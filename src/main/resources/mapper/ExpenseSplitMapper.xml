@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.ExpenseSplitMapper">
+
+    <resultMap id="ExpenseSplitResultMap" type="com.ds.goroute.entity.ExpenseSplit">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="expense_id" property="expenseId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="user_id" property="userId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="guest_name" property="guestName" jdbcType="VARCHAR"/>
+        <result column="guest_email" property="guestEmail" jdbcType="VARCHAR"/>
+        <result column="amount" property="amount" jdbcType="DECIMAL"/>
+        <result column="is_settled" property="isSettled" jdbcType="BOOLEAN"/>
+        <result column="settled_at" property="settledAt" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.ExpenseSplit">
+        INSERT INTO expense_splits (id, expense_id, user_id, guest_name, guest_email, amount, is_settled)
+        VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{expenseId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{userId,javaType=java.util.UUID,jdbcType=OTHER}, #{guestName}, #{guestEmail}, #{amount}, FALSE)
+    </insert>
+
+    <select id="selectByExpenseId" parameterType="java.util.UUID" resultMap="ExpenseSplitResultMap">
+        SELECT * FROM expense_splits WHERE expense_id = #{expenseId,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <update id="updateById" parameterType="com.ds.goroute.entity.ExpenseSplit">
+        UPDATE expense_splits SET
+            amount = #{amount},
+            is_settled = #{isSettled},
+            settled_at = #{settledAt}
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <delete id="deleteByExpenseId" parameterType="java.util.UUID">
+        DELETE FROM expense_splits WHERE expense_id = #{expenseId,javaType=java.util.UUID,jdbcType=OTHER}
+    </delete>
+
+    <select id="selectById" parameterType="java.util.UUID" resultMap="ExpenseSplitResultMap">
+        SELECT * FROM expense_splits WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <select id="selectByUserId" parameterType="java.util.UUID" resultMap="ExpenseSplitResultMap">
+        SELECT * FROM expense_splits WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <delete id="deleteById" parameterType="java.util.UUID">
+        DELETE FROM expense_splits WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </delete>
+
+</mapper>

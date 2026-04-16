@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.RefreshTokenMapper">
+
+    <resultMap id="RefreshTokenResultMap" type="com.ds.goroute.entity.RefreshToken">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="user_id" property="userId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="token" property="token" jdbcType="VARCHAR"/>
+        <result column="expires_at" property="expiresAt" jdbcType="TIMESTAMP"/>
+        <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.RefreshToken">
+        INSERT INTO refresh_tokens (id, user_id, token, expires_at, created_at)
+        VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{userId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{token}, #{expiresAt}, NOW())
+    </insert>
+
+    <select id="selectByToken" parameterType="String" resultMap="RefreshTokenResultMap">
+        SELECT * FROM refresh_tokens WHERE token = #{token}
+    </select>
+
+    <delete id="deleteByToken" parameterType="String">
+        DELETE FROM refresh_tokens WHERE token = #{token}
+    </delete>
+
+    <delete id="deleteByUserId" parameterType="java.util.UUID">
+        DELETE FROM refresh_tokens WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+    </delete>
+
+    <select id="selectById" parameterType="java.util.UUID" resultMap="RefreshTokenResultMap">
+        SELECT * FROM refresh_tokens WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <delete id="deleteById" parameterType="java.util.UUID">
+        DELETE FROM refresh_tokens WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </delete>
+
+</mapper>

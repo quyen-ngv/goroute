@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.CheckinMapper">
+
+    <resultMap id="CheckinResultMap" type="com.ds.goroute.entity.Checkin">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="activity_id" property="activityId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="user_id" property="userId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="checked_in_at" property="checkedInAt" jdbcType="TIMESTAMP"/>
+        <result column="rating" property="rating" jdbcType="INTEGER"/>
+        <result column="notes" property="notes" jdbcType="VARCHAR"/>
+        <result column="lat" property="lat" jdbcType="DECIMAL"/>
+        <result column="lng" property="lng" jdbcType="DECIMAL"/>
+        <result column="auto_checkin" property="autoCheckin" jdbcType="BOOLEAN"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.Checkin">
+        INSERT INTO checkins (id, activity_id, user_id, checked_in_at, rating, notes, lat, lng, auto_checkin)
+        VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{activityId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{userId,javaType=java.util.UUID,jdbcType=OTHER}, NOW(), #{rating}, #{notes}, #{lat}, #{lng}, #{autoCheckin})
+    </insert>
+
+    <select id="selectById" parameterType="java.util.UUID" resultMap="CheckinResultMap">
+        SELECT * FROM checkins WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <select id="selectByActivityId" parameterType="java.util.UUID" resultMap="CheckinResultMap">
+        SELECT * FROM checkins WHERE activity_id = #{activityId,javaType=java.util.UUID,jdbcType=OTHER}
+        ORDER BY checked_in_at DESC
+    </select>
+
+    <select id="selectByTripId" parameterType="java.util.UUID" resultMap="CheckinResultMap">
+        SELECT c.* FROM checkins c
+        JOIN activities a ON c.activity_id = a.id
+        WHERE a.trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+        ORDER BY c.checked_in_at DESC
+    </select>
+
+    <select id="selectByActivityIdAndUserId" resultMap="CheckinResultMap">
+        SELECT * FROM checkins WHERE activity_id = #{activityId,javaType=java.util.UUID,jdbcType=OTHER}
+        AND user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <update id="updateById" parameterType="com.ds.goroute.entity.Checkin">
+        UPDATE checkins SET
+            rating = #{rating},
+            notes = #{notes}
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <select id="selectByUserId" parameterType="java.util.UUID" resultMap="CheckinResultMap">
+        SELECT * FROM checkins WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+        ORDER BY checked_in_at DESC
+    </select>
+
+    <delete id="deleteById" parameterType="java.util.UUID">
+        DELETE FROM checkins WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </delete>
+
+</mapper>

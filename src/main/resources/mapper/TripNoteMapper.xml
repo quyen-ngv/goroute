@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.TripNoteMapper">
+
+    <resultMap id="TripNoteResultMap" type="com.ds.goroute.entity.TripNote">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="trip_id" property="tripId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="user_id" property="userId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="content" property="content" jdbcType="VARCHAR"/>
+        <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
+        <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
+        <result column="is_deleted" property="isDeleted" jdbcType="BOOLEAN"/>
+    </resultMap>
+
+    <select id="selectById" parameterType="java.util.UUID" resultMap="TripNoteResultMap">
+        SELECT * FROM trip_notes WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND is_deleted = false
+    </select>
+
+    <select id="selectByTripId" parameterType="java.util.UUID" resultMap="TripNoteResultMap">
+        SELECT * FROM trip_notes WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER} 
+        AND is_deleted = false ORDER BY created_at DESC
+    </select>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.TripNote">
+        INSERT INTO trip_notes (id, trip_id, user_id, content, created_at, updated_at, is_deleted)
+        VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{userId,javaType=java.util.UUID,jdbcType=OTHER}, #{content}, NOW(), NOW(), false)
+    </insert>
+
+    <update id="updateById" parameterType="com.ds.goroute.entity.TripNote">
+        UPDATE trip_notes SET content = #{content}, updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <update id="softDelete" parameterType="java.util.UUID">
+        UPDATE trip_notes SET is_deleted = true WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <delete id="deleteById" parameterType="java.util.UUID">
+        DELETE FROM trip_notes WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </delete>
+
+    <select id="countByTripId" parameterType="java.util.UUID" resultType="int">
+        SELECT COUNT(*) FROM trip_notes WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER} 
+        AND is_deleted = false
+    </select>
+
+</mapper>

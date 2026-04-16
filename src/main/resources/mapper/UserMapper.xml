@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.UserMapper">
+
+    <resultMap id="UserResultMap" type="com.ds.goroute.entity.User">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="email" property="email" jdbcType="VARCHAR"/>
+        <result column="password_hash" property="passwordHash" jdbcType="VARCHAR"/>
+        <result column="full_name" property="fullName" jdbcType="VARCHAR"/>
+        <result column="username" property="username" jdbcType="VARCHAR"/>
+        <result column="avatar_url" property="avatarUrl" jdbcType="VARCHAR"/>
+        <result column="provider" property="provider" jdbcType="VARCHAR"/>
+        <result column="provider_id" property="providerId" jdbcType="VARCHAR"/>
+        <result column="default_currency" property="defaultCurrency" jdbcType="VARCHAR"/>
+        <result column="default_travel_mode" property="defaultTravelMode" jdbcType="VARCHAR"/>
+        <result column="location_tracking" property="locationTracking" jdbcType="VARCHAR"/>
+        <result column="auto_checkin_radius" property="autoCheckinRadius" jdbcType="INTEGER"/>
+        <result column="budget_alert_threshold" property="budgetAlertThreshold" jdbcType="INTEGER"/>
+        <result column="budget_alert_daily" property="budgetAlertDaily" jdbcType="BOOLEAN"/>
+        <result column="default_trip_visibility" property="defaultTripVisibility" jdbcType="VARCHAR"/>
+        <result column="language" property="language" jdbcType="VARCHAR"/>
+        <result column="theme" property="theme" jdbcType="VARCHAR"/>
+        <result column="onboarding_completed" property="onboardingCompleted" jdbcType="BOOLEAN"/>
+        <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
+        <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.User">
+        INSERT INTO users (id, email, password_hash, full_name, username, avatar_url, provider, provider_id,
+                          default_currency, default_travel_mode, location_tracking, auto_checkin_radius,
+                          budget_alert_threshold, budget_alert_daily, default_trip_visibility, language, theme,
+                          onboarding_completed, created_at, updated_at)
+        VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{email}, #{passwordHash}, #{fullName}, #{username},
+                #{avatarUrl}, #{provider}, #{providerId}, #{defaultCurrency}, #{defaultTravelMode},
+                #{locationTracking}, #{autoCheckinRadius}, #{budgetAlertThreshold}, #{budgetAlertDaily},
+                #{defaultTripVisibility}, #{language}, #{theme}, #{onboardingCompleted}, NOW(), NOW())
+    </insert>
+
+    <select id="selectByEmail" parameterType="String" resultMap="UserResultMap">
+        SELECT * FROM users WHERE email = #{email} AND provider = 'LOCAL'
+    </select>
+
+    <select id="selectByProviderId" parameterType="String" resultMap="UserResultMap">
+        SELECT * FROM users WHERE provider_id = #{providerId}
+    </select>
+
+    <select id="selectById" parameterType="java.util.UUID" resultMap="UserResultMap">
+        SELECT * FROM users WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <update id="updateById" parameterType="com.ds.goroute.entity.User">
+        UPDATE users SET
+            email = #{email},
+            password_hash = #{passwordHash},
+            full_name = #{fullName},
+            username = #{username},
+            avatar_url = #{avatarUrl},
+            default_currency = #{defaultCurrency},
+            default_travel_mode = #{defaultTravelMode},
+            location_tracking = #{locationTracking},
+            auto_checkin_radius = #{autoCheckinRadius},
+            budget_alert_threshold = #{budgetAlertThreshold},
+            budget_alert_daily = #{budgetAlertDaily},
+            language = #{language},
+            theme = #{theme},
+            onboarding_completed = #{onboardingCompleted},
+            updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <select id="selectByUsername" parameterType="String" resultMap="UserResultMap">
+        SELECT * FROM users WHERE username = #{username}
+    </select>
+
+    <select id="selectAll" resultMap="UserResultMap">
+        SELECT * FROM users ORDER BY created_at DESC
+    </select>
+
+    <delete id="deleteById" parameterType="java.util.UUID">
+        DELETE FROM users WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </delete>
+
+</mapper>

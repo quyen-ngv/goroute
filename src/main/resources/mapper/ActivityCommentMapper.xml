@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.ActivityCommentMapper">
+
+    <resultMap id="ActivityCommentResultMap" type="com.ds.goroute.entity.ActivityComment">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="activity_id" property="activityId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="user_id" property="userId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="content" property="content" jdbcType="VARCHAR"/>
+        <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
+        <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
+        <result column="is_deleted" property="isDeleted" jdbcType="BOOLEAN"/>
+    </resultMap>
+
+    <select id="selectById" parameterType="java.util.UUID" resultMap="ActivityCommentResultMap">
+        SELECT * FROM activity_comments WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND is_deleted = false
+    </select>
+
+    <select id="selectByActivityId" parameterType="java.util.UUID" resultMap="ActivityCommentResultMap">
+        SELECT * FROM activity_comments WHERE activity_id = #{activityId,javaType=java.util.UUID,jdbcType=OTHER} 
+        AND is_deleted = false ORDER BY created_at DESC
+    </select>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.ActivityComment">
+        INSERT INTO activity_comments (id, activity_id, user_id, content, created_at, updated_at, is_deleted)
+        VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{activityId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{userId,javaType=java.util.UUID,jdbcType=OTHER}, #{content}, NOW(), NOW(), false)
+    </insert>
+
+    <update id="updateById" parameterType="com.ds.goroute.entity.ActivityComment">
+        UPDATE activity_comments SET content = #{content}, updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <update id="softDelete" parameterType="java.util.UUID">
+        UPDATE activity_comments SET is_deleted = true WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <delete id="deleteById" parameterType="java.util.UUID">
+        DELETE FROM activity_comments WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </delete>
+
+    <select id="countByActivityId" parameterType="java.util.UUID" resultType="int">
+        SELECT COUNT(*) FROM activity_comments WHERE activity_id = #{activityId,javaType=java.util.UUID,jdbcType=OTHER} 
+        AND is_deleted = false
+    </select>
+
+</mapper>

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.UserDeviceMapper">
+
+    <resultMap id="UserDeviceResultMap" type="com.ds.goroute.entity.UserDevice">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="fcmToken" column="fcm_token"/>
+        <result property="deviceType" column="device_type"/>
+        <result property="deviceName" column="device_name"/>
+        <result property="isActive" column="is_active"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO user_devices (id, user_id, fcm_token, device_type, device_name, is_active, created_at, updated_at)
+        VALUES (#{id}, #{userId}, #{fcmToken}, #{deviceType}, #{deviceName}, #{isActive}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <select id="findById" resultMap="UserDeviceResultMap">
+        SELECT * FROM user_devices WHERE id = #{id}
+    </select>
+
+    <select id="findActiveByUserId" resultMap="UserDeviceResultMap">
+        SELECT * FROM user_devices 
+        WHERE user_id = #{userId} AND is_active = true
+        ORDER BY updated_at DESC
+    </select>
+
+    <select id="findByUserIdAndToken" resultMap="UserDeviceResultMap">
+        SELECT * FROM user_devices 
+        WHERE user_id = #{userId} AND fcm_token = #{fcmToken}
+    </select>
+
+    <update id="updateToken">
+        UPDATE user_devices 
+        SET fcm_token = #{fcmToken}, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="deactivate">
+        UPDATE user_devices 
+        SET is_active = false, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+</mapper>

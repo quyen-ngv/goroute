@@ -1,0 +1,13 @@
+package com.ds.goroute.service;
+
+import com.ds.goroute.dto.request.CreateTripNoteRequest;
+import com.ds.goroute.dto.response.TripNoteResponse;
+
+import java.util.List;
+import java.util.UUID;
+
+public interface TripNoteService {
+    List<TripNoteResponse> getTripNotes(UUID tripId, UUID userId);
+    TripNoteResponse createTripNote(UUID tripId, CreateTripNoteRequest request, UUID userId);
+    void deleteTripNote(UUID tripId, UUID noteId, UUID userId);
+}

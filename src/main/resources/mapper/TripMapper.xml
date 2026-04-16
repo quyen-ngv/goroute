@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.TripMapper">
+
+    <resultMap id="TripResultMap" type="com.ds.goroute.entity.Trip">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="name" property="name" jdbcType="VARCHAR"/>
+        <result column="cover_image_url" property="coverImageUrl" jdbcType="VARCHAR"/>
+        <result column="destination" property="destination" jdbcType="VARCHAR"/>
+        <result column="destination_place_id" property="destinationPlaceId" jdbcType="VARCHAR"/>
+        <result column="destination_lat" property="destinationLat" jdbcType="DECIMAL"/>
+        <result column="destination_lng" property="destinationLng" jdbcType="DECIMAL"/>
+        <result column="start_date" property="startDate" jdbcType="DATE"/>
+        <result column="end_date" property="endDate" jdbcType="DATE"/>
+        <result column="budget" property="budget" jdbcType="DECIMAL"/>
+        <result column="currency" property="currency" jdbcType="VARCHAR"/>
+        <result column="status" property="status" jdbcType="VARCHAR"/>
+        <result column="visibility" property="visibility" jdbcType="VARCHAR"/>
+        <result column="share_code" property="shareCode" jdbcType="VARCHAR"/>
+        <result column="timezone" property="timezone" jdbcType="VARCHAR"/>
+        <result column="owner_id" property="ownerId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="is_deleted" property="isDeleted" jdbcType="BOOLEAN"/>
+        <result column="deleted_at" property="deletedAt" jdbcType="TIMESTAMP"/>
+        <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
+        <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.Trip">
+        INSERT INTO trips (id, name, cover_image_url, destination, destination_place_id, destination_lat, destination_lng,
+                          start_date, end_date, budget, currency, status, visibility, share_code, timezone, owner_id,
+                          is_deleted, created_at, updated_at)
+        VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{name}, #{coverImageUrl}, #{destination},
+                #{destinationPlaceId}, #{destinationLat}, #{destinationLng}, #{startDate}, #{endDate}, #{budget},
+                #{currency}, #{status}, 
+                #{visibility}, #{shareCode}, #{timezone},
+                #{ownerId,javaType=java.util.UUID,jdbcType=OTHER}, FALSE, NOW(), NOW())
+    </insert>
+
+    <select id="selectById" parameterType="java.util.UUID" resultMap="TripResultMap">
+        SELECT * FROM trips WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND is_deleted = FALSE
+    </select>
+
+    <select id="selectByOwnerId" parameterType="java.util.UUID" resultMap="TripResultMap">
+        SELECT * FROM trips WHERE owner_id = #{ownerId,javaType=java.util.UUID,jdbcType=OTHER} AND is_deleted = FALSE
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="selectByUserId" parameterType="java.util.UUID" resultMap="TripResultMap">
+        SELECT DISTINCT t.* FROM trips t
+        LEFT JOIN trip_members tm ON t.id = tm.trip_id
+        WHERE (
+            t.owner_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER} 
+            OR (tm.user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER} AND tm.status = 'ACCEPTED')
+        )
+        AND t.is_deleted = FALSE
+        ORDER BY t.created_at DESC
+    </select>
+
+    <update id="updateById" parameterType="com.ds.goroute.entity.Trip">
+        UPDATE trips SET
+            name = #{name},
+            cover_image_url = #{coverImageUrl},
+            destination = #{destination},
+            start_date = #{startDate},
+            end_date = #{endDate},
+            budget = #{budget},
+            status = #{status},
+            visibility = #{visibility},
+            updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <update id="deleteById" parameterType="java.util.UUID">
+        UPDATE trips SET is_deleted = TRUE, deleted_at = NOW(), updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <select id="selectByShareCode" parameterType="String" resultMap="TripResultMap">
+        SELECT * FROM trips WHERE share_code = #{shareCode} AND is_deleted = FALSE
+    </select>
+
+</mapper>

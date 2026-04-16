@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.ExpenseMapper">
+
+    <resultMap id="ExpenseResultMap" type="com.ds.goroute.entity.Expense">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="trip_id" property="tripId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="activity_id" property="activityId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="amount" property="amount" jdbcType="DECIMAL"/>
+        <result column="currency" property="currency" jdbcType="VARCHAR"/>
+        <result column="exchange_rate" property="exchangeRate" jdbcType="DECIMAL"/>
+        <result column="amount_in_trip_currency" property="amountInTripCurrency" jdbcType="DECIMAL"/>
+        <result column="category" property="category" jdbcType="VARCHAR"/>
+        <result column="description" property="description" jdbcType="VARCHAR"/>
+        <result column="paid_by" property="paidBy" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="paid_by_guest_name" property="paidByGuestName" jdbcType="VARCHAR"/>
+        <result column="paid_by_guest_email" property="paidByGuestEmail" jdbcType="VARCHAR"/>
+        <result column="receipt_url" property="receiptUrl" jdbcType="VARCHAR"/>
+        <result column="photo_urls" property="photoUrls" jdbcType="ARRAY" typeHandler="org.apache.ibatis.type.ArrayTypeHandler"/>
+        <result column="created_by" property="createdBy" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
+        <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.Expense">
+        INSERT INTO expenses (id, trip_id, activity_id, amount, currency, exchange_rate, amount_in_trip_currency,
+                             category, description, paid_by, paid_by_guest_name, paid_by_guest_email, receipt_url, photo_urls, created_by, created_at, updated_at)
+        VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{activityId,javaType=java.util.UUID,jdbcType=OTHER}, #{amount}, #{currency}, #{exchangeRate},
+                #{amountInTripCurrency}, 
+                #{category}, 
+                #{description},
+                #{paidBy,javaType=java.util.UUID,jdbcType=OTHER}, #{paidByGuestName}, #{paidByGuestEmail}, #{receiptUrl},
+                #{photoUrls,jdbcType=ARRAY,typeHandler=org.apache.ibatis.type.ArrayTypeHandler},
+                #{createdBy,javaType=java.util.UUID,jdbcType=OTHER}, NOW(), NOW())
+    </insert>
+
+    <select id="selectById" parameterType="java.util.UUID" resultMap="ExpenseResultMap">
+        SELECT * FROM expenses WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <select id="selectByTripId" parameterType="java.util.UUID" resultMap="ExpenseResultMap">
+        SELECT * FROM expenses WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+        ORDER BY created_at DESC
+    </select>
+
+    <update id="updateById" parameterType="com.ds.goroute.entity.Expense">
+        UPDATE expenses SET
+            amount = #{amount},
+            currency = #{currency},
+            category = #{category},
+            description = #{description},
+            photo_urls = #{photoUrls,jdbcType=ARRAY,typeHandler=org.apache.ibatis.type.ArrayTypeHandler},
+            updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <delete id="deleteById" parameterType="java.util.UUID">
+        DELETE FROM expenses WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </delete>
+
+    <select id="selectByActivityId" parameterType="java.util.UUID" resultMap="ExpenseResultMap">
+        SELECT * FROM expenses WHERE activity_id = #{activityId,javaType=java.util.UUID,jdbcType=OTHER}
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="selectByPaidBy" parameterType="java.util.UUID" resultMap="ExpenseResultMap">
+        SELECT * FROM expenses WHERE paid_by = #{paidBy,javaType=java.util.UUID,jdbcType=OTHER}
+        ORDER BY created_at DESC
+    </select>
+
+    <delete id="deleteByTripId" parameterType="java.util.UUID">
+        DELETE FROM expenses WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+    </delete>
+
+</mapper>

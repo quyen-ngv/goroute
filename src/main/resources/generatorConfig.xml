@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE generatorConfiguration PUBLIC "-//mybatis.org//DTD MyBatis Generator Configuration 1.0//EN"
+        "http://mybatis.org/dtd/mybatis-generator-config_1_0.dtd">
+
+<generatorConfiguration>
+
+    <context id="PostgresContext" targetRuntime="MyBatis3Simple">
+
+        <plugin type="com.softwareloop.mybatis.generator.plugins.LombokPlugin">
+            <!-- Generate @Data annotation (includes @Getter, @Setter, @ToString, @EqualsAndHashCode) -->
+            <property name="data" value="true"/>
+            <!-- Generate @Builder annotation -->
+            <property name="builder" value="true"/>
+            <!-- Generate @NoArgsConstructor annotation -->
+            <property name="noArgsConstructor" value="true"/>
+            <!-- Generate @AllArgsConstructor annotation -->
+            <property name="allArgsConstructor" value="true"/>
+        </plugin>
+
+        <!-- Disable getter/setter generation since we use Lombok -->
+        <plugin type="org.mybatis.generator.plugins.ToStringPlugin"/>
+
+        <commentGenerator>
+            <property name="suppressAllComments" value="true"/>
+            <property name="suppressDate" value="true"/>
+        </commentGenerator>
+
+        <jdbcConnection driverClass="org.postgresql.Driver"
+                        connectionURL="jdbc:postgresql://localhost:5431/ticketmaster_db"
+                        userId="ticketmaster"
+                        password="ticketmaster_secret"/>
+
+        <javaTypeResolver>
+            <!-- Use Java 8 Date/Time API (LocalDateTime, etc.) -->
+            <property name="useJSR310Types" value="true"/>
+            <!-- Force JDBC type resolution -->
+            <property name="forceBigDecimals" value="false"/>
+        </javaTypeResolver>
+
+        <javaModelGenerator targetPackage="com.ds.goroute.entity"
+                            targetProject="src/main/java">
+            <property name="enableSubPackages" value="true"/>
+            <property name="trimStrings" value="true"/>
+            <!-- Don't immutable - allow setters -->
+            <property name="immutable" value="false"/>
+        </javaModelGenerator>
+
+        <sqlMapGenerator targetPackage="mapper"
+                         targetProject="src/main/resources">
+            <property name="enableSubPackages" value="true"/>
+        </sqlMapGenerator>
+
+        <javaClientGenerator type="XMLMAPPER"
+                             targetPackage="com.ds.goroute.mapper"
+                             targetProject="src/main/java">
+            <property name="enableSubPackages" value="true"/>
+        </javaClientGenerator>
+
+
+        <table tableName="events" domainObjectName="Event">
+            <columnOverride column="id" javaType="java.util.UUID" jdbcType="OTHER" typeHandler="com.ds.goroute.config.database.UUIDTypeHandler"/>
+            <columnOverride column="status" javaType="com.ds.goroute.type.EventStatus" jdbcType="VARCHAR"/>
+        </table>
+
+        <table tableName="bookings" domainObjectName="Booking">
+            <columnOverride column="id" javaType="java.util.UUID" jdbcType="OTHER" typeHandler="com.ds.goroute.config.database.UUIDTypeHandler"/>
+            <columnOverride column="user_id" javaType="java.util.UUID" jdbcType="OTHER" typeHandler="com.ds.goroute.config.database.UUIDTypeHandler"/>
+            <columnOverride column="event_id" javaType="java.util.UUID" jdbcType="OTHER" typeHandler="com.ds.goroute.config.database.UUIDTypeHandler"/>
+            <columnOverride column="status" javaType="com.ds.goroute.type.BookingStatus" jdbcType="VARCHAR"/>
+        </table>
+
+        <table tableName="booking_items" domainObjectName="BookingItem">
+            <columnOverride column="id" javaType="java.util.UUID" jdbcType="OTHER" typeHandler="com.ds.goroute.config.database.UUIDTypeHandler"/>
+            <columnOverride column="booking_id" javaType="java.util.UUID" jdbcType="OTHER" typeHandler="com.ds.goroute.config.database.UUIDTypeHandler"/>
+            <columnOverride column="seat_inventory_id" javaType="java.util.UUID" jdbcType="OTHER" typeHandler="com.ds.goroute.config.database.UUIDTypeHandler"/>
+        </table>
+
+        <table tableName="seat_groups" domainObjectName="SeatGroup">
+            <columnOverride column="id" javaType="java.util.UUID" jdbcType="OTHER" typeHandler="com.ds.goroute.config.database.UUIDTypeHandler"/>
+            <columnOverride column="event_id" javaType="java.util.UUID" jdbcType="OTHER" typeHandler="com.ds.goroute.config.database.UUIDTypeHandler"/>
+        </table>
+
+        <table tableName="seat_inventories" domainObjectName="SeatInventory">
+            <columnOverride column="id" javaType="java.util.UUID" jdbcType="OTHER" typeHandler="com.ds.goroute.config.database.UUIDTypeHandler"/>
+            <columnOverride column="event_id" javaType="java.util.UUID" jdbcType="OTHER" typeHandler="com.ds.goroute.config.database.UUIDTypeHandler"/>
+            <columnOverride column="seat_type_id" javaType="java.util.UUID" jdbcType="OTHER" typeHandler="com.ds.goroute.config.database.UUIDTypeHandler"/>
+            <columnOverride column="status" javaType="com.ds.goroute.type.SeatInventoryStatus" jdbcType="VARCHAR"/>
+        </table>
+
+    </context>
+</generatorConfiguration>

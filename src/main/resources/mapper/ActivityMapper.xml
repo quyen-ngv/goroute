@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.ActivityMapper">
+
+    <resultMap id="ActivityResultMap" type="com.ds.goroute.entity.Activity">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="trip_id" property="tripId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="day_number" property="dayNumber" jdbcType="INTEGER"/>
+        <result column="place_id" property="placeId" jdbcType="VARCHAR"/>
+        <result column="name" property="name" jdbcType="VARCHAR"/>
+        <result column="address" property="address" jdbcType="VARCHAR"/>
+        <result column="lat" property="lat" jdbcType="DECIMAL"/>
+        <result column="lng" property="lng" jdbcType="DECIMAL"/>
+        <result column="start_time" property="startTime" javaType="java.time.LocalTime" jdbcType="TIME"/>
+        <result column="end_time" property="endTime" javaType="java.time.LocalTime" jdbcType="TIME"/>
+        <result column="estimated_cost" property="estimatedCost" jdbcType="DECIMAL"/>
+        <result column="cost_currency" property="costCurrency" jdbcType="VARCHAR"/>
+        <result column="category" property="category" jdbcType="VARCHAR"/>
+        <result column="transport_mode" property="transportMode" jdbcType="VARCHAR"/>
+        <result column="rating" property="rating" jdbcType="DECIMAL"/>
+        <result column="photo_url" property="photoUrl" jdbcType="VARCHAR"/>
+        <result column="notes" property="notes" jdbcType="VARCHAR"/>
+        <result column="status" property="status" jdbcType="VARCHAR"/>
+        <result column="added_by" property="addedBy" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="is_accommodation" property="isAccommodation" jdbcType="BOOLEAN"/>
+        <result column="is_starting_point" property="isStartingPoint" jdbcType="BOOLEAN"/>
+        <result column="starting_point_date" property="startingPointDate" jdbcType="TIMESTAMP"/>
+        <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
+        <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.Activity">
+        INSERT INTO activities (id, trip_id, day_number, place_id, custom_place_id, name, address,
+                               lat, lng, start_time, end_time, estimated_cost, cost_currency, category, 
+                               transport_mode, rating, photo_url, notes, status, added_by, 
+                               is_accommodation, is_starting_point, starting_point_date, created_at, updated_at)
+        VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, 
+                #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{dayNumber}, #{placeId}, #{customPlaceId,javaType=java.util.UUID,jdbcType=OTHER}, 
+                #{name}, #{address}, #{lat}, #{lng}, 
+                #{startTime,javaType=java.time.LocalTime,jdbcType=TIME}, 
+                #{endTime,javaType=java.time.LocalTime,jdbcType=TIME}, 
+                #{estimatedCost}, #{costCurrency}, #{category}, 
+                #{transportMode}, 
+                #{rating}, #{photoUrl}, #{notes},
+                #{status},
+                #{addedBy,javaType=java.util.UUID,jdbcType=OTHER}, 
+                #{isAccommodation}, #{isStartingPoint}, #{startingPointDate},
+                NOW(), NOW())
+    </insert>
+
+    <select id="selectById" parameterType="java.util.UUID" resultMap="ActivityResultMap">
+        SELECT * FROM activities WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <select id="selectByTripId" parameterType="java.util.UUID" resultMap="ActivityResultMap">
+        SELECT * FROM activities WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+        ORDER BY day_number, start_time
+    </select>
+
+    <select id="selectByTripIdAndDay" resultMap="ActivityResultMap">
+        SELECT * FROM activities WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+        AND day_number = #{dayNumber}
+        ORDER BY start_time
+    </select>
+
+    <update id="updateById" parameterType="com.ds.goroute.entity.Activity">
+        UPDATE activities
+        <set>
+            <if test="placeId != null">place_id = #{placeId},</if>
+            <if test="customPlaceId != null">custom_place_id = #{customPlaceId,javaType=java.util.UUID,jdbcType=OTHER},</if>
+            <if test="name != null">name = #{name},</if>
+            <if test="address != null">address = #{address},</if>
+            <if test="lat != null">lat = #{lat},</if>
+            <if test="lng != null">lng = #{lng},</if>
+            <if test="dayNumber != null">day_number = #{dayNumber},</if>
+            <if test="startTime != null">start_time = #{startTime,javaType=java.time.LocalTime,jdbcType=TIME},</if>
+            <if test="endTime != null">end_time = #{endTime,javaType=java.time.LocalTime,jdbcType=TIME},</if>
+            <if test="estimatedCost != null">estimated_cost = #{estimatedCost},</if>
+            <if test="costCurrency != null">cost_currency = #{costCurrency},</if>
+            <if test="category != null">category = #{category},</if>
+            <if test="transportMode != null">transport_mode = #{transportMode},</if>
+            <if test="rating != null">rating = #{rating},</if>
+            <if test="photoUrl != null">photo_url = #{photoUrl},</if>
+            <if test="notes != null">notes = #{notes},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="isAccommodation != null">is_accommodation = #{isAccommodation},</if>
+            <if test="isStartingPoint != null">is_starting_point = #{isStartingPoint},</if>
+            <if test="startingPointDate != null">starting_point_date = #{startingPointDate},</if>
+            updated_at = NOW()
+        </set>
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <delete id="deleteById" parameterType="java.util.UUID">
+        DELETE FROM activities WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </delete>
+
+    <select id="selectByTripIdAndDayNumber" resultMap="ActivityResultMap">
+        SELECT * FROM activities WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+        AND day_number = #{dayNumber}
+        ORDER BY start_time
+    </select>
+
+    <delete id="deleteByTripId" parameterType="java.util.UUID">
+        DELETE FROM activities WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+    </delete>
+
+    <update id="updateSortOrder">
+        UPDATE activities SET sort_order = #{sortOrder}, updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+</mapper>
