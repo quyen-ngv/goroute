@@ -26,6 +26,8 @@ public class UpdateTripRequest {
     private String status;
     private String visibility;
     private String notes;
+    private Boolean shareExpenses;
+    private Boolean shareNotes;
     
     // Starting point
     private String startingPointName;

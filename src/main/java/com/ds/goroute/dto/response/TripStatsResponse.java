@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 public class TripStatsResponse {
     private Integer totalItems;
     private Integer checkedInItems;
+    private Integer totalMembers;
     private BigDecimal totalExpenses;
     private BigDecimal remainingBudget;
 }

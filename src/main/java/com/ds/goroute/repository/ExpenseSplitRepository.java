@@ -10,6 +10,7 @@ public interface ExpenseSplitRepository {
     ExpenseSplit findById(UUID id);
     List<ExpenseSplit> findByExpenseId(UUID expenseId);
     List<ExpenseSplit> findByUserId(UUID userId);
+    List<ExpenseSplit> findByGuestMemberId(UUID guestMemberId);
     void update(ExpenseSplit split);
     void delete(UUID id);
     void deleteByExpenseId(UUID expenseId);

@@ -18,6 +18,9 @@ public class ErrorConstant {
      * Write the error code prefixed with 400 below
      * 400
      */
+
+    public static final int BAD_REQUEST = 4000000;
+
     public static final int INVALID_PARAMETERS = 4000001;
 
     public static final int SYSTEM_CONFIGURATION_NOT_FOUND = 4004208;

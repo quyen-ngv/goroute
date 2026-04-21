@@ -30,8 +30,7 @@ public class CreateExpenseRequest {
     private String description;
     private UUID activityId;
     private UUID paidBy;
-    private String paidByGuestName;
-    private String paidByGuestEmail;
+    private String paidByGuestName; // Treat as both username and fullName
     private List<ExpenseSplitRequest> splits;
     private List<String> photoUrls;
 }

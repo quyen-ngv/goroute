@@ -31,8 +31,12 @@ public class NotificationController {
             @RequestAttribute("userId") UUID userId,
             @RequestParam(defaultValue = "0") Integer page,
             @RequestParam(defaultValue = "20") Integer size,
-            @RequestParam(defaultValue = "false") Boolean unreadOnly) {
-        List<NotificationResponse> notifications = notificationService.getNotifications(userId, page, size, unreadOnly);
+            @RequestParam(defaultValue = "false") Boolean unreadOnly,
+            @RequestParam(required = false) UUID tripId) {
+        log.info("getNotifications - userId: {}, tripId: {}, page: {}, size: {}, unreadOnly: {}", 
+                userId, tripId, page, size, unreadOnly);
+        List<NotificationResponse> notifications = notificationService.getNotifications(userId, page, size, unreadOnly, tripId);
+        log.info("getNotifications - found {} notifications", notifications.size());
         return ResponseEntity.ok(BaseResponse.ofSucceeded(notifications));
     }
 

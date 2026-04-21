@@ -25,8 +25,6 @@ public class TripMember {
     private LocalDateTime createdAt;
     
     // Guest member fields (khi userId = null)
-    private String guestName;
-    private String guestEmail; // optional, dùng để link sau này
-    private String guestPhone; // optional
+    private String guestName; // Treat as both username and fullName
     private Boolean isGuest; // true nếu là guest member
 }

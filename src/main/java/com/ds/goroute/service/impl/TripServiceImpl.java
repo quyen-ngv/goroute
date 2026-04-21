@@ -3,28 +3,16 @@ package com.ds.goroute.service.impl;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.CreateTripRequest;
 import com.ds.goroute.dto.request.InviteMemberRequest;
+import com.ds.goroute.dto.request.LinkGuestRequest;
 import com.ds.goroute.dto.request.UpdateTripRequest;
-import com.ds.goroute.dto.response.TripDetailResponse;
-import com.ds.goroute.dto.response.TripResponse;
-import com.ds.goroute.dto.response.TripMemberResponse;
-import com.ds.goroute.dto.response.TripInvitationResponse;
-import com.ds.goroute.dto.response.TripStatsResponse;
-import com.ds.goroute.dto.response.UserResponse;
-import com.ds.goroute.entity.Trip;
-import com.ds.goroute.entity.TripMember;
-import com.ds.goroute.entity.User;
+import com.ds.goroute.dto.response.*;
+import com.ds.goroute.entity.*;
 import com.ds.goroute.exception.BusinessException;
-import com.ds.goroute.repository.TripRepository;
-import com.ds.goroute.repository.TripMemberRepository;
-import com.ds.goroute.repository.UserRepository;
-import com.ds.goroute.repository.ActivityRepository;
-import com.ds.goroute.repository.ExpenseRepository;
-import com.ds.goroute.repository.CheckinRepository;
+import com.ds.goroute.repository.*;
 import com.ds.goroute.service.TripService;
-import com.ds.goroute.service.NotificationService;
+import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.MemberRole;
 import com.ds.goroute.type.MemberStatus;
-import com.ds.goroute.type.NotificationType;
 import com.ds.goroute.type.TripStatus;
 import com.ds.goroute.type.TripVisibility;
 import lombok.RequiredArgsConstructor;
@@ -33,9 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -45,14 +31,16 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class TripServiceImpl implements TripService {
-    
+
     private final TripRepository tripRepository;
     private final TripMemberRepository tripMemberRepository;
     private final UserRepository userRepository;
     private final ActivityRepository activityRepository;
     private final ExpenseRepository expenseRepository;
+    private final ExpenseSplitRepository expenseSplitRepository;
     private final CheckinRepository checkinRepository;
-    private final NotificationService notificationService;
+    private final TripNoteRepository tripNoteRepository;
+    private final NotificationHelper notificationHelper;
 
     @Override
     @Transactional
@@ -101,7 +89,7 @@ public class TripServiceImpl implements TripService {
     @Transactional(readOnly = true)
     public List<TripResponse> getTrips(UUID userId, String status) {
         List<Trip> trips = tripRepository.findByUserId(userId);
-        
+
         // Filter by status if provided
         if (status != null && !status.isEmpty() && !status.equalsIgnoreCase("all")) {
             final String statusFilter = status;
@@ -185,7 +173,9 @@ public class TripServiceImpl implements TripService {
         if (request.getCurrency() != null) trip.setCurrency(request.getCurrency());
         if (request.getStatus() != null) trip.setStatus(TripStatus.valueOf(request.getStatus()));
         if (request.getVisibility() != null) trip.setVisibility(TripVisibility.valueOf(request.getVisibility()));
-        
+        if (request.getShareExpenses() != null) trip.setShareExpenses(request.getShareExpenses());
+        if (request.getShareNotes() != null) trip.setShareNotes(request.getShareNotes());
+
         // Update starting point
         if (request.getStartingPointName() != null) trip.setStartingPointName(request.getStartingPointName());
         if (request.getStartingPointAddress() != null) trip.setStartingPointAddress(request.getStartingPointAddress());
@@ -195,6 +185,9 @@ public class TripServiceImpl implements TripService {
 
         tripRepository.updateById(trip);
         log.info("Trip updated: {}", tripId);
+
+        notificationHelper.emitTripUpdated(trip, userId);
+
         return mapToTripResponse(trip, userId);
     }
 
@@ -210,6 +203,8 @@ public class TripServiceImpl implements TripService {
 
         tripRepository.deleteById(tripId);
         log.info("Trip deleted: {}", tripId);
+
+        notificationHelper.emitTripDeleted(trip, userId);
     }
 
     @Override
@@ -223,14 +218,14 @@ public class TripServiceImpl implements TripService {
         }
 
         TripMember member;
-        
+
         // Check if adding guest member
         if (Boolean.TRUE.equals(request.getIsGuest())) {
             // Validate guest name
             if (request.getGuestName() == null || request.getGuestName().trim().isEmpty()) {
                 throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Guest name is required");
             }
-            
+
             // Create guest member
             member = TripMember.builder()
                     .id(UUID.randomUUID())
@@ -240,22 +235,20 @@ public class TripServiceImpl implements TripService {
                     .status(MemberStatus.ACCEPTED) // Guest auto accepted
                     .invitedBy(userId)
                     .isGuest(true)
-                    .guestName(request.getGuestName())
-                    .guestEmail(request.getGuestEmail())
-                    .guestPhone(request.getGuestPhone())
+                    .guestName(request.getGuestName()) // Treat as both username and fullName
                     .joinedAt(LocalDateTime.now())
                     .build();
-            
+
             log.info("Guest member added to trip: {} - {}", tripId, request.getGuestName());
         } else {
             // Original logic for registered user
             if (request.getIdentifier() == null || request.getIdentifier().trim().isEmpty()) {
                 throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Email or username is required");
             }
-            
+
             User invitedUser;
             String identifier = request.getIdentifier();
-            
+
             if (identifier.contains("@")) {
                 invitedUser = userRepository.findByEmail(identifier)
                         .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found with email: " + identifier));
@@ -278,11 +271,14 @@ public class TripServiceImpl implements TripService {
                     .invitedBy(userId)
                     .isGuest(false)
                     .build();
-            
+
             log.info("Member invited to trip: {} - {}", tripId, invitedUser.getId());
         }
 
         tripMemberRepository.insert(member);
+
+        notificationHelper.emitMemberAdded(member, trip, userId);
+
         return mapToTripMemberResponse(member);
     }
 
@@ -308,8 +304,13 @@ public class TripServiceImpl implements TripService {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only owner can remove members");
         }
 
+        TripMember member = tripMemberRepository.findById(memberId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Member not found"));
+
         tripMemberRepository.deleteById(memberId);
         log.info("Member removed from trip: {} - {}", tripId, memberId);
+
+        notificationHelper.emitMemberRemoved(member, trip, userId);
     }
 
     @Override
@@ -365,6 +366,8 @@ public class TripServiceImpl implements TripService {
                 .currency(trip.getCurrency())
                 .visibility(trip.getVisibility() != null ? trip.getVisibility().toString() : null)
                 .shareCode(trip.getShareCode())
+                .shareExpenses(trip.getShareExpenses())
+                .shareNotes(trip.getShareNotes())
                 .stats(stats)
                 .build();
     }
@@ -377,8 +380,8 @@ public class TripServiceImpl implements TripService {
                     .user(UserResponse.builder()
                             .id(null)
                             .fullName(member.getGuestName())
-                            .email(member.getGuestEmail())
-                            .username(null)
+                            .username(member.getGuestName()) // Use guestName as username
+                            .email(null)
                             .avatarUrl(null)
                             .build())
                     .role(member.getRole().toString())
@@ -387,7 +390,7 @@ public class TripServiceImpl implements TripService {
                     .isGuest(true)
                     .build();
         }
-        
+
         // Handle registered user
         User user = userRepository.findById(member.getUserId())
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
@@ -417,6 +420,9 @@ public class TripServiceImpl implements TripService {
     private TripStatsResponse calculateTripStats(UUID tripId) {
         int totalItems = activityRepository.findByTripId(tripId).size();
         int checkedInItems = checkinRepository.findByTripId(tripId).size();
+        int totalMembers = (int) tripMemberRepository.findByTripId(tripId).stream()
+                .filter(m -> m.getStatus() == MemberStatus.ACCEPTED)
+                .count();
         BigDecimal totalExpenses = expenseRepository.findByTripId(tripId).stream()
                 .map(e -> e.getAmountInTripCurrency() != null ? e.getAmountInTripCurrency() : e.getAmount())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -428,6 +434,7 @@ public class TripServiceImpl implements TripService {
         return TripStatsResponse.builder()
                 .totalItems(totalItems)
                 .checkedInItems(checkedInItems)
+                .totalMembers(totalMembers)
                 .totalExpenses(totalExpenses)
                 .remainingBudget(remainingBudget)
                 .build();
@@ -436,18 +443,18 @@ public class TripServiceImpl implements TripService {
     private String generateShareCode() {
         return UUID.randomUUID().toString().substring(0, 8).toUpperCase();
     }
-    
+
     @Override
     public List<TripInvitationResponse> getPendingInvitations(UUID userId) {
         List<TripMember> pendingMembers = tripMemberRepository.findPendingByUserId(userId);
-        
+
         return pendingMembers.stream().map(member -> {
             Trip trip = tripRepository.findById(member.getTripId())
                     .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-            
+
             User inviter = userRepository.findById(member.getInvitedBy())
                     .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Inviter not found"));
-            
+
             return TripInvitationResponse.builder()
                     .tripId(trip.getId())
                     .tripName(trip.getName())
@@ -461,34 +468,140 @@ public class TripServiceImpl implements TripService {
                     .build();
         }).collect(Collectors.toList());
     }
-    
+
     @Override
     @Transactional
-    public void linkGuestToUser(UUID tripId, UUID guestMemberId, UUID userId) {
+    public void linkGuestToUser(UUID tripId, UUID guestMemberId, LinkGuestRequest request, UUID currentUserId) {
+        // Validate guest member
         TripMember guestMember = tripMemberRepository.findById(guestMemberId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Guest member not found"));
-        
+
         if (!Boolean.TRUE.equals(guestMember.getIsGuest())) {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Member is not a guest");
         }
-        
+
         if (!guestMember.getTripId().equals(tripId)) {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Guest member does not belong to this trip");
         }
+
+        // Validate target user exists in trip
+        UUID targetUserId = request.getTargetUserId();
+        TripMember targetMember = tripMemberRepository.findByTripIdAndUserId(tripId, targetUserId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Target user is not a member of this trip"));
+
+        if (Boolean.TRUE.equals(targetMember.getIsGuest())) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Cannot link to another guest member");
+        }
+
+        // Validate current user is owner or editor
+        tripMemberRepository.findByTripIdAndUserId(tripId, currentUserId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.FORBIDDEN, "You are not a member of this trip"));
+
+        // Update all expense splits for this guest member
+        List<ExpenseSplit> guestSplits = expenseSplitRepository.findByGuestMemberId(guestMemberId);
+        log.info("Found {} expense splits for guest member {}", guestSplits.size(), guestMemberId);
+
+        for (ExpenseSplit split : guestSplits) {
+            split.setUserId(targetUserId);
+            split.setGuestMemberId(null);
+            split.setGuestName(null);
+            expenseSplitRepository.update(split);
+        }
+
+        tripMemberRepository.deleteById(guestMemberId);
+
+        log.info("Guest member linked: trip={}, guest={} -> user={}, updated {} expense splits",
+                tripId, guestMemberId, targetUserId, guestSplits.size());
+
+        notificationHelper.emitGuestLinked(guestMember, targetUserId, tripId, currentUserId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PublicTripResponse getPublicTrip(UUID tripId) {
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+
+        // Get activities
+        List<com.ds.goroute.entity.Activity> activities = activityRepository.findByTripId(tripId);
         
-        // Check if user already in trip
-        var existingMember = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
-        if (existingMember.isPresent()) {
-            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "User is already a member of this trip");
+        // Get expenses if shared
+        Map<UUID, List<PublicExpenseResponse>> expensesByActivity = new java.util.HashMap<>();
+        List<PublicExpenseResponse> tripLevelExpenses = new java.util.ArrayList<>();
+        
+        if (Boolean.TRUE.equals(trip.getShareExpenses())) {
+            List<com.ds.goroute.entity.Expense> expenses = expenseRepository.findByTripId(tripId);
+            for (com.ds.goroute.entity.Expense e : expenses) {
+                PublicExpenseResponse expenseResponse = PublicExpenseResponse.builder()
+                        .id(e.getId())
+                        .amount(e.getAmount())
+                        .currency(e.getCurrency())
+                        .category(String.valueOf(e.getCategory()))
+                        .description(e.getDescription())
+                        .createdAt(e.getCreatedAt())
+                        .build();
+                
+                if (e.getActivityId() != null) {
+                    expensesByActivity.computeIfAbsent(e.getActivityId(), k -> new java.util.ArrayList<>()).add(expenseResponse);
+                } else {
+                    tripLevelExpenses.add(expenseResponse);
+                }
+            }
+        }
+
+        // Get notes if shared
+        Map<UUID, List<PublicNoteResponse>> notesByActivity = new java.util.HashMap<>();
+        List<PublicNoteResponse> tripLevelNotes = new java.util.ArrayList<>();
+        
+        if (Boolean.TRUE.equals(trip.getShareNotes())) {
+            List<TripNote> notes = tripNoteRepository.findByTripId(tripId);
+            for (TripNote n : notes) {
+                PublicNoteResponse noteResponse = PublicNoteResponse.builder()
+                        .id(n.getId())
+                        .content(n.getContent())
+                        .createdAt(n.getCreatedAt())
+                        .build();
+                
+                if (n.getActivityId() != null) {
+                    notesByActivity.computeIfAbsent(n.getActivityId(), k -> new java.util.ArrayList<>()).add(noteResponse);
+                } else {
+                    tripLevelNotes.add(noteResponse);
+                }
+            }
         }
         
-        // Link guest to real user
-        guestMember.setUserId(userId);
-        guestMember.setIsGuest(false);
-        guestMember.setStatus(MemberStatus.ACCEPTED);
-        // Keep guest info for reference
-        tripMemberRepository.updateById(guestMember);
-        
-        log.info("Guest member linked to user: {} - {} -> {}", tripId, guestMemberId, userId);
+        // Build activity responses with nested expenses and notes
+        List<PublicActivityResponse> activityResponses = activities.stream()
+                .map(a -> PublicActivityResponse.builder()
+                        .id(a.getId())
+                        .dayNumber(a.getDayNumber())
+                        .name(a.getName())
+                        .address(a.getAddress())
+                        .lat(a.getLat())
+                        .lng(a.getLng())
+                        .startTime(a.getStartTime())
+                        .endTime(a.getEndTime())
+                        .category(a.getCategory())
+                        .rating(a.getRating())
+                        .photoUrl(a.getPhotoUrl())
+                        .expenses(expensesByActivity.getOrDefault(a.getId(), null))
+                        .notes(notesByActivity.getOrDefault(a.getId(), null))
+                        .build())
+                .collect(Collectors.toList());
+
+        return PublicTripResponse.builder()
+                .id(trip.getId())
+                .name(trip.getName())
+                .coverImageUrl(trip.getCoverImageUrl())
+                .destination(trip.getDestination())
+                .lat(trip.getDestinationLat())
+                .lng(trip.getDestinationLng())
+                .startDate(trip.getStartDate())
+                .endDate(trip.getEndDate())
+                .currency(trip.getCurrency())
+                .activities(activityResponses)
+                .expenses(tripLevelExpenses.isEmpty() ? null : tripLevelExpenses)
+                .notes(tripLevelNotes.isEmpty() ? null : tripLevelNotes)
+                .build();
     }
 }

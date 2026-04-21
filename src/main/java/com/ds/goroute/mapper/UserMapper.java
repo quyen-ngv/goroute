@@ -23,4 +23,6 @@ public interface UserMapper {
     int updateById(User user);
     
     int deleteById(@Param("id") UUID id);
+    
+    int softDeleteById(@Param("id") UUID id);
 }

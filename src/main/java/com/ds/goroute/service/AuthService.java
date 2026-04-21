@@ -1,5 +1,6 @@
 package com.ds.goroute.service;
 
+import com.ds.goroute.dto.request.AppleLoginRequest;
 import com.ds.goroute.dto.request.GoogleLoginRequest;
 import com.ds.goroute.dto.request.LoginRequest;
 import com.ds.goroute.dto.request.RefreshTokenRequest;
@@ -12,6 +13,8 @@ public interface AuthService {
     AuthResponse login(LoginRequest request);
     
     AuthResponse googleLogin(GoogleLoginRequest request);
+    
+    AuthResponse appleLogin(AppleLoginRequest request);
     
     AuthResponse refreshToken(RefreshTokenRequest request);
     

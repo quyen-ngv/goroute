@@ -5,6 +5,7 @@
     <resultMap id="TripNoteResultMap" type="com.ds.goroute.entity.TripNote">
         <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="trip_id" property="tripId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="activity_id" property="activityId" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="user_id" property="userId" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="content" property="content" jdbcType="VARCHAR"/>
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
@@ -18,13 +19,19 @@
 
     <select id="selectByTripId" parameterType="java.util.UUID" resultMap="TripNoteResultMap">
         SELECT * FROM trip_notes WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER} 
-        AND is_deleted = false ORDER BY created_at DESC
+        AND is_deleted = false ORDER BY created_at ASC
+    </select>
+
+    <select id="selectByActivityId" parameterType="java.util.UUID" resultMap="TripNoteResultMap">
+        SELECT * FROM trip_notes WHERE activity_id = #{activityId,javaType=java.util.UUID,jdbcType=OTHER} 
+        AND is_deleted = false ORDER BY created_at ASC
     </select>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.TripNote">
-        INSERT INTO trip_notes (id, trip_id, user_id, content, created_at, updated_at, is_deleted)
+        INSERT INTO trip_notes (id, trip_id, activity_id, user_id, content, created_at, updated_at, is_deleted)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
-                #{userId,javaType=java.util.UUID,jdbcType=OTHER}, #{content}, NOW(), NOW(), false)
+                #{activityId,javaType=java.util.UUID,jdbcType=OTHER}, #{userId,javaType=java.util.UUID,jdbcType=OTHER}, 
+                #{content}, NOW(), NOW(), false)
     </insert>
 
     <update id="updateById" parameterType="com.ds.goroute.entity.TripNote">

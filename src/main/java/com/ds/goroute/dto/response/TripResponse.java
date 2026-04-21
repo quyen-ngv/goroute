@@ -27,5 +27,7 @@ public class TripResponse {
     private String currency;
     private String visibility;
     private String shareCode;
+    private Boolean shareExpenses;
+    private Boolean shareNotes;
     private TripStatsResponse stats;
 }

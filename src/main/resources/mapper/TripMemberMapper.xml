@@ -12,13 +12,11 @@
         <result column="joined_at" property="joinedAt" jdbcType="TIMESTAMP"/>
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
         <result column="guest_name" property="guestName" jdbcType="VARCHAR"/>
-        <result column="guest_email" property="guestEmail" jdbcType="VARCHAR"/>
-        <result column="guest_phone" property="guestPhone" jdbcType="VARCHAR"/>
         <result column="is_guest" property="isGuest" jdbcType="BOOLEAN"/>
     </resultMap>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.TripMember">
-        INSERT INTO trip_members (id, trip_id, user_id, role, status, invited_by, joined_at, created_at, guest_name, guest_email, guest_phone, is_guest)
+        INSERT INTO trip_members (id, trip_id, user_id, role, status, invited_by, joined_at, created_at, guest_name, is_guest)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
                 #{userId,javaType=java.util.UUID,jdbcType=OTHER}, 
                 #{role}, 
@@ -27,8 +25,6 @@
                 #{joinedAt,jdbcType=TIMESTAMP}, 
                 NOW(),
                 #{guestName,jdbcType=VARCHAR},
-                #{guestEmail,jdbcType=VARCHAR},
-                #{guestPhone,jdbcType=VARCHAR},
                 #{isGuest,jdbcType=BOOLEAN})
     </insert>
 
@@ -77,11 +73,10 @@
         ORDER BY created_at DESC
     </select>
 
-    <select id="selectGuestsByEmail" parameterType="string" resultMap="TripMemberResultMap">
+    <select id="selectGuestsByEmail" parameterType="String" resultMap="TripMemberResultMap">
         SELECT * FROM trip_members 
-        WHERE is_guest = TRUE
-        AND guest_email = #{email,jdbcType=VARCHAR}
-        ORDER BY created_at DESC
+        WHERE guest_name = #{email,jdbcType=VARCHAR}
+        AND is_guest = true
     </select>
 
 </mapper>

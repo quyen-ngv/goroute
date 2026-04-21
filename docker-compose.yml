@@ -73,6 +73,9 @@ services:
       - DB_USERNAME=goroute
       - DB_PASSWORD=goroute123
       - JWT_SECRET=${GOROUTE_JWT_SECRET:-404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+      - FIREBASE_CREDENTIAL_PATH=/app/goroute-credentials.json
+    volumes:
+      - ./goroute-credentials.json:/app/goroute-credentials.json:ro
     depends_on:
       goroute-db:
         condition: service_healthy

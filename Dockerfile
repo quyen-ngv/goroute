@@ -1,15 +1,12 @@
 # Build stage
-FROM eclipse-temurin:21-jdk AS builder
+FROM maven:3.9.9-eclipse-temurin-21 AS builder
 WORKDIR /app
 
-# Install Maven
-ENV MAVEN_VERSION=3.9.9
-RUN apt-get update && apt-get install -y --no-install-recommends curl tar && \
-    mkdir -p /usr/share/maven && \
-    curl -fsSL https://archive.apache.org/dist/maven/maven-3/$MAVEN_VERSION/binaries/apache-maven-$MAVEN_VERSION-bin.tar.gz | tar -xzC /usr/share/maven --strip-components=1 && \
-    ln -s /usr/share/maven/bin/mvn /usr/bin/mvn
+# Copy pom.xml trước để cache dependencies
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
 
-# Copy source and build
+# Copy source code
 COPY . .
 RUN mvn clean package -DskipTests
 
@@ -50,8 +47,12 @@ RUN groupadd --system spring && useradd --system -g spring spring && \
 
 COPY --from=builder --chown=spring:spring /app/target/ticketmaster-0.0.1-SNAPSHOT.jar app.jar
 
+# Copy Firebase credentials
+COPY --from=builder --chown=spring:spring /app/src/main/resources/firebase-credentials.json /app/goroute-credentials.json
+
 # Biến môi trường quan trọng giúp tránh lỗi SSL/Networking khi khởi tạo
 ENV JAVA_OPTS="-Djava.net.preferIPv4Stack=true -Djava.security.egd=file:/dev/./urandom"
+ENV FIREBASE_CREDENTIAL_PATH=/app/goroute-credentials.json
 
 USER spring
 

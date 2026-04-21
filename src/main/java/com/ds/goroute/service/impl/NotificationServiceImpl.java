@@ -75,13 +75,15 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
-    public List<NotificationResponse> getNotifications(UUID userId, Integer page, Integer size, Boolean unreadOnly) {
+    public List<NotificationResponse> getNotifications(UUID userId, Integer page, Integer size, Boolean unreadOnly, UUID tripId) {
+        log.info("Service getNotifications - userId: {}, tripId: {}, unreadOnly: {}", userId, tripId, unreadOnly);
         List<Notification> notifications;
         if (unreadOnly != null && unreadOnly) {
-            notifications = notificationRepository.findUnreadByUserId(userId);
+            notifications = notificationRepository.findUnreadByUserId(userId, tripId);
         } else {
-            notifications = notificationRepository.findByUserId(userId);
+            notifications = notificationRepository.findByUserId(userId, tripId);
         }
+        log.info("Service getNotifications - found {} notifications from DB", notifications.size());
 
         return notifications.stream()
                 .skip((long) page * size)
@@ -140,12 +142,27 @@ public class NotificationServiceImpl implements NotificationService {
             }
         }
 
+        // Parse deepLink from data JSON
+        String deepLink = null;
+        if (notification.getData() != null) {
+            try {
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, Object> dataMap = gson.fromJson(notification.getData(), java.util.Map.class);
+                if (dataMap != null && dataMap.containsKey("deepLink")) {
+                    deepLink = (String) dataMap.get("deepLink");
+                }
+            } catch (Exception e) {
+                log.warn("Failed to parse deepLink from notification data: {}", e.getMessage());
+            }
+        }
+
         return NotificationResponse.builder()
                 .id(notification.getId())
                 .type(notification.getType())
                 .title(notification.getTitle())
                 .body(notification.getBody())
                 .tripId(notification.getTripId())
+                .deepLink(deepLink)
                 .actor(actor)
                 .data(notification.getData())
                 .isRead(notification.getIsRead())

@@ -35,4 +35,5 @@ public class User {
     private Boolean onboardingCompleted;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private LocalDateTime deletedAt;
 }

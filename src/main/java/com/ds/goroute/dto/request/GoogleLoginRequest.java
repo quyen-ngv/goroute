@@ -13,4 +13,6 @@ import lombok.NoArgsConstructor;
 public class GoogleLoginRequest {
     @NotBlank(message = "ID token is required")
     private String idToken;
+    
+    private String guestId;
 }

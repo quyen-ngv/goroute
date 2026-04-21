@@ -2,6 +2,7 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.request.CreateTripRequest;
 import com.ds.goroute.dto.request.InviteMemberRequest;
+import com.ds.goroute.dto.request.LinkGuestRequest;
 import com.ds.goroute.dto.request.UpdateTripRequest;
 import com.ds.goroute.dto.response.TripDetailResponse;
 import com.ds.goroute.dto.response.TripMemberResponse;
@@ -126,8 +127,9 @@ public class TripController extends BaseService {
     public ResponseEntity<BaseResponse<Void>> linkGuestToUser(
             @PathVariable UUID tripId,
             @PathVariable UUID guestMemberId,
+            @Valid @RequestBody LinkGuestRequest request,
             @RequestAttribute("userId") UUID userId) {
-        tripService.linkGuestToUser(tripId, guestMemberId, userId);
+        tripService.linkGuestToUser(tripId, guestMemberId, request, userId);
         return ResponseEntity.ok(ofSucceeded(null));
     }
 }

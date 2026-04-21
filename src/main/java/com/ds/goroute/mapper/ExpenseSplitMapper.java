@@ -17,6 +17,8 @@ public interface ExpenseSplitMapper {
     
     List<ExpenseSplit> selectByUserId(@Param("userId") UUID userId);
     
+    List<ExpenseSplit> selectByGuestMemberId(@Param("guestMemberId") UUID guestMemberId);
+    
     int updateById(ExpenseSplit split);
     
     int deleteById(@Param("id") UUID id);

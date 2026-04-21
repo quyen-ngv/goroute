@@ -12,4 +12,5 @@ public interface UserService {
     UserProfileResponse updateProfile(UUID userId, UpdateProfileRequest request);
     void updateSettings(UUID userId, UpdateSettingsRequest request);
     String updateAvatar(UUID userId, MultipartFile file);
+    void deleteAccount(UUID userId);
 }

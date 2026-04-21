@@ -18,6 +18,7 @@ public class NotificationResponse {
     private String title;
     private String body;
     private UUID tripId;
+    private String deepLink;
     private UserResponse actor;
     private String data;
     private Boolean isRead;

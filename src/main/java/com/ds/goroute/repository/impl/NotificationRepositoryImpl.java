@@ -32,8 +32,24 @@ public class NotificationRepositoryImpl implements NotificationRepository {
     }
     
     @Override
+    public List<Notification> findByUserId(UUID userId, UUID tripId) {
+        if (tripId == null) {
+            return findByUserId(userId);
+        }
+        return notificationMapper.selectByUserIdAndTripId(userId, tripId);
+    }
+    
+    @Override
     public List<Notification> findUnreadByUserId(UUID userId) {
         return notificationMapper.selectUnreadByUserId(userId);
+    }
+    
+    @Override
+    public List<Notification> findUnreadByUserId(UUID userId, UUID tripId) {
+        if (tripId == null) {
+            return findUnreadByUserId(userId);
+        }
+        return notificationMapper.selectUnreadByUserIdAndTripId(userId, tripId);
     }
     
     @Override

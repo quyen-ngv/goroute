@@ -54,4 +54,11 @@ public class UserController extends BaseService {
         String avatarUrl = userService.updateAvatar(userId, file);
         return ResponseEntity.ok(ofSucceeded(avatarUrl));
     }
+
+    @DeleteMapping("/me")
+    public ResponseEntity<BaseResponse<Void>> deleteAccount(
+            @RequestAttribute("userId") UUID userId) {
+        userService.deleteAccount(userId);
+        return ResponseEntity.ok(ofSucceeded(null));
+    }
 }

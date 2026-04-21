@@ -12,6 +12,8 @@ public interface TripNoteRepository {
     
     List<TripNote> findByTripId(UUID tripId);
     
+    List<TripNote> findByActivityId(UUID activityId);
+    
     void updateById(TripNote note);
     
     void deleteById(UUID id);

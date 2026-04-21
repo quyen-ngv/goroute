@@ -26,8 +26,7 @@ public class Expense {
     private ExpenseCategory category;
     private String description;
     private UUID paidBy;
-    private String paidByGuestName;
-    private String paidByGuestEmail;
+    private String paidByGuestName; // Treat as both username and fullName
     private String receiptUrl;
     private String[] photoUrls;
     private UUID createdBy;

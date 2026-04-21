@@ -36,6 +36,11 @@ public class ExpenseSplitRepositoryImpl implements ExpenseSplitRepository {
     }
 
     @Override
+    public List<ExpenseSplit> findByGuestMemberId(UUID guestMemberId) {
+        return expenseSplitMapper.selectByGuestMemberId(guestMemberId);
+    }
+
+    @Override
     public void update(ExpenseSplit split) {
         expenseSplitMapper.updateById(split);
     }

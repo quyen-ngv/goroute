@@ -8,6 +8,7 @@ import java.util.UUID;
 
 public interface TripNoteService {
     List<TripNoteResponse> getTripNotes(UUID tripId, UUID userId);
+    List<TripNoteResponse> getActivityNotes(UUID tripId, UUID activityId, UUID userId);
     TripNoteResponse createTripNote(UUID tripId, CreateTripNoteRequest request, UUID userId);
     void deleteTripNote(UUID tripId, UUID noteId, UUID userId);
 }

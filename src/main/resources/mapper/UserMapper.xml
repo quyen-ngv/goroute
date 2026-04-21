@@ -23,6 +23,7 @@
         <result column="onboarding_completed" property="onboardingCompleted" jdbcType="BOOLEAN"/>
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
         <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
+        <result column="deleted_at" property="deletedAt" jdbcType="TIMESTAMP"/>
     </resultMap>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.User">
@@ -37,15 +38,15 @@
     </insert>
 
     <select id="selectByEmail" parameterType="String" resultMap="UserResultMap">
-        SELECT * FROM users WHERE email = #{email} AND provider = 'LOCAL'
+        SELECT * FROM users WHERE email = #{email} AND provider = 'LOCAL' AND deleted_at IS NULL
     </select>
 
     <select id="selectByProviderId" parameterType="String" resultMap="UserResultMap">
-        SELECT * FROM users WHERE provider_id = #{providerId}
+        SELECT * FROM users WHERE provider_id = #{providerId} AND deleted_at IS NULL
     </select>
 
     <select id="selectById" parameterType="java.util.UUID" resultMap="UserResultMap">
-        SELECT * FROM users WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+        SELECT * FROM users WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
     </select>
 
     <update id="updateById" parameterType="com.ds.goroute.entity.User">
@@ -79,5 +80,10 @@
     <delete id="deleteById" parameterType="java.util.UUID">
         DELETE FROM users WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </delete>
+
+    <update id="softDeleteById" parameterType="java.util.UUID">
+        UPDATE users SET deleted_at = NOW(), updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
+    </update>
 
 </mapper>

@@ -112,4 +112,16 @@ public class UserServiceImpl implements UserService {
         log.info("User avatar updated: {}", userId);
         return avatarUrl;
     }
+
+    @Override
+    @Transactional
+    public void deleteAccount(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
+
+        // Soft delete user
+        userRepository.softDeleteById(userId);
+        
+        log.info("User account soft deleted: {}", userId);
+    }
 }

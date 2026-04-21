@@ -14,6 +14,7 @@ import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.CommentService;
+import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.MemberStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,7 @@ public class CommentServiceImpl implements CommentService {
     private final ActivityRepository activityRepository;
     private final TripMemberRepository tripMemberRepository;
     private final UserRepository userRepository;
+    private final NotificationHelper notificationHelper;
 
     @Override
     @Transactional(readOnly = true)
@@ -83,6 +85,8 @@ public class CommentServiceImpl implements CommentService {
         commentRepository.insert(comment);
         log.info("Comment created: {} for activity: {}", comment.getId(), activityId);
         
+        notificationHelper.emitCommentCreated(tripId, activityId, userId);
+        
         return toCommentResponse(comment);
     }
 
@@ -110,6 +114,8 @@ public class CommentServiceImpl implements CommentService {
         
         commentRepository.softDelete(commentId);
         log.info("Comment deleted: {}", commentId);
+        
+        notificationHelper.emitCommentDeleted(tripId, activityId, userId);
     }
     
     private void verifyTripMember(UUID tripId, UUID userId) {

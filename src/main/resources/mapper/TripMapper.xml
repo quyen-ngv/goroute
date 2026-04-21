@@ -17,6 +17,8 @@
         <result column="status" property="status" jdbcType="VARCHAR"/>
         <result column="visibility" property="visibility" jdbcType="VARCHAR"/>
         <result column="share_code" property="shareCode" jdbcType="VARCHAR"/>
+        <result column="share_expenses" property="shareExpenses" jdbcType="BOOLEAN"/>
+        <result column="share_notes" property="shareNotes" jdbcType="BOOLEAN"/>
         <result column="timezone" property="timezone" jdbcType="VARCHAR"/>
         <result column="owner_id" property="ownerId" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="is_deleted" property="isDeleted" jdbcType="BOOLEAN"/>
@@ -66,6 +68,8 @@
             budget = #{budget},
             status = #{status},
             visibility = #{visibility},
+            share_expenses = #{shareExpenses},
+            share_notes = #{shareNotes},
             updated_at = NOW()
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </update>

@@ -14,6 +14,7 @@ import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.CheckinService;
+import com.ds.goroute.service.notification.NotificationHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,7 @@ public class CheckinServiceImpl implements CheckinService {
     private final TripRepository tripRepository;
     private final TripMemberRepository tripMemberRepository;
     private final UserRepository userRepository;
+    private final NotificationHelper notificationHelper;
 
     @Override
     @Transactional
@@ -75,6 +77,9 @@ public class CheckinServiceImpl implements CheckinService {
 
         checkinRepository.insert(checkin);
         log.info("Checkin created: {} - {}", activityId, userId);
+        
+        notificationHelper.emitCheckin(tripId, activityId, userId);
+        
         return mapToCheckinResponse(checkin);
     }
 

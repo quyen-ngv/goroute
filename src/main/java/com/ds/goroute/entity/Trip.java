@@ -41,6 +41,9 @@ public class Trip {
     private BigDecimal startingPointLng;
     private LocalDateTime startingPointTime;
     
+    private Boolean shareExpenses;
+    private Boolean shareNotes;
+    
     private Boolean isDeleted;
     private LocalDateTime deletedAt;
     private LocalDateTime createdAt;

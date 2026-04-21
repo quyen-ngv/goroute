@@ -12,7 +12,11 @@ public interface NotificationRepository {
     
     List<Notification> findByUserId(UUID userId);
     
+    List<Notification> findByUserId(UUID userId, UUID tripId);
+    
     List<Notification> findUnreadByUserId(UUID userId);
+    
+    List<Notification> findUnreadByUserId(UUID userId, UUID tripId);
     
     void updateById(Notification notification);
     

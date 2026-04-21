@@ -14,7 +14,7 @@ import java.util.UUID;
 @AllArgsConstructor
 public class ExpenseSplitRequest {
     private UUID userId;
-    private String guestName;
-    private String guestEmail;
+    private UUID guestMemberId; // Reference to trip_members.id for guest
+    private String guestName; // Treat as both username and fullName
     private BigDecimal amount;
 }

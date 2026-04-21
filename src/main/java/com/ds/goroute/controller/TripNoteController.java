@@ -26,8 +26,14 @@ public class TripNoteController extends BaseService {
     @GetMapping
     public ResponseEntity<BaseResponse<List<TripNoteResponse>>> getTripNotes(
             @PathVariable UUID tripId,
+            @RequestParam(required = false) UUID activityId,
             @RequestAttribute("userId") UUID userId) {
-        List<TripNoteResponse> notes = tripNoteService.getTripNotes(tripId, userId);
+        List<TripNoteResponse> notes;
+        if (activityId != null) {
+            notes = tripNoteService.getActivityNotes(tripId, activityId, userId);
+        } else {
+            notes = tripNoteService.getTripNotes(tripId, userId);
+        }
         return ResponseEntity.ok(ofSucceeded(notes));
     }
 

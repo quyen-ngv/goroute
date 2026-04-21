@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="agd-partner-manual-verification" />
+    <title>Shared Trip - GoRoute</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f9fafb; color: #111827; line-height: 1.5; font-size: 14px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        
+        /* Hero */
+        .header { background: linear-gradient(135deg, #6366f1 0%, #7c3aed 60%, #a855f7 100%); color: white; padding: 40px 16px 32px; }
+        .header h1 { font-size: clamp(22px, 5vw, 34px); font-weight: 800; letter-spacing: -0.5px; margin-bottom: 8px; }
+        .header .info { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: rgba(255,255,255,0.8); margin-bottom: 16px; }
+        .header .stats { display: flex; flex-wrap: wrap; gap: 8px; }
+        .stat-pill { background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.9); padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        
+        /* Content */
+        .content { padding: 24px 12px 64px; }
+        .section-title { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+        .section-title-text { font-size: 14px; font-weight: 700; color: #1f2937; }
+        
+        /* Desktop Table */
+        .desktop-table { display: none; background: white; border-radius: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; border: 1px solid #f3f4f6; margin-bottom: 20px; }
+        .desktop-table table { width: 100%; border-collapse: collapse; }
+        .desktop-table thead { background: #f9fafb; border-bottom: 1px solid #f3f4f6; }
+        .desktop-table th { padding: 10px 16px; text-align: left; font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; }
+        .desktop-table .activity-row { cursor: pointer; transition: background 0.2s; }
+        .desktop-table .activity-row:hover { background: #f9fafb; }
+        .desktop-table .activity-row.expanded { background: #eef2ff; }
+        .desktop-table td { padding: 10px 16px; border-bottom: 1px solid #f9fafb; font-size: 13px; }
+        .day-badge { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 8px; background: #6366f1; color: white; font-size: 12px; font-weight: 700; }
+        .day-badge-inactive { background: #f3f4f6; color: #d1d5db; }
+        .time-cell { font-size: 12px; color: #9ca3af; }
+        .name-cell { font-weight: 500; color: #1f2937; }
+        .location-cell { font-size: 12px; color: #9ca3af; cursor: pointer; transition: color 0.2s; }
+        .location-cell:hover { color: #6366f1; }
+        
+        /* Type Badges */
+        .type-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+        .type-departure { background: #ede9fe; color: #7c3aed; }
+        .type-hotel { background: #dbeafe; color: #2563eb; }
+        .type-attraction { background: #fed7aa; color: #ea580c; }
+        .type-food { background: #d1fae5; color: #059669; }
+        .type-transport { background: #f3f4f6; color: #4b5563; }
+        .type-activity { background: #fce7f3; color: #db2777; }
+        
+        /* Dropdown detail */
+        .detail-panel { background: #f9fafb; border-top: 1px solid #e5e7eb; padding: 12px 16px; }
+        .detail-section { margin-bottom: 12px; }
+        .detail-section:last-child { margin-bottom: 0; }
+        .detail-header { font-size: 11px; font-weight: 700; color: #6366f1; text-transform: uppercase; margin-bottom: 6px; }
+        .expense-item, .note-item { display: flex; gap: 8px; padding: 6px 0; font-size: 12px; color: #6b7280; }
+        .expense-amount { margin-left: auto; font-weight: 600; color: #1f2937; }
+        
+        /* Mobile Timeline */
+        .mobile-timeline { display: block; }
+        .day-group { margin-bottom: 20px; }
+        .day-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+        .day-badge-mobile { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 8px; background: #6366f1; color: white; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+        .day-date { font-size: 12px; font-weight: 600; color: #6b7280; }
+        .day-divider { flex: 1; height: 1px; background: #e5e7eb; }
+        
+        .activity-card { background: white; border-radius: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; border: 1px solid #f3f4f6; margin-left: 16px; }
+        .activity-item { padding: 12px 14px; cursor: pointer; transition: background 0.2s; display: flex; align-items: start; gap: 8px; }
+        .activity-item:hover { background: #f9fafb; }
+        .activity-item.expanded { background: #eef2ff; }
+        .activity-item:not(:last-child) { border-bottom: 1px solid #f9fafb; }
+        .type-dot { width: 6px; height: 6px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+        .dot-violet { background: #a78bfa; }
+        .dot-blue { background: #60a5fa; }
+        .dot-orange { background: #fb923c; }
+        .dot-green { background: #34d399; }
+        .dot-gray { background: #9ca3af; }
+        .dot-pink { background: #f472b6; }
+        
+        .activity-info { flex: 1; min-width: 0; overflow: hidden; }
+        .activity-top { display: flex; justify-content: space-between; align-items: start; gap: 6px; margin-bottom: 4px; }
+        .activity-name { font-size: 13px; font-weight: 600; color: #1f2937; line-height: 1.3; flex: 1; overflow: hidden; text-overflow: ellipsis; }
+        .activity-meta { display: flex; gap: 12px; font-size: 11px; color: #9ca3af; flex-wrap: wrap; }
+        .activity-meta-item { display: flex; align-items: center; gap: 3px; }
+        .clickable { cursor: pointer; transition: color 0.2s; }
+        .clickable:hover { color: #6366f1; }
+        .chevron-icon { font-size: 13px; color: #9ca3af; flex-shrink: 0; margin-top: 2px; width: 16px; text-align: center; }
+        
+        /* Trip-level section */
+        .trip-section { margin-top: 32px; }
+        .trip-card { background: white; border-radius: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; border: 1px solid #f3f4f6; margin-bottom: 12px; }
+        .trip-card-header { padding: 12px 16px; cursor: pointer; display: flex; align-items: center; gap: 12px; transition: background 0.2s; }
+        .trip-card-header:hover { background: #f9fafb; }
+        .trip-icon { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .trip-icon-expense { background: #eef2ff; color: #6366f1; }
+        .trip-icon-note { background: #fef3c7; color: #f59e0b; }
+        .trip-card-title { font-size: 13px; font-weight: 600; color: #1f2937; }
+        .trip-card-subtitle { font-size: 11px; color: #9ca3af; }
+        
+        .loading { text-align: center; padding: 60px 20px; }
+        .error { text-align: center; padding: 60px 20px; color: #dc2626; }
+        
+        @media (min-width: 768px) {
+            .content { padding: 24px 64px 64px; }
+            .header { padding: 40px 64px 32px; }
+            .desktop-table { display: block; }
+            .mobile-timeline { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="loading" class="loading"><h2>Loading trip...</h2></div>
+        <div id="error" class="error" style="display: none;"><h2>Trip not found</h2></div>
+        <div id="content" style="display: none;"></div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'https://onestudy.id.vn/api/goroute';
+        
+        function getTripIdFromUrl() {
+            const pathParts = window.location.pathname.split('/');
+            return pathParts[pathParts.length - 1].replace('.html', '');
+        }
+
+        function formatDate(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('vi-VN', { day: 'numeric', month: 'short', year: 'numeric' });
+        }
+
+        function formatDateShort(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('vi-VN', { weekday: 'short', day: 'numeric', month: 'numeric' });
+        }
+
+        function getDateForDay(startDate, dayNumber) {
+            const date = new Date(startDate);
+            date.setDate(date.getDate() + (dayNumber - 1));
+            return date;
+        }
+
+        function formatTime(timeStr) {
+            if (!timeStr) return '';
+            return timeStr.substring(0, 5);
+        }
+
+        function formatMoney(amount, currency) {
+            if (currency === 'VND') {
+                return new Intl.NumberFormat('vi-VN').format(amount) + 'đ';
+            }
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
+        }
+
+        function openGoogleMaps(lat, lng, address) {
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            if (isMobile) {
+                if (lat && lng) {
+                    window.location.href = `google.navigation:q=${lat},${lng}`;
+                } else if (address) {
+                    window.location.href = `google.navigation:q=${encodeURIComponent(address)}`;
+                }
+            } else {
+                if (lat && lng) {
+                    window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank');
+                } else if (address) {
+                    window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`, '_blank');
+                }
+            }
+        }
+
+        function getCategoryClass(category) {
+            const cat = (category || '').toUpperCase();
+            const classes = {
+                'DEPARTURE': 'type-departure', 'FOOD': 'type-food',
+                'ACCOMMODATION': 'type-hotel', 'HOTEL': 'type-hotel',
+                'TRANSPORTATION': 'type-transport', 'TRANSPORT': 'type-transport',
+                'ACTIVITY': 'type-activity', 'SIGHTSEEING': 'type-attraction',
+                'ATTRACTION': 'type-attraction', 'SHOPPING': 'type-activity', 'OTHER': 'type-transport'
+            };
+            return classes[cat] || 'type-transport';
+        }
+
+        function getDotClass(category) {
+            const cat = (category || '').toUpperCase();
+            const classes = {
+                'DEPARTURE': 'dot-violet', 'FOOD': 'dot-green',
+                'ACCOMMODATION': 'dot-blue', 'HOTEL': 'dot-blue',
+                'TRANSPORTATION': 'dot-gray', 'TRANSPORT': 'dot-gray',
+                'ACTIVITY': 'dot-pink', 'SIGHTSEEING': 'dot-orange',
+                'ATTRACTION': 'dot-orange', 'SHOPPING': 'dot-violet', 'OTHER': 'dot-gray'
+            };
+            return classes[cat] || 'dot-gray';
+        }
+
+        function getCategoryIcon(category) {
+            const cat = (category || '').toUpperCase();
+            const icons = {
+                'DEPARTURE': '✈️', 'FOOD': '🍽️', 'ACCOMMODATION': '🏨', 'HOTEL': '🏨',
+                'TRANSPORTATION': '🚗', 'TRANSPORT': '🚗', 'ACTIVITY': '⚓',
+                'SIGHTSEEING': '📷', 'ATTRACTION': '📷', 'SHOPPING': '🛍️', 'OTHER': '📌'
+            };
+            return icons[cat] || '📌';
+        }
+
+        function getCategoryLabel(category) {
+            const cat = (category || '').toUpperCase();
+            const labels = {
+                'DEPARTURE': 'Bay', 'FOOD': 'Ăn uống', 'ACCOMMODATION': 'Lưu trú', 'HOTEL': 'Lưu trú',
+                'TRANSPORTATION': 'Di chuyển', 'TRANSPORT': 'Di chuyển', 'ACTIVITY': 'Hoạt động',
+                'SIGHTSEEING': 'Địa điểm', 'ATTRACTION': 'Địa điểm', 'SHOPPING': 'Mua sắm', 'OTHER': 'Khác'
+            };
+            return labels[cat] || 'Khác';
+        }
+
+        function totalExpenses(expenses) {
+            return expenses.reduce((sum, e) => sum + e.amount, 0);
+        }
+
+        function renderTrip(trip) {
+            const content = document.getElementById('content');
+            
+            // Calculate totals
+            const allActivityExpenses = trip.activities.flatMap(a => a.expenses || []);
+            const grandTotal = totalExpenses([...allActivityExpenses, ...(trip.expenses || [])]);
+            
+            let html = `
+                <div class="header">
+                    <h1>${trip.name}</h1>
+                    <div class="info">
+                        ${trip.destination ? `<div>📍 ${trip.destination}</div>` : ''}
+                        <div>📅 ${formatDate(trip.startDate)} – ${formatDate(trip.endDate)}</div>
+                    </div>
+                    <div class="stats">
+                        <span class="stat-pill">${Math.ceil((new Date(trip.endDate) - new Date(trip.startDate)) / (1000 * 60 * 60 * 24)) + 1} ngày</span>
+                        <span class="stat-pill">${trip.activities.length} hoạt động</span>
+                        <span class="stat-pill">Tổng ${formatMoney(grandTotal, trip.currency)}</span>
+                    </div>
+                </div>
+                <div class="content">
+                    <div class="section-title">
+                        <span style="font-size: 16px;">🗺️</span>
+                        <span class="section-title-text">Lịch trình</span>
+                    </div>
+            `;
+
+            // Group activities by day
+            const activitiesByDay = {};
+            trip.activities.forEach(activity => {
+                if (!activitiesByDay[activity.dayNumber]) {
+                    activitiesByDay[activity.dayNumber] = [];
+                }
+                activitiesByDay[activity.dayNumber].push(activity);
+            });
+
+            // Desktop table
+            html += `
+                <div class="desktop-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 56px;">Ngày</th>
+                                <th style="width: 60px;">Giờ</th>
+                                <th>Hoạt động</th>
+                                <th style="width: 155px;">Địa điểm</th>
+                                <th style="width: 100px;">Loại</th>
+                                <th style="width: 80px;">Chi phí</th>
+                                <th style="width: 24px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            Object.keys(activitiesByDay).sort((a, b) => a - b).forEach(day => {
+                const dayActivities = activitiesByDay[day].sort((a, b) => {
+                    if (!a.startTime) return 1;
+                    if (!b.startTime) return -1;
+                    return a.startTime.localeCompare(b.startTime);
+                });
+
+                dayActivities.forEach((activity, idx) => {
+                    const icon = getCategoryIcon(activity.category);
+                    const label = getCategoryLabel(activity.category);
+                    const hasLocation = (activity.lat && activity.lng) || activity.address;
+                    const badgeClass = idx === 0 ? 'day-badge' : 'day-badge day-badge-inactive';
+                    const activityTotal = activity.expenses ? totalExpenses(activity.expenses) : 0;
+                    const hasDetail = (activity.expenses && activity.expenses.length > 0) || (activity.notes && activity.notes.length > 0);
+                    
+                    html += `
+                        <tr class="activity-row" data-activity-id="${activity.id}" onclick="toggleDetail('${activity.id}')">
+                            <td><div class="${badgeClass}">${day}</div></td>
+                            <td class="time-cell">🕐 ${formatTime(activity.startTime) || '-'}</td>
+                            <td class="name-cell">${activity.name}</td>
+                            <td class="location-cell" onclick="event.stopPropagation(); openGoogleMaps(${activity.lat}, ${activity.lng}, '${(activity.address || '').replace(/'/g, "\\'")}')">${hasLocation ? '📍 ' + activity.address : '-'}</td>
+                            <td><span class="type-badge ${getCategoryClass(activity.category)}">${icon} ${label}</span></td>
+                            <td style="text-align: right; font-weight: ${activityTotal > 0 ? 600 : 400}; color: ${activityTotal > 0 ? '#1f2937' : '#e5e7eb'};">${activityTotal > 0 ? formatMoney(activityTotal, trip.currency) : '—'}</td>
+                            <td>${hasDetail ? '<span style="font-size: 13px; color: #9ca3af;">▼</span>' : ''}</td>
+                        </tr>
+                    `;
+                    
+                    if (hasDetail) {
+                        html += `<tr id="detail-${activity.id}" style="display: none;"><td colspan="7" class="detail-panel">`;
+                        
+                        if (activity.expenses && activity.expenses.length > 0) {
+                            html += `<div class="detail-section"><div class="detail-header">💳 Chi phí</div>`;
+                            activity.expenses.forEach(e => {
+                                html += `<div class="expense-item"><span>💰</span><span>${e.description}</span><span class="expense-amount">${formatMoney(e.amount, e.currency)}</span></div>`;
+                            });
+                            html += `</div>`;
+                        }
+                        
+                        if (activity.notes && activity.notes.length > 0) {
+                            html += `<div class="detail-section"><div class="detail-header">📝 Ghi chú</div>`;
+                            activity.notes.forEach(n => {
+                                html += `<div class="note-item"><span>📌</span><span>${n.content}</span></div>`;
+                            });
+                            html += `</div>`;
+                        }
+                        
+                        html += `</td></tr>`;
+                    }
+                });
+            });
+
+            html += `</tbody></table></div>`;
+
+            // Mobile timeline
+            html += `<div class="mobile-timeline">`;
+            
+            Object.keys(activitiesByDay).sort((a, b) => a - b).forEach(day => {
+                const dayActivities = activitiesByDay[day].sort((a, b) => {
+                    if (!a.startTime) return 1;
+                    if (!b.startTime) return -1;
+                    return a.startTime.localeCompare(b.startTime);
+                });
+
+                const dayDate = getDateForDay(trip.startDate, parseInt(day));
+                const dayDateLabel = formatDateShort(dayDate.toISOString());
+
+                html += `
+                    <div class="day-group">
+                        <div class="day-header">
+                            <div class="day-badge-mobile">${day}</div>
+                            <span class="day-date">${dayDateLabel}</span>
+                            <div class="day-divider"></div>
+                        </div>
+                        <div class="activity-card">
+                `;
+
+                dayActivities.forEach(activity => {
+                    const icon = getCategoryIcon(activity.category);
+                    const dotClass = getDotClass(activity.category);
+                    const hasLocation = (activity.lat && activity.lng) || activity.address;
+                    const activityTotal = activity.expenses ? totalExpenses(activity.expenses) : 0;
+                    const hasDetail = (activity.expenses && activity.expenses.length > 0) || (activity.notes && activity.notes.length > 0);
+                    
+                    html += `
+                        <div class="activity-item" data-activity-id="${activity.id}" onclick="toggleDetailMobile('${activity.id}')">
+                            <div class="type-dot ${dotClass}"></div>
+                            <div class="activity-info">
+                                <div class="activity-top">
+                                    <div class="activity-name">${activity.name}</div>
+                                    <span class="type-badge ${getCategoryClass(activity.category)}">${icon}</span>
+                                </div>
+                                <div class="activity-meta">
+                                    ${activity.startTime ? `<div class="activity-meta-item">🕐 ${formatTime(activity.startTime)}</div>` : ''}
+                                    ${activity.address ? `<div class="activity-meta-item ${hasLocation ? 'clickable' : ''}" onclick="event.stopPropagation(); openGoogleMaps(${activity.lat}, ${activity.lng}, '${(activity.address || '').replace(/'/g, "\\'")}')">${hasLocation ? '📍' : ''} ${activity.address}</div>` : ''}
+                                    ${activityTotal > 0 ? `<div class="activity-meta-item" style="color: #6366f1; font-weight: 600;">💳 ${formatMoney(activityTotal, trip.currency)}</div>` : ''}
+                                    ${activity.notes && activity.notes.length > 0 ? `<div class="activity-meta-item" style="color: #f59e0b;">📝 ${activity.notes.length}</div>` : ''}
+                                </div>
+                            </div>
+                            ${hasDetail ? '<span class="chevron-icon">▼</span>' : ''}
+                        </div>
+                    `;
+                    
+                    if (hasDetail) {
+                        html += `<div id="detail-mobile-${activity.id}" style="display: none;" class="detail-panel">`;
+                        
+                        if (activity.expenses && activity.expenses.length > 0) {
+                            html += `<div class="detail-section"><div class="detail-header">💳 Chi phí</div>`;
+                            activity.expenses.forEach(e => {
+                                html += `<div class="expense-item"><span>💰</span><span>${e.description}</span><span class="expense-amount">${formatMoney(e.amount, e.currency)}</span></div>`;
+                            });
+                            html += `</div>`;
+                        }
+                        
+                        if (activity.notes && activity.notes.length > 0) {
+                            html += `<div class="detail-section"><div class="detail-header">📝 Ghi chú</div>`;
+                            activity.notes.forEach(n => {
+                                html += `<div class="note-item"><span>📌</span><span>${n.content}</span></div>`;
+                            });
+                            html += `</div>`;
+                        }
+                        
+                        html += `</div>`;
+                    }
+                });
+
+                html += `</div></div>`;
+            });
+
+            html += `</div>`;
+
+            // Trip-level expenses and notes
+            if ((trip.expenses && trip.expenses.length > 0) || (trip.notes && trip.notes.length > 0)) {
+                html += `
+                    <div class="trip-section">
+                        <div class="section-title">
+                            <span style="font-size: 16px;">📋</span>
+                            <span class="section-title-text">Thông tin chuyến đi</span>
+                            <div style="flex: 1; height: 1px; background: #e5e7eb;"></div>
+                        </div>
+                `;
+
+                if (trip.expenses && trip.expenses.length > 0) {
+                    const tripExpenseTotal = totalExpenses(trip.expenses);
+                    html += `
+                        <div class="trip-card">
+                            <div class="trip-card-header" onclick="toggleTripDetail('trip-expenses')">
+                                <div class="trip-icon trip-icon-expense">💳</div>
+                                <div style="flex: 1;">
+                                    <div class="trip-card-title">Chi phí chuyến đi</div>
+                                    <div class="trip-card-subtitle">${trip.expenses.length} khoản · tổng ${formatMoney(tripExpenseTotal, trip.currency)}</div>
+                                </div>
+                                <span style="font-size: 13px; color: #9ca3af;">▼</span>
+                            </div>
+                            <div id="trip-expenses" style="display: none;" class="detail-panel">
+                                <div class="detail-section">
+                    `;
+                    trip.expenses.forEach(e => {
+                        html += `<div class="expense-item"><span>💰</span><span>${e.description}</span><span class="expense-amount">${formatMoney(e.amount, e.currency)}</span></div>`;
+                    });
+                    html += `</div></div></div>`;
+                }
+
+                if (trip.notes && trip.notes.length > 0) {
+                    html += `
+                        <div class="trip-card">
+                            <div class="trip-card-header" onclick="toggleTripDetail('trip-notes')">
+                                <div class="trip-icon trip-icon-note">📝</div>
+                                <div style="flex: 1;">
+                                    <div class="trip-card-title">Ghi chú chuyến đi</div>
+                                    <div class="trip-card-subtitle">${trip.notes.length} ghi chú</div>
+                                </div>
+                                <span style="font-size: 13px; color: #9ca3af;">▼</span>
+                            </div>
+                            <div id="trip-notes" style="display: none;" class="detail-panel">
+                                <div class="detail-section">
+                    `;
+                    trip.notes.forEach(n => {
+                        html += `<div class="note-item"><span>📌</span><span>${n.content}</span></div>`;
+                    });
+                    html += `</div></div></div>`;
+                }
+
+                html += `</div>`;
+            }
+
+            html += `</div>`; // Close content
+
+            content.innerHTML = html;
+            content.style.display = 'block';
+        }
+
+        function toggleDetail(activityId) {
+            const detailRow = document.getElementById(`detail-${activityId}`);
+            const activityRow = document.querySelector(`[data-activity-id="${activityId}"]`);
+            if (detailRow.style.display === 'none') {
+                detailRow.style.display = 'table-row';
+                activityRow.classList.add('expanded');
+            } else {
+                detailRow.style.display = 'none';
+                activityRow.classList.remove('expanded');
+            }
+        }
+
+        function toggleDetailMobile(activityId) {
+            const detailPanel = document.getElementById(`detail-mobile-${activityId}`);
+            const activityItem = document.querySelector(`.mobile-timeline [data-activity-id="${activityId}"]`);
+            if (detailPanel.style.display === 'none') {
+                detailPanel.style.display = 'block';
+                activityItem.classList.add('expanded');
+            } else {
+                detailPanel.style.display = 'none';
+                activityItem.classList.remove('expanded');
+            }
+        }
+
+        function toggleTripDetail(id) {
+            const panel = document.getElementById(id);
+            if (panel.style.display === 'none') {
+                panel.style.display = 'block';
+            } else {
+                panel.style.display = 'none';
+            }
+        }
+
+        async function loadTrip() {
+            const tripId = getTripIdFromUrl();
+            try {
+                const response = await fetch(`${API_BASE_URL}/v1/api/public/trips/${tripId}`);
+                if (!response.ok) throw new Error('Trip not found');
+                const data = await response.json();
+                if (data.meta && data.meta.code === 200000 && data.data) {
+                    document.getElementById('loading').style.display = 'none';
+                    renderTrip(data.data);
+                } else {
+                    throw new Error('Invalid response');
+                }
+            } catch (error) {
+                console.error('Error loading trip:', error);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+            }
+        }
+
+        loadTrip();
+    </script>
+</body>
+</html>

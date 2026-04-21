@@ -3,6 +3,7 @@ package com.ds.goroute.service.impl;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.CreateExpenseRequest;
 import com.ds.goroute.dto.request.UpdateExpenseRequest;
+import com.ds.goroute.dto.request.MarkPaymentRequest;
 import com.ds.goroute.dto.response.BudgetOverviewResponse;
 import com.ds.goroute.dto.response.ExpenseResponse;
 import com.ds.goroute.dto.response.ExpenseSplitResponse;
@@ -10,6 +11,7 @@ import com.ds.goroute.dto.response.UserResponse;
 import com.ds.goroute.entity.Expense;
 import com.ds.goroute.entity.ExpenseSplit;
 import com.ds.goroute.entity.Trip;
+import com.ds.goroute.entity.TripMember;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.ExpenseRepository;
@@ -18,6 +20,7 @@ import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.ExpenseService;
+import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.ExpenseCategory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +46,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     private final TripRepository tripRepository;
     private final TripMemberRepository tripMemberRepository;
     private final UserRepository userRepository;
+    private final NotificationHelper notificationHelper;
 
     @Override
     @Transactional
@@ -65,37 +70,43 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .description(request.getDescription())
                 .paidBy(paidBy)
                 .paidByGuestName(request.getPaidByGuestName())
-                .paidByGuestEmail(request.getPaidByGuestEmail())
                 .photoUrls(request.getPhotoUrls() != null ? request.getPhotoUrls().toArray(new String[0]) : null)
                 .createdBy(userId)
                 .build();
 
         expenseRepository.insert(expense);
 
-        // Create splits
         if (request.getSplits() != null && !request.getSplits().isEmpty()) {
             for (var split : request.getSplits()) {
-                // Validate: must have either userId or guestName
                 if (split.getUserId() == null && 
                     (split.getGuestName() == null || split.getGuestName().trim().isEmpty())) {
                     throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, 
                         "Each split must have either userId or guestName");
                 }
                 
+                boolean isSettled = false;
+                if (split.getUserId() != null && split.getUserId().equals(paidBy)) {
+                    isSettled = true;
+                }
+                
                 ExpenseSplit expenseSplit = ExpenseSplit.builder()
                         .id(UUID.randomUUID())
                         .expenseId(expense.getId())
                         .userId(split.getUserId())
+                        .guestMemberId(split.getGuestMemberId())
                         .guestName(split.getGuestName())
-                        .guestEmail(split.getGuestEmail())
                         .amount(split.getAmount())
-                        .isSettled(false)
+                        .isSettled(isSettled)
+                        .settledAt(isSettled ? LocalDateTime.now() : null)
                         .build();
                 expenseSplitRepository.save(expenseSplit);
             }
         }
 
         log.info("Expense created: {} in trip: {}", expense.getId(), tripId);
+        
+        notificationHelper.emitExpenseCreated(expense, userId);
+        
         return mapToExpenseResponse(expense);
     }
 
@@ -171,6 +182,8 @@ public class ExpenseServiceImpl implements ExpenseService {
         expenseSplitRepository.deleteByExpenseId(expenseId);
         expenseRepository.deleteById(expenseId);
         log.info("Expense deleted: {}", expenseId);
+        
+        notificationHelper.emitExpenseDeleted(expense, userId);
     }
 
     @Override
@@ -262,12 +275,17 @@ public class ExpenseServiceImpl implements ExpenseService {
                             amount = amount.add(remainder);
                         }
                         
+                        // Auto-settle if this split is for the payer
+                        boolean isSettled = memberId.equals(expense.getPaidBy());
+                        
                         ExpenseSplit split = ExpenseSplit.builder()
                                 .id(UUID.randomUUID())
                                 .expenseId(expenseId)
                                 .userId(memberId)
+                                .guestMemberId(null) // Equal split is for registered users only
                                 .amount(amount)
-                                .isSettled(false)
+                                .isSettled(isSettled)
+                                .settledAt(isSettled ? LocalDateTime.now() : null)
                                 .build();
                         expenseSplitRepository.save(split);
                     }
@@ -296,31 +314,35 @@ public class ExpenseServiceImpl implements ExpenseService {
                         "Each split must have either userId or guestName");
                 }
                 
+                // Auto-settle if this split is for the payer
+                boolean isSettled = false;
+                if (split.getUserId() != null && split.getUserId().equals(expense.getPaidBy())) {
+                    isSettled = true;
+                }
+                
                 ExpenseSplit expenseSplit = ExpenseSplit.builder()
                         .id(UUID.randomUUID())
                         .expenseId(expenseId)
                         .userId(split.getUserId())
+                        .guestMemberId(split.getGuestMemberId())
                         .guestName(split.getGuestName())
-                        .guestEmail(split.getGuestEmail())
                         .amount(split.getAmount())
-                        .isSettled(false)
+                        .isSettled(isSettled)
+                        .settledAt(isSettled ? LocalDateTime.now() : null)
                         .build();
                 expenseSplitRepository.save(expenseSplit);
             }
             log.info("Updated custom splits for expense {}", expenseId);
         }
         
-        // 6. Update expense record
         expenseRepository.updateById(expense);
         
-        // 8. Invalidate cache: expenses:{tripId}:overview
-        // Note: Cache invalidation would be handled by @CacheEvict annotation in production
-        // For now, just log it
         log.info("Cache invalidated for expenses:{}:overview", tripId);
         
         log.info("Expense updated successfully: expenseId={}", expenseId);
         
-        // 9. Return updated expense
+        notificationHelper.emitExpenseUpdated(expense, userId);
+        
         return mapToExpenseResponse(expense);
     }
 
@@ -334,8 +356,8 @@ public class ExpenseServiceImpl implements ExpenseService {
             // Guest payer
             paidByResponse = UserResponse.builder()
                     .id(null)
-                    .email(expense.getPaidByGuestEmail())
-                    .username(null)
+                    .email(null)
+                    .username(expense.getPaidByGuestName())
                     .fullName(expense.getPaidByGuestName())
                     .avatarUrl(null)
                     .build();
@@ -362,8 +384,8 @@ public class ExpenseServiceImpl implements ExpenseService {
                         // Guest member - create UserResponse with guest info
                         userResponse = UserResponse.builder()
                                 .id(null) // Guest has no userId
-                                .email(s.getGuestEmail())
-                                .username(null)
+                                .email(null)
+                                .username(s.getGuestName())
                                 .fullName(s.getGuestName())
                                 .avatarUrl(null)
                                 .build();
@@ -401,6 +423,154 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .avatarUrl(user.getAvatarUrl())
                 .defaultCurrency(user.getDefaultCurrency())
                 .language(user.getLanguage())
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public ExpenseSplitResponse markPaymentForSplit(UUID tripId, UUID expenseId, UUID splitId, MarkPaymentRequest request, UUID userId) {
+        log.info("Marking payment for split: splitId={}, expenseId={}, tripId={}, userId={}", splitId, expenseId, tripId, userId);
+        
+        // 1. Fetch expense
+        Expense expense = expenseRepository.findById(expenseId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found"));
+        
+        if (!expense.getTripId().equals(tripId)) {
+            throw new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found");
+        }
+        
+        // 2. Fetch split
+        ExpenseSplit split = expenseSplitRepository.findById(splitId);
+        if (split == null || !split.getExpenseId().equals(expenseId)) {
+            throw new BusinessException(ErrorConstant.NOT_FOUND, "Split not found");
+        }
+        
+        // 3. Validate permission: only payer or payee can mark as paid
+        boolean isExpensePayer = expense.getPaidBy() != null && expense.getPaidBy().equals(userId);
+        boolean isExpensePayee = split.getUserId() != null && split.getUserId().equals(userId);
+        boolean isGuestPayee = split.getGuestMemberId() != null || (split.getUserId() == null && split.getGuestName() != null);
+        
+        // For guest, check if current user is payer, trip owner, or expense creator
+        if (isGuestPayee) {
+            Trip trip = tripRepository.findById(tripId)
+                    .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+            if (!isExpensePayer && !trip.getOwnerId().equals(userId) && !expense.getCreatedBy().equals(userId)) {
+                throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only payer, trip owner, or expense creator can mark guest payment");
+            }
+        } else if (!isExpensePayer && !isExpensePayee) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only payer or payee can mark payment");
+        }
+        
+        split.setIsSettled(request.getIsPaid());
+        split.setSettledAt(request.getIsPaid() ? LocalDateTime.now() : null);
+        expenseSplitRepository.update(split);
+        
+        log.info("Payment marked for split {}: isPaid={}", splitId, request.getIsPaid());
+        
+        notificationHelper.emitPaymentMarked(tripId, expenseId, splitId, split, 
+            expense.getDescription(), expense.getCurrency(), request.getIsPaid(), userId);
+        
+        return mapToExpenseSplitResponse(split);
+    }
+
+    @Override
+    @Transactional
+    public ExpenseResponse markAllPaymentsForExpense(UUID tripId, UUID expenseId, MarkPaymentRequest request, UUID userId) {
+        log.info("Marking all payments for expense: expenseId={}, tripId={}, userId={}", expenseId, tripId, userId);
+        
+        // 1. Fetch expense
+        Expense expense = expenseRepository.findById(expenseId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found"));
+        
+        if (!expense.getTripId().equals(tripId)) {
+            throw new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found");
+        }
+        
+        // 2. Validate permission: only payer or trip owner can mark all as paid
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+        
+        boolean isExpensePayer = expense.getPaidBy() != null && expense.getPaidBy().equals(userId);
+        boolean isTripOwner = trip.getOwnerId().equals(userId);
+        
+        if (!isExpensePayer && !isTripOwner) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only payer or trip owner can mark all payments");
+        }
+        
+        List<ExpenseSplit> splits = expenseSplitRepository.findByExpenseId(expenseId);
+        for (ExpenseSplit split : splits) {
+            split.setIsSettled(request.getIsPaid());
+            split.setSettledAt(request.getIsPaid() ? LocalDateTime.now() : null);
+            expenseSplitRepository.update(split);
+        }
+        
+        log.info("All payments marked for expense {}: isPaid={}, count={}", expenseId, request.getIsPaid(), splits.size());
+        
+        notificationHelper.emitPaymentAllMarked(tripId, expenseId, expense.getDescription(), request.getIsPaid(), userId);
+        
+        return mapToExpenseResponse(expense);
+    }
+
+    @Override
+    @Transactional
+    public void markAllPaymentsForTrip(UUID tripId, MarkPaymentRequest request, UUID userId) {
+        log.info("Marking all payments for trip: tripId={}, userId={}", tripId, userId);
+        
+        // 1. Validate trip exists and user is owner
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+        
+        if (!trip.getOwnerId().equals(userId)) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only trip owner can mark all payments for trip");
+        }
+        
+        // 2. Get all expenses for trip
+        List<Expense> expenses = expenseRepository.findByTripId(tripId);
+        
+        int totalUpdated = 0;
+        for (Expense expense : expenses) {
+            List<ExpenseSplit> splits = expenseSplitRepository.findByExpenseId(expense.getId());
+            for (ExpenseSplit split : splits) {
+                split.setIsSettled(request.getIsPaid());
+                split.setSettledAt(request.getIsPaid() ? LocalDateTime.now() : null);
+                expenseSplitRepository.update(split);
+                totalUpdated++;
+            }
+        }
+        
+        log.info("All payments marked for trip {}: isPaid={}, totalUpdated={}", tripId, request.getIsPaid(), totalUpdated);
+        
+        notificationHelper.emitPaymentTripMarked(tripId, request.getIsPaid(), userId);
+    }
+
+    private ExpenseSplitResponse mapToExpenseSplitResponse(ExpenseSplit split) {
+        UserResponse userResponse = null;
+        if (split.getUserId() != null) {
+            User user = userRepository.findById(split.getUserId()).orElse(null);
+            if (user != null) {
+                userResponse = UserResponse.builder()
+                        .id(user.getId())
+                        .email(user.getEmail())
+                        .username(user.getUsername())
+                        .fullName(user.getFullName())
+                        .avatarUrl(user.getAvatarUrl())
+                        .build();
+            }
+        } else if (split.getGuestName() != null) {
+            userResponse = UserResponse.builder()
+                    .id(null)
+                    .email(null)
+                    .username(split.getGuestName())
+                    .fullName(split.getGuestName())
+                    .avatarUrl(null)
+                    .build();
+        }
+        
+        return ExpenseSplitResponse.builder()
+                .id(split.getId())
+                .user(userResponse)
+                .amount(split.getAmount())
+                .isPaid(split.getIsSettled())
                 .build();
     }
 }

@@ -18,7 +18,5 @@ public class InviteMemberRequest {
     
     // Guest member fields
     private Boolean isGuest; // true nếu thêm guest
-    private String guestName; // required nếu isGuest = true
-    private String guestEmail; // optional
-    private String guestPhone; // optional
+    private String guestName; // required nếu isGuest = true (treat as both username and fullName)
 }

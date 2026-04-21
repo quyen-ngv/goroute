@@ -13,7 +13,7 @@ public interface NotificationService {
     
     void sendPushNotification(UUID userId, String title, String body, Map<String, Object> data);
     
-    List<NotificationResponse> getNotifications(UUID userId, Integer page, Integer size, Boolean unreadOnly);
+    List<NotificationResponse> getNotifications(UUID userId, Integer page, Integer size, Boolean unreadOnly, UUID tripId);
     
     void markAsRead(UUID notificationId);
     

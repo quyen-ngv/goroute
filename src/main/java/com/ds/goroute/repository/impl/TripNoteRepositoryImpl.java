@@ -32,6 +32,11 @@ public class TripNoteRepositoryImpl implements TripNoteRepository {
     }
     
     @Override
+    public List<TripNote> findByActivityId(UUID activityId) {
+        return tripNoteMapper.selectByActivityId(activityId);
+    }
+    
+    @Override
     public void updateById(TripNote note) {
         tripNoteMapper.updateById(note);
     }

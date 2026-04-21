@@ -4,16 +4,19 @@ import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.CreateTripNoteRequest;
 import com.ds.goroute.dto.response.TripNoteResponse;
 import com.ds.goroute.dto.response.UserResponse;
+import com.ds.goroute.entity.Activity;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.entity.TripMember;
 import com.ds.goroute.entity.TripNote;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripNoteRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.TripNoteService;
+import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.MemberStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +37,8 @@ public class TripNoteServiceImpl implements TripNoteService {
     private final TripRepository tripRepository;
     private final TripMemberRepository tripMemberRepository;
     private final UserRepository userRepository;
+    private final ActivityRepository activityRepository;
+    private final NotificationHelper notificationHelper;
 
     @Override
     @Transactional(readOnly = true)
@@ -49,14 +54,35 @@ public class TripNoteServiceImpl implements TripNoteService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<TripNoteResponse> getActivityNotes(UUID tripId, UUID activityId, UUID userId) {
+        // Verify user is member of trip
+        verifyTripMember(tripId, userId);
+        
+        List<TripNote> notes = tripNoteRepository.findByActivityId(activityId);
+        
+        return notes.stream()
+                .map(this::toTripNoteResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
     @Transactional
     public TripNoteResponse createTripNote(UUID tripId, CreateTripNoteRequest request, UUID userId) {
         // Verify user is member of trip
         verifyTripMember(tripId, userId);
         
+        UUID activityId = null;
+        // If activityId is provided, verify it belongs to the trip
+        if (request.getActivityId() != null && !request.getActivityId().isEmpty()) {
+            activityId = UUID.fromString(request.getActivityId());
+            verifyActivityBelongsToTrip(activityId, tripId);
+        }
+        
         TripNote note = TripNote.builder()
                 .id(UUID.randomUUID())
                 .tripId(tripId)
+                .activityId(activityId)
                 .userId(userId)
                 .content(request.getContent())
                 .createdAt(LocalDateTime.now())
@@ -66,6 +92,8 @@ public class TripNoteServiceImpl implements TripNoteService {
         
         tripNoteRepository.insert(note);
         log.info("Trip note created: {} for trip: {}", note.getId(), tripId);
+        
+        notificationHelper.emitNoteCreated(tripId, activityId, userId);
         
         return toTripNoteResponse(note);
     }
@@ -86,6 +114,8 @@ public class TripNoteServiceImpl implements TripNoteService {
         
         tripNoteRepository.softDelete(noteId);
         log.info("Trip note deleted: {}", noteId);
+        
+        notificationHelper.emitNoteDeleted(tripId, note.getActivityId(), userId);
     }
     
     private void verifyTripMember(UUID tripId, UUID userId) {
@@ -100,12 +130,22 @@ public class TripNoteServiceImpl implements TripNoteService {
         }
     }
     
+    private void verifyActivityBelongsToTrip(UUID activityId, UUID tripId) {
+        Activity activity = activityRepository.findById(activityId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity not found"));
+        
+        if (!activity.getTripId().equals(tripId)) {
+            throw new BusinessException(ErrorConstant.BAD_REQUEST, "Activity does not belong to this trip");
+        }
+    }
+    
     private TripNoteResponse toTripNoteResponse(TripNote note) {
         User user = userRepository.findById(note.getUserId()).orElse(null);
         
         return TripNoteResponse.builder()
                 .id(note.getId())
                 .tripId(note.getTripId())
+                .activityId(note.getActivityId())
                 .user(UserResponse.builder()
                         .id(user.getId())
                         .fullName(user.getFullName())

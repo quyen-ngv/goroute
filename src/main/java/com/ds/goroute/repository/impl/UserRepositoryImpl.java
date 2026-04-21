@@ -37,6 +37,11 @@ public class UserRepositoryImpl implements UserRepository {
     }
     
     @Override
+    public Optional<User> findByProviderId(String providerId) {
+        return Optional.ofNullable(userMapper.selectByProviderId(providerId));
+    }
+    
+    @Override
     public List<User> findAll() {
         return userMapper.selectAll();
     }
@@ -47,7 +52,17 @@ public class UserRepositoryImpl implements UserRepository {
     }
     
     @Override
+    public void update(User user) {
+        userMapper.updateById(user);
+    }
+    
+    @Override
     public void deleteById(UUID id) {
         userMapper.deleteById(id);
+    }
+    
+    @Override
+    public void softDeleteById(UUID id) {
+        userMapper.softDeleteById(id);
     }
 }

@@ -17,7 +17,11 @@ public interface NotificationMapper {
     
     List<Notification> selectByUserId(@Param("userId") UUID userId);
     
+    List<Notification> selectByUserIdAndTripId(@Param("userId") UUID userId, @Param("tripId") UUID tripId);
+    
     List<Notification> selectUnreadByUserId(@Param("userId") UUID userId);
+    
+    List<Notification> selectUnreadByUserIdAndTripId(@Param("userId") UUID userId, @Param("tripId") UUID tripId);
     
     List<Notification> findByUserId(@Param("userId") UUID userId, 
                                      @Param("unreadOnly") Boolean unreadOnly,

@@ -23,6 +23,7 @@ import com.ds.goroute.dto.response.UserResponse;
 import com.ds.goroute.dto.response.ExpenseSplitResponse;
 import com.ds.goroute.service.ActivityService;
 import com.ds.goroute.service.redis.RedisService;
+import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.ActivityStatus;
 import com.ds.goroute.type.TransportMode;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +50,7 @@ public class ActivityServiceImpl implements ActivityService {
     private final ExpenseRepository expenseRepository;
     private final UserRepository userRepository;
     private final ExpenseSplitRepository expenseSplitRepository;
+    private final NotificationHelper notificationHelper;
 
     @Override
     @Transactional
@@ -86,6 +88,9 @@ public class ActivityServiceImpl implements ActivityService {
 
         activityRepository.insert(activity);
         log.info("Activity created: {} in trip: {}", activity.getId(), tripId);
+        
+        notificationHelper.emitActivityCreated(activity, userId);
+        
         return mapToActivityResponse(activity);
     }
 
@@ -141,11 +146,13 @@ public class ActivityServiceImpl implements ActivityService {
 
         activityRepository.updateById(activity);
         
-        // Invalidate cache
         String cacheKey = "activities:" + tripId;
         redisService.delete(cacheKey);
         
         log.info("Activity updated: {}", activityId);
+        
+        notificationHelper.emitActivityUpdated(activity, userId);
+        
         return mapToActivityResponse(activity);
     }
 
@@ -168,11 +175,12 @@ public class ActivityServiceImpl implements ActivityService {
 
         activityRepository.deleteById(activityId);
         
-        // Invalidate cache
         String cacheKey = "activities:" + tripId;
         redisService.delete(cacheKey);
         
         log.info("Activity deleted: {}", activityId);
+        
+        notificationHelper.emitActivityDeleted(activity, userId);
     }
 
     @Override
@@ -253,8 +261,8 @@ public class ActivityServiceImpl implements ActivityService {
             // Guest payer
             paidByUser = UserResponse.builder()
                     .id(null)
-                    .email(expense.getPaidByGuestEmail())
-                    .username(null)
+                    .email(null)
+                    .username(expense.getPaidByGuestName())
                     .fullName(expense.getPaidByGuestName())
                     .avatarUrl(null)
                     .build();
@@ -281,8 +289,8 @@ public class ActivityServiceImpl implements ActivityService {
                         // Guest member - create UserResponse with guest info
                         userResponse = UserResponse.builder()
                                 .id(null) // Guest has no userId
-                                .email(split.getGuestEmail())
-                                .username(null)
+                                .email(null)
+                                .username(split.getGuestName())
                                 .fullName(split.getGuestName())
                                 .avatarUrl(null)
                                 .build();

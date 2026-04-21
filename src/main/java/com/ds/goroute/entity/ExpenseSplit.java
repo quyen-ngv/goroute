@@ -17,8 +17,8 @@ public class ExpenseSplit {
     private UUID id;
     private UUID expenseId;
     private UUID userId;
-    private String guestName;
-    private String guestEmail;
+    private UUID guestMemberId; // Reference to trip_members.id for guest
+    private String guestName; // Treat as both username and fullName
     private BigDecimal amount;
     private Boolean isSettled;
     private LocalDateTime settledAt;

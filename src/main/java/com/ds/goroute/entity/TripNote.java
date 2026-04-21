@@ -15,6 +15,7 @@ import java.util.UUID;
 public class TripNote {
     private UUID id;
     private UUID tripId;
+    private UUID activityId;  // Optional: for activity-specific notes
     private UUID userId;
     private String content;
     private LocalDateTime createdAt;

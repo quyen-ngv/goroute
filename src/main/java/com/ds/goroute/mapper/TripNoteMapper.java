@@ -14,6 +14,8 @@ public interface TripNoteMapper {
     
     List<TripNote> selectByTripId(@Param("tripId") UUID tripId);
     
+    List<TripNote> selectByActivityId(@Param("activityId") UUID activityId);
+    
     int insert(TripNote note);
     
     int updateById(TripNote note);

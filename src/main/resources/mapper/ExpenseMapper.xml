@@ -14,7 +14,6 @@
         <result column="description" property="description" jdbcType="VARCHAR"/>
         <result column="paid_by" property="paidBy" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="paid_by_guest_name" property="paidByGuestName" jdbcType="VARCHAR"/>
-        <result column="paid_by_guest_email" property="paidByGuestEmail" jdbcType="VARCHAR"/>
         <result column="receipt_url" property="receiptUrl" jdbcType="VARCHAR"/>
         <result column="photo_urls" property="photoUrls" jdbcType="ARRAY" typeHandler="org.apache.ibatis.type.ArrayTypeHandler"/>
         <result column="created_by" property="createdBy" javaType="java.util.UUID" jdbcType="OTHER"/>
@@ -24,13 +23,13 @@
 
     <insert id="insert" parameterType="com.ds.goroute.entity.Expense">
         INSERT INTO expenses (id, trip_id, activity_id, amount, currency, exchange_rate, amount_in_trip_currency,
-                             category, description, paid_by, paid_by_guest_name, paid_by_guest_email, receipt_url, photo_urls, created_by, created_at, updated_at)
+                             category, description, paid_by, paid_by_guest_name, receipt_url, photo_urls, created_by, created_at, updated_at)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
                 #{activityId,javaType=java.util.UUID,jdbcType=OTHER}, #{amount}, #{currency}, #{exchangeRate},
                 #{amountInTripCurrency}, 
                 #{category}, 
                 #{description},
-                #{paidBy,javaType=java.util.UUID,jdbcType=OTHER}, #{paidByGuestName}, #{paidByGuestEmail}, #{receiptUrl},
+                #{paidBy,javaType=java.util.UUID,jdbcType=OTHER}, #{paidByGuestName}, #{receiptUrl},
                 #{photoUrls,jdbcType=ARRAY,typeHandler=org.apache.ibatis.type.ArrayTypeHandler},
                 #{createdBy,javaType=java.util.UUID,jdbcType=OTHER}, NOW(), NOW())
     </insert>
