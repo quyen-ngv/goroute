@@ -14,6 +14,7 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 public class TripInvitationResponse {
+    private UUID memberId;
     private UUID tripId;
     private String tripName;
     private String coverImageUrl;

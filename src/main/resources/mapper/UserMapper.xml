@@ -38,7 +38,11 @@
     </insert>
 
     <select id="selectByEmail" parameterType="String" resultMap="UserResultMap">
-        SELECT * FROM users WHERE email = #{email} AND provider = 'LOCAL' AND deleted_at IS NULL
+        SELECT * FROM users WHERE email = #{email} AND deleted_at IS NULL
+    </select>
+
+    <select id="selectByEmailIncludingDeleted" parameterType="String" resultMap="UserResultMap">
+        SELECT * FROM users WHERE email = #{email}
     </select>
 
     <select id="selectByProviderId" parameterType="String" resultMap="UserResultMap">
@@ -65,6 +69,7 @@
             language = #{language},
             theme = #{theme},
             onboarding_completed = #{onboardingCompleted},
+            deleted_at = #{deletedAt},
             updated_at = NOW()
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </update>

@@ -25,6 +25,7 @@ import com.ds.goroute.service.ActivityService;
 import com.ds.goroute.service.redis.RedisService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.ActivityStatus;
+import com.ds.goroute.type.MemberStatus;
 import com.ds.goroute.type.TransportMode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -58,8 +59,12 @@ public class ActivityServiceImpl implements ActivityService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
 
-        // Check if user has access
-        if (!trip.getOwnerId().equals(userId) && tripMemberRepository.findByTripIdAndUserId(tripId, userId).isEmpty()) {
+        // Check if user has access (must be ACCEPTED member, not LEFT)
+        var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
+        boolean hasAccess = trip.getOwnerId().equals(userId) || 
+                           (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
+        
+        if (!hasAccess) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
         }
 
@@ -122,7 +127,12 @@ public class ActivityServiceImpl implements ActivityService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
         
-        if (!trip.getOwnerId().equals(userId) && tripMemberRepository.findByTripIdAndUserId(tripId, userId).isEmpty()) {
+        // Check if user has access (must be ACCEPTED member, not LEFT)
+        var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
+        boolean hasAccess = trip.getOwnerId().equals(userId) || 
+                           (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
+        
+        if (!hasAccess) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
         }
 
@@ -140,6 +150,7 @@ public class ActivityServiceImpl implements ActivityService {
         if (request.getCategory() != null) activity.setCategory(request.getCategory());
         if (request.getTransportMode() != null) activity.setTransportMode(TransportMode.valueOf(request.getTransportMode()));
         if (request.getNotes() != null) activity.setNotes(request.getNotes());
+        if (request.getDescription() != null) activity.setDescription(request.getDescription());
         if (request.getIsAccommodation() != null) activity.setIsAccommodation(request.getIsAccommodation());
         if (request.getIsStartingPoint() != null) activity.setIsStartingPoint(request.getIsStartingPoint());
         if (request.getStartingPointDate() != null) activity.setStartingPointDate(request.getStartingPointDate());
@@ -169,7 +180,12 @@ public class ActivityServiceImpl implements ActivityService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
         
-        if (!trip.getOwnerId().equals(userId) && tripMemberRepository.findByTripIdAndUserId(tripId, userId).isEmpty()) {
+        // Check if user has access (must be ACCEPTED member, not LEFT)
+        var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
+        boolean hasAccess = trip.getOwnerId().equals(userId) || 
+                           (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
+        
+        if (!hasAccess) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
         }
 
@@ -189,7 +205,12 @@ public class ActivityServiceImpl implements ActivityService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
 
-        if (!trip.getOwnerId().equals(userId) && tripMemberRepository.findByTripIdAndUserId(tripId, userId).isEmpty()) {
+        // Check if user has access (must be ACCEPTED member, not LEFT)
+        var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
+        boolean hasAccess = trip.getOwnerId().equals(userId) || 
+                           (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
+        
+        if (!hasAccess) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
         }
 
@@ -231,6 +252,7 @@ public class ActivityServiceImpl implements ActivityService {
                 .rating(activity.getRating())
                 .photoUrl(activity.getPhotoUrl())
                 .notes(activity.getNotes())
+                .description(activity.getDescription())
                 .status(activity.getStatus().toString())
                 .checkedIn(false)
                 .checkedInCount(checkedInCount)
@@ -317,6 +339,7 @@ public class ActivityServiceImpl implements ActivityService {
                 .description(expense.getDescription())
                 .activityId(expense.getActivityId())
                 .paidBy(paidByUser)
+                .paidByGuestMemberId(expense.getPaidByGuestMemberId())
                 .splits(splitResponses)
                 .photoUrls(photoUrlsList)
                 .createdAt(expense.getCreatedAt())

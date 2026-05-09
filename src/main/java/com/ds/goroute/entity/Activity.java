@@ -35,6 +35,7 @@ public class Activity {
     private BigDecimal rating;
     private String photoUrl;
     private String notes;
+    private String description;
     private ActivityStatus status;
     private UUID addedBy;
     

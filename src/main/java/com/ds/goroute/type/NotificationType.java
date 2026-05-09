@@ -14,6 +14,7 @@ public enum NotificationType {
     TRIP_INVITE,
     MEMBER_ADDED,
     MEMBER_JOINED,
+    MEMBER_ACCEPTED,
     MEMBER_REMOVED,
     MEMBER_LEFT,
     GUEST_LINKED,

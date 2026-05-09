@@ -27,8 +27,8 @@ public class AppleTokenVerifier {
     private static final String APPLE_PUBLIC_KEYS_URL = "https://appleid.apple.com/auth/keys";
     private static final String APPLE_ISSUER = "https://appleid.apple.com";
     
-    private final RestTemplate restTemplate = new RestTemplate();
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final RestTemplate restTemplate;
+    private final ObjectMapper objectMapper;
     
     private Map<String, PublicKey> publicKeysCache = new HashMap<>();
     private long cacheExpiry = 0;
@@ -52,19 +52,22 @@ public class AppleTokenVerifier {
             // Verify and parse token
             Claims claims = Jwts.parserBuilder()
                     .setSigningKey(publicKey)
+                    .requireIssuer(APPLE_ISSUER)
                     .build()
                     .parseClaimsJws(identityToken)
                     .getBody();
             
-            // Validate issuer
-            if (!APPLE_ISSUER.equals(claims.getIssuer())) {
-                throw new BusinessException(ErrorConstant.UNAUTHORIZED, "Invalid Apple token issuer");
+            // Extract email verification status
+            Boolean emailVerified = claims.get("email_verified", Boolean.class);
+            if (emailVerified == null) {
+                // Fallback to string check for compatibility
+                emailVerified = "true".equals(claims.get("email_verified", String.class));
             }
             
             return AppleTokenInfo.builder()
                     .sub(claims.getSubject())
                     .email(claims.get("email", String.class))
-                    .emailVerified("true".equals(claims.get("email_verified", String.class)))
+                    .emailVerified(Boolean.TRUE.equals(emailVerified))
                     .build();
                     
         } catch (Exception e) {

@@ -18,13 +18,18 @@ public class PublicTripResponse {
     private UUID id;
     private String name;
     private String coverImageUrl;
+    private String description;
     private String destination;
     private BigDecimal lat;
     private BigDecimal lng;
     private LocalDate startDate;
     private LocalDate endDate;
     private String currency;
+    private String ownerName;
+    private String ownerAvatarUrl;
     private List<PublicActivityResponse> activities;
     private List<PublicExpenseResponse> expenses;
     private List<PublicNoteResponse> notes;
+    private Integer viewCount;
+    private Integer copyCount;
 }

@@ -1,6 +1,7 @@
 package com.ds.goroute.service.impl;
 
 import com.ds.goroute.constant.ErrorConstant;
+import com.ds.goroute.dto.request.CloneTripRequest;
 import com.ds.goroute.dto.request.CreateTripRequest;
 import com.ds.goroute.dto.request.InviteMemberRequest;
 import com.ds.goroute.dto.request.LinkGuestRequest;
@@ -9,12 +10,10 @@ import com.ds.goroute.dto.response.*;
 import com.ds.goroute.entity.*;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.*;
+import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.service.notification.NotificationHelper;
-import com.ds.goroute.type.MemberRole;
-import com.ds.goroute.type.MemberStatus;
-import com.ds.goroute.type.TripStatus;
-import com.ds.goroute.type.TripVisibility;
+import com.ds.goroute.type.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -24,6 +23,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -41,6 +41,7 @@ public class TripServiceImpl implements TripService {
     private final CheckinRepository checkinRepository;
     private final TripNoteRepository tripNoteRepository;
     private final NotificationHelper notificationHelper;
+    private final LocationImageService locationImageService;
 
     @Override
     @Transactional
@@ -50,9 +51,13 @@ public class TripServiceImpl implements TripService {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Start date must be before end date");
         }
 
+        // Auto set cover image based on destination
+        String coverImage = locationImageService.getImageForDestination(request.getDestination());
+
         Trip trip = Trip.builder()
                 .id(UUID.randomUUID())
                 .name(request.getName())
+                .coverImageUrl(coverImage)
                 .destination(request.getDestination())
                 .destinationPlaceId(request.getDestinationPlaceId())
                 .destinationLat(request.getDestinationLat())
@@ -109,10 +114,12 @@ public class TripServiceImpl implements TripService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
 
-        // Check if user has access
+        // Check if user has access (must be ACCEPTED member, not LEFT)
         var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
-        if (member.isEmpty() && !trip.getOwnerId().equals(userId)) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
+        if (member.isEmpty() || member.get().getStatus() == MemberStatus.LEFT) {
+            if (!trip.getOwnerId().equals(userId)) {
+                throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
+            }
         }
 
         List<TripMember> members = tripMemberRepository.findByTripId(tripId);
@@ -125,11 +132,17 @@ public class TripServiceImpl implements TripService {
         UserResponse ownerResponse = mapToUserResponse(owner);
 
         TripStatsResponse stats = calculateTripStats(tripId);
+        
+        // Auto fill cover image if not set
+        String coverImageUrl = trip.getCoverImageUrl();
+        if (coverImageUrl == null || coverImageUrl.isEmpty()) {
+            coverImageUrl = locationImageService.getImageForDestination(trip.getDestination());
+        }
 
         return TripDetailResponse.builder()
                 .id(trip.getId())
                 .name(trip.getName())
-                .coverImageUrl(trip.getCoverImageUrl())
+                .coverImageUrl(coverImageUrl)
                 .destination(trip.getDestination())
                 .lat(trip.getDestinationLat())
                 .lng(trip.getDestinationLng())
@@ -140,6 +153,7 @@ public class TripServiceImpl implements TripService {
                 .currency(trip.getCurrency())
                 .visibility(trip.getVisibility().toString())
                 .shareCode(trip.getShareCode())
+                .description(trip.getDescription())
                 .startingPointName(trip.getStartingPointName())
                 .startingPointAddress(trip.getStartingPointAddress())
                 .startingPointLat(trip.getStartingPointLat())
@@ -157,8 +171,12 @@ public class TripServiceImpl implements TripService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
 
-        // Check if user is owner or member of trip
-        if (!trip.getOwnerId().equals(userId) && tripMemberRepository.findByTripIdAndUserId(tripId, userId).isEmpty()) {
+        // Check if user is owner or ACCEPTED member of trip (not LEFT)
+        var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
+        boolean hasAccess = trip.getOwnerId().equals(userId) || 
+                           (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
+        
+        if (!hasAccess) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only trip members can update trip");
         }
 
@@ -175,6 +193,7 @@ public class TripServiceImpl implements TripService {
         if (request.getVisibility() != null) trip.setVisibility(TripVisibility.valueOf(request.getVisibility()));
         if (request.getShareExpenses() != null) trip.setShareExpenses(request.getShareExpenses());
         if (request.getShareNotes() != null) trip.setShareNotes(request.getShareNotes());
+        if (request.getDescription() != null) trip.setDescription(request.getDescription());
 
         // Update starting point
         if (request.getStartingPointName() != null) trip.setStartingPointName(request.getStartingPointName());
@@ -332,30 +351,91 @@ public class TripServiceImpl implements TripService {
     }
 
     @Override
+    @Transactional
+    public void updateGuestName(UUID tripId, UUID guestMemberId, String guestName, UUID userId) {
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+
+        if (!trip.getOwnerId().equals(userId)) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only owner can update guest name");
+        }
+
+        TripMember guestMember = tripMemberRepository.findById(guestMemberId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Guest member not found"));
+
+        if (!guestMember.getTripId().equals(tripId)) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Guest member does not belong to this trip");
+        }
+
+        if (!Boolean.TRUE.equals(guestMember.getIsGuest())) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Member is not a guest");
+        }
+
+        guestMember.setGuestName(guestName);
+        tripMemberRepository.updateById(guestMember);
+        log.info("Guest name updated: {} - {} - {}", tripId, guestMemberId, guestName);
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<TripMemberResponse> getTripMembers(UUID tripId, UUID userId) {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
 
-        // Check if user has access
+        // Check if user has access (must be ACCEPTED member, not LEFT)
         var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
-        if (member.isEmpty() && !trip.getOwnerId().equals(userId)) {
+        boolean hasAccess = trip.getOwnerId().equals(userId) || 
+                           (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
+        
+        if (!hasAccess) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
         }
 
         List<TripMember> members = tripMemberRepository.findByTripId(tripId);
         return members.stream()
+                .filter(m -> m.getStatus() != MemberStatus.LEFT) // Exclude LEFT members from list
                 .map(this::mapToTripMemberResponse)
                 .collect(Collectors.toList());
     }
 
     private TripResponse mapToTripResponse(Trip trip, UUID userId) {
         TripStatsResponse stats = calculateTripStats(trip.getId());
+        
+        // Auto fill cover image if not set
+        String coverImageUrl = trip.getCoverImageUrl();
+        if (coverImageUrl == null || coverImageUrl.isEmpty()) {
+            coverImageUrl = locationImageService.getImageForDestination(trip.getDestination());
+        }
+        
+        // Determine user role in this trip
+        String userRole = null;
+        log.info("🔍 Mapping trip: {}, ownerId: {}, userId: {}", trip.getName(), trip.getOwnerId(), userId);
+        
+        // Check if user is owner first (most important)
+        if (trip.getOwnerId() != null && trip.getOwnerId().equals(userId)) {
+            userRole = "OWNER";
+            log.info("✅ User is OWNER (from trip.ownerId)");
+        } else {
+            // Check if user is member
+            var member = tripMemberRepository.findByTripIdAndUserId(trip.getId(), userId);
+            if (member.isPresent()) {
+                // If member role is OWNER, use it (fallback for old data)
+                if (member.get().getRole() == MemberRole.OWNER) {
+                    userRole = "OWNER";
+                    log.info("✅ User is OWNER (from trip_members)");
+                } else {
+                    userRole = member.get().getRole().toString();
+                    log.info("✅ User is member with role: {}", userRole);
+                }
+            } else {
+                log.warn("⚠️ User is not owner and not member - tripId: {}, userId: {}", trip.getId(), userId);
+            }
+        }
 
         return TripResponse.builder()
                 .id(trip.getId())
                 .name(trip.getName())
-                .coverImageUrl(trip.getCoverImageUrl())
+                .coverImageUrl(coverImageUrl)
                 .destination(trip.getDestination())
                 .lat(trip.getDestinationLat())
                 .lng(trip.getDestinationLng())
@@ -368,7 +448,9 @@ public class TripServiceImpl implements TripService {
                 .shareCode(trip.getShareCode())
                 .shareExpenses(trip.getShareExpenses())
                 .shareNotes(trip.getShareNotes())
+                .description(trip.getDescription())
                 .stats(stats)
+                .userRole(userRole)
                 .build();
     }
 
@@ -448,25 +530,57 @@ public class TripServiceImpl implements TripService {
     public List<TripInvitationResponse> getPendingInvitations(UUID userId) {
         List<TripMember> pendingMembers = tripMemberRepository.findPendingByUserId(userId);
 
-        return pendingMembers.stream().map(member -> {
-            Trip trip = tripRepository.findById(member.getTripId())
-                    .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+        return pendingMembers.stream()
+                .map(member -> {
+                    try {
+                        Trip trip = tripRepository.findById(member.getTripId())
+                                .orElse(null);
+                        
+                        if (trip == null) {
+                            log.warn("Trip not found for pending invitation: tripId={}", member.getTripId());
+                            return null;
+                        }
 
-            User inviter = userRepository.findById(member.getInvitedBy())
-                    .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Inviter not found"));
+                        User inviter = null;
+                        if (member.getInvitedBy() != null) {
+                            inviter = userRepository.findById(member.getInvitedBy()).orElse(null);
+                        }
+                        
+                        if (inviter == null) {
+                            log.warn("Inviter not found for pending invitation: invitedBy={}, using placeholder", member.getInvitedBy());
+                            // Create placeholder inviter
+                            inviter = User.builder()
+                                    .id(member.getInvitedBy())
+                                    .fullName("Unknown User")
+                                    .username("unknown")
+                                    .build();
+                        }
 
-            return TripInvitationResponse.builder()
-                    .tripId(trip.getId())
-                    .tripName(trip.getName())
-                    .coverImageUrl(trip.getCoverImageUrl())
-                    .destination(trip.getDestination())
-                    .startDate(trip.getStartDate())
-                    .endDate(trip.getEndDate())
-                    .invitedBy(mapToUserResponse(inviter))
-                    .role(member.getRole().toString())
-                    .invitedAt(member.getCreatedAt())
-                    .build();
-        }).collect(Collectors.toList());
+                        // Auto fill cover image if not set
+                        String coverImageUrl = trip.getCoverImageUrl();
+                        if (coverImageUrl == null || coverImageUrl.isEmpty()) {
+                            coverImageUrl = locationImageService.getImageForDestination(trip.getDestination());
+                        }
+
+                        return TripInvitationResponse.builder()
+                                .memberId(member.getId())
+                                .tripId(trip.getId())
+                                .tripName(trip.getName())
+                                .coverImageUrl(coverImageUrl)
+                                .destination(trip.getDestination())
+                                .startDate(trip.getStartDate())
+                                .endDate(trip.getEndDate())
+                                .invitedBy(mapToUserResponse(inviter))
+                                .role(member.getRole().toString())
+                                .invitedAt(member.getCreatedAt())
+                                .build();
+                    } catch (Exception e) {
+                        log.error("Error processing pending invitation for member: {}, error: {}", member.getId(), e.getMessage());
+                        return null;
+                    }
+                })
+                .filter(Objects::nonNull) // Filter out failed invitations
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -522,6 +636,15 @@ public class TripServiceImpl implements TripService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
 
+        // Increment view count async (don't block response)
+        incrementViewCountAsync(tripId);
+
+        // Auto fill cover image if not set
+        String coverImageUrl = trip.getCoverImageUrl();
+        if (coverImageUrl == null || coverImageUrl.isEmpty()) {
+            coverImageUrl = locationImageService.getImageForDestination(trip.getDestination());
+        }
+
         // Get activities
         List<com.ds.goroute.entity.Activity> activities = activityRepository.findByTripId(tripId);
         
@@ -575,6 +698,7 @@ public class TripServiceImpl implements TripService {
                 .map(a -> PublicActivityResponse.builder()
                         .id(a.getId())
                         .dayNumber(a.getDayNumber())
+                        .placeId(a.getPlaceId() != null ? UUID.fromString(a.getPlaceId()) : null)
                         .name(a.getName())
                         .address(a.getAddress())
                         .lat(a.getLat())
@@ -589,19 +713,292 @@ public class TripServiceImpl implements TripService {
                         .build())
                 .collect(Collectors.toList());
 
+        // Get owner info
+        User owner = userRepository.findById(trip.getOwnerId()).orElse(null);
+        String ownerName = owner != null ? owner.getFullName() : null;
+        String ownerAvatarUrl = owner != null ? owner.getAvatarUrl() : null;
+
         return PublicTripResponse.builder()
                 .id(trip.getId())
                 .name(trip.getName())
-                .coverImageUrl(trip.getCoverImageUrl())
+                .coverImageUrl(coverImageUrl)
+                .description(trip.getDescription())
                 .destination(trip.getDestination())
                 .lat(trip.getDestinationLat())
                 .lng(trip.getDestinationLng())
                 .startDate(trip.getStartDate())
                 .endDate(trip.getEndDate())
                 .currency(trip.getCurrency())
+                .ownerName(ownerName)
+                .ownerAvatarUrl(ownerAvatarUrl)
                 .activities(activityResponses)
                 .expenses(tripLevelExpenses.isEmpty() ? null : tripLevelExpenses)
                 .notes(tripLevelNotes.isEmpty() ? null : tripLevelNotes)
+                .viewCount(trip.getViewCount())
+                .copyCount(trip.getCopyCount())
                 .build();
     }
+
+    @Override
+    @Transactional
+    public TripResponse joinTripByCode(String code, UUID userId) {
+        Trip trip = tripRepository.findByShareCode(code)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found with code: " + code));
+
+        // Check if user is already a member
+        var existingMember = tripMemberRepository.findByTripIdAndUserId(trip.getId(), userId);
+        if (existingMember.isPresent()) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "User is already a member of this trip");
+        }
+
+        // Create new member with PENDING status
+        TripMember member = TripMember.builder()
+                .id(UUID.randomUUID())
+                .tripId(trip.getId())
+                .userId(userId)
+                .role(MemberRole.VIEWER)
+                .status(MemberStatus.PENDING)
+                .build();
+
+        tripMemberRepository.insert(member);
+        log.info("User joined trip by code: tripId={}, userId={}, code={}", trip.getId(), userId, code);
+
+        notificationHelper.emitMemberAdded(member, trip, userId);
+
+        return mapToTripResponse(trip, userId);
+    }
+
+    @Override
+    @Transactional
+    public void acceptMember(UUID tripId, UUID memberId, UUID userId) {
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+
+        // Check if current user is owner
+        if (!trip.getOwnerId().equals(userId)) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only owner can accept members");
+        }
+
+        TripMember member = tripMemberRepository.findById(memberId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Member not found"));
+
+        // Check if member belongs to this trip
+        if (!member.getTripId().equals(tripId)) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Member does not belong to this trip");
+        }
+
+        // Check if member is in PENDING status
+        if (member.getStatus() != MemberStatus.PENDING) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Member is not in pending status");
+        }
+
+        member.setStatus(MemberStatus.ACCEPTED);
+        member.setJoinedAt(LocalDateTime.now());
+        tripMemberRepository.updateById(member);
+        log.info("Member accepted: tripId={}, memberId={}, acceptedBy={}", tripId, memberId, userId);
+
+        notificationHelper.emitMemberAccepted(member, trip, userId);
+    }
+
+    @Override
+    @Transactional
+    public void leaveTrip(UUID tripId, UUID userId) {
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+
+        // Owner cannot leave trip
+        if (trip.getOwnerId().equals(userId)) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Owner cannot leave trip. Please delete the trip or transfer ownership first.");
+        }
+
+        TripMember member = tripMemberRepository.findByTripIdAndUserId(tripId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "You are not a member of this trip"));
+
+        // Update status to LEFT instead of deleting
+        member.setStatus(MemberStatus.LEFT);
+        tripMemberRepository.updateById(member);
+        log.info("Member left trip: tripId={}, userId={}", tripId, userId);
+
+        notificationHelper.emitMemberLeft(member, trip, userId);
+    }
+
+    @Override
+    @Transactional
+    public TripResponse cloneTrip(UUID tripId, CloneTripRequest request, UUID userId) {
+        // 1. Validate dates
+        if (request.getStartDate().isAfter(request.getEndDate())) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Start date must be before end date");
+        }
+
+        // 2. Get original trip
+        Trip originalTrip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+
+        // 3. Verify user can clone this trip
+        // Allow cloning if:
+        // - User is owner
+        // - User is accepted member  
+        // - Trip is public/shared (anyone can clone)
+        boolean canClone = originalTrip.getOwnerId().equals(userId) ||
+                tripMemberRepository.findByTripIdAndUserId(tripId, userId)
+                        .filter(m -> m.getStatus() == MemberStatus.ACCEPTED)
+                        .isPresent() ||
+                originalTrip.getVisibility() == TripVisibility.PUBLIC ||
+                originalTrip.getVisibility() == TripVisibility.SHARED;
+
+        if (!canClone) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You don't have access to clone this trip");
+        }
+
+        // 4. Create new trip with user-provided info
+        Trip newTrip = Trip.builder()
+                .id(UUID.randomUUID())
+                .name(request.getName())
+                .coverImageUrl(originalTrip.getCoverImageUrl())
+                .destination(originalTrip.getDestination())
+                .destinationPlaceId(originalTrip.getDestinationPlaceId())
+                .destinationLat(originalTrip.getDestinationLat())
+                .destinationLng(originalTrip.getDestinationLng())
+                .startDate(request.getStartDate())
+                .endDate(request.getEndDate())
+                .budget(request.getBudget())
+                .currency(request.getCurrency() != null ? request.getCurrency() : "VND")
+                .status(TripStatus.PLANNING)
+                .visibility(TripVisibility.PRIVATE)
+                .shareCode(generateShareCode())
+                .timezone(originalTrip.getTimezone())
+                .ownerId(userId) // Current user becomes owner
+                .description(originalTrip.getDescription())
+                .startingPointName(originalTrip.getStartingPointName())
+                .startingPointAddress(originalTrip.getStartingPointAddress())
+                .startingPointLat(originalTrip.getStartingPointLat())
+                .startingPointLng(originalTrip.getStartingPointLng())
+                .startingPointTime(originalTrip.getStartingPointTime())
+                .shareExpenses(false)
+                .shareNotes(false)
+                .isDeleted(false)
+                .build();
+
+        tripRepository.insert(newTrip);
+        log.info("Cloned trip created: originalTripId={}, newTripId={}, userId={}", tripId, newTrip.getId(), userId);
+
+        // 5. Add user as owner member
+        TripMember owner = TripMember.builder()
+                .id(UUID.randomUUID())
+                .tripId(newTrip.getId())
+                .userId(userId)
+                .role(MemberRole.OWNER)
+                .status(MemberStatus.ACCEPTED)
+                .joinedAt(LocalDateTime.now())
+                .build();
+        tripMemberRepository.insert(owner);
+
+        // 6. Increment copy count of original trip
+        try {
+            tripRepository.incrementCopyCount(tripId);
+        } catch (Exception e) {
+            log.warn("Failed to increment copy count for trip: {}", tripId, e);
+        }
+
+        // 7. Clone activities (without expenses)
+        List<Activity> originalActivities = activityRepository.findByTripId(tripId);
+        for (Activity originalActivity : originalActivities) {
+            Activity newActivity = Activity.builder()
+                    .id(UUID.randomUUID())
+                    .tripId(newTrip.getId())
+                    .dayNumber(originalActivity.getDayNumber())
+                    .placeId(originalActivity.getPlaceId())
+                    .customPlaceId(originalActivity.getCustomPlaceId())
+                    .name(originalActivity.getName())
+                    .address(originalActivity.getAddress())
+                    .lat(originalActivity.getLat())
+                    .lng(originalActivity.getLng())
+                    .startTime(originalActivity.getStartTime())
+                    .endTime(originalActivity.getEndTime())
+                    .estimatedCost(originalActivity.getEstimatedCost())
+                    .costCurrency(originalActivity.getCostCurrency())
+                    .category(originalActivity.getCategory())
+                    .transportMode(originalActivity.getTransportMode())
+                    .rating(originalActivity.getRating())
+                    .photoUrl(originalActivity.getPhotoUrl())
+                    .notes(originalActivity.getNotes())
+                    .description(originalActivity.getDescription())
+                    .status(ActivityStatus.CONFIRMED)
+                    .addedBy(userId)
+                    .isAccommodation(originalActivity.getIsAccommodation())
+                    .isStartingPoint(originalActivity.getIsStartingPoint())
+                    .startingPointDate(originalActivity.getStartingPointDate())
+                    .build();
+
+            activityRepository.insert(newActivity);
+        }
+
+        log.info("Cloned {} activities for trip: {}", originalActivities.size(), newTrip.getId());
+
+        // 8. Return response
+        return mapToTripResponse(newTrip, userId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PublicTripResponse> searchPublicTrips(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm, String destination, int page, int size, UUID excludeUserId) {
+        List<Trip> trips = tripRepository.searchPublicTrips(latitude, longitude, radiusKm, destination, page, size, excludeUserId);
+        
+        return trips.stream()
+                .map(trip -> {
+                    String coverImageUrl = trip.getCoverImageUrl();
+                    if (coverImageUrl == null || coverImageUrl.isEmpty()) {
+                        coverImageUrl = locationImageService.getImageForDestination(trip.getDestination());
+                    }
+                    
+                    // Get owner info
+                    User owner = userRepository.findById(trip.getOwnerId()).orElse(null);
+                    String ownerName = owner != null ? owner.getFullName() : null;
+                    String ownerAvatarUrl = owner != null ? owner.getAvatarUrl() : null;
+                    
+                    return PublicTripResponse.builder()
+                            .id(trip.getId())
+                            .name(trip.getName())
+                            .coverImageUrl(coverImageUrl)
+                            .destination(trip.getDestination())
+                            .lat(trip.getDestinationLat())
+                            .lng(trip.getDestinationLng())
+                            .startDate(trip.getStartDate())
+                            .endDate(trip.getEndDate())
+                            .currency(trip.getCurrency())
+                            .ownerName(ownerName)
+                            .ownerAvatarUrl(ownerAvatarUrl)
+                            .activities(null)
+                            .expenses(null)
+                            .notes(null)
+                            .viewCount(trip.getViewCount())
+                            .copyCount(trip.getCopyCount())
+                            .build();
+                })
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public TripRecentLocationResponse getRecentLocation(UUID userId) {
+        Trip recentTrip = tripRepository.findMostRecentByUserId(userId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "No trips found for user"));
+
+        return TripRecentLocationResponse.builder()
+                .name(recentTrip.getDestination())
+                .lat(recentTrip.getDestinationLat())
+                .lng(recentTrip.getDestinationLng())
+                .build();
+    }
+
+    private void incrementViewCountAsync(UUID tripId) {
+        new Thread(() -> {
+            try {
+                tripRepository.incrementViewCount(tripId);
+            } catch (Exception e) {
+                log.warn("Failed to increment view count for trip: {}", tripId, e);
+            }
+        }).start();
+    }
 }
+

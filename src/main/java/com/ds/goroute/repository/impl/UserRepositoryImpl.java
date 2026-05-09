@@ -32,6 +32,11 @@ public class UserRepositoryImpl implements UserRepository {
     }
     
     @Override
+    public Optional<User> findByEmailIncludingDeleted(String email) {
+        return Optional.ofNullable(userMapper.selectByEmailIncludingDeleted(email));
+    }
+    
+    @Override
     public Optional<User> findByUsername(String username) {
         return Optional.ofNullable(userMapper.selectByUsername(username));
     }

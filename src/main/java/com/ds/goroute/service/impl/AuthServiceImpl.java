@@ -125,6 +125,20 @@ public class AuthServiceImpl implements AuthService {
                         return existing;
                     }
 
+                    // Check if email exists but was soft deleted
+                    var deletedUser = userRepository.findByEmailIncludingDeleted(tokenInfo.getEmail());
+                    if (deletedUser.isPresent()) {
+                        User existing = deletedUser.get();
+                        existing.setProviderId(tokenInfo.getSub());
+                        existing.setProvider(AuthProvider.GOOGLE);
+                        existing.setDeletedAt(null); // Restore user
+                        existing.setFullName(tokenInfo.getName());
+                        existing.setAvatarUrl(tokenInfo.getPicture());
+                        userRepository.update(existing);
+                        log.info("Restored deleted user via Google: {}", tokenInfo.getEmail());
+                        return existing;
+                    }
+
                     // Create new user
                     String username = generateUsername(tokenInfo.getEmail());
                     User newUser = User.builder()
@@ -172,6 +186,29 @@ public class AuthServiceImpl implements AuthService {
         // Find user by Apple ID or create new
         User user = userRepository.findByProviderId(tokenInfo.getSub())
                 .orElseGet(() -> {
+                    // Check if email already exists (link Apple to existing account)
+                    var existingUser = userRepository.findByEmail(tokenInfo.getEmail());
+                    if (existingUser.isPresent()) {
+                        User existing = existingUser.get();
+                        existing.setProviderId(tokenInfo.getSub());
+                        existing.setProvider(AuthProvider.APPLE);
+                        userRepository.update(existing);
+                        log.info("Linked Apple account to existing user: {}", tokenInfo.getEmail());
+                        return existing;
+                    }
+
+                    // Check if email exists but was soft deleted
+                    var deletedUser = userRepository.findByEmailIncludingDeleted(tokenInfo.getEmail());
+                    if (deletedUser.isPresent()) {
+                        User existing = deletedUser.get();
+                        existing.setProviderId(tokenInfo.getSub());
+                        existing.setProvider(AuthProvider.APPLE);
+                        existing.setDeletedAt(null); // Restore user
+                        userRepository.update(existing);
+                        log.info("Restored deleted user via Apple: {}", tokenInfo.getEmail());
+                        return existing;
+                    }
+
                     String username = generateUsername(tokenInfo.getEmail());
                     User newUser = User.builder()
                             .id(UUID.randomUUID())

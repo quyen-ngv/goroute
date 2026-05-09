@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ds.goroute.mapper.ReviewFlagMapper">
+
+    <resultMap id="ReviewFlagResultMap" type="com.ds.goroute.entity.ReviewFlag">
+        <id property="id" column="id"/>
+        <result property="reviewId" column="review_id"/>
+        <result property="flagType" column="flag_type"/>
+        <result property="severity" column="severity"/>
+        <result property="reason" column="reason"/>
+        <result property="metadata" column="metadata"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.ReviewFlag">
+        INSERT INTO review_flags (
+            id, review_id, flag_type, severity, reason, metadata
+        ) VALUES (
+            #{id}, #{reviewId}, #{flagType}::VARCHAR, #{severity}::VARCHAR, #{reason}, #{metadata}::text
+        )
+    </insert>
+
+    <select id="findByReviewId" resultMap="ReviewFlagResultMap">
+        SELECT * FROM review_flags
+        WHERE review_id = #{reviewId}
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="countByReviewId" resultType="int">
+        SELECT COUNT(*) FROM review_flags
+        WHERE review_id = #{reviewId}
+    </select>
+
+</mapper>

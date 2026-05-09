@@ -41,6 +41,7 @@ public class ActivityResponse {
     private BigDecimal rating;
     private String photoUrl;
     private String notes;
+    private String description;
     private String status;
     private Boolean checkedIn;
     private Integer checkedInCount;

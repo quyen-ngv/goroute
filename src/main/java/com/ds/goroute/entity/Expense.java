@@ -27,6 +27,7 @@ public class Expense {
     private String description;
     private UUID paidBy;
     private String paidByGuestName; // Treat as both username and fullName
+    private UUID paidByGuestMemberId; // Reference to trip_members.id for guest payer
     private String receiptUrl;
     private String[] photoUrls;
     private UUID createdBy;

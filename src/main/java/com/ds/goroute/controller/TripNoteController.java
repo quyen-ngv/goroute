@@ -2,6 +2,7 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.CreateTripNoteRequest;
+import com.ds.goroute.dto.request.UpdateTripNoteRequest;
 import com.ds.goroute.dto.response.TripNoteResponse;
 import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.TripNoteService;
@@ -45,6 +46,16 @@ public class TripNoteController extends BaseService {
         TripNoteResponse note = tripNoteService.createTripNote(tripId, request, userId);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ofSucceeded(note));
+    }
+
+    @PutMapping("/{noteId}")
+    public ResponseEntity<BaseResponse<TripNoteResponse>> updateTripNote(
+            @PathVariable UUID tripId,
+            @PathVariable UUID noteId,
+            @Valid @RequestBody UpdateTripNoteRequest request,
+            @RequestAttribute("userId") UUID userId) {
+        TripNoteResponse note = tripNoteService.updateTripNote(tripId, noteId, request, userId);
+        return ResponseEntity.ok(ofSucceeded(note));
     }
 
     @DeleteMapping("/{noteId}")

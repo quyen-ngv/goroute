@@ -1,6 +1,7 @@
 package com.ds.goroute.repository;
 
 import com.ds.goroute.entity.Trip;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -19,4 +20,12 @@ public interface TripRepository {
     void deleteById(UUID id);
     
     Optional<Trip> findByShareCode(String shareCode);
+    
+    List<Trip> searchPublicTrips(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm, String destination, int page, int size, UUID excludeUserId);
+    
+    void incrementViewCount(UUID id);
+    
+    void incrementCopyCount(UUID id);
+    
+    Optional<Trip> findMostRecentByUserId(UUID userId);
 }

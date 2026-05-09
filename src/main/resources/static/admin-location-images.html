@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản lý ảnh địa điểm - GoRoute Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f9fafb; color: #111827; line-height: 1.5; }
+        
+        .header { background: linear-gradient(135deg, #6366f1 0%, #7c3aed 60%, #a855f7 100%); color: white; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .header h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+        .header p { font-size: 14px; opacity: 0.9; }
+        
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+        
+        .toolbar { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+        .btn { padding: 10px 20px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background: #6366f1; color: white; }
+        .btn-primary:hover { background: #4f46e5; }
+        .btn-secondary { background: white; color: #6366f1; border: 1px solid #e5e7eb; }
+        .btn-secondary:hover { background: #f9fafb; }
+        .btn-danger { background: #dc2626; color: white; }
+        .btn-danger:hover { background: #b91c1c; }
+        
+        .card { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; margin-bottom: 16px; }
+        .card-header { padding: 16px 20px; border-bottom: 1px solid #f3f4f6; display: flex; justify-content: space-between; align-items: center; }
+        .card-title { font-size: 16px; font-weight: 600; color: #1f2937; }
+        .card-body { padding: 20px; }
+        
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        thead { background: #f9fafb; }
+        th { padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 700; color: #6b7280; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; }
+        td { padding: 12px 16px; border-bottom: 1px solid #f3f4f6; font-size: 14px; }
+        tr:hover { background: #f9fafb; }
+        
+        .img-preview { width: 80px; height: 60px; object-fit: cover; border-radius: 6px; }
+        .priority-badge { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        .priority-high { background: #fef3c7; color: #f59e0b; }
+        .priority-medium { background: #dbeafe; color: #2563eb; }
+        .priority-low { background: #f3f4f6; color: #6b7280; }
+        
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+        .modal.active { display: flex; }
+        .modal-content { background: white; border-radius: 16px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto; }
+        .modal-header { padding: 20px 24px; border-bottom: 1px solid #e5e7eb; }
+        .modal-title { font-size: 18px; font-weight: 700; color: #1f2937; }
+        .modal-body { padding: 24px; }
+        .modal-footer { padding: 16px 24px; border-top: 1px solid #e5e7eb; display: flex; gap: 12px; justify-content: flex-end; }
+        
+        .form-group { margin-bottom: 20px; }
+        .form-label { display: block; font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 8px; }
+        .form-input { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
+        .form-input:focus { outline: none; border-color: #6366f1; }
+        .form-textarea { min-height: 80px; resize: vertical; }
+        
+        .loading { text-align: center; padding: 60px 20px; color: #6b7280; }
+        .empty { text-align: center; padding: 60px 20px; color: #9ca3af; }
+        .error { background: #fee2e2; color: #dc2626; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; }
+        
+        .action-btns { display: flex; gap: 8px; }
+        .btn-sm { padding: 6px 12px; font-size: 13px; }
+        
+        .upload-area { border: 2px dashed #d1d5db; border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; transition: all 0.2s; }
+        .upload-area:hover { border-color: #6366f1; background: #f9fafb; }
+        .upload-area.dragover { border-color: #6366f1; background: #eef2ff; }
+        
+        .preview-container { margin-top: 16px; }
+        .preview-img { max-width: 100%; height: auto; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🗺️ Quản lý ảnh địa điểm</h1>
+        <p>Thêm và quản lý ảnh banner cho các địa điểm du lịch</p>
+    </div>
+
+    <div class="container">
+        <div class="toolbar">
+            <button class="btn btn-primary" onclick="openCreateModal()">➕ Thêm địa điểm mới</button>
+            <button class="btn btn-secondary" onclick="loadData()">🔄 Làm mới</button>
+        </div>
+
+        <div id="error-message" class="error" style="display: none;"></div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Danh sách địa điểm (<span id="total-count">0</span>)</div>
+            </div>
+            <div class="card-body">
+                <div id="loading" class="loading">Đang tải...</div>
+                <div id="empty" class="empty" style="display: none;">Chưa có địa điểm nào</div>
+                <div id="table-container" class="table-container" style="display: none;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 100px;">Ảnh</th>
+                                <th>Địa chỉ đầy đủ</th>
+                                <th style="width: 100px;">Độ ưu tiên</th>
+                                <th style="width: 150px;">Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create/Edit Modal -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title" id="modal-title">Thêm địa điểm mới</div>
+            </div>
+            <div class="modal-body">
+                <form id="location-form">
+                    <input type="hidden" id="location-id">
+                    
+                    <div class="form-group">
+                        <label class="form-label">Địa chỉ đầy đủ *</label>
+                        <textarea id="full-address" class="form-input form-textarea" placeholder="VD: Bà Nà Hills, Thôn An Sơn, Xã Hòa Ninh, Huyện Hòa Vang, Thành phố Đà Nẵng" required></textarea>
+                        <small style="color: #6b7280; font-size: 12px;">Copy địa chỉ từ Goong API hoặc nhập thủ công</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">URL ảnh *</label>
+                        <input type="url" id="image-url" class="form-input" placeholder="https://..." required>
+                        <small style="color: #6b7280; font-size: 12px;">Hoặc upload ảnh bên dưới</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Upload ảnh</label>
+                        <div class="upload-area" id="upload-area" onclick="document.getElementById('file-input').click()">
+                            <div>📤 Click hoặc kéo thả ảnh vào đây</div>
+                            <small style="color: #6b7280;">JPG, PNG (tối đa 5MB)</small>
+                        </div>
+                        <input type="file" id="file-input" accept="image/*" style="display: none;" onchange="handleFileSelect(event)">
+                        <div id="preview-container" class="preview-container" style="display: none;">
+                            <img id="preview-img" class="preview-img">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Độ ưu tiên *</label>
+                        <input type="number" id="priority" class="form-input" value="50" min="0" max="200" required>
+                        <small style="color: #6b7280; font-size: 12px;">0-49: Thấp | 50-99: Trung bình | 100+: Cao (địa danh nổi tiếng)</small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal()">Hủy</button>
+                <button class="btn btn-primary" onclick="saveLocation()">Lưu</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'https://onestudy.id.vn/api/goroute/v1/api';
+        let locations = [];
+        let isEditMode = false;
+
+        async function loadData() {
+            try {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('empty').style.display = 'none';
+                document.getElementById('table-container').style.display = 'none';
+                document.getElementById('error-message').style.display = 'none';
+
+                const response = await fetch(`${API_BASE_URL}/location-images`);
+                const data = await response.json();
+
+                if (data.meta.code === 200000) {
+                    locations = data.data;
+                    renderTable();
+                } else {
+                    throw new Error(data.meta.message);
+                }
+            } catch (error) {
+                showError('Lỗi tải dữ liệu: ' + error.message);
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        function renderTable() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('total-count').textContent = locations.length;
+
+            if (locations.length === 0) {
+                document.getElementById('empty').style.display = 'block';
+                return;
+            }
+
+            document.getElementById('table-container').style.display = 'block';
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
+
+            locations.forEach(loc => {
+                const priorityClass = loc.priority >= 100 ? 'priority-high' : loc.priority >= 50 ? 'priority-medium' : 'priority-low';
+                const priorityLabel = loc.priority >= 100 ? 'Cao' : loc.priority >= 50 ? 'Trung bình' : 'Thấp';
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><img src="${loc.imageUrl}" class="img-preview" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E'"></td>
+                    <td>${loc.fullAddress}</td>
+                    <td><span class="priority-badge ${priorityClass}">${priorityLabel} (${loc.priority})</span></td>
+                    <td>
+                        <div class="action-btns">
+                            <button class="btn btn-secondary btn-sm" onclick="openEditModal('${loc.id}')">✏️ Sửa</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteLocation('${loc.id}')">🗑️ Xóa</button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function openCreateModal() {
+            isEditMode = false;
+            document.getElementById('modal-title').textContent = 'Thêm địa điểm mới';
+            document.getElementById('location-form').reset();
+            document.getElementById('location-id').value = '';
+            document.getElementById('priority').value = '50';
+            document.getElementById('preview-container').style.display = 'none';
+            document.getElementById('modal').classList.add('active');
+        }
+
+        function openEditModal(id) {
+            isEditMode = true;
+            const location = locations.find(l => l.id === id);
+            if (!location) return;
+
+            document.getElementById('modal-title').textContent = 'Chỉnh sửa địa điểm';
+            document.getElementById('location-id').value = location.id;
+            document.getElementById('full-address').value = location.fullAddress;
+            document.getElementById('image-url').value = location.imageUrl;
+            document.getElementById('priority').value = location.priority;
+            
+            document.getElementById('preview-container').style.display = 'block';
+            document.getElementById('preview-img').src = location.imageUrl;
+            
+            document.getElementById('modal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.remove('active');
+        }
+
+        async function saveLocation() {
+            const fullAddress = document.getElementById('full-address').value.trim();
+            const imageUrl = document.getElementById('image-url').value.trim();
+            const priority = parseInt(document.getElementById('priority').value);
+
+            if (!fullAddress || !imageUrl) {
+                alert('Vui lòng điền đầy đủ thông tin');
+                return;
+            }
+
+            try {
+                const locationId = document.getElementById('location-id').value;
+                const url = isEditMode ? `${API_BASE_URL}/location-images/${locationId}` : `${API_BASE_URL}/location-images`;
+                const method = isEditMode ? 'PUT' : 'POST';
+
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fullAddress, imageUrl, priority })
+                });
+
+                const data = await response.json();
+
+                if (data.meta.code === 200000) {
+                    closeModal();
+                    loadData();
+                } else {
+                    throw new Error(data.meta.message);
+                }
+            } catch (error) {
+                showError('Lỗi lưu dữ liệu: ' + error.message);
+            }
+        }
+
+        async function deleteLocation(id) {
+            if (!confirm('Bạn có chắc muốn xóa địa điểm này?')) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/location-images/${id}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (data.meta.code === 200000) {
+                    loadData();
+                } else {
+                    throw new Error(data.meta.message);
+                }
+            } catch (error) {
+                showError('Lỗi xóa dữ liệu: ' + error.message);
+            }
+        }
+
+        async function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            if (file.size > 5 * 1024 * 1024) {
+                alert('File quá lớn (tối đa 5MB)');
+                return;
+            }
+
+            // Preview
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                document.getElementById('preview-container').style.display = 'block';
+                document.getElementById('preview-img').src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+
+            // Upload
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const response = await fetch(`${API_BASE_URL}/location-images/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.meta.code === 200000) {
+                    document.getElementById('image-url').value = data.data;
+                } else {
+                    throw new Error(data.meta.message);
+                }
+            } catch (error) {
+                showError('Lỗi upload ảnh: ' + error.message);
+            }
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        // Drag & drop
+        const uploadArea = document.getElementById('upload-area');
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file) {
+                document.getElementById('file-input').files = e.dataTransfer.files;
+                handleFileSelect({ target: { files: [file] } });
+            }
+        });
+
+        // Close modal on outside click
+        document.getElementById('modal').addEventListener('click', (e) => {
+            if (e.target.id === 'modal') closeModal();
+        });
+
+        // Load data on page load
+        loadData();
+    </script>
+</body>
+</html>

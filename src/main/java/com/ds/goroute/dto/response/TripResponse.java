@@ -29,5 +29,7 @@ public class TripResponse {
     private String shareCode;
     private Boolean shareExpenses;
     private Boolean shareNotes;
+    private String description;
     private TripStatsResponse stats;
+    private String userRole; // Role of current user in this trip (OWNER, EDITOR, VIEWER)
 }

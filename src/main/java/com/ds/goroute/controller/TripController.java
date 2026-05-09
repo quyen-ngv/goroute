@@ -1,13 +1,12 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.dto.request.CloneTripRequest;
 import com.ds.goroute.dto.request.CreateTripRequest;
 import com.ds.goroute.dto.request.InviteMemberRequest;
 import com.ds.goroute.dto.request.LinkGuestRequest;
+import com.ds.goroute.dto.request.UpdateGuestNameRequest;
 import com.ds.goroute.dto.request.UpdateTripRequest;
-import com.ds.goroute.dto.response.TripDetailResponse;
-import com.ds.goroute.dto.response.TripMemberResponse;
-import com.ds.goroute.dto.response.TripInvitationResponse;
-import com.ds.goroute.dto.response.TripResponse;
+import com.ds.goroute.dto.response.*;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.service.BaseService;
@@ -71,6 +70,13 @@ public class TripController extends BaseService {
         return ResponseEntity.ok(ofSucceeded(null));
     }
 
+    @GetMapping("/invitations/pending")
+    public ResponseEntity<BaseResponse<List<TripInvitationResponse>>> getPendingInvitations(
+            @RequestAttribute("userId") UUID userId) {
+        List<TripInvitationResponse> invitations = tripService.getPendingInvitations(userId);
+        return ResponseEntity.ok(ofSucceeded(invitations));
+    }
+
     @PostMapping("/{tripId}/members")
     public ResponseEntity<BaseResponse<TripMemberResponse>> inviteMember(
             @PathVariable UUID tripId,
@@ -116,13 +122,6 @@ public class TripController extends BaseService {
         return ResponseEntity.ok(ofSucceeded(members));
     }
     
-    @GetMapping("/invitations/pending")
-    public ResponseEntity<BaseResponse<List<TripInvitationResponse>>> getPendingInvitations(
-            @RequestAttribute("userId") UUID userId) {
-        List<TripInvitationResponse> invitations = tripService.getPendingInvitations(userId);
-        return ResponseEntity.ok(ofSucceeded(invitations));
-    }
-    
     @PostMapping("/{tripId}/members/{guestMemberId}/link")
     public ResponseEntity<BaseResponse<Void>> linkGuestToUser(
             @PathVariable UUID tripId,
@@ -131,5 +130,57 @@ public class TripController extends BaseService {
             @RequestAttribute("userId") UUID userId) {
         tripService.linkGuestToUser(tripId, guestMemberId, request, userId);
         return ResponseEntity.ok(ofSucceeded(null));
+    }
+
+    @PutMapping("/{tripId}/members/{guestMemberId}/guest-name")
+    public ResponseEntity<BaseResponse<Void>> updateGuestName(
+            @PathVariable UUID tripId,
+            @PathVariable UUID guestMemberId,
+            @Valid @RequestBody UpdateGuestNameRequest request,
+            @RequestAttribute("userId") UUID userId) {
+        tripService.updateGuestName(tripId, guestMemberId, request.getGuestName(), userId);
+        return ResponseEntity.ok(ofSucceeded(null));
+    }
+
+    @PostMapping("/join-by-code")
+    public ResponseEntity<BaseResponse<TripResponse>> joinTripByCode(
+            @RequestParam String code,
+            @RequestAttribute("userId") UUID userId) {
+        TripResponse trip = tripService.joinTripByCode(code, userId);
+        return ResponseEntity.ok(ofSucceeded(trip));
+    }
+
+    @PostMapping("/{tripId}/members/{memberId}/accept")
+    public ResponseEntity<BaseResponse<Void>> acceptMember(
+            @PathVariable UUID tripId,
+            @PathVariable UUID memberId,
+            @RequestAttribute("userId") UUID userId) {
+        tripService.acceptMember(tripId, memberId, userId);
+        return ResponseEntity.ok(ofSucceeded(null));
+    }
+
+    @PostMapping("/{tripId}/leave")
+    public ResponseEntity<BaseResponse<Void>> leaveTrip(
+            @PathVariable UUID tripId,
+            @RequestAttribute("userId") UUID userId) {
+        tripService.leaveTrip(tripId, userId);
+        return ResponseEntity.ok(ofSucceeded(null));
+    }
+
+    @PostMapping("/{tripId}/clone")
+    public ResponseEntity<BaseResponse<TripResponse>> cloneTrip(
+            @PathVariable UUID tripId,
+            @Valid @RequestBody CloneTripRequest request,
+            @RequestAttribute("userId") UUID userId) {
+        TripResponse clonedTrip = tripService.cloneTrip(tripId, request, userId);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ofSucceeded(clonedTrip));
+    }
+
+    @GetMapping("/recent-location")
+    public ResponseEntity<BaseResponse<TripRecentLocationResponse>> getRecentLocation(
+            @RequestAttribute("userId") UUID userId) {
+        TripRecentLocationResponse location = tripService.getRecentLocation(userId);
+        return ResponseEntity.ok(ofSucceeded(location));
     }
 }

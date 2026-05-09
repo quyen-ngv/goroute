@@ -77,4 +77,17 @@ public class JsonUtils {
         return objectMapper.readValue(objectMapper.writeValueAsString(input),
                 objectMapper.getTypeFactory().constructCollectionType(List.class, clazz));
     }
+    
+    // Add methods for review system
+    public static String toJson(Object obj) {
+        return toJsonString(obj);
+    }
+    
+    public static <T> T fromJson(String json, Class<T> clazz) {
+        return readObject(json, clazz);
+    }
+    
+    public static <T> T fromJson(String json, TypeReference<T> typeReference) {
+        return readObject(json, typeReference);
+    }
 }

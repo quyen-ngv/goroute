@@ -26,6 +26,7 @@ public class UpdateTripRequest {
     private String status;
     private String visibility;
     private String notes;
+    private String description;
     private Boolean shareExpenses;
     private Boolean shareNotes;
     

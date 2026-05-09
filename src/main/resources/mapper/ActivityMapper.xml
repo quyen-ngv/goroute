@@ -20,6 +20,7 @@
         <result column="rating" property="rating" jdbcType="DECIMAL"/>
         <result column="photo_url" property="photoUrl" jdbcType="VARCHAR"/>
         <result column="notes" property="notes" jdbcType="VARCHAR"/>
+        <result column="description" property="description" jdbcType="VARCHAR"/>
         <result column="status" property="status" jdbcType="VARCHAR"/>
         <result column="added_by" property="addedBy" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="is_accommodation" property="isAccommodation" jdbcType="BOOLEAN"/>
@@ -32,7 +33,7 @@
     <insert id="insert" parameterType="com.ds.goroute.entity.Activity">
         INSERT INTO activities (id, trip_id, day_number, place_id, custom_place_id, name, address,
                                lat, lng, start_time, end_time, estimated_cost, cost_currency, category, 
-                               transport_mode, rating, photo_url, notes, status, added_by, 
+                               transport_mode, rating, photo_url, notes, description, status, added_by, 
                                is_accommodation, is_starting_point, starting_point_date, created_at, updated_at)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, 
                 #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
@@ -42,7 +43,7 @@
                 #{endTime,javaType=java.time.LocalTime,jdbcType=TIME}, 
                 #{estimatedCost}, #{costCurrency}, #{category}, 
                 #{transportMode}, 
-                #{rating}, #{photoUrl}, #{notes},
+                #{rating}, #{photoUrl}, #{notes}, #{description},
                 #{status},
                 #{addedBy,javaType=java.util.UUID,jdbcType=OTHER}, 
                 #{isAccommodation}, #{isStartingPoint}, #{startingPointDate},
@@ -83,6 +84,7 @@
             <if test="rating != null">rating = #{rating},</if>
             <if test="photoUrl != null">photo_url = #{photoUrl},</if>
             <if test="notes != null">notes = #{notes},</if>
+            <if test="description != null">description = #{description},</if>
             <if test="status != null">status = #{status},</if>
             <if test="isAccommodation != null">is_accommodation = #{isAccommodation},</if>
             <if test="isStartingPoint != null">is_starting_point = #{isStartingPoint},</if>

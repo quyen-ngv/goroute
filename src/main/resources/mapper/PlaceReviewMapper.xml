@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ds.goroute.mapper.PlaceReviewMapper">
+
+    <resultMap id="PlaceReviewResultMap" type="com.ds.goroute.entity.PlaceReview">
+        <id property="id" column="id"/>
+        <result property="placeId" column="place_id"/>
+        <result property="reviewerName" column="reviewer_name"/>
+        <result property="profilePicture" column="profile_picture"/>
+        <result property="rating" column="rating"/>
+        <result property="description" column="description"/>
+        <result property="reviewDate" column="review_date"/>
+        <result property="images" column="images"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.PlaceReview">
+        INSERT INTO place_reviews (
+            id, place_id, reviewer_name, profile_picture,
+            rating, description, review_date, images, created_at
+        ) VALUES (
+            #{id}, #{placeId}, #{reviewerName}, #{profilePicture},
+            #{rating}, #{description}, #{reviewDate}, #{images}, #{createdAt}
+        )
+    </insert>
+
+    <insert id="insertBatch" parameterType="java.util.List">
+        INSERT INTO place_reviews (
+            id, place_id, reviewer_name, profile_picture,
+            rating, description, review_date, images, created_at
+        ) VALUES
+        <foreach collection="reviews" item="review" separator=",">
+            (
+                #{review.id}, #{review.placeId}, #{review.reviewerName}, #{review.profilePicture},
+                #{review.rating}, #{review.description}, #{review.reviewDate}, #{review.images}, #{review.createdAt}
+            )
+        </foreach>
+    </insert>
+
+    <select id="findByPlaceId" resultMap="PlaceReviewResultMap">
+        SELECT * FROM place_reviews
+        WHERE place_id = #{placeId}
+        ORDER BY review_date DESC, created_at DESC
+    </select>
+
+    <delete id="deleteByPlaceId">
+        DELETE FROM place_reviews WHERE place_id = #{placeId}
+    </delete>
+
+</mapper>

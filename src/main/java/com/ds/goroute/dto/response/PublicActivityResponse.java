@@ -17,6 +17,7 @@ import java.util.UUID;
 public class PublicActivityResponse {
     private UUID id;
     private Integer dayNumber;
+    private UUID placeId; // Backend Place UUID
     private String name;
     private String address;
     private BigDecimal lat;

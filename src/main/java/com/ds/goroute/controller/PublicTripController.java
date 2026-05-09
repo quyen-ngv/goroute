@@ -13,15 +13,20 @@ import org.springframework.util.StreamUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequiredArgsConstructor
 @Slf4j
 public class PublicTripController extends BaseService {
     
     private final TripService tripService;
+
+    public PublicTripController(TripService tripService) {
+        this.tripService = tripService;
+    }
 
     @GetMapping("/v1/api/public/trips/{tripId}")
     public ResponseEntity<BaseResponse<PublicTripResponse>> getPublicTrip(@PathVariable UUID tripId) {
@@ -29,9 +34,22 @@ public class PublicTripController extends BaseService {
         return ResponseEntity.ok(ofSucceeded(trip));
     }
     
+    @GetMapping("/v1/api/public/trips/search")
+    public ResponseEntity<BaseResponse<List<PublicTripResponse>>> searchPublicTrips(
+            @RequestParam BigDecimal latitude,
+            @RequestParam BigDecimal longitude,
+            @RequestParam(defaultValue = "50") BigDecimal radiusKm,
+            @RequestParam(required = false) String destination,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestAttribute(value = "userId", required = false) UUID userId
+    ) {
+        List<PublicTripResponse> trips = tripService.searchPublicTrips(latitude, longitude, radiusKm, destination, page, size, userId);
+        return ResponseEntity.ok(ofSucceeded(trips));
+    }
+    
     @GetMapping(value = "/share/{tripId}", produces = MediaType.TEXT_HTML_VALUE)
     public ResponseEntity<String> getSharePage(@PathVariable String tripId) throws IOException {
-        log.info("Serving share page for trip: {}", tripId);
         ClassPathResource resource = new ClassPathResource("static/share-trip.html");
         String html = StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
         return ResponseEntity.ok(html);

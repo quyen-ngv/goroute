@@ -31,6 +31,7 @@ public class CreateExpenseRequest {
     private UUID activityId;
     private UUID paidBy;
     private String paidByGuestName; // Treat as both username and fullName
+    private UUID paidByGuestMemberId; // Reference to trip_members.id for guest payer
     private List<ExpenseSplitRequest> splits;
     private List<String> photoUrls;
 }

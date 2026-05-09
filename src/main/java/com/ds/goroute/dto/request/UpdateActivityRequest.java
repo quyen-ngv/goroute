@@ -32,6 +32,7 @@ public class UpdateActivityRequest {
     private String category;
     private String transportMode;
     private String notes;
+    private String description;
     private Boolean isAccommodation;
     private Boolean isStartingPoint;
     private LocalDateTime startingPointDate;

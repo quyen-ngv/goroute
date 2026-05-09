@@ -36,3 +36,5 @@ logs/
 docs/
 deployment/
 src/main/resources/application.yaml
+src/main/resources/firebase-credentials.json
+src/main/resources/firebase-credentials.json.example

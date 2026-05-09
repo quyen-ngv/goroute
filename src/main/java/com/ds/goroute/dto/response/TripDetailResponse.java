@@ -30,6 +30,7 @@ public class TripDetailResponse {
     private String visibility;
     private String shareCode;
     private String notes;
+    private String description;
     
     // Starting point
     private String startingPointName;

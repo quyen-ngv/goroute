@@ -12,6 +12,8 @@ public interface UserMapper {
     
     User selectByEmail(@Param("email") String email);
     
+    User selectByEmailIncludingDeleted(@Param("email") String email);
+    
     User selectByUsername(@Param("username") String username);
     
     User selectByProviderId(@Param("providerId") String providerId);

@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ds.goroute.mapper.UserReviewMapper">
+
+    <resultMap id="UserReviewResultMap" type="com.ds.goroute.entity.UserReview">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="placeId" column="place_id"/>
+        <result property="tripId" column="trip_id"/>
+        <result property="overallRating" column="overall_rating"/>
+        <result property="foodRating" column="food_rating"/>
+        <result property="priceRating" column="price_rating"/>
+        <result property="ambianceRating" column="ambiance_rating"/>
+        <result property="serviceRating" column="service_rating"/>
+        <result property="text" column="text"/>
+        <result property="photos" column="photos"/>
+        <result property="weight" column="weight"/>
+        <result property="helpfulVotes" column="helpful_votes"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.UserReview">
+        INSERT INTO user_reviews (
+            id, user_id, place_id, trip_id,
+            overall_rating, food_rating, price_rating, ambiance_rating, service_rating,
+            text, photos, weight, helpful_votes
+        ) VALUES (
+            #{id}, #{userId}, #{placeId}, #{tripId},
+            #{overallRating}, #{foodRating}, #{priceRating}, #{ambianceRating}, #{serviceRating},
+            #{text}, #{photos}::text, #{weight}, #{helpfulVotes}
+        )
+    </insert>
+
+    <update id="update" parameterType="com.ds.goroute.entity.UserReview">
+        UPDATE user_reviews
+        SET overall_rating = #{overallRating},
+            food_rating = #{foodRating},
+            price_rating = #{priceRating},
+            ambiance_rating = #{ambianceRating},
+            service_rating = #{serviceRating},
+            text = #{text},
+            photos = #{photos}::text,
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <select id="findById" resultMap="UserReviewResultMap">
+        SELECT * FROM user_reviews
+        WHERE id = #{id}
+    </select>
+
+    <select id="findByUserAndPlace" resultMap="UserReviewResultMap">
+        SELECT * FROM user_reviews
+        WHERE user_id = #{userId} AND place_id = #{placeId}
+        LIMIT 1
+    </select>
+
+    <select id="findByPlaceId" resultMap="UserReviewResultMap">
+        SELECT * FROM user_reviews
+        WHERE place_id = #{placeId}
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findByUserId" resultMap="UserReviewResultMap">
+        SELECT * FROM user_reviews
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countByPlaceId" resultType="int">
+        SELECT COUNT(*) FROM user_reviews
+        WHERE place_id = #{placeId}
+    </select>
+
+    <select id="countByUserId" resultType="int">
+        SELECT COUNT(*) FROM user_reviews
+        WHERE user_id = #{userId}
+    </select>
+
+    <select id="countByUserInTimeRange" resultType="int">
+        SELECT COUNT(*) FROM user_reviews
+        WHERE user_id = #{userId}
+        AND created_at BETWEEN #{startTime} AND #{endTime}
+    </select>
+
+    <delete id="delete">
+        DELETE FROM user_reviews WHERE id = #{id}
+    </delete>
+
+</mapper>

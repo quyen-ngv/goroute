@@ -40,4 +40,8 @@ public class UpdateExpenseRequest {
     private BigDecimal exchangeRate;
     
     private List<String> photoUrls;
+    
+    private UUID paidById;
+    
+    private UUID paidByGuestMemberId;
 }

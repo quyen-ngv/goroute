@@ -1,7 +1,5 @@
 package com.ds.goroute.constant;
 
-import com.ds.goroute.exception.BusinessError;
-
 public class ErrorConstant {
 
     public static final int FORBIDDEN = 400003;
@@ -47,6 +45,15 @@ public class ErrorConstant {
      * 404
      */
     public static final int NOT_FOUND = 4040001;
+    public static final int PLACE_NOT_FOUND = 4040002;
+    public static final int REVIEW_NOT_FOUND = 4040003;
+    public static final int USER_NOT_FOUND = 4040004;
+    
+    /**
+     * Write the error code prefixed with 409 below
+     * 409
+     */
+    public static final int REVIEW_ALREADY_EXISTS = 4090001;
  
     /**
      * Write the error code prefixed with 500 below

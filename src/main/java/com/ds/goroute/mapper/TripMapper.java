@@ -4,6 +4,7 @@ import com.ds.goroute.entity.Trip;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -22,4 +23,20 @@ public interface TripMapper {
     int deleteById(@Param("id") UUID id);
     
     Trip selectByShareCode(@Param("shareCode") String shareCode);
+    
+    List<Trip> searchPublicTrips(
+        @Param("latitude") BigDecimal latitude,
+        @Param("longitude") BigDecimal longitude,
+        @Param("radiusKm") BigDecimal radiusKm,
+        @Param("destination") String destination,
+        @Param("offset") int offset,
+        @Param("limit") int limit,
+        @Param("excludeUserId") UUID excludeUserId
+    );
+    
+    int incrementViewCount(@Param("id") UUID id);
+    
+    int incrementCopyCount(@Param("id") UUID id);
+    
+    Trip selectMostRecentByUserId(@Param("userId") UUID userId);
 }

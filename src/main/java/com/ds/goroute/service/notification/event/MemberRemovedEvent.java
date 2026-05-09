@@ -14,6 +14,7 @@ public class MemberRemovedEvent extends TripEvent {
     private String removedMemberName;
     private String actorName;
     private String tripName;
+    private String memberName;
     
     @Override
     public String getTitle() {

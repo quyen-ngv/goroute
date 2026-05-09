@@ -217,6 +217,60 @@ public class NotificationHelper {
             log.error("Failed to emit MEMBER_REMOVED: {}", e.getMessage());
         }
     }
+
+    @Async
+    public void emitMemberAccepted(TripMember member, Trip trip, UUID actorId) {
+        try {
+            User actor = userRepository.findById(actorId).orElse(null);
+            String actorName = actor != null ? actor.getUsername() : "Someone";
+            
+            String memberName = member.getUserId() != null 
+                ? userRepository.findById(member.getUserId()).map(User::getUsername).orElse("Someone")
+                : "Someone";
+            
+            MemberAcceptedEvent event = MemberAcceptedEvent.builder()
+                    .tripId(trip.getId())
+                    .actorId(actorId)
+                    .type(NotificationType.MEMBER_ACCEPTED)
+                    .memberName(memberName)
+                    .actorName(actorName)
+                    .tripName(trip.getName())
+                    .metadata(buildMetadata(
+                        trip.getId().toString(),
+                        "/trip/" + trip.getId() + "/members"
+                    ))
+                    .build();
+            
+            notificationDispatcher.dispatch(event);
+        } catch (Exception e) {
+            log.error("Failed to emit MEMBER_ACCEPTED: {}", e.getMessage());
+        }
+    }
+    
+    @Async
+    public void emitMemberLeft(TripMember member, Trip trip, UUID actorId) {
+        try {
+            User actor = userRepository.findById(actorId).orElse(null);
+            String actorName = actor != null ? actor.getUsername() : "Someone";
+            
+            MemberRemovedEvent event = MemberRemovedEvent.builder()
+                    .tripId(trip.getId())
+                    .actorId(actorId)
+                    .type(NotificationType.MEMBER_REMOVED)
+                    .memberName(actorName) // User left themselves
+                    .actorName(actorName)
+                    .tripName(trip.getName())
+                    .metadata(buildMetadata(
+                        trip.getId().toString(),
+                        "/trip/" + trip.getId() + "/members"
+                    ))
+                    .build();
+            
+            notificationDispatcher.dispatch(event);
+        } catch (Exception e) {
+            log.error("Failed to emit MEMBER_LEFT: {}", e.getMessage());
+        }
+    }
     
     @Async
     public void emitGuestLinked(TripMember guestMember, UUID targetUserId, UUID tripId, UUID actorId) {
@@ -252,6 +306,12 @@ public class NotificationHelper {
             User actor = userRepository.findById(actorId).orElse(null);
             String actorName = actor != null ? actor.getUsername() : "Someone";
             
+            Map<String, Object> metadata = buildMetadata(
+                expense.getTripId().toString(),
+                "/trip/" + expense.getTripId() + "/expenses/" + expense.getId()
+            );
+            metadata.put("expenseId", expense.getId());
+            
             ExpenseCreatedEvent event = ExpenseCreatedEvent.builder()
                     .tripId(expense.getTripId())
                     .actorId(actorId)
@@ -262,10 +322,7 @@ public class NotificationHelper {
                     .currency(expense.getCurrency())
                     .actorName(actorName)
                     .tripName(trip.getName())
-                    .metadata(buildMetadata(
-                        expense.getTripId().toString(),
-                        "/trip/" + expense.getTripId() + "/expenses/" + expense.getId()
-                    ))
+                    .metadata(metadata)
                     .build();
             
             notificationDispatcher.dispatch(event);
@@ -283,6 +340,12 @@ public class NotificationHelper {
             User actor = userRepository.findById(actorId).orElse(null);
             String actorName = actor != null ? actor.getUsername() : "Someone";
             
+            Map<String, Object> metadata = buildMetadata(
+                expense.getTripId().toString(),
+                "/trip/" + expense.getTripId() + "/expenses/" + expense.getId()
+            );
+            metadata.put("expenseId", expense.getId());
+            
             ExpenseUpdatedEvent event = ExpenseUpdatedEvent.builder()
                     .tripId(expense.getTripId())
                     .actorId(actorId)
@@ -293,10 +356,7 @@ public class NotificationHelper {
                     .currency(expense.getCurrency())
                     .actorName(actorName)
                     .tripName(trip.getName())
-                    .metadata(buildMetadata(
-                        expense.getTripId().toString(),
-                        "/trip/" + expense.getTripId() + "/expenses/" + expense.getId()
-                    ))
+                    .metadata(metadata)
                     .build();
             
             notificationDispatcher.dispatch(event);
@@ -314,6 +374,9 @@ public class NotificationHelper {
             User actor = userRepository.findById(actorId).orElse(null);
             String actorName = actor != null ? actor.getUsername() : "Someone";
             
+            Map<String, Object> metadata = buildMetadata(expense.getTripId().toString(), "/trip/" + expense.getTripId() + "/expenses");
+            metadata.put("expenseId", expense.getId());
+            
             ExpenseDeletedEvent event = ExpenseDeletedEvent.builder()
                     .tripId(expense.getTripId())
                     .actorId(actorId)
@@ -322,7 +385,7 @@ public class NotificationHelper {
                     .description(expense.getDescription())
                     .actorName(actorName)
                     .tripName(trip.getName())
-                    .metadata(buildMetadata(expense.getTripId().toString(), "/trip/" + expense.getTripId() + "/expenses"))
+                    .metadata(metadata)
                     .build();
             
             notificationDispatcher.dispatch(event);
@@ -377,6 +440,12 @@ public class NotificationHelper {
             User actor = userRepository.findById(actorId).orElse(null);
             String actorName = actor != null ? actor.getUsername() : "Someone";
             
+            Map<String, Object> metadata = buildMetadata(
+                tripId.toString(),
+                "/trip/" + tripId + "/expenses/" + expenseId
+            );
+            metadata.put("expenseId", expenseId);
+            
             PaymentAllMarkedEvent event = PaymentAllMarkedEvent.builder()
                     .tripId(tripId)
                     .actorId(actorId)
@@ -385,10 +454,7 @@ public class NotificationHelper {
                     .expenseDescription(expenseDescription)
                     .actorName(actorName)
                     .isPaid(isPaid)
-                    .metadata(buildMetadata(
-                        tripId.toString(),
-                        "/trip/" + tripId + "/expenses/" + expenseId
-                    ))
+                    .metadata(metadata)
                     .build();
             
             notificationDispatcher.dispatch(event);

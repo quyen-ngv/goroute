@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ds.goroute.mapper.UserReviewProfileMapper">
+
+    <resultMap id="UserReviewProfileResultMap" type="com.ds.goroute.entity.UserReviewProfile">
+        <id property="userId" column="user_id"/>
+        <result property="tier" column="tier"/>
+        <result property="trustScore" column="trust_score"/>
+        <result property="reviewCount" column="review_count"/>
+        <result property="avgReviewLength" column="avg_review_length"/>
+        <result property="helpfulVotesReceived" column="helpful_votes_received"/>
+        <result property="verifiedTripsCount" column="verified_trips_count"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.UserReviewProfile">
+        INSERT INTO user_review_profiles (
+            user_id, tier, trust_score, review_count, avg_review_length,
+            helpful_votes_received, verified_trips_count
+        ) VALUES (
+            #{userId}, #{tier}::VARCHAR, #{trustScore}, #{reviewCount}, #{avgReviewLength},
+            #{helpfulVotesReceived}, #{verifiedTripsCount}
+        )
+    </insert>
+
+    <update id="update" parameterType="com.ds.goroute.entity.UserReviewProfile">
+        UPDATE user_review_profiles
+        SET tier = #{tier}::VARCHAR,
+            trust_score = #{trustScore},
+            review_count = #{reviewCount},
+            avg_review_length = #{avgReviewLength},
+            helpful_votes_received = #{helpfulVotesReceived},
+            verified_trips_count = #{verifiedTripsCount},
+            updated_at = NOW()
+        WHERE user_id = #{userId}
+    </update>
+
+    <select id="findByUserId" resultMap="UserReviewProfileResultMap">
+        SELECT * FROM user_review_profiles
+        WHERE user_id = #{userId}
+    </select>
+
+    <update id="incrementReviewCount">
+        UPDATE user_review_profiles
+        SET review_count = review_count + 1,
+            updated_at = NOW()
+        WHERE user_id = #{userId}
+    </update>
+
+    <update id="decrementReviewCount">
+        UPDATE user_review_profiles
+        SET review_count = GREATEST(review_count - 1, 0),
+            updated_at = NOW()
+        WHERE user_id = #{userId}
+    </update>
+
+</mapper>

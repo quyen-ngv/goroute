@@ -6,6 +6,7 @@ import com.ds.goroute.repository.TripRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -49,5 +50,26 @@ public class TripRepositoryImpl implements TripRepository {
     @Override
     public Optional<Trip> findByShareCode(String shareCode) {
         return Optional.ofNullable(tripMapper.selectByShareCode(shareCode));
+    }
+    
+    @Override
+    public List<Trip> searchPublicTrips(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm, String destination, int page, int size, UUID excludeUserId) {
+        int offset = page * size;
+        return tripMapper.searchPublicTrips(latitude, longitude, radiusKm, destination, offset, size, excludeUserId);
+    }
+    
+    @Override
+    public void incrementViewCount(UUID id) {
+        tripMapper.incrementViewCount(id);
+    }
+    
+    @Override
+    public void incrementCopyCount(UUID id) {
+        tripMapper.incrementCopyCount(id);
+    }
+    
+    @Override
+    public Optional<Trip> findMostRecentByUserId(UUID userId) {
+        return Optional.ofNullable(tripMapper.selectMostRecentByUserId(userId));
     }
 }

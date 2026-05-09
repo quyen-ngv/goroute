@@ -2,6 +2,7 @@ package com.ds.goroute.service.impl;
 
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.CreateTripNoteRequest;
+import com.ds.goroute.dto.request.UpdateTripNoteRequest;
 import com.ds.goroute.dto.response.TripNoteResponse;
 import com.ds.goroute.dto.response.UserResponse;
 import com.ds.goroute.entity.Activity;
@@ -29,10 +30,9 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class TripNoteServiceImpl implements TripNoteService {
-    
+
     private final TripNoteRepository tripNoteRepository;
     private final TripRepository tripRepository;
     private final TripMemberRepository tripMemberRepository;
@@ -40,14 +40,28 @@ public class TripNoteServiceImpl implements TripNoteService {
     private final ActivityRepository activityRepository;
     private final NotificationHelper notificationHelper;
 
+    public TripNoteServiceImpl(TripNoteRepository tripNoteRepository,
+                               TripRepository tripRepository,
+                               TripMemberRepository tripMemberRepository,
+                               UserRepository userRepository,
+                               ActivityRepository activityRepository,
+                               NotificationHelper notificationHelper) {
+        this.tripNoteRepository = tripNoteRepository;
+        this.tripRepository = tripRepository;
+        this.tripMemberRepository = tripMemberRepository;
+        this.userRepository = userRepository;
+        this.activityRepository = activityRepository;
+        this.notificationHelper = notificationHelper;
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<TripNoteResponse> getTripNotes(UUID tripId, UUID userId) {
         // Verify user is member of trip
         verifyTripMember(tripId, userId);
-        
+
         List<TripNote> notes = tripNoteRepository.findByTripId(tripId);
-        
+
         return notes.stream()
                 .map(this::toTripNoteResponse)
                 .collect(Collectors.toList());
@@ -58,9 +72,9 @@ public class TripNoteServiceImpl implements TripNoteService {
     public List<TripNoteResponse> getActivityNotes(UUID tripId, UUID activityId, UUID userId) {
         // Verify user is member of trip
         verifyTripMember(tripId, userId);
-        
+
         List<TripNote> notes = tripNoteRepository.findByActivityId(activityId);
-        
+
         return notes.stream()
                 .map(this::toTripNoteResponse)
                 .collect(Collectors.toList());
@@ -71,14 +85,14 @@ public class TripNoteServiceImpl implements TripNoteService {
     public TripNoteResponse createTripNote(UUID tripId, CreateTripNoteRequest request, UUID userId) {
         // Verify user is member of trip
         verifyTripMember(tripId, userId);
-        
+
         UUID activityId = null;
         // If activityId is provided, verify it belongs to the trip
         if (request.getActivityId() != null && !request.getActivityId().isEmpty()) {
             activityId = UUID.fromString(request.getActivityId());
             verifyActivityBelongsToTrip(activityId, tripId);
         }
-        
+
         TripNote note = TripNote.builder()
                 .id(UUID.randomUUID())
                 .tripId(tripId)
@@ -89,12 +103,12 @@ public class TripNoteServiceImpl implements TripNoteService {
                 .updatedAt(LocalDateTime.now())
                 .isDeleted(false)
                 .build();
-        
+
         tripNoteRepository.insert(note);
         log.info("Trip note created: {} for trip: {}", note.getId(), tripId);
-        
+
         notificationHelper.emitNoteCreated(tripId, activityId, userId);
-        
+
         return toTripNoteResponse(note);
     }
 
@@ -103,45 +117,45 @@ public class TripNoteServiceImpl implements TripNoteService {
     public void deleteTripNote(UUID tripId, UUID noteId, UUID userId) {
         // Verify user is member of trip
         verifyTripMember(tripId, userId);
-        
+
         TripNote note = tripNoteRepository.findById(noteId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Note not found"));
-        
+
         // Only note owner can delete
         if (!note.getUserId().equals(userId)) {
             throw new BusinessException(ErrorConstant.FORBIDDEN, "You can only delete your own notes");
         }
-        
+
         tripNoteRepository.softDelete(noteId);
         log.info("Trip note deleted: {}", noteId);
-        
+
         notificationHelper.emitNoteDeleted(tripId, note.getActivityId(), userId);
     }
-    
+
     private void verifyTripMember(UUID tripId, UUID userId) {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-        
+
         TripMember member = tripMemberRepository.findByTripIdAndUserId(tripId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.FORBIDDEN, "You are not a member of this trip"));
-        
+
         if (member.getStatus() != MemberStatus.ACCEPTED) {
             throw new BusinessException(ErrorConstant.FORBIDDEN, "You are not a member of this trip");
         }
     }
-    
+
     private void verifyActivityBelongsToTrip(UUID activityId, UUID tripId) {
         Activity activity = activityRepository.findById(activityId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity not found"));
-        
+
         if (!activity.getTripId().equals(tripId)) {
             throw new BusinessException(ErrorConstant.BAD_REQUEST, "Activity does not belong to this trip");
         }
     }
-    
+
     private TripNoteResponse toTripNoteResponse(TripNote note) {
         User user = userRepository.findById(note.getUserId()).orElse(null);
-        
+
         return TripNoteResponse.builder()
                 .id(note.getId())
                 .tripId(note.getTripId())
@@ -154,5 +168,28 @@ public class TripNoteServiceImpl implements TripNoteService {
                 .content(note.getContent())
                 .createdAt(note.getCreatedAt())
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public TripNoteResponse updateTripNote(UUID tripId, UUID noteId, UpdateTripNoteRequest request, UUID userId) {
+        // Verify user is member of trip
+        verifyTripMember(tripId, userId);
+
+        TripNote note = tripNoteRepository.findById(noteId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Note not found"));
+
+        // Only note owner can update
+        if (!note.getUserId().equals(userId)) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN, "You can only update your own notes");
+        }
+
+        note.setContent(request.getContent());
+        note.setUpdatedAt(LocalDateTime.now());
+
+        tripNoteRepository.updateById(note);
+        log.info("Trip note updated: {}", noteId);
+
+        return toTripNoteResponse(note);
     }
 }

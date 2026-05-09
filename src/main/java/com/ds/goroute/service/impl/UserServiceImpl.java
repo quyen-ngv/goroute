@@ -8,6 +8,7 @@ import com.ds.goroute.entity.User;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.UserService;
+import com.ds.goroute.service.StorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -22,7 +23,7 @@ import java.util.UUID;
 public class UserServiceImpl implements UserService {
     
     private final UserRepository userRepository;
-    // TODO: Inject StorageService when implementing S3 upload
+    private final StorageService storageService;
 
     @Override
     @Transactional(readOnly = true)
@@ -97,20 +98,39 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public String updateAvatar(UUID userId, MultipartFile file) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
+        try {
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
 
-        // TODO: Implement S3 upload
-        // String avatarUrl = storageService.uploadImage(file, "avatars/" + userId);
-        
-        // For now, return placeholder
-        String avatarUrl = "https://placeholder.com/avatar/" + userId;
-        
-        user.setAvatarUrl(avatarUrl);
-        userRepository.updateById(user);
-        
-        log.info("User avatar updated: {}", userId);
-        return avatarUrl;
+            if (file.isEmpty()) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "File is empty");
+            }
+
+            // Generate unique filename
+            String originalFilename = file.getOriginalFilename();
+            String extension = originalFilename != null && originalFilename.contains(".")
+                    ? originalFilename.substring(originalFilename.lastIndexOf("."))
+                    : "";
+            String fileName = "avatars/" + userId + "/" + UUID.randomUUID() + extension;
+
+            // Upload to S3
+            String avatarUrl = storageService.uploadFile(
+                    fileName,
+                    file.getInputStream(),
+                    file.getContentType(),
+                    file.getSize()
+            );
+            
+            user.setAvatarUrl(avatarUrl);
+            userRepository.updateById(user);
+            
+            log.info("User avatar updated: {} -> {}", userId, avatarUrl);
+            return avatarUrl;
+            
+        } catch (Exception e) {
+            log.error("Failed to update avatar for user: {}", userId, e);
+            throw new BusinessException(ErrorConstant.INTERNAL_SERVER_ERROR, "Failed to upload avatar: " + e.getMessage());
+        }
     }
 
     @Override

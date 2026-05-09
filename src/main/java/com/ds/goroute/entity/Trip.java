@@ -44,6 +44,11 @@ public class Trip {
     private Boolean shareExpenses;
     private Boolean shareNotes;
     
+    private String description;
+    
+    private Integer viewCount;
+    private Integer copyCount;
+    
     private Boolean isDeleted;
     private LocalDateTime deletedAt;
     private LocalDateTime createdAt;

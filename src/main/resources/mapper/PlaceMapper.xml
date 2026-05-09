@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ds.goroute.mapper.PlaceMapper">
+
+    <resultMap id="PlaceResultMap" type="com.ds.goroute.entity.Place">
+        <id property="id" column="id"/>
+        <result property="placeId" column="place_id"/>
+        <result property="cid" column="cid"/>
+        <result property="dataId" column="data_id"/>
+        <result property="inputId" column="input_id"/>
+        <result property="title" column="title"/>
+        <result property="category" column="category"/>
+        <result property="address" column="address"/>
+        <result property="latitude" column="latitude"/>
+        <result property="longitude" column="longitude"/>
+        <result property="plusCode" column="plus_code"/>
+        <result property="timezone" column="timezone"/>
+        <result property="phone" column="phone"/>
+        <result property="website" column="website"/>
+        <result property="googleMapsLink" column="google_maps_link"/>
+        <result property="reviewCount" column="review_count"/>
+        <result property="reviewRating" column="review_rating"/>
+        <result property="reviewsPerRating" column="reviews_per_rating"/>
+        <result property="thumbnail" column="thumbnail"/>
+        <result property="images" column="images"/>
+        <result property="descriptions" column="descriptions"/>
+        <result property="status" column="status"/>
+        <result property="priceRange" column="price_range"/>
+        <result property="openHours" column="open_hours"/>
+        <result property="popularTimes" column="popular_times"/>
+        <result property="reservations" column="reservations"/>
+        <result property="orderOnline" column="order_online"/>
+        <result property="menu" column="menu"/>
+        <result property="completeAddress" column="complete_address"/>
+        <result property="about" column="about"/>
+        <result property="owner" column="owner"/>
+        <result property="emails" column="emails"/>
+        <result property="rawData" column="raw_data"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="distance" column="distance"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.Place">
+        INSERT INTO places (
+            id, place_id, cid, data_id, input_id,
+            title, category, address, latitude, longitude,
+            plus_code, timezone, phone, website, google_maps_link,
+            review_count, review_rating, reviews_per_rating,
+            thumbnail, images, descriptions, status, price_range,
+            open_hours, popular_times, reservations, order_online, menu,
+            complete_address, about, owner, emails, raw_data,
+            created_at, updated_at
+        ) VALUES (
+            #{id}, #{placeId}, #{cid}, #{dataId}, #{inputId},
+            #{title}, #{category}, #{address}, #{latitude}, #{longitude},
+            #{plusCode}, #{timezone}, #{phone}, #{website}, #{googleMapsLink},
+            #{reviewCount}, #{reviewRating}, #{reviewsPerRating},
+            #{thumbnail}, #{images}, #{descriptions}, #{status}, #{priceRange},
+            #{openHours}, #{popularTimes}, #{reservations}, #{orderOnline}, #{menu},
+            #{completeAddress}, #{about}, #{owner}, #{emails}, #{rawData},
+            #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <update id="update" parameterType="com.ds.goroute.entity.Place">
+        UPDATE places SET
+            title = #{title},
+            category = #{category},
+            address = #{address},
+            latitude = #{latitude},
+            longitude = #{longitude},
+            plus_code = #{plusCode},
+            timezone = #{timezone},
+            phone = #{phone},
+            website = #{website},
+            google_maps_link = #{googleMapsLink},
+            review_count = #{reviewCount},
+            review_rating = #{reviewRating},
+            reviews_per_rating = #{reviewsPerRating},
+            thumbnail = #{thumbnail},
+            images = #{images},
+            descriptions = #{descriptions},
+            status = #{status},
+            price_range = #{priceRange},
+            open_hours = #{openHours},
+            popular_times = #{popularTimes},
+            reservations = #{reservations},
+            order_online = #{orderOnline},
+            menu = #{menu},
+            complete_address = #{completeAddress},
+            about = #{about},
+            owner = #{owner},
+            emails = #{emails},
+            raw_data = #{rawData},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <select id="findById" resultMap="PlaceResultMap">
+        SELECT * FROM places WHERE id = #{id}
+    </select>
+
+    <select id="findByPlaceId" resultMap="PlaceResultMap">
+        SELECT * FROM places WHERE place_id = #{placeId}
+    </select>
+
+    <select id="findNearby" resultMap="PlaceResultMap">
+        SELECT *
+        FROM (
+            SELECT *,
+                (6371 * acos(
+                    cos(radians(#{latitude})) * cos(radians(latitude)) *
+                    cos(radians(longitude) - radians(#{longitude})) +
+                    sin(radians(#{latitude})) * sin(radians(latitude))
+                )) AS distance
+            FROM places
+            WHERE 1=1
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    to_tsvector('simple', COALESCE(title, '') || ' ' || COALESCE(address, '') || ' ' || COALESCE(category, '') || ' ' || COALESCE(descriptions, ''))
+                    @@ plainto_tsquery('simple', #{keyword})
+                    OR LOWER(title) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                    OR LOWER(address) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                    OR LOWER(category) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                    OR LOWER(descriptions) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                )
+            </if>
+            <if test="category != null and category != ''">
+                AND category = #{category}
+            </if>
+            <if test="minRating != null">
+                AND review_rating &gt;= #{minRating}
+            </if>
+        ) AS places_with_distance
+        WHERE distance &lt;= #{radius}
+        ORDER BY distance
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <delete id="delete">
+        DELETE FROM places WHERE id = #{id}
+    </delete>
+
+</mapper>

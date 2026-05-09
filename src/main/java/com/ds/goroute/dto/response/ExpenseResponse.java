@@ -22,6 +22,7 @@ public class ExpenseResponse {
     private String description;
     private UUID activityId;
     private UserResponse paidBy;
+    private UUID paidByGuestMemberId; // For guest payer
     private List<ExpenseSplitResponse> splits;
     private List<String> photoUrls;
     private LocalDateTime createdAt;

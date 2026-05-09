@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản lý Places - TripMind Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f9fafb; color: #111827; line-height: 1.5; }
+        
+        .header { background: linear-gradient(135deg, #6366f1 0%, #7c3aed 60%, #a855f7 100%); color: white; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .header h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+        .header p { font-size: 14px; opacity: 0.9; }
+        
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        
+        .toolbar { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+        .btn { padding: 10px 20px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background: #6366f1; color: white; }
+        .btn-primary:hover { background: #4f46e5; }
+        .btn-secondary { background: white; color: #6366f1; border: 1px solid #e5e7eb; }
+        .btn-secondary:hover { background: #f9fafb; }
+        .btn-danger { background: #dc2626; color: white; }
+        .btn-danger:hover { background: #b91c1c; }
+        .btn-success { background: #059669; color: white; }
+        .btn-success:hover { background: #047857; }
+        
+        .card { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; margin-bottom: 16px; }
+        .card-header { padding: 16px 20px; border-bottom: 1px solid #f3f4f6; display: flex; justify-content: space-between; align-items: center; }
+        .card-title { font-size: 16px; font-weight: 600; color: #1f2937; }
+        .card-body { padding: 20px; }
+        
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        thead { background: #f9fafb; }
+        th { padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 700; color: #6b7280; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; }
+        td { padding: 12px 16px; border-bottom: 1px solid #f3f4f6; font-size: 14px; }
+        tr:hover { background: #f9fafb; }
+        
+        .img-preview { width: 80px; height: 60px; object-fit: cover; border-radius: 6px; }
+        .rating-badge { display: inline-block; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; background: #fef3c7; color: #f59e0b; }
+        
+        .image-preview-container { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+        .image-preview-item { position: relative; width: 120px; height: 90px; border-radius: 8px; overflow: hidden; border: 2px solid #e5e7eb; }
+        .image-preview-item img { width: 100%; height: 100%; object-fit: cover; }
+        .image-preview-item.thumbnail { border-color: #6366f1; }
+        .image-preview-label { position: absolute; top: 4px; left: 4px; background: rgba(0,0,0,0.7); color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+        
+        .image-item { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+        .image-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .image-item-preview { width: 80px; height: 60px; border-radius: 6px; overflow: hidden; border: 1px solid #d1d5db; margin-bottom: 8px; }
+        .image-item-preview img { width: 100%; height: 100%; object-fit: cover; }
+        .image-item-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .image-item-input { padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
+        .image-item-actions { display: flex; gap: 6px; }
+        .image-item-actions button { padding: 4px 8px; font-size: 12px; }
+        
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+        #image-viewer-modal { z-index: 2000; background: rgba(0,0,0,0.9); }
+        .modal.active { display: flex; }
+        .modal-content { background: white; border-radius: 16px; max-width: 800px; width: 90%; max-height: 90vh; overflow-y: auto; }
+        .modal-header { padding: 20px 24px; border-bottom: 1px solid #e5e7eb; }
+        .modal-title { font-size: 18px; font-weight: 700; color: #1f2937; }
+        .modal-body { padding: 24px; }
+        .modal-footer { padding: 16px 24px; border-top: 1px solid #e5e7eb; display: flex; gap: 12px; justify-content: flex-end; }
+        
+        .form-group { margin-bottom: 20px; }
+        .form-label { display: block; font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 8px; }
+        .form-input { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
+        .form-input:focus { outline: none; border-color: #6366f1; }
+        .form-textarea { min-height: 120px; resize: vertical; font-family: 'Courier New', monospace; }
+        
+        .loading { text-align: center; padding: 60px 20px; color: #6b7280; }
+        .empty { text-align: center; padding: 60px 20px; color: #9ca3af; }
+        .error { background: #fee2e2; color: #dc2626; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; }
+        .success { background: #d1fae5; color: #059669; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; }
+        
+        .action-btns { display: flex; gap: 8px; }
+        .btn-sm { padding: 6px 12px; font-size: 13px; }
+        
+        .json-preview { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; font-family: 'Courier New', monospace; font-size: 12px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; }
+        
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .stat-number { font-size: 24px; font-weight: 700; color: #1f2937; }
+        .stat-label { font-size: 14px; color: #6b7280; margin-top: 4px; }
+        
+        .search-box { width: 300px; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
+        .search-box:focus { outline: none; border-color: #6366f1; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🗺️ Quản lý Places - TripMind</h1>
+        <p>Import và quản lý dữ liệu địa điểm từ Google Maps</p>
+    </div>
+
+    <div class="container">
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number" id="total-places">0</div>
+                <div class="stat-label">Tổng số places</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="total-reviews">0</div>
+                <div class="stat-label">Tổng số reviews</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="avg-rating">0</div>
+                <div class="stat-label">Rating trung bình</div>
+            </div>
+        </div>
+
+        <div class="toolbar">
+            <button class="btn btn-primary" onclick="openImportModal()">📥 Import Place JSON</button>
+            <button class="btn btn-success" onclick="openBatchImportModal()">📦 Import Batch</button>
+            <button class="btn btn-secondary" onclick="loadData()">🔄 Làm mới</button>
+            <input type="text" class="search-box" id="search-input" placeholder="Tìm kiếm theo tên, địa chỉ..." onkeyup="filterPlaces()">
+        </div>
+
+        <div id="error-message" class="error" style="display: none;"></div>
+        <div id="success-message" class="success" style="display: none;"></div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Danh sách Places (<span id="filtered-count">0</span>/<span id="total-count">0</span>)</div>
+            </div>
+            <div class="card-body">
+                <div id="loading" class="loading">Đang tải...</div>
+                <div id="empty" class="empty" style="display: none;">Chưa có place nào</div>
+                <div id="table-container" class="table-container" style="display: none;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 100px;">Ảnh</th>
+                                <th>Tên địa điểm</th>
+                                <th>Địa chỉ</th>
+                                <th style="width: 100px;">Rating</th>
+                                <th style="width: 100px;">Reviews</th>
+                                <th style="width: 150px;">Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Single Place Modal -->
+    <div id="import-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">Import Place từ JSON</div>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">JSON Data *</label>
+                    <textarea id="json-input" class="form-input form-textarea" placeholder='Paste JSON data từ Google Maps scraper...' required></textarea>
+                    <small style="color: #6b7280; font-size: 12px;">Paste toàn bộ JSON object của 1 place từ Google Maps scraper</small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Preview:</label>
+                    <div id="json-preview" class="json-preview">Chưa có dữ liệu</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeImportModal()">Hủy</button>
+                <button class="btn btn-primary" onclick="importSinglePlace()">Import</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Batch Modal -->
+    <div id="batch-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">Import Batch Places</div>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">JSON Array *</label>
+                    <textarea id="batch-json-input" class="form-input form-textarea" placeholder='Paste JSON array của nhiều places...' required></textarea>
+                    <small style="color: #6b7280; font-size: 12px;">Paste array JSON chứa nhiều places, ví dụ: [{"placeId": "...", "title": "..."}, {...}]</small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Preview:</label>
+                    <div id="batch-preview" class="json-preview">Chưa có dữ liệu</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeBatchModal()">Hủy</button>
+                <button class="btn btn-success" onclick="importBatchPlaces()">Import Batch</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- View Details Modal -->
+    <div id="details-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title" id="details-title">Chi tiết Place</div>
+            </div>
+            <div class="modal-body">
+                <div id="place-details"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeDetailsModal()">Đóng</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Viewer Modal -->
+    <div id="image-viewer-modal" class="modal">
+        <div class="modal-content" style="max-width: 90%; background: transparent; box-shadow: none;">
+            <div style="position: relative; display: flex; align-items: center; justify-content: center;">
+                <img id="viewer-image" src="" style="max-width: 100%; max-height: 90vh; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.3);">
+                <button type="button" onclick="closeImageViewer()" style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); color: white; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center;">✕</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Place Modal -->
+    <div id="edit-modal" class="modal">
+        <div class="modal-content" style="max-width: 1000px;">
+            <div class="modal-header">
+                <div class="modal-title">Chỉnh sửa Place</div>
+            </div>
+            <div class="modal-body">
+                <form id="edit-form">
+                    <input type="hidden" id="edit-place-id">
+                    
+                    <h4 style="margin-bottom: 16px; color: #6366f1;">📍 Thông tin cơ bản</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                        <div class="form-group">
+                            <label class="form-label">Tên địa điểm *</label>
+                            <input type="text" id="edit-title" class="form-input" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Danh mục</label>
+                            <input type="text" id="edit-category" class="form-input">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Địa chỉ</label>
+                        <input type="text" id="edit-address" class="form-input">
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px;">
+                        <div class="form-group">
+                            <label class="form-label">Latitude *</label>
+                            <input type="number" step="any" id="edit-latitude" class="form-input" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Longitude *</label>
+                            <input type="number" step="any" id="edit-longitude" class="form-input" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Plus Code</label>
+                            <input type="text" id="edit-plus-code" class="form-input">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Timezone</label>
+                            <input type="text" id="edit-timezone" class="form-input">
+                        </div>
+                    </div>
+                    
+                    <h4 style="margin: 24px 0 16px; color: #6366f1;">📞 Liên hệ & Web</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+                        <div class="form-group">
+                            <label class="form-label">Điện thoại</label>
+                            <input type="text" id="edit-phone" class="form-input">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Website</label>
+                            <input type="url" id="edit-website" class="form-input">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Google Maps Link</label>
+                            <input type="url" id="edit-google-maps-link" class="form-input">
+                        </div>
+                    </div>
+                    
+                    <h4 style="margin: 24px 0 16px; color: #6366f1;">⭐ Rating & Reviews</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 16px;">
+                        <div class="form-group">
+                            <label class="form-label">Review Count</label>
+                            <input type="number" id="edit-review-count" class="form-input">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Review Rating</label>
+                            <input type="number" step="0.1" id="edit-review-rating" class="form-input">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Reviews Per Rating (JSON)</label>
+                            <input type="text" id="edit-reviews-per-rating" class="form-input" placeholder='{"5": 100, "4": 50, ...}'>
+                        </div>
+                    </div>
+                    
+                    <h4 style="margin: 24px 0 16px; color: #6366f1;">🖼️ Media</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                        <div class="form-group">
+                            <label class="form-label">Thumbnail URL</label>
+                            <input type="url" id="edit-thumbnail" class="form-input" onchange="previewThumbnail()">
+                            <div id="thumbnail-preview" style="margin-top: 8px;"></div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Images Manager</label>
+                            <button type="button" class="btn btn-success btn-sm" onclick="addImageItem()" style="width: 100%; margin-bottom: 8px;">➕ Thêm ảnh</button>
+                        </div>
+                    </div>
+                    
+                    <div id="images-list-container" style="margin-top: 16px;">
+                        <div id="images-list"></div>
+                    </div>
+                    
+                    <h4 style="margin: 24px 0 16px; color: #6366f1;">📝 Chi tiết</h4>
+                    <div class="form-group">
+                        <label class="form-label">Mô tả</label>
+                        <textarea id="edit-descriptions" class="form-input" rows="3"></textarea>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                        <div class="form-group">
+                            <label class="form-label">Status</label>
+                            <input type="text" id="edit-status" class="form-input">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Price Range</label>
+                            <input type="text" id="edit-price-range" class="form-input" placeholder="$$">
+                        </div>
+                    </div>
+                    
+                    <h4 style="margin: 24px 0 16px; color: #6366f1;">🕐 Giờ mở cửa & Booking</h4>
+                    <div class="form-group">
+                        <label class="form-label">Open Hours (JSON)</label>
+                        <textarea id="edit-open-hours" class="form-input form-textarea" rows="3" placeholder='{"Monday": ["9:00 AM - 5:00 PM"], ...}'></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Popular Times (JSON)</label>
+                        <textarea id="edit-popular-times" class="form-input form-textarea" rows="3" placeholder='{"Monday": {"9": 20, "10": 40, ...}, ...}'></textarea>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+                        <div class="form-group">
+                            <label class="form-label">Reservations (JSON)</label>
+                            <input type="text" id="edit-reservations" class="form-input" placeholder='{"link": "..."}'>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Order Online (JSON)</label>
+                            <input type="text" id="edit-order-online" class="form-input" placeholder='{"link": "..."}'>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Menu (JSON)</label>
+                            <input type="text" id="edit-menu" class="form-input" placeholder='{"link": "..."}'>
+                        </div>
+                    </div>
+                    
+                    <h4 style="margin: 24px 0 16px; color: #6366f1;">ℹ️ Thông tin bổ sung</h4>
+                    <div class="form-group">
+                        <label class="form-label">Complete Address (JSON)</label>
+                        <textarea id="edit-complete-address" class="form-input form-textarea" rows="2" placeholder='{"street": "...", "city": "...", ...}'></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">About (JSON Array)</label>
+                        <textarea id="edit-about" class="form-input form-textarea" rows="3" placeholder='[{"title": "...", "options": [...]}, ...]'></textarea>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                        <div class="form-group">
+                            <label class="form-label">Owner (JSON)</label>
+                            <input type="text" id="edit-owner" class="form-input" placeholder='{"name": "...", "link": "..."}'>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Emails (JSON Array)</label>
+                            <input type="text" id="edit-emails" class="form-input" placeholder='["email1@...", "email2@..."]'>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeEditModal()">Hủy</button>
+                <button class="btn btn-primary" onclick="savePlace()">💾 Lưu thay đổi</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'https://onestudy.id.vn/api/goroute/v1/api';
+        let places = [];
+        let filteredPlaces = [];
+
+        async function loadData() {
+            try {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('empty').style.display = 'none';
+                document.getElementById('table-container').style.display = 'none';
+                hideMessages();
+
+                const response = await fetch(`${API_BASE_URL}/places/search?latitude=16&longitude=108&radius=1000&page=0&size=1000`);
+                const data = await response.json();
+
+                if (data.meta && data.meta.code === 200000) {
+                    places = data.data || [];
+                    filteredPlaces = [...places];
+                    renderTable();
+                    updateStats();
+                } else {
+                    throw new Error(data.meta?.message || 'Unknown error');
+                }
+            } catch (error) {
+                showError('Lỗi tải dữ liệu: ' + error.message);
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        function renderTable() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('total-count').textContent = places.length;
+            document.getElementById('filtered-count').textContent = filteredPlaces.length;
+
+            if (filteredPlaces.length === 0) {
+                document.getElementById('empty').style.display = 'block';
+                return;
+            }
+
+            document.getElementById('table-container').style.display = 'block';
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
+
+            filteredPlaces.forEach(place => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><img src="${place.thumbnail || ''}" class="img-preview" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E'"></td>
+                    <td>
+                        <div style="font-weight: 600;">${place.title || 'N/A'}</div>
+                        <div style="font-size: 12px; color: #6b7280;">${place.category || ''}</div>
+                    </td>
+                    <td>${place.address || 'N/A'}</td>
+                    <td><span class="rating-badge">⭐ ${place.reviewRating || 0}</span></td>
+                    <td>${place.reviewCount || 0}</td>
+                    <td>
+                        <div class="action-btns">
+                            <button class="btn btn-secondary btn-sm" onclick="viewDetails('${place.id}')">👁️ Xem</button>
+                            <button class="btn btn-primary btn-sm" onclick="editPlace('${place.id}')">✏️ Sửa</button>
+                            <button class="btn btn-danger btn-sm" onclick="deletePlace('${place.id}')">🗑️ Xóa</button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateStats() {
+            document.getElementById('total-places').textContent = places.length;
+            
+            const totalReviews = places.reduce((sum, place) => sum + (place.reviewCount || 0), 0);
+            document.getElementById('total-reviews').textContent = totalReviews.toLocaleString();
+            
+            const avgRating = places.length > 0 
+                ? (places.reduce((sum, place) => sum + (place.reviewRating || 0), 0) / places.length).toFixed(1)
+                : 0;
+            document.getElementById('avg-rating').textContent = avgRating;
+        }
+
+        function filterPlaces() {
+            const query = document.getElementById('search-input').value.toLowerCase();
+            filteredPlaces = places.filter(place => 
+                (place.title || '').toLowerCase().includes(query) ||
+                (place.address || '').toLowerCase().includes(query) ||
+                (place.category || '').toLowerCase().includes(query)
+            );
+            renderTable();
+        }
+
+        function openImportModal() {
+            document.getElementById('json-input').value = '';
+            document.getElementById('json-preview').textContent = 'Chưa có dữ liệu';
+            document.getElementById('import-modal').classList.add('active');
+        }
+
+        function closeImportModal() {
+            document.getElementById('import-modal').classList.remove('active');
+        }
+
+        function openBatchImportModal() {
+            document.getElementById('batch-json-input').value = '';
+            document.getElementById('batch-preview').textContent = 'Chưa có dữ liệu';
+            document.getElementById('batch-modal').classList.add('active');
+        }
+
+        function closeBatchModal() {
+            document.getElementById('batch-modal').classList.remove('active');
+        }
+
+        async function importSinglePlace() {
+            const jsonText = document.getElementById('json-input').value.trim();
+            if (!jsonText) {
+                alert('Vui lòng nhập JSON data');
+                return;
+            }
+
+            try {
+                const placeData = JSON.parse(jsonText);
+                
+                // Convert to ImportPlaceRequest format
+                const request = convertToImportRequest(placeData);
+
+                const response = await fetch(`${API_BASE_URL}/places/import`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(request)
+                });
+
+                const result = await response.json();
+
+                if (result.meta && result.meta.code === 200000) {
+                    showSuccess('Import thành công!');
+                    closeImportModal();
+                    loadData();
+                } else {
+                    throw new Error(result.meta?.message || 'Import failed');
+                }
+            } catch (error) {
+                showError('Lỗi import: ' + error.message);
+            }
+        }
+
+        async function importBatchPlaces() {
+            const jsonText = document.getElementById('batch-json-input').value.trim();
+            if (!jsonText) {
+                alert('Vui lòng nhập JSON array');
+                return;
+            }
+
+            try {
+                const placesData = JSON.parse(jsonText);
+                if (!Array.isArray(placesData)) {
+                    throw new Error('Dữ liệu phải là array');
+                }
+
+                // Convert to ImportPlaceRequest format
+                const requests = placesData.map(convertToImportRequest);
+
+                const response = await fetch(`${API_BASE_URL}/places/import/batch`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requests)
+                });
+
+                const result = await response.json();
+
+                if (result.meta && result.meta.code === 200000) {
+                    showSuccess(`Import thành công ${requests.length} places!`);
+                    closeBatchModal();
+                    loadData();
+                } else {
+                    throw new Error(result.meta?.message || 'Batch import failed');
+                }
+            } catch (error) {
+                showError('Lỗi batch import: ' + error.message);
+            }
+        }
+
+        function convertToImportRequest(placeData) {
+            return {
+                placeId: placeData.placeId,
+                cid: placeData.cid,
+                dataId: placeData.dataId,
+                title: placeData.title,
+                category: placeData.category,
+                address: placeData.address,
+                latitude: placeData.latitude,
+                longitude: placeData.longitude,
+                plusCode: placeData.plusCode,
+                timezone: placeData.timezone,
+                phone: placeData.phone,
+                website: placeData.website,
+                googleMapsLink: placeData.link,
+                reviewCount: placeData.reviewCount,
+                reviewRating: placeData.reviewRating,
+                reviewsPerRating: typeof placeData.reviewsPerRating === 'string' ? placeData.reviewsPerRating : JSON.stringify(placeData.reviewsPerRating || {}),
+                thumbnail: placeData.thumbnail,
+                images: typeof placeData.images === 'string' ? placeData.images : JSON.stringify(placeData.images || []),
+                descriptions: placeData.descriptions,
+                status: placeData.status,
+                priceRange: placeData.priceRange,
+                openHours: typeof placeData.openHours === 'string' ? placeData.openHours : JSON.stringify(placeData.openHours || {}),
+                popularTimes: typeof placeData.popularTimes === 'string' ? placeData.popularTimes : JSON.stringify(placeData.popularTimes || {}),
+                reservations: typeof placeData.reservations === 'string' ? placeData.reservations : JSON.stringify(placeData.reservations || null),
+                orderOnline: typeof placeData.orderOnline === 'string' ? placeData.orderOnline : JSON.stringify(placeData.orderOnline || null),
+                menu: typeof placeData.menu === 'string' ? placeData.menu : JSON.stringify(placeData.menu || {}),
+                completeAddress: typeof placeData.completeAddress === 'string' ? placeData.completeAddress : JSON.stringify(placeData.completeAddress || {}),
+                about: typeof placeData.about === 'string' ? placeData.about : JSON.stringify(placeData.about || []),
+                owner: typeof placeData.owner === 'string' ? placeData.owner : JSON.stringify(placeData.owner || {}),
+                emails: typeof placeData.emails === 'string' ? placeData.emails : JSON.stringify(placeData.emails || []),
+                rawData: typeof placeData === 'string' ? placeData : JSON.stringify(placeData),
+                userReviews: typeof placeData.userReviews === 'string' ? placeData.userReviews : JSON.stringify(placeData.userReviews || [])
+            };
+        }
+
+        async function viewDetails(placeId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/places/${placeId}`);
+                const result = await response.json();
+
+                if (result.meta && result.meta.code === 200000) {
+                    const place = result.data;
+                    document.getElementById('details-title').textContent = place.title;
+                    
+                    // Render images
+                    let imagesHtml = '';
+                    if (place.thumbnail) {
+                        imagesHtml += `<img src="${place.thumbnail}" style="width: 100%; max-width: 300px; border-radius: 8px; margin-bottom: 12px;" onerror="this.style.display='none'">`;
+                    }
+                    
+                    if (place.images && Array.isArray(place.images) && place.images.length > 0) {
+                        imagesHtml += '<div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">';
+                        place.images.slice(0, 6).forEach(img => {
+                            const url = img.image || img.url || img.imageUrl;
+                            const title = img.title || 'Image';
+                            if (url) {
+                                imagesHtml += `<img src="${url}" title="${title}" style="width: 100px; height: 75px; object-fit: cover; border-radius: 6px; border: 1px solid #e5e7eb; cursor: pointer;" onerror="this.style.display='none'">`;
+                            }
+                        });
+                        if (place.images.length > 6) {
+                            imagesHtml += `<div style="width: 100px; height: 75px; display: flex; align-items: center; justify-content: center; background: #f3f4f6; border-radius: 6px; font-size: 14px; color: #6b7280;">+${place.images.length - 6}</div>`;
+                        }
+                        imagesHtml += '</div>';
+                    }
+                    
+                    document.getElementById('place-details').innerHTML = `
+                        ${imagesHtml}
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                            <div>
+                                <h4>Thông tin cơ bản</h4>
+                                <p><strong>Place ID:</strong> ${place.placeId}</p>
+                                <p><strong>Danh mục:</strong> ${place.category || 'N/A'}</p>
+                                <p><strong>Địa chỉ:</strong> ${place.address || 'N/A'}</p>
+                                <p><strong>Tọa độ:</strong> ${place.latitude}, ${place.longitude}</p>
+                                <p><strong>Điện thoại:</strong> ${place.phone || 'N/A'}</p>
+                                <p><strong>Website:</strong> ${place.website ? `<a href="${place.website}" target="_blank">${place.website}</a>` : 'N/A'}</p>
+                            </div>
+                            <div>
+                                <h4>Đánh giá</h4>
+                                <p><strong>Rating:</strong> ⭐ ${place.reviewRating || 0}</p>
+                                <p><strong>Số reviews:</strong> ${place.reviewCount || 0}</p>
+                                <p><strong>Giá:</strong> ${place.priceRange || 'N/A'}</p>
+                                <p><strong>Status:</strong> ${place.status || 'N/A'}</p>
+                                <p><strong>Mô tả:</strong> ${place.descriptions || 'N/A'}</p>
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('details-modal').classList.add('active');
+                } else {
+                    throw new Error(result.meta?.message || 'Failed to load details');
+                }
+            } catch (error) {
+                showError('Lỗi tải chi tiết: ' + error.message);
+            }
+        }
+
+        function closeDetailsModal() {
+            document.getElementById('details-modal').classList.remove('active');
+        }
+
+        async function editPlace(placeId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/places/${placeId}`);
+                const result = await response.json();
+
+                if (result.meta && result.meta.code === 200000) {
+                    const place = result.data;
+                    
+                    // Helper to safely set value
+                    const setVal = (id, val) => {
+                        const el = document.getElementById(id);
+                        if (el) el.value = val || '';
+                    };
+                    
+                    // Fill form - Basic Info
+                    setVal('edit-place-id', place.id);
+                    setVal('edit-title', place.title);
+                    setVal('edit-category', place.category);
+                    setVal('edit-address', place.address);
+                    setVal('edit-latitude', place.latitude);
+                    setVal('edit-longitude', place.longitude);
+                    setVal('edit-plus-code', place.plusCode);
+                    setVal('edit-timezone', place.timezone);
+                    
+                    // Contact & Web
+                    setVal('edit-phone', place.phone);
+                    setVal('edit-website', place.website);
+                    setVal('edit-google-maps-link', place.googleMapsLink);
+                    
+                    // Rating & Reviews
+                    setVal('edit-review-count', place.reviewCount);
+                    setVal('edit-review-rating', place.reviewRating);
+                    setVal('edit-reviews-per-rating', place.reviewsPerRating ? JSON.stringify(place.reviewsPerRating) : '');
+                    
+                    // Media
+                    setVal('edit-thumbnail', place.thumbnail);
+                    
+                    // Details
+                    setVal('edit-descriptions', place.descriptions);
+                    setVal('edit-status', place.status);
+                    setVal('edit-price-range', place.priceRange);
+                    
+                    // Hours & Booking
+                    setVal('edit-open-hours', place.openHours ? JSON.stringify(place.openHours, null, 2) : '');
+                    setVal('edit-popular-times', place.popularTimes ? JSON.stringify(place.popularTimes, null, 2) : '');
+                    setVal('edit-reservations', place.reservations ? JSON.stringify(place.reservations) : '');
+                    setVal('edit-order-online', place.orderOnline ? JSON.stringify(place.orderOnline) : '');
+                    setVal('edit-menu', place.menu ? JSON.stringify(place.menu) : '');
+                    
+                    // Additional Info
+                    setVal('edit-complete-address', place.completeAddress ? JSON.stringify(place.completeAddress, null, 2) : '');
+                    setVal('edit-about', place.about ? JSON.stringify(place.about, null, 2) : '');
+                    setVal('edit-owner', place.owner ? JSON.stringify(place.owner) : '');
+                    setVal('edit-emails', place.emails ? JSON.stringify(place.emails) : '');
+                    
+                    // Load images list
+                    if (place.images && Array.isArray(place.images)) {
+                        imagesList = place.images.map(img => ({
+                            title: img.title || '',
+                            image: img.image || ''
+                        }));
+                    } else {
+                        imagesList = [];
+                    }
+                    renderImagesList();
+                    
+                    // Trigger preview
+                    previewThumbnail();
+                    
+                    document.getElementById('edit-modal').classList.add('active');
+                } else {
+                    throw new Error(result.meta?.message || 'Failed to load place');
+                }
+            } catch (error) {
+                showError('Lỗi tải dữ liệu: ' + error.message);
+            }
+        }
+
+        function previewThumbnail() {
+            const thumbnailUrl = document.getElementById('edit-thumbnail').value;
+            const previewDiv = document.getElementById('thumbnail-preview');
+            
+            if (thumbnailUrl && thumbnailUrl.trim() !== '') {
+                previewDiv.innerHTML = `
+                    <div class="image-preview-item thumbnail">
+                        <img src="${thumbnailUrl}" onerror="this.parentElement.innerHTML='<div style=\\'display:flex;align-items:center;justify-content:center;height:100%;background:#f3f4f6;color:#9ca3af;font-size:12px;\\'>Invalid URL</div>'">
+                        <div class="image-preview-label">THUMBNAIL</div>
+                    </div>
+                `;
+            } else {
+                previewDiv.innerHTML = '';
+            }
+        }
+
+        // Images list management
+        let imagesList = [];
+
+        function renderImagesList() {
+            const container = document.getElementById('images-list');
+            if (imagesList.length === 0) {
+                container.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 20px;">Chưa có ảnh nào. Nhấn "➕ Thêm ảnh" để bắt đầu</div>';
+                return;
+            }
+
+            let html = '';
+            imagesList.forEach((img, index) => {
+                html += `
+                    <div class="image-item">
+                        <div class="image-item-header">
+                            <span style="font-weight: 600; color: #1f2937;">Ảnh #${index + 1}</span>
+                            <div class="image-item-actions">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="moveImageUp(${index})" ${index === 0 ? 'disabled' : ''}>⬆️</button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="moveImageDown(${index})" ${index === imagesList.length - 1 ? 'disabled' : ''}>⬇️</button>
+                                <button type="button" class="btn btn-danger btn-sm" onclick="removeImage(${index})">🗑️</button>
+                            </div>
+                        </div>
+                        
+                        <div class="image-item-preview" id="preview-${index}" onclick="viewImageFull('${img.image.replace(/'/g, "\\'")}')">
+                            ${img.image ? `<img src="${img.image}" onerror="this.style.display='none'" style="cursor: pointer;">` : '<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#f3f4f6;color:#9ca3af;font-size:12px;">No image</div>'}
+                        </div>
+                        
+                        <div class="image-item-inputs">
+                            <input type="text" class="image-item-input" placeholder="Title" value="${img.title || ''}" onchange="updateImageField(${index}, 'title', this.value)">
+                            <input type="url" class="image-item-input" placeholder="Image URL" value="${img.image || ''}" onchange="updateImageField(${index}, 'image', this.value); updateImagePreview(${index})">
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+
+        function addImageItem() {
+            imagesList.push({ title: '', image: '' });
+            renderImagesList();
+        }
+
+        function removeImage(index) {
+            imagesList.splice(index, 1);
+            renderImagesList();
+        }
+
+        function moveImageUp(index) {
+            if (index > 0) {
+                [imagesList[index], imagesList[index - 1]] = [imagesList[index - 1], imagesList[index]];
+                renderImagesList();
+            }
+        }
+
+        function moveImageDown(index) {
+            if (index < imagesList.length - 1) {
+                [imagesList[index], imagesList[index + 1]] = [imagesList[index + 1], imagesList[index]];
+                renderImagesList();
+            }
+        }
+
+        function updateImageField(index, field, value) {
+            imagesList[index][field] = value;
+        }
+
+        function updateImagePreview(index) {
+            const previewDiv = document.getElementById(`preview-${index}`);
+            if (!previewDiv) return;
+            
+            const imageUrl = imagesList[index].image;
+            if (imageUrl) {
+                previewDiv.innerHTML = `<img src="${imageUrl}" onerror="this.parentElement.innerHTML='<div style=\\'display:flex;align-items:center;justify-content:center;height:100%;background:#f3f4f6;color:#9ca3af;font-size:12px;\\'>Invalid URL</div>'" style="cursor: pointer;">`;
+                previewDiv.onclick = () => viewImageFull(imageUrl);
+            } else {
+                previewDiv.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#f3f4f6;color:#9ca3af;font-size:12px;">No image</div>';
+            }
+        }
+
+        function viewImageFull(imageUrl) {
+            document.getElementById('viewer-image').src = imageUrl;
+            document.getElementById('image-viewer-modal').classList.add('active');
+        }
+
+        function closeImageViewer() {
+            document.getElementById('image-viewer-modal').classList.remove('active');
+        }
+
+        function previewImages() {
+            const imagesJson = document.getElementById('edit-images').value;
+            const previewDiv = document.getElementById('images-preview');
+            
+            if (!imagesJson || imagesJson.trim() === '') {
+                previewDiv.innerHTML = '';
+                return;
+            }
+            
+            try {
+                const images = JSON.parse(imagesJson);
+                if (!Array.isArray(images) || images.length === 0) {
+                    previewDiv.innerHTML = '';
+                    return;
+                }
+                
+                let html = '<div class="image-preview-container">';
+                images.forEach((img, index) => {
+                    // Support both formats: {image: "url"} or {url: "url"} or just "url"
+                    const url = typeof img === 'string' ? img : (img.image || img.url || img.imageUrl);
+                    const title = typeof img === 'object' ? (img.title || `Image ${index + 1}`) : `Image ${index + 1}`;
+                    
+                    if (url) {
+                        html += `
+                            <div class="image-preview-item" title="${title}">
+                                <img src="${url}" onerror="this.parentElement.innerHTML='<div style=\\'display:flex;align-items:center;justify-content:center;height:100%;background:#f3f4f6;color:#9ca3af;font-size:11px;\\'>Invalid</div>'">
+                                <div class="image-preview-label">#${index + 1}</div>
+                            </div>
+                        `;
+                    }
+                });
+                html += '</div>';
+                previewDiv.innerHTML = html;
+            } catch (e) {
+                previewDiv.innerHTML = '<div style="color: #dc2626; font-size: 12px; margin-top: 4px;">⚠️ Invalid JSON format</div>';
+            }
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-modal').classList.remove('active');
+        }
+
+        async function savePlace() {
+            const placeId = document.getElementById('edit-place-id').value;
+            
+            // Helper function to parse JSON or return null
+            const parseJsonOrNull = (value) => {
+                if (!value || value.trim() === '') return null;
+                try {
+                    return typeof value === 'string' ? JSON.stringify(JSON.parse(value)) : value;
+                } catch (e) {
+                    return value; // Return as-is if not valid JSON
+                }
+            };
+            
+            // Helper to safely get value
+            const getVal = (id) => {
+                const el = document.getElementById(id);
+                return el ? el.value : '';
+            };
+            
+            const updateData = {
+                // Basic Info
+                title: getVal('edit-title'),
+                category: getVal('edit-category') || null,
+                address: getVal('edit-address') || null,
+                latitude: parseFloat(getVal('edit-latitude')),
+                longitude: parseFloat(getVal('edit-longitude')),
+                plusCode: getVal('edit-plus-code') || null,
+                timezone: getVal('edit-timezone') || null,
+                
+                // Contact & Web
+                phone: getVal('edit-phone') || null,
+                website: getVal('edit-website') || null,
+                googleMapsLink: getVal('edit-google-maps-link') || null,
+                
+                // Rating & Reviews
+                reviewCount: getVal('edit-review-count') ? 
+                    parseInt(getVal('edit-review-count')) : null,
+                reviewRating: getVal('edit-review-rating') ? 
+                    parseFloat(getVal('edit-review-rating')) : null,
+                reviewsPerRating: parseJsonOrNull(getVal('edit-reviews-per-rating')),
+                
+                // Media
+                thumbnail: getVal('edit-thumbnail') || null,
+                images: imagesList.length > 0 ? JSON.stringify(imagesList) : null,
+                
+                // Details
+                descriptions: getVal('edit-descriptions') || null,
+                status: getVal('edit-status') || null,
+                priceRange: getVal('edit-price-range') || null,
+                
+                // Hours & Booking
+                openHours: parseJsonOrNull(getVal('edit-open-hours')),
+                popularTimes: parseJsonOrNull(getVal('edit-popular-times')),
+                reservations: parseJsonOrNull(getVal('edit-reservations')),
+                orderOnline: parseJsonOrNull(getVal('edit-order-online')),
+                menu: parseJsonOrNull(getVal('edit-menu')),
+                
+                // Additional Info
+                completeAddress: parseJsonOrNull(getVal('edit-complete-address')),
+                about: parseJsonOrNull(getVal('edit-about')),
+                owner: parseJsonOrNull(getVal('edit-owner')),
+                emails: parseJsonOrNull(getVal('edit-emails'))
+            };
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/places/${placeId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updateData)
+                });
+
+                const result = await response.json();
+
+                if (result.meta && result.meta.code === 200000) {
+                    showSuccess('Cập nhật thành công!');
+                    closeEditModal();
+                    loadData();
+                } else {
+                    throw new Error(result.meta?.message || 'Update failed');
+                }
+            } catch (error) {
+                showError('Lỗi cập nhật: ' + error.message);
+            }
+        }
+
+        async function deletePlace(placeId) {
+            if (!confirm('Bạn có chắc muốn xóa place này?')) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/places/${placeId}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+
+                if (result.meta && result.meta.code === 200000) {
+                    showSuccess('Xóa thành công!');
+                    loadData();
+                } else {
+                    throw new Error(result.meta?.message || 'Delete failed');
+                }
+            } catch (error) {
+                showError('Lỗi xóa: ' + error.message);
+            }
+        }
+
+        // JSON preview handlers
+        document.getElementById('json-input').addEventListener('input', function() {
+            try {
+                const data = JSON.parse(this.value);
+                document.getElementById('json-preview').textContent = JSON.stringify(data, null, 2);
+            } catch (e) {
+                document.getElementById('json-preview').textContent = 'JSON không hợp lệ';
+            }
+        });
+
+        document.getElementById('batch-json-input').addEventListener('input', function() {
+            try {
+                const data = JSON.parse(this.value);
+                document.getElementById('batch-preview').textContent = `${Array.isArray(data) ? data.length : 0} places\n\n${JSON.stringify(data, null, 2).substring(0, 500)}...`;
+            } catch (e) {
+                document.getElementById('batch-preview').textContent = 'JSON không hợp lệ';
+            }
+        });
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => errorDiv.style.display = 'none', 5000);
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('success-message');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            setTimeout(() => successDiv.style.display = 'none', 3000);
+        }
+
+        function hideMessages() {
+            document.getElementById('error-message').style.display = 'none';
+            document.getElementById('success-message').style.display = 'none';
+        }
+
+        // Close modals on outside click
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.remove('active');
+                }
+            });
+        });
+
+        // Load data on page load
+        loadData();
+    </script>
+</body>
+</html>
