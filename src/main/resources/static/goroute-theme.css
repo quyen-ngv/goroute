@@ -1,4 +1,4 @@
-/* GoRoute â€” ElevenLabs-inspired theme (html-style skill) */
+/* GoRoute — ElevenLabs-inspired theme (html-style skill) */
 
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&display=swap');
 
@@ -367,7 +367,7 @@ tr:hover td { background: var(--color-powder); }
   white-space: pre-wrap;
 }
 
-/* Modal â€” sticky header/footer, scrollable body only */
+/* Modal — sticky header/footer, scrollable body only */
 .modal {
   display: none;
   position: fixed;
@@ -551,7 +551,7 @@ tr:hover td { background: var(--color-powder); }
 .preview-container { margin-top: 16px; }
 .preview-img { max-width: 100%; height: auto; border-radius: var(--radius-inputs); }
 
-/* â€”â€”â€” Share trip (public) â€”â€”â€” */
+/* ——— Share trip (public) ——— */
 .share-page .container {
   max-width: 1000px;
   margin: 0 auto;

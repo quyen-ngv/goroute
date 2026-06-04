@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quáº£n lÃ½ Activity Bookings - TripMind Admin</title>
+    <title>Quản lý Activity Bookings - TripMind Admin</title>
     <link rel="stylesheet" href="/goroute/goroute-theme.css">
     <style>
         .img-preview {
@@ -20,41 +20,41 @@
 
 <body>
     <div class="page-header">
-        <h1>ðŸŽ« Quáº£n lÃ½ Activity Bookings - TripMind</h1>
-        <p>Import vÃ  quáº£n lÃ½ tour/activity tá»« Klook, Viator</p>
+        <h1>🎫 Quản lý Activity Bookings - TripMind</h1>
+        <p>Import và quản lý tour/activity từ Klook, Viator</p>
     </div>
 
     <div class="container container--wide">
         <div class="stats">
             <div class="stat-card">
                 <div class="stat-number" id="total-bookings">0</div>
-                <div class="stat-label">Tá»•ng sá»‘ activities</div>
+                <div class="stat-label">Tổng số activities</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number" id="avg-rating">0</div>
-                <div class="stat-label">Rating trung bÃ¬nh</div>
+                <div class="stat-label">Rating trung bình</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number" id="total-booked">0</div>
-                <div class="stat-label">Tá»•ng lÆ°á»£t Ä‘áº·t</div>
+                <div class="stat-label">Tổng lượt đặt</div>
             </div>
         </div>
 
         <div class="toolbar">
-            <button class="btn btn-primary" onclick="openImportModal()">ðŸ“¥ Import tá»« Klook JSON</button>
-            <button class="btn btn-success" onclick="triggerReindex()">ðŸ”„ Reindex Lucene</button>
-            <button class="btn btn-secondary" onclick="loadData()">ðŸ”„ LÃ m má»›i</button>
-            <input type="text" class="search-box" id="search-input" placeholder="TÃ¬m kiáº¿m..."
+            <button class="btn btn-primary" onclick="openImportModal()">📥 Import từ Klook JSON</button>
+            <button class="btn btn-success" onclick="triggerReindex()">🔄 Reindex Lucene</button>
+            <button class="btn btn-secondary" onclick="loadData()">🔄 Làm mới</button>
+            <input type="text" class="search-box" id="search-input" placeholder="Tìm kiếm..."
                 onkeyup="searchActivities()">
             <input type="text" class="search-box" id="destination-input" placeholder="Destination: Hue, Da Nang">
-            <button class="btn btn-secondary" onclick="searchByDestination()">ðŸ“ Lá»c destination</button>
+            <button class="btn btn-secondary" onclick="searchByDestination()">📍 Lọc destination</button>
             <input type="number" class="search-box" id="search-lat" placeholder="Lat" step="any" style="width:120px">
             <input type="number" class="search-box" id="search-lng" placeholder="Lng" step="any" style="width:120px">
             <input type="number" class="search-box" id="search-radius-km" placeholder="Radius km" value="50" min="1"
                 step="1" style="width:120px">
-            <button class="btn btn-secondary" onclick="searchByCoordinates()">ðŸŒ Theo tá»a Ä‘á»™</button>
+            <button class="btn btn-secondary" onclick="searchByCoordinates()">🌍 Theo tọa độ</button>
             <input type="text" class="search-box" id="place-id-input" placeholder="Place ID">
-            <button class="btn btn-secondary" onclick="searchActivitiesByPlace()">ðŸ§­ Theo place</button>
+            <button class="btn btn-secondary" onclick="searchActivitiesByPlace()">🧭 Theo place</button>
         </div>
 
         <div id="error-message" class="error" style="display: none;"></div>
@@ -62,22 +62,22 @@
 
         <div class="card">
             <div class="card-header">
-                <div class="card-title">Danh sÃ¡ch Activity Bookings (<span id="total-count">0</span>)</div>
+                <div class="card-title">Danh sách Activity Bookings (<span id="total-count">0</span>)</div>
             </div>
             <div class="card-body">
-                <div id="loading" class="loading">Äang táº£i...</div>
-                <div id="empty" class="empty" style="display: none;">ChÆ°a cÃ³ activity nÃ o</div>
+                <div id="loading" class="loading">Đang tải...</div>
+                <div id="empty" class="empty" style="display: none;">Chưa có activity nào</div>
                 <div id="table-container" class="table-container" style="display: none;">
                     <table>
                         <thead>
                             <tr>
-                                <th style="width: 140px;">áº¢nh</th>
-                                <th>TÃªn Activity</th>
+                                <th style="width: 140px;">Ảnh</th>
+                                <th>Tên Activity</th>
                                 <th style="width: 150px;">Departing From</th>
                                 <th style="width: 100px;">Price</th>
                                 <th style="width: 100px;">Rating</th>
                                 <th style="width: 80px;">Source</th>
-                                <th style="width: 180px;">Thao tÃ¡c</th>
+                                <th style="width: 180px;">Thao tác</th>
                             </tr>
                         </thead>
                         <tbody id="table-body"></tbody>
@@ -91,20 +91,20 @@
     <div id="import-modal" class="modal">
         <div class="modal-content modal-content--lg">
             <div class="modal-header">
-                <div class="modal-title">Import Activity tá»« Klook JSON</div>
+                <div class="modal-title">Import Activity từ Klook JSON</div>
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label class="form-label">JSON Data tá»« Klook Scraper *</label>
+                    <label class="form-label">JSON Data từ Klook Scraper *</label>
                     <textarea id="json-input" class="form-input form-textarea"
-                        placeholder='Paste toÃ n bá»™ JSON object tá»« Klook scraper...' required></textarea>
+                        placeholder='Paste toàn bộ JSON object từ Klook scraper...' required></textarea>
                     <small class="form-help">
                         Format: {"url": "...", "title": "...", "destinationCoordinates": [{"lat": 21.0285, "lng": 105.8542}], "location": {...}, "price": {...}, ...}
                     </small>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeImportModal()">Há»§y</button>
+                <button class="btn btn-secondary" onclick="closeImportModal()">Hủy</button>
                 <button class="btn btn-primary" onclick="importActivity()">Import</button>
             </div>
         </div>
@@ -114,13 +114,13 @@
     <div id="details-modal" class="modal">
         <div class="modal-content modal-content--xl">
             <div class="modal-header">
-                <div class="modal-title" id="details-title">Chi tiáº¿t Activity</div>
+                <div class="modal-title" id="details-title">Chi tiết Activity</div>
             </div>
             <div class="modal-body">
                 <div id="activity-details"></div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeDetailsModal()">ÄÃ³ng</button>
+                <button class="btn btn-secondary" onclick="closeDetailsModal()">Đóng</button>
             </div>
         </div>
     </div>
@@ -129,7 +129,7 @@
     <div id="edit-modal" class="modal">
         <div class="modal-content modal-content--2xl">
             <div class="modal-header">
-                <div class="modal-title">Chá»‰nh sá»­a Activity Booking</div>
+                <div class="modal-title">Chỉnh sửa Activity Booking</div>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="edit-id">
@@ -251,11 +251,11 @@
                             placeholder='[{"title":"...","content":"...","images":["https://..."]}]'></textarea>
                     </div>
                 </div>
-                <small class="form-help">LÆ°u Ã½: CÃ¡c Ã´ JSON pháº£i Ä‘Ãºng format array/object Ä‘á»ƒ cáº­p nháº­t thÃ nh cÃ´ng.</small>
+                <small class="form-help">Lưu ý: Các ô JSON phải đúng format array/object để cập nhật thành công.</small>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeEditModal()">Há»§y</button>
-                <button class="btn btn-primary" onclick="saveActivity()">ðŸ’¾ LÆ°u</button>
+                <button class="btn btn-secondary" onclick="closeEditModal()">Hủy</button>
+                <button class="btn btn-primary" onclick="saveActivity()">💾 Lưu</button>
             </div>
         </div>
     </div>
@@ -288,7 +288,7 @@
                     throw new Error(data.meta?.message || 'Unknown error');
                 }
             } catch (error) {
-                showError('Lá»—i táº£i dá»¯ liá»‡u: ' + error.message);
+                showError('Lỗi tải dữ liệu: ' + error.message);
                 chrome.loadingEl.style.display = 'none';
             }
         }
@@ -333,17 +333,17 @@
                     <td>
                         <div style="font-weight: 600;">${activity.title || 'N/A'}</div>
                         <div style="font-size: 12px; color: #6b7280;">${activity.duration || ''}</div>
-                        <div style="font-size: 12px; color: #f59e0b;">${(activity.destinations || []).join(' â€¢ ')}</div>
+                        <div style="font-size: 12px; color: #f59e0b;">${(activity.destinations || []).join(' • ')}</div>
                     </td>
                     <td>${activity.departingFrom || 'N/A'}</td>
                     <td style="font-weight: 600; color: #059669;">$${activity.priceAmount || 0}</td>
-                    <td><span class="rating-badge">â­ ${activity.rating || 0}</span></td>
+                    <td><span class="rating-badge">⭐ ${activity.rating || 0}</span></td>
                     <td><span class="source-badge">${activity.source || 'N/A'}</span></td>
                     <td>
                         <div class="action-btns">
-                            <button class="btn btn-secondary btn-sm" onclick="viewDetails('${activity.id}')">ðŸ‘ï¸ Xem</button>
-                            <button class="btn btn-primary btn-sm" onclick="editActivity('${activity.id}')">âœï¸ Sá»­a</button>
-                            <button class="btn btn-danger btn-sm" onclick="deleteActivity('${activity.id}')">ðŸ—‘ï¸ XÃ³a</button>
+                            <button class="btn btn-secondary btn-sm" onclick="viewDetails('${activity.id}')">👁️ Xem</button>
+                            <button class="btn btn-primary btn-sm" onclick="editActivity('${activity.id}')">✏️ Sửa</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteActivity('${activity.id}')">🗑️ Xóa</button>
                         </div>
                     </td>
                 `;
@@ -386,7 +386,7 @@
                     updateStats();
                 }
             } catch (error) {
-                showError('Lá»—i tÃ¬m kiáº¿m: ' + error.message);
+                showError('Lỗi tìm kiếm: ' + error.message);
             }
         }
 
@@ -409,7 +409,7 @@
                     throw new Error(data.meta?.message || 'Unknown error');
                 }
             } catch (error) {
-                showError('Lá»—i lá»c destination: ' + error.message);
+                showError('Lỗi lọc destination: ' + error.message);
             }
         }
 
@@ -417,7 +417,7 @@
             const placeId = document.getElementById('place-id-input').value.trim();
             const query = document.getElementById('search-input').value.trim();
             if (!placeId) {
-                showError('Vui lÃ²ng nháº­p placeId');
+                showError('Vui lòng nhập placeId');
                 return;
             }
 
@@ -437,7 +437,7 @@
                     throw new Error(data.meta?.message || 'Unknown error');
                 }
             } catch (error) {
-                showError('Lá»—i tÃ¬m theo place: ' + error.message);
+                showError('Lỗi tìm theo place: ' + error.message);
             }
         }
 
@@ -453,7 +453,7 @@
         async function importActivity() {
             const jsonText = document.getElementById('json-input').value.trim();
             if (!jsonText) {
-                showError('Vui lÃ²ng nháº­p JSON data');
+                showError('Vui lòng nhập JSON data');
                 return;
             }
 
@@ -469,7 +469,7 @@
                 const data = await response.json();
 
                 if (data.meta && data.meta.code === 200000) {
-                    showSuccess('Import thÃ nh cÃ´ng!');
+                    showSuccess('Import thành công!');
                     closeImportModal();
                     if (data.data) {
                         applyActivityMutation(data.data);
@@ -480,7 +480,7 @@
                     throw new Error(data.meta?.message || 'Import failed');
                 }
             } catch (error) {
-                showError('Lá»—i import: ' + error.message);
+                showError('Lỗi import: ' + error.message);
             }
         }
 
@@ -495,7 +495,7 @@
 
                     let html = `
                         <div class="detail-section">
-                            <h4>ðŸ“ ThÃ´ng tin cÆ¡ báº£n</h4>
+                            <h4>📍 Thông tin cơ bản</h4>
                             <div class="detail-grid">
                                 <div class="detail-item">
                                     <div class="detail-label">Departing From</div>
@@ -515,7 +515,7 @@
                                 </div>
                                 <div class="detail-item">
                                     <div class="detail-label">Rating</div>
-                                    <div class="detail-value">â­ ${activity.rating || 0} (${activity.reviewCount || 0} reviews)</div>
+                                    <div class="detail-value">⭐ ${activity.rating || 0} (${activity.reviewCount || 0} reviews)</div>
                                 </div>
                                 <div class="detail-item">
                                     <div class="detail-label">Booked Count</div>
@@ -525,22 +525,22 @@
                         </div>
 
                         <div class="detail-section">
-                            <h4>ðŸ“ Description</h4>
+                            <h4>📝 Description</h4>
                             <p>${activity.description || 'N/A'}</p>
                         </div>
 
                         <div class="detail-section">
-                            <h4>âœ¨ Highlights</h4>
+                            <h4>✨ Highlights</h4>
                             <ul style="padding-left: 20px;">
                                 ${(activity.highlights || []).map(h => `<li>${h}</li>`).join('')}
                             </ul>
                         </div>
 
                         <div class="detail-section">
-                            <h4>ðŸ—ºï¸ Locations</h4>
+                            <h4>🗺️ Locations</h4>
                             <div class="detail-item">
                                 <div class="detail-label">Navigation List</div>
-                                <div class="detail-value">${(activity.navigationList || []).join(' â†’ ')}</div>
+                                <div class="detail-value">${(activity.navigationList || []).join(' → ')}</div>
                             </div>
                             <div class="detail-item" style="margin-top: 8px;">
                                 <div class="detail-label">Destinations</div>
@@ -561,7 +561,7 @@
                         </div>
 
                         <div class="detail-section">
-                            <h4>ðŸ–¼ï¸ Images</h4>
+                            <h4>🖼️ Images</h4>
                             <div class="detail-images">
                                 ${(activity.images || []).map(img => `<img src="${img}" onclick="window.open('${img}', '_blank')">`).join('')}
                             </div>
@@ -572,7 +572,7 @@
                     document.getElementById('details-modal').classList.add('active');
                 }
             } catch (error) {
-                showError('Lá»—i táº£i chi tiáº¿t: ' + error.message);
+                showError('Lỗi tải chi tiết: ' + error.message);
             }
         }
 
@@ -619,7 +619,7 @@
                         document.getElementById('edit-modal').classList.add('active');
                     }
                 })
-                .catch(error => showError('Lá»—i táº£i dá»¯ liá»‡u: ' + error.message));
+                .catch(error => showError('Lỗi tải dữ liệu: ' + error.message));
         }
 
         function closeEditModal() {
@@ -669,7 +669,7 @@
                 const result = await response.json();
 
                 if (result.meta && result.meta.code === 200000) {
-                    showSuccess('Cáº­p nháº­t thÃ nh cÃ´ng!');
+                    showSuccess('Cập nhật thành công!');
                     closeEditModal();
                     if (result.data) {
                         applyActivityMutation(result.data);
@@ -680,12 +680,12 @@
                     throw new Error(result.meta?.message || 'Update failed');
                 }
             } catch (error) {
-                showError('Lá»—i cáº­p nháº­t: ' + error.message);
+                showError('Lỗi cập nhật: ' + error.message);
             }
         }
 
         async function deleteActivity(id) {
-            if (!confirm('Báº¡n cÃ³ cháº¯c muá»‘n xÃ³a activity nÃ y?')) return;
+            if (!confirm('Bạn có chắc muốn xóa activity này?')) return;
 
             try {
                 const response = await fetch(`${API_BASE_URL}/activity-bookings/${id}`, {
@@ -695,21 +695,21 @@
                 const data = await response.json();
 
                 if (data.meta && data.meta.code === 200000) {
-                    showSuccess('XÃ³a thÃ nh cÃ´ng!');
+                    showSuccess('Xóa thành công!');
                     removeActivityFromList(id);
                 } else {
                     throw new Error(data.meta?.message || 'Delete failed');
                 }
             } catch (error) {
-                showError('Lá»—i xÃ³a: ' + error.message);
+                showError('Lỗi xóa: ' + error.message);
             }
         }
 
         async function triggerReindex() {
-            if (!confirm('Báº¡n cÃ³ cháº¯c muá»‘n reindex toÃ n bá»™ dá»¯ liá»‡u?')) return;
+            if (!confirm('Bạn có chắc muốn reindex toàn bộ dữ liệu?')) return;
 
             try {
-                showSuccess('Äang reindex...');
+                showSuccess('Đang reindex...');
                 const response = await fetch(`${API_BASE_URL}/activity-bookings/indexing/trigger`, {
                     method: 'POST'
                 });
@@ -717,12 +717,12 @@
                 const data = await response.json();
 
                 if (data.meta && data.meta.code === 200000) {
-                    showSuccess('Reindex thÃ nh cÃ´ng!');
+                    showSuccess('Reindex thành công!');
                 } else {
                     throw new Error(data.meta?.message || 'Reindex failed');
                 }
             } catch (error) {
-                showError('Lá»—i reindex: ' + error.message);
+                showError('Lỗi reindex: ' + error.message);
             }
         }
 
@@ -752,10 +752,10 @@
             try {
                 value = JSON.parse(raw);
             } catch (error) {
-                throw new Error(`Field ${fieldId} khÃ´ng Ä‘Ãºng JSON`);
+                throw new Error(`Field ${fieldId} không đúng JSON`);
             }
             if (!Array.isArray(value)) {
-                throw new Error(`Field ${fieldId} pháº£i lÃ  JSON array`);
+                throw new Error(`Field ${fieldId} phải là JSON array`);
             }
             return value;
         }
@@ -765,7 +765,7 @@
             if (!raw) return null;
             const value = Number(raw);
             if (!Number.isFinite(value)) {
-                throw new Error(`Field ${fieldId} pháº£i lÃ  sá»‘ há»£p lá»‡`);
+                throw new Error(`Field ${fieldId} phải là số hợp lệ`);
             }
             return value;
         }
@@ -775,7 +775,7 @@
             if (!raw) return null;
             const value = parseInt(raw, 10);
             if (!Number.isInteger(value)) {
-                throw new Error(`Field ${fieldId} pháº£i lÃ  sá»‘ nguyÃªn há»£p lá»‡`);
+                throw new Error(`Field ${fieldId} phải là số nguyên hợp lệ`);
             }
             return value;
         }
@@ -791,7 +791,7 @@
         async function searchByCoordinates() {
             const geoParams = buildGeoQueryParams();
             if (!geoParams) {
-                showError('Vui lÃ²ng nháº­p latitude vÃ  longitude');
+                showError('Vui lòng nhập latitude và longitude');
                 return;
             }
             const query = document.getElementById('search-input').value.trim();
@@ -808,7 +808,7 @@
                     throw new Error(data.meta?.message || 'Unknown error');
                 }
             } catch (error) {
-                showError('Lá»—i tÃ¬m theo tá»a Ä‘á»™: ' + error.message);
+                showError('Lỗi tìm theo tọa độ: ' + error.message);
             }
         }
 

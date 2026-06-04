@@ -4,39 +4,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quáº£n lÃ½ áº£nh Ä‘á»‹a Ä‘iá»ƒm - GoRoute Admin</title>
+    <title>Quản lý ảnh địa điểm - GoRoute Admin</title>
     <link rel="stylesheet" href="/goroute/goroute-theme.css">
 </head>
 
 <body>
     <div class="page-header">
-        <h1>ðŸ—ºï¸ Quáº£n lÃ½ áº£nh Ä‘á»‹a Ä‘iá»ƒm</h1>
-        <p>ThÃªm vÃ  quáº£n lÃ½ áº£nh banner cho cÃ¡c Ä‘á»‹a Ä‘iá»ƒm du lá»‹ch</p>
+        <h1>🗺️ Quản lý ảnh địa điểm</h1>
+        <p>Thêm và quản lý ảnh banner cho các địa điểm du lịch</p>
     </div>
 
     <div class="container">
         <div class="toolbar">
-            <button class="btn btn-primary" onclick="openCreateModal()">âž• ThÃªm Ä‘á»‹a Ä‘iá»ƒm má»›i</button>
-            <button class="btn btn-secondary" onclick="loadData()">ðŸ”„ LÃ m má»›i</button>
+            <button class="btn btn-primary" onclick="openCreateModal()">➕ Thêm địa điểm mới</button>
+            <button class="btn btn-secondary" onclick="loadData()">🔄 Làm mới</button>
         </div>
 
         <div id="error-message" class="error" style="display: none;"></div>
 
         <div class="card">
             <div class="card-header">
-                <div class="card-title">Danh sÃ¡ch Ä‘á»‹a Ä‘iá»ƒm (<span id="total-count">0</span>)</div>
+                <div class="card-title">Danh sách địa điểm (<span id="total-count">0</span>)</div>
             </div>
             <div class="card-body">
-                <div id="loading" class="loading">Äang táº£i...</div>
-                <div id="empty" class="empty" style="display: none;">ChÆ°a cÃ³ Ä‘á»‹a Ä‘iá»ƒm nÃ o</div>
+                <div id="loading" class="loading">Đang tải...</div>
+                <div id="empty" class="empty" style="display: none;">Chưa có địa điểm nào</div>
                 <div id="table-container" class="table-container" style="display: none;">
                     <table>
                         <thead>
                             <tr>
-                                <th style="width: 100px;">áº¢nh</th>
-                                <th>Äá»‹a chá»‰ Ä‘áº§y Ä‘á»§</th>
-                                <th style="width: 100px;">Äá»™ Æ°u tiÃªn</th>
-                                <th style="width: 150px;">Thao tÃ¡c</th>
+                                <th style="width: 100px;">Ảnh</th>
+                                <th>Địa chỉ đầy đủ</th>
+                                <th style="width: 100px;">Độ ưu tiên</th>
+                                <th style="width: 150px;">Thao tác</th>
                             </tr>
                         </thead>
                         <tbody id="table-body"></tbody>
@@ -50,32 +50,32 @@
     <div id="modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <div class="modal-title" id="modal-title">ThÃªm Ä‘á»‹a Ä‘iá»ƒm má»›i</div>
+                <div class="modal-title" id="modal-title">Thêm địa điểm mới</div>
             </div>
             <div class="modal-body">
                 <form id="location-form">
                     <input type="hidden" id="location-id">
 
                     <div class="form-group">
-                        <label class="form-label">Äá»‹a chá»‰ Ä‘áº§y Ä‘á»§ *</label>
+                        <label class="form-label">Địa chỉ đầy đủ *</label>
                         <textarea id="full-address" class="form-input form-textarea"
-                            placeholder="VD: BÃ  NÃ  Hills, ThÃ´n An SÆ¡n, XÃ£ HÃ²a Ninh, Huyá»‡n HÃ²a Vang, ThÃ nh phá»‘ ÄÃ  Náºµng"
+                            placeholder="VD: Bà Nà Hills, Thôn An Sơn, Xã Hòa Ninh, Huyện Hòa Vang, Thành phố Đà Nẵng"
                             required></textarea>
-                        <small class="form-help">Copy Ä‘á»‹a chá»‰ tá»« Goong API hoáº·c nháº­p thá»§ cÃ´ng</small>
+                        <small class="form-help">Copy địa chỉ từ Goong API hoặc nhập thủ công</small>
                     </div>
 
                     <div class="form-group">
-                        <label class="form-label">URL áº£nh *</label>
+                        <label class="form-label">URL ảnh *</label>
                         <input type="url" id="image-url" class="form-input" placeholder="https://..." required>
-                        <small class="form-help">Hoáº·c upload áº£nh bÃªn dÆ°á»›i</small>
+                        <small class="form-help">Hoặc upload ảnh bên dưới</small>
                     </div>
 
                     <div class="form-group">
-                        <label class="form-label">Upload áº£nh</label>
+                        <label class="form-label">Upload ảnh</label>
                         <div class="upload-area" id="upload-area"
                             onclick="document.getElementById('file-input').click()">
-                            <div>ðŸ“¤ Click hoáº·c kÃ©o tháº£ áº£nh vÃ o Ä‘Ã¢y</div>
-                            <small class="form-help">JPG, PNG (tá»‘i Ä‘a 5MB)</small>
+                            <div>📤 Click hoặc kéo thả ảnh vào đây</div>
+                            <small class="form-help">JPG, PNG (tối đa 5MB)</small>
                         </div>
                         <input type="file" id="file-input" accept="image/*" style="display: none;"
                             onchange="handleFileSelect(event)">
@@ -85,15 +85,15 @@
                     </div>
 
                     <div class="form-group">
-                        <label class="form-label">Äá»™ Æ°u tiÃªn *</label>
+                        <label class="form-label">Độ ưu tiên *</label>
                         <input type="number" id="priority" class="form-input" value="50" min="0" max="200" required>
-                        <small class="form-help">0-49: Tháº¥p | 50-99: Trung bÃ¬nh | 100+: Cao (Ä‘á»‹a danh ná»•i tiáº¿ng)</small>
+                        <small class="form-help">0-49: Thấp | 50-99: Trung bình | 100+: Cao (địa danh nổi tiếng)</small>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal()">Há»§y</button>
-                <button class="btn btn-primary" onclick="saveLocation()">LÆ°u</button>
+                <button class="btn btn-secondary" onclick="closeModal()">Hủy</button>
+                <button class="btn btn-primary" onclick="saveLocation()">Lưu</button>
             </div>
         </div>
     </div>
@@ -128,7 +128,7 @@
                     throw new Error(data.meta.message);
                 }
             } catch (error) {
-                showError('Lá»—i táº£i dá»¯ liá»‡u: ' + error.message);
+                showError('Lỗi tải dữ liệu: ' + error.message);
                 chrome.loadingEl.style.display = 'none';
             }
         }
@@ -158,7 +158,7 @@
 
             locations.forEach(loc => {
                 const priorityClass = loc.priority >= 100 ? 'priority-high' : loc.priority >= 50 ? 'priority-medium' : 'priority-low';
-                const priorityLabel = loc.priority >= 100 ? 'Cao' : loc.priority >= 50 ? 'Trung bÃ¬nh' : 'Tháº¥p';
+                const priorityLabel = loc.priority >= 100 ? 'Cao' : loc.priority >= 50 ? 'Trung bình' : 'Thấp';
 
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -167,8 +167,8 @@
                     <td><span class="priority-badge ${priorityClass}">${priorityLabel} (${loc.priority})</span></td>
                     <td>
                         <div class="action-btns">
-                            <button class="btn btn-secondary btn-sm" onclick="openEditModal('${loc.id}')">âœï¸ Sá»­a</button>
-                            <button class="btn btn-danger btn-sm" onclick="deleteLocation('${loc.id}')">ðŸ—‘ï¸ XÃ³a</button>
+                            <button class="btn btn-secondary btn-sm" onclick="openEditModal('${loc.id}')">✏️ Sửa</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteLocation('${loc.id}')">🗑️ Xóa</button>
                         </div>
                     </td>
                 `;
@@ -178,7 +178,7 @@
 
         function openCreateModal() {
             isEditMode = false;
-            document.getElementById('modal-title').textContent = 'ThÃªm Ä‘á»‹a Ä‘iá»ƒm má»›i';
+            document.getElementById('modal-title').textContent = 'Thêm địa điểm mới';
             document.getElementById('location-form').reset();
             document.getElementById('location-id').value = '';
             document.getElementById('priority').value = '50';
@@ -191,7 +191,7 @@
             const location = locations.find(l => l.id === id);
             if (!location) return;
 
-            document.getElementById('modal-title').textContent = 'Chá»‰nh sá»­a Ä‘á»‹a Ä‘iá»ƒm';
+            document.getElementById('modal-title').textContent = 'Chỉnh sửa địa điểm';
             document.getElementById('location-id').value = location.id;
             document.getElementById('full-address').value = location.fullAddress;
             document.getElementById('image-url').value = location.imageUrl;
@@ -213,7 +213,7 @@
             const priority = parseInt(document.getElementById('priority').value);
 
             if (!fullAddress || !imageUrl) {
-                alert('Vui lÃ²ng Ä‘iá»n Ä‘áº§y Ä‘á»§ thÃ´ng tin');
+                alert('Vui lòng điền đầy đủ thông tin');
                 return;
             }
 
@@ -241,12 +241,12 @@
                     throw new Error(data.meta.message);
                 }
             } catch (error) {
-                showError('Lá»—i lÆ°u dá»¯ liá»‡u: ' + error.message);
+                showError('Lỗi lưu dữ liệu: ' + error.message);
             }
         }
 
         async function deleteLocation(id) {
-            if (!confirm('Báº¡n cÃ³ cháº¯c muá»‘n xÃ³a Ä‘á»‹a Ä‘iá»ƒm nÃ y?')) return;
+            if (!confirm('Bạn có chắc muốn xóa địa điểm này?')) return;
 
             try {
                 const response = await fetch(`${API_BASE_URL}/location-images/${id}`, {
@@ -261,7 +261,7 @@
                     throw new Error(data.meta.message);
                 }
             } catch (error) {
-                showError('Lá»—i xÃ³a dá»¯ liá»‡u: ' + error.message);
+                showError('Lỗi xóa dữ liệu: ' + error.message);
             }
         }
 
@@ -270,7 +270,7 @@
             if (!file) return;
 
             if (file.size > 5 * 1024 * 1024) {
-                alert('File quÃ¡ lá»›n (tá»‘i Ä‘a 5MB)');
+                alert('File quá lớn (tối đa 5MB)');
                 return;
             }
 
@@ -300,7 +300,7 @@
                     throw new Error(data.meta.message);
                 }
             } catch (error) {
-                showError('Lá»—i upload áº£nh: ' + error.message);
+                showError('Lỗi upload ảnh: ' + error.message);
             }
         }
 

@@ -1,5 +1,5 @@
 /**
- * Shared admin list helpers â€” avoid full-page loading flicker on mutations.
+ * Shared admin list helpers — avoid full-page loading flicker on mutations.
  */
 (function (global) {
   function upsertById(list, item, idKey = 'id') {

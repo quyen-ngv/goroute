@@ -51,7 +51,7 @@
 
         function formatMoney(amount, currency) {
             if (currency === 'VND') {
-                return new Intl.NumberFormat('vi-VN').format(amount) + 'Ä‘';
+                return new Intl.NumberFormat('vi-VN').format(amount) + 'đ';
             }
             return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
         }
@@ -100,21 +100,21 @@
         function getCategoryIcon(category) {
             const cat = (category || '').toUpperCase();
             const icons = {
-                'DEPARTURE': 'âœˆï¸', 'FOOD': 'ðŸ½ï¸', 'ACCOMMODATION': 'ðŸ¨', 'HOTEL': 'ðŸ¨',
-                'TRANSPORTATION': 'ðŸš—', 'TRANSPORT': 'ðŸš—', 'ACTIVITY': 'âš“',
-                'SIGHTSEEING': 'ðŸ“·', 'ATTRACTION': 'ðŸ“·', 'SHOPPING': 'ðŸ›ï¸', 'OTHER': 'ðŸ“Œ'
+                'DEPARTURE': '✈️', 'FOOD': '🍽️', 'ACCOMMODATION': '🏨', 'HOTEL': '🏨',
+                'TRANSPORTATION': '🚗', 'TRANSPORT': '🚗', 'ACTIVITY': '⚓',
+                'SIGHTSEEING': '📷', 'ATTRACTION': '📷', 'SHOPPING': '🛍️', 'OTHER': '📌'
             };
-            return icons[cat] || 'ðŸ“Œ';
+            return icons[cat] || '📌';
         }
 
         function getCategoryLabel(category) {
             const cat = (category || '').toUpperCase();
             const labels = {
-                'DEPARTURE': 'Bay', 'FOOD': 'Ä‚n uá»‘ng', 'ACCOMMODATION': 'LÆ°u trÃº', 'HOTEL': 'LÆ°u trÃº',
-                'TRANSPORTATION': 'Di chuyá»ƒn', 'TRANSPORT': 'Di chuyá»ƒn', 'ACTIVITY': 'Hoáº¡t Ä‘á»™ng',
-                'SIGHTSEEING': 'Äá»‹a Ä‘iá»ƒm', 'ATTRACTION': 'Äá»‹a Ä‘iá»ƒm', 'SHOPPING': 'Mua sáº¯m', 'OTHER': 'KhÃ¡c'
+                'DEPARTURE': 'Bay', 'FOOD': 'Ăn uống', 'ACCOMMODATION': 'Lưu trú', 'HOTEL': 'Lưu trú',
+                'TRANSPORTATION': 'Di chuyển', 'TRANSPORT': 'Di chuyển', 'ACTIVITY': 'Hoạt động',
+                'SIGHTSEEING': 'Địa điểm', 'ATTRACTION': 'Địa điểm', 'SHOPPING': 'Mua sắm', 'OTHER': 'Khác'
             };
-            return labels[cat] || 'KhÃ¡c';
+            return labels[cat] || 'Khác';
         }
 
         function totalExpenses(expenses) {
@@ -132,19 +132,19 @@
                 <div class="header">
                     <h1>${trip.name}</h1>
                     <div class="info">
-                        ${trip.destination ? `<div>ðŸ“ ${trip.destination}</div>` : ''}
-                        <div>ðŸ“… ${formatDate(trip.startDate)} â€“ ${formatDate(trip.endDate)}</div>
+                        ${trip.destination ? `<div>📍 ${trip.destination}</div>` : ''}
+                        <div>📅 ${formatDate(trip.startDate)} – ${formatDate(trip.endDate)}</div>
                     </div>
                     <div class="stats">
-                        <span class="stat-pill">${Math.ceil((new Date(trip.endDate) - new Date(trip.startDate)) / (1000 * 60 * 60 * 24)) + 1} ngÃ y</span>
-                        <span class="stat-pill">${trip.activities.length} hoáº¡t Ä‘á»™ng</span>
-                        <span class="stat-pill">Tá»•ng ${formatMoney(grandTotal, trip.currency)}</span>
+                        <span class="stat-pill">${Math.ceil((new Date(trip.endDate) - new Date(trip.startDate)) / (1000 * 60 * 60 * 24)) + 1} ngày</span>
+                        <span class="stat-pill">${trip.activities.length} hoạt động</span>
+                        <span class="stat-pill">Tổng ${formatMoney(grandTotal, trip.currency)}</span>
                     </div>
                 </div>
                 <div class="content">
                     <div class="section-title">
-                        <span style="font-size: 16px;">ðŸ—ºï¸</span>
-                        <span class="section-title-text">Lá»‹ch trÃ¬nh</span>
+                        <span style="font-size: 16px;">🗺️</span>
+                        <span class="section-title-text">Lịch trình</span>
                     </div>
             `;
 
@@ -163,12 +163,12 @@
                     <table>
                         <thead>
                             <tr>
-                                <th style="width: 56px;">NgÃ y</th>
-                                <th style="width: 60px;">Giá»</th>
-                                <th>Hoáº¡t Ä‘á»™ng</th>
-                                <th style="width: 155px;">Äá»‹a Ä‘iá»ƒm</th>
-                                <th style="width: 100px;">Loáº¡i</th>
-                                <th style="width: 80px;">Chi phÃ­</th>
+                                <th style="width: 56px;">Ngày</th>
+                                <th style="width: 60px;">Giờ</th>
+                                <th>Hoạt động</th>
+                                <th style="width: 155px;">Địa điểm</th>
+                                <th style="width: 100px;">Loại</th>
+                                <th style="width: 80px;">Chi phí</th>
                                 <th style="width: 24px;"></th>
                             </tr>
                         </thead>
@@ -193,12 +193,12 @@
                     html += `
                         <tr class="activity-row" data-activity-id="${activity.id}" onclick="toggleDetail('${activity.id}')">
                             <td><div class="${badgeClass}">${day}</div></td>
-                            <td class="time-cell">ðŸ• ${formatTime(activity.startTime) || '-'}</td>
+                            <td class="time-cell">🕐 ${formatTime(activity.startTime) || '-'}</td>
                             <td class="name-cell">${activity.name}</td>
-                            <td class="location-cell" onclick="event.stopPropagation(); openGoogleMaps(${activity.lat}, ${activity.lng}, '${(activity.address || '').replace(/'/g, "\\'")}')">${hasLocation ? 'ðŸ“ ' + activity.address : '-'}</td>
+                            <td class="location-cell" onclick="event.stopPropagation(); openGoogleMaps(${activity.lat}, ${activity.lng}, '${(activity.address || '').replace(/'/g, "\\'")}')">${hasLocation ? '📍 ' + activity.address : '-'}</td>
                             <td><span class="type-badge ${getCategoryClass(activity.category)}">${icon} ${label}</span></td>
-                            <td style="text-align: right; font-weight: ${activityTotal > 0 ? 600 : 400}; color: ${activityTotal > 0 ? '#1f2937' : '#e5e7eb'};">${activityTotal > 0 ? formatMoney(activityTotal, trip.currency) : 'â€”'}</td>
-                            <td>${hasDetail ? '<span style="font-size: 13px; color: #9ca3af;">â–¼</span>' : ''}</td>
+                            <td style="text-align: right; font-weight: ${activityTotal > 0 ? 600 : 400}; color: ${activityTotal > 0 ? '#1f2937' : '#e5e7eb'};">${activityTotal > 0 ? formatMoney(activityTotal, trip.currency) : '—'}</td>
+                            <td>${hasDetail ? '<span style="font-size: 13px; color: #9ca3af;">▼</span>' : ''}</td>
                         </tr>
                     `;
 
@@ -206,17 +206,17 @@
                         html += `<tr id="detail-${activity.id}" style="display: none;"><td colspan="7" class="detail-panel">`;
 
                         if (activity.expenses && activity.expenses.length > 0) {
-                            html += `<div class="detail-section"><div class="detail-header">ðŸ’³ Chi phÃ­</div>`;
+                            html += `<div class="detail-section"><div class="detail-header">💳 Chi phí</div>`;
                             activity.expenses.forEach(e => {
-                                html += `<div class="expense-item"><span>ðŸ’°</span><span>${e.description}</span><span class="expense-amount">${formatMoney(e.amount, e.currency)}</span></div>`;
+                                html += `<div class="expense-item"><span>💰</span><span>${e.description}</span><span class="expense-amount">${formatMoney(e.amount, e.currency)}</span></div>`;
                             });
                             html += `</div>`;
                         }
 
                         if (activity.notes && activity.notes.length > 0) {
-                            html += `<div class="detail-section"><div class="detail-header">ðŸ“ Ghi chÃº</div>`;
+                            html += `<div class="detail-section"><div class="detail-header">📝 Ghi chú</div>`;
                             activity.notes.forEach(n => {
-                                html += `<div class="note-item"><span>ðŸ“Œ</span><span>${n.content}</span></div>`;
+                                html += `<div class="note-item"><span>📌</span><span>${n.content}</span></div>`;
                             });
                             html += `</div>`;
                         }
@@ -267,13 +267,13 @@
                                     <span class="type-badge ${getCategoryClass(activity.category)}">${icon}</span>
                                 </div>
                                 <div class="activity-meta">
-                                    ${activity.startTime ? `<div class="activity-meta-item">ðŸ• ${formatTime(activity.startTime)}</div>` : ''}
-                                    ${activity.address ? `<div class="activity-meta-item ${hasLocation ? 'clickable' : ''}" onclick="event.stopPropagation(); openGoogleMaps(${activity.lat}, ${activity.lng}, '${(activity.address || '').replace(/'/g, "\\'")}')">${hasLocation ? 'ðŸ“' : ''} ${activity.address}</div>` : ''}
-                                    ${activityTotal > 0 ? `<div class="activity-meta-item activity-meta-expense">ðŸ’³ ${formatMoney(activityTotal, trip.currency)}</div>` : ''}
-                                    ${activity.notes && activity.notes.length > 0 ? `<div class="activity-meta-item activity-meta-notes">ðŸ“ ${activity.notes.length}</div>` : ''}
+                                    ${activity.startTime ? `<div class="activity-meta-item">🕐 ${formatTime(activity.startTime)}</div>` : ''}
+                                    ${activity.address ? `<div class="activity-meta-item ${hasLocation ? 'clickable' : ''}" onclick="event.stopPropagation(); openGoogleMaps(${activity.lat}, ${activity.lng}, '${(activity.address || '').replace(/'/g, "\\'")}')">${hasLocation ? '📍' : ''} ${activity.address}</div>` : ''}
+                                    ${activityTotal > 0 ? `<div class="activity-meta-item activity-meta-expense">💳 ${formatMoney(activityTotal, trip.currency)}</div>` : ''}
+                                    ${activity.notes && activity.notes.length > 0 ? `<div class="activity-meta-item activity-meta-notes">📝 ${activity.notes.length}</div>` : ''}
                                 </div>
                             </div>
-                            ${hasDetail ? '<span class="chevron-icon">â–¼</span>' : ''}
+                            ${hasDetail ? '<span class="chevron-icon">▼</span>' : ''}
                         </div>
                     `;
 
@@ -281,17 +281,17 @@
                         html += `<div id="detail-mobile-${activity.id}" style="display: none;" class="detail-panel">`;
 
                         if (activity.expenses && activity.expenses.length > 0) {
-                            html += `<div class="detail-section"><div class="detail-header">ðŸ’³ Chi phÃ­</div>`;
+                            html += `<div class="detail-section"><div class="detail-header">💳 Chi phí</div>`;
                             activity.expenses.forEach(e => {
-                                html += `<div class="expense-item"><span>ðŸ’°</span><span>${e.description}</span><span class="expense-amount">${formatMoney(e.amount, e.currency)}</span></div>`;
+                                html += `<div class="expense-item"><span>💰</span><span>${e.description}</span><span class="expense-amount">${formatMoney(e.amount, e.currency)}</span></div>`;
                             });
                             html += `</div>`;
                         }
 
                         if (activity.notes && activity.notes.length > 0) {
-                            html += `<div class="detail-section"><div class="detail-header">ðŸ“ Ghi chÃº</div>`;
+                            html += `<div class="detail-section"><div class="detail-header">📝 Ghi chú</div>`;
                             activity.notes.forEach(n => {
-                                html += `<div class="note-item"><span>ðŸ“Œ</span><span>${n.content}</span></div>`;
+                                html += `<div class="note-item"><span>📌</span><span>${n.content}</span></div>`;
                             });
                             html += `</div>`;
                         }
@@ -310,8 +310,8 @@
                 html += `
                     <div class="trip-section">
                         <div class="section-title">
-                            <span style="font-size: 16px;">ðŸ“‹</span>
-                            <span class="section-title-text">ThÃ´ng tin chuyáº¿n Ä‘i</span>
+                            <span style="font-size: 16px;">📋</span>
+                            <span class="section-title-text">Thông tin chuyến đi</span>
                             <div style="flex: 1; height: 1px; background: #e5e7eb;"></div>
                         </div>
                 `;
@@ -321,18 +321,18 @@
                     html += `
                         <div class="trip-card">
                             <div class="trip-card-header" onclick="toggleTripDetail('trip-expenses')">
-                                <div class="trip-icon trip-icon-expense">ðŸ’³</div>
+                                <div class="trip-icon trip-icon-expense">💳</div>
                                 <div style="flex: 1;">
-                                    <div class="trip-card-title">Chi phÃ­ chuyáº¿n Ä‘i</div>
-                                    <div class="trip-card-subtitle">${trip.expenses.length} khoáº£n Â· tá»•ng ${formatMoney(tripExpenseTotal, trip.currency)}</div>
+                                    <div class="trip-card-title">Chi phí chuyến đi</div>
+                                    <div class="trip-card-subtitle">${trip.expenses.length} khoản · tổng ${formatMoney(tripExpenseTotal, trip.currency)}</div>
                                 </div>
-                                <span style="font-size: 13px; color: #9ca3af;">â–¼</span>
+                                <span style="font-size: 13px; color: #9ca3af;">▼</span>
                             </div>
                             <div id="trip-expenses" style="display: none;" class="detail-panel">
                                 <div class="detail-section">
                     `;
                     trip.expenses.forEach(e => {
-                        html += `<div class="expense-item"><span>ðŸ’°</span><span>${e.description}</span><span class="expense-amount">${formatMoney(e.amount, e.currency)}</span></div>`;
+                        html += `<div class="expense-item"><span>💰</span><span>${e.description}</span><span class="expense-amount">${formatMoney(e.amount, e.currency)}</span></div>`;
                     });
                     html += `</div></div></div>`;
                 }
@@ -341,18 +341,18 @@
                     html += `
                         <div class="trip-card">
                             <div class="trip-card-header" onclick="toggleTripDetail('trip-notes')">
-                                <div class="trip-icon trip-icon-note">ðŸ“</div>
+                                <div class="trip-icon trip-icon-note">📝</div>
                                 <div style="flex: 1;">
-                                    <div class="trip-card-title">Ghi chÃº chuyáº¿n Ä‘i</div>
-                                    <div class="trip-card-subtitle">${trip.notes.length} ghi chÃº</div>
+                                    <div class="trip-card-title">Ghi chú chuyến đi</div>
+                                    <div class="trip-card-subtitle">${trip.notes.length} ghi chú</div>
                                 </div>
-                                <span style="font-size: 13px; color: #9ca3af;">â–¼</span>
+                                <span style="font-size: 13px; color: #9ca3af;">▼</span>
                             </div>
                             <div id="trip-notes" style="display: none;" class="detail-panel">
                                 <div class="detail-section">
                     `;
                     trip.notes.forEach(n => {
-                        html += `<div class="note-item"><span>ðŸ“Œ</span><span>${n.content}</span></div>`;
+                        html += `<div class="note-item"><span>📌</span><span>${n.content}</span></div>`;
                     });
                     html += `</div></div></div>`;
                 }

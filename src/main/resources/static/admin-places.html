@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quáº£n lÃ½ Places - TripMind Admin</title>
+    <title>Quản lý Places - TripMind Admin</title>
     <link rel="stylesheet" href="/goroute/goroute-theme.css">
     <style>
         .img-preview {
@@ -56,31 +56,31 @@
 
 <body>
     <div class="page-header">
-        <h1>ðŸ—ºï¸ Quáº£n lÃ½ Places - TripMind</h1>
-        <p>Import vÃ  quáº£n lÃ½ dá»¯ liá»‡u Ä‘á»‹a Ä‘iá»ƒm tá»« Google Maps</p>
+        <h1>🗺️ Quản lý Places - TripMind</h1>
+        <p>Import và quản lý dữ liệu địa điểm từ Google Maps</p>
     </div>
 
     <div class="container container--wide">
         <div class="stats">
             <div class="stat-card">
                 <div class="stat-number" id="total-places">0</div>
-                <div class="stat-label">Tá»•ng sá»‘ places</div>
+                <div class="stat-label">Tổng số places</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number" id="total-reviews">0</div>
-                <div class="stat-label">Tá»•ng sá»‘ reviews</div>
+                <div class="stat-label">Tổng số reviews</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number" id="avg-rating">0</div>
-                <div class="stat-label">Rating trung bÃ¬nh</div>
+                <div class="stat-label">Rating trung bình</div>
             </div>
         </div>
 
         <div class="toolbar">
-            <button class="btn btn-primary" onclick="openImportModal()">ðŸ“¥ Import Place JSON</button>
-            <button class="btn btn-success" onclick="openBatchImportModal()">ðŸ“¦ Import Batch</button>
-            <button class="btn btn-secondary" onclick="loadData()">ðŸ”„ LÃ m má»›i</button>
-            <input type="text" class="search-box" id="search-input" placeholder="TÃ¬m kiáº¿m theo tÃªn, Ä‘á»‹a chá»‰..."
+            <button class="btn btn-primary" onclick="openImportModal()">📥 Import Place JSON</button>
+            <button class="btn btn-success" onclick="openBatchImportModal()">📦 Import Batch</button>
+            <button class="btn btn-secondary" onclick="loadData()">🔄 Làm mới</button>
+            <input type="text" class="search-box" id="search-input" placeholder="Tìm kiếm theo tên, địa chỉ..."
                 onkeyup="filterPlaces()">
         </div>
 
@@ -89,22 +89,22 @@
 
         <div class="card">
             <div class="card-header">
-                <div class="card-title">Danh sÃ¡ch Places (<span id="filtered-count">0</span>/<span
+                <div class="card-title">Danh sách Places (<span id="filtered-count">0</span>/<span
                         id="total-count">0</span>)</div>
             </div>
             <div class="card-body">
-                <div id="loading" class="loading">Äang táº£i...</div>
-                <div id="empty" class="empty" style="display: none;">ChÆ°a cÃ³ place nÃ o</div>
+                <div id="loading" class="loading">Đang tải...</div>
+                <div id="empty" class="empty" style="display: none;">Chưa có place nào</div>
                 <div id="table-container" class="table-container" style="display: none;">
                     <table>
                         <thead>
                             <tr>
-                                <th style="width: 100px;">áº¢nh</th>
-                                <th>TÃªn Ä‘á»‹a Ä‘iá»ƒm</th>
-                                <th>Äá»‹a chá»‰</th>
+                                <th style="width: 100px;">Ảnh</th>
+                                <th>Tên địa điểm</th>
+                                <th>Địa chỉ</th>
                                 <th style="width: 100px;">Rating</th>
                                 <th style="width: 100px;">Reviews</th>
-                                <th style="width: 150px;">Thao tÃ¡c</th>
+                                <th style="width: 150px;">Thao tác</th>
                             </tr>
                         </thead>
                         <tbody id="table-body"></tbody>
@@ -118,22 +118,22 @@
     <div id="import-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <div class="modal-title">Import Place tá»« JSON</div>
+                <div class="modal-title">Import Place từ JSON</div>
             </div>
             <div class="modal-body">
                 <div class="form-group">
                     <label class="form-label">JSON Data *</label>
                     <textarea id="json-input" class="form-input form-textarea"
-                        placeholder='Paste JSON data tá»« Google Maps scraper...' required></textarea>
-                    <small class="form-help">Paste toÃ n bá»™ JSON object cá»§a 1 place tá»« Google Maps scraper</small>
+                        placeholder='Paste JSON data từ Google Maps scraper...' required></textarea>
+                    <small class="form-help">Paste toàn bộ JSON object của 1 place từ Google Maps scraper</small>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Preview:</label>
-                    <div id="json-preview" class="json-preview">ChÆ°a cÃ³ dá»¯ liá»‡u</div>
+                    <div id="json-preview" class="json-preview">Chưa có dữ liệu</div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeImportModal()">Há»§y</button>
+                <button class="btn btn-secondary" onclick="closeImportModal()">Hủy</button>
                 <button class="btn btn-primary" onclick="importSinglePlace()">Import</button>
             </div>
         </div>
@@ -149,17 +149,17 @@
                 <div class="form-group">
                     <label class="form-label">JSON Array *</label>
                     <textarea id="batch-json-input" class="form-input form-textarea"
-                        placeholder='Paste JSON array cá»§a nhiá»u places...' required></textarea>
-                    <small class="form-help">Paste array JSON chá»©a nhiá»u places, vÃ­ dá»¥: [{"placeId": "...", "title":
+                        placeholder='Paste JSON array của nhiều places...' required></textarea>
+                    <small class="form-help">Paste array JSON chứa nhiều places, ví dụ: [{"placeId": "...", "title":
                         "..."}, {...}]</small>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Preview:</label>
-                    <div id="batch-preview" class="json-preview">ChÆ°a cÃ³ dá»¯ liá»‡u</div>
+                    <div id="batch-preview" class="json-preview">Chưa có dữ liệu</div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeBatchModal()">Há»§y</button>
+                <button class="btn btn-secondary" onclick="closeBatchModal()">Hủy</button>
                 <button class="btn btn-success" onclick="importBatchPlaces()">Import Batch</button>
             </div>
         </div>
@@ -169,13 +169,13 @@
     <div id="details-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <div class="modal-title" id="details-title">Chi tiáº¿t Place</div>
+                <div class="modal-title" id="details-title">Chi tiết Place</div>
             </div>
             <div class="modal-body">
                 <div id="place-details"></div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeDetailsModal()">ÄÃ³ng</button>
+                <button class="btn btn-secondary" onclick="closeDetailsModal()">Đóng</button>
             </div>
         </div>
     </div>
@@ -187,7 +187,7 @@
                 <img id="viewer-image" src=""
                     style="max-width: 100%; max-height: 90vh; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.3);">
                 <button type="button" onclick="closeImageViewer()"
-                    style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); color: white; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center;">âœ•</button>
+                    style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); color: white; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center;">✕</button>
             </div>
         </div>
     </div>
@@ -196,56 +196,56 @@
     <div id="edit-modal" class="modal">
         <div class="modal-content modal-content--xl">
             <div class="modal-header">
-                <div class="modal-title">Chá»‰nh sá»­a Place</div>
+                <div class="modal-title">Chỉnh sửa Place</div>
             </div>
             <div class="modal-body">
                 <form id="edit-form">
                     <input type="hidden" id="edit-place-id">
 
-                    <h4 style="margin-bottom: 16px; color: #6366f1;">ðŸ“ ThÃ´ng tin cÆ¡ báº£n</h4>
+                    <h4 style="margin-bottom: 16px; color: #6366f1;">📍 Thông tin cơ bản</h4>
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
                         <div class="form-group">
-                            <label class="form-label">TÃªn Ä‘á»‹a Ä‘iá»ƒm *</label>
+                            <label class="form-label">Tên địa điểm *</label>
                             <input type="text" id="edit-title" class="form-input" required>
                         </div>
 
                         <div class="form-group">
                             <label class="form-label">Place Group</label>
                             <select id="edit-place-group" class="form-input">
-                                <option value="">-- Chá»n nhÃ³m --</option>
-                                <option value="FOOD_AND_DRINK">ðŸ½ï¸ Food & Drink</option>
-                                <option value="CULTURE_AND_HERITAGE">ðŸ›ï¸ Culture & Heritage</option>
-                                <option value="NATURE_AND_OUTDOORS">ðŸŒ³ Nature & Outdoors</option>
-                                <option value="SHOPPING_AND_MARKET">ðŸ›ï¸ Shopping & Market</option>
-                                <option value="ATTRACTIONS">ðŸŽ¡ Attractions</option>
-                                <option value="ACCOMMODATION">ðŸ¨ Accommodation</option>
-                                <option value="OTHER">ðŸ“¦ Other</option>
+                                <option value="">-- Chọn nhóm --</option>
+                                <option value="FOOD_AND_DRINK">🍽️ Food & Drink</option>
+                                <option value="CULTURE_AND_HERITAGE">🏛️ Culture & Heritage</option>
+                                <option value="NATURE_AND_OUTDOORS">🌳 Nature & Outdoors</option>
+                                <option value="SHOPPING_AND_MARKET">🛍️ Shopping & Market</option>
+                                <option value="ATTRACTIONS">🎡 Attractions</option>
+                                <option value="ACCOMMODATION">🏨 Accommodation</option>
+                                <option value="OTHER">📦 Other</option>
                             </select>
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label">Danh má»¥c</label>
+                            <label class="form-label">Danh mục</label>
                             <input type="text" id="edit-category" class="form-input">
                         </div>
                     </div>
 
                     <div class="form-group">
-                        <label class="form-label">Äá»‹a chá»‰</label>
+                        <label class="form-label">Địa chỉ</label>
                         <input type="text" id="edit-address" class="form-input">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Destinations (dáº¥u pháº©y)</label>
+                        <label class="form-label">Destinations (dấu phẩy)</label>
                         <input type="text" id="edit-destinations" class="form-input" placeholder="Ha Noi, Hue, Da Nang">
                     </div>
 
                     <div class="form-group">
                         <label class="form-label">Food types</label>
                         <div class="food-tag-manager">
-                            <div id="edit-food-tags-empty" class="form-help">ChÆ°a gÃ¡n food type nÃ o.</div>
+                            <div id="edit-food-tags-empty" class="form-help">Chưa gán food type nào.</div>
                             <div id="edit-food-tags" class="food-tag-list"></div>
                             <div class="food-tag-actions">
                                 <select id="edit-food-select" class="form-input"></select>
-                                <button type="button" class="btn btn-secondary" onclick="linkSelectedFoodToPlace()">GÃ¡n food type</button>
+                                <button type="button" class="btn btn-secondary" onclick="linkSelectedFoodToPlace()">Gán food type</button>
                             </div>
                         </div>
                     </div>
@@ -272,10 +272,10 @@
                         </div>
                     </div>
 
-                    <h4 style="margin: 24px 0 16px; color: #6366f1;">ðŸ“ž LiÃªn há»‡ & Web</h4>
+                    <h4 style="margin: 24px 0 16px; color: #6366f1;">📞 Liên hệ & Web</h4>
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
                         <div class="form-group">
-                            <label class="form-label">Äiá»‡n thoáº¡i</label>
+                            <label class="form-label">Điện thoại</label>
                             <input type="text" id="edit-phone" class="form-input">
                         </div>
 
@@ -290,7 +290,7 @@
                         </div>
                     </div>
 
-                    <h4 style="margin: 24px 0 16px; color: #6366f1;">â­ Rating & Reviews</h4>
+                    <h4 style="margin: 24px 0 16px; color: #6366f1;">⭐ Rating & Reviews</h4>
                     <div style="display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 16px;">
                         <div class="form-group">
                             <label class="form-label">Review Count</label>
@@ -309,7 +309,7 @@
                         </div>
                     </div>
 
-                    <h4 style="margin: 24px 0 16px; color: #6366f1;">ðŸ–¼ï¸ Media</h4>
+                    <h4 style="margin: 24px 0 16px; color: #6366f1;">🖼️ Media</h4>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                         <div class="form-group">
                             <label class="form-label">Thumbnail URL</label>
@@ -320,7 +320,7 @@
                         <div class="form-group">
                             <label class="form-label">Images Manager</label>
                             <button type="button" class="btn btn-success btn-sm" onclick="addImageItem()"
-                                style="width: 100%; margin-bottom: 8px;">âž• ThÃªm áº£nh</button>
+                                style="width: 100%; margin-bottom: 8px;">➕ Thêm ảnh</button>
                         </div>
                     </div>
 
@@ -328,9 +328,9 @@
                         <div id="images-list"></div>
                     </div>
 
-                    <h4 style="margin: 24px 0 16px; color: #6366f1;">ðŸ“ Chi tiáº¿t</h4>
+                    <h4 style="margin: 24px 0 16px; color: #6366f1;">📝 Chi tiết</h4>
                     <div class="form-group">
-                        <label class="form-label">MÃ´ táº£</label>
+                        <label class="form-label">Mô tả</label>
                         <textarea id="edit-descriptions" class="form-input" rows="3"></textarea>
                     </div>
 
@@ -346,7 +346,7 @@
                         </div>
                     </div>
 
-                    <h4 style="margin: 24px 0 16px; color: #6366f1;">ðŸ• Giá» má»Ÿ cá»­a & Booking</h4>
+                    <h4 style="margin: 24px 0 16px; color: #6366f1;">🕐 Giờ mở cửa & Booking</h4>
                     <div class="form-group">
                         <label class="form-label">Open Hours (JSON)</label>
                         <textarea id="edit-open-hours" class="form-input form-textarea" rows="3"
@@ -376,7 +376,7 @@
                         </div>
                     </div>
 
-                    <h4 style="margin: 24px 0 16px; color: #6366f1;">â„¹ï¸ ThÃ´ng tin bá»• sung</h4>
+                    <h4 style="margin: 24px 0 16px; color: #6366f1;">ℹ️ Thông tin bổ sung</h4>
                     <div class="form-group">
                         <label class="form-label">Complete Address (JSON)</label>
                         <textarea id="edit-complete-address" class="form-input form-textarea" rows="2"
@@ -405,8 +405,8 @@
                 </form>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeEditModal()">Há»§y</button>
-                <button class="btn btn-primary" onclick="savePlace()">ðŸ’¾ LÆ°u thay Ä‘á»•i</button>
+                <button class="btn btn-secondary" onclick="closeEditModal()">Hủy</button>
+                <button class="btn btn-primary" onclick="savePlace()">💾 Lưu thay đổi</button>
             </div>
         </div>
     </div>
@@ -443,7 +443,7 @@
                     throw new Error(data.meta?.message || 'Unknown error');
                 }
             } catch (error) {
-                showError('Lá»—i táº£i dá»¯ liá»‡u: ' + error.message);
+                showError('Lỗi tải dữ liệu: ' + error.message);
                 chrome.loadingEl.style.display = 'none';
             }
         }
@@ -479,7 +479,7 @@
                 foodCatalog = data.data || [];
                 renderFoodTagManager();
             } else {
-                throw new Error(data.meta?.message || 'KhÃ´ng táº£i Ä‘Æ°á»£c food types');
+                throw new Error(data.meta?.message || 'Không tải được food types');
             }
         }
 
@@ -490,7 +490,7 @@
                 currentPlaceFoodTags = data.data || [];
                 renderFoodTagManager();
             } else {
-                throw new Error(data.meta?.message || 'KhÃ´ng táº£i Ä‘Æ°á»£c food tags cá»§a place');
+                throw new Error(data.meta?.message || 'Không tải được food tags của place');
             }
         }
 
@@ -513,14 +513,14 @@
             select.disabled = availableFoods.length === 0;
             select.innerHTML = availableFoods.length
                 ? availableFoods.map(food => `<option value="${escapeHtml(food.id)}">${escapeHtml(food.name || food.id)}</option>`).join('')
-                : '<option value="">KhÃ´ng cÃ²n food type Ä‘á»ƒ gÃ¡n</option>';
+                : '<option value="">Không còn food type để gán</option>';
         }
 
         async function linkSelectedFoodToPlace() {
             const placeId = document.getElementById('edit-place-id').value;
             const foodId = document.getElementById('edit-food-select').value;
             if (!placeId || !foodId) {
-                showError('Chá»n food type trÆ°á»›c khi gÃ¡n');
+                showError('Chọn food type trước khi gán');
                 return;
             }
             try {
@@ -529,31 +529,31 @@
                 if (data.meta?.code === 200000 || data.meta?.code === 201000) {
                     await loadPlaceFoodTags(placeId);
                     await refreshPlaceSilent(placeId);
-                    showSuccess('ÄÃ£ gÃ¡n food type cho place');
+                    showSuccess('Đã gán food type cho place');
                 } else {
-                    throw new Error(data.meta?.message || 'GÃ¡n food type tháº¥t báº¡i');
+                    throw new Error(data.meta?.message || 'Gán food type thất bại');
                 }
             } catch (error) {
-                showError('Lá»—i gÃ¡n food type: ' + error.message);
+                showError('Lỗi gán food type: ' + error.message);
             }
         }
 
         async function unlinkFoodFromPlace(foodId) {
             const placeId = document.getElementById('edit-place-id').value;
             if (!placeId || !foodId) return;
-            if (!confirm('Gá»¡ food type nÃ y khá»i place?')) return;
+            if (!confirm('Gỡ food type này khỏi place?')) return;
             try {
                 const response = await fetch(`${API_BASE_URL}/places/${placeId}/food-tags/${foodId}`, { method: 'DELETE' });
                 const data = await response.json();
                 if (data.meta?.code === 200000) {
                     await loadPlaceFoodTags(placeId);
                     await refreshPlaceSilent(placeId);
-                    showSuccess('ÄÃ£ gá»¡ food type khá»i place');
+                    showSuccess('Đã gỡ food type khỏi place');
                 } else {
-                    throw new Error(data.meta?.message || 'Gá»¡ food type tháº¥t báº¡i');
+                    throw new Error(data.meta?.message || 'Gỡ food type thất bại');
                 }
             } catch (error) {
-                showError('Lá»—i gá»¡ food type: ' + error.message);
+                showError('Lỗi gỡ food type: ' + error.message);
             }
         }
 
@@ -578,16 +578,16 @@
                     <td>
                         <div style="font-weight: 600;">${place.title || 'N/A'}</div>
                         <div style="font-size: 12px; color: #6b7280;">${place.category || ''}</div>
-                        <div style="font-size: 12px; color: #6366f1;">${(place.destinations || []).join(' â€¢ ')}</div>
+                        <div style="font-size: 12px; color: #6366f1;">${(place.destinations || []).join(' • ')}</div>
                     </td>
                     <td>${place.address || 'N/A'}</td>
-                    <td><span class="rating-badge">â­ ${place.reviewRating || 0}</span></td>
+                    <td><span class="rating-badge">⭐ ${place.reviewRating || 0}</span></td>
                     <td>${place.reviewCount || 0}</td>
                     <td>
                         <div class="action-btns">
-                            <button class="btn btn-secondary btn-sm" onclick="viewDetails('${place.id}')">ðŸ‘ï¸ Xem</button>
-                            <button class="btn btn-primary btn-sm" onclick="editPlace('${place.id}')">âœï¸ Sá»­a</button>
-                            <button class="btn btn-danger btn-sm" onclick="deletePlace('${place.id}')">ðŸ—‘ï¸ XÃ³a</button>
+                            <button class="btn btn-secondary btn-sm" onclick="viewDetails('${place.id}')">👁️ Xem</button>
+                            <button class="btn btn-primary btn-sm" onclick="editPlace('${place.id}')">✏️ Sửa</button>
+                            <button class="btn btn-danger btn-sm" onclick="deletePlace('${place.id}')">🗑️ Xóa</button>
                         </div>
                     </td>
                 `;
@@ -619,7 +619,7 @@
 
         function openImportModal() {
             document.getElementById('json-input').value = '';
-            document.getElementById('json-preview').textContent = 'ChÆ°a cÃ³ dá»¯ liá»‡u';
+            document.getElementById('json-preview').textContent = 'Chưa có dữ liệu';
             document.getElementById('import-modal').classList.add('active');
         }
 
@@ -629,7 +629,7 @@
 
         function openBatchImportModal() {
             document.getElementById('batch-json-input').value = '';
-            document.getElementById('batch-preview').textContent = 'ChÆ°a cÃ³ dá»¯ liá»‡u';
+            document.getElementById('batch-preview').textContent = 'Chưa có dữ liệu';
             document.getElementById('batch-modal').classList.add('active');
         }
 
@@ -640,7 +640,7 @@
         async function importSinglePlace() {
             const jsonText = document.getElementById('json-input').value.trim();
             if (!jsonText) {
-                alert('Vui lÃ²ng nháº­p JSON data');
+                alert('Vui lòng nhập JSON data');
                 return;
             }
 
@@ -659,7 +659,7 @@
                 const result = await response.json();
 
                 if (result.meta && result.meta.code === 200000) {
-                    showSuccess('Import thÃ nh cÃ´ng!');
+                    showSuccess('Import thành công!');
                     closeImportModal();
                     if (result.data) {
                         applyPlaceMutation(result.data);
@@ -670,21 +670,21 @@
                     throw new Error(result.meta?.message || 'Import failed');
                 }
             } catch (error) {
-                showError('Lá»—i import: ' + error.message);
+                showError('Lỗi import: ' + error.message);
             }
         }
 
         async function importBatchPlaces() {
             const jsonText = document.getElementById('batch-json-input').value.trim();
             if (!jsonText) {
-                alert('Vui lÃ²ng nháº­p JSON array');
+                alert('Vui lòng nhập JSON array');
                 return;
             }
 
             try {
                 const placesData = JSON.parse(jsonText);
                 if (!Array.isArray(placesData)) {
-                    throw new Error('Dá»¯ liá»‡u pháº£i lÃ  array');
+                    throw new Error('Dữ liệu phải là array');
                 }
 
                 // Convert to ImportPlaceRequest format
@@ -699,7 +699,7 @@
                 const result = await response.json();
 
                 if (result.meta && result.meta.code === 200000) {
-                    showSuccess(`Import thÃ nh cÃ´ng ${requests.length} places!`);
+                    showSuccess(`Import thành công ${requests.length} places!`);
                     closeBatchModal();
                     if (Array.isArray(result.data) && result.data.length > 0) {
                         GorouteAdmin.upsertManyById(places, result.data);
@@ -712,7 +712,7 @@
                     throw new Error(result.meta?.message || 'Batch import failed');
                 }
             } catch (error) {
-                showError('Lá»—i batch import: ' + error.message);
+                showError('Lỗi batch import: ' + error.message);
             }
         }
 
@@ -879,23 +879,23 @@
                         ${imagesHtml}
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                             <div>
-                                <h4>ThÃ´ng tin cÆ¡ báº£n</h4>
+                                <h4>Thông tin cơ bản</h4>
                                 <p><strong>Place ID:</strong> ${place.placeId}</p>
                                 <p><strong>Place Group:</strong> ${place.placeGroup || 'N/A'}</p>
-                                <p><strong>Danh má»¥c:</strong> ${place.category || 'N/A'}</p>
-                                <p><strong>Äá»‹a chá»‰:</strong> ${place.address || 'N/A'}</p>
+                                <p><strong>Danh mục:</strong> ${place.category || 'N/A'}</p>
+                                <p><strong>Địa chỉ:</strong> ${place.address || 'N/A'}</p>
                                 <p><strong>Destinations:</strong> ${(place.destinations || []).join(', ') || 'N/A'}</p>
-                                <p><strong>Tá»a Ä‘á»™:</strong> ${place.latitude}, ${place.longitude}</p>
-                                <p><strong>Äiá»‡n thoáº¡i:</strong> ${place.phone || 'N/A'}</p>
+                                <p><strong>Tọa độ:</strong> ${place.latitude}, ${place.longitude}</p>
+                                <p><strong>Điện thoại:</strong> ${place.phone || 'N/A'}</p>
                                 <p><strong>Website:</strong> ${place.website ? `<a href="${place.website}" target="_blank">${place.website}</a>` : 'N/A'}</p>
                             </div>
                             <div>
-                                <h4>ÄÃ¡nh giÃ¡</h4>
-                                <p><strong>Rating:</strong> â­ ${place.reviewRating || 0}</p>
-                                <p><strong>Sá»‘ reviews:</strong> ${place.reviewCount || 0}</p>
-                                <p><strong>GiÃ¡:</strong> ${place.priceRange || 'N/A'}</p>
+                                <h4>Đánh giá</h4>
+                                <p><strong>Rating:</strong> ⭐ ${place.reviewRating || 0}</p>
+                                <p><strong>Số reviews:</strong> ${place.reviewCount || 0}</p>
+                                <p><strong>Giá:</strong> ${place.priceRange || 'N/A'}</p>
                                 <p><strong>Status:</strong> ${place.status || 'N/A'}</p>
-                                <p><strong>MÃ´ táº£:</strong> ${place.descriptions || 'N/A'}</p>
+                                <p><strong>Mô tả:</strong> ${place.descriptions || 'N/A'}</p>
                             </div>
                         </div>
                     `;
@@ -904,7 +904,7 @@
                     throw new Error(result.meta?.message || 'Failed to load details');
                 }
             } catch (error) {
-                showError('Lá»—i táº£i chi tiáº¿t: ' + error.message);
+                showError('Lỗi tải chi tiết: ' + error.message);
             }
         }
 
@@ -992,7 +992,7 @@
                     throw new Error(result.meta?.message || 'Failed to load place');
                 }
             } catch (error) {
-                showError('Lá»—i táº£i dá»¯ liá»‡u: ' + error.message);
+                showError('Lỗi tải dữ liệu: ' + error.message);
             }
         }
 
@@ -1018,7 +1018,7 @@
         function renderImagesList() {
             const container = document.getElementById('images-list');
             if (imagesList.length === 0) {
-                container.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 20px;">ChÆ°a cÃ³ áº£nh nÃ o. Nháº¥n "âž• ThÃªm áº£nh" Ä‘á»ƒ báº¯t Ä‘áº§u</div>';
+                container.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 20px;">Chưa có ảnh nào. Nhấn "➕ Thêm ảnh" để bắt đầu</div>';
                 return;
             }
 
@@ -1027,18 +1027,18 @@
                 html += `
                     <div class="image-item">
                         <div class="image-item-header">
-                            <span style="font-weight: 600; color: #1f2937;">áº¢nh #${index + 1}</span>
+                            <span style="font-weight: 600; color: #1f2937;">Ảnh #${index + 1}</span>
                             <div class="image-item-actions">
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="moveImageUp(${index})" ${index === 0 ? 'disabled' : ''}>â¬†ï¸</button>
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="moveImageDown(${index})" ${index === imagesList.length - 1 ? 'disabled' : ''}>â¬‡ï¸</button>
-                                <button type="button" class="btn btn-danger btn-sm" onclick="removeImage(${index})">ðŸ—‘ï¸</button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="moveImageUp(${index})" ${index === 0 ? 'disabled' : ''}>⬆️</button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="moveImageDown(${index})" ${index === imagesList.length - 1 ? 'disabled' : ''}>⬇️</button>
+                                <button type="button" class="btn btn-danger btn-sm" onclick="removeImage(${index})">🗑️</button>
                             </div>
                         </div>
-
+                        
                         <div class="image-item-preview" id="preview-${index}" onclick="viewImageFull('${img.image.replace(/'/g, "\\'")}')">
                             ${img.image ? `<img src="${img.image}" onerror="this.style.display='none'" style="cursor: pointer;">` : '<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#f3f4f6;color:#9ca3af;font-size:12px;">No image</div>'}
                         </div>
-
+                        
                         <div class="image-item-inputs">
                             <input type="text" class="image-item-input" placeholder="Title" value="${img.title || ''}" onchange="updateImageField(${index}, 'title', this.value)">
                             <input type="url" class="image-item-input" placeholder="Image URL" value="${img.image || ''}" onchange="updateImageField(${index}, 'image', this.value); updateImagePreview(${index})">
@@ -1133,7 +1133,7 @@
                 html += '</div>';
                 previewDiv.innerHTML = html;
             } catch (e) {
-                previewDiv.innerHTML = '<div style="color: #dc2626; font-size: 12px; margin-top: 4px;">âš ï¸ Invalid JSON format</div>';
+                previewDiv.innerHTML = '<div style="color: #dc2626; font-size: 12px; margin-top: 4px;">⚠️ Invalid JSON format</div>';
             }
         }
 
@@ -1217,7 +1217,7 @@
                 const result = await response.json();
 
                 if (result.meta && result.meta.code === 200000) {
-                    showSuccess('Cáº­p nháº­t thÃ nh cÃ´ng!');
+                    showSuccess('Cập nhật thành công!');
                     closeEditModal();
                     if (result.data) {
                         applyPlaceMutation(result.data);
@@ -1228,12 +1228,12 @@
                     throw new Error(result.meta?.message || 'Update failed');
                 }
             } catch (error) {
-                showError('Lá»—i cáº­p nháº­t: ' + error.message);
+                showError('Lỗi cập nhật: ' + error.message);
             }
         }
 
         async function deletePlace(placeId) {
-            if (!confirm('Báº¡n cÃ³ cháº¯c muá»‘n xÃ³a place nÃ y?')) return;
+            if (!confirm('Bạn có chắc muốn xóa place này?')) return;
 
             try {
                 const response = await fetch(`${API_BASE_URL}/places/${placeId}`, {
@@ -1243,13 +1243,13 @@
                 const result = await response.json();
 
                 if (result.meta && result.meta.code === 200000) {
-                    showSuccess('XÃ³a thÃ nh cÃ´ng!');
+                    showSuccess('Xóa thành công!');
                     removePlaceFromLists(placeId);
                 } else {
                     throw new Error(result.meta?.message || 'Delete failed');
                 }
             } catch (error) {
-                showError('Lá»—i xÃ³a: ' + error.message);
+                showError('Lỗi xóa: ' + error.message);
             }
         }
 
@@ -1259,7 +1259,7 @@
                 const data = JSON.parse(this.value);
                 document.getElementById('json-preview').textContent = JSON.stringify(data, null, 2);
             } catch (e) {
-                document.getElementById('json-preview').textContent = 'JSON khÃ´ng há»£p lá»‡';
+                document.getElementById('json-preview').textContent = 'JSON không hợp lệ';
             }
         });
 
@@ -1268,7 +1268,7 @@
                 const data = JSON.parse(this.value);
                 document.getElementById('batch-preview').textContent = `${Array.isArray(data) ? data.length : 0} places\n\n${JSON.stringify(data, null, 2).substring(0, 500)}...`;
             } catch (e) {
-                document.getElementById('batch-preview').textContent = 'JSON khÃ´ng há»£p lá»‡';
+                document.getElementById('batch-preview').textContent = 'JSON không hợp lệ';
             }
         });
 

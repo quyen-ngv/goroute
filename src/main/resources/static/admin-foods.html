@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quáº£n lÃ½ Ä‘áº·c sáº£n - GoRoute Admin</title>
+    <title>Quản lý đặc sản - GoRoute Admin</title>
     <link rel="stylesheet" href="/goroute/goroute-theme.css">
     <style>
         .foods-admin .img-preview {
@@ -151,26 +151,26 @@
 
 <body class="foods-admin">
     <div class="page-header">
-        <h1>Quáº£n lÃ½ Ä‘áº·c sáº£n (Food Discovery)</h1>
-        <p>CRUD mÃ³n Äƒn, Ä‘iá»ƒm theo thÃ nh phá»‘ vÃ  liÃªn káº¿t quÃ¡n</p>
+        <h1>Quản lý đặc sản (Food Discovery)</h1>
+        <p>CRUD món ăn, điểm theo thành phố và liên kết quán</p>
     </div>
 
     <div class="container container--wide">
         <div class="stats">
             <div class="stat-card">
                 <div class="stat-number" id="total-count">0</div>
-                <div class="stat-label">Tá»•ng sá»‘ mÃ³n</div>
+                <div class="stat-label">Tổng số món</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number" id="city-count">0</div>
-                <div class="stat-label">ThÃ nh phá»‘ kháº£ dá»¥ng</div>
+                <div class="stat-label">Thành phố khả dụng</div>
             </div>
         </div>
 
         <div class="toolbar">
-            <button class="btn btn-primary" onclick="openCreateModal()">ThÃªm mÃ³n má»›i</button>
-            <button class="btn btn-secondary" onclick="loadData()">LÃ m má»›i</button>
-            <input type="text" class="search-box" id="search-input" placeholder="TÃ¬m theo tÃªn..."
+            <button class="btn btn-primary" onclick="openCreateModal()">Thêm món mới</button>
+            <button class="btn btn-secondary" onclick="loadData()">Làm mới</button>
+            <input type="text" class="search-box" id="search-input" placeholder="Tìm theo tên..."
                 onkeyup="debounceSearch()">
         </div>
 
@@ -179,19 +179,19 @@
 
         <div class="card">
             <div class="card-header">
-                <div class="card-title">Danh sÃ¡ch mÃ³n</div>
+                <div class="card-title">Danh sách món</div>
             </div>
             <div class="card-body">
-                <div id="loading" class="loading">Äang táº£i...</div>
-                <div id="empty" class="empty" style="display: none;">ChÆ°a cÃ³ mÃ³n nÃ o</div>
+                <div id="loading" class="loading">Đang tải...</div>
+                <div id="empty" class="empty" style="display: none;">Chưa có món nào</div>
                 <div id="table-container" class="table-container" style="display: none;">
                     <table>
                         <thead>
                             <tr>
-                                <th style="width: 120px;">áº¢nh</th>
-                                <th>TÃªn</th>
-                                <th style="width: 140px;">Loáº¡i</th>
-                                <th style="width: 190px;">Thao tÃ¡c</th>
+                                <th style="width: 120px;">Ảnh</th>
+                                <th>Tên</th>
+                                <th style="width: 140px;">Loại</th>
+                                <th style="width: 190px;">Thao tác</th>
                             </tr>
                         </thead>
                         <tbody id="table-body"></tbody>
@@ -205,8 +205,8 @@
         <div class="modal-content modal-content--2xl">
             <div class="modal-header">
                 <div>
-                    <div class="modal-title" id="food-modal-title">ThÃªm mÃ³n má»›i</div>
-                    <div class="form-help" id="food-modal-help">LÆ°u mÃ³n trÆ°á»›c, sau Ä‘Ã³ thÃªm Ä‘iá»ƒm theo tá»«ng thÃ nh phá»‘.</div>
+                    <div class="modal-title" id="food-modal-title">Thêm món mới</div>
+                    <div class="form-help" id="food-modal-help">Lưu món trước, sau đó thêm điểm theo từng thành phố.</div>
                 </div>
             </div>
             <div class="modal-body">
@@ -217,28 +217,28 @@
                     <div class="food-panel">
                         <div class="food-panel-header">
                             <div>
-                                <div class="food-panel-title">ThÃ´ng tin mÃ³n</div>
-                                <div class="food-panel-subtitle">TÃªn, mÃ´ táº£, phÃ¢n loáº¡i vÃ  áº£nh Ä‘áº¡i diá»‡n.</div>
+                                <div class="food-panel-title">Thông tin món</div>
+                                <div class="food-panel-subtitle">Tên, mô tả, phân loại và ảnh đại diện.</div>
                             </div>
                         </div>
                         <div class="food-panel-body">
                             <div class="form-grid">
                                 <div class="form-group">
-                                    <label class="form-label">TÃªn (VI) *</label>
+                                    <label class="form-label">Tên (VI) *</label>
                                     <input type="text" id="name-vi" class="form-input" required>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">TÃªn (EN) *</label>
+                                    <label class="form-label">Tên (EN) *</label>
                                     <input type="text" id="name-en" class="form-input" required>
                                 </div>
                             </div>
                             <div class="form-group">
-                                <label class="form-label">MÃ´ táº£ *</label>
+                                <label class="form-label">Mô tả *</label>
                                 <textarea id="description" class="form-input form-textarea" required></textarea>
                             </div>
                             <div class="form-grid">
                                 <div class="form-group">
-                                    <label class="form-label">Loáº¡i *</label>
+                                    <label class="form-label">Loại *</label>
                                     <select id="category" class="form-input" required>
                                         <option value="NOODLE">NOODLE</option>
                                         <option value="RICE">RICE</option>
@@ -249,7 +249,7 @@
                                     </select>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">URL áº£nh</label>
+                                    <label class="form-label">URL ảnh</label>
                                     <input type="url" id="image-url" class="form-input" placeholder="https://...">
                                 </div>
                             </div>
@@ -259,21 +259,21 @@
                     <div class="food-panel">
                         <div class="food-panel-header">
                             <div>
-                                <div class="food-panel-title">Äiá»ƒm theo thÃ nh phá»‘</div>
-                                <div class="food-panel-subtitle">ThÃªm, sá»­a hoáº·c xÃ³a Ä‘iá»ƒm hiá»ƒn thá»‹ theo tá»«ng city slug.</div>
+                                <div class="food-panel-title">Điểm theo thành phố</div>
+                                <div class="food-panel-subtitle">Thêm, sửa hoặc xóa điểm hiển thị theo từng city slug.</div>
                             </div>
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="resetScoreForm()">Má»›i</button>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="resetScoreForm()">Mới</button>
                         </div>
                         <div class="food-panel-body">
-                            <div id="scores-empty" class="form-help" style="display: none;">ChÆ°a cÃ³ Ä‘iá»ƒm. LÆ°u mÃ³n trÆ°á»›c khi thÃªm Ä‘iá»ƒm.</div>
+                            <div id="scores-empty" class="form-help" style="display: none;">Chưa có điểm. Lưu món trước khi thêm điểm.</div>
                             <div id="scores-table-wrap" class="table-container" style="display: none;">
                                 <table class="score-table">
                                     <thead>
                                         <tr>
-                                            <th style="width: 150px;">ThÃ nh phá»‘</th>
-                                            <th style="width: 80px;">Äiá»ƒm</th>
-                                            <th>MÃ´ táº£</th>
-                                            <th style="width: 150px;">Thao tÃ¡c</th>
+                                            <th style="width: 150px;">Thành phố</th>
+                                            <th style="width: 80px;">Điểm</th>
+                                            <th>Mô tả</th>
+                                            <th style="width: 150px;">Thao tác</th>
                                         </tr>
                                     </thead>
                                     <tbody id="scores-body"></tbody>
@@ -281,35 +281,35 @@
                             </div>
 
                             <div id="score-form" class="score-editor" style="display: none;">
-                                <div class="form-section-title" id="score-form-title">ThÃªm Ä‘iá»ƒm thÃ nh phá»‘</div>
+                                <div class="form-section-title" id="score-form-title">Thêm điểm thành phố</div>
                                 <div class="form-grid">
                                     <div class="form-group">
-                                        <label class="form-label">ThÃ nh phá»‘ *</label>
+                                        <label class="form-label">Thành phố *</label>
                                         <input type="text" id="score-city-slug" class="form-input" list="score-city-options" placeholder="hanoi, hcmc, da-lat..." autocomplete="off">
                                         <datalist id="score-city-options"></datalist>
-                                        <small class="form-help">CÃ³ thá»ƒ chá»n city cÃ³ sáºµn hoáº·c nháº­p slug má»›i.</small>
+                                        <small class="form-help">Có thể chọn city có sẵn hoặc nhập slug mới.</small>
                                     </div>
                                     <div class="form-group">
-                                        <label class="form-label">Äiá»ƒm (0-100) *</label>
+                                        <label class="form-label">Điểm (0-100) *</label>
                                         <input type="number" id="score-value" class="form-input" min="0" max="100" value="80">
                                     </div>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">MÃ´ táº£ Ä‘á»‹a phÆ°Æ¡ng</label>
+                                    <label class="form-label">Mô tả địa phương</label>
                                     <textarea id="score-local-desc" class="form-input form-textarea" rows="3"></textarea>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">URL áº£nh riÃªng cho city</label>
+                                    <label class="form-label">URL ảnh riêng cho city</label>
                                     <input type="url" id="score-image-url" class="form-input" placeholder="https://...">
-                                    <small class="form-help">Äá»ƒ trá»‘ng thÃ¬ app dÃ¹ng áº£nh chung cá»§a mÃ³n.</small>
+                                    <small class="form-help">Để trống thì app dùng ảnh chung của món.</small>
                                 </div>
                                 <div class="form-group">
                                     <label class="form-label">Fun fact</label>
                                     <input type="text" id="score-fun-fact" class="form-input">
                                 </div>
                                 <div class="score-editor-actions">
-                                    <button type="button" class="btn btn-primary btn-sm" id="score-save-btn" onclick="saveCityScore()">ThÃªm Ä‘iá»ƒm</button>
-                                    <button type="button" class="btn btn-secondary btn-sm" id="score-cancel-btn" onclick="resetScoreForm()" style="display: none;">Há»§y sá»­a</button>
+                                    <button type="button" class="btn btn-primary btn-sm" id="score-save-btn" onclick="saveCityScore()">Thêm điểm</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="score-cancel-btn" onclick="resetScoreForm()" style="display: none;">Hủy sửa</button>
                                 </div>
                             </div>
                         </div>
@@ -319,21 +319,21 @@
                 <div class="food-panel" style="margin-top: 20px;">
                     <div class="food-panel-header">
                         <div>
-                            <div class="food-panel-title">QuÃ¡n liÃªn káº¿t (<span id="linked-count">0</span>)</div>
-                            <div class="food-panel-subtitle">LiÃªn káº¿t place UUID vá»›i mÃ³n Ä‘ang chá»‰nh sá»­a.</div>
+                            <div class="food-panel-title">Quán liên kết (<span id="linked-count">0</span>)</div>
+                            <div class="food-panel-subtitle">Liên kết place UUID với món đang chỉnh sửa.</div>
                         </div>
                     </div>
                     <div class="food-panel-body">
-                        <div id="linked-empty" class="form-help">LÆ°u mÃ³n Ä‘á»ƒ quáº£n lÃ½ liÃªn káº¿t.</div>
+                        <div id="linked-empty" class="form-help">Lưu món để quản lý liên kết.</div>
                         <ul id="linked-list" style="list-style: none; padding: 0; margin: 0 0 12px;"></ul>
                         <div id="link-form" style="display: none;">
                             <div class="form-grid">
                                 <div class="form-group">
                                     <label class="form-label">Place UUID</label>
-                                    <input type="text" id="link-place-id" class="form-input" placeholder="uuid cá»§a place">
+                                    <input type="text" id="link-place-id" class="form-input" placeholder="uuid của place">
                                 </div>
                                 <div class="form-group" style="align-self: end;">
-                                    <button type="button" class="btn btn-secondary" onclick="linkPlace()">LiÃªn káº¿t quÃ¡n</button>
+                                    <button type="button" class="btn btn-secondary" onclick="linkPlace()">Liên kết quán</button>
                                 </div>
                             </div>
                         </div>
@@ -341,8 +341,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeFoodModal()">ÄÃ³ng</button>
-                <button class="btn btn-primary" onclick="saveFood()">LÆ°u mÃ³n</button>
+                <button class="btn btn-secondary" onclick="closeFoodModal()">Đóng</button>
+                <button class="btn btn-primary" onclick="saveFood()">Lưu món</button>
             </div>
         </div>
     </div>
@@ -444,10 +444,10 @@
                     document.getElementById('city-count').textContent = citySlugs.length;
                     renderCitySlugSelect();
                 } else {
-                    throw new Error(data.meta?.message || 'KhÃ´ng táº£i Ä‘Æ°á»£c city slug');
+                    throw new Error(data.meta?.message || 'Không tải được city slug');
                 }
             } catch (error) {
-                showError('Lá»—i táº£i city slug: ' + error.message);
+                showError('Lỗi tải city slug: ' + error.message);
             }
         }
 
@@ -464,10 +464,10 @@
                     foods = data.data || [];
                     renderTable({ silent });
                 } else {
-                    throw new Error(data.meta?.message || 'KhÃ´ng táº£i Ä‘Æ°á»£c dá»¯ liá»‡u');
+                    throw new Error(data.meta?.message || 'Không tải được dữ liệu');
                 }
             } catch (error) {
-                showError('Lá»—i táº£i dá»¯ liá»‡u: ' + error.message);
+                showError('Lỗi tải dữ liệu: ' + error.message);
                 chrome.loadingEl.style.display = 'none';
             }
         }
@@ -488,7 +488,7 @@
                 const row = document.createElement('tr');
                 const image = food.imageUrl
                     ? `<img src="${escapeHtml(food.imageUrl)}" class="img-preview" onerror="this.style.display='none'">`
-                    : '<span class="form-help">KhÃ´ng cÃ³ áº£nh</span>';
+                    : '<span class="form-help">Không có ảnh</span>';
                 row.innerHTML = `
                     <td>${image}</td>
                     <td>
@@ -498,8 +498,8 @@
                     <td><span class="badge source-badge">${escapeHtml(food.category || '')}</span></td>
                     <td>
                         <div class="action-btns">
-                            <button class="btn btn-primary btn-sm" onclick="openEditModal('${escapeHtml(food.id)}')">Sá»­a</button>
-                            <button class="btn btn-danger btn-sm" onclick="deleteFood('${escapeHtml(food.id)}')">XÃ³a</button>
+                            <button class="btn btn-primary btn-sm" onclick="openEditModal('${escapeHtml(food.id)}')">Sửa</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteFood('${escapeHtml(food.id)}')">Xóa</button>
                         </div>
                     </td>`;
                 tbody.appendChild(row);
@@ -510,8 +510,8 @@
             isEditMode = false;
             currentDetail = null;
             currentScores = [];
-            document.getElementById('food-modal-title').textContent = 'ThÃªm mÃ³n má»›i';
-            document.getElementById('food-modal-help').textContent = 'LÆ°u mÃ³n trÆ°á»›c, sau Ä‘Ã³ thÃªm Ä‘iá»ƒm theo tá»«ng thÃ nh phá»‘.';
+            document.getElementById('food-modal-title').textContent = 'Thêm món mới';
+            document.getElementById('food-modal-help').textContent = 'Lưu món trước, sau đó thêm điểm theo từng thành phố.';
             document.getElementById('food-id').value = '';
             document.getElementById('name-vi').value = '';
             document.getElementById('name-en').value = '';
@@ -530,11 +530,11 @@
             try {
                 const res = await fetch(`${API_BASE_URL}/${id}`);
                 const data = await res.json();
-                if (data.meta?.code !== 200000) throw new Error(data.meta?.message || 'KhÃ´ng táº£i Ä‘Æ°á»£c chi tiáº¿t');
+                if (data.meta?.code !== 200000) throw new Error(data.meta?.message || 'Không tải được chi tiết');
                 currentDetail = data.data;
                 const detail = currentDetail;
-                document.getElementById('food-modal-title').textContent = 'Chá»‰nh sá»­a mÃ³n';
-                document.getElementById('food-modal-help').textContent = 'CÃ³ thá»ƒ chá»‰nh thÃ´ng tin mÃ³n vÃ  CRUD Ä‘iá»ƒm theo thÃ nh phá»‘ trong cÃ¹ng mÃ n.';
+                document.getElementById('food-modal-title').textContent = 'Chỉnh sửa món';
+                document.getElementById('food-modal-help').textContent = 'Có thể chỉnh thông tin món và CRUD điểm theo thành phố trong cùng màn.';
                 document.getElementById('food-id').value = detail.id;
                 document.getElementById('name-vi').value = detail.names?.vi || '';
                 document.getElementById('name-en').value = detail.names?.en || '';
@@ -547,7 +547,7 @@
                 await loadLinkedPlaces(id);
                 document.getElementById('food-modal').classList.add('active');
             } catch (error) {
-                showError('Lá»—i táº£i chi tiáº¿t: ' + error.message);
+                showError('Lỗi tải chi tiết: ' + error.message);
             }
         }
 
@@ -568,8 +568,8 @@
             if (!currentScores.length) {
                 const hasFoodId = Boolean(document.getElementById('food-id').value);
                 empty.textContent = hasFoodId
-                    ? 'ChÆ°a cÃ³ Ä‘iá»ƒm. DÃ¹ng form bÃªn dÆ°á»›i Ä‘á»ƒ thÃªm Ä‘iá»ƒm cho thÃ nh phá»‘ Ä‘áº§u tiÃªn.'
-                    : 'ChÆ°a cÃ³ Ä‘iá»ƒm. LÆ°u mÃ³n trÆ°á»›c khi thÃªm Ä‘iá»ƒm.';
+                    ? 'Chưa có điểm. Dùng form bên dưới để thêm điểm cho thành phố đầu tiên.'
+                    : 'Chưa có điểm. Lưu món trước khi thêm điểm.';
                 empty.style.display = 'block';
                 wrap.style.display = 'none';
                 tbody.innerHTML = '';
@@ -581,7 +581,7 @@
             tbody.innerHTML = currentScores.map(score => {
                 const localDesc = escapeHtml(score.localDescription || '');
                 const funFact = escapeHtml(score.funFact || '');
-                const imageNote = score.imageUrl ? `áº¢nh city: ${escapeHtml(score.imageUrl)}` : '';
+                const imageNote = score.imageUrl ? `Ảnh city: ${escapeHtml(score.imageUrl)}` : '';
                 const description = [localDesc, imageNote, funFact ? `Fun fact: ${funFact}` : ''].filter(Boolean).join('<br>');
                 return `
                     <tr>
@@ -592,11 +592,11 @@
                             </span>
                         </td>
                         <td><span class="score-value">${escapeHtml(score.score ?? '')}</span></td>
-                        <td><div class="score-meta">${description || 'ChÆ°a cÃ³ mÃ´ táº£'}</div></td>
+                        <td><div class="score-meta">${description || 'Chưa có mô tả'}</div></td>
                         <td>
                             <div class="inline-actions">
-                                <button class="btn btn-secondary btn-sm" onclick="editCityScore('${escapeHtml(score.id)}')">Sá»­a</button>
-                                <button class="btn btn-danger btn-sm" onclick="deleteCityScore('${escapeHtml(score.id)}')">XÃ³a</button>
+                                <button class="btn btn-secondary btn-sm" onclick="editCityScore('${escapeHtml(score.id)}')">Sửa</button>
+                                <button class="btn btn-danger btn-sm" onclick="deleteCityScore('${escapeHtml(score.id)}')">Xóa</button>
                             </div>
                         </td>
                     </tr>`;
@@ -609,8 +609,8 @@
             document.getElementById('score-local-desc').value = '';
             document.getElementById('score-image-url').value = '';
             document.getElementById('score-fun-fact').value = '';
-            document.getElementById('score-form-title').textContent = 'ThÃªm Ä‘iá»ƒm thÃ nh phá»‘';
-            document.getElementById('score-save-btn').textContent = 'ThÃªm Ä‘iá»ƒm';
+            document.getElementById('score-form-title').textContent = 'Thêm điểm thành phố';
+            document.getElementById('score-save-btn').textContent = 'Thêm điểm';
             document.getElementById('score-cancel-btn').style.display = 'none';
             renderCitySlugSelect();
         }
@@ -624,8 +624,8 @@
             document.getElementById('score-local-desc').value = score.localDescription || '';
             document.getElementById('score-image-url').value = score.imageUrl || '';
             document.getElementById('score-fun-fact').value = score.funFact || '';
-            document.getElementById('score-form-title').textContent = 'Sá»­a Ä‘iá»ƒm thÃ nh phá»‘';
-            document.getElementById('score-save-btn').textContent = 'Cáº­p nháº­t Ä‘iá»ƒm';
+            document.getElementById('score-form-title').textContent = 'Sửa điểm thành phố';
+            document.getElementById('score-save-btn').textContent = 'Cập nhật điểm';
             document.getElementById('score-cancel-btn').style.display = 'inline-flex';
             document.getElementById('score-form').scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
@@ -633,7 +633,7 @@
         async function refreshFoodDetail(foodId) {
             const res = await fetch(`${API_BASE_URL}/${foodId}`);
             const data = await res.json();
-            if (data.meta?.code !== 200000) throw new Error(data.meta?.message || 'KhÃ´ng táº£i Ä‘Æ°á»£c chi tiáº¿t');
+            if (data.meta?.code !== 200000) throw new Error(data.meta?.message || 'Không tải được chi tiết');
             currentDetail = data.data;
             renderScoresSection(currentDetail.cityScores || []);
         }
@@ -660,10 +660,10 @@
             list.innerHTML = items.map(place => `
                 <li class="linked-item">
                     <span>
-                        <span class="linked-title">${escapeHtml(place.title || 'KhÃ´ng tÃªn')}</span>
+                        <span class="linked-title">${escapeHtml(place.title || 'Không tên')}</span>
                         <span class="linked-id">${escapeHtml(place.id)}</span>
                     </span>
-                    <button class="btn btn-danger btn-sm" onclick="unlinkPlace('${escapeHtml(place.id)}')">Gá»¡</button>
+                    <button class="btn btn-danger btn-sm" onclick="unlinkPlace('${escapeHtml(place.id)}')">Gỡ</button>
                 </li>`).join('');
         }
 
@@ -674,7 +674,7 @@
             const category = document.getElementById('category').value;
             const imageUrl = document.getElementById('image-url').value.trim() || null;
             if (!nameVi || !nameEn || !description) {
-                showError('Vui lÃ²ng Ä‘iá»n Ä‘á»§ tÃªn VI, tÃªn EN vÃ  mÃ´ táº£');
+                showError('Vui lòng điền đủ tên VI, tên EN và mô tả');
                 return;
             }
 
@@ -699,31 +699,31 @@
                         await loadLinkedPlaces(data.data.id);
                     }
                     await loadData(true);
-                    showSuccess('ÄÃ£ lÆ°u mÃ³n');
+                    showSuccess('Đã lưu món');
                 } else {
-                    throw new Error(data.meta?.message || 'LÆ°u tháº¥t báº¡i');
+                    throw new Error(data.meta?.message || 'Lưu thất bại');
                 }
             } catch (error) {
-                showError('Lá»—i lÆ°u: ' + error.message);
+                showError('Lỗi lưu: ' + error.message);
             }
         }
 
         async function saveCityScore() {
             const foodId = document.getElementById('food-id').value;
             if (!foodId) {
-                showError('LÆ°u mÃ³n trÆ°á»›c khi thÃªm Ä‘iá»ƒm thÃ nh phá»‘');
+                showError('Lưu món trước khi thêm điểm thành phố');
                 return;
             }
 
             const scoreValue = Number(document.getElementById('score-value').value);
             if (!Number.isInteger(scoreValue) || scoreValue < 0 || scoreValue > 100) {
-                showError('Äiá»ƒm pháº£i lÃ  sá»‘ nguyÃªn tá»« 0 Ä‘áº¿n 100');
+                showError('Điểm phải là số nguyên từ 0 đến 100');
                 return;
             }
 
             const citySlug = document.getElementById('score-city-slug').value.trim();
             if (!citySlug) {
-                showError('Nháº­p city slug trÆ°á»›c khi lÆ°u Ä‘iá»ƒm');
+                showError('Nhập city slug trước khi lưu điểm');
                 return;
             }
 
@@ -751,30 +751,30 @@
                     await refreshFoodDetail(foodId);
                     await loadCitySlugs();
                     resetScoreForm();
-                    showSuccess(scoreId ? 'ÄÃ£ cáº­p nháº­t Ä‘iá»ƒm thÃ nh phá»‘' : 'ÄÃ£ thÃªm Ä‘iá»ƒm thÃ nh phá»‘');
+                    showSuccess(scoreId ? 'Đã cập nhật điểm thành phố' : 'Đã thêm điểm thành phố');
                 } else {
-                    throw new Error(data.meta?.message || 'LÆ°u Ä‘iá»ƒm tháº¥t báº¡i');
+                    throw new Error(data.meta?.message || 'Lưu điểm thất bại');
                 }
             } catch (error) {
-                showError('Lá»—i lÆ°u Ä‘iá»ƒm: ' + error.message);
+                showError('Lỗi lưu điểm: ' + error.message);
             }
         }
 
         async function deleteCityScore(scoreId) {
             const foodId = document.getElementById('food-id').value;
-            if (!confirm('XÃ³a Ä‘iá»ƒm thÃ nh phá»‘ nÃ y?')) return;
+            if (!confirm('Xóa điểm thành phố này?')) return;
             try {
                 const res = await fetch(`${API_BASE_URL}/${foodId}/city-scores/${scoreId}`, { method: 'DELETE' });
                 const data = await res.json();
                 if (data.meta?.code === 200000) {
                     await refreshFoodDetail(foodId);
                     resetScoreForm();
-                    showSuccess('ÄÃ£ xÃ³a Ä‘iá»ƒm thÃ nh phá»‘');
+                    showSuccess('Đã xóa điểm thành phố');
                 } else {
-                    throw new Error(data.meta?.message || 'XÃ³a Ä‘iá»ƒm tháº¥t báº¡i');
+                    throw new Error(data.meta?.message || 'Xóa điểm thất bại');
                 }
             } catch (error) {
-                showError('Lá»—i xÃ³a Ä‘iá»ƒm: ' + error.message);
+                showError('Lỗi xóa điểm: ' + error.message);
             }
         }
 
@@ -782,7 +782,7 @@
             const foodId = document.getElementById('food-id').value;
             const placeId = document.getElementById('link-place-id').value.trim();
             if (!foodId || !placeId) {
-                showError('Nháº­p UUID place');
+                showError('Nhập UUID place');
                 return;
             }
             try {
@@ -795,46 +795,46 @@
                 if (data.meta?.code === 200000 || data.meta?.code === 201000) {
                     document.getElementById('link-place-id').value = '';
                     await loadLinkedPlaces(foodId);
-                    showSuccess('ÄÃ£ liÃªn káº¿t quÃ¡n');
+                    showSuccess('Đã liên kết quán');
                 } else {
-                    throw new Error(data.meta?.message || 'LiÃªn káº¿t tháº¥t báº¡i');
+                    throw new Error(data.meta?.message || 'Liên kết thất bại');
                 }
             } catch (error) {
-                showError('Lá»—i liÃªn káº¿t: ' + error.message);
+                showError('Lỗi liên kết: ' + error.message);
             }
         }
 
         async function unlinkPlace(placeId) {
             const foodId = document.getElementById('food-id').value;
-            if (!confirm('Gá»¡ liÃªn káº¿t quÃ¡n nÃ y?')) return;
+            if (!confirm('Gỡ liên kết quán này?')) return;
             try {
                 const res = await fetch(`${API_BASE_URL}/${foodId}/linked-places/${placeId}`, { method: 'DELETE' });
                 const data = await res.json();
                 if (data.meta?.code === 200000) {
                     await loadLinkedPlaces(foodId);
-                    showSuccess('ÄÃ£ gá»¡ liÃªn káº¿t quÃ¡n');
+                    showSuccess('Đã gỡ liên kết quán');
                 } else {
-                    throw new Error(data.meta?.message || 'Gá»¡ liÃªn káº¿t tháº¥t báº¡i');
+                    throw new Error(data.meta?.message || 'Gỡ liên kết thất bại');
                 }
             } catch (error) {
-                showError('Lá»—i gá»¡ liÃªn káº¿t: ' + error.message);
+                showError('Lỗi gỡ liên kết: ' + error.message);
             }
         }
 
         async function deleteFood(id) {
-            if (!confirm('XÃ³a mÃ³n nÃ y?')) return;
+            if (!confirm('Xóa món này?')) return;
             try {
                 const res = await fetch(`${API_BASE_URL}/${id}`, { method: 'DELETE' });
                 const data = await res.json();
                 if (data.meta?.code === 200000) {
                     GorouteAdmin.removeById(foods, id);
                     renderTable({ silent: true });
-                    showSuccess('ÄÃ£ xÃ³a mÃ³n');
+                    showSuccess('Đã xóa món');
                 } else {
-                    throw new Error(data.meta?.message || 'XÃ³a tháº¥t báº¡i');
+                    throw new Error(data.meta?.message || 'Xóa thất bại');
                 }
             } catch (error) {
-                showError('Lá»—i xÃ³a: ' + error.message);
+                showError('Lỗi xóa: ' + error.message);
             }
         }
 
