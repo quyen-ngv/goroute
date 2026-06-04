@@ -75,9 +75,6 @@ public class ReviewScoringService {
         // Quality bonus from trust score (max +0.3)
         double qualityBonus = Math.min(profile.getTrustScore().doubleValue() / 100.0, 0.3);
         
-        // Verified trip bonus (+0.2 if review linked to trip)
-        double verifiedBonus = review.getTripId() != null ? 0.2 : 0;
-        
         // Time decay
         double timeDecay = calculateTimeDecay(review.getCreatedAt());
         
@@ -85,7 +82,7 @@ public class ReviewScoringService {
         int flagCount = flagRepository.countByReviewId(review.getId());
         double flagPenalty = flagCount >= 2 ? 0 : (flagCount == 1 ? 0.3 : 1.0);
         
-        return (baseWeight + qualityBonus + verifiedBonus) * timeDecay * flagPenalty;
+        return (baseWeight + qualityBonus) * timeDecay * flagPenalty;
     }
     
     /**

@@ -27,6 +27,9 @@ public class PublicActivityResponse {
     private String category;
     private BigDecimal rating;
     private String photoUrl;
+    private PlaceScoreResponse platformScore;
+    private BigDecimal tripAvgScore;
+    private List<UserReviewResponse> memberReviews;
     private List<PublicExpenseResponse> expenses;
     private List<PublicNoteResponse> notes;
 }

@@ -18,7 +18,7 @@ public class CreateReviewRequest {
     @NotNull(message = "Place ID is required")
     private UUID placeId;
     
-    private UUID tripId; // Optional - but increases weight if provided
+    private UUID tripId; // Deprecated: reviews are scoped to place, not trip
     
     @NotNull(message = "Overall rating is required")
     @Min(value = 1, message = "Rating must be between 1 and 5")

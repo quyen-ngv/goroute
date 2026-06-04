@@ -14,16 +14,21 @@ import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.*;
+import com.ds.goroute.utils.JsonUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -42,6 +47,9 @@ public class TripServiceImpl implements TripService {
     private final TripNoteRepository tripNoteRepository;
     private final NotificationHelper notificationHelper;
     private final LocationImageService locationImageService;
+    private final UserReviewRepository userReviewRepository;
+    private final UserReviewProfileRepository userReviewProfileRepository;
+    private final PlaceScoreRepository placeScoreRepository;
 
     @Override
     @Transactional
@@ -522,6 +530,121 @@ public class TripServiceImpl implements TripService {
                 .build();
     }
 
+    private UUID parseActivityPlaceId(String placeId) {
+        if (placeId == null || placeId.isBlank()) {
+            return null;
+        }
+
+        try {
+            return UUID.fromString(placeId);
+        } catch (IllegalArgumentException e) {
+            log.warn("Activity placeId is not a backend UUID: {}", placeId);
+            return null;
+        }
+    }
+
+    private List<UserReviewResponse> buildSharedTripReviews(UUID placeId, UUID ownerId, Set<UUID> memberUserIds) {
+        return userReviewRepository.findByPlaceId(placeId, 1000, 0).stream()
+                .filter(review -> memberUserIds.contains(review.getUserId()))
+                .sorted(sharedTripReviewComparator(ownerId))
+                .map(this::mapToSharedTripReview)
+                .collect(Collectors.toList());
+    }
+
+    private Comparator<UserReview> sharedTripReviewComparator(UUID ownerId) {
+        return Comparator
+                .comparingInt((UserReview review) -> review.getUserId().equals(ownerId) ? 0 : 1)
+                .thenComparing(UserReview::getOverallRating, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(UserReview::getUnhelpfulVotes, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(UserReview::getHelpfulVotes, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(UserReview::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()));
+    }
+
+    private UserReviewResponse mapToSharedTripReview(UserReview review) {
+        User user = userRepository.findById(review.getUserId()).orElse(null);
+        UserReviewProfile profile = userReviewProfileRepository.findByUserId(review.getUserId()).orElse(null);
+
+        return UserReviewResponse.builder()
+                .id(review.getId())
+                .userId(review.getUserId())
+                .placeId(review.getPlaceId())
+                .tripId(review.getTripId())
+                .userName(user != null ? user.getFullName() : "Unknown")
+                .userAvatar(user != null ? user.getAvatarUrl() : null)
+                .userTier(profile != null ? profile.getTier() : UserTier.NEWCOMER)
+                .overallRating(review.getOverallRating())
+                .foodRating(review.getFoodRating())
+                .priceRating(review.getPriceRating())
+                .ambianceRating(review.getAmbianceRating())
+                .serviceRating(review.getServiceRating())
+                .text(review.getText())
+                .photos(parseReviewPhotos(review.getPhotos()))
+                .weight(review.getWeight() != null ? review.getWeight() : BigDecimal.ONE)
+                .helpfulVotes(review.getHelpfulVotes() != null ? review.getHelpfulVotes() : 0)
+                .unhelpfulVotes(review.getUnhelpfulVotes() != null ? review.getUnhelpfulVotes() : 0)
+                .hasVotedHelpful(null)
+                .isOwnReview(false)
+                .createdAt(review.getCreatedAt())
+                .updatedAt(review.getUpdatedAt())
+                .build();
+    }
+
+    private List<String> parseReviewPhotos(String photosJson) {
+        if (photosJson == null || photosJson.isBlank()) {
+            return null;
+        }
+
+        List<?> parsed = JsonUtils.fromJson(photosJson, List.class);
+        if (parsed == null) {
+            return null;
+        }
+
+        return parsed.stream()
+                .filter(Objects::nonNull)
+                .map(Object::toString)
+                .collect(Collectors.toList());
+    }
+
+    private BigDecimal calculateTripAverage(List<UserReviewResponse> reviews) {
+        if (reviews == null || reviews.isEmpty()) {
+            return null;
+        }
+
+        List<Integer> ratings = reviews.stream()
+                .map(UserReviewResponse::getOverallRating)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+
+        BigDecimal total = ratings.stream()
+                .map(BigDecimal::valueOf)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return ratings.isEmpty()
+                ? null
+                : total.divide(BigDecimal.valueOf(ratings.size()), 1, RoundingMode.HALF_UP);
+    }
+
+    private PlaceScoreResponse buildPlatformScore(UUID placeId) {
+        return placeScoreRepository.findByPlaceId(placeId)
+                .map(score -> PlaceScoreResponse.builder()
+                        .placeId(placeId)
+                        .tripmindScore(score.getTripmindScore())
+                        .googleScore(score.getGoogleScore())
+                        .reviewCount(score.getReviewCount())
+                        .foodScore(score.getFoodScore())
+                        .priceScore(score.getPriceScore())
+                        .ambianceScore(score.getAmbianceScore())
+                        .serviceScore(score.getServiceScore())
+                        .displayScore(score.getTripmindScore() != null
+                                ? score.getTripmindScore().toString()
+                                : (score.getGoogleScore() != null ? score.getGoogleScore().toString() : "N/A"))
+                        .displayLabel("Platform score")
+                        .useGoogleScore(score.getTripmindScore() == null && score.getGoogleScore() != null)
+                        .lastCalculatedAt(score.getLastCalculatedAt())
+                        .build())
+                .orElse(null);
+    }
+
     private String generateShareCode() {
         return UUID.randomUUID().toString().substring(0, 8).toUpperCase();
     }
@@ -647,6 +770,12 @@ public class TripServiceImpl implements TripService {
 
         // Get activities
         List<com.ds.goroute.entity.Activity> activities = activityRepository.findByTripId(tripId);
+        Set<UUID> memberUserIds = tripMemberRepository.findByTripId(tripId).stream()
+                .filter(m -> m.getStatus() == MemberStatus.ACCEPTED)
+                .map(TripMember::getUserId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        memberUserIds.add(trip.getOwnerId());
         
         // Get expenses if shared
         Map<UUID, List<PublicExpenseResponse>> expensesByActivity = new java.util.HashMap<>();
@@ -695,22 +824,32 @@ public class TripServiceImpl implements TripService {
         
         // Build activity responses with nested expenses and notes
         List<PublicActivityResponse> activityResponses = activities.stream()
-                .map(a -> PublicActivityResponse.builder()
-                        .id(a.getId())
-                        .dayNumber(a.getDayNumber())
-                        .placeId(a.getPlaceId() != null ? UUID.fromString(a.getPlaceId()) : null)
-                        .name(a.getName())
-                        .address(a.getAddress())
-                        .lat(a.getLat())
-                        .lng(a.getLng())
-                        .startTime(a.getStartTime())
-                        .endTime(a.getEndTime())
-                        .category(a.getCategory())
-                        .rating(a.getRating())
-                        .photoUrl(a.getPhotoUrl())
-                        .expenses(expensesByActivity.getOrDefault(a.getId(), null))
-                        .notes(notesByActivity.getOrDefault(a.getId(), null))
-                        .build())
+                .map(a -> {
+                    UUID placeId = parseActivityPlaceId(a.getPlaceId());
+                    List<UserReviewResponse> memberReviews = placeId != null
+                            ? buildSharedTripReviews(placeId, trip.getOwnerId(), memberUserIds)
+                            : null;
+
+                    return PublicActivityResponse.builder()
+                            .id(a.getId())
+                            .dayNumber(a.getDayNumber())
+                            .placeId(placeId)
+                            .name(a.getName())
+                            .address(a.getAddress())
+                            .lat(a.getLat())
+                            .lng(a.getLng())
+                            .startTime(a.getStartTime())
+                            .endTime(a.getEndTime())
+                            .category(a.getCategory())
+                            .rating(a.getRating())
+                            .photoUrl(a.getPhotoUrl())
+                            .platformScore(placeId != null ? buildPlatformScore(placeId) : null)
+                            .tripAvgScore(calculateTripAverage(memberReviews))
+                            .memberReviews(memberReviews == null || memberReviews.isEmpty() ? null : memberReviews)
+                            .expenses(expensesByActivity.getOrDefault(a.getId(), null))
+                            .notes(notesByActivity.getOrDefault(a.getId(), null))
+                            .build();
+                })
                 .collect(Collectors.toList());
 
         // Get owner info

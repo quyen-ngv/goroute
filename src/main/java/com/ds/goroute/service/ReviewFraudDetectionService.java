@@ -45,13 +45,7 @@ public class ReviewFraudDetectionService {
                     FlagSeverity.HIGH, "New account with extreme rating"));
         }
         
-        // 3. No trip context
-        if (review.getTripId() == null) {
-            flags.add(createFlag(review.getId(), ReviewFlagType.NO_TRIP_CONTEXT,
-                    FlagSeverity.LOW, "Review not linked to a trip"));
-        }
-        
-        // 4. Duplicate text detection
+        // 3. Duplicate text detection
         if (hasDuplicateText(review)) {
             flags.add(createFlag(review.getId(), ReviewFlagType.DUPLICATE_TEXT,
                     FlagSeverity.HIGH, "Review text similar to existing reviews"));

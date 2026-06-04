@@ -65,7 +65,7 @@ public class ReviewServiceImpl implements ReviewService {
                 .id(UUID.randomUUID())
                 .userId(userId)
                 .placeId(request.getPlaceId())
-                .tripId(request.getTripId())
+                .tripId(null)
                 .overallRating(request.getOverallRating())
                 .foodRating(request.getFoodRating())
                 .priceRating(request.getPriceRating())
