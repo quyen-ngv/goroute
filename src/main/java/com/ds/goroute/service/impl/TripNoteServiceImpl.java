@@ -99,6 +99,7 @@ public class TripNoteServiceImpl implements TripNoteService {
                 .activityId(activityId)
                 .userId(userId)
                 .content(request.getContent())
+                .isShared(request.getIsShared() == null || request.getIsShared())
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .isDeleted(false)
@@ -166,6 +167,7 @@ public class TripNoteServiceImpl implements TripNoteService {
                         .avatarUrl(user.getAvatarUrl())
                         .build())
                 .content(note.getContent())
+                .isShared(note.getIsShared() == null || note.getIsShared())
                 .createdAt(note.getCreatedAt())
                 .build();
     }
@@ -185,6 +187,9 @@ public class TripNoteServiceImpl implements TripNoteService {
         }
 
         note.setContent(request.getContent());
+        if (request.getIsShared() != null) {
+            note.setIsShared(request.getIsShared());
+        }
         note.setUpdatedAt(LocalDateTime.now());
 
         tripNoteRepository.updateById(note);

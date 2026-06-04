@@ -24,7 +24,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 public class ExpenseController extends BaseService {
-    
+
     private final ExpenseService expenseService;
 
     @GetMapping
@@ -50,7 +50,7 @@ public class ExpenseController extends BaseService {
     public ResponseEntity<BaseResponse<BudgetOverviewResponse>> getBudgetOverview(
             @PathVariable UUID tripId,
             @RequestAttribute("userId") UUID userId) {
-        BudgetOverviewResponse overview = expenseService.getBudgetOverview(tripId);
+        BudgetOverviewResponse overview = expenseService.getBudgetOverview(tripId, userId);
         return ResponseEntity.ok(ofSucceeded(overview));
     }
 
@@ -80,7 +80,7 @@ public class ExpenseController extends BaseService {
             @PathVariable UUID splitId,
             @Valid @RequestBody MarkPaymentRequest request,
             @RequestAttribute("userId") UUID userId) {
-        log.info("🔵 markPaymentForSplit endpoint called: tripId={}, expenseId={}, splitId={}, isPaid={}", 
+        log.info("ðŸ”µ markPaymentForSplit endpoint called: tripId={}, expenseId={}, splitId={}, isPaid={}",
                 tripId, expenseId, splitId, request.getIsPaid());
         ExpenseSplitResponse split = expenseService.markPaymentForSplit(tripId, expenseId, splitId, request, userId);
         return ResponseEntity.ok(ofSucceeded(split));

@@ -11,8 +11,10 @@
         <result property="dataId" column="data_id"/>
         <result property="inputId" column="input_id"/>
         <result property="title" column="title"/>
+        <result property="placeGroup" column="place_group" javaType="com.ds.goroute.type.PlaceGroup"/>
         <result property="category" column="category"/>
         <result property="address" column="address"/>
+        <result property="destinations" column="destinations"/>
         <result property="latitude" column="latitude"/>
         <result property="longitude" column="longitude"/>
         <result property="plusCode" column="plus_code"/>
@@ -29,6 +31,7 @@
         <result property="status" column="status"/>
         <result property="priceRange" column="price_range"/>
         <result property="openHours" column="open_hours"/>
+        <result property="visitDurationMinutes" column="visit_duration_minutes"/>
         <result property="popularTimes" column="popular_times"/>
         <result property="reservations" column="reservations"/>
         <result property="orderOnline" column="order_online"/>
@@ -38,6 +41,14 @@
         <result property="owner" column="owner"/>
         <result property="emails" column="emails"/>
         <result property="rawData" column="raw_data"/>
+        <result property="avgAuthenticityScore" column="avg_authenticity_score"/>
+        <result property="placeOverallScore" column="place_overall_score"/>
+        <result property="adjustedRating" column="adjusted_rating"/>
+        <result property="trustLevel" column="trust_level" javaType="com.ds.goroute.type.PlaceTrustLevel"/>
+        <result property="isJcurveDetected" column="is_jcurve_detected"/>
+        <result property="isSpikeDetected" column="is_spike_detected"/>
+        <result property="authenticLowStarCount" column="authentic_low_star_count"/>
+        <result property="scoreCalculatedAt" column="score_calculated_at"/>
         <result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
         <result property="distance" column="distance"/>
@@ -46,21 +57,27 @@
     <insert id="insert" parameterType="com.ds.goroute.entity.Place">
         INSERT INTO places (
             id, place_id, cid, data_id, input_id,
-            title, category, address, latitude, longitude,
+            title, place_group, category, address, destinations, latitude, longitude,
             plus_code, timezone, phone, website, google_maps_link,
             review_count, review_rating, reviews_per_rating,
             thumbnail, images, descriptions, status, price_range,
-            open_hours, popular_times, reservations, order_online, menu,
+            open_hours, visit_duration_minutes, popular_times, reservations, order_online, menu,
             complete_address, about, owner, emails, raw_data,
+            avg_authenticity_score, place_overall_score, adjusted_rating,
+            trust_level, is_jcurve_detected, is_spike_detected,
+            authentic_low_star_count, score_calculated_at,
             created_at, updated_at
         ) VALUES (
             #{id}, #{placeId}, #{cid}, #{dataId}, #{inputId},
-            #{title}, #{category}, #{address}, #{latitude}, #{longitude},
+            #{title}, #{placeGroup,typeHandler=org.apache.ibatis.type.EnumTypeHandler}, #{category}, #{address}, #{destinations}::jsonb, #{latitude}, #{longitude},
             #{plusCode}, #{timezone}, #{phone}, #{website}, #{googleMapsLink},
             #{reviewCount}, #{reviewRating}, #{reviewsPerRating},
             #{thumbnail}, #{images}, #{descriptions}, #{status}, #{priceRange},
-            #{openHours}, #{popularTimes}, #{reservations}, #{orderOnline}, #{menu},
+            #{openHours}, #{visitDurationMinutes}, #{popularTimes}, #{reservations}, #{orderOnline}, #{menu},
             #{completeAddress}, #{about}, #{owner}, #{emails}, #{rawData},
+            #{avgAuthenticityScore}, #{placeOverallScore}, #{adjustedRating},
+            #{trustLevel,typeHandler=org.apache.ibatis.type.EnumTypeHandler}, #{isJcurveDetected}, #{isSpikeDetected},
+            #{authenticLowStarCount}, #{scoreCalculatedAt},
             #{createdAt}, #{updatedAt}
         )
     </insert>
@@ -68,8 +85,10 @@
     <update id="update" parameterType="com.ds.goroute.entity.Place">
         UPDATE places SET
             title = #{title},
+            place_group = #{placeGroup,typeHandler=org.apache.ibatis.type.EnumTypeHandler},
             category = #{category},
             address = #{address},
+            destinations = #{destinations}::jsonb,
             latitude = #{latitude},
             longitude = #{longitude},
             plus_code = #{plusCode},
@@ -86,6 +105,7 @@
             status = #{status},
             price_range = #{priceRange},
             open_hours = #{openHours},
+            visit_duration_minutes = #{visitDurationMinutes},
             popular_times = #{popularTimes},
             reservations = #{reservations},
             order_online = #{orderOnline},
@@ -95,6 +115,14 @@
             owner = #{owner},
             emails = #{emails},
             raw_data = #{rawData},
+            avg_authenticity_score = #{avgAuthenticityScore},
+            place_overall_score = #{placeOverallScore},
+            adjusted_rating = #{adjustedRating},
+            trust_level = #{trustLevel,typeHandler=org.apache.ibatis.type.EnumTypeHandler},
+            is_jcurve_detected = #{isJcurveDetected},
+            is_spike_detected = #{isSpikeDetected},
+            authentic_low_star_count = #{authenticLowStarCount},
+            score_calculated_at = #{scoreCalculatedAt},
             updated_at = #{updatedAt}
         WHERE id = #{id}
     </update>
@@ -105,6 +133,11 @@
 
     <select id="findByPlaceId" resultMap="PlaceResultMap">
         SELECT * FROM places WHERE place_id = #{placeId}
+    </select>
+
+    <select id="findAll" resultMap="PlaceResultMap">
+        SELECT * FROM places
+        ORDER BY created_at DESC
     </select>
 
     <select id="findNearby" resultMap="PlaceResultMap">
@@ -120,16 +153,20 @@
             WHERE 1=1
             <if test="keyword != null and keyword != ''">
                 AND (
-                    to_tsvector('simple', COALESCE(title, '') || ' ' || COALESCE(address, '') || ' ' || COALESCE(category, '') || ' ' || COALESCE(descriptions, ''))
+                    to_tsvector('simple', COALESCE(title, '') || ' ' || COALESCE(address, '') || ' ' || COALESCE(category, '') || ' ' || COALESCE(descriptions, '') || ' ' || COALESCE(destinations::text, ''))
                     @@ plainto_tsquery('simple', #{keyword})
                     OR LOWER(title) LIKE CONCAT('%', LOWER(#{keyword}), '%')
                     OR LOWER(address) LIKE CONCAT('%', LOWER(#{keyword}), '%')
                     OR LOWER(category) LIKE CONCAT('%', LOWER(#{keyword}), '%')
                     OR LOWER(descriptions) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                    OR LOWER(destinations::text) LIKE CONCAT('%', LOWER(#{keyword}), '%')
                 )
             </if>
             <if test="category != null and category != ''">
                 AND category = #{category}
+            </if>
+            <if test="placeGroup != null and placeGroup != ''">
+                AND place_group = #{placeGroup}
             </if>
             <if test="minRating != null">
                 AND review_rating &gt;= #{minRating}
@@ -143,5 +180,57 @@
     <delete id="delete">
         DELETE FROM places WHERE id = #{id}
     </delete>
+
+    <select id="findNearbyExtended" resultMap="PlaceResultMap">
+        SELECT *
+        FROM (
+            SELECT p.*,
+                (6371 * acos(
+                    cos(radians(#{latitude})) * cos(radians(p.latitude)) *
+                    cos(radians(p.longitude) - radians(#{longitude})) +
+                    sin(radians(#{latitude})) * sin(radians(p.latitude))
+                )) AS distance
+            FROM places p
+            <if test="foodIds != null and foodIds.size() > 0">
+                INNER JOIN place_foods pf ON pf.place_id = p.id
+            </if>
+            WHERE 1=1
+            <if test="foodIds != null and foodIds.size() > 0">
+                AND pf.food_id IN
+                <foreach collection="foodIds" item="fid" open="(" separator="," close=")">
+                    #{fid}
+                </foreach>
+            </if>
+            <if test="citySlugJson != null and citySlugJson != ''">
+                AND p.destinations @&gt; #{citySlugJson}::jsonb
+            </if>
+            <if test="excludeLinkedFoodPlaces != null and excludeLinkedFoodPlaces">
+                AND NOT EXISTS (SELECT 1 FROM place_foods pfx WHERE pfx.place_id = p.id)
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    to_tsvector('simple', COALESCE(p.title, '') || ' ' || COALESCE(p.address, '') || ' ' || COALESCE(p.category, '') || ' ' || COALESCE(p.descriptions, '') || ' ' || COALESCE(p.destinations::text, ''))
+                    @@ plainto_tsquery('simple', #{keyword})
+                    OR LOWER(p.title) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                    OR LOWER(p.address) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                    OR LOWER(p.category) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                    OR LOWER(p.descriptions) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                    OR LOWER(p.destinations::text) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                )
+            </if>
+            <if test="category != null and category != ''">
+                AND p.category = #{category}
+            </if>
+            <if test="placeGroup != null and placeGroup != ''">
+                AND p.place_group = #{placeGroup}
+            </if>
+            <if test="minRating != null">
+                AND p.review_rating &gt;= #{minRating}
+            </if>
+        ) AS places_with_distance
+        WHERE distance &lt;= #{radius}
+        ORDER BY distance
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
 
 </mapper>

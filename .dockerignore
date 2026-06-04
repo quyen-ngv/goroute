@@ -8,3 +8,12 @@ node_modules/
 .DS_Store
 .env.local
 *.log
+logs/
+data/
+docs/
+deployment/
+nginx/
+*.iml
+*.iws
+*.ipr
+.mvn/

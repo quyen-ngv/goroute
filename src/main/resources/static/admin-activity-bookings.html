@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quáº£n lÃ½ Activity Bookings - TripMind Admin</title>
+    <link rel="stylesheet" href="/goroute/goroute-theme.css">
+    <style>
+        .img-preview {
+            width: 120px;
+            height: 80px;
+        }
+
+        #json-input.form-textarea {
+            min-height: 400px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="page-header">
+        <h1>ðŸŽ« Quáº£n lÃ½ Activity Bookings - TripMind</h1>
+        <p>Import vÃ  quáº£n lÃ½ tour/activity tá»« Klook, Viator</p>
+    </div>
+
+    <div class="container container--wide">
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number" id="total-bookings">0</div>
+                <div class="stat-label">Tá»•ng sá»‘ activities</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="avg-rating">0</div>
+                <div class="stat-label">Rating trung bÃ¬nh</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="total-booked">0</div>
+                <div class="stat-label">Tá»•ng lÆ°á»£t Ä‘áº·t</div>
+            </div>
+        </div>
+
+        <div class="toolbar">
+            <button class="btn btn-primary" onclick="openImportModal()">ðŸ“¥ Import tá»« Klook JSON</button>
+            <button class="btn btn-success" onclick="triggerReindex()">ðŸ”„ Reindex Lucene</button>
+            <button class="btn btn-secondary" onclick="loadData()">ðŸ”„ LÃ m má»›i</button>
+            <input type="text" class="search-box" id="search-input" placeholder="TÃ¬m kiáº¿m..."
+                onkeyup="searchActivities()">
+            <input type="text" class="search-box" id="destination-input" placeholder="Destination: Hue, Da Nang">
+            <button class="btn btn-secondary" onclick="searchByDestination()">ðŸ“ Lá»c destination</button>
+            <input type="number" class="search-box" id="search-lat" placeholder="Lat" step="any" style="width:120px">
+            <input type="number" class="search-box" id="search-lng" placeholder="Lng" step="any" style="width:120px">
+            <input type="number" class="search-box" id="search-radius-km" placeholder="Radius km" value="50" min="1"
+                step="1" style="width:120px">
+            <button class="btn btn-secondary" onclick="searchByCoordinates()">ðŸŒ Theo tá»a Ä‘á»™</button>
+            <input type="text" class="search-box" id="place-id-input" placeholder="Place ID">
+            <button class="btn btn-secondary" onclick="searchActivitiesByPlace()">ðŸ§­ Theo place</button>
+        </div>
+
+        <div id="error-message" class="error" style="display: none;"></div>
+        <div id="success-message" class="success" style="display: none;"></div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Danh sÃ¡ch Activity Bookings (<span id="total-count">0</span>)</div>
+            </div>
+            <div class="card-body">
+                <div id="loading" class="loading">Äang táº£i...</div>
+                <div id="empty" class="empty" style="display: none;">ChÆ°a cÃ³ activity nÃ o</div>
+                <div id="table-container" class="table-container" style="display: none;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 140px;">áº¢nh</th>
+                                <th>TÃªn Activity</th>
+                                <th style="width: 150px;">Departing From</th>
+                                <th style="width: 100px;">Price</th>
+                                <th style="width: 100px;">Rating</th>
+                                <th style="width: 80px;">Source</th>
+                                <th style="width: 180px;">Thao tÃ¡c</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Modal -->
+    <div id="import-modal" class="modal">
+        <div class="modal-content modal-content--lg">
+            <div class="modal-header">
+                <div class="modal-title">Import Activity tá»« Klook JSON</div>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">JSON Data tá»« Klook Scraper *</label>
+                    <textarea id="json-input" class="form-input form-textarea"
+                        placeholder='Paste toÃ n bá»™ JSON object tá»« Klook scraper...' required></textarea>
+                    <small class="form-help">
+                        Format: {"url": "...", "title": "...", "destinationCoordinates": [{"lat": 21.0285, "lng": 105.8542}], "location": {...}, "price": {...}, ...}
+                    </small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeImportModal()">Há»§y</button>
+                <button class="btn btn-primary" onclick="importActivity()">Import</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- View Details Modal -->
+    <div id="details-modal" class="modal">
+        <div class="modal-content modal-content--xl">
+            <div class="modal-header">
+                <div class="modal-title" id="details-title">Chi tiáº¿t Activity</div>
+            </div>
+            <div class="modal-body">
+                <div id="activity-details"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeDetailsModal()">ÄÃ³ng</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div id="edit-modal" class="modal">
+        <div class="modal-content modal-content--2xl">
+            <div class="modal-header">
+                <div class="modal-title">Chá»‰nh sá»­a Activity Booking</div>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-id">
+                <div class="form-section-title">Basic</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">Title</label>
+                        <input type="text" id="edit-title" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">URL</label>
+                        <input type="url" id="edit-url" class="form-input" placeholder="https://...">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Redirect URL (Affiliate Link)</label>
+                    <input type="url" id="edit-redirect-url" class="form-input" placeholder="https://...">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <textarea id="edit-description" class="form-input" rows="4"></textarea>
+                </div>
+
+                <div class="form-section-title">Location</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">Departing From</label>
+                        <input type="text" id="edit-departing-from" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Activity Address</label>
+                        <input type="text" id="edit-activity-address" class="form-input">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Navigation List (JSON Array)</label>
+                    <textarea id="edit-navigation-list" class="form-input" rows="3"
+                        placeholder='["Hong Kong","Lantau Island"]'></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Destinations (JSON Array)</label>
+                    <textarea id="edit-destinations" class="form-input" rows="3"
+                        placeholder='["Hue","Da Nang","Hoi An"]'></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Destination coordinates (JSON Array)</label>
+                    <textarea id="edit-destination-coordinates" class="form-input" rows="4"
+                        placeholder='[{"lat":21.0285,"lng":105.8542}]'></textarea>
+                    <small class="form-help">Toa do dung cho search theo ban kinh (km).</small>
+                </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">Itinerary Stops (JSON Array)</label>
+                        <textarea id="edit-itinerary-stops" class="form-input" rows="3"
+                            placeholder='["Stop A","Stop B"]'></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Pickup Addresses (JSON Array)</label>
+                        <textarea id="edit-pickup-addresses" class="form-input" rows="3"
+                            placeholder='["Address A","Address B"]'></textarea>
+                    </div>
+                </div>
+
+                <div class="form-section-title">Pricing & Stats</div>
+                <div class="form-grid-3">
+                    <div class="form-group">
+                        <label class="form-label">Price Amount</label>
+                        <input type="number" id="edit-price-amount" class="form-input" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Price Currency</label>
+                        <input type="text" id="edit-price-currency" class="form-input" placeholder="USD">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Duration</label>
+                        <input type="text" id="edit-duration" class="form-input" placeholder="8 hour(s) - 10 hour(s)">
+                    </div>
+                </div>
+                <div class="form-grid-3">
+                    <div class="form-group">
+                        <label class="form-label">Rating</label>
+                        <input type="number" id="edit-rating" class="form-input" step="0.1" min="0" max="5">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Review Count</label>
+                        <input type="number" id="edit-review-count" class="form-input" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Booked Count</label>
+                        <input type="number" id="edit-booked-count" class="form-input" min="0">
+                    </div>
+                </div>
+
+                <div class="form-section-title">Media & Detail</div>
+                <div class="form-group">
+                    <label class="form-label">Thumbnail URL</label>
+                    <input type="url" id="edit-thumbnail" class="form-input" placeholder="https://...">
+                </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">Images (JSON Array)</label>
+                        <textarea id="edit-images" class="form-input" rows="5" placeholder='["https://..."]'></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Highlights (JSON Array)</label>
+                        <textarea id="edit-highlights" class="form-input" rows="5"
+                            placeholder='["Highlight 1","Highlight 2"]'></textarea>
+                    </div>
+                </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">What To Expect (JSON Array Object)</label>
+                        <textarea id="edit-what-to-expect" class="form-input" rows="6"
+                            placeholder='[{"text":"...","image":"https://..."}]'></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Itinerary (JSON Array Object)</label>
+                        <textarea id="edit-itinerary" class="form-input" rows="6"
+                            placeholder='[{"title":"...","content":"...","images":["https://..."]}]'></textarea>
+                    </div>
+                </div>
+                <small class="form-help">LÆ°u Ã½: CÃ¡c Ã´ JSON pháº£i Ä‘Ãºng format array/object Ä‘á»ƒ cáº­p nháº­t thÃ nh cÃ´ng.</small>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeEditModal()">Há»§y</button>
+                <button class="btn btn-primary" onclick="saveActivity()">ðŸ’¾ LÆ°u</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/goroute/goroute-admin-utils.js"></script>
+    <script>
+        const API_BASE_URL = 'https://onestudy.id.vn/goroute/v1/api';
+        let activities = [];
+
+        const tableChrome = () => ({
+            loadingEl: document.getElementById('loading'),
+            emptyEl: document.getElementById('empty'),
+            tableEl: document.getElementById('table-container'),
+        });
+
+        async function loadData(silent = false) {
+            const chrome = tableChrome();
+            try {
+                GorouteAdmin.beginLoading({ silent, ...chrome });
+                if (!silent) hideMessages();
+
+                const response = await fetch(`${API_BASE_URL}/activity-bookings/search?page=0&size=1000`);
+                const data = await response.json();
+
+                if (data.meta && data.meta.code === 200000) {
+                    activities = data.data || [];
+                    renderTable({ silent });
+                    updateStats();
+                } else {
+                    throw new Error(data.meta?.message || 'Unknown error');
+                }
+            } catch (error) {
+                showError('Lá»—i táº£i dá»¯ liá»‡u: ' + error.message);
+                chrome.loadingEl.style.display = 'none';
+            }
+        }
+
+        function applyActivityMutation(activity) {
+            GorouteAdmin.upsertById(activities, activity);
+            renderTable({ silent: true });
+            updateStats();
+        }
+
+        function removeActivityFromList(id) {
+            GorouteAdmin.removeById(activities, id);
+            renderTable({ silent: true });
+            updateStats();
+        }
+
+        async function refreshActivitySilent(id) {
+            const response = await fetch(`${API_BASE_URL}/activity-bookings/${id}`);
+            const data = await response.json();
+            if (data.meta && data.meta.code === 200000 && data.data) {
+                applyActivityMutation(data.data);
+            }
+        }
+
+        function renderTable(options = {}) {
+            const silent = options.silent === true;
+            GorouteAdmin.syncTableChrome({
+                silent,
+                ...tableChrome(),
+                rowCount: activities.length,
+            });
+            document.getElementById('total-count').textContent = activities.length;
+
+            if (activities.length === 0) return;
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
+
+            activities.forEach(activity => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><img src="${activity.thumbnail || ''}" class="img-preview" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%2280%22%3E%3Crect fill=%22%23ddd%22 width=%22120%22 height=%2280%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E'"></td>
+                    <td>
+                        <div style="font-weight: 600;">${activity.title || 'N/A'}</div>
+                        <div style="font-size: 12px; color: #6b7280;">${activity.duration || ''}</div>
+                        <div style="font-size: 12px; color: #f59e0b;">${(activity.destinations || []).join(' â€¢ ')}</div>
+                    </td>
+                    <td>${activity.departingFrom || 'N/A'}</td>
+                    <td style="font-weight: 600; color: #059669;">$${activity.priceAmount || 0}</td>
+                    <td><span class="rating-badge">â­ ${activity.rating || 0}</span></td>
+                    <td><span class="source-badge">${activity.source || 'N/A'}</span></td>
+                    <td>
+                        <div class="action-btns">
+                            <button class="btn btn-secondary btn-sm" onclick="viewDetails('${activity.id}')">ðŸ‘ï¸ Xem</button>
+                            <button class="btn btn-primary btn-sm" onclick="editActivity('${activity.id}')">âœï¸ Sá»­a</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteActivity('${activity.id}')">ðŸ—‘ï¸ XÃ³a</button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateStats() {
+            document.getElementById('total-bookings').textContent = activities.length;
+
+            const avgRating = activities.length > 0
+                ? (activities.reduce((sum, a) => sum + (a.rating || 0), 0) / activities.length).toFixed(1)
+                : 0;
+            document.getElementById('avg-rating').textContent = avgRating;
+
+            const totalBooked = activities.reduce((sum, a) => sum + (a.bookedCount || 0), 0);
+            document.getElementById('total-booked').textContent = totalBooked.toLocaleString();
+        }
+
+        async function searchActivities() {
+            const query = document.getElementById('search-input').value;
+            const destinationParams = buildDestinationQueryParams(document.getElementById('destination-input').value);
+            if (!query.trim()) {
+                if (destinationParams) {
+                    searchByDestination();
+                } else {
+                    loadData(activities.length > 0);
+                }
+                return;
+            }
+
+            try {
+                const geoParams = buildGeoQueryParams();
+                const response = await fetch(`${API_BASE_URL}/activity-bookings/search?q=${encodeURIComponent(query)}${geoParams}${destinationParams}&page=0&size=100`);
+                const data = await response.json();
+
+                if (data.meta && data.meta.code === 200000) {
+                    activities = data.data || [];
+                    renderTable();
+                    updateStats();
+                }
+            } catch (error) {
+                showError('Lá»—i tÃ¬m kiáº¿m: ' + error.message);
+            }
+        }
+
+        async function searchByDestination() {
+            const destinationParams = buildDestinationQueryParams(document.getElementById('destination-input').value);
+            if (!destinationParams) {
+                loadData(activities.length > 0);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/activity-bookings/search?page=0&size=200${destinationParams}`);
+                const data = await response.json();
+
+                if (data.meta && data.meta.code === 200000) {
+                    activities = data.data || [];
+                    renderTable();
+                    updateStats();
+                } else {
+                    throw new Error(data.meta?.message || 'Unknown error');
+                }
+            } catch (error) {
+                showError('Lá»—i lá»c destination: ' + error.message);
+            }
+        }
+
+        async function searchActivitiesByPlace() {
+            const placeId = document.getElementById('place-id-input').value.trim();
+            const query = document.getElementById('search-input').value.trim();
+            if (!placeId) {
+                showError('Vui lÃ²ng nháº­p placeId');
+                return;
+            }
+
+            try {
+                const params = new URLSearchParams({ placeId, page: '0', size: '100' });
+                if (query) {
+                    params.append('q', query);
+                }
+                const response = await fetch(`${API_BASE_URL}/activity-bookings/search/by-place?${params.toString()}`);
+                const data = await response.json();
+
+                if (data.meta && data.meta.code === 200000) {
+                    activities = data.data || [];
+                    renderTable();
+                    updateStats();
+                } else {
+                    throw new Error(data.meta?.message || 'Unknown error');
+                }
+            } catch (error) {
+                showError('Lá»—i tÃ¬m theo place: ' + error.message);
+            }
+        }
+
+        function openImportModal() {
+            document.getElementById('json-input').value = '';
+            document.getElementById('import-modal').classList.add('active');
+        }
+
+        function closeImportModal() {
+            document.getElementById('import-modal').classList.remove('active');
+        }
+
+        async function importActivity() {
+            const jsonText = document.getElementById('json-input').value.trim();
+            if (!jsonText) {
+                showError('Vui lÃ²ng nháº­p JSON data');
+                return;
+            }
+
+            try {
+                const jsonData = JSON.parse(jsonText);
+
+                const response = await fetch(`${API_BASE_URL}/activity-bookings/import`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(jsonData)
+                });
+
+                const data = await response.json();
+
+                if (data.meta && data.meta.code === 200000) {
+                    showSuccess('Import thÃ nh cÃ´ng!');
+                    closeImportModal();
+                    if (data.data) {
+                        applyActivityMutation(data.data);
+                    } else {
+                        loadData(true);
+                    }
+                } else {
+                    throw new Error(data.meta?.message || 'Import failed');
+                }
+            } catch (error) {
+                showError('Lá»—i import: ' + error.message);
+            }
+        }
+
+        async function viewDetails(id) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/activity-bookings/${id}`);
+                const data = await response.json();
+
+                if (data.meta && data.meta.code === 200000) {
+                    const activity = data.data;
+                    document.getElementById('details-title').textContent = activity.title;
+
+                    let html = `
+                        <div class="detail-section">
+                            <h4>ðŸ“ ThÃ´ng tin cÆ¡ báº£n</h4>
+                            <div class="detail-grid">
+                                <div class="detail-item">
+                                    <div class="detail-label">Departing From</div>
+                                    <div class="detail-value">${activity.departingFrom || 'N/A'}</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-label">Activity Address</div>
+                                    <div class="detail-value">${activity.activityAddress || 'N/A'}</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-label">Duration</div>
+                                    <div class="detail-value">${activity.duration || 'N/A'}</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-label">Price</div>
+                                    <div class="detail-value">$${activity.priceAmount || 0} ${activity.priceCurrency || ''}</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-label">Rating</div>
+                                    <div class="detail-value">â­ ${activity.rating || 0} (${activity.reviewCount || 0} reviews)</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-label">Booked Count</div>
+                                    <div class="detail-value">${(activity.bookedCount || 0).toLocaleString()}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="detail-section">
+                            <h4>ðŸ“ Description</h4>
+                            <p>${activity.description || 'N/A'}</p>
+                        </div>
+
+                        <div class="detail-section">
+                            <h4>âœ¨ Highlights</h4>
+                            <ul style="padding-left: 20px;">
+                                ${(activity.highlights || []).map(h => `<li>${h}</li>`).join('')}
+                            </ul>
+                        </div>
+
+                        <div class="detail-section">
+                            <h4>ðŸ—ºï¸ Locations</h4>
+                            <div class="detail-item">
+                                <div class="detail-label">Navigation List</div>
+                                <div class="detail-value">${(activity.navigationList || []).join(' â†’ ')}</div>
+                            </div>
+                            <div class="detail-item" style="margin-top: 8px;">
+                                <div class="detail-label">Destinations</div>
+                                <div class="detail-value">${(activity.destinations || []).join(', ')}</div>
+                            </div>
+                            <div class="detail-item" style="margin-top: 8px;">
+                                <div class="detail-label">Destination coordinates</div>
+                                <div class="detail-value">${JSON.stringify(activity.destinationCoordinates || [])}</div>
+                            </div>
+                            <div class="detail-item" style="margin-top: 8px;">
+                                <div class="detail-label">Itinerary Stops</div>
+                                <div class="detail-value">${(activity.itineraryStops || []).join(', ')}</div>
+                            </div>
+                            <div class="detail-item" style="margin-top: 8px;">
+                                <div class="detail-label">Pickup Addresses</div>
+                                <div class="detail-value">${(activity.pickupAddresses || []).join(', ')}</div>
+                            </div>
+                        </div>
+
+                        <div class="detail-section">
+                            <h4>ðŸ–¼ï¸ Images</h4>
+                            <div class="detail-images">
+                                ${(activity.images || []).map(img => `<img src="${img}" onclick="window.open('${img}', '_blank')">`).join('')}
+                            </div>
+                        </div>
+                    `;
+
+                    document.getElementById('activity-details').innerHTML = html;
+                    document.getElementById('details-modal').classList.add('active');
+                }
+            } catch (error) {
+                showError('Lá»—i táº£i chi tiáº¿t: ' + error.message);
+            }
+        }
+
+        function closeDetailsModal() {
+            document.getElementById('details-modal').classList.remove('active');
+        }
+
+        function editActivity(id) {
+            fetch(`${API_BASE_URL}/activity-bookings/${id}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.meta && data.meta.code === 200000) {
+                        const activity = data.data;
+                        document.getElementById('edit-id').value = activity.id;
+                        document.getElementById('edit-title').value = activity.title || '';
+                        document.getElementById('edit-url').value = activity.url || '';
+                        document.getElementById('edit-description').value = activity.description || '';
+                        document.getElementById('edit-redirect-url').value = activity.redirectUrl || activity.url || '';
+                        document.getElementById('edit-activity-address').value = activity.activityAddress || '';
+                        document.getElementById('edit-departing-from').value = activity.departingFrom || '';
+                        document.getElementById('edit-destinations').value = JSON.stringify(activity.destinations || [], null, 2);
+                        document.getElementById('edit-destination-coordinates').value = JSON.stringify(activity.destinationCoordinates || [], null, 2);
+                        document.getElementById('edit-navigation-list').value = JSON.stringify(activity.navigationList || [], null, 2);
+                        document.getElementById('edit-itinerary-stops').value = JSON.stringify(activity.itineraryStops || [], null, 2);
+                        document.getElementById('edit-pickup-addresses').value = JSON.stringify(activity.pickupAddresses || [], null, 2);
+                        document.getElementById('edit-price-amount').value = activity.priceAmount ?? '';
+                        document.getElementById('edit-price-currency').value = activity.priceCurrency || '';
+                        document.getElementById('edit-duration').value = activity.duration || '';
+                        document.getElementById('edit-rating').value = activity.rating ?? '';
+                        document.getElementById('edit-review-count').value = activity.reviewCount ?? '';
+                        document.getElementById('edit-booked-count').value = activity.bookedCount ?? '';
+                        document.getElementById('edit-thumbnail').value = activity.thumbnail || '';
+                        document.getElementById('edit-images').value = JSON.stringify(activity.images || [], null, 2);
+                        document.getElementById('edit-highlights').value = JSON.stringify(activity.highlights || [], null, 2);
+                        document.getElementById('edit-what-to-expect').value = JSON.stringify(
+                            (activity.whatToExpect || []).map(item => ({
+                                text: item.text || '',
+                                image: item.imageUrl || ''
+                            })),
+                            null,
+                            2
+                        );
+                        document.getElementById('edit-itinerary').value = JSON.stringify(activity.itinerary || [], null, 2);
+                        document.getElementById('edit-modal').classList.add('active');
+                    }
+                })
+                .catch(error => showError('Lá»—i táº£i dá»¯ liá»‡u: ' + error.message));
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-modal').classList.remove('active');
+        }
+
+        async function saveActivity() {
+            const id = document.getElementById('edit-id').value;
+            let payload;
+            try {
+                payload = {
+                    title: document.getElementById('edit-title').value,
+                    url: document.getElementById('edit-url').value,
+                    description: document.getElementById('edit-description').value,
+                    redirectUrl: document.getElementById('edit-redirect-url').value,
+                    activityAddress: document.getElementById('edit-activity-address').value,
+                    departingFrom: document.getElementById('edit-departing-from').value,
+                    destinations: parseJsonArrayField('edit-destinations'),
+                    destinationCoordinates: parseJsonArrayField('edit-destination-coordinates'),
+                    navigationList: parseJsonArrayField('edit-navigation-list'),
+                    itineraryStops: parseJsonArrayField('edit-itinerary-stops'),
+                    pickupAddresses: parseJsonArrayField('edit-pickup-addresses'),
+                    priceAmount: parseDecimalField('edit-price-amount'),
+                    priceCurrency: document.getElementById('edit-price-currency').value,
+                    duration: document.getElementById('edit-duration').value,
+                    rating: parseDecimalField('edit-rating'),
+                    reviewCount: parseIntegerField('edit-review-count'),
+                    bookedCount: parseIntegerField('edit-booked-count'),
+                    thumbnail: document.getElementById('edit-thumbnail').value,
+                    images: parseJsonArrayField('edit-images'),
+                    highlights: parseJsonArrayField('edit-highlights'),
+                    whatToExpect: parseJsonArrayField('edit-what-to-expect'),
+                    itinerary: parseJsonArrayField('edit-itinerary')
+                };
+            } catch (error) {
+                showError(error.message);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/activity-bookings/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (result.meta && result.meta.code === 200000) {
+                    showSuccess('Cáº­p nháº­t thÃ nh cÃ´ng!');
+                    closeEditModal();
+                    if (result.data) {
+                        applyActivityMutation(result.data);
+                    } else {
+                        await refreshActivitySilent(id);
+                    }
+                } else {
+                    throw new Error(result.meta?.message || 'Update failed');
+                }
+            } catch (error) {
+                showError('Lá»—i cáº­p nháº­t: ' + error.message);
+            }
+        }
+
+        async function deleteActivity(id) {
+            if (!confirm('Báº¡n cÃ³ cháº¯c muá»‘n xÃ³a activity nÃ y?')) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/activity-bookings/${id}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (data.meta && data.meta.code === 200000) {
+                    showSuccess('XÃ³a thÃ nh cÃ´ng!');
+                    removeActivityFromList(id);
+                } else {
+                    throw new Error(data.meta?.message || 'Delete failed');
+                }
+            } catch (error) {
+                showError('Lá»—i xÃ³a: ' + error.message);
+            }
+        }
+
+        async function triggerReindex() {
+            if (!confirm('Báº¡n cÃ³ cháº¯c muá»‘n reindex toÃ n bá»™ dá»¯ liá»‡u?')) return;
+
+            try {
+                showSuccess('Äang reindex...');
+                const response = await fetch(`${API_BASE_URL}/activity-bookings/indexing/trigger`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (data.meta && data.meta.code === 200000) {
+                    showSuccess('Reindex thÃ nh cÃ´ng!');
+                } else {
+                    throw new Error(data.meta?.message || 'Reindex failed');
+                }
+            } catch (error) {
+                showError('Lá»—i reindex: ' + error.message);
+            }
+        }
+
+        function showError(message) {
+            const el = document.getElementById('error-message');
+            el.textContent = message;
+            el.style.display = 'block';
+            setTimeout(() => el.style.display = 'none', 5000);
+        }
+
+        function showSuccess(message) {
+            const el = document.getElementById('success-message');
+            el.textContent = message;
+            el.style.display = 'block';
+            setTimeout(() => el.style.display = 'none', 3000);
+        }
+
+        function hideMessages() {
+            document.getElementById('error-message').style.display = 'none';
+            document.getElementById('success-message').style.display = 'none';
+        }
+
+        function parseJsonArrayField(fieldId) {
+            const raw = document.getElementById(fieldId).value.trim();
+            if (!raw) return [];
+            let value;
+            try {
+                value = JSON.parse(raw);
+            } catch (error) {
+                throw new Error(`Field ${fieldId} khÃ´ng Ä‘Ãºng JSON`);
+            }
+            if (!Array.isArray(value)) {
+                throw new Error(`Field ${fieldId} pháº£i lÃ  JSON array`);
+            }
+            return value;
+        }
+
+        function parseDecimalField(fieldId) {
+            const raw = document.getElementById(fieldId).value.trim();
+            if (!raw) return null;
+            const value = Number(raw);
+            if (!Number.isFinite(value)) {
+                throw new Error(`Field ${fieldId} pháº£i lÃ  sá»‘ há»£p lá»‡`);
+            }
+            return value;
+        }
+
+        function parseIntegerField(fieldId) {
+            const raw = document.getElementById(fieldId).value.trim();
+            if (!raw) return null;
+            const value = parseInt(raw, 10);
+            if (!Number.isInteger(value)) {
+                throw new Error(`Field ${fieldId} pháº£i lÃ  sá»‘ nguyÃªn há»£p lá»‡`);
+            }
+            return value;
+        }
+
+        function buildGeoQueryParams() {
+            const lat = document.getElementById('search-lat').value.trim();
+            const lng = document.getElementById('search-lng').value.trim();
+            const radius = document.getElementById('search-radius-km').value.trim() || '50';
+            if (!lat || !lng) return '';
+            return `&latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lng)}&radiusKm=${encodeURIComponent(radius)}`;
+        }
+
+        async function searchByCoordinates() {
+            const geoParams = buildGeoQueryParams();
+            if (!geoParams) {
+                showError('Vui lÃ²ng nháº­p latitude vÃ  longitude');
+                return;
+            }
+            const query = document.getElementById('search-input').value.trim();
+            const destinationParams = buildDestinationQueryParams(document.getElementById('destination-input').value);
+            const q = query ? `q=${encodeURIComponent(query)}&` : '';
+            try {
+                const response = await fetch(`${API_BASE_URL}/activity-bookings/search?${q}page=0&size=200${geoParams}${destinationParams}`);
+                const data = await response.json();
+                if (data.meta && data.meta.code === 200000) {
+                    activities = data.data || [];
+                    renderTable();
+                    updateStats();
+                } else {
+                    throw new Error(data.meta?.message || 'Unknown error');
+                }
+            } catch (error) {
+                showError('Lá»—i tÃ¬m theo tá»a Ä‘á»™: ' + error.message);
+            }
+        }
+
+        function buildDestinationQueryParams(input) {
+            if (!input || !input.trim()) return '';
+            const destinations = input
+                .split(',')
+                .map(value => value.trim())
+                .filter(value => value.length > 0);
+            if (destinations.length === 0) return '';
+            return destinations.map(destination => `&destinations=${encodeURIComponent(destination)}`).join('');
+        }
+
+        // Load data on page load
+        loadData();
+    </script>
+</body>
+
+</html>

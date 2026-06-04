@@ -12,8 +12,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class UpdateTripNoteRequest {
-    
+
     @NotBlank(message = "Content is required")
     @Size(max = 2000, message = "Content must not exceed 2000 characters")
     private String content;
+
+    private Boolean isShared;
 }

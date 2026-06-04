@@ -35,6 +35,6 @@ nginx/
 logs/
 docs/
 deployment/
+data/
 src/main/resources/application.yaml
 src/main/resources/firebase-credentials.json
-src/main/resources/firebase-credentials.json.example

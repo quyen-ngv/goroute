@@ -24,6 +24,10 @@ public class UpdateActivityRequest {
     private String address;
     private BigDecimal lat;
     private BigDecimal lng;
+    /** Destination point for transport activities. */
+    private String endAddress;
+    private BigDecimal endLat;
+    private BigDecimal endLng;
     private Integer dayNumber;
     private LocalTime startTime;
     private LocalTime endTime;
@@ -36,7 +40,7 @@ public class UpdateActivityRequest {
     private Boolean isAccommodation;
     private Boolean isStartingPoint;
     private LocalDateTime startingPointDate;
-    
+
     // Ignore expenses field if sent from frontend
     private List<Object> expenses;
 }

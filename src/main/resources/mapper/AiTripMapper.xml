@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ds.goroute.mapper.AiTripMapper">
+
+    <sql id="AiTripDraftColumns">
+        id, user_id, trip_name, city_id, city_name, city_lat, city_lng,
+        start_date, end_date, day_count, place_groups, pace, preference_text,
+        candidates, status, idempotency_key, created_trip_id, created_at, updated_at
+    </sql>
+
+    <resultMap id="AiTripDraftResultMap" type="com.ds.goroute.entity.AiTripDraft">
+        <id property="id" column="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result property="userId" column="user_id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result property="tripName" column="trip_name" jdbcType="VARCHAR"/>
+        <result property="cityId" column="city_id" jdbcType="VARCHAR"/>
+        <result property="cityName" column="city_name" jdbcType="VARCHAR"/>
+        <result property="cityLat" column="city_lat" jdbcType="DECIMAL"/>
+        <result property="cityLng" column="city_lng" jdbcType="DECIMAL"/>
+        <result property="startDate" column="start_date" jdbcType="DATE"/>
+        <result property="endDate" column="end_date" jdbcType="DATE"/>
+        <result property="dayCount" column="day_count" jdbcType="INTEGER"/>
+        <result property="placeGroups" column="place_groups" jdbcType="VARCHAR"/>
+        <result property="pace" column="pace" jdbcType="VARCHAR"/>
+        <result property="preferenceText" column="preference_text" jdbcType="VARCHAR"/>
+        <result property="candidates" column="candidates" jdbcType="VARCHAR"/>
+        <result property="status" column="status" jdbcType="VARCHAR"/>
+        <result property="idempotencyKey" column="idempotency_key" jdbcType="VARCHAR"/>
+        <result property="createdTripId" column="created_trip_id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result property="createdAt" column="created_at" jdbcType="TIMESTAMP"/>
+        <result property="updatedAt" column="updated_at" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <insert id="ensureSubscription">
+        INSERT INTO user_subscriptions (user_id, tier, ai_trips_used)
+        VALUES (#{userId,javaType=java.util.UUID,jdbcType=OTHER}, 'FREE', 0)
+        ON CONFLICT (user_id) DO NOTHING
+    </insert>
+
+    <update id="consumeAiTripQuota">
+        UPDATE user_subscriptions
+        SET ai_trips_used = ai_trips_used + 1,
+            updated_at = NOW()
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND ai_trips_used &lt; CASE WHEN tier = 'PRO' THEN 10 ELSE 3 END
+    </update>
+
+    <select id="getSubscriptionTier" resultType="string">
+        SELECT tier
+        FROM user_subscriptions
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <select id="getAiTripsUsed" resultType="int">
+        SELECT ai_trips_used
+        FROM user_subscriptions
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <insert id="insertDraft" parameterType="com.ds.goroute.entity.AiTripDraft">
+        INSERT INTO ai_trip_drafts (
+            id, user_id, trip_name, city_id, city_name, city_lat, city_lng,
+            start_date, end_date, day_count, place_groups, pace, preference_text, candidates, status
+        )
+        VALUES (
+            #{id,javaType=java.util.UUID,jdbcType=OTHER},
+            #{userId,javaType=java.util.UUID,jdbcType=OTHER},
+            #{tripName,jdbcType=VARCHAR},
+            #{cityId,jdbcType=VARCHAR},
+            #{cityName,jdbcType=VARCHAR},
+            #{cityLat,jdbcType=DECIMAL},
+            #{cityLng,jdbcType=DECIMAL},
+            #{startDate,javaType=java.time.LocalDate,jdbcType=DATE},
+            #{endDate,javaType=java.time.LocalDate,jdbcType=DATE},
+            #{dayCount,jdbcType=INTEGER},
+            #{placeGroups,jdbcType=VARCHAR}::jsonb,
+            #{pace,jdbcType=VARCHAR},
+            #{preferenceText,jdbcType=VARCHAR},
+            #{candidates,jdbcType=VARCHAR}::jsonb,
+            #{status,jdbcType=VARCHAR}
+        )
+    </insert>
+
+    <select id="findDraftForUpdate" resultMap="AiTripDraftResultMap">
+        SELECT <include refid="AiTripDraftColumns"/>
+        FROM ai_trip_drafts
+        WHERE id = #{draftId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+        FOR UPDATE
+    </select>
+
+    <select id="findDraft" resultMap="AiTripDraftResultMap">
+        SELECT <include refid="AiTripDraftColumns"/>
+        FROM ai_trip_drafts
+        WHERE id = #{draftId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <update id="completeDraft">
+        UPDATE ai_trip_drafts
+        SET status = 'COMPLETED',
+            idempotency_key = #{idempotencyKey,jdbcType=VARCHAR},
+            created_trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
+            updated_at = NOW()
+        WHERE id = #{draftId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+</mapper>

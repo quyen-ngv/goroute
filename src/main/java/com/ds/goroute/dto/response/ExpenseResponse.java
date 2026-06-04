@@ -18,6 +18,8 @@ public class ExpenseResponse {
     private UUID id;
     private BigDecimal amount;
     private String currency;
+    private BigDecimal exchangeRate;
+    private BigDecimal amountInTripCurrency;
     private String category;
     private String description;
     private UUID activityId;

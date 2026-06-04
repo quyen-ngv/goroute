@@ -28,17 +28,17 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class ReviewServiceImpl implements ReviewService {
-    
+
     private final UserReviewRepository reviewRepository;
     private final UserReviewProfileRepository profileRepository;
     private final PlaceScoreRepository scoreRepository;
     private final ReviewHelpfulVoteRepository voteRepository;
     private final UserRepository userRepository;
     private final PlaceRepository placeRepository;
-    
+
     private final ReviewScoringService scoringService;
     private final ReviewFraudDetectionService fraudDetectionService;
-    
+
     /**
      * Create a new review
      */
@@ -48,18 +48,15 @@ public class ReviewServiceImpl implements ReviewService {
         // Check if user already reviewed this place
         Optional<UserReview> existingReview = reviewRepository.findByUserAndPlace(userId, request.getPlaceId());
         if (existingReview.isPresent()) {
-            log.warn("User {} already reviewed place {}. Existing review ID: {}", 
+            log.warn("User {} already reviewed place {}. Existing review ID: {}",
                 userId, request.getPlaceId(), existingReview.get().getId());
-            throw new BusinessException(ErrorConstant.REVIEW_ALREADY_EXISTS, 
+            throw new BusinessException(ErrorConstant.REVIEW_ALREADY_EXISTS,
                 "You have already reviewed this place. Please update your existing review instead.");
         }
-        
+
         // Verify place exists
-        Place place = placeRepository.findById(request.getPlaceId());
-        if (place == null) {
-            throw new BusinessException(ErrorConstant.PLACE_NOT_FOUND, "Place not found");
-        }
-        
+        Place place = placeRepository.findById(request.getPlaceId()).orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND, "Place not found"));
+
         // Create review
         UserReview review = UserReview.builder()
                 .id(UUID.randomUUID())
@@ -75,25 +72,26 @@ public class ReviewServiceImpl implements ReviewService {
                 .photos(request.getPhotos() != null ? JsonUtils.toJson(request.getPhotos()) : null)
                 .weight(BigDecimal.ONE)
                 .helpfulVotes(0)
+                .unhelpfulVotes(0)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
-        
+
         reviewRepository.save(review);
-        
+
         // Fraud detection
         fraudDetectionService.detectAndFlagReview(review);
-        
+
         // Update user profile
         profileRepository.incrementReviewCount(userId);
         scoringService.updateUserTier(userId);
-        
+
         // Recalculate place scores
         scoringService.recalculatePlaceScores(request.getPlaceId());
-        
+
         return mapToResponse(review, userId);
     }
-    
+
     /**
      * Update existing review
      */
@@ -102,12 +100,12 @@ public class ReviewServiceImpl implements ReviewService {
     public UserReviewResponse updateReview(UUID userId, UUID reviewId, UpdateReviewRequest request) {
         UserReview review = reviewRepository.findById(reviewId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.REVIEW_NOT_FOUND, "Review not found"));
-        
+
         // Check ownership
         if (!review.getUserId().equals(userId)) {
             throw new BusinessException(ErrorConstant.UNAUTHORIZED, "You can only edit your own reviews");
         }
-        
+
         // Update fields
         if (request.getOverallRating() != null) {
             review.setOverallRating(request.getOverallRating());
@@ -130,16 +128,16 @@ public class ReviewServiceImpl implements ReviewService {
         if (request.getPhotos() != null) {
             review.setPhotos(JsonUtils.toJson(request.getPhotos()));
         }
-        
+
         review.setUpdatedAt(LocalDateTime.now());
         reviewRepository.update(review);
-        
+
         // Recalculate scores
         scoringService.recalculatePlaceScores(review.getPlaceId());
-        
+
         return mapToResponse(review, userId);
     }
-    
+
     /**
      * Delete review
      */
@@ -148,19 +146,19 @@ public class ReviewServiceImpl implements ReviewService {
     public void deleteReview(UUID userId, UUID reviewId) {
         UserReview review = reviewRepository.findById(reviewId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.REVIEW_NOT_FOUND, "Review not found"));
-        
+
         if (!review.getUserId().equals(userId)) {
             throw new BusinessException(ErrorConstant.UNAUTHORIZED, "You can only delete your own reviews");
         }
-        
+
         UUID placeId = review.getPlaceId();
-        
+
         reviewRepository.delete(reviewId);
         profileRepository.decrementReviewCount(userId);
         scoringService.updateUserTier(userId);
         scoringService.recalculatePlaceScores(placeId);
     }
-    
+
     /**
      * Get reviews for a place
      */
@@ -168,12 +166,12 @@ public class ReviewServiceImpl implements ReviewService {
     public List<UserReviewResponse> getPlaceReviews(UUID placeId, UUID currentUserId, int page, int size) {
         int offset = page * size;
         List<UserReview> reviews = reviewRepository.findByPlaceId(placeId, size, offset);
-        
+
         return reviews.stream()
                 .map(review -> mapToResponse(review, currentUserId))
                 .collect(Collectors.toList());
     }
-    
+
     /**
      * Get user's reviews
      */
@@ -181,23 +179,27 @@ public class ReviewServiceImpl implements ReviewService {
     public List<UserReviewResponse> getUserReviews(UUID userId, int page, int size) {
         int offset = page * size;
         List<UserReview> reviews = reviewRepository.findByUserId(userId, size, offset);
-        
+
         return reviews.stream()
                 .map(review -> mapToResponse(review, userId))
                 .collect(Collectors.toList());
     }
-    
+
     /**
      * Vote review as helpful
      */
     @Override
     @Transactional
-    public void voteHelpful(UUID userId, UUID reviewId) {
+    public UserReviewResponse voteHelpful(UUID userId, UUID reviewId) {
         UserReview review = reviewRepository.findById(reviewId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.REVIEW_NOT_FOUND, "Review not found"));
-        
+
+        if (review.getUserId().equals(userId)) {
+            throw new BusinessException(ErrorConstant.UNAUTHORIZED, "Cannot vote on your own review");
+        }
+
         ReviewHelpfulVote existingVote = voteRepository.findByReviewIdAndUserId(reviewId, userId);
-        
+
         if (existingVote != null) {
             if (existingVote.isHelpful()) {
                 // Already voted helpful, remove vote
@@ -217,26 +219,22 @@ public class ReviewServiceImpl implements ReviewService {
                     .build();
             voteRepository.save(vote);
         }
-        
-        // Update vote counts
-        int helpfulCount = voteRepository.countByReviewIdAndIsHelpful(reviewId, true);
-        int unhelpfulCount = voteRepository.countByReviewIdAndIsHelpful(reviewId, false);
-        review.setHelpfulVotes(helpfulCount);
-        review.setUnhelpfulVotes(unhelpfulCount);
-        reviewRepository.update(review);
-        
-        // Update reviewer's profile
-        scoringService.updateUserTier(review.getUserId());
+
+        return syncVoteCounts(review, userId);
     }
-    
+
     @Override
     @Transactional
-    public void voteUnhelpful(UUID userId, UUID reviewId) {
+    public UserReviewResponse voteUnhelpful(UUID userId, UUID reviewId) {
         UserReview review = reviewRepository.findById(reviewId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.REVIEW_NOT_FOUND, "Review not found"));
-        
+
+        if (review.getUserId().equals(userId)) {
+            throw new BusinessException(ErrorConstant.UNAUTHORIZED, "Cannot vote on your own review");
+        }
+
         ReviewHelpfulVote existingVote = voteRepository.findByReviewIdAndUserId(reviewId, userId);
-        
+
         if (existingVote != null) {
             if (!existingVote.isHelpful()) {
                 // Already voted unhelpful, remove vote
@@ -256,25 +254,30 @@ public class ReviewServiceImpl implements ReviewService {
                     .build();
             voteRepository.save(vote);
         }
-        
-        // Update vote counts
-        int helpfulCount = voteRepository.countByReviewIdAndIsHelpful(reviewId, true);
-        int unhelpfulCount = voteRepository.countByReviewIdAndIsHelpful(reviewId, false);
+
+        return syncVoteCounts(review, userId);
+    }
+
+    private UserReviewResponse syncVoteCounts(UserReview review, UUID currentUserId) {
+        int helpfulCount = voteRepository.countByReviewIdAndIsHelpful(review.getId(), true);
+        int unhelpfulCount = voteRepository.countByReviewIdAndIsHelpful(review.getId(), false);
         review.setHelpfulVotes(helpfulCount);
         review.setUnhelpfulVotes(unhelpfulCount);
-        reviewRepository.update(review);
-        
+        reviewRepository.updateVoteCounts(review);
+
         // Update reviewer's profile
         scoringService.updateUserTier(review.getUserId());
+
+        return mapToResponse(review, currentUserId);
     }
-    
+
     /**
      * Get place score
      */
     @Override
     public PlaceScoreResponse getPlaceScore(UUID placeId) {
         PlaceScore score = scoreRepository.findByPlaceId(placeId).orElse(null);
-        
+
         if (score == null) {
             return PlaceScoreResponse.builder()
                     .placeId(placeId)
@@ -283,9 +286,9 @@ public class ReviewServiceImpl implements ReviewService {
                     .useGoogleScore(true)
                     .build();
         }
-        
+
         boolean useGoogle = score.getReviewCount() < 10;
-        
+
         return PlaceScoreResponse.builder()
                 .placeId(placeId)
                 .tripmindScore(score.getTripmindScore())
@@ -295,18 +298,18 @@ public class ReviewServiceImpl implements ReviewService {
                 .priceScore(score.getPriceScore())
                 .ambianceScore(score.getAmbianceScore())
                 .serviceScore(score.getServiceScore())
-                .nationalityBreakdown(score.getNationalityBreakdown() != null ? 
+                .nationalityBreakdown(score.getNationalityBreakdown() != null ?
                         JsonUtils.fromJson(score.getNationalityBreakdown(), Map.class) : null)
-                .displayScore(useGoogle && score.getGoogleScore() != null ? 
-                        score.getGoogleScore().toString() : 
+                .displayScore(useGoogle && score.getGoogleScore() != null ?
+                        score.getGoogleScore().toString() :
                         (score.getTripmindScore() != null ? score.getTripmindScore().toString() : "N/A"))
-                .displayLabel(score.getReviewCount() < 10 ? "Preliminary" : 
+                .displayLabel(score.getReviewCount() < 10 ? "Preliminary" :
                         (score.getReviewCount() < 50 ? "TripMind Score" : "TripMind Score"))
                 .useGoogleScore(useGoogle)
                 .lastCalculatedAt(score.getLastCalculatedAt())
                 .build();
     }
-    
+
     /**
      * Get user review profile
      */
@@ -314,7 +317,7 @@ public class ReviewServiceImpl implements ReviewService {
     public UserReviewProfileResponse getUserProfile(UUID userId) {
         UserReviewProfile profile = profileRepository.findByUserId(userId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.USER_NOT_FOUND, "User not found"));
-        
+
         return UserReviewProfileResponse.builder()
                 .userId(userId)
                 .tier(profile.getTier())
@@ -327,11 +330,11 @@ public class ReviewServiceImpl implements ReviewService {
                 .tierDescription(getTierDescription(profile.getTier()))
                 .build();
     }
-    
+
     private UserReviewResponse mapToResponse(UserReview review, UUID currentUserId) {
         User user = userRepository.findById(review.getUserId()).orElse(null);
         UserReviewProfile profile = profileRepository.findByUserId(review.getUserId()).orElse(null);
-        
+
         // Get current user's vote status: true = helpful, false = unhelpful, null = no vote
         Boolean hasVotedHelpful = null;
         if (currentUserId != null) {
@@ -340,7 +343,7 @@ public class ReviewServiceImpl implements ReviewService {
                 hasVotedHelpful = vote.isHelpful();
             }
         }
-        
+
         return UserReviewResponse.builder()
                 .id(review.getId())
                 .userId(review.getUserId())
@@ -358,23 +361,23 @@ public class ReviewServiceImpl implements ReviewService {
                 .photos(review.getPhotos() != null ? JsonUtils.fromJson(review.getPhotos(), List.class) : null)
                 .weight(review.getWeight())
                 .helpfulVotes(review.getHelpfulVotes())
-                .unhelpfulVotes(review.getUnhelpfulVotes())
+                .unhelpfulVotes(review.getUnhelpfulVotes() != null ? review.getUnhelpfulVotes() : 0)
                 .hasVotedHelpful(hasVotedHelpful)
                 .isOwnReview(currentUserId != null && review.getUserId().equals(currentUserId))
                 .createdAt(review.getCreatedAt())
                 .updatedAt(review.getUpdatedAt())
                 .build();
     }
-    
+
     private String getTierDisplay(UserTier tier) {
         return switch (tier) {
-            case NEWCOMER -> "Newcomer 🌱";
-            case TRAVELER -> "Traveler ✈️";
-            case EXPLORER -> "Explorer 🧭";
-            case EXPERT -> "Local Expert 🌟";
+            case NEWCOMER -> "Newcomer ðŸŒ±";
+            case TRAVELER -> "Traveler âœˆï¸";
+            case EXPLORER -> "Explorer ðŸ§­";
+            case EXPERT -> "Local Expert ðŸŒŸ";
         };
     }
-    
+
     private String getTierDescription(UserTier tier) {
         return switch (tier) {
             case NEWCOMER -> "0-2 reviews";

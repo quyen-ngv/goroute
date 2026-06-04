@@ -15,6 +15,7 @@ import java.util.UUID;
 public class LocationImageResponse {
     private UUID id;
     private String fullAddress;
+    private String citySlug;
     private String imageUrl;
     private Integer priority;
     private LocalDateTime createdAt;

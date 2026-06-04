@@ -10,6 +10,7 @@ import com.ds.goroute.dto.response.*;
 import com.ds.goroute.entity.*;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.*;
+import com.ds.goroute.service.ExpenseService;
 import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.service.notification.NotificationHelper;
@@ -23,13 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
-import java.util.Comparator;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -47,6 +42,7 @@ public class TripServiceImpl implements TripService {
     private final TripNoteRepository tripNoteRepository;
     private final NotificationHelper notificationHelper;
     private final LocationImageService locationImageService;
+    private final ExpenseService expenseService;
     private final UserReviewRepository userReviewRepository;
     private final UserReviewProfileRepository userReviewProfileRepository;
     private final PlaceScoreRepository placeScoreRepository;
@@ -78,6 +74,8 @@ public class TripServiceImpl implements TripService {
                 .visibility(TripVisibility.PRIVATE)
                 .shareCode(generateShareCode())
                 .ownerId(userId)
+                .shareExpenses(false)
+                .shareNotes(true)
                 .isDeleted(false)
                 .build();
 
@@ -140,7 +138,7 @@ public class TripServiceImpl implements TripService {
         UserResponse ownerResponse = mapToUserResponse(owner);
 
         TripStatsResponse stats = calculateTripStats(tripId);
-        
+
         // Auto fill cover image if not set
         String coverImageUrl = trip.getCoverImageUrl();
         if (coverImageUrl == null || coverImageUrl.isEmpty()) {
@@ -161,6 +159,8 @@ public class TripServiceImpl implements TripService {
                 .currency(trip.getCurrency())
                 .visibility(trip.getVisibility().toString())
                 .shareCode(trip.getShareCode())
+                .shareExpenses(trip.getShareExpenses())
+                .shareNotes(trip.getShareNotes())
                 .description(trip.getDescription())
                 .startingPointName(trip.getStartingPointName())
                 .startingPointAddress(trip.getStartingPointAddress())
@@ -181,9 +181,9 @@ public class TripServiceImpl implements TripService {
 
         // Check if user is owner or ACCEPTED member of trip (not LEFT)
         var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
-        boolean hasAccess = trip.getOwnerId().equals(userId) || 
+        boolean hasAccess = trip.getOwnerId().equals(userId) ||
                            (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
-        
+
         if (!hasAccess) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only trip members can update trip");
         }
@@ -196,7 +196,12 @@ public class TripServiceImpl implements TripService {
         if (request.getStartDate() != null) trip.setStartDate(request.getStartDate());
         if (request.getEndDate() != null) trip.setEndDate(request.getEndDate());
         if (request.getBudget() != null) trip.setBudget(request.getBudget());
-        if (request.getCurrency() != null) trip.setCurrency(request.getCurrency());
+        boolean tripCurrencyChanged = false;
+        if (request.getCurrency() != null) {
+            String currentCurrency = trip.getCurrency() != null ? trip.getCurrency() : "VND";
+            tripCurrencyChanged = !request.getCurrency().equalsIgnoreCase(currentCurrency);
+            trip.setCurrency(request.getCurrency());
+        }
         if (request.getStatus() != null) trip.setStatus(TripStatus.valueOf(request.getStatus()));
         if (request.getVisibility() != null) trip.setVisibility(TripVisibility.valueOf(request.getVisibility()));
         if (request.getShareExpenses() != null) trip.setShareExpenses(request.getShareExpenses());
@@ -212,6 +217,10 @@ public class TripServiceImpl implements TripService {
 
         tripRepository.updateById(trip);
         log.info("Trip updated: {}", tripId);
+
+        if (tripCurrencyChanged) {
+            expenseService.recalculateForTripCurrency(tripId);
+        }
 
         notificationHelper.emitTripUpdated(trip, userId);
 
@@ -257,7 +266,7 @@ public class TripServiceImpl implements TripService {
             member = TripMember.builder()
                     .id(UUID.randomUUID())
                     .tripId(tripId)
-                    .userId(null) // Guest không có userId
+                    .userId(null) // Guest khÃ´ng cÃ³ userId
                     .role(MemberRole.valueOf(request.getRole()))
                     .status(MemberStatus.ACCEPTED) // Guest auto accepted
                     .invitedBy(userId)
@@ -312,13 +321,51 @@ public class TripServiceImpl implements TripService {
     @Override
     @Transactional
     public void acceptInvite(UUID tripId, UUID userId) {
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+
         TripMember member = tripMemberRepository.findByTripIdAndUserId(tripId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Invitation not found"));
+
+        if (member.getStatus() != MemberStatus.PENDING) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Invitation is not pending");
+        }
 
         member.setStatus(MemberStatus.ACCEPTED);
         member.setJoinedAt(LocalDateTime.now());
         tripMemberRepository.updateById(member);
         log.info("Member accepted invite: {} - {}", tripId, userId);
+
+        notificationHelper.emitMemberAccepted(member, trip, userId);
+    }
+
+    @Override
+    @Transactional
+    public void declineInvite(UUID tripId, UUID userId) {
+        TripMember member = tripMemberRepository.findByTripIdAndUserId(tripId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Invitation not found"));
+
+        if (member.getStatus() != MemberStatus.PENDING) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Invitation is not pending");
+        }
+
+        member.setStatus(MemberStatus.DECLINED);
+        tripMemberRepository.updateById(member);
+        log.info("Member declined invite: {} - {}", tripId, userId);
+    }
+
+    @Override
+    @Transactional
+    public void respondToInvitation(UUID tripId, String action, UUID userId) {
+        if (action == null || action.isBlank()) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Action is required");
+        }
+
+        switch (action.trim().toLowerCase()) {
+            case "accept" -> acceptInvite(tripId, userId);
+            case "decline" -> declineInvite(tripId, userId);
+            default -> throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Invalid action. Use accept or decline");
+        }
     }
 
     @Override
@@ -327,12 +374,32 @@ public class TripServiceImpl implements TripService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
 
-        if (!trip.getOwnerId().equals(userId)) {
+        TripMember member = tripMemberRepository.findById(memberId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Member not found"));
+
+        if (!member.getTripId().equals(tripId)) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Member does not belong to this trip");
+        }
+
+        boolean isOwner = trip.getOwnerId().equals(userId);
+        boolean isSelfDecline = member.getUserId() != null
+                && member.getUserId().equals(userId)
+                && member.getStatus() == MemberStatus.PENDING;
+
+        if (!isOwner && !isSelfDecline) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only owner can remove members");
         }
 
-        TripMember member = tripMemberRepository.findById(memberId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Member not found"));
+        if (member.getUserId() != null && member.getUserId().equals(trip.getOwnerId())) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Cannot remove trip owner");
+        }
+
+        if (isSelfDecline) {
+            member.setStatus(MemberStatus.DECLINED);
+            tripMemberRepository.updateById(member);
+            log.info("Member declined invite via remove: {} - {}", tripId, userId);
+            return;
+        }
 
         tripMemberRepository.deleteById(memberId);
         log.info("Member removed from trip: {} - {}", tripId, memberId);
@@ -392,37 +459,37 @@ public class TripServiceImpl implements TripService {
 
         // Check if user has access (must be ACCEPTED member, not LEFT)
         var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
-        boolean hasAccess = trip.getOwnerId().equals(userId) || 
+        boolean hasAccess = trip.getOwnerId().equals(userId) ||
                            (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
-        
+
         if (!hasAccess) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
         }
 
         List<TripMember> members = tripMemberRepository.findByTripId(tripId);
         return members.stream()
-                .filter(m -> m.getStatus() != MemberStatus.LEFT) // Exclude LEFT members from list
+                .filter(m -> m.getStatus() != MemberStatus.LEFT && m.getStatus() != MemberStatus.DECLINED)
                 .map(this::mapToTripMemberResponse)
                 .collect(Collectors.toList());
     }
 
     private TripResponse mapToTripResponse(Trip trip, UUID userId) {
         TripStatsResponse stats = calculateTripStats(trip.getId());
-        
+
         // Auto fill cover image if not set
         String coverImageUrl = trip.getCoverImageUrl();
         if (coverImageUrl == null || coverImageUrl.isEmpty()) {
             coverImageUrl = locationImageService.getImageForDestination(trip.getDestination());
         }
-        
+
         // Determine user role in this trip
         String userRole = null;
-        log.info("🔍 Mapping trip: {}, ownerId: {}, userId: {}", trip.getName(), trip.getOwnerId(), userId);
-        
+        log.info("ðŸ” Mapping trip: {}, ownerId: {}, userId: {}", trip.getName(), trip.getOwnerId(), userId);
+
         // Check if user is owner first (most important)
         if (trip.getOwnerId() != null && trip.getOwnerId().equals(userId)) {
             userRole = "OWNER";
-            log.info("✅ User is OWNER (from trip.ownerId)");
+            log.info("âœ… User is OWNER (from trip.ownerId)");
         } else {
             // Check if user is member
             var member = tripMemberRepository.findByTripIdAndUserId(trip.getId(), userId);
@@ -430,13 +497,13 @@ public class TripServiceImpl implements TripService {
                 // If member role is OWNER, use it (fallback for old data)
                 if (member.get().getRole() == MemberRole.OWNER) {
                     userRole = "OWNER";
-                    log.info("✅ User is OWNER (from trip_members)");
+                    log.info("âœ… User is OWNER (from trip_members)");
                 } else {
                     userRole = member.get().getRole().toString();
-                    log.info("✅ User is member with role: {}", userRole);
+                    log.info("âœ… User is member with role: {}", userRole);
                 }
             } else {
-                log.warn("⚠️ User is not owner and not member - tripId: {}, userId: {}", trip.getId(), userId);
+                log.warn("âš ï¸ User is not owner and not member - tripId: {}, userId: {}", trip.getId(), userId);
             }
         }
 
@@ -534,7 +601,6 @@ public class TripServiceImpl implements TripService {
         if (placeId == null || placeId.isBlank()) {
             return null;
         }
-
         try {
             return UUID.fromString(placeId);
         } catch (IllegalArgumentException e) {
@@ -543,11 +609,18 @@ public class TripServiceImpl implements TripService {
         }
     }
 
-    private List<UserReviewResponse> buildSharedTripReviews(UUID placeId, UUID ownerId, Set<UUID> memberUserIds) {
-        return userReviewRepository.findByPlaceId(placeId, 1000, 0).stream()
+    private List<UserReviewResponse> buildSharedTripReviews(
+            UUID placeId,
+            UUID ownerId,
+            Set<UUID> memberUserIds
+    ) {
+        List<UserReview> reviews = userReviewRepository.findByPlaceId(placeId, 1000, 0).stream()
                 .filter(review -> memberUserIds.contains(review.getUserId()))
                 .sorted(sharedTripReviewComparator(ownerId))
-                .map(this::mapToSharedTripReview)
+                .collect(Collectors.toList());
+
+        return reviews.stream()
+                .map(this::mapToSharedTripUserReviewResponse)
                 .collect(Collectors.toList());
     }
 
@@ -560,7 +633,7 @@ public class TripServiceImpl implements TripService {
                 .thenComparing(UserReview::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()));
     }
 
-    private UserReviewResponse mapToSharedTripReview(UserReview review) {
+    private UserReviewResponse mapToSharedTripUserReviewResponse(UserReview review) {
         User user = userRepository.findById(review.getUserId()).orElse(null);
         UserReviewProfile profile = userReviewProfileRepository.findByUserId(review.getUserId()).orElse(null);
 
@@ -593,12 +666,10 @@ public class TripServiceImpl implements TripService {
         if (photosJson == null || photosJson.isBlank()) {
             return null;
         }
-
         List<?> parsed = JsonUtils.fromJson(photosJson, List.class);
         if (parsed == null) {
             return null;
         }
-
         return parsed.stream()
                 .filter(Objects::nonNull)
                 .map(Object::toString)
@@ -609,39 +680,38 @@ public class TripServiceImpl implements TripService {
         if (reviews == null || reviews.isEmpty()) {
             return null;
         }
-
-        List<Integer> ratings = reviews.stream()
+        BigDecimal total = reviews.stream()
                 .map(UserReviewResponse::getOverallRating)
                 .filter(Objects::nonNull)
-                .collect(Collectors.toList());
-
-        BigDecimal total = ratings.stream()
                 .map(BigDecimal::valueOf)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        return ratings.isEmpty()
-                ? null
-                : total.divide(BigDecimal.valueOf(ratings.size()), 1, RoundingMode.HALF_UP);
+        long count = reviews.stream()
+                .map(UserReviewResponse::getOverallRating)
+                .filter(Objects::nonNull)
+                .count();
+        if (count == 0) {
+            return null;
+        }
+        return total.divide(BigDecimal.valueOf(count), 1, RoundingMode.HALF_UP);
     }
 
     private PlaceScoreResponse buildPlatformScore(UUID placeId) {
         return placeScoreRepository.findByPlaceId(placeId)
-                .map(score -> PlaceScoreResponse.builder()
-                        .placeId(placeId)
-                        .tripmindScore(score.getTripmindScore())
-                        .googleScore(score.getGoogleScore())
-                        .reviewCount(score.getReviewCount())
-                        .foodScore(score.getFoodScore())
-                        .priceScore(score.getPriceScore())
-                        .ambianceScore(score.getAmbianceScore())
-                        .serviceScore(score.getServiceScore())
-                        .displayScore(score.getTripmindScore() != null
-                                ? score.getTripmindScore().toString()
-                                : (score.getGoogleScore() != null ? score.getGoogleScore().toString() : "N/A"))
-                        .displayLabel("Platform score")
-                        .useGoogleScore(score.getTripmindScore() == null && score.getGoogleScore() != null)
-                        .lastCalculatedAt(score.getLastCalculatedAt())
-                        .build())
+                .map(score -> {
+                    BigDecimal displayScore = score.getTripmindScore() != null
+                            ? score.getTripmindScore()
+                            : score.getGoogleScore();
+                    return PlaceScoreResponse.builder()
+                            .placeId(placeId)
+                            .tripmindScore(score.getTripmindScore())
+                            .googleScore(score.getGoogleScore())
+                            .reviewCount(score.getReviewCount())
+                            .displayScore(displayScore != null ? displayScore.toPlainString() : null)
+                            .displayLabel("Platform score")
+                            .useGoogleScore(score.getTripmindScore() == null && score.getGoogleScore() != null)
+                            .lastCalculatedAt(score.getLastCalculatedAt())
+                            .build();
+                })
                 .orElse(null);
     }
 
@@ -658,7 +728,7 @@ public class TripServiceImpl implements TripService {
                     try {
                         Trip trip = tripRepository.findById(member.getTripId())
                                 .orElse(null);
-                        
+
                         if (trip == null) {
                             log.warn("Trip not found for pending invitation: tripId={}", member.getTripId());
                             return null;
@@ -668,7 +738,7 @@ public class TripServiceImpl implements TripService {
                         if (member.getInvitedBy() != null) {
                             inviter = userRepository.findById(member.getInvitedBy()).orElse(null);
                         }
-                        
+
                         if (inviter == null) {
                             log.warn("Inviter not found for pending invitation: invitedBy={}, using placeholder", member.getInvitedBy());
                             // Create placeholder inviter
@@ -759,6 +829,10 @@ public class TripServiceImpl implements TripService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
 
+        if (trip.getVisibility() == TripVisibility.PRIVATE) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Trip is not shared");
+        }
+
         // Increment view count async (don't block response)
         incrementViewCountAsync(tripId);
 
@@ -770,17 +844,19 @@ public class TripServiceImpl implements TripService {
 
         // Get activities
         List<com.ds.goroute.entity.Activity> activities = activityRepository.findByTripId(tripId);
-        Set<UUID> memberUserIds = tripMemberRepository.findByTripId(tripId).stream()
+        List<TripMember> acceptedMembers = tripMemberRepository.findByTripId(tripId).stream()
                 .filter(m -> m.getStatus() == MemberStatus.ACCEPTED)
+                .filter(m -> m.getUserId() != null)
+                .collect(Collectors.toList());
+        Set<UUID> memberUserIds = acceptedMembers.stream()
                 .map(TripMember::getUserId)
-                .filter(Objects::nonNull)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         memberUserIds.add(trip.getOwnerId());
-        
+
         // Get expenses if shared
         Map<UUID, List<PublicExpenseResponse>> expensesByActivity = new java.util.HashMap<>();
         List<PublicExpenseResponse> tripLevelExpenses = new java.util.ArrayList<>();
-        
+
         if (Boolean.TRUE.equals(trip.getShareExpenses())) {
             List<com.ds.goroute.entity.Expense> expenses = expenseRepository.findByTripId(tripId);
             for (com.ds.goroute.entity.Expense e : expenses) {
@@ -792,7 +868,7 @@ public class TripServiceImpl implements TripService {
                         .description(e.getDescription())
                         .createdAt(e.getCreatedAt())
                         .build();
-                
+
                 if (e.getActivityId() != null) {
                     expensesByActivity.computeIfAbsent(e.getActivityId(), k -> new java.util.ArrayList<>()).add(expenseResponse);
                 } else {
@@ -804,16 +880,19 @@ public class TripServiceImpl implements TripService {
         // Get notes if shared
         Map<UUID, List<PublicNoteResponse>> notesByActivity = new java.util.HashMap<>();
         List<PublicNoteResponse> tripLevelNotes = new java.util.ArrayList<>();
-        
+
         if (Boolean.TRUE.equals(trip.getShareNotes())) {
             List<TripNote> notes = tripNoteRepository.findByTripId(tripId);
             for (TripNote n : notes) {
+                if (Boolean.FALSE.equals(n.getIsShared())) {
+                    continue;
+                }
                 PublicNoteResponse noteResponse = PublicNoteResponse.builder()
                         .id(n.getId())
                         .content(n.getContent())
                         .createdAt(n.getCreatedAt())
                         .build();
-                
+
                 if (n.getActivityId() != null) {
                     notesByActivity.computeIfAbsent(n.getActivityId(), k -> new java.util.ArrayList<>()).add(noteResponse);
                 } else {
@@ -821,7 +900,7 @@ public class TripServiceImpl implements TripService {
                 }
             }
         }
-        
+
         // Build activity responses with nested expenses and notes
         List<PublicActivityResponse> activityResponses = activities.stream()
                 .map(a -> {
@@ -829,11 +908,11 @@ public class TripServiceImpl implements TripService {
                     List<UserReviewResponse> memberReviews = placeId != null
                             ? buildSharedTripReviews(placeId, trip.getOwnerId(), memberUserIds)
                             : null;
-
                     return PublicActivityResponse.builder()
                             .id(a.getId())
                             .dayNumber(a.getDayNumber())
                             .placeId(placeId)
+                            .bookingId(a.getBookingId())
                             .name(a.getName())
                             .address(a.getAddress())
                             .lat(a.getLat())
@@ -976,7 +1055,7 @@ public class TripServiceImpl implements TripService {
         // 3. Verify user can clone this trip
         // Allow cloning if:
         // - User is owner
-        // - User is accepted member  
+        // - User is accepted member
         // - Trip is public/shared (anyone can clone)
         boolean canClone = originalTrip.getOwnerId().equals(userId) ||
                 tripMemberRepository.findByTripIdAndUserId(tripId, userId)
@@ -1014,7 +1093,7 @@ public class TripServiceImpl implements TripService {
                 .startingPointLng(originalTrip.getStartingPointLng())
                 .startingPointTime(originalTrip.getStartingPointTime())
                 .shareExpenses(false)
-                .shareNotes(false)
+                .shareNotes(true)
                 .isDeleted(false)
                 .build();
 
@@ -1052,6 +1131,9 @@ public class TripServiceImpl implements TripService {
                     .address(originalActivity.getAddress())
                     .lat(originalActivity.getLat())
                     .lng(originalActivity.getLng())
+                    .endLat(originalActivity.getEndLat())
+                    .endLng(originalActivity.getEndLng())
+                    .endAddress(originalActivity.getEndAddress())
                     .startTime(originalActivity.getStartTime())
                     .endTime(originalActivity.getEndTime())
                     .estimatedCost(originalActivity.getEstimatedCost())
@@ -1082,19 +1164,19 @@ public class TripServiceImpl implements TripService {
     @Transactional(readOnly = true)
     public List<PublicTripResponse> searchPublicTrips(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm, String destination, int page, int size, UUID excludeUserId) {
         List<Trip> trips = tripRepository.searchPublicTrips(latitude, longitude, radiusKm, destination, page, size, excludeUserId);
-        
+
         return trips.stream()
                 .map(trip -> {
                     String coverImageUrl = trip.getCoverImageUrl();
                     if (coverImageUrl == null || coverImageUrl.isEmpty()) {
                         coverImageUrl = locationImageService.getImageForDestination(trip.getDestination());
                     }
-                    
+
                     // Get owner info
                     User owner = userRepository.findById(trip.getOwnerId()).orElse(null);
                     String ownerName = owner != null ? owner.getFullName() : null;
                     String ownerAvatarUrl = owner != null ? owner.getAvatarUrl() : null;
-                    
+
                     return PublicTripResponse.builder()
                             .id(trip.getId())
                             .name(trip.getName())

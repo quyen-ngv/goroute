@@ -15,27 +15,27 @@ import java.util.UUID;
 
 /**
  * Handler cho Payment-related notifications
- * - PAYMENT_MARKED (1 split) → PayeeOnlyStrategy
- * - PAYMENT_ALL_MARKED (1 expense) → ExpenseMembersStrategy
- * - PAYMENT_TRIP_MARKED (toàn trip) → AllMembersStrategy
+ * - PAYMENT_MARKED (1 split) â†’ PayeeOnlyStrategy
+ * - PAYMENT_ALL_MARKED (1 expense) â†’ ExpenseMembersStrategy
+ * - PAYMENT_TRIP_MARKED (toÃ n trip) â†’ AllMembersStrategy
  */
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class PaymentNotificationHandler implements NotificationEventHandler {
-    
+
     private final NotificationService notificationService;
     private final PayeeOnlyStrategy payeeOnlyStrategy;
     private final ExpenseMembersStrategy expenseMembersStrategy;
     private final AllMembersStrategy allMembersStrategy;
-    
+
     @Override
     public void handle(TripEvent event) {
-        log.info("🔵 PaymentHandler: Handling event type={}", event.getType());
-        
+        log.info("ðŸ”µ PaymentHandler: Handling event type={}", event.getType());
+
         List<UUID> recipients;
-        
-        // Chọn strategy dựa vào type
+
+        // Chá»n strategy dá»±a vÃ o type
         if (event.getType() == NotificationType.PAYMENT_MARKED) {
             recipients = payeeOnlyStrategy.getRecipients(event);
         } else if (event.getType() == NotificationType.PAYMENT_ALL_MARKED) {
@@ -43,24 +43,16 @@ public class PaymentNotificationHandler implements NotificationEventHandler {
         } else { // PAYMENT_TRIP_MARKED
             recipients = allMembersStrategy.getRecipients(event);
         }
-        
-        log.info("📧 Found {} recipients", recipients.size());
-        
+
+        log.info("ðŸ“§ Found {} recipients", recipients.size());
+
         for (UUID recipientId : recipients) {
-            notificationService.createNotification(
-                recipientId,
-                event.getTripId(),
-                event.getType(),
-                event.getTitle(),
-                event.getBody(),
-                event.getMetadata(),
-                event.getActorId()
-            );
+            notificationService.createNotification(recipientId, event);
         }
-        
-        log.info("✅ Sent {} notifications for {}", recipients.size(), event.getType());
+
+        log.info("âœ… Sent {} notifications for {}", recipients.size(), event.getType());
     }
-    
+
     @Override
     public boolean supports(TripEvent event) {
         return event.getType() == NotificationType.PAYMENT_MARKED

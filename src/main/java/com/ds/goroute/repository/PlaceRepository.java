@@ -8,17 +8,23 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface PlaceRepository {
-    
+
     void insert(Place place);
-    
+
     void update(Place place);
-    
-    Place findById(UUID id);
-    
+
+    Optional<Place> findById(UUID id);
+
     Place findByPlaceId(String placeId);
-    
-    List<Place> findNearby(String keyword, BigDecimal latitude, BigDecimal longitude, BigDecimal radius, 
-                          String category, BigDecimal minRating, int limit, int offset);
-    
+
+    List<Place> findAll();
+
+    List<Place> findNearby(String keyword, BigDecimal latitude, BigDecimal longitude, BigDecimal radius,
+                          String category, String placeGroup, BigDecimal minRating, int limit, int offset);
+
+    List<Place> findNearbyExtended(String keyword, BigDecimal latitude, BigDecimal longitude, BigDecimal radius,
+                                   String category, String placeGroup, BigDecimal minRating, String citySlugJson,
+                                   List<UUID> foodIds, Boolean excludeLinkedFoodPlaces, int limit, int offset);
+
     void delete(UUID id);
 }

@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.FoodMapper">
+
+    <resultMap id="FoodResultMap" type="com.ds.goroute.entity.Food">
+        <id property="id" column="id"/>
+        <result property="nameVi" column="name_vi"/>
+        <result property="nameEn" column="name_en"/>
+        <result property="nameJa" column="name_ja"/>
+        <result property="nameKo" column="name_ko"/>
+        <result property="description" column="description"/>
+        <result property="category" column="category"/>
+        <result property="imageUrl" column="image_url"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <resultMap id="FoodWithScoreResultMap" type="com.ds.goroute.entity.FoodWithScoreRow">
+        <id property="id" column="id"/>
+        <result property="nameVi" column="name_vi"/>
+        <result property="nameEn" column="name_en"/>
+        <result property="nameJa" column="name_ja"/>
+        <result property="nameKo" column="name_ko"/>
+        <result property="description" column="description"/>
+        <result property="category" column="category"/>
+        <result property="imageUrl" column="image_url"/>
+        <result property="score" column="score"/>
+        <result property="citySlug" column="city_slug"/>
+        <result property="localDescription" column="local_description"/>
+        <result property="flavorProfile" column="flavor_profile"/>
+        <result property="funFact" column="fun_fact"/>
+    </resultMap>
+
+    <resultMap id="FoodCityScoreResultMap" type="com.ds.goroute.entity.FoodCityScore">
+        <id property="id" column="id"/>
+        <result property="foodId" column="food_id"/>
+        <result property="citySlug" column="city_slug"/>
+        <result property="score" column="score"/>
+        <result property="localDescription" column="local_description"/>
+        <result property="imageUrl" column="image_url"/>
+        <result property="flavorProfile" column="flavor_profile"/>
+        <result property="funFact" column="fun_fact"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <resultMap id="FoodPlaceRowMap" type="com.ds.goroute.entity.FoodPlaceRow">
+        <id property="id" column="id"/>
+        <result property="title" column="title"/>
+        <result property="thumbnail" column="thumbnail"/>
+        <result property="adjustedRating" column="adjusted_rating"/>
+        <result property="priceRange" column="price_range"/>
+        <result property="address" column="address"/>
+        <result property="latitude" column="latitude"/>
+        <result property="longitude" column="longitude"/>
+        <result property="distanceMeters" column="distance_meters"/>
+    </resultMap>
+
+    <resultMap id="FoodTagRowMap" type="com.ds.goroute.entity.FoodTagRow">
+        <result property="placeId" column="place_id"/>
+        <result property="foodId" column="food_id"/>
+        <result property="nameVi" column="name_vi"/>
+        <result property="nameEn" column="name_en"/>
+        <result property="nameJa" column="name_ja"/>
+        <result property="nameKo" column="name_ko"/>
+    </resultMap>
+
+    <insert id="insertFood">
+        INSERT INTO foods (id, name_vi, name_en, name_ja, name_ko, description, category, image_url, created_at, updated_at)
+        VALUES (#{id}, #{nameVi}, #{nameEn}, #{nameJa}, #{nameKo}, #{description}, #{category}, #{imageUrl}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <update id="updateFood">
+        UPDATE foods SET
+            name_vi = #{nameVi},
+            name_en = #{nameEn},
+            name_ja = #{nameJa},
+            name_ko = #{nameKo},
+            description = #{description},
+            category = #{category},
+            image_url = #{imageUrl},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteFood">
+        DELETE FROM foods WHERE id = #{id}
+    </delete>
+
+    <select id="findFoodById" resultMap="FoodResultMap">
+        SELECT * FROM foods WHERE id = #{id}
+    </select>
+
+    <select id="findAllFoods" resultMap="FoodResultMap">
+        SELECT * FROM foods
+        <where>
+            <if test="q != null and q != ''">
+                AND (LOWER(name_vi) LIKE CONCAT('%', LOWER(#{q}), '%')
+                OR LOWER(name_en) LIKE CONCAT('%', LOWER(#{q}), '%'))
+            </if>
+        </where>
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAllFoods" resultType="long">
+        SELECT COUNT(*) FROM foods
+        <where>
+            <if test="q != null and q != ''">
+                AND (LOWER(name_vi) LIKE CONCAT('%', LOWER(#{q}), '%')
+                OR LOWER(name_en) LIKE CONCAT('%', LOWER(#{q}), '%'))
+            </if>
+        </where>
+    </select>
+
+    <select id="findKnownCitySlugs" resultType="string">
+        SELECT city_slug
+        FROM (
+            SELECT city_slug
+            FROM food_city_scores
+            WHERE city_slug IS NOT NULL AND city_slug != ''
+            UNION
+            SELECT jsonb_array_elements_text(destinations) AS city_slug
+            FROM places
+            WHERE destinations IS NOT NULL AND jsonb_typeof(destinations) = 'array'
+        ) known_city_slugs
+        WHERE city_slug IS NOT NULL AND city_slug != ''
+        ORDER BY city_slug
+    </select>
+
+    <select id="findFoodsByCity" resultMap="FoodWithScoreResultMap">
+        SELECT f.id, f.name_vi, f.name_en, f.name_ja, f.name_ko, f.description, f.category,
+               COALESCE(fcs.image_url, f.image_url) AS image_url,
+               fcs.score, fcs.city_slug, fcs.local_description, fcs.flavor_profile::text AS flavor_profile, fcs.fun_fact
+        FROM foods f
+        INNER JOIN food_city_scores fcs ON fcs.food_id = f.id
+        WHERE fcs.city_slug = #{citySlug} AND fcs.score &gt;= #{minScore}
+        ORDER BY fcs.score DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findFoodDetailByCity" resultMap="FoodWithScoreResultMap">
+        SELECT f.id, f.name_vi, f.name_en, f.name_ja, f.name_ko, f.description, f.category,
+               COALESCE(fcs.image_url, f.image_url) AS image_url,
+               fcs.score, fcs.city_slug, fcs.local_description, fcs.flavor_profile::text AS flavor_profile, fcs.fun_fact
+        FROM foods f
+        INNER JOIN food_city_scores fcs ON fcs.food_id = f.id
+        WHERE f.id = #{foodId} AND fcs.city_slug = #{citySlug}
+    </select>
+
+    <insert id="insertCityScore">
+        INSERT INTO food_city_scores (id, food_id, city_slug, score, local_description, image_url, flavor_profile, fun_fact, created_at, updated_at)
+        VALUES (#{id}, #{foodId}, #{citySlug}, #{score}, #{localDescription}, #{imageUrl}, #{flavorProfile}::jsonb, #{funFact}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <update id="updateCityScore">
+        UPDATE food_city_scores SET
+            city_slug = #{citySlug},
+            score = #{score},
+            local_description = #{localDescription},
+            image_url = #{imageUrl},
+            flavor_profile = #{flavorProfile}::jsonb,
+            fun_fact = #{funFact},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteCityScore">
+        DELETE FROM food_city_scores WHERE id = #{id}
+    </delete>
+
+    <select id="findCityScoreById" resultMap="FoodCityScoreResultMap">
+        SELECT * FROM food_city_scores WHERE id = #{id}
+    </select>
+
+    <select id="findCityScoresByFoodId" resultMap="FoodCityScoreResultMap">
+        SELECT * FROM food_city_scores WHERE food_id = #{foodId} ORDER BY score DESC
+    </select>
+
+    <insert id="insertPlaceFood">
+        INSERT INTO place_foods (place_id, food_id) VALUES (#{placeId}, #{foodId})
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <delete id="deletePlaceFood">
+        DELETE FROM place_foods WHERE place_id = #{placeId} AND food_id = #{foodId}
+    </delete>
+
+    <select id="countLinkedPlaces" resultType="long">
+        SELECT COUNT(DISTINCT p.id)
+        FROM places p
+        INNER JOIN place_foods pf ON pf.place_id = p.id
+        WHERE pf.food_id = #{foodId}
+        <if test="citySlugJson != null">
+            AND p.destinations @&gt; #{citySlugJson}::jsonb
+        </if>
+    </select>
+
+    <sql id="foodPlacesBase">
+        FROM places p
+        INNER JOIN place_foods pf ON pf.place_id = p.id
+        WHERE pf.food_id = #{foodId}
+        <if test="citySlugJson != null">
+            AND p.destinations @&gt; #{citySlugJson}::jsonb
+        </if>
+    </sql>
+
+    <select id="findPlacesByFood" resultMap="FoodPlaceRowMap">
+        <choose>
+            <when test="useDistance">
+                SELECT * FROM (
+                    SELECT p.id, p.title, p.thumbnail, p.adjusted_rating, p.price_range, p.address,
+                           p.latitude, p.longitude,
+                           (6371000 * acos(
+                               LEAST(1.0, GREATEST(-1.0,
+                                   cos(radians(#{latitude})) * cos(radians(p.latitude::double precision)) *
+                                   cos(radians(p.longitude::double precision) - radians(#{longitude})) +
+                                   sin(radians(#{latitude})) * sin(radians(p.latitude::double precision))
+                               ))
+                           )) AS distance_meters
+                    <include refid="foodPlacesBase"/>
+                ) ranked
+                ORDER BY distance_meters ASC NULLS LAST
+            </when>
+            <otherwise>
+                SELECT p.id, p.title, p.thumbnail, p.adjusted_rating, p.price_range, p.address,
+                       p.latitude, p.longitude, NULL::float8 AS distance_meters
+                <include refid="foodPlacesBase"/>
+                ORDER BY p.adjusted_rating DESC NULLS LAST
+            </otherwise>
+        </choose>
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countPlacesByFood" resultType="long">
+        SELECT COUNT(DISTINCT p.id)
+        <include refid="foodPlacesBase"/>
+    </select>
+
+    <select id="findLinkedPlacesAdmin" resultMap="FoodPlaceRowMap">
+        SELECT p.id, p.title, p.thumbnail, p.adjusted_rating, p.price_range, p.address,
+               p.latitude, p.longitude, NULL::float8 AS distance_meters
+        <include refid="foodPlacesBase"/>
+        ORDER BY p.title
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findFoodTagsByPlaceIds" resultMap="FoodTagRowMap">
+        SELECT pf.place_id, f.id AS food_id, f.name_vi, f.name_en, f.name_ja, f.name_ko
+        FROM place_foods pf
+        INNER JOIN foods f ON f.id = pf.food_id
+        WHERE pf.place_id IN
+        <foreach collection="placeIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <select id="findFoodsByPlaceId" resultMap="FoodWithScoreResultMap">
+        SELECT f.id, f.name_vi, f.name_en, f.name_ja, f.name_ko, f.description, f.category,
+               COALESCE(fcs.image_url, f.image_url) AS image_url,
+               fcs.score, fcs.city_slug, fcs.local_description,
+               fcs.flavor_profile::text AS flavor_profile, fcs.fun_fact
+        FROM place_foods pf
+        INNER JOIN foods f ON f.id = pf.food_id
+        LEFT JOIN food_city_scores fcs ON fcs.food_id = f.id AND fcs.city_slug = #{citySlug}
+        WHERE pf.place_id = #{placeId}
+        ORDER BY fcs.score DESC NULLS LAST, f.name_en ASC
+    </select>
+
+</mapper>

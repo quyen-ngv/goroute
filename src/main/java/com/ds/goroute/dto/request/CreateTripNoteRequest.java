@@ -12,10 +12,12 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class CreateTripNoteRequest {
-    
+
     private String activityId;  // Optional: for activity-specific notes
-    
+
     @NotBlank(message = "Content is required")
     @Size(max = 2000, message = "Content must not exceed 2000 characters")
     private String content;
+
+    private Boolean isShared;
 }

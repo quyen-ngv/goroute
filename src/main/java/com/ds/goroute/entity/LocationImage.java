@@ -18,16 +18,17 @@ public class LocationImage {
     private String fullAddress;
     private String normalizedAddress;
     private String imageUrl;
+    private String citySlug;
     private Integer priority;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
-    
+
     public void normalizeAddress() {
         if (fullAddress != null) {
             this.normalizedAddress = normalizeVietnamese(fullAddress.toLowerCase());
         }
     }
-    
+
     private String normalizeVietnamese(String text) {
         String normalized = Normalizer.normalize(text, Normalizer.Form.NFD);
         return normalized.replaceAll("\\p{M}", "")

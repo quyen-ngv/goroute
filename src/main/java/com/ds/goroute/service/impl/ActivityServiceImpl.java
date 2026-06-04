@@ -42,7 +42,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class ActivityServiceImpl implements ActivityService {
-    
+
     private final ActivityRepository activityRepository;
     private final TripRepository tripRepository;
     private final TripMemberRepository tripMemberRepository;
@@ -61,9 +61,9 @@ public class ActivityServiceImpl implements ActivityService {
 
         // Check if user has access (must be ACCEPTED member, not LEFT)
         var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
-        boolean hasAccess = trip.getOwnerId().equals(userId) || 
+        boolean hasAccess = trip.getOwnerId().equals(userId) ||
                            (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
-        
+
         if (!hasAccess) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
         }
@@ -78,24 +78,31 @@ public class ActivityServiceImpl implements ActivityService {
                 .address(request.getAddress())
                 .lat(request.getLat())
                 .lng(request.getLng())
+                .endLat(request.getEndLat())
+                .endLng(request.getEndLng())
+                .endAddress(request.getEndAddress())
                 .startTime(request.getStartTime())
                 .endTime(request.getEndTime())
                 .estimatedCost(request.getEstimatedCost())
                 .costCurrency(request.getCostCurrency())
                 .category(request.getCategory())
                 .transportMode(request.getTransportMode() != null ? TransportMode.valueOf(request.getTransportMode()) : null)
+                .notes(request.getNotes())
+                .description(request.getDescription())
                 .status(ActivityStatus.CONFIRMED)
                 .isAccommodation(request.getIsAccommodation() != null ? request.getIsAccommodation() : false)
                 .isStartingPoint(request.getIsStartingPoint() != null ? request.getIsStartingPoint() : false)
                 .startingPointDate(request.getStartingPointDate())
+                .bookingId(request.getBookingId())
+                .bookingSource(request.getBookingSource())
                 .addedBy(userId)
                 .build();
 
         activityRepository.insert(activity);
         log.info("Activity created: {} in trip: {}", activity.getId(), tripId);
-        
+
         notificationHelper.emitActivityCreated(activity, userId);
-        
+
         return mapToActivityResponse(activity);
     }
 
@@ -119,19 +126,19 @@ public class ActivityServiceImpl implements ActivityService {
     public ActivityResponse updateActivity(UUID tripId, UUID activityId, UpdateActivityRequest request, UUID userId) {
         Activity activity = activityRepository.findById(activityId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity not found"));
-        
+
         if (!activity.getTripId().equals(tripId)) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Activity not found");
         }
 
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-        
+
         // Check if user has access (must be ACCEPTED member, not LEFT)
         var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
-        boolean hasAccess = trip.getOwnerId().equals(userId) || 
+        boolean hasAccess = trip.getOwnerId().equals(userId) ||
                            (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
-        
+
         if (!hasAccess) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
         }
@@ -142,6 +149,9 @@ public class ActivityServiceImpl implements ActivityService {
         if (request.getAddress() != null) activity.setAddress(request.getAddress());
         if (request.getLat() != null) activity.setLat(request.getLat());
         if (request.getLng() != null) activity.setLng(request.getLng());
+        if (request.getEndLat() != null) activity.setEndLat(request.getEndLat());
+        if (request.getEndLng() != null) activity.setEndLng(request.getEndLng());
+        if (request.getEndAddress() != null) activity.setEndAddress(request.getEndAddress());
         if (request.getDayNumber() != null) activity.setDayNumber(request.getDayNumber());
         if (request.getStartTime() != null) activity.setStartTime(request.getStartTime());
         if (request.getEndTime() != null) activity.setEndTime(request.getEndTime());
@@ -156,14 +166,14 @@ public class ActivityServiceImpl implements ActivityService {
         if (request.getStartingPointDate() != null) activity.setStartingPointDate(request.getStartingPointDate());
 
         activityRepository.updateById(activity);
-        
+
         String cacheKey = "activities:" + tripId;
         redisService.delete(cacheKey);
-        
+
         log.info("Activity updated: {}", activityId);
-        
+
         notificationHelper.emitActivityUpdated(activity, userId);
-        
+
         return mapToActivityResponse(activity);
     }
 
@@ -172,30 +182,30 @@ public class ActivityServiceImpl implements ActivityService {
     public void deleteActivity(UUID tripId, UUID activityId, UUID userId) {
         Activity activity = activityRepository.findById(activityId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity not found"));
-        
+
         if (!activity.getTripId().equals(tripId)) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Activity not found");
         }
 
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-        
+
         // Check if user has access (must be ACCEPTED member, not LEFT)
         var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
-        boolean hasAccess = trip.getOwnerId().equals(userId) || 
+        boolean hasAccess = trip.getOwnerId().equals(userId) ||
                            (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
-        
+
         if (!hasAccess) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
         }
 
         activityRepository.deleteById(activityId);
-        
+
         String cacheKey = "activities:" + tripId;
         redisService.delete(cacheKey);
-        
+
         log.info("Activity deleted: {}", activityId);
-        
+
         notificationHelper.emitActivityDeleted(activity, userId);
     }
 
@@ -207,9 +217,9 @@ public class ActivityServiceImpl implements ActivityService {
 
         // Check if user has access (must be ACCEPTED member, not LEFT)
         var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
-        boolean hasAccess = trip.getOwnerId().equals(userId) || 
+        boolean hasAccess = trip.getOwnerId().equals(userId) ||
                            (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
-        
+
         if (!hasAccess) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
         }
@@ -221,18 +231,18 @@ public class ActivityServiceImpl implements ActivityService {
 
     private ActivityResponse mapToActivityResponse(Activity activity) {
         int checkedInCount = checkinRepository.findByActivityId(activity.getId()).size();
-        
+
         // Calculate actual spent from expenses
         List<Expense> expenses = expenseRepository.findByActivityId(activity.getId());
         BigDecimal actualSpent = expenses.stream()
                 .map(Expense::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        
+
         // Map expenses to response
         List<ExpenseResponse> expenseResponses = expenses.stream()
                 .map(this::mapToExpenseResponse)
                 .collect(Collectors.toList());
-        
+
         return ActivityResponse.builder()
                 .id(activity.getId())
                 .tripId(activity.getTripId())
@@ -243,6 +253,9 @@ public class ActivityServiceImpl implements ActivityService {
                 .address(activity.getAddress())
                 .lat(activity.getLat())
                 .lng(activity.getLng())
+                .endLat(activity.getEndLat())
+                .endLng(activity.getEndLng())
+                .endAddress(activity.getEndAddress())
                 .startTime(activity.getStartTime())
                 .endTime(activity.getEndTime())
                 .estimatedCost(activity.getEstimatedCost())
@@ -262,9 +275,11 @@ public class ActivityServiceImpl implements ActivityService {
                 .actualSpent(actualSpent)
                 .expenseCount(expenses.size())
                 .expenses(expenseResponses)
+                .bookingId(activity.getBookingId())
+                .bookingSource(activity.getBookingSource())
                 .build();
     }
-    
+
     private ExpenseResponse mapToExpenseResponse(Expense expense) {
         // Handle paidBy - can be registered user or guest
         UserResponse paidByUser = null;
@@ -289,7 +304,7 @@ public class ActivityServiceImpl implements ActivityService {
                     .avatarUrl(null)
                     .build();
         }
-        
+
         // Get splits
         List<ExpenseSplit> splits = expenseSplitRepository.findByExpenseId(expense.getId());
         List<ExpenseSplitResponse> splitResponses = splits.stream()
@@ -325,12 +340,12 @@ public class ActivityServiceImpl implements ActivityService {
                             .build();
                 })
                 .collect(Collectors.toList());
-        
+
         // Convert photoUrls array to list
-        List<String> photoUrlsList = expense.getPhotoUrls() != null 
-                ? Arrays.asList(expense.getPhotoUrls()) 
+        List<String> photoUrlsList = expense.getPhotoUrls() != null
+                ? Arrays.asList(expense.getPhotoUrls())
                 : List.of();
-        
+
         return ExpenseResponse.builder()
                 .id(expense.getId())
                 .amount(expense.getAmount())

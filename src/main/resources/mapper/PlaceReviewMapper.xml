@@ -7,42 +7,144 @@
     <resultMap id="PlaceReviewResultMap" type="com.ds.goroute.entity.PlaceReview">
         <id property="id" column="id"/>
         <result property="placeId" column="place_id"/>
+        <result property="reviewId" column="review_id"/>
+        <result property="googlePlaceId" column="google_place_id"/>
         <result property="reviewerName" column="reviewer_name"/>
+        <result property="profileUrl" column="profile_url"/>
         <result property="profilePicture" column="profile_picture"/>
+        <result property="isLocalGuide" column="is_local_guide"/>
+        <result property="totalReviews" column="total_reviews"/>
+        <result property="totalPhotos" column="total_photos"/>
         <result property="rating" column="rating"/>
         <result property="description" column="description"/>
+        <result property="language" column="language" javaType="com.ds.goroute.type.ReviewLanguage"/>
         <result property="reviewDate" column="review_date"/>
         <result property="images" column="images"/>
+        <result property="likes" column="likes"/>
+        <result property="contentHash" column="content_hash"/>
+        <result property="isDeleted" column="is_deleted"/>
+        <result property="authenticityScore" column="authenticity_score"/>
+        <result property="authenticityLevel" column="authenticity_level" javaType="com.ds.goroute.type.ReviewAuthenticityLevel"/>
+        <result property="scoreCalculatedAt" column="score_calculated_at"/>
         <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
     </resultMap>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.PlaceReview">
         INSERT INTO place_reviews (
-            id, place_id, reviewer_name, profile_picture,
-            rating, description, review_date, images, created_at
+            id, place_id, review_id, google_place_id,
+            reviewer_name, profile_url, profile_picture,
+            is_local_guide, total_reviews, total_photos,
+            rating, description, language, review_date,
+            images, likes, content_hash, is_deleted,
+            authenticity_score, authenticity_level, score_calculated_at,
+            created_at, updated_at
         ) VALUES (
-            #{id}, #{placeId}, #{reviewerName}, #{profilePicture},
-            #{rating}, #{description}, #{reviewDate}, #{images}, #{createdAt}
+            #{id}, #{placeId}, #{reviewId}, #{googlePlaceId},
+            #{reviewerName}, #{profileUrl}, #{profilePicture},
+            #{isLocalGuide}, #{totalReviews}, #{totalPhotos},
+            #{rating}, #{description}, #{language}, #{reviewDate},
+            #{images}, #{likes}, #{contentHash}, #{isDeleted},
+            #{authenticityScore}, #{authenticityLevel}, #{scoreCalculatedAt},
+            #{createdAt}, #{updatedAt}
         )
     </insert>
 
     <insert id="insertBatch" parameterType="java.util.List">
         INSERT INTO place_reviews (
-            id, place_id, reviewer_name, profile_picture,
-            rating, description, review_date, images, created_at
+            id, place_id, review_id, google_place_id,
+            reviewer_name, profile_url, profile_picture,
+            is_local_guide, total_reviews, total_photos,
+            rating, description, language, review_date,
+            images, likes, content_hash, is_deleted,
+            authenticity_score, authenticity_level, score_calculated_at,
+            created_at, updated_at
         ) VALUES
         <foreach collection="reviews" item="review" separator=",">
             (
-                #{review.id}, #{review.placeId}, #{review.reviewerName}, #{review.profilePicture},
-                #{review.rating}, #{review.description}, #{review.reviewDate}, #{review.images}, #{review.createdAt}
+                #{review.id}, #{review.placeId}, #{review.reviewId}, #{review.googlePlaceId},
+                #{review.reviewerName}, #{review.profileUrl}, #{review.profilePicture},
+                #{review.isLocalGuide}, #{review.totalReviews}, #{review.totalPhotos},
+                #{review.rating}, #{review.description}, #{review.language}, #{review.reviewDate},
+                #{review.images}, #{review.likes}, #{review.contentHash}, #{review.isDeleted},
+                #{review.authenticityScore}, #{review.authenticityLevel}, #{review.scoreCalculatedAt},
+                #{review.createdAt}, #{review.updatedAt}
             )
         </foreach>
     </insert>
+
+    <update id="update" parameterType="com.ds.goroute.entity.PlaceReview">
+        UPDATE place_reviews SET
+            place_id = #{placeId},
+            google_place_id = #{googlePlaceId},
+            reviewer_name = #{reviewerName},
+            profile_url = #{profileUrl},
+            profile_picture = #{profilePicture},
+            is_local_guide = #{isLocalGuide},
+            total_reviews = #{totalReviews},
+            total_photos = #{totalPhotos},
+            rating = #{rating},
+            description = #{description},
+            language = #{language},
+            review_date = #{reviewDate},
+            images = #{images},
+            likes = #{likes},
+            content_hash = #{contentHash},
+            is_deleted = #{isDeleted},
+            authenticity_score = #{authenticityScore},
+            authenticity_level = #{authenticityLevel},
+            score_calculated_at = #{scoreCalculatedAt},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
 
     <select id="findByPlaceId" resultMap="PlaceReviewResultMap">
         SELECT * FROM place_reviews
         WHERE place_id = #{placeId}
         ORDER BY review_date DESC, created_at DESC
+    </select>
+
+    <select id="findAll" resultMap="PlaceReviewResultMap">
+        SELECT * FROM place_reviews
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="findByReviewId" resultMap="PlaceReviewResultMap">
+        SELECT * FROM place_reviews
+        WHERE review_id = #{reviewId}
+        LIMIT 1
+    </select>
+
+    <select id="findTopReviewsByPlaceId" resultMap="PlaceReviewResultMap">
+        SELECT * FROM place_reviews
+        WHERE place_id = #{placeId}
+          AND (is_deleted IS NULL OR is_deleted = false)
+        ORDER BY
+            authenticity_score DESC NULLS LAST,
+            likes DESC,
+            review_date DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findReviewsByPlaceIdAndRating" resultMap="PlaceReviewResultMap">
+        SELECT * FROM place_reviews
+        WHERE place_id = #{placeId}
+          AND rating = #{rating}
+          AND (is_deleted IS NULL OR is_deleted = false)
+          AND authenticity_score >= #{minAuthScore}
+        ORDER BY
+            authenticity_score DESC,
+            likes DESC,
+            review_date DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="getAvgAuthenticityScore" resultType="java.math.BigDecimal">
+        SELECT AVG(authenticity_score)
+        FROM place_reviews
+        WHERE place_id = #{placeId}
+          AND (is_deleted IS NULL OR is_deleted = false)
+          AND authenticity_score IS NOT NULL
     </select>
 
     <delete id="deleteByPlaceId">

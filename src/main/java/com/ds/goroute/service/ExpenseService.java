@@ -12,18 +12,21 @@ import java.util.UUID;
 
 public interface ExpenseService {
     ExpenseResponse createExpense(UUID tripId, CreateExpenseRequest request, UUID userId);
-    
+
     List<ExpenseResponse> getExpenses(UUID tripId, String category);
-    
-    BudgetOverviewResponse getBudgetOverview(UUID tripId);
-    
+
+    BudgetOverviewResponse getBudgetOverview(UUID tripId, UUID userId);
+
     ExpenseResponse updateExpense(UUID tripId, UUID expenseId, UpdateExpenseRequest request, UUID userId);
-    
+
     void deleteExpense(UUID tripId, UUID expenseId, UUID userId);
-    
+
     ExpenseSplitResponse markPaymentForSplit(UUID tripId, UUID expenseId, UUID splitId, MarkPaymentRequest request, UUID userId);
-    
+
     ExpenseResponse markAllPaymentsForExpense(UUID tripId, UUID expenseId, MarkPaymentRequest request, UUID userId);
-    
+
     void markAllPaymentsForTrip(UUID tripId, MarkPaymentRequest request, UUID userId);
+
+    /** Re-apply trip currency conversion for all expenses after trip.currency changes. */
+    void recalculateForTripCurrency(UUID tripId);
 }

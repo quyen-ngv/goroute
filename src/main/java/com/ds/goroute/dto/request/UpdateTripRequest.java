@@ -29,7 +29,7 @@ public class UpdateTripRequest {
     private String description;
     private Boolean shareExpenses;
     private Boolean shareNotes;
-    
+
     // Starting point
     private String startingPointName;
     private String startingPointAddress;

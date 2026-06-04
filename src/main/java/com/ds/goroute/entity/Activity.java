@@ -26,6 +26,11 @@ public class Activity {
     private String address;
     private BigDecimal lat;
     private BigDecimal lng;
+    // For transport activities (category=transport): destination point (B).
+    // lat/lng above represent the origin point (A); these fields stay NULL for non-transport activities.
+    private BigDecimal endLat;
+    private BigDecimal endLng;
+    private String endAddress;
     private LocalTime startTime;
     private LocalTime endTime;
     private BigDecimal estimatedCost;
@@ -38,12 +43,16 @@ public class Activity {
     private String description;
     private ActivityStatus status;
     private UUID addedBy;
-    
+
     // Special flags
     private Boolean isAccommodation;
     private Boolean isStartingPoint;
     private LocalDateTime startingPointDate;
-    
+
+    // Booking reference
+    private UUID bookingId;
+    private String bookingSource; // KLOOK, VIATOR, null for user-created
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

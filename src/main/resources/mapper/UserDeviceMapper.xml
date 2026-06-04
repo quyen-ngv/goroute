@@ -8,14 +8,15 @@
         <result property="fcmToken" column="fcm_token"/>
         <result property="deviceType" column="device_type"/>
         <result property="deviceName" column="device_name"/>
+        <result property="language" column="language"/>
         <result property="isActive" column="is_active"/>
         <result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
     </resultMap>
 
     <insert id="insert">
-        INSERT INTO user_devices (id, user_id, fcm_token, device_type, device_name, is_active, created_at, updated_at)
-        VALUES (#{id}, #{userId}, #{fcmToken}, #{deviceType}, #{deviceName}, #{isActive}, #{createdAt}, #{updatedAt})
+        INSERT INTO user_devices (id, user_id, fcm_token, device_type, device_name, language, is_active, created_at, updated_at)
+        VALUES (#{id}, #{userId}, #{fcmToken}, #{deviceType}, #{deviceName}, #{language}, #{isActive}, #{createdAt}, #{updatedAt})
     </insert>
 
     <select id="findById" resultMap="UserDeviceResultMap">
@@ -23,26 +24,47 @@
     </select>
 
     <select id="findActiveByUserId" resultMap="UserDeviceResultMap">
-        SELECT * FROM user_devices 
+        SELECT * FROM user_devices
         WHERE user_id = #{userId} AND is_active = true
         ORDER BY updated_at DESC
     </select>
 
     <select id="findByUserIdAndToken" resultMap="UserDeviceResultMap">
-        SELECT * FROM user_devices 
+        SELECT * FROM user_devices
         WHERE user_id = #{userId} AND fcm_token = #{fcmToken}
     </select>
 
     <update id="updateToken">
-        UPDATE user_devices 
+        UPDATE user_devices
         SET fcm_token = #{fcmToken}, updated_at = NOW()
         WHERE id = #{id}
     </update>
 
+    <update id="updateDevice">
+        UPDATE user_devices
+        <set>
+            <if test="fcmToken != null">fcm_token = #{fcmToken},</if>
+            <if test="language != null">language = #{language},</if>
+            <if test="isActive != null">is_active = #{isActive},</if>
+            updated_at = NOW()
+        </set>
+        WHERE id = #{id} AND user_id = #{userId}
+    </update>
+
     <update id="deactivate">
-        UPDATE user_devices 
+        UPDATE user_devices
         SET is_active = false, updated_at = NOW()
         WHERE id = #{id}
     </update>
+
+    <delete id="deleteByToken">
+        DELETE FROM user_devices
+        WHERE fcm_token = #{fcmToken}
+    </delete>
+
+    <delete id="deleteByIdAndUserId">
+        DELETE FROM user_devices
+        WHERE id = #{id} AND user_id = #{userId}
+    </delete>
 
 </mapper>

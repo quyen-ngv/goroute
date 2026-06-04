@@ -24,9 +24,9 @@ import java.util.UUID;
 @Slf4j
 @Tag(name = "Reviews", description = "User review management APIs")
 public class ReviewController extends BaseService {
-    
+
     private final ReviewService reviewService;
-    
+
     @PostMapping
     @Operation(summary = "Create a new review")
     public ResponseEntity createReview(
@@ -35,7 +35,7 @@ public class ReviewController extends BaseService {
         UserReviewResponse response = reviewService.createReview(userId, request);
         return ResponseEntity.ok(ofSucceeded(response));
     }
-    
+
     @PutMapping("/{id}")
     @Operation(summary = "Update an existing review")
     public ResponseEntity updateReview(
@@ -45,7 +45,7 @@ public class ReviewController extends BaseService {
         UserReviewResponse response = reviewService.updateReview(userId, id, request);
         return ResponseEntity.ok(ofSucceeded(response));
     }
-    
+
     @DeleteMapping("/{id}")
     @Operation(summary = "Delete a review")
     public ResponseEntity deleteReview(
@@ -54,7 +54,7 @@ public class ReviewController extends BaseService {
         reviewService.deleteReview(userId, id);
         return ResponseEntity.ok(ofSucceeded(null));
     }
-    
+
     @GetMapping("/places/{placeId}")
     @Operation(summary = "Get reviews for a place")
     public ResponseEntity getPlaceReviews(
@@ -65,7 +65,7 @@ public class ReviewController extends BaseService {
         List<UserReviewResponse> reviews = reviewService.getPlaceReviews(placeId, userId, page, size);
         return ResponseEntity.ok(ofSucceeded(reviews));
     }
-    
+
     @GetMapping("/users/me")
     @Operation(summary = "Get current user's reviews")
     public ResponseEntity getMyReviews(
@@ -75,32 +75,32 @@ public class ReviewController extends BaseService {
         List<UserReviewResponse> reviews = reviewService.getUserReviews(userId, page, size);
         return ResponseEntity.ok(ofSucceeded(reviews));
     }
-    
+
     @PostMapping("/{id}/helpful")
     @Operation(summary = "Vote review as helpful (toggle)")
     public ResponseEntity voteHelpful(
             @PathVariable UUID id,
             @RequestAttribute("userId") UUID userId) {
-        reviewService.voteHelpful(userId, id);
-        return ResponseEntity.ok(ofSucceeded(null));
+        UserReviewResponse response = reviewService.voteHelpful(userId, id);
+        return ResponseEntity.ok(ofSucceeded(response));
     }
-    
+
     @PostMapping("/{id}/unhelpful")
     @Operation(summary = "Vote review as unhelpful (toggle)")
     public ResponseEntity voteUnhelpful(
             @PathVariable UUID id,
             @RequestAttribute("userId") UUID userId) {
-        reviewService.voteUnhelpful(userId, id);
-        return ResponseEntity.ok(ofSucceeded(null));
+        UserReviewResponse response = reviewService.voteUnhelpful(userId, id);
+        return ResponseEntity.ok(ofSucceeded(response));
     }
-    
+
     @GetMapping("/places/{placeId}/score")
     @Operation(summary = "Get aggregated score for a place")
     public ResponseEntity getPlaceScore(@PathVariable UUID placeId) {
         PlaceScoreResponse response = reviewService.getPlaceScore(placeId);
         return ResponseEntity.ok(ofSucceeded(response));
     }
-    
+
     @GetMapping("/users/me/profile")
     @Operation(summary = "Get current user's review profile (tier & stats)")
     public ResponseEntity getMyProfile(@RequestAttribute("userId") UUID userId) {

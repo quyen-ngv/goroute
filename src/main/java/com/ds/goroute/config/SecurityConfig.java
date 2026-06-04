@@ -34,11 +34,31 @@ public class SecurityConfig {
                         .requestMatchers("/v1/api/public/**").permitAll()
                         .requestMatchers("/v1/api/location-images/**").permitAll()
                         .requestMatchers("/v1/api/places/**").permitAll()
+                        .requestMatchers("/v1/api/place-reviews/**").permitAll()
+                        .requestMatchers("/v1/api/activity-bookings/**").permitAll()
+                        .requestMatchers("/v1/api/foods/**").permitAll()
+                        .requestMatchers("/v1/api/admin/foods/**").permitAll()
                         .requestMatchers("/share/**").permitAll()
+                        .requestMatchers("/goroute/share/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/api/health").permitAll()
                         .requestMatchers("/swagger-ui/**", "/api-docs/**", "/swagger-ui.html").permitAll()
-                        .requestMatchers("/admin-*.html", "/*.html", "/css/**", "/js/**").permitAll()
+                        // Static admin/share assets (PathPattern: ** must be last â€” no /**/*.css)
+                        .requestMatchers(
+                                "/admin-*.html",
+                                "/*.html",
+                                "/goroute-theme.css",
+                                "/goroute-admin-utils.js",
+                                "/goroute/admin-*.html",
+                                "/goroute/goroute-theme.css",
+                                "/goroute/goroute-admin-utils.js",
+                                "/*.css",
+                                "/*.js",
+                                "/goroute/*.css",
+                                "/goroute/*.js",
+                                "/css/**",
+                                "/js/**"
+                        ).permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 

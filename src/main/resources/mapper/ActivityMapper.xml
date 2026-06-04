@@ -11,6 +11,9 @@
         <result column="address" property="address" jdbcType="VARCHAR"/>
         <result column="lat" property="lat" jdbcType="DECIMAL"/>
         <result column="lng" property="lng" jdbcType="DECIMAL"/>
+        <result column="end_lat" property="endLat" jdbcType="DECIMAL"/>
+        <result column="end_lng" property="endLng" jdbcType="DECIMAL"/>
+        <result column="end_address" property="endAddress" jdbcType="VARCHAR"/>
         <result column="start_time" property="startTime" javaType="java.time.LocalTime" jdbcType="TIME"/>
         <result column="end_time" property="endTime" javaType="java.time.LocalTime" jdbcType="TIME"/>
         <result column="estimated_cost" property="estimatedCost" jdbcType="DECIMAL"/>
@@ -26,27 +29,33 @@
         <result column="is_accommodation" property="isAccommodation" jdbcType="BOOLEAN"/>
         <result column="is_starting_point" property="isStartingPoint" jdbcType="BOOLEAN"/>
         <result column="starting_point_date" property="startingPointDate" jdbcType="TIMESTAMP"/>
+        <result column="booking_id" property="bookingId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="booking_source" property="bookingSource" jdbcType="VARCHAR"/>
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
         <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
     </resultMap>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.Activity">
         INSERT INTO activities (id, trip_id, day_number, place_id, custom_place_id, name, address,
-                               lat, lng, start_time, end_time, estimated_cost, cost_currency, category, 
-                               transport_mode, rating, photo_url, notes, description, status, added_by, 
-                               is_accommodation, is_starting_point, starting_point_date, created_at, updated_at)
-        VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, 
+                               lat, lng, end_lat, end_lng, end_address,
+                               start_time, end_time, estimated_cost, cost_currency, category,
+                               transport_mode, rating, photo_url, notes, description, status, added_by,
+                               is_accommodation, is_starting_point, starting_point_date,
+                               booking_id, booking_source, created_at, updated_at)
+        VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER},
                 #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
-                #{dayNumber}, #{placeId}, #{customPlaceId,javaType=java.util.UUID,jdbcType=OTHER}, 
-                #{name}, #{address}, #{lat}, #{lng}, 
-                #{startTime,javaType=java.time.LocalTime,jdbcType=TIME}, 
-                #{endTime,javaType=java.time.LocalTime,jdbcType=TIME}, 
-                #{estimatedCost}, #{costCurrency}, #{category}, 
-                #{transportMode}, 
+                #{dayNumber}, #{placeId}, #{customPlaceId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{name}, #{address}, #{lat}, #{lng},
+                #{endLat}, #{endLng}, #{endAddress},
+                #{startTime,javaType=java.time.LocalTime,jdbcType=TIME},
+                #{endTime,javaType=java.time.LocalTime,jdbcType=TIME},
+                #{estimatedCost}, #{costCurrency}, #{category},
+                #{transportMode},
                 #{rating}, #{photoUrl}, #{notes}, #{description},
                 #{status},
-                #{addedBy,javaType=java.util.UUID,jdbcType=OTHER}, 
+                #{addedBy,javaType=java.util.UUID,jdbcType=OTHER},
                 #{isAccommodation}, #{isStartingPoint}, #{startingPointDate},
+                #{bookingId,javaType=java.util.UUID,jdbcType=OTHER}, #{bookingSource},
                 NOW(), NOW())
     </insert>
 
@@ -74,6 +83,9 @@
             <if test="address != null">address = #{address},</if>
             <if test="lat != null">lat = #{lat},</if>
             <if test="lng != null">lng = #{lng},</if>
+            <if test="endLat != null">end_lat = #{endLat},</if>
+            <if test="endLng != null">end_lng = #{endLng},</if>
+            <if test="endAddress != null">end_address = #{endAddress},</if>
             <if test="dayNumber != null">day_number = #{dayNumber},</if>
             <if test="startTime != null">start_time = #{startTime,javaType=java.time.LocalTime,jdbcType=TIME},</if>
             <if test="endTime != null">end_time = #{endTime,javaType=java.time.LocalTime,jdbcType=TIME},</if>
@@ -89,6 +101,8 @@
             <if test="isAccommodation != null">is_accommodation = #{isAccommodation},</if>
             <if test="isStartingPoint != null">is_starting_point = #{isStartingPoint},</if>
             <if test="startingPointDate != null">starting_point_date = #{startingPointDate},</if>
+            <if test="bookingId != null">booking_id = #{bookingId,javaType=java.util.UUID,jdbcType=OTHER},</if>
+            <if test="bookingSource != null">booking_source = #{bookingSource},</if>
             updated_at = NOW()
         </set>
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}

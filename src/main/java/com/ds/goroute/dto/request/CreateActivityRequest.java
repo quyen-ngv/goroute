@@ -27,6 +27,11 @@ public class CreateActivityRequest {
     private BigDecimal lat;
     private BigDecimal lng;
 
+    /** Destination address for transport activities (origin = address). */
+    private String endAddress;
+    private BigDecimal endLat;
+    private BigDecimal endLng;
+
     @NotNull(message = "Day number is required")
     private Integer dayNumber;
 
@@ -37,9 +42,14 @@ public class CreateActivityRequest {
     private String category;
     private String transportMode;
     private String notes;
-    
+    private String description;
+
     // Special flags
     private Boolean isAccommodation;
     private Boolean isStartingPoint;
     private LocalDateTime startingPointDate;
+
+    // Booking reference (optional â€” when adding from activity catalog)
+    private UUID bookingId;
+    private String bookingSource; // KLOOK, VIATOR
 }

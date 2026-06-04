@@ -18,6 +18,7 @@
         <result property="photos" column="photos"/>
         <result property="weight" column="weight"/>
         <result property="helpfulVotes" column="helpful_votes"/>
+        <result property="unhelpfulVotes" column="unhelpful_votes"/>
         <result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
     </resultMap>
@@ -26,11 +27,11 @@
         INSERT INTO user_reviews (
             id, user_id, place_id, trip_id,
             overall_rating, food_rating, price_rating, ambiance_rating, service_rating,
-            text, photos, weight, helpful_votes
+            text, photos, weight, helpful_votes, unhelpful_votes
         ) VALUES (
             #{id}, #{userId}, #{placeId}, #{tripId},
             #{overallRating}, #{foodRating}, #{priceRating}, #{ambianceRating}, #{serviceRating},
-            #{text}, #{photos}::text, #{weight}, #{helpfulVotes}
+            #{text}, #{photos}::text, #{weight}, #{helpfulVotes}, #{unhelpfulVotes}
         )
     </insert>
 
@@ -43,6 +44,16 @@
             service_rating = #{serviceRating},
             text = #{text},
             photos = #{photos}::text,
+            helpful_votes = #{helpfulVotes},
+            unhelpful_votes = #{unhelpfulVotes},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateVoteCounts" parameterType="com.ds.goroute.entity.UserReview">
+        UPDATE user_reviews
+        SET helpful_votes = #{helpfulVotes},
+            unhelpful_votes = #{unhelpfulVotes},
             updated_at = NOW()
         WHERE id = #{id}
     </update>

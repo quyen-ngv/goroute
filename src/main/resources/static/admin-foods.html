@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quáº£n lÃ½ Ä‘áº·c sáº£n - GoRoute Admin</title>
+    <link rel="stylesheet" href="/goroute/goroute-theme.css">
+    <style>
+        .foods-admin .img-preview {
+            width: 96px;
+            height: 72px;
+            background: var(--color-powder);
+        }
+
+        .food-name {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .food-desc {
+            color: var(--color-gravel);
+            font-size: 12px;
+            line-height: 1.45;
+            max-width: 620px;
+        }
+
+        .food-modal-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+            gap: 20px;
+            align-items: start;
+        }
+
+        .food-panel {
+            border: 1px solid var(--color-chalk);
+            border-radius: 8px;
+            background: #ffffff;
+            overflow: hidden;
+        }
+
+        .food-panel-header {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--color-chalk);
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .food-panel-title {
+            font-weight: 600;
+            color: var(--color-obsidian);
+        }
+
+        .food-panel-subtitle {
+            color: var(--color-gravel);
+            font-size: 12px;
+            margin-top: 2px;
+        }
+
+        .food-panel-body {
+            padding: 16px;
+        }
+
+        .score-table td,
+        .score-table th {
+            vertical-align: top;
+        }
+
+        .city-pill {
+            display: inline-flex;
+            flex-direction: column;
+            gap: 2px;
+            padding: 6px 10px;
+            border-radius: 8px;
+            background: var(--color-powder);
+            border: 1px solid var(--color-chalk);
+        }
+
+        .city-pill strong {
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .city-pill small {
+            color: var(--color-gravel);
+            font-size: 11px;
+        }
+
+        .score-value {
+            font-weight: 600;
+            color: var(--color-obsidian);
+        }
+
+        .score-meta {
+            color: var(--color-gravel);
+            font-size: 12px;
+            line-height: 1.45;
+        }
+
+        .score-editor {
+            background: var(--color-powder);
+            border: 1px solid var(--color-chalk);
+            border-radius: 8px;
+            padding: 14px;
+        }
+
+        .score-editor-actions,
+        .inline-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .form-input[disabled] {
+            background: var(--color-powder);
+            color: var(--color-gravel);
+            cursor: not-allowed;
+        }
+
+        .linked-item {
+            padding: 10px 0;
+            border-bottom: 1px solid var(--color-chalk);
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .linked-title {
+            font-weight: 500;
+        }
+
+        .linked-id {
+            display: block;
+            color: var(--color-gravel);
+            font-size: 11px;
+            margin-top: 2px;
+            word-break: break-all;
+        }
+
+        @media (max-width: 980px) {
+            .food-modal-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body class="foods-admin">
+    <div class="page-header">
+        <h1>Quáº£n lÃ½ Ä‘áº·c sáº£n (Food Discovery)</h1>
+        <p>CRUD mÃ³n Äƒn, Ä‘iá»ƒm theo thÃ nh phá»‘ vÃ  liÃªn káº¿t quÃ¡n</p>
+    </div>
+
+    <div class="container container--wide">
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number" id="total-count">0</div>
+                <div class="stat-label">Tá»•ng sá»‘ mÃ³n</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="city-count">0</div>
+                <div class="stat-label">ThÃ nh phá»‘ kháº£ dá»¥ng</div>
+            </div>
+        </div>
+
+        <div class="toolbar">
+            <button class="btn btn-primary" onclick="openCreateModal()">ThÃªm mÃ³n má»›i</button>
+            <button class="btn btn-secondary" onclick="loadData()">LÃ m má»›i</button>
+            <input type="text" class="search-box" id="search-input" placeholder="TÃ¬m theo tÃªn..."
+                onkeyup="debounceSearch()">
+        </div>
+
+        <div id="error-message" class="error" style="display: none;"></div>
+        <div id="success-message" class="success" style="display: none;"></div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Danh sÃ¡ch mÃ³n</div>
+            </div>
+            <div class="card-body">
+                <div id="loading" class="loading">Äang táº£i...</div>
+                <div id="empty" class="empty" style="display: none;">ChÆ°a cÃ³ mÃ³n nÃ o</div>
+                <div id="table-container" class="table-container" style="display: none;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 120px;">áº¢nh</th>
+                                <th>TÃªn</th>
+                                <th style="width: 140px;">Loáº¡i</th>
+                                <th style="width: 190px;">Thao tÃ¡c</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="food-modal" class="modal">
+        <div class="modal-content modal-content--2xl">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-title" id="food-modal-title">ThÃªm mÃ³n má»›i</div>
+                    <div class="form-help" id="food-modal-help">LÆ°u mÃ³n trÆ°á»›c, sau Ä‘Ã³ thÃªm Ä‘iá»ƒm theo tá»«ng thÃ nh phá»‘.</div>
+                </div>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="food-id">
+                <input type="hidden" id="score-id">
+
+                <div class="food-modal-layout">
+                    <div class="food-panel">
+                        <div class="food-panel-header">
+                            <div>
+                                <div class="food-panel-title">ThÃ´ng tin mÃ³n</div>
+                                <div class="food-panel-subtitle">TÃªn, mÃ´ táº£, phÃ¢n loáº¡i vÃ  áº£nh Ä‘áº¡i diá»‡n.</div>
+                            </div>
+                        </div>
+                        <div class="food-panel-body">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label class="form-label">TÃªn (VI) *</label>
+                                    <input type="text" id="name-vi" class="form-input" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">TÃªn (EN) *</label>
+                                    <input type="text" id="name-en" class="form-input" required>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">MÃ´ táº£ *</label>
+                                <textarea id="description" class="form-input form-textarea" required></textarea>
+                            </div>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label class="form-label">Loáº¡i *</label>
+                                    <select id="category" class="form-input" required>
+                                        <option value="NOODLE">NOODLE</option>
+                                        <option value="RICE">RICE</option>
+                                        <option value="BREAD">BREAD</option>
+                                        <option value="DRINK">DRINK</option>
+                                        <option value="SNACK">SNACK</option>
+                                        <option value="DESSERT">DESSERT</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">URL áº£nh</label>
+                                    <input type="url" id="image-url" class="form-input" placeholder="https://...">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="food-panel">
+                        <div class="food-panel-header">
+                            <div>
+                                <div class="food-panel-title">Äiá»ƒm theo thÃ nh phá»‘</div>
+                                <div class="food-panel-subtitle">ThÃªm, sá»­a hoáº·c xÃ³a Ä‘iá»ƒm hiá»ƒn thá»‹ theo tá»«ng city slug.</div>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="resetScoreForm()">Má»›i</button>
+                        </div>
+                        <div class="food-panel-body">
+                            <div id="scores-empty" class="form-help" style="display: none;">ChÆ°a cÃ³ Ä‘iá»ƒm. LÆ°u mÃ³n trÆ°á»›c khi thÃªm Ä‘iá»ƒm.</div>
+                            <div id="scores-table-wrap" class="table-container" style="display: none;">
+                                <table class="score-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 150px;">ThÃ nh phá»‘</th>
+                                            <th style="width: 80px;">Äiá»ƒm</th>
+                                            <th>MÃ´ táº£</th>
+                                            <th style="width: 150px;">Thao tÃ¡c</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="scores-body"></tbody>
+                                </table>
+                            </div>
+
+                            <div id="score-form" class="score-editor" style="display: none;">
+                                <div class="form-section-title" id="score-form-title">ThÃªm Ä‘iá»ƒm thÃ nh phá»‘</div>
+                                <div class="form-grid">
+                                    <div class="form-group">
+                                        <label class="form-label">ThÃ nh phá»‘ *</label>
+                                        <input type="text" id="score-city-slug" class="form-input" list="score-city-options" placeholder="hanoi, hcmc, da-lat..." autocomplete="off">
+                                        <datalist id="score-city-options"></datalist>
+                                        <small class="form-help">CÃ³ thá»ƒ chá»n city cÃ³ sáºµn hoáº·c nháº­p slug má»›i.</small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Äiá»ƒm (0-100) *</label>
+                                        <input type="number" id="score-value" class="form-input" min="0" max="100" value="80">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">MÃ´ táº£ Ä‘á»‹a phÆ°Æ¡ng</label>
+                                    <textarea id="score-local-desc" class="form-input form-textarea" rows="3"></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">URL áº£nh riÃªng cho city</label>
+                                    <input type="url" id="score-image-url" class="form-input" placeholder="https://...">
+                                    <small class="form-help">Äá»ƒ trá»‘ng thÃ¬ app dÃ¹ng áº£nh chung cá»§a mÃ³n.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Fun fact</label>
+                                    <input type="text" id="score-fun-fact" class="form-input">
+                                </div>
+                                <div class="score-editor-actions">
+                                    <button type="button" class="btn btn-primary btn-sm" id="score-save-btn" onclick="saveCityScore()">ThÃªm Ä‘iá»ƒm</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="score-cancel-btn" onclick="resetScoreForm()" style="display: none;">Há»§y sá»­a</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="food-panel" style="margin-top: 20px;">
+                    <div class="food-panel-header">
+                        <div>
+                            <div class="food-panel-title">QuÃ¡n liÃªn káº¿t (<span id="linked-count">0</span>)</div>
+                            <div class="food-panel-subtitle">LiÃªn káº¿t place UUID vá»›i mÃ³n Ä‘ang chá»‰nh sá»­a.</div>
+                        </div>
+                    </div>
+                    <div class="food-panel-body">
+                        <div id="linked-empty" class="form-help">LÆ°u mÃ³n Ä‘á»ƒ quáº£n lÃ½ liÃªn káº¿t.</div>
+                        <ul id="linked-list" style="list-style: none; padding: 0; margin: 0 0 12px;"></ul>
+                        <div id="link-form" style="display: none;">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label class="form-label">Place UUID</label>
+                                    <input type="text" id="link-place-id" class="form-input" placeholder="uuid cá»§a place">
+                                </div>
+                                <div class="form-group" style="align-self: end;">
+                                    <button type="button" class="btn btn-secondary" onclick="linkPlace()">LiÃªn káº¿t quÃ¡n</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeFoodModal()">ÄÃ³ng</button>
+                <button class="btn btn-primary" onclick="saveFood()">LÆ°u mÃ³n</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/goroute/goroute-admin-utils.js"></script>
+    <script>
+        const API_BASE_URL = 'https://onestudy.id.vn/goroute/v1/api/admin/foods';
+        let foods = [];
+        let citySlugs = [];
+        let currentScores = [];
+        let currentDetail = null;
+        let searchTimer = null;
+        let isEditMode = false;
+
+        const tableChrome = () => ({
+            loadingEl: document.getElementById('loading'),
+            emptyEl: document.getElementById('empty'),
+            tableEl: document.getElementById('table-container'),
+        });
+
+        function showError(message) {
+            const el = document.getElementById('error-message');
+            el.textContent = message;
+            el.style.display = 'block';
+            setTimeout(() => el.style.display = 'none', 6000);
+        }
+
+        function showSuccess(message) {
+            const el = document.getElementById('success-message');
+            el.textContent = message;
+            el.style.display = 'block';
+            setTimeout(() => el.style.display = 'none', 3000);
+        }
+
+        function hideMessages() {
+            document.getElementById('error-message').style.display = 'none';
+            document.getElementById('success-message').style.display = 'none';
+        }
+
+        function debounceSearch() {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => loadData(), 350);
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function getCitySlug(option) {
+            if (typeof option === 'string') return option;
+            return option?.slug || option?.citySlug || option?.value || '';
+        }
+
+        function getCityLabel(option) {
+            if (typeof option === 'string') return option;
+            return option?.label || option?.displayName || option?.name || option?.slug || '';
+        }
+
+        function findCityOption(slug) {
+            return citySlugs.find(item => getCitySlug(item) === slug);
+        }
+
+        function formatCityLabel(slug) {
+            const option = findCityOption(slug);
+            const label = getCityLabel(option) || slug;
+            return label === slug ? slug : `${label} (${slug})`;
+        }
+
+        function renderCitySlugSelect(selectedSlug = '') {
+            const input = document.getElementById('score-city-slug');
+            const list = document.getElementById('score-city-options');
+            if (!input || !list) return;
+            if (!citySlugs.length) {
+                list.innerHTML = '';
+                input.value = selectedSlug || '';
+                return;
+            }
+            input.disabled = false;
+            list.innerHTML = citySlugs.map(item => {
+                const slug = getCitySlug(item);
+                const label = getCityLabel(item);
+                const text = label && label !== slug ? `${label} (${slug})` : slug;
+                return `<option value="${escapeHtml(slug)}">${escapeHtml(text)}</option>`;
+            }).join('');
+            input.value = selectedSlug || (citySlugs[0] ? getCitySlug(citySlugs[0]) : '');
+        }
+
+        async function loadCitySlugs() {
+            try {
+                const res = await fetch(`${API_BASE_URL}/city-slugs`);
+                const data = await res.json();
+                if (data.meta?.code === 200000) {
+                    citySlugs = data.data || [];
+                    document.getElementById('city-count').textContent = citySlugs.length;
+                    renderCitySlugSelect();
+                } else {
+                    throw new Error(data.meta?.message || 'KhÃ´ng táº£i Ä‘Æ°á»£c city slug');
+                }
+            } catch (error) {
+                showError('Lá»—i táº£i city slug: ' + error.message);
+            }
+        }
+
+        async function loadData(silent = false) {
+            const chrome = tableChrome();
+            const q = document.getElementById('search-input').value.trim();
+            try {
+                GorouteAdmin.beginLoading({ silent, ...chrome });
+                if (!silent) hideMessages();
+                const url = q ? `${API_BASE_URL}?q=${encodeURIComponent(q)}` : API_BASE_URL;
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.meta?.code === 200000) {
+                    foods = data.data || [];
+                    renderTable({ silent });
+                } else {
+                    throw new Error(data.meta?.message || 'KhÃ´ng táº£i Ä‘Æ°á»£c dá»¯ liá»‡u');
+                }
+            } catch (error) {
+                showError('Lá»—i táº£i dá»¯ liá»‡u: ' + error.message);
+                chrome.loadingEl.style.display = 'none';
+            }
+        }
+
+        function renderTable(options = {}) {
+            const silent = options.silent === true;
+            GorouteAdmin.syncTableChrome({
+                silent,
+                ...tableChrome(),
+                rowCount: foods.length,
+            });
+            document.getElementById('total-count').textContent = foods.length;
+            if (foods.length === 0) return;
+
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
+            foods.forEach(food => {
+                const row = document.createElement('tr');
+                const image = food.imageUrl
+                    ? `<img src="${escapeHtml(food.imageUrl)}" class="img-preview" onerror="this.style.display='none'">`
+                    : '<span class="form-help">KhÃ´ng cÃ³ áº£nh</span>';
+                row.innerHTML = `
+                    <td>${image}</td>
+                    <td>
+                        <div class="food-name">${escapeHtml(food.name || '')}</div>
+                        <div class="food-desc">${escapeHtml(food.description || '').slice(0, 120)}</div>
+                    </td>
+                    <td><span class="badge source-badge">${escapeHtml(food.category || '')}</span></td>
+                    <td>
+                        <div class="action-btns">
+                            <button class="btn btn-primary btn-sm" onclick="openEditModal('${escapeHtml(food.id)}')">Sá»­a</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteFood('${escapeHtml(food.id)}')">XÃ³a</button>
+                        </div>
+                    </td>`;
+                tbody.appendChild(row);
+            });
+        }
+
+        function openCreateModal() {
+            isEditMode = false;
+            currentDetail = null;
+            currentScores = [];
+            document.getElementById('food-modal-title').textContent = 'ThÃªm mÃ³n má»›i';
+            document.getElementById('food-modal-help').textContent = 'LÆ°u mÃ³n trÆ°á»›c, sau Ä‘Ã³ thÃªm Ä‘iá»ƒm theo tá»«ng thÃ nh phá»‘.';
+            document.getElementById('food-id').value = '';
+            document.getElementById('name-vi').value = '';
+            document.getElementById('name-en').value = '';
+            document.getElementById('description').value = '';
+            document.getElementById('category').value = 'NOODLE';
+            document.getElementById('image-url').value = '';
+            renderScoresSection([]);
+            renderLinkedSection([], 0);
+            resetScoreForm();
+            setPostSaveControlsVisible(false);
+            document.getElementById('food-modal').classList.add('active');
+        }
+
+        async function openEditModal(id) {
+            isEditMode = true;
+            try {
+                const res = await fetch(`${API_BASE_URL}/${id}`);
+                const data = await res.json();
+                if (data.meta?.code !== 200000) throw new Error(data.meta?.message || 'KhÃ´ng táº£i Ä‘Æ°á»£c chi tiáº¿t');
+                currentDetail = data.data;
+                const detail = currentDetail;
+                document.getElementById('food-modal-title').textContent = 'Chá»‰nh sá»­a mÃ³n';
+                document.getElementById('food-modal-help').textContent = 'CÃ³ thá»ƒ chá»‰nh thÃ´ng tin mÃ³n vÃ  CRUD Ä‘iá»ƒm theo thÃ nh phá»‘ trong cÃ¹ng mÃ n.';
+                document.getElementById('food-id').value = detail.id;
+                document.getElementById('name-vi').value = detail.names?.vi || '';
+                document.getElementById('name-en').value = detail.names?.en || '';
+                document.getElementById('description').value = detail.description || '';
+                document.getElementById('category').value = detail.category || 'NOODLE';
+                document.getElementById('image-url').value = detail.imageUrl || '';
+                renderScoresSection(detail.cityScores || []);
+                resetScoreForm();
+                setPostSaveControlsVisible(true);
+                await loadLinkedPlaces(id);
+                document.getElementById('food-modal').classList.add('active');
+            } catch (error) {
+                showError('Lá»—i táº£i chi tiáº¿t: ' + error.message);
+            }
+        }
+
+        function closeFoodModal() {
+            document.getElementById('food-modal').classList.remove('active');
+        }
+
+        function setPostSaveControlsVisible(visible) {
+            document.getElementById('score-form').style.display = visible ? 'block' : 'none';
+            document.getElementById('link-form').style.display = visible ? 'block' : 'none';
+        }
+
+        function renderScoresSection(scores) {
+            currentScores = scores || [];
+            const empty = document.getElementById('scores-empty');
+            const wrap = document.getElementById('scores-table-wrap');
+            const tbody = document.getElementById('scores-body');
+            if (!currentScores.length) {
+                const hasFoodId = Boolean(document.getElementById('food-id').value);
+                empty.textContent = hasFoodId
+                    ? 'ChÆ°a cÃ³ Ä‘iá»ƒm. DÃ¹ng form bÃªn dÆ°á»›i Ä‘á»ƒ thÃªm Ä‘iá»ƒm cho thÃ nh phá»‘ Ä‘áº§u tiÃªn.'
+                    : 'ChÆ°a cÃ³ Ä‘iá»ƒm. LÆ°u mÃ³n trÆ°á»›c khi thÃªm Ä‘iá»ƒm.';
+                empty.style.display = 'block';
+                wrap.style.display = 'none';
+                tbody.innerHTML = '';
+                return;
+            }
+
+            empty.style.display = 'none';
+            wrap.style.display = 'block';
+            tbody.innerHTML = currentScores.map(score => {
+                const localDesc = escapeHtml(score.localDescription || '');
+                const funFact = escapeHtml(score.funFact || '');
+                const imageNote = score.imageUrl ? `áº¢nh city: ${escapeHtml(score.imageUrl)}` : '';
+                const description = [localDesc, imageNote, funFact ? `Fun fact: ${funFact}` : ''].filter(Boolean).join('<br>');
+                return `
+                    <tr>
+                        <td>
+                            <span class="city-pill">
+                                <strong>${escapeHtml(formatCityLabel(score.citySlug))}</strong>
+                                <small>${escapeHtml(score.citySlug)}</small>
+                            </span>
+                        </td>
+                        <td><span class="score-value">${escapeHtml(score.score ?? '')}</span></td>
+                        <td><div class="score-meta">${description || 'ChÆ°a cÃ³ mÃ´ táº£'}</div></td>
+                        <td>
+                            <div class="inline-actions">
+                                <button class="btn btn-secondary btn-sm" onclick="editCityScore('${escapeHtml(score.id)}')">Sá»­a</button>
+                                <button class="btn btn-danger btn-sm" onclick="deleteCityScore('${escapeHtml(score.id)}')">XÃ³a</button>
+                            </div>
+                        </td>
+                    </tr>`;
+            }).join('');
+        }
+
+        function resetScoreForm() {
+            document.getElementById('score-id').value = '';
+            document.getElementById('score-value').value = '80';
+            document.getElementById('score-local-desc').value = '';
+            document.getElementById('score-image-url').value = '';
+            document.getElementById('score-fun-fact').value = '';
+            document.getElementById('score-form-title').textContent = 'ThÃªm Ä‘iá»ƒm thÃ nh phá»‘';
+            document.getElementById('score-save-btn').textContent = 'ThÃªm Ä‘iá»ƒm';
+            document.getElementById('score-cancel-btn').style.display = 'none';
+            renderCitySlugSelect();
+        }
+
+        function editCityScore(scoreId) {
+            const score = currentScores.find(item => String(item.id) === String(scoreId));
+            if (!score) return;
+            document.getElementById('score-id').value = score.id;
+            renderCitySlugSelect(score.citySlug);
+            document.getElementById('score-value').value = score.score ?? 80;
+            document.getElementById('score-local-desc').value = score.localDescription || '';
+            document.getElementById('score-image-url').value = score.imageUrl || '';
+            document.getElementById('score-fun-fact').value = score.funFact || '';
+            document.getElementById('score-form-title').textContent = 'Sá»­a Ä‘iá»ƒm thÃ nh phá»‘';
+            document.getElementById('score-save-btn').textContent = 'Cáº­p nháº­t Ä‘iá»ƒm';
+            document.getElementById('score-cancel-btn').style.display = 'inline-flex';
+            document.getElementById('score-form').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        async function refreshFoodDetail(foodId) {
+            const res = await fetch(`${API_BASE_URL}/${foodId}`);
+            const data = await res.json();
+            if (data.meta?.code !== 200000) throw new Error(data.meta?.message || 'KhÃ´ng táº£i Ä‘Æ°á»£c chi tiáº¿t');
+            currentDetail = data.data;
+            renderScoresSection(currentDetail.cityScores || []);
+        }
+
+        async function loadLinkedPlaces(foodId) {
+            const res = await fetch(`${API_BASE_URL}/${foodId}/linked-places?size=50`);
+            const data = await res.json();
+            if (data.meta?.code === 200000) {
+                const items = data.data || [];
+                renderLinkedSection(items, items.length);
+            }
+        }
+
+        function renderLinkedSection(items, count) {
+            document.getElementById('linked-count').textContent = count;
+            const list = document.getElementById('linked-list');
+            const empty = document.getElementById('linked-empty');
+            if (!items.length) {
+                list.innerHTML = '';
+                empty.style.display = 'block';
+                return;
+            }
+            empty.style.display = 'none';
+            list.innerHTML = items.map(place => `
+                <li class="linked-item">
+                    <span>
+                        <span class="linked-title">${escapeHtml(place.title || 'KhÃ´ng tÃªn')}</span>
+                        <span class="linked-id">${escapeHtml(place.id)}</span>
+                    </span>
+                    <button class="btn btn-danger btn-sm" onclick="unlinkPlace('${escapeHtml(place.id)}')">Gá»¡</button>
+                </li>`).join('');
+        }
+
+        async function saveFood() {
+            const nameVi = document.getElementById('name-vi').value.trim();
+            const nameEn = document.getElementById('name-en').value.trim();
+            const description = document.getElementById('description').value.trim();
+            const category = document.getElementById('category').value;
+            const imageUrl = document.getElementById('image-url').value.trim() || null;
+            if (!nameVi || !nameEn || !description) {
+                showError('Vui lÃ²ng Ä‘iá»n Ä‘á»§ tÃªn VI, tÃªn EN vÃ  mÃ´ táº£');
+                return;
+            }
+
+            const body = { nameVi, nameEn, description, category, imageUrl };
+            const foodId = document.getElementById('food-id').value;
+            const url = isEditMode && foodId ? `${API_BASE_URL}/${foodId}` : API_BASE_URL;
+            const method = isEditMode && foodId ? 'PUT' : 'POST';
+            try {
+                const res = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                const data = await res.json();
+                if (data.meta?.code === 200000 || data.meta?.code === 201000) {
+                    if (data.data?.id) {
+                        isEditMode = true;
+                        document.getElementById('food-id').value = data.data.id;
+                        currentDetail = data.data;
+                        renderScoresSection(data.data.cityScores || []);
+                        setPostSaveControlsVisible(true);
+                        await loadLinkedPlaces(data.data.id);
+                    }
+                    await loadData(true);
+                    showSuccess('ÄÃ£ lÆ°u mÃ³n');
+                } else {
+                    throw new Error(data.meta?.message || 'LÆ°u tháº¥t báº¡i');
+                }
+            } catch (error) {
+                showError('Lá»—i lÆ°u: ' + error.message);
+            }
+        }
+
+        async function saveCityScore() {
+            const foodId = document.getElementById('food-id').value;
+            if (!foodId) {
+                showError('LÆ°u mÃ³n trÆ°á»›c khi thÃªm Ä‘iá»ƒm thÃ nh phá»‘');
+                return;
+            }
+
+            const scoreValue = Number(document.getElementById('score-value').value);
+            if (!Number.isInteger(scoreValue) || scoreValue < 0 || scoreValue > 100) {
+                showError('Äiá»ƒm pháº£i lÃ  sá»‘ nguyÃªn tá»« 0 Ä‘áº¿n 100');
+                return;
+            }
+
+            const citySlug = document.getElementById('score-city-slug').value.trim();
+            if (!citySlug) {
+                showError('Nháº­p city slug trÆ°á»›c khi lÆ°u Ä‘iá»ƒm');
+                return;
+            }
+
+            const scoreId = document.getElementById('score-id').value;
+            const body = {
+                citySlug,
+                score: scoreValue,
+                localDescription: document.getElementById('score-local-desc').value.trim(),
+                imageUrl: document.getElementById('score-image-url').value.trim() || null,
+                funFact: document.getElementById('score-fun-fact').value.trim(),
+            };
+            const url = scoreId
+                ? `${API_BASE_URL}/${foodId}/city-scores/${scoreId}`
+                : `${API_BASE_URL}/${foodId}/city-scores`;
+            const method = scoreId ? 'PUT' : 'POST';
+
+            try {
+                const res = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                const data = await res.json();
+                if (data.meta?.code === 200000 || data.meta?.code === 201000) {
+                    await refreshFoodDetail(foodId);
+                    await loadCitySlugs();
+                    resetScoreForm();
+                    showSuccess(scoreId ? 'ÄÃ£ cáº­p nháº­t Ä‘iá»ƒm thÃ nh phá»‘' : 'ÄÃ£ thÃªm Ä‘iá»ƒm thÃ nh phá»‘');
+                } else {
+                    throw new Error(data.meta?.message || 'LÆ°u Ä‘iá»ƒm tháº¥t báº¡i');
+                }
+            } catch (error) {
+                showError('Lá»—i lÆ°u Ä‘iá»ƒm: ' + error.message);
+            }
+        }
+
+        async function deleteCityScore(scoreId) {
+            const foodId = document.getElementById('food-id').value;
+            if (!confirm('XÃ³a Ä‘iá»ƒm thÃ nh phá»‘ nÃ y?')) return;
+            try {
+                const res = await fetch(`${API_BASE_URL}/${foodId}/city-scores/${scoreId}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.meta?.code === 200000) {
+                    await refreshFoodDetail(foodId);
+                    resetScoreForm();
+                    showSuccess('ÄÃ£ xÃ³a Ä‘iá»ƒm thÃ nh phá»‘');
+                } else {
+                    throw new Error(data.meta?.message || 'XÃ³a Ä‘iá»ƒm tháº¥t báº¡i');
+                }
+            } catch (error) {
+                showError('Lá»—i xÃ³a Ä‘iá»ƒm: ' + error.message);
+            }
+        }
+
+        async function linkPlace() {
+            const foodId = document.getElementById('food-id').value;
+            const placeId = document.getElementById('link-place-id').value.trim();
+            if (!foodId || !placeId) {
+                showError('Nháº­p UUID place');
+                return;
+            }
+            try {
+                const res = await fetch(`${API_BASE_URL}/${foodId}/linked-places`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ placeId }),
+                });
+                const data = await res.json();
+                if (data.meta?.code === 200000 || data.meta?.code === 201000) {
+                    document.getElementById('link-place-id').value = '';
+                    await loadLinkedPlaces(foodId);
+                    showSuccess('ÄÃ£ liÃªn káº¿t quÃ¡n');
+                } else {
+                    throw new Error(data.meta?.message || 'LiÃªn káº¿t tháº¥t báº¡i');
+                }
+            } catch (error) {
+                showError('Lá»—i liÃªn káº¿t: ' + error.message);
+            }
+        }
+
+        async function unlinkPlace(placeId) {
+            const foodId = document.getElementById('food-id').value;
+            if (!confirm('Gá»¡ liÃªn káº¿t quÃ¡n nÃ y?')) return;
+            try {
+                const res = await fetch(`${API_BASE_URL}/${foodId}/linked-places/${placeId}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.meta?.code === 200000) {
+                    await loadLinkedPlaces(foodId);
+                    showSuccess('ÄÃ£ gá»¡ liÃªn káº¿t quÃ¡n');
+                } else {
+                    throw new Error(data.meta?.message || 'Gá»¡ liÃªn káº¿t tháº¥t báº¡i');
+                }
+            } catch (error) {
+                showError('Lá»—i gá»¡ liÃªn káº¿t: ' + error.message);
+            }
+        }
+
+        async function deleteFood(id) {
+            if (!confirm('XÃ³a mÃ³n nÃ y?')) return;
+            try {
+                const res = await fetch(`${API_BASE_URL}/${id}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.meta?.code === 200000) {
+                    GorouteAdmin.removeById(foods, id);
+                    renderTable({ silent: true });
+                    showSuccess('ÄÃ£ xÃ³a mÃ³n');
+                } else {
+                    throw new Error(data.meta?.message || 'XÃ³a tháº¥t báº¡i');
+                }
+            } catch (error) {
+                showError('Lá»—i xÃ³a: ' + error.message);
+            }
+        }
+
+        loadCitySlugs();
+        loadData();
+    </script>
+</body>
+
+</html>

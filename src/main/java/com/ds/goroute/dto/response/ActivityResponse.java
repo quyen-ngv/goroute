@@ -27,13 +27,18 @@ public class ActivityResponse {
     private String address;
     private BigDecimal lat;
     private BigDecimal lng;
-    
+
+    /** Destination point for transport activities (origin = lat/lng). */
+    private String endAddress;
+    private BigDecimal endLat;
+    private BigDecimal endLng;
+
     @JsonFormat(pattern = "HH:mm")
     private LocalTime startTime;
-    
+
     @JsonFormat(pattern = "HH:mm")
     private LocalTime endTime;
-    
+
     private BigDecimal estimatedCost;
     private String costCurrency;
     private String category;
@@ -45,20 +50,24 @@ public class ActivityResponse {
     private String status;
     private Boolean checkedIn;
     private Integer checkedInCount;
-    
+
     // Distance and duration to next activity
     private String distanceToNext;
     private String durationToNext;
     private Integer distanceValueToNext;
     private Integer durationValueToNext;
-    
+
     // Special flags
     private Boolean isAccommodation;
     private Boolean isStartingPoint;
     private LocalDateTime startingPointDate;
-    
+
     // Expense tracking
     private BigDecimal actualSpent;
     private Integer expenseCount;
     private List<ExpenseResponse> expenses;
+
+    /** Linked activity booking (Klook, etc.) when added from Explore. */
+    private UUID bookingId;
+    private String bookingSource;
 }

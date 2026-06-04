@@ -38,6 +38,23 @@ public class LocalCacheConfig {
         return cacheManager;
     }
 
+    /** Dedicated 6-hour cache for exchange rates (daily updated, low churn). */
+    @Bean("foodsByCityCacheManager")
+    public CacheManager foodsByCityCacheManager() {
+        CaffeineCacheManager cacheManager = new CaffeineCacheManager("foodsByCity");
+        cacheManager.setCaffeine(Caffeine.newBuilder().expireAfterWrite(1, TimeUnit.HOURS));
+        return cacheManager;
+    }
+
+    @Bean("exchangeRateCacheManager")
+    public CacheManager exchangeRateCacheManager() {
+        CaffeineCacheManager cacheManager = new CaffeineCacheManager("exchangeRates");
+        cacheManager.setCaffeine(
+            Caffeine.newBuilder().expireAfterWrite(6, java.util.concurrent.TimeUnit.HOURS)
+        );
+        return cacheManager;
+    }
+
     @Bean("customKeyGenerator")
     public KeyGenerator keyGenerator() {
         return new CustomKeyGenerator();

@@ -40,7 +40,7 @@
 			<artifactId>mybatis-spring-boot-starter</artifactId>
 			<version>3.0.3</version>
 		</dependency>
-		
+
 		<!-- AOP / AspectJ -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -118,7 +118,7 @@
             <artifactId>spring-kafka</artifactId>
             <version>3.3.1</version>
         </dependency>
-		
+
 		<!-- Redis - Disabled for now -->
 		<!--
 		<dependency>
@@ -241,6 +241,23 @@
 			<groupId>org.springdoc</groupId>
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
 			<version>2.3.0</version>
+		</dependency>
+
+		<!-- Apache Lucene for full-text search -->
+		<dependency>
+			<groupId>org.apache.lucene</groupId>
+			<artifactId>lucene-core</artifactId>
+			<version>9.9.1</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.lucene</groupId>
+			<artifactId>lucene-queryparser</artifactId>
+			<version>9.9.1</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.lucene</groupId>
+			<artifactId>lucene-analysis-common</artifactId>
+			<version>9.9.1</version>
 		</dependency>
 
 	</dependencies>

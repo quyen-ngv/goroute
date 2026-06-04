@@ -29,16 +29,18 @@ public class TripDetailResponse {
     private String currency;
     private String visibility;
     private String shareCode;
+    private Boolean shareExpenses;
+    private Boolean shareNotes;
     private String notes;
     private String description;
-    
+
     // Starting point
     private String startingPointName;
     private String startingPointAddress;
     private BigDecimal startingPointLat;
     private BigDecimal startingPointLng;
     private LocalDateTime startingPointTime;
-    
+
     private UserResponse owner;
     private List<TripMemberResponse> members;
     private TripStatsResponse stats;

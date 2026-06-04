@@ -2,15 +2,15 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.RegisterDeviceRequest;
+import com.ds.goroute.dto.request.UpdateDeviceRequest;
 import com.ds.goroute.dto.response.NotificationResponse;
 import com.ds.goroute.entity.UserDevice;
 import com.ds.goroute.mapper.UserDeviceMapper;
 import com.ds.goroute.service.NotificationService;
+import com.ds.goroute.service.notification.NotificationLanguage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -33,7 +33,7 @@ public class NotificationController {
             @RequestParam(defaultValue = "20") Integer size,
             @RequestParam(defaultValue = "false") Boolean unreadOnly,
             @RequestParam(required = false) UUID tripId) {
-        log.info("getNotifications - userId: {}, tripId: {}, page: {}, size: {}, unreadOnly: {}", 
+        log.info("getNotifications - userId: {}, tripId: {}, page: {}, size: {}, unreadOnly: {}",
                 userId, tripId, page, size, unreadOnly);
         List<NotificationResponse> notifications = notificationService.getNotifications(userId, page, size, unreadOnly, tripId);
         log.info("getNotifications - found {} notifications", notifications.size());
@@ -69,15 +69,20 @@ public class NotificationController {
     }
 
     @PostMapping("/devices")
-    public ResponseEntity<BaseResponse<Void>> registerDevice(
+    public ResponseEntity<BaseResponse<UserDevice>> registerDevice(
             @RequestAttribute("userId") UUID userId,
             @RequestBody RegisterDeviceRequest request) {
-        
+
         // Check if device already exists
+        String language = NotificationLanguage.normalize(request.getLanguage());
         UserDevice existing = userDeviceMapper.findByUserIdAndToken(userId, request.getFcmToken());
         if (existing != null) {
             // Update existing device
-            userDeviceMapper.updateToken(existing.getId(), request.getFcmToken());
+            userDeviceMapper.updateDevice(existing.getId(), userId, request.getFcmToken(), language, true);
+            existing.setFcmToken(request.getFcmToken());
+            existing.setLanguage(language);
+            existing.setIsActive(true);
+            return ResponseEntity.ok(BaseResponse.ofSucceeded(existing));
         } else {
             // Create new device
             UserDevice device = UserDevice.builder()
@@ -86,13 +91,31 @@ public class NotificationController {
                     .fcmToken(request.getFcmToken())
                     .deviceType(request.getDeviceType())
                     .deviceName(request.getDeviceName())
+                    .language(language)
                     .isActive(true)
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
                     .build();
             userDeviceMapper.insert(device);
+            return ResponseEntity.ok(BaseResponse.ofSucceeded(device));
         }
-        
+    }
+
+    @PatchMapping("/devices/{deviceId}")
+    public ResponseEntity<BaseResponse<Void>> updateDevice(
+            @RequestAttribute("userId") UUID userId,
+            @PathVariable UUID deviceId,
+            @RequestBody UpdateDeviceRequest request) {
+        String language = request.getLanguage() != null
+                ? NotificationLanguage.normalize(request.getLanguage())
+                : null;
+        userDeviceMapper.updateDevice(
+                deviceId,
+                userId,
+                request.getFcmToken(),
+                language,
+                request.getIsActive()
+        );
         return ResponseEntity.ok(BaseResponse.ofSucceeded());
     }
 }

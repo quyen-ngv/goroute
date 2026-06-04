@@ -8,40 +8,41 @@ import java.util.UUID;
 
 @Mapper
 public interface LocationImageMapper {
-    
+
     @Select("""
         SELECT * FROM location_images
         WHERE similarity(normalized_address, #{searchTerm}) > 0.3
-        ORDER BY 
+        ORDER BY
             priority DESC,
             similarity(normalized_address, #{searchTerm}) DESC
         LIMIT 1
         """)
     LocationImage selectBestMatch(String searchTerm);
-    
+
     @Select("SELECT * FROM location_images ORDER BY priority DESC, created_at DESC")
     List<LocationImage> selectAll();
-    
+
     @Select("SELECT * FROM location_images WHERE id = #{id}")
     LocationImage selectById(UUID id);
-    
+
     @Insert("""
-        INSERT INTO location_images (id, full_address, normalized_address, image_url, priority, created_at, updated_at)
-        VALUES (#{id}, #{fullAddress}, #{normalizedAddress}, #{imageUrl}, #{priority}, #{createdAt}, #{updatedAt})
+        INSERT INTO location_images (id, full_address, normalized_address, image_url, city_slug, priority, created_at, updated_at)
+        VALUES (#{id}, #{fullAddress}, #{normalizedAddress}, #{imageUrl}, #{citySlug}, #{priority}, #{createdAt}, #{updatedAt})
         """)
     void insert(LocationImage locationImage);
-    
+
     @Update("""
         UPDATE location_images
         SET full_address = #{fullAddress},
             normalized_address = #{normalizedAddress},
             image_url = #{imageUrl},
+            city_slug = #{citySlug},
             priority = #{priority},
             updated_at = #{updatedAt}
         WHERE id = #{id}
         """)
     void updateById(LocationImage locationImage);
-    
+
     @Delete("DELETE FROM location_images WHERE id = #{id}")
     void deleteById(UUID id);
 }

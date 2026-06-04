@@ -14,8 +14,12 @@ import java.util.Map;
 @AllArgsConstructor
 public class BudgetOverviewResponse {
     private BigDecimal totalBudget;
+    private BigDecimal totalEstimated;
     private BigDecimal totalSpent;
     private BigDecimal remaining;
     private Integer percentageSpent;
+    private String currency;
+    private BigDecimal myShare;
+    private BigDecimal myPaid;
     private Map<String, BigDecimal> byCategory;
 }

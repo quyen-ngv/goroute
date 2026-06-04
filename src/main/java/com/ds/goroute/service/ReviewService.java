@@ -10,22 +10,22 @@ import java.util.List;
 import java.util.UUID;
 
 public interface ReviewService {
-    
+
     UserReviewResponse createReview(UUID userId, CreateReviewRequest request);
-    
+
     UserReviewResponse updateReview(UUID userId, UUID reviewId, UpdateReviewRequest request);
-    
+
     void deleteReview(UUID userId, UUID reviewId);
-    
+
     List<UserReviewResponse> getPlaceReviews(UUID placeId, UUID currentUserId, int page, int size);
-    
+
     List<UserReviewResponse> getUserReviews(UUID userId, int page, int size);
-    
-    void voteHelpful(UUID userId, UUID reviewId);
-    
-    void voteUnhelpful(UUID userId, UUID reviewId);
-    
+
+    UserReviewResponse voteHelpful(UUID userId, UUID reviewId);
+
+    UserReviewResponse voteUnhelpful(UUID userId, UUID reviewId);
+
     PlaceScoreResponse getPlaceScore(UUID placeId);
-    
+
     UserReviewProfileResponse getUserProfile(UUID userId);
 }

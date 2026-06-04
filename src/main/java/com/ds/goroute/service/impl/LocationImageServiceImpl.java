@@ -8,6 +8,7 @@ import com.ds.goroute.entity.LocationImage;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.LocationImageRepository;
 import com.ds.goroute.service.LocationImageService;
+import com.ds.goroute.utils.CitySlugResolver;
 import com.ds.goroute.service.StorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,25 +26,25 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class LocationImageServiceImpl implements LocationImageService {
-    
+
     private final LocationImageRepository locationImageRepository;
     private final StorageService storageService;
-    
+
     private static final String DEFAULT_IMAGE = "https://images.unsplash.com/photo-1488646953014-85cb44e25828";
-    
+
     @Override
     public String getImageForDestination(String destination) {
         if (destination == null || destination.isEmpty()) {
             return DEFAULT_IMAGE;
         }
-        
+
         String normalized = normalizeVietnamese(destination.toLowerCase());
-        
+
         return locationImageRepository.findBestMatch(normalized)
             .map(LocationImage::getImageUrl)
             .orElse(DEFAULT_IMAGE);
     }
-    
+
     @Override
     @Transactional(readOnly = true)
     public List<LocationImageResponse> getAllLocationImages() {
@@ -51,7 +52,7 @@ public class LocationImageServiceImpl implements LocationImageService {
             .map(this::mapToResponse)
             .collect(Collectors.toList());
     }
-    
+
     @Override
     @Transactional(readOnly = true)
     public LocationImageResponse getLocationImage(UUID id) {
@@ -59,7 +60,7 @@ public class LocationImageServiceImpl implements LocationImageService {
             .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Location image not found"));
         return mapToResponse(locationImage);
     }
-    
+
     @Override
     @Transactional
     public LocationImageResponse createLocationImage(CreateLocationImageRequest request) {
@@ -71,20 +72,22 @@ public class LocationImageServiceImpl implements LocationImageService {
             .createdAt(LocalDateTime.now())
             .updatedAt(LocalDateTime.now())
             .build();
-        
+
         locationImage.normalizeAddress();
+        CitySlugResolver.resolveFromDestination(request.getFullAddress())
+                .ifPresent(city -> locationImage.setCitySlug(city.getSlug()));
         locationImageRepository.insert(locationImage);
-        
+
         log.info("Location image created: {}", locationImage.getId());
         return mapToResponse(locationImage);
     }
-    
+
     @Override
     @Transactional
     public LocationImageResponse updateLocationImage(UUID id, UpdateLocationImageRequest request) {
         LocationImage locationImage = locationImageRepository.findById(id)
             .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Location image not found"));
-        
+
         if (request.getFullAddress() != null) {
             locationImage.setFullAddress(request.getFullAddress());
         }
@@ -94,25 +97,25 @@ public class LocationImageServiceImpl implements LocationImageService {
         if (request.getPriority() != null) {
             locationImage.setPriority(request.getPriority());
         }
-        
+
         locationImage.setUpdatedAt(LocalDateTime.now());
         locationImage.normalizeAddress();
         locationImageRepository.update(locationImage);
-        
+
         log.info("Location image updated: {}", id);
         return mapToResponse(locationImage);
     }
-    
+
     @Override
     @Transactional
     public void deleteLocationImage(UUID id) {
         LocationImage locationImage = locationImageRepository.findById(id)
             .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Location image not found"));
-        
+
         locationImageRepository.deleteById(id);
         log.info("Location image deleted: {}", id);
     }
-    
+
     @Override
     public String uploadLocationImage(MultipartFile file) {
         try {
@@ -128,18 +131,19 @@ public class LocationImageServiceImpl implements LocationImageService {
             throw new BusinessException(ErrorConstant.INTERNAL_SERVER_ERROR, "Failed to upload image");
         }
     }
-    
+
     private LocationImageResponse mapToResponse(LocationImage locationImage) {
         return LocationImageResponse.builder()
             .id(locationImage.getId())
             .fullAddress(locationImage.getFullAddress())
+            .citySlug(locationImage.getCitySlug())
             .imageUrl(locationImage.getImageUrl())
             .priority(locationImage.getPriority())
             .createdAt(locationImage.getCreatedAt())
             .updatedAt(locationImage.getUpdatedAt())
             .build();
     }
-    
+
     private String normalizeVietnamese(String text) {
         String normalized = Normalizer.normalize(text, Normalizer.Form.NFD);
         return normalized.replaceAll("\\p{M}", "")

@@ -18,5 +18,6 @@ public class TripNoteResponse {
     private UUID activityId;  // Optional: for activity-specific notes
     private UserResponse user;
     private String content;
+    private Boolean isShared;
     private LocalDateTime createdAt;
 }

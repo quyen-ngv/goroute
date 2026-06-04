@@ -27,8 +27,8 @@
                              category, description, paid_by, paid_by_guest_name, paid_by_guest_member_id, receipt_url, photo_urls, created_by, created_at, updated_at)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
                 #{activityId,javaType=java.util.UUID,jdbcType=OTHER}, #{amount}, #{currency}, #{exchangeRate},
-                #{amountInTripCurrency}, 
-                #{category}, 
+                #{amountInTripCurrency},
+                #{category},
                 #{description},
                 #{paidBy,javaType=java.util.UUID,jdbcType=OTHER}, #{paidByGuestName}, #{paidByGuestMemberId,javaType=java.util.UUID,jdbcType=OTHER}, #{receiptUrl},
                 #{photoUrls,jdbcType=ARRAY,typeHandler=org.apache.ibatis.type.ArrayTypeHandler},
@@ -48,6 +48,8 @@
         UPDATE expenses SET
             amount = #{amount},
             currency = #{currency},
+            exchange_rate = #{exchangeRate},
+            amount_in_trip_currency = #{amountInTripCurrency},
             category = #{category},
             description = #{description},
             paid_by = #{paidBy,javaType=java.util.UUID,jdbcType=OTHER},

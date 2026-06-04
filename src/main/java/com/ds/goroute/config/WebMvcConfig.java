@@ -17,12 +17,14 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        registry.addResourceHandler("/share/**")
+        // Reverse-proxy prefix: /goroute/goroute-theme.css -> classpath:/static/goroute-theme.css
+        registry.addResourceHandler("/goroute/**")
                 .addResourceLocations("classpath:/static/");
     }
 
     @Override
     public void addViewControllers(ViewControllerRegistry registry) {
         registry.addViewController("/share/{tripId}").setViewName("forward:/share-trip.html");
+        registry.addViewController("/goroute/share/{tripId}").setViewName("forward:/share-trip.html");
     }
 }

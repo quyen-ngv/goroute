@@ -17,6 +17,7 @@ public class UserDevice {
     private String fcmToken;
     private String deviceType;
     private String deviceName;
+    private String language;
     private Boolean isActive;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

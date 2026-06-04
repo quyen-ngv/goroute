@@ -38,12 +38,14 @@
     <insert id="insert" parameterType="com.ds.goroute.entity.Trip">
         INSERT INTO trips (id, name, cover_image_url, destination, destination_place_id, destination_lat, destination_lng,
                           start_date, end_date, budget, currency, status, visibility, share_code, timezone, owner_id,
-                          is_deleted, created_at, updated_at)
+                          share_expenses, share_notes, is_deleted, created_at, updated_at)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{name}, #{coverImageUrl}, #{destination},
                 #{destinationPlaceId}, #{destinationLat}, #{destinationLng}, #{startDate}, #{endDate}, #{budget},
-                #{currency}, #{status}, 
+                #{currency}, #{status},
                 #{visibility}, #{shareCode}, #{timezone},
-                #{ownerId,javaType=java.util.UUID,jdbcType=OTHER}, FALSE, NOW(), NOW())
+                #{ownerId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{shareExpenses,jdbcType=BOOLEAN}, #{shareNotes,jdbcType=BOOLEAN},
+                FALSE, NOW(), NOW())
     </insert>
 
     <select id="selectById" parameterType="java.util.UUID" resultMap="TripResultMap">
@@ -59,7 +61,7 @@
         SELECT DISTINCT t.* FROM trips t
         LEFT JOIN trip_members tm ON t.id = tm.trip_id
         WHERE (
-            t.owner_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER} 
+            t.owner_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
             OR (tm.user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER} AND tm.status = 'ACCEPTED')
         )
         AND t.is_deleted = FALSE
@@ -116,7 +118,7 @@
               <if test="excludeUserId != null">
                   AND owner_id != #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
                   AND id NOT IN (
-                      SELECT trip_id FROM trip_members 
+                      SELECT trip_id FROM trip_members
                       WHERE user_id = #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
                       AND status = 'ACCEPTED'
                   )
@@ -131,14 +133,14 @@
     </select>
 
     <update id="incrementViewCount" parameterType="java.util.UUID">
-        UPDATE trips 
+        UPDATE trips
         SET view_count = COALESCE(view_count, 0) + 1,
             updated_at = NOW()
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </update>
 
     <update id="incrementCopyCount" parameterType="java.util.UUID">
-        UPDATE trips 
+        UPDATE trips
         SET copy_count = COALESCE(copy_count, 0) + 1,
             updated_at = NOW()
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
@@ -150,9 +152,9 @@
             FROM trips t
             WHERE t.owner_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
               AND t.is_deleted = FALSE
-            
+
             UNION ALL
-            
+
             SELECT t.*, tm.joined_at as sort_date
             FROM trips t
             INNER JOIN trip_members tm ON t.id = tm.trip_id

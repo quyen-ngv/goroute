@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ds.goroute.mapper.ActivityBookingMapper">
+
+    <sql id="ActivityBookingColumns">
+        id, external_id, source, url, redirect_url,
+        title, description,
+        activity_address, departing_from, destinations, destination_coordinates,
+        search_lat, search_lng, destinations_norm,
+        navigation_list, itinerary_stops, pickup_addresses,
+        price_amount, price_currency,
+        duration_raw, duration_hours, visit_duration_minutes, rating, review_count, booked_count,
+        thumbnail, images, highlights, what_to_expect, itinerary,
+        created_at, updated_at
+    </sql>
+
+    <!-- List/search: omit heavy JSON blobs -->
+    <sql id="ActivityBookingListColumns">
+        id, external_id, source, url, redirect_url,
+        title, description,
+        activity_address, departing_from, destinations, destination_coordinates,
+        search_lat, search_lng, destinations_norm,
+        navigation_list, itinerary_stops, pickup_addresses,
+        price_amount, price_currency,
+        duration_raw, duration_hours, visit_duration_minutes, rating, review_count, booked_count,
+        thumbnail,
+        created_at, updated_at
+    </sql>
+
+    <resultMap id="ActivityBookingResultMap" type="com.ds.goroute.entity.ActivityBooking">
+        <id property="id" column="id"/>
+        <result property="externalId" column="external_id"/>
+        <result property="source" column="source"/>
+        <result property="url" column="url"/>
+        <result property="title" column="title"/>
+        <result property="description" column="description"/>
+        <result property="redirectUrl" column="redirect_url"/>
+        <result property="activityAddress" column="activity_address"/>
+        <result property="departingFrom" column="departing_from"/>
+        <result property="destinations" column="destinations"/>
+        <result property="destinationCoordinates" column="destination_coordinates"/>
+        <result property="searchLat" column="search_lat"/>
+        <result property="searchLng" column="search_lng"/>
+        <result property="destinationsNorm" column="destinations_norm"/>
+        <result property="navigationList" column="navigation_list"/>
+        <result property="itineraryStops" column="itinerary_stops"/>
+        <result property="pickupAddresses" column="pickup_addresses"/>
+        <result property="priceAmount" column="price_amount"/>
+        <result property="priceCurrency" column="price_currency"/>
+        <result property="durationRaw" column="duration_raw"/>
+        <result property="durationHours" column="duration_hours"/>
+        <result property="visitDurationMinutes" column="visit_duration_minutes"/>
+        <result property="rating" column="rating"/>
+        <result property="reviewCount" column="review_count"/>
+        <result property="bookedCount" column="booked_count"/>
+        <result property="thumbnail" column="thumbnail"/>
+        <result property="images" column="images"/>
+        <result property="highlights" column="highlights"/>
+        <result property="whatToExpect" column="what_to_expect"/>
+        <result property="itinerary" column="itinerary"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.ActivityBooking">
+        INSERT INTO activity_bookings (
+            id, external_id, source, url, redirect_url,
+            title, description,
+            activity_address, departing_from, destinations, destination_coordinates,
+            search_lat, search_lng, destinations_norm,
+            navigation_list, itinerary_stops, pickup_addresses,
+            price_amount, price_currency,
+            duration_raw, duration_hours, visit_duration_minutes, rating, review_count, booked_count,
+            thumbnail, images, highlights, what_to_expect, itinerary,
+            created_at, updated_at
+        ) VALUES (
+            #{id}, #{externalId}, #{source}, #{url}, #{redirectUrl},
+            #{title}, #{description},
+            #{activityAddress}, #{departingFrom}, #{destinations}::jsonb, #{destinationCoordinates}::jsonb,
+            #{searchLat}, #{searchLng}, #{destinationsNorm},
+            #{navigationList}::jsonb, #{itineraryStops}::jsonb, #{pickupAddresses}::jsonb,
+            #{priceAmount}, #{priceCurrency},
+            #{durationRaw}, #{durationHours}, #{visitDurationMinutes}, #{rating}, #{reviewCount}, #{bookedCount},
+            #{thumbnail}, #{images}::jsonb, #{highlights}::jsonb, #{whatToExpect}::jsonb, #{itinerary}::jsonb,
+            NOW(), NOW()
+        )
+    </insert>
+
+    <update id="update" parameterType="com.ds.goroute.entity.ActivityBooking">
+        UPDATE activity_bookings SET
+            url = #{url},
+            title = #{title},
+            description = #{description},
+            redirect_url = #{redirectUrl},
+            activity_address = #{activityAddress},
+            departing_from = #{departingFrom},
+            destinations = #{destinations}::jsonb,
+            destination_coordinates = #{destinationCoordinates}::jsonb,
+            search_lat = #{searchLat},
+            search_lng = #{searchLng},
+            destinations_norm = #{destinationsNorm},
+            navigation_list = #{navigationList}::jsonb,
+            itinerary_stops = #{itineraryStops}::jsonb,
+            pickup_addresses = #{pickupAddresses}::jsonb,
+            price_amount = #{priceAmount},
+            price_currency = #{priceCurrency},
+            duration_raw = #{durationRaw},
+            duration_hours = #{durationHours},
+            visit_duration_minutes = #{visitDurationMinutes},
+            rating = #{rating},
+            review_count = #{reviewCount},
+            booked_count = #{bookedCount},
+            thumbnail = #{thumbnail},
+            images = #{images}::jsonb,
+            highlights = #{highlights}::jsonb,
+            what_to_expect = #{whatToExpect}::jsonb,
+            itinerary = #{itinerary}::jsonb,
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <select id="findById" resultMap="ActivityBookingResultMap">
+        SELECT <include refid="ActivityBookingColumns"/>
+        FROM activity_bookings WHERE id = #{id}
+    </select>
+
+    <select id="findByExternalId" resultMap="ActivityBookingResultMap">
+        SELECT <include refid="ActivityBookingColumns"/>
+        FROM activity_bookings WHERE external_id = #{externalId}
+    </select>
+
+    <select id="findByIds" resultMap="ActivityBookingResultMap">
+        SELECT <include refid="ActivityBookingColumns"/>
+        FROM activity_bookings
+        WHERE id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <select id="findAll" resultMap="ActivityBookingResultMap">
+        SELECT <include refid="ActivityBookingListColumns"/>
+        FROM activity_bookings
+        ORDER BY updated_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAll" resultType="long">
+        SELECT COUNT(*) FROM activity_bookings
+    </select>
+
+    <select id="findByDestinations" resultMap="ActivityBookingResultMap">
+        SELECT <include refid="ActivityBookingListColumns"/>
+        FROM activity_bookings ab
+        WHERE ab.destinations_norm IS NOT NULL
+          AND (
+            <foreach item="destination" collection="destinations" separator=" OR ">
+                ab.destinations_norm LIKE CONCAT('%', #{destination}, '%')
+            </foreach>
+          )
+        ORDER BY ab.updated_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findWithinRadius" resultMap="ActivityBookingResultMap">
+        SELECT <include refid="ActivityBookingListColumns"/>
+        FROM activity_bookings ab
+        WHERE ab.search_lat IS NOT NULL
+          AND ab.search_lng IS NOT NULL
+          AND ab.search_lat BETWEEN #{p.minLat} AND #{p.maxLat}
+          AND ab.search_lng BETWEEN #{p.minLng} AND #{p.maxLng}
+          AND (
+            6371 * acos(
+                LEAST(1.0, GREATEST(-1.0,
+                    cos(radians(#{p.latitude})) * cos(radians(ab.search_lat)) *
+                    cos(radians(ab.search_lng) - radians(#{p.longitude})) +
+                    sin(radians(#{p.latitude})) * sin(radians(ab.search_lat))
+                ))
+            )
+          ) &lt;= #{p.radiusKm}
+        <if test="p.minPrice != null">
+            AND ab.price_amount &gt;= #{p.minPrice}
+        </if>
+        <if test="p.maxPrice != null">
+            AND ab.price_amount &lt;= #{p.maxPrice}
+        </if>
+        <if test="p.minRating != null">
+            AND ab.rating &gt;= #{p.minRating}
+        </if>
+        ORDER BY ab.updated_at DESC
+        LIMIT #{p.limit} OFFSET #{p.offset}
+    </select>
+
+    <delete id="delete">
+        DELETE FROM activity_bookings WHERE id = #{id}
+    </delete>
+
+</mapper>

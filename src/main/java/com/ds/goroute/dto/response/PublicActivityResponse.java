@@ -18,6 +18,7 @@ public class PublicActivityResponse {
     private UUID id;
     private Integer dayNumber;
     private UUID placeId; // Backend Place UUID
+    private UUID bookingId;
     private String name;
     private String address;
     private BigDecimal lat;

@@ -4,6 +4,7 @@ import com.ds.goroute.dto.request.CloneTripRequest;
 import com.ds.goroute.dto.request.CreateTripRequest;
 import com.ds.goroute.dto.request.InviteMemberRequest;
 import com.ds.goroute.dto.request.LinkGuestRequest;
+import com.ds.goroute.dto.request.MemberRespondRequest;
 import com.ds.goroute.dto.request.UpdateGuestNameRequest;
 import com.ds.goroute.dto.request.UpdateTripRequest;
 import com.ds.goroute.dto.response.*;
@@ -25,7 +26,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 public class TripController extends BaseService {
-    
+
     private final TripService tripService;
 
     @PostMapping
@@ -95,6 +96,15 @@ public class TripController extends BaseService {
         return ResponseEntity.ok(ofSucceeded(null));
     }
 
+    @PostMapping("/{tripId}/members/respond")
+    public ResponseEntity<BaseResponse<Void>> respondToInvitation(
+            @PathVariable UUID tripId,
+            @Valid @RequestBody MemberRespondRequest request,
+            @RequestAttribute("userId") UUID userId) {
+        tripService.respondToInvitation(tripId, request.getAction(), userId);
+        return ResponseEntity.ok(ofSucceeded(null));
+    }
+
     @DeleteMapping("/{tripId}/members/{memberId}")
     public ResponseEntity<BaseResponse<Void>> removeMember(
             @PathVariable UUID tripId,
@@ -121,7 +131,7 @@ public class TripController extends BaseService {
         List<TripMemberResponse> members = tripService.getTripMembers(tripId, userId);
         return ResponseEntity.ok(ofSucceeded(members));
     }
-    
+
     @PostMapping("/{tripId}/members/{guestMemberId}/link")
     public ResponseEntity<BaseResponse<Void>> linkGuestToUser(
             @PathVariable UUID tripId,

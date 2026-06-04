@@ -24,6 +24,10 @@ public interface TripService {
 
     void acceptInvite(UUID tripId, UUID userId);
 
+    void declineInvite(UUID tripId, UUID userId);
+
+    void respondToInvitation(UUID tripId, String action, UUID userId);
+
     void removeMember(UUID tripId, UUID memberId, UUID userId);
 
     void updateMemberRole(UUID tripId, UUID memberId, String role, UUID userId);

@@ -10,9 +10,15 @@ import com.ds.goroute.dto.response.PlaceReviewResponse;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.PlaceReview;
 import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.dto.response.FoodTagResponse;
+import com.ds.goroute.entity.Food;
+import com.ds.goroute.entity.FoodTagRow;
+import com.ds.goroute.repository.FoodRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.PlaceReviewRepository;
 import com.ds.goroute.service.PlaceService;
+import com.ds.goroute.utils.CitySlugResolver;
+import com.ds.goroute.utils.FoodNameResolver;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -24,45 +30,45 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class PlaceServiceImpl implements PlaceService {
-    
+
     private final PlaceRepository placeRepository;
     private final PlaceReviewRepository placeReviewRepository;
+    private final FoodRepository foodRepository;
     private final ObjectMapper objectMapper;
-    
+
+    private static final Integer maxReview = 50;
+
     @Override
     @Transactional
     public PlaceResponse importPlace(ImportPlaceRequest request) {
         log.info("Importing place: {}", request.getPlaceId());
-        
+
         // Check if place already exists
         Place existingPlace = placeRepository.findByPlaceId(request.getPlaceId());
         if (existingPlace != null) {
             log.info("Place already exists, updating: {}", request.getPlaceId());
             return updateExistingPlace(existingPlace, request);
         }
-        
+
         // Create new place
         Place place = buildPlaceFromRequest(request);
         placeRepository.insert(place);
-        
+
         // Import reviews if provided
         if (request.getUserReviews() != null && !request.getUserReviews().isEmpty()) {
             importReviews(place.getId(), request.getUserReviews());
         }
-        
+
         return toPlaceResponse(place);
     }
-    
+
     @Override
     @Transactional
     public List<PlaceResponse> importPlaces(List<ImportPlaceRequest> requests) {
@@ -71,16 +77,13 @@ public class PlaceServiceImpl implements PlaceService {
                 .map(this::importPlace)
                 .collect(Collectors.toList());
     }
-    
+
     @Override
     public PlaceResponse getPlaceById(UUID id) {
-        Place place = placeRepository.findById(id);
-        if (place == null) {
-            throw new BusinessException(ErrorConstant.PLACE_NOT_FOUND);
-        }
+        Place place = placeRepository.findById(id).orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND));
         return toPlaceResponse(place);
     }
-    
+
     @Override
     public PlaceResponse getPlaceByGoogleId(String placeId) {
         Place place = placeRepository.findByPlaceId(placeId);
@@ -89,53 +92,287 @@ public class PlaceServiceImpl implements PlaceService {
         }
         return toPlaceResponse(place);
     }
-    
+
     @Override
-    public List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude, 
-                                           BigDecimal radius, String category, BigDecimal minRating, int page, int size) {
+    public List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
+                                           BigDecimal radius, String category, String placeGroup,
+                                           BigDecimal minRating, int page, int size) {
+        return searchPlaces(keyword, latitude, longitude, radius, category, placeGroup,
+                minRating, null, null, null, page, size);
+    }
+
+    @Override
+    public List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
+                                           BigDecimal radius, String category, String placeGroup,
+                                           BigDecimal minRating, String citySlug, List<UUID> foodIds,
+                                           Boolean excludeLinkedFoodPlaces, int page, int size) {
         int offset = page * size;
-        List<Place> places = placeRepository.findNearby(keyword, latitude, longitude, radius, category, minRating, size, offset);
-        return places.stream()
+        boolean extended = (foodIds != null && !foodIds.isEmpty())
+                || (citySlug != null && !citySlug.isBlank())
+                || Boolean.TRUE.equals(excludeLinkedFoodPlaces);
+
+        String citySlugJson = null;
+        if (citySlug != null && !citySlug.isBlank()) {
+            citySlugJson = CitySlugResolver.toJsonbFilter(citySlug);
+        }
+
+        List<Place> places;
+        if (extended) {
+            places = placeRepository.findNearbyExtended(
+                    keyword, latitude, longitude, radius, category, placeGroup, minRating,
+                    citySlugJson, foodIds, excludeLinkedFoodPlaces, size, offset);
+        } else {
+            places = placeRepository.findNearby(
+                    keyword, latitude, longitude, radius, category, placeGroup, minRating, size, offset);
+        }
+
+        List<PlaceResponse> responses = places.stream()
                 .map(this::toPlaceResponse)
                 .collect(Collectors.toList());
+        attachFoodTags(responses);
+        return responses;
     }
-    
+
+    private void attachFoodTags(List<PlaceResponse> responses) {
+        if (responses == null || responses.isEmpty()) {
+            return;
+        }
+        List<UUID> placeIds = responses.stream().map(PlaceResponse::getId).filter(Objects::nonNull).toList();
+        List<FoodTagRow> tagRows = foodRepository.findFoodTagsByPlaceIds(placeIds);
+        if (tagRows.isEmpty()) {
+            return;
+        }
+        Map<UUID, List<FoodTagResponse>> byPlace = new HashMap<>();
+        for (FoodTagRow row : tagRows) {
+            Food food = Food.builder()
+                    .nameVi(row.getNameVi())
+                    .nameEn(row.getNameEn())
+                    .nameJa(row.getNameJa())
+                    .nameKo(row.getNameKo())
+                    .build();
+            FoodTagResponse tag = FoodTagResponse.builder()
+                    .id(row.getFoodId())
+                    .name(FoodNameResolver.resolveName(food))
+                    .build();
+            byPlace.computeIfAbsent(row.getPlaceId(), k -> new ArrayList<>()).add(tag);
+        }
+        for (PlaceResponse response : responses) {
+            List<FoodTagResponse> tags = byPlace.get(response.getId());
+            if (tags != null && !tags.isEmpty()) {
+                response.setFoodTags(tags);
+            }
+        }
+    }
+
     @Override
     public List<PlaceReviewResponse> getPlaceReviews(UUID placeId) {
-        List<PlaceReview> reviews = placeReviewRepository.findByPlaceId(placeId);
-        return reviews.stream()
+        Place place = placeRepository.findById(placeId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND));
+
+        // Get avg authenticity score
+        BigDecimal avgAuthScore = placeReviewRepository.getAvgAuthenticityScore(placeId);
+        if (avgAuthScore == null) {
+            avgAuthScore = BigDecimal.ZERO;
+        }
+
+        // Parse reviews_per_rating
+        Map<String, Integer> reviewsPerRating = parseJsonToMap(place.getReviewsPerRating());
+        if (reviewsPerRating == null || reviewsPerRating.isEmpty()) {
+            // Fallback: get top maxReview reviews
+            return placeReviewRepository.findTopReviewsByPlaceId(placeId, maxReview, 0).stream()
+                    .map(this::toReviewResponse)
+                    .collect(Collectors.toList());
+        }
+
+        // Calculate initial distribution for maxReview slots
+        Map<Integer, Integer> targetDistribution = calculateReviewDistribution(reviewsPerRating, maxReview);
+
+        // Fetch reviews by rating and track actual counts
+        List<PlaceReview> result = new ArrayList<>();
+        Map<Integer, Integer> actualCounts = new HashMap<>();
+
+        for (int rating = 1; rating <= 5; rating++) {
+            int targetCount = targetDistribution.getOrDefault(rating, 0);
+            if (targetCount > 0) {
+                List<PlaceReview> reviews = placeReviewRepository.findReviewsByPlaceIdAndRating(
+                        placeId, rating, avgAuthScore, targetCount);
+                result.addAll(reviews);
+                actualCounts.put(rating, reviews.size());
+            }
+        }
+
+        // Handle shortage: redistribute missing slots
+        int totalActual = actualCounts.values().stream().mapToInt(Integer::intValue).sum();
+        int shortage = maxReview - totalActual;
+
+        if (shortage > 0) {
+            log.info("Review shortage detected: {} slots missing. Redistributing...", shortage);
+
+            // Sort ratings by ratio (descending) to prioritize high-ratio stars
+            List<Integer> ratingsByRatio = reviewsPerRating.entrySet().stream()
+                    .sorted((e1, e2) -> Integer.compare(
+                            Integer.parseInt(e2.getValue().toString()),
+                            Integer.parseInt(e1.getValue().toString())))
+                    .map(e -> Integer.parseInt(e.getKey()))
+                    .collect(Collectors.toList());
+
+            // Try to fill shortage from high-ratio stars
+            for (int rating : ratingsByRatio) {
+                if (shortage <= 0) break;
+
+                int currentCount = actualCounts.getOrDefault(rating, 0);
+                int targetCount = targetDistribution.getOrDefault(rating, 0);
+
+                // Can we get more from this rating?
+                if (currentCount < targetCount) {
+                    continue; // Already maxed out
+                }
+
+                // Try to fetch additional reviews
+                int additionalNeeded = Math.min(shortage, 5); // Max 5 extra per rating
+                List<PlaceReview> additionalReviews = placeReviewRepository.findReviewsByPlaceIdAndRating(
+                        placeId, rating, avgAuthScore, currentCount + additionalNeeded);
+
+                int additionalFetched = additionalReviews.size() - currentCount;
+                if (additionalFetched > 0) {
+                    // Add only the new ones
+                    result.addAll(additionalReviews.subList(currentCount, additionalReviews.size()));
+                    actualCounts.put(rating, additionalReviews.size());
+                    shortage -= additionalFetched;
+                    log.info("Added {} extra reviews from {}â˜…", additionalFetched, rating);
+                }
+            }
+        }
+
+        // Sort final result by authenticity_score DESC, likes DESC, review_date DESC
+        result.sort((r1, r2) -> {
+            int authCompare = compareNullable(r2.getAuthenticityScore(), r1.getAuthenticityScore());
+            if (authCompare != 0) return authCompare;
+
+            int likesCompare = Integer.compare(
+                    r2.getLikes() != null ? r2.getLikes() : 0,
+                    r1.getLikes() != null ? r1.getLikes() : 0
+            );
+            if (likesCompare != 0) return likesCompare;
+
+            if (r1.getReviewDate() != null && r2.getReviewDate() != null) {
+                return r2.getReviewDate().compareTo(r1.getReviewDate());
+            }
+            return 0;
+        });
+
+        log.info("Final review distribution: {}", actualCounts);
+
+        return result.stream()
+                .limit(maxReview) // Ensure max maxReview
                 .map(this::toReviewResponse)
                 .collect(Collectors.toList());
     }
-    
+
+    /**
+     * Calculate review distribution across star ratings
+     * Min 1 review per star (if exists), remaining slots distributed by ratio
+     */
+    private Map<Integer, Integer> calculateReviewDistribution(Map<String, Integer> reviewsPerRating, int totalSlots) {
+        Map<Integer, Integer> distribution = new HashMap<>();
+
+        // Step 1: Allocate min 1 per star (if exists)
+        int remainingSlots = totalSlots;
+        for (int rating = 1; rating <= 5; rating++) {
+            int count = reviewsPerRating.getOrDefault(String.valueOf(rating), 0);
+            if (count > 0) {
+                distribution.put(rating, 1);
+                remainingSlots--;
+            }
+        }
+
+        // Step 2: Calculate total reviews
+        int totalReviews = reviewsPerRating.values().stream().mapToInt(Integer::intValue).sum();
+        if (totalReviews == 0 || remainingSlots <= 0) {
+            return distribution;
+        }
+
+        // Step 3: Calculate ratios
+        Map<Integer, Double> ratios = new HashMap<>();
+        for (int rating = 1; rating <= 5; rating++) {
+            int count = reviewsPerRating.getOrDefault(String.valueOf(rating), 0);
+            if (count > 0) {
+                ratios.put(rating, (double) count / totalReviews);
+            }
+        }
+
+        // Step 4: Distribute remaining slots proportionally
+        Map<Integer, Double> exactAllocations = new HashMap<>();
+        for (Map.Entry<Integer, Double> entry : ratios.entrySet()) {
+            exactAllocations.put(entry.getKey(), entry.getValue() * remainingSlots);
+        }
+
+        // Allocate integer parts first
+        int allocated = 0;
+        Map<Integer, Double> remainders = new HashMap<>();
+
+        for (Map.Entry<Integer, Double> entry : exactAllocations.entrySet()) {
+            int rating = entry.getKey();
+            double exact = entry.getValue();
+            int intPart = (int) exact;
+            double remainder = exact - intPart;
+
+            distribution.put(rating, distribution.get(rating) + intPart);
+            allocated += intPart;
+
+            if (remainder > 0.001) { // Avoid floating point errors
+                remainders.put(rating, remainder);
+            }
+        }
+
+        // Distribute remaining slots by largest remainder
+        int leftover = remainingSlots - allocated;
+        if (leftover > 0 && !remainders.isEmpty()) {
+            List<Map.Entry<Integer, Double>> sortedRemainders = remainders.entrySet().stream()
+                    .sorted((e1, e2) -> Double.compare(e2.getValue(), e1.getValue()))
+                    .collect(Collectors.toList());
+
+            for (int i = 0; i < Math.min(leftover, sortedRemainders.size()); i++) {
+                int rating = sortedRemainders.get(i).getKey();
+                distribution.put(rating, distribution.get(rating) + 1);
+            }
+        }
+
+        return distribution;
+    }
+
+    private int compareNullable(BigDecimal a, BigDecimal b) {
+        if (a == null && b == null) return 0;
+        if (a == null) return 1;
+        if (b == null) return -1;
+        return a.compareTo(b);
+    }
+
     @Override
     @Transactional
     public void deletePlace(UUID id) {
-        Place place = placeRepository.findById(id);
-        if (place == null) {
-            throw new BusinessException(ErrorConstant.PLACE_NOT_FOUND);
-        }
-        
+        Place place = placeRepository.findById(id).orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND));
+
         // Delete reviews first
         placeReviewRepository.deleteByPlaceId(id);
-        
+
         // Delete place
         placeRepository.delete(id);
         log.info("Deleted place: {}", id);
     }
-    
+
     @Override
     @Transactional
     public PlaceResponse updatePlace(UUID id, UpdatePlaceRequest request) {
-        Place place = placeRepository.findById(id);
-        if (place == null) {
-            throw new BusinessException(ErrorConstant.PLACE_NOT_FOUND);
-        }
-        
+        Place place = placeRepository.findById(id).orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND));
+
         // Update all fields
         place.setTitle(request.getTitle());
         place.setCategory(request.getCategory());
+        place.setPlaceGroup(request.getPlaceGroup() != null ?
+            com.ds.goroute.type.PlaceGroup.valueOf(request.getPlaceGroup()) : null);
         place.setAddress(request.getAddress());
+        place.setDestinations(toJson(request.getDestinations()));
         place.setLatitude(request.getLatitude());
         place.setLongitude(request.getLongitude());
         place.setPlusCode(request.getPlusCode());
@@ -161,32 +398,32 @@ public class PlaceServiceImpl implements PlaceService {
         place.setOwner(request.getOwner());
         place.setEmails(request.getEmails());
         place.setUpdatedAt(LocalDateTime.now());
-        
+
         placeRepository.update(place);
         log.info("Updated place: {}", id);
-        
+
         return toPlaceResponse(place);
     }
-    
+
     // Helper methods
-    
+
     private PlaceResponse updateExistingPlace(Place existingPlace, ImportPlaceRequest request) {
         Place updated = buildPlaceFromRequest(request);
         updated.setId(existingPlace.getId());
         updated.setCreatedAt(existingPlace.getCreatedAt());
         updated.setUpdatedAt(LocalDateTime.now());
-        
+
         placeRepository.update(updated);
-        
+
         // Update reviews
         if (request.getUserReviews() != null && !request.getUserReviews().isEmpty()) {
             placeReviewRepository.deleteByPlaceId(existingPlace.getId());
             importReviews(existingPlace.getId(), request.getUserReviews());
         }
-        
+
         return toPlaceResponse(updated);
     }
-    
+
     private Place buildPlaceFromRequest(ImportPlaceRequest request) {
         return Place.builder()
                 .id(UUID.randomUUID())
@@ -195,7 +432,10 @@ public class PlaceServiceImpl implements PlaceService {
                 .dataId(request.getDataId())
                 .title(request.getTitle())
                 .category(request.getCategory())
+                .placeGroup(request.getPlaceGroup() != null ?
+                    com.ds.goroute.type.PlaceGroup.valueOf(request.getPlaceGroup()) : null)
                 .address(request.getAddress())
+                .destinations(toJson(request.getDestinations()))
                 .latitude(request.getLatitude())
                 .longitude(request.getLongitude())
                 .plusCode(request.getPlusCode())
@@ -225,16 +465,16 @@ public class PlaceServiceImpl implements PlaceService {
                 .updatedAt(LocalDateTime.now())
                 .build();
     }
-    
+
     private void importReviews(UUID placeId, String reviewsJson) {
         try {
             JsonNode reviewsNode = objectMapper.readTree(reviewsJson);
             if (!reviewsNode.isArray()) {
                 return;
             }
-            
+
             List<PlaceReview> reviews = new ArrayList<>();
-            
+
             for (JsonNode reviewNode : reviewsNode) {
                 try {
                     Integer rating = null;
@@ -244,7 +484,7 @@ public class PlaceServiceImpl implements PlaceService {
                             rating = ratingValue;
                         }
                     }
-                    
+
                     PlaceReview review = PlaceReview.builder()
                             .id(UUID.randomUUID())
                             .placeId(placeId)
@@ -256,13 +496,13 @@ public class PlaceServiceImpl implements PlaceService {
                             .images(reviewNode.has("images") ? reviewNode.get("images").toString() : null)
                             .createdAt(LocalDateTime.now())
                             .build();
-                    
+
                     reviews.add(review);
                 } catch (Exception e) {
                     log.error("Error parsing review: {}", e.getMessage());
                 }
             }
-            
+
             if (!reviews.isEmpty()) {
                 placeReviewRepository.insertBatch(reviews);
                 log.info("Imported {} reviews for place {}", reviews.size(), placeId);
@@ -271,34 +511,36 @@ public class PlaceServiceImpl implements PlaceService {
             log.error("Error parsing reviews JSON: {}", e.getMessage());
         }
     }
-    
+
     private String getTextValue(JsonNode node, String fieldName) {
-        return node.has(fieldName) && !node.get(fieldName).isNull() 
-                ? node.get(fieldName).asText() 
+        return node.has(fieldName) && !node.get(fieldName).isNull()
+                ? node.get(fieldName).asText()
                 : null;
     }
-    
+
     private LocalDate parseReviewDate(String dateStr) {
         if (dateStr == null || dateStr.isEmpty()) {
             return null;
         }
-        
+
         try {
-            // Try format: "2025-6-1"
+            // Try format: "25-6-1"
             return LocalDate.parse(dateStr, DateTimeFormatter.ofPattern("yyyy-M-d"));
         } catch (Exception e) {
             log.warn("Could not parse review date: {}", dateStr);
             return null;
         }
     }
-    
+
     private PlaceResponse toPlaceResponse(Place place) {
         return PlaceResponse.builder()
                 .id(place.getId())
                 .placeId(place.getPlaceId())
                 .title(place.getTitle())
                 .category(place.getCategory())
+                .placeGroup(place.getPlaceGroup() != null ? place.getPlaceGroup().name() : null)
                 .address(place.getAddress())
+                .destinations(parseJsonToStringList(place.getDestinations()))
                 .latitude(place.getLatitude())
                 .longitude(place.getLongitude())
                 .phone(place.getPhone())
@@ -319,69 +561,101 @@ public class PlaceServiceImpl implements PlaceService {
                 .updatedAt(place.getUpdatedAt())
                 .build();
     }
-    
+
     private Map<String, Integer> parseJsonToMap(String jsonString) {
         if (jsonString == null || jsonString.trim().isEmpty()) {
             return null;
         }
         try {
-            return objectMapper.readValue(jsonString, 
+            return objectMapper.readValue(jsonString,
                 new com.fasterxml.jackson.core.type.TypeReference<Map<String, Integer>>() {});
         } catch (Exception e) {
             log.warn("Failed to parse JSON to Map: {}", e.getMessage());
             return null;
         }
     }
-    
+
     private <T> List<T> parseJsonToList(String jsonString, Class<T> clazz) {
         if (jsonString == null || jsonString.trim().isEmpty()) {
             return null;
         }
         try {
-            return objectMapper.readValue(jsonString, 
+            return objectMapper.readValue(jsonString,
                 objectMapper.getTypeFactory().constructCollectionType(List.class, clazz));
         } catch (Exception e) {
             log.warn("Failed to parse JSON to List: {}", e.getMessage());
             return null;
         }
     }
-    
+
+    private List<String> parseJsonToStringList(String jsonString) {
+        if (jsonString == null || jsonString.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+        try {
+            return objectMapper.readValue(jsonString,
+                    new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            log.warn("Failed to parse destinations JSON: {}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    private String toJson(Object value) {
+        try {
+            if (value == null) {
+                return "[]";
+            }
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception e) {
+            log.warn("Failed to serialize value to JSON: {}", e.getMessage());
+            return "[]";
+        }
+    }
+
     private Map<String, List<String>> parseJsonToMapOfList(String jsonString) {
         if (jsonString == null || jsonString.trim().isEmpty()) {
             return null;
         }
         try {
-            return objectMapper.readValue(jsonString, 
+            return objectMapper.readValue(jsonString,
                 new com.fasterxml.jackson.core.type.TypeReference<Map<String, List<String>>>() {});
         } catch (Exception e) {
             log.warn("Failed to parse JSON to Map<String, List<String>>: {}", e.getMessage());
             return null;
         }
     }
-    
+
     private Map<String, Map<String, Integer>> parseJsonToMapOfMap(String jsonString) {
         if (jsonString == null || jsonString.trim().isEmpty()) {
             return null;
         }
         try {
-            return objectMapper.readValue(jsonString, 
+            return objectMapper.readValue(jsonString,
                 new com.fasterxml.jackson.core.type.TypeReference<Map<String, Map<String, Integer>>>() {});
         } catch (Exception e) {
             log.warn("Failed to parse JSON to Map<String, Map<String, Integer>>: {}", e.getMessage());
             return null;
         }
     }
-    
+
     private PlaceReviewResponse toReviewResponse(PlaceReview review) {
         return PlaceReviewResponse.builder()
                 .id(review.getId())
                 .placeId(review.getPlaceId())
                 .reviewerName(review.getReviewerName())
                 .profilePicture(review.getProfilePicture())
+                .profileUrl(review.getProfileUrl())
+                .isLocalGuide(review.getIsLocalGuide())
+                .totalReviews(review.getTotalReviews())
+                .totalPhotos(review.getTotalPhotos())
                 .rating(review.getRating())
                 .description(review.getDescription())
                 .reviewDate(review.getReviewDate())
                 .images(review.getImages())
+                .likes(review.getLikes())
+                .authenticityScore(review.getAuthenticityScore())
+                .authenticityLevel(review.getAuthenticityLevel() != null ? review.getAuthenticityLevel().name() : null)
                 .build();
     }
 }
