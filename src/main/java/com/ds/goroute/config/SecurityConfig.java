@@ -4,6 +4,7 @@ import com.ds.goroute.config.filter.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -35,6 +36,7 @@ public class SecurityConfig {
                         .requestMatchers("/v1/api/location-images/**").permitAll()
                         .requestMatchers("/v1/api/places/**").permitAll()
                         .requestMatchers("/v1/api/place-reviews/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/v1/api/activity-bookings/*/add-to-trip").authenticated()
                         .requestMatchers("/v1/api/activity-bookings/**").permitAll()
                         .requestMatchers("/v1/api/foods/**").permitAll()
                         .requestMatchers("/v1/api/admin/foods/**").permitAll()
