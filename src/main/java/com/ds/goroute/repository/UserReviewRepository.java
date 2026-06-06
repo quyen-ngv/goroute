@@ -23,6 +23,8 @@ public interface UserReviewRepository {
 
     List<UserReview> findByUserId(UUID userId, int limit, int offset);
 
+    List<UserReview> findFeedReviews(UUID excludeUserId, int limit, int offset);
+
     int countByPlaceId(UUID placeId);
 
     int countByUserId(UUID userId);

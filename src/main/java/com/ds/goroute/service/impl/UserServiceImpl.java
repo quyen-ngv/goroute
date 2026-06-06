@@ -3,9 +3,11 @@ package com.ds.goroute.service.impl;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.UpdateProfileRequest;
 import com.ds.goroute.dto.request.UpdateSettingsRequest;
+import com.ds.goroute.dto.response.DiscoverUserResponse;
 import com.ds.goroute.dto.response.UserProfileResponse;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.repository.UserReviewRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.UserService;
 import com.ds.goroute.service.StorageService;
@@ -15,6 +17,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -23,6 +27,7 @@ import java.util.UUID;
 public class UserServiceImpl implements UserService {
     
     private final UserRepository userRepository;
+    private final UserReviewRepository userReviewRepository;
     private final StorageService storageService;
 
     @Override
@@ -96,6 +101,56 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<DiscoverUserResponse> discoverUsers(UUID userId, int limit) {
+        int resolvedLimit = Math.max(1, Math.min(limit, 20));
+        return userRepository.findAll().stream()
+                .filter(user -> user.getDeletedAt() == null)
+                .filter(user -> !user.getId().equals(userId))
+                .map(this::toDiscoverUserResponse)
+                .sorted(Comparator.comparingInt(DiscoverUserResponse::getReviewCount).reversed())
+                .limit(resolvedLimit)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DiscoverUserResponse> getFollowers(UUID userId) {
+        ensureUserExists(userId);
+        return userRepository.findFollowers(userId).stream()
+                .map(this::toDiscoverUserResponse)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DiscoverUserResponse> getFollowing(UUID userId) {
+        ensureUserExists(userId);
+        return userRepository.findFollowing(userId).stream()
+                .map(this::toDiscoverUserResponse)
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public void followUser(UUID userId, UUID targetUserId) {
+        if (userId.equals(targetUserId)) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Cannot follow yourself");
+        }
+        ensureUserExists(userId);
+        ensureUserExists(targetUserId);
+        userRepository.follow(userId, targetUserId);
+    }
+
+    @Override
+    @Transactional
+    public void unfollowUser(UUID userId, UUID targetUserId) {
+        ensureUserExists(userId);
+        ensureUserExists(targetUserId);
+        userRepository.unfollow(userId, targetUserId);
+    }
+
+    @Override
     @Transactional
     public String updateAvatar(UUID userId, MultipartFile file) {
         try {
@@ -143,5 +198,22 @@ public class UserServiceImpl implements UserService {
         userRepository.softDeleteById(userId);
         
         log.info("User account soft deleted: {}", userId);
+    }
+
+    private void ensureUserExists(UUID userId) {
+        userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
+    }
+
+    private DiscoverUserResponse toDiscoverUserResponse(User user) {
+        return DiscoverUserResponse.builder()
+                .id(user.getId())
+                .fullName(user.getFullName())
+                .username(user.getUsername())
+                .avatarUrl(user.getAvatarUrl())
+                .reviewCount(userReviewRepository.countByUserId(user.getId()))
+                .followersCount(userRepository.countFollowers(user.getId()))
+                .followingCount(userRepository.countFollowing(user.getId()))
+                .build();
     }
 }

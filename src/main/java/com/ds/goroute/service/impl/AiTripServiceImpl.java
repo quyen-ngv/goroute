@@ -24,6 +24,7 @@ import com.ds.goroute.service.TripService;
 import com.ds.goroute.thirdparty.claude.ClaudeClient;
 import com.ds.goroute.type.ActivityStatus;
 import com.ds.goroute.type.PlaceGroup;
+import com.ds.goroute.type.TransportMode;
 import com.ds.goroute.utils.AiTripGenerationSummary;
 import com.ds.goroute.utils.AiTripLanguageSupport;
 import com.ds.goroute.utils.DestinationMatchUtils;
@@ -335,6 +336,7 @@ public class AiTripServiceImpl implements AiTripService {
                 .reviewCount(place.getReviewCount())
                 .photoUrl(place.getThumbnail())
                 .placeGroup(place.getPlaceGroup() != null ? place.getPlaceGroup().name() : PlaceGroup.OTHER.name())
+                .category(place.getCategory())
                 .visitDurationMinutes(duration)
                 .durationText(formatDuration(duration))
                 .build();
@@ -361,6 +363,7 @@ public class AiTripServiceImpl implements AiTripService {
                 .reviewCount(booking.getReviewCount())
                 .photoUrl(booking.getThumbnail())
                 .placeGroup(PlaceGroup.ATTRACTIONS.name())
+                .category("activity")
                 .visitDurationMinutes(duration)
                 .durationText(firstNonBlank(booking.getDurationRaw(), formatDuration(duration)))
                 .bookingId(booking.getId())
@@ -396,18 +399,25 @@ public class AiTripServiceImpl implements AiTripService {
         String system = """
                 You rank real travel candidates for a trip. Return strict JSON only.
                 Do not invent places. Use only candidate IDs provided by the server.
+                Rank using real-world fit: place type/category, opening rhythm, trip dates, likely local weather/season,
+                travel distance, visit duration, user preference, rating, review volume, and whether the stop is indoor/outdoor.
+                Avoid generic tourist-only lists when stronger local, food, culture, or weather-appropriate options exist.
                 """ + "\n" + AiTripLanguageSupport.claudeLanguageRule();
         String prompt = """
                 Trip city: %s
                 Days: %d
+                Trip dates: %s to %s
                 Pace: %s
                 User preferences: %s
-                Return JSON: {"candidateIds":["id1"],"reasons":{"id1":"short reason"}}
+                Candidate fields include placeGroup, category, sourceType, visitDurationMinutes, rating, reviewCount, lat/lng, address, price, and description.
+                Return JSON: {"candidateIds":["id1"],"reasons":{"id1":"short concrete reason using timing/place/weather fit"}}
                 Candidates:
                 %s
                 """.formatted(
                 request.getCityName(),
                 resolveDayCount(request),
+                request.getStartDate(),
+                request.getEndDate(),
                 normalizePace(request.getPace()),
                 Optional.ofNullable(request.getPreferenceText()).orElse(""),
                 JsonUtils.toJson(candidates));
@@ -459,16 +469,27 @@ public class AiTripServiceImpl implements AiTripService {
         String system = """
                 You order real travel candidates for an itinerary. Return strict JSON only.
                 Cluster by geographic proximity using lat/lng. Use only candidate IDs provided by the server.
+                Use each candidate's placeGroup, category, visitDurationMinutes, address, rating, reviewCount, price, and description.
+                Build practical days that usually start around 09:00 and end around 18:00, but treat that as a soft travel rhythm, not a hard limit.
+                It is acceptable to start earlier or end later when sunrise/sunset, dining time, transport, nightlife, or long travel makes that better.
+                Infer likely local season/weather from city and trip dates when explicit weather is unavailable:
+                keep outdoor/nature stops in better daylight windows, avoid too many exposed outdoor stops in likely hot/rainy periods,
+                place indoor, food, shopping, and culture stops as good buffers.
+                Put breakfast/lunch/dinner food stops into natural meal windows when selected.
+                Consider realistic transport between stops and avoid zig-zag days.
+                Prefer realistic transitions and avoid generic ordering.
                 """ + "\n" + AiTripLanguageSupport.claudeLanguageRule();
         String prompt = """
                 City: %s
                 Days: %d
+                Trip dates: %s to %s
                 Pace: %s
                 Preference: %s
+                Candidate fields include placeGroup, category, sourceType, visitDurationMinutes, rating, reviewCount, lat/lng, address, price, and description.
                 Return JSON: {"candidateIds":["id1","id2"]}.
                 Candidates:
                 %s
-                """.formatted(draft.getCityName(), draft.getDayCount(), draft.getPace(),
+                """.formatted(draft.getCityName(), draft.getDayCount(), draft.getStartDate(), draft.getEndDate(), draft.getPace(),
                 Optional.ofNullable(draft.getPreferenceText()).orElse(""), JsonUtils.toJson(selected));
 
         return claudeClient.completeJson(system, prompt)
@@ -528,28 +549,74 @@ public class AiTripServiceImpl implements AiTripService {
         int used = 0;
         LocalTime cursor = LocalTime.of(9, 0);
         List<ScheduledCandidate> schedule = new ArrayList<>();
+        AiTripCandidateResponse previous = null;
 
         for (AiTripCandidateResponse candidate : ordered) {
             if (day > draft.getDayCount()) {
                 break;
             }
             int duration = clamp(candidate.getVisitDurationMinutes() != null ? candidate.getVisitDurationMinutes() : 120, 45, 480);
-            int block = duration + 30;
+            int travelGap = previous == null ? 0 : travelGapMinutes(previous, candidate);
+            int mealGap = needsMealBreak(cursor.plusMinutes(travelGap), duration) ? 60 : 0;
+            int block = duration + travelGap + mealGap;
             if (used > 0 && used + block > capMinutes) {
                 day++;
                 used = 0;
                 cursor = LocalTime.of(9, 0);
+                previous = null;
+                travelGap = 0;
+                mealGap = needsMealBreak(cursor, duration) ? 60 : 0;
+                block = duration + mealGap;
             }
             if (day > draft.getDayCount()) {
                 break;
             }
+            if (used > 0) {
+                cursor = cursor.plusMinutes(travelGap);
+            }
+            if (mealGap > 0) {
+                cursor = cursor.plusMinutes(mealGap);
+            }
             LocalTime start = cursor;
             LocalTime end = start.plusMinutes(duration);
-            schedule.add(new ScheduledCandidate(candidate, day, start, end));
+            schedule.add(new ScheduledCandidate(candidate, day, start, end, recommendTransport(previous, candidate)));
             used += block;
-            cursor = end.plusMinutes(30);
+            cursor = end;
+            previous = candidate;
         }
         return schedule;
+    }
+
+    private int travelGapMinutes(AiTripCandidateResponse from, AiTripCandidateResponse to) {
+        if (from.getLat() == null || from.getLng() == null || to.getLat() == null || to.getLng() == null) {
+            return 30;
+        }
+        double km = haversineKm(
+                from.getLat().doubleValue(),
+                from.getLng().doubleValue(),
+                to.getLat().doubleValue(),
+                to.getLng().doubleValue()
+        );
+        if (km < 1.0) return 15;
+        if (km < 3.0) return 25;
+        if (km < 8.0) return 40;
+        if (km < 20.0) return 60;
+        return 90;
+    }
+
+    private boolean needsMealBreak(LocalTime start, int durationMinutes) {
+        LocalTime end = start.plusMinutes(durationMinutes);
+        return start.isBefore(LocalTime.of(13, 0)) && end.isAfter(LocalTime.of(12, 0));
+    }
+
+    private double haversineKm(double lat1, double lng1, double lat2, double lng2) {
+        double radiusKm = 6371.0;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        return radiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
     private Activity toActivity(UUID tripId, ScheduledCandidate item, UUID userId, Map<String, String> visitTips) {
@@ -566,7 +633,8 @@ public class AiTripServiceImpl implements AiTripService {
                 .lng(candidate.getLng())
                 .startTime(item.startTime())
                 .endTime(item.endTime())
-                .category(candidate.getPlaceGroup())
+                .category(activityCategoryFor(candidate))
+                .transportMode(item.transportMode())
                 .rating(candidate.getRating())
                 .photoUrl(candidate.getPhotoUrl())
                 .description(trimText(visitTip, 280))
@@ -577,6 +645,74 @@ public class AiTripServiceImpl implements AiTripService {
                 .bookingId(candidate.getBookingId())
                 .bookingSource(candidate.getBookingSource())
                 .build();
+    }
+
+    private String activityCategoryFor(AiTripCandidateResponse candidate) {
+        String category = normalizeKey(candidate.getCategory());
+        String name = normalizeKey(candidate.getName());
+        String text = category + " " + name + " " + normalizeKey(candidate.getDescription());
+        if (containsAny(text, "restaurant", "food", "cafe", "coffee", "bar", "pub", "bakery", "drink", "quan", "nha hang")) {
+            return "restaurant";
+        }
+        if (containsAny(text, "hotel", "hostel", "resort", "homestay", "accommodation")) {
+            return "hotel";
+        }
+        if (containsAny(text, "beach", "island", "bay", "coast", "bien", "dao")) {
+            return "beach";
+        }
+        if (containsAny(text, "temple", "pagoda", "church", "cathedral", "shrine", "chua", "den", "nha tho")) {
+            return "spiritual";
+        }
+        if (containsAny(text, "park", "garden", "mountain", "lake", "waterfall", "nature", "trail", "forest", "vuon", "ho", "thac")) {
+            return "nature";
+        }
+        if (containsAny(text, "market", "mall", "shopping", "shop", "cho")) {
+            return "shopping";
+        }
+        if (containsAny(text, "museum", "gallery", "heritage", "historic", "palace", "citadel", "monument", "bao tang")) {
+            return "museum";
+        }
+        if (containsAny(text, "show", "theater", "cinema", "night", "club", "entertainment", "performance")) {
+            return "entertainment";
+        }
+        if (candidate.getPlaceGroup() == null) {
+            return "attraction";
+        }
+        return switch (candidate.getPlaceGroup()) {
+            case "FOOD_AND_DRINK" -> "restaurant";
+            case "ACCOMMODATION" -> "hotel";
+            case "SHOPPING_AND_MARKET" -> "shopping";
+            case "NATURE_AND_OUTDOORS" -> "nature";
+            case "CULTURE_AND_HERITAGE" -> "museum";
+            case "ATTRACTIONS" -> "attraction";
+            default -> "attraction";
+        };
+    }
+
+    private boolean containsAny(String text, String... tokens) {
+        for (String token : tokens) {
+            if (text.contains(normalizeKey(token))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private TransportMode recommendTransport(AiTripCandidateResponse previous, AiTripCandidateResponse current) {
+        if (previous == null || previous.getLat() == null || previous.getLng() == null
+                || current.getLat() == null || current.getLng() == null) {
+            return null;
+        }
+        double km = haversineKm(
+                previous.getLat().doubleValue(),
+                previous.getLng().doubleValue(),
+                current.getLat().doubleValue(),
+                current.getLng().doubleValue()
+        );
+        if (km < 1.2) return TransportMode.WALKING;
+        if (km < 8.0) return TransportMode.MOTORBIKE;
+        if (km < 45.0) return TransportMode.CAR;
+        return TransportMode.TRAIN;
     }
 
     private Map<String, String> generateVisitTips(AiTripDraft draft, List<ScheduledCandidate> schedule) {
@@ -591,25 +727,29 @@ public class AiTripServiceImpl implements AiTripService {
             row.put("id", candidate.getId());
             row.put("name", candidate.getName());
             row.put("placeGroup", candidate.getPlaceGroup());
+            row.put("category", candidate.getCategory());
             row.put("sourceType", candidate.getSourceType());
             row.put("dayNumber", item.dayNumber());
             row.put("startTime", item.startTime().toString());
             row.put("endTime", item.endTime().toString());
+            row.put("transportModeToHere", item.transportMode() != null ? item.transportMode().name() : null);
             payload.add(row);
         }
 
         String system = """
                 You write very short practical visit tips for a travel itinerary.
                 Return strict JSON only: {"tips":{"candidateId":"short tip text"}}.
-                Each tip: 1 short sentence (max 120 chars) on HOW to visit or enjoy the place (timing, focus, pace).
+                Each tip: 1 short sentence (max 160 chars) on HOW to visit or enjoy the place.
+                Use the scheduled time, place type/category, likely weather/season from city and trip dates, and transport context.
                 Do NOT copy marketing or listing descriptions. Use only candidate IDs from the input.
                 """ + "\n" + AiTripLanguageSupport.claudeLanguageRule();
         String prompt = """
                 City: %s
+                Trip dates: %s to %s
                 Pace: %s
                 Activities:
                 %s
-                """.formatted(draft.getCityName(), draft.getPace(), JsonUtils.toJson(payload));
+                """.formatted(draft.getCityName(), draft.getStartDate(), draft.getEndDate(), draft.getPace(), JsonUtils.toJson(payload));
 
         Map<String, String> tips = claudeClient.completeJson(system, prompt)
                 .map(this::parseVisitTips)
@@ -761,6 +901,7 @@ public class AiTripServiceImpl implements AiTripService {
     }
 
     private record ScheduledCandidate(AiTripCandidateResponse candidate, int dayNumber,
-                                      LocalTime startTime, LocalTime endTime) {
+                                      LocalTime startTime, LocalTime endTime,
+                                      TransportMode transportMode) {
     }
 }

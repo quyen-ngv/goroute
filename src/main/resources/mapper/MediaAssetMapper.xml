@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.MediaAssetMapper">
+
+    <resultMap id="MediaAssetResultMap" type="com.ds.goroute.entity.MediaAsset">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="trip_id" property="tripId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="activity_id" property="activityId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="entity_type" property="entityType" jdbcType="VARCHAR"/>
+        <result column="entity_id" property="entityId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="url" property="url" jdbcType="VARCHAR"/>
+        <result column="caption" property="caption" jdbcType="VARCHAR"/>
+        <result column="uploaded_by" property="uploadedBy" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
+        <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
+        <result column="deleted_at" property="deletedAt" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.MediaAsset">
+        INSERT INTO media_assets (id, trip_id, activity_id, entity_type, entity_id, url, caption, uploaded_by, created_at, updated_at)
+        VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER},
+                #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{activityId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{entityType},
+                #{entityId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{url},
+                #{caption},
+                #{uploadedBy,javaType=java.util.UUID,jdbcType=OTHER},
+                NOW(),
+                NOW())
+    </insert>
+
+    <select id="selectById" parameterType="java.util.UUID" resultMap="MediaAssetResultMap">
+        SELECT * FROM media_assets
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+        AND deleted_at IS NULL
+    </select>
+
+    <select id="selectByTripId" parameterType="java.util.UUID" resultMap="MediaAssetResultMap">
+        SELECT * FROM media_assets
+        WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+        AND deleted_at IS NULL
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="selectByActivityId" parameterType="java.util.UUID" resultMap="MediaAssetResultMap">
+        SELECT * FROM media_assets
+        WHERE activity_id = #{activityId,javaType=java.util.UUID,jdbcType=OTHER}
+        AND deleted_at IS NULL
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="countByTripId" parameterType="java.util.UUID" resultType="int">
+        SELECT COUNT(*) FROM media_assets
+        WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+        AND deleted_at IS NULL
+    </select>
+
+    <update id="softDelete" parameterType="java.util.UUID">
+        UPDATE media_assets
+        SET deleted_at = NOW(), updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+</mapper>

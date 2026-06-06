@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Data
@@ -19,5 +20,7 @@ public class PublicExpenseResponse {
     private String currency;
     private String category;
     private String description;
+    private Integer splitCount;
+    private List<String> photoUrls;
     private LocalDateTime createdAt;
 }

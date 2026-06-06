@@ -53,6 +53,11 @@ public class UserReviewRepositoryImpl implements UserReviewRepository {
     }
 
     @Override
+    public List<UserReview> findFeedReviews(UUID excludeUserId, int limit, int offset) {
+        return mapper.findFeedReviews(excludeUserId, limit, offset);
+    }
+
+    @Override
     public int countByPlaceId(UUID placeId) {
         return mapper.countByPlaceId(placeId);
     }

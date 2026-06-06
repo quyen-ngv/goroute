@@ -2,6 +2,7 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.request.UpdateProfileRequest;
 import com.ds.goroute.dto.request.UpdateSettingsRequest;
+import com.ds.goroute.dto.response.DiscoverUserResponse;
 import com.ds.goroute.dto.response.UserProfileResponse;
 import com.ds.goroute.service.UserService;
 import com.ds.goroute.dto.BaseResponse;
@@ -14,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -44,6 +46,41 @@ public class UserController extends BaseService {
             @Valid @RequestBody UpdateSettingsRequest request,
             @RequestAttribute("userId") UUID userId) {
         userService.updateSettings(userId, request);
+        return ResponseEntity.ok(ofSucceeded(null));
+    }
+
+    @GetMapping("/discover")
+    public ResponseEntity<BaseResponse<List<DiscoverUserResponse>>> discoverUsers(
+            @RequestParam(defaultValue = "10") int limit,
+            @RequestAttribute("userId") UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(userService.discoverUsers(userId, limit)));
+    }
+
+    @GetMapping("/me/followers")
+    public ResponseEntity<BaseResponse<List<DiscoverUserResponse>>> getFollowers(
+            @RequestAttribute("userId") UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(userService.getFollowers(userId)));
+    }
+
+    @GetMapping("/me/following")
+    public ResponseEntity<BaseResponse<List<DiscoverUserResponse>>> getFollowing(
+            @RequestAttribute("userId") UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(userService.getFollowing(userId)));
+    }
+
+    @PostMapping("/{targetUserId}/follow")
+    public ResponseEntity<BaseResponse<Void>> followUser(
+            @PathVariable UUID targetUserId,
+            @RequestAttribute("userId") UUID userId) {
+        userService.followUser(userId, targetUserId);
+        return ResponseEntity.ok(ofSucceeded(null));
+    }
+
+    @DeleteMapping("/{targetUserId}/follow")
+    public ResponseEntity<BaseResponse<Void>> unfollowUser(
+            @PathVariable UUID targetUserId,
+            @RequestAttribute("userId") UUID userId) {
+        userService.unfollowUser(userId, targetUserId);
         return ResponseEntity.ok(ofSucceeded(null));
     }
 

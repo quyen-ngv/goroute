@@ -27,7 +27,9 @@ public class PublicActivityResponse {
     private LocalTime endTime;
     private String category;
     private BigDecimal rating;
+    private Integer reviewCount;
     private String photoUrl;
+    private String description;
     private PlaceScoreResponse platformScore;
     private BigDecimal tripAvgScore;
     private List<UserReviewResponse> memberReviews;

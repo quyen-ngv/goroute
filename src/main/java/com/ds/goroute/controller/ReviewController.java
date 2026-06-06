@@ -76,6 +76,16 @@ public class ReviewController extends BaseService {
         return ResponseEntity.ok(ofSucceeded(reviews));
     }
 
+    @GetMapping("/feed")
+    @Operation(summary = "Get reviews for feed, excluding current user's reviews when authenticated")
+    public ResponseEntity getFeedReviews(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestAttribute(value = "userId", required = false) UUID userId) {
+        List<UserReviewResponse> reviews = reviewService.getFeedReviews(userId, page, size);
+        return ResponseEntity.ok(ofSucceeded(reviews));
+    }
+
     @PostMapping("/{id}/helpful")
     @Operation(summary = "Vote review as helpful (toggle)")
     public ResponseEntity voteHelpful(

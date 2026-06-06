@@ -185,6 +185,16 @@ public class ReviewServiceImpl implements ReviewService {
                 .collect(Collectors.toList());
     }
 
+    @Override
+    public List<UserReviewResponse> getFeedReviews(UUID currentUserId, int page, int size) {
+        int offset = page * size;
+        List<UserReview> reviews = reviewRepository.findFeedReviews(currentUserId, size, offset);
+
+        return reviews.stream()
+                .map(review -> mapToResponse(review, currentUserId))
+                .collect(Collectors.toList());
+    }
+
     /**
      * Vote review as helpful
      */

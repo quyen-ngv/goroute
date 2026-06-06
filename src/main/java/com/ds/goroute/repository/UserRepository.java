@@ -19,6 +19,18 @@ public interface UserRepository {
     Optional<User> findByProviderId(String providerId);
     
     List<User> findAll();
+
+    List<User> findFollowers(UUID userId);
+
+    List<User> findFollowing(UUID userId);
+
+    int countFollowers(UUID userId);
+
+    int countFollowing(UUID userId);
+
+    void follow(UUID followerId, UUID followingId);
+
+    void unfollow(UUID followerId, UUID followingId);
     
     void updateById(User user);
     

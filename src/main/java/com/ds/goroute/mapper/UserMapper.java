@@ -21,6 +21,18 @@ public interface UserMapper {
     User selectById(@Param("id") UUID id);
     
     java.util.List<User> selectAll();
+
+    java.util.List<User> selectFollowers(@Param("userId") UUID userId);
+
+    java.util.List<User> selectFollowing(@Param("userId") UUID userId);
+
+    int countFollowers(@Param("userId") UUID userId);
+
+    int countFollowing(@Param("userId") UUID userId);
+
+    int insertFollow(@Param("followerId") UUID followerId, @Param("followingId") UUID followingId);
+
+    int deleteFollow(@Param("followerId") UUID followerId, @Param("followingId") UUID followingId);
     
     int updateById(User user);
     

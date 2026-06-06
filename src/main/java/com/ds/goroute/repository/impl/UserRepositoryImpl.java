@@ -50,6 +50,36 @@ public class UserRepositoryImpl implements UserRepository {
     public List<User> findAll() {
         return userMapper.selectAll();
     }
+
+    @Override
+    public List<User> findFollowers(UUID userId) {
+        return userMapper.selectFollowers(userId);
+    }
+
+    @Override
+    public List<User> findFollowing(UUID userId) {
+        return userMapper.selectFollowing(userId);
+    }
+
+    @Override
+    public int countFollowers(UUID userId) {
+        return userMapper.countFollowers(userId);
+    }
+
+    @Override
+    public int countFollowing(UUID userId) {
+        return userMapper.countFollowing(userId);
+    }
+
+    @Override
+    public void follow(UUID followerId, UUID followingId) {
+        userMapper.insertFollow(followerId, followingId);
+    }
+
+    @Override
+    public void unfollow(UUID followerId, UUID followingId) {
+        userMapper.deleteFollow(followerId, followingId);
+    }
     
     @Override
     public void updateById(User user) {

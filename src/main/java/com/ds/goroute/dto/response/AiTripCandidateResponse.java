@@ -25,6 +25,7 @@ public class AiTripCandidateResponse {
     private Integer reviewCount;
     private String photoUrl;
     private String placeGroup;
+    private String category;
     private Integer visitDurationMinutes;
     private String durationText;
     private UUID bookingId;

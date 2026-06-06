@@ -29,6 +29,10 @@ public interface UserReviewMapper {
                                   @Param("limit") int limit,
                                   @Param("offset") int offset);
 
+    List<UserReview> findFeedReviews(@Param("excludeUserId") UUID excludeUserId,
+                                     @Param("limit") int limit,
+                                     @Param("offset") int offset);
+
     int countByPlaceId(@Param("placeId") UUID placeId);
 
     int countByUserId(@Param("userId") UUID userId);

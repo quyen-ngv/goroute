@@ -860,12 +860,15 @@ public class TripServiceImpl implements TripService {
         if (Boolean.TRUE.equals(trip.getShareExpenses())) {
             List<com.ds.goroute.entity.Expense> expenses = expenseRepository.findByTripId(tripId);
             for (com.ds.goroute.entity.Expense e : expenses) {
+                int splitCount = expenseSplitRepository.findByExpenseId(e.getId()).size();
                 PublicExpenseResponse expenseResponse = PublicExpenseResponse.builder()
                         .id(e.getId())
                         .amount(e.getAmount())
                         .currency(e.getCurrency())
                         .category(String.valueOf(e.getCategory()))
                         .description(e.getDescription())
+                        .splitCount(splitCount)
+                        .photoUrls(e.getPhotoUrls() != null ? List.of(e.getPhotoUrls()) : List.of())
                         .createdAt(e.getCreatedAt())
                         .build();
 
@@ -921,7 +924,9 @@ public class TripServiceImpl implements TripService {
                             .endTime(a.getEndTime())
                             .category(a.getCategory())
                             .rating(a.getRating())
+                            .reviewCount(memberReviews != null ? memberReviews.size() : null)
                             .photoUrl(a.getPhotoUrl())
+                            .description(a.getDescription())
                             .platformScore(placeId != null ? buildPlatformScore(placeId) : null)
                             .tripAvgScore(calculateTripAverage(memberReviews))
                             .memberReviews(memberReviews == null || memberReviews.isEmpty() ? null : memberReviews)
@@ -1181,6 +1186,7 @@ public class TripServiceImpl implements TripService {
                             .id(trip.getId())
                             .name(trip.getName())
                             .coverImageUrl(coverImageUrl)
+                            .description(trip.getDescription())
                             .destination(trip.getDestination())
                             .lat(trip.getDestinationLat())
                             .lng(trip.getDestinationLng())
@@ -1222,4 +1228,3 @@ public class TripServiceImpl implements TripService {
         }).start();
     }
 }
-

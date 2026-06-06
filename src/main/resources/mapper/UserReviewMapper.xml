@@ -83,6 +83,27 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
+    <select id="findFeedReviews" resultMap="UserReviewResultMap">
+        SELECT * FROM user_reviews
+        WHERE (#{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER} IS NULL
+            OR user_id != #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER})
+        AND (
+            NULLIF(TRIM(COALESCE(text, '')), '') IS NOT NULL
+            OR NULLIF(TRIM(COALESCE(photos, '')), '') IS NOT NULL
+        )
+        ORDER BY
+            (
+                (overall_rating * 8)
+                + (LEAST(helpful_votes, 20) * 2)
+                + CASE WHEN NULLIF(TRIM(COALESCE(text, '')), '') IS NOT NULL THEN 10 ELSE 0 END
+                + CASE WHEN NULLIF(TRIM(COALESCE(photos, '')), '') IS NOT NULL THEN 8 ELSE 0 END
+                + GREATEST(0, 30 - EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400)
+                + MOD(ABS(('x' || SUBSTR(MD5(id::text || TO_CHAR(NOW(), 'YYYY-MM-DD-HH12')), 1, 8))::bit(32)::bigint), 10)
+            ) DESC,
+            created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
     <select id="countByPlaceId" resultType="int">
         SELECT COUNT(*) FROM user_reviews
         WHERE place_id = #{placeId}
