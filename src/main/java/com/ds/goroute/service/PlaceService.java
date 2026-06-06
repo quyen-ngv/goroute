@@ -34,6 +34,8 @@ public interface PlaceService {
     /**
      * Search places by location and filters
      */
+    List<PlaceResponse> getAllPlaces();
+
     List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
                                      BigDecimal radius, String category, String placeGroup,
                                      BigDecimal minRating, int page, int size);

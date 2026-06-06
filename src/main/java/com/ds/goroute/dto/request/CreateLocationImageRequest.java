@@ -17,6 +17,7 @@ public class CreateLocationImageRequest {
     
     @NotBlank(message = "Image URL is required")
     private String imageUrl;
+    private String avatarUrl;
     
     @NotNull(message = "Priority is required")
     private Integer priority;

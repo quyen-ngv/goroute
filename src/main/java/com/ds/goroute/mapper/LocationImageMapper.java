@@ -26,8 +26,8 @@ public interface LocationImageMapper {
     LocationImage selectById(UUID id);
 
     @Insert("""
-        INSERT INTO location_images (id, full_address, normalized_address, image_url, city_slug, priority, created_at, updated_at)
-        VALUES (#{id}, #{fullAddress}, #{normalizedAddress}, #{imageUrl}, #{citySlug}, #{priority}, #{createdAt}, #{updatedAt})
+        INSERT INTO location_images (id, full_address, normalized_address, image_url, avatar_url, city_slug, priority, created_at, updated_at)
+        VALUES (#{id}, #{fullAddress}, #{normalizedAddress}, #{imageUrl}, #{avatarUrl}, #{citySlug}, #{priority}, #{createdAt}, #{updatedAt})
         """)
     void insert(LocationImage locationImage);
 
@@ -36,6 +36,7 @@ public interface LocationImageMapper {
         SET full_address = #{fullAddress},
             normalized_address = #{normalizedAddress},
             image_url = #{imageUrl},
+            avatar_url = #{avatarUrl},
             city_slug = #{citySlug},
             priority = #{priority},
             updated_at = #{updatedAt}

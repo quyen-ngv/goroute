@@ -1,4 +1,4 @@
-package com.ds.goroute.dto.response;
+package com.ds.goroute.entity;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -12,13 +12,14 @@ import java.util.UUID;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class LocationImageResponse {
+public class CityStory {
     private UUID id;
-    private String fullAddress;
-    private String citySlug;
+    private UUID locationImageId;
     private String imageUrl;
-    private String avatarUrl;
-    private Integer priority;
+    private String description;
+    private UUID placeId;
+    private Integer likeCount;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private LocalDateTime deletedAt;
 }

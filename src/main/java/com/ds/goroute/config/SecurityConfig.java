@@ -34,6 +34,8 @@ public class SecurityConfig {
                         .requestMatchers("/v1/api/auth/**").permitAll()
                         .requestMatchers("/v1/api/public/**").permitAll()
                         .requestMatchers("/v1/api/location-images/**").permitAll()
+                        .requestMatchers("/v1/api/city-stories/feed").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/v1/api/location-images/*/stories").permitAll()
                         .requestMatchers("/v1/api/places/**").permitAll()
                         .requestMatchers("/v1/api/place-reviews/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/api/activity-bookings/*/add-to-trip").authenticated()

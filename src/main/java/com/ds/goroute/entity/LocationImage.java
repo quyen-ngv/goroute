@@ -18,6 +18,7 @@ public class LocationImage {
     private String fullAddress;
     private String normalizedAddress;
     private String imageUrl;
+    private String avatarUrl;
     private String citySlug;
     private Integer priority;
     private LocalDateTime createdAt;

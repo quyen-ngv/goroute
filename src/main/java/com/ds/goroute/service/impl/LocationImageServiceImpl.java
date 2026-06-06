@@ -68,6 +68,7 @@ public class LocationImageServiceImpl implements LocationImageService {
             .id(UUID.randomUUID())
             .fullAddress(request.getFullAddress())
             .imageUrl(request.getImageUrl())
+            .avatarUrl(resolveAvatarUrl(request.getAvatarUrl(), request.getImageUrl()))
             .priority(request.getPriority())
             .createdAt(LocalDateTime.now())
             .updatedAt(LocalDateTime.now())
@@ -93,6 +94,11 @@ public class LocationImageServiceImpl implements LocationImageService {
         }
         if (request.getImageUrl() != null) {
             locationImage.setImageUrl(request.getImageUrl());
+        }
+        if (request.getAvatarUrl() != null) {
+            locationImage.setAvatarUrl(request.getAvatarUrl());
+        } else if (request.getImageUrl() != null && locationImage.getAvatarUrl() == null) {
+            locationImage.setAvatarUrl(request.getImageUrl());
         }
         if (request.getPriority() != null) {
             locationImage.setPriority(request.getPriority());
@@ -138,6 +144,10 @@ public class LocationImageServiceImpl implements LocationImageService {
             .fullAddress(locationImage.getFullAddress())
             .citySlug(locationImage.getCitySlug())
             .imageUrl(locationImage.getImageUrl())
+            .avatarUrl(locationImage.getAvatarUrl() != null
+                    && !locationImage.getAvatarUrl().isBlank()
+                    ? locationImage.getAvatarUrl()
+                    : locationImage.getImageUrl())
             .priority(locationImage.getPriority())
             .createdAt(locationImage.getCreatedAt())
             .updatedAt(locationImage.getUpdatedAt())
@@ -149,5 +159,12 @@ public class LocationImageServiceImpl implements LocationImageService {
         return normalized.replaceAll("\\p{M}", "")
             .replaceAll("\\s+", " ")
             .trim();
+    }
+
+    private String resolveAvatarUrl(String avatarUrl, String imageUrl) {
+        if (avatarUrl != null && !avatarUrl.isBlank()) {
+            return avatarUrl;
+        }
+        return imageUrl;
     }
 }

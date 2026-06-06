@@ -12,5 +12,6 @@ import lombok.NoArgsConstructor;
 public class UpdateLocationImageRequest {
     private String fullAddress;
     private String imageUrl;
+    private String avatarUrl;
     private Integer priority;
 }

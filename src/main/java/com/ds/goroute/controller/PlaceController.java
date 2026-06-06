@@ -45,6 +45,13 @@ public class PlaceController extends BaseService {
         return ResponseEntity.ok(ofSucceeded(responses));
     }
 
+    @GetMapping
+    @Operation(summary = "List all places")
+    public ResponseEntity getAllPlaces() {
+        List<PlaceResponse> responses = placeService.getAllPlaces();
+        return ResponseEntity.ok(ofSucceeded(responses));
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "Get place by ID")
     public ResponseEntity getPlaceById(@PathVariable UUID id) {

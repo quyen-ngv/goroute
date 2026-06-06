@@ -12,13 +12,15 @@ import java.util.UUID;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class LocationImageResponse {
+public class CityStoryItemResponse {
     private UUID id;
-    private String fullAddress;
-    private String citySlug;
+    private UUID locationImageId;
     private String imageUrl;
-    private String avatarUrl;
-    private Integer priority;
+    private String description;
+    private UUID placeId;
+    private CityStoryPlaceSummary place;
+    private int likeCount;
+    private boolean hasLiked;
+    private boolean hasViewed;
     private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
 }

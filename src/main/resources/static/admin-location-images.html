@@ -6,6 +6,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Quản lý ảnh địa điểm - GoRoute Admin</title>
     <link rel="stylesheet" href="/goroute/goroute-theme.css">
+    <style>
+        .location-image-thumb {
+            width: 96px;
+            height: 64px;
+            display: block;
+            object-fit: cover;
+        }
+
+        .location-image-preview {
+            width: 100%;
+            max-width: 420px;
+            max-height: 240px;
+            object-fit: cover;
+        }
+
+        .story-image-thumb {
+            width: 72px;
+            height: 96px;
+            flex: 0 0 72px;
+            display: block;
+            object-fit: cover;
+        }
+
+        .place-select-help {
+            margin-top: 6px;
+            color: #6b7280;
+            font-size: 12px;
+        }
+    </style>
 </head>
 
 <body>
@@ -65,9 +94,15 @@
                     </div>
 
                     <div class="form-group">
-                        <label class="form-label">URL ảnh *</label>
+                        <label class="form-label">URL ảnh banner *</label>
                         <input type="url" id="image-url" class="form-input" placeholder="https://..." required>
-                        <small class="form-help">Hoặc upload ảnh bên dưới</small>
+                        <small class="form-help">Ảnh nền / banner thành phố</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">URL avatar thành phố</label>
+                        <input type="url" id="avatar-url" class="form-input" placeholder="https://...">
+                        <small class="form-help">Ảnh tròn trên story. Để trống sẽ dùng ảnh banner.</small>
                     </div>
 
                     <div class="form-group">
@@ -80,7 +115,7 @@
                         <input type="file" id="file-input" accept="image/*" style="display: none;"
                             onchange="handleFileSelect(event)">
                         <div id="preview-container" class="preview-container" style="display: none;">
-                            <img id="preview-img" class="preview-img">
+                            <img id="preview-img" class="preview-img location-image-preview">
                         </div>
                     </div>
 
@@ -94,6 +129,57 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal()">Hủy</button>
                 <button class="btn btn-primary" onclick="saveLocation()">Lưu</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- City stories modal -->
+    <div id="stories-modal" class="modal">
+        <div class="modal-content" style="max-width: 760px;">
+            <div class="modal-header">
+                <div class="modal-title" id="stories-modal-title">Quản lý tin thành phố</div>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="stories-location-id">
+                <div class="card" style="margin-bottom: 16px;">
+                    <div class="card-header"><div class="card-title">Tạo tin mới (hiển thị 24h)</div></div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label class="form-label">URL ảnh tin *</label>
+                            <input type="url" id="story-image-url" class="form-input" placeholder="https://...">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Upload ảnh tin</label>
+                            <input type="file" id="story-file-input" accept="image/*" onchange="handleStoryFileSelect(event)">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Mô tả</label>
+                            <textarea id="story-description" class="form-input form-textarea" placeholder="Nội dung tin..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Place (tuỳ chọn)</label>
+                            <input type="search" id="story-place-search" class="form-input"
+                                placeholder="Tìm theo tên, địa chỉ, category..."
+                                oninput="renderPlaceOptions()">
+                            <select id="story-place-id" class="form-input" style="margin-top:8px;">
+                                <option value="">Không gắn place</option>
+                            </select>
+                            <div id="story-place-status" class="place-select-help">Chưa tải danh sách place</div>
+                        </div>
+                        <button class="btn btn-primary" onclick="createStory()">➕ Đăng tin</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header"><div class="card-title">Danh sách tin</div></div>
+                    <div class="card-body">
+                        <div id="stories-loading" class="loading">Đang tải tin...</div>
+                        <div id="stories-empty" class="empty" style="display:none;">Chưa có tin nào</div>
+                        <div id="stories-list"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeStoriesModal()">Đóng</button>
             </div>
         </div>
     </div>
@@ -162,11 +248,12 @@
 
                 const row = document.createElement('tr');
                 row.innerHTML = `
-                    <td><img src="${loc.imageUrl}" class="img-preview" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E'"></td>
+                    <td><img src="${loc.imageUrl}" class="img-preview location-image-thumb" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E'"></td>
                     <td>${loc.fullAddress}</td>
                     <td><span class="priority-badge ${priorityClass}">${priorityLabel} (${loc.priority})</span></td>
                     <td>
                         <div class="action-btns">
+                            <button class="btn btn-secondary btn-sm" onclick="openStoriesModal('${loc.id}')">📸 Tin</button>
                             <button class="btn btn-secondary btn-sm" onclick="openEditModal('${loc.id}')">✏️ Sửa</button>
                             <button class="btn btn-danger btn-sm" onclick="deleteLocation('${loc.id}')">🗑️ Xóa</button>
                         </div>
@@ -195,6 +282,7 @@
             document.getElementById('location-id').value = location.id;
             document.getElementById('full-address').value = location.fullAddress;
             document.getElementById('image-url').value = location.imageUrl;
+            document.getElementById('avatar-url').value = location.avatarUrl || '';
             document.getElementById('priority').value = location.priority;
 
             document.getElementById('preview-container').style.display = 'block';
@@ -210,6 +298,7 @@
         async function saveLocation() {
             const fullAddress = document.getElementById('full-address').value.trim();
             const imageUrl = document.getElementById('image-url').value.trim();
+            const avatarUrl = document.getElementById('avatar-url').value.trim();
             const priority = parseInt(document.getElementById('priority').value);
 
             if (!fullAddress || !imageUrl) {
@@ -225,7 +314,12 @@
                 const response = await fetch(url, {
                     method: method,
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ fullAddress, imageUrl, priority })
+                    body: JSON.stringify({
+                        fullAddress,
+                        imageUrl,
+                        avatarUrl: avatarUrl || null,
+                        priority
+                    })
                 });
 
                 const data = await response.json();
@@ -304,6 +398,213 @@
             }
         }
 
+        let currentStories = [];
+        let storyPlaces = [];
+        let storyPlacesLoaded = false;
+
+        async function loadStoryPlaces() {
+            const statusEl = document.getElementById('story-place-status');
+            if (storyPlacesLoaded) {
+                renderPlaceOptions();
+                return;
+            }
+
+            statusEl.textContent = 'Đang tải danh sách place...';
+            try {
+                const response = await fetch(`${API_BASE_URL}/places`);
+                const data = await response.json();
+                if (data.meta.code !== 200000 && data.meta.code !== 200) {
+                    throw new Error(data.meta.message);
+                }
+
+                storyPlaces = data.data || [];
+                storyPlacesLoaded = true;
+                renderPlaceOptions();
+            } catch (error) {
+                statusEl.textContent = 'Không tải được danh sách place: ' + error.message;
+            }
+        }
+
+        function placeLabel(place) {
+            return [place.title, place.address, place.category]
+                .filter(Boolean)
+                .join(' - ');
+        }
+
+        function renderPlaceOptions() {
+            const selectEl = document.getElementById('story-place-id');
+            const searchEl = document.getElementById('story-place-search');
+            const statusEl = document.getElementById('story-place-status');
+            const selectedValue = selectEl.value;
+            const keyword = (searchEl.value || '').trim().toLowerCase();
+            const filtered = storyPlaces
+                .filter(place => !keyword || placeLabel(place).toLowerCase().includes(keyword))
+                .slice(0, 200);
+
+            selectEl.innerHTML = '<option value="">Không gắn place</option>';
+            filtered.forEach(place => {
+                const option = document.createElement('option');
+                option.value = place.id;
+                option.textContent = placeLabel(place) || place.id;
+                selectEl.appendChild(option);
+            });
+
+            if (selectedValue && filtered.some(place => place.id === selectedValue)) {
+                selectEl.value = selectedValue;
+            }
+
+            statusEl.textContent = storyPlacesLoaded
+                ? `Đang hiển thị ${filtered.length}/${storyPlaces.length} place`
+                : 'Chưa tải danh sách place';
+        }
+
+        function storyPlaceText(story) {
+            if (story.place && story.place.title) {
+                return story.place.address
+                    ? `${story.place.title} - ${story.place.address}`
+                    : story.place.title;
+            }
+            if (!story.placeId) return '';
+            const place = storyPlaces.find(item => item.id === story.placeId);
+            return place ? placeLabel(place) : story.placeId;
+        }
+
+        async function openStoriesModal(locationId) {
+            const location = locations.find(l => l.id === locationId);
+            if (!location) return;
+            document.getElementById('stories-location-id').value = locationId;
+            document.getElementById('stories-modal-title').textContent =
+                `Tin thành phố: ${location.fullAddress}`;
+            document.getElementById('story-image-url').value = '';
+            document.getElementById('story-description').value = '';
+            document.getElementById('story-place-search').value = '';
+            document.getElementById('story-place-id').value = '';
+            document.getElementById('stories-modal').classList.add('active');
+            await loadStoryPlaces();
+            loadStories(locationId);
+        }
+
+        function closeStoriesModal() {
+            document.getElementById('stories-modal').classList.remove('active');
+        }
+
+        async function loadStories(locationId) {
+            const loadingEl = document.getElementById('stories-loading');
+            const emptyEl = document.getElementById('stories-empty');
+            const listEl = document.getElementById('stories-list');
+            loadingEl.style.display = 'block';
+            emptyEl.style.display = 'none';
+            listEl.innerHTML = '';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/location-images/${locationId}/stories`);
+                const data = await response.json();
+                if (data.meta.code !== 200000) throw new Error(data.meta.message);
+                currentStories = data.data || [];
+                loadingEl.style.display = 'none';
+                if (currentStories.length === 0) {
+                    emptyEl.style.display = 'block';
+                    return;
+                }
+                currentStories.forEach(story => {
+                    const placeText = storyPlaceText(story);
+                    if (placeText) story.placeId = placeText;
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    card.style.marginBottom = '12px';
+                    card.innerHTML = `
+                        <div class="card-body" style="display:flex; gap:12px; align-items:flex-start;">
+                            <img src="${story.imageUrl}" class="img-preview story-image-thumb">
+                            <div style="flex:1;">
+                                <div><strong>${new Date(story.createdAt).toLocaleString('vi-VN')}</strong></div>
+                                <div style="margin-top:6px;">${story.description || '<em>Không có mô tả</em>'}</div>
+                                <div style="margin-top:6px; color:#666;">❤️ ${story.likeCount || 0}
+                                    ${story.placeId ? ` • Place: ${story.placeId}` : ''}</div>
+                            </div>
+                            <button class="btn btn-danger btn-sm" onclick="deleteStory('${story.id}')">🗑️</button>
+                        </div>`;
+                    listEl.appendChild(card);
+                });
+            } catch (error) {
+                loadingEl.style.display = 'none';
+                showError('Lỗi tải tin: ' + error.message);
+            }
+        }
+
+        async function createStory() {
+            const locationId = document.getElementById('stories-location-id').value;
+            const imageUrl = document.getElementById('story-image-url').value.trim();
+            const description = document.getElementById('story-description').value.trim();
+            const placeId = document.getElementById('story-place-id').value.trim();
+
+            if (!imageUrl) {
+                alert('Vui lòng nhập URL ảnh tin');
+                return;
+            }
+
+            try {
+                const payload = { imageUrl, description: description || null };
+                if (placeId) payload.placeId = placeId;
+
+                const response = await fetch(`${API_BASE_URL}/location-images/${locationId}/stories`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                if (data.meta.code !== 200000) throw new Error(data.meta.message);
+
+                document.getElementById('story-image-url').value = '';
+                document.getElementById('story-description').value = '';
+                document.getElementById('story-place-search').value = '';
+                document.getElementById('story-place-id').value = '';
+                renderPlaceOptions();
+                await loadStories(locationId);
+            } catch (error) {
+                showError('Lỗi tạo tin: ' + error.message);
+            }
+        }
+
+        async function deleteStory(storyId) {
+            if (!confirm('Xóa tin này?')) return;
+            const locationId = document.getElementById('stories-location-id').value;
+            try {
+                const response = await fetch(`${API_BASE_URL}/city-stories/${storyId}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+                if (data.meta.code !== 200000) throw new Error(data.meta.message);
+                await loadStories(locationId);
+            } catch (error) {
+                showError('Lỗi xóa tin: ' + error.message);
+            }
+        }
+
+        async function handleStoryFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            if (file.size > 5 * 1024 * 1024) {
+                alert('File quá lớn (tối đa 5MB)');
+                return;
+            }
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                const response = await fetch(`${API_BASE_URL}/location-images/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (data.meta.code === 200000) {
+                    document.getElementById('story-image-url').value = data.data;
+                } else {
+                    throw new Error(data.meta.message);
+                }
+            } catch (error) {
+                showError('Lỗi upload ảnh tin: ' + error.message);
+            }
+        }
+
         function showError(message) {
             const errorDiv = document.getElementById('error-message');
             errorDiv.textContent = message;
@@ -335,6 +636,9 @@
         // Close modal on outside click
         document.getElementById('modal').addEventListener('click', (e) => {
             if (e.target.id === 'modal') closeModal();
+        });
+        document.getElementById('stories-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'stories-modal') closeStoriesModal();
         });
 
         // Load data on page load

@@ -94,6 +94,14 @@ public class PlaceServiceImpl implements PlaceService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<PlaceResponse> getAllPlaces() {
+        return placeRepository.findAll().stream()
+                .map(this::toPlaceResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
     public List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
                                            BigDecimal radius, String category, String placeGroup,
                                            BigDecimal minRating, int page, int size) {
