@@ -40,9 +40,9 @@ public interface TripService {
 
     PublicTripResponse getPublicTrip(UUID tripId, UUID viewerId);
 
-    PublicTripResponse voteTripHelpful(UUID tripId, UUID userId);
+    TripVoteResponse voteTripHelpful(UUID tripId, UUID userId);
 
-    PublicTripResponse voteTripUnhelpful(UUID tripId, UUID userId);
+    TripVoteResponse voteTripUnhelpful(UUID tripId, UUID userId);
 
     TripResponse joinTripByCode(String code, UUID userId);
 

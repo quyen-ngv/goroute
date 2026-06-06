@@ -1,6 +1,7 @@
 package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.response.PublicTripResponse;
+import com.ds.goroute.dto.response.TripVoteResponse;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.service.BaseService;
@@ -37,19 +38,19 @@ public class PublicTripController extends BaseService {
     }
 
     @PostMapping("/v1/api/public/trips/{tripId}/helpful")
-    public ResponseEntity<BaseResponse<PublicTripResponse>> voteTripHelpful(
+    public ResponseEntity<BaseResponse<TripVoteResponse>> voteTripHelpful(
             @PathVariable UUID tripId,
             @RequestAttribute("userId") UUID userId) {
-        PublicTripResponse trip = tripService.voteTripHelpful(tripId, userId);
-        return ResponseEntity.ok(ofSucceeded(trip));
+        TripVoteResponse result = tripService.voteTripHelpful(tripId, userId);
+        return ResponseEntity.ok(ofSucceeded(result));
     }
 
     @PostMapping("/v1/api/public/trips/{tripId}/unhelpful")
-    public ResponseEntity<BaseResponse<PublicTripResponse>> voteTripUnhelpful(
+    public ResponseEntity<BaseResponse<TripVoteResponse>> voteTripUnhelpful(
             @PathVariable UUID tripId,
             @RequestAttribute("userId") UUID userId) {
-        PublicTripResponse trip = tripService.voteTripUnhelpful(tripId, userId);
-        return ResponseEntity.ok(ofSucceeded(trip));
+        TripVoteResponse result = tripService.voteTripUnhelpful(tripId, userId);
+        return ResponseEntity.ok(ofSucceeded(result));
     }
     
     @GetMapping("/v1/api/public/trips/search")

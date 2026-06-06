@@ -987,7 +987,7 @@ public class TripServiceImpl implements TripService {
 
     @Override
     @Transactional
-    public PublicTripResponse voteTripHelpful(UUID tripId, UUID userId) {
+    public TripVoteResponse voteTripHelpful(UUID tripId, UUID userId) {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
         ensurePublicTripVotable(trip);
@@ -1014,12 +1014,12 @@ public class TripServiceImpl implements TripService {
         }
 
         syncTripVoteCounts(trip);
-        return getPublicTrip(tripId, userId);
+        return buildTripVoteResponse(trip, userId);
     }
 
     @Override
     @Transactional
-    public PublicTripResponse voteTripUnhelpful(UUID tripId, UUID userId) {
+    public TripVoteResponse voteTripUnhelpful(UUID tripId, UUID userId) {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
         ensurePublicTripVotable(trip);
@@ -1046,7 +1046,16 @@ public class TripServiceImpl implements TripService {
         }
 
         syncTripVoteCounts(trip);
-        return getPublicTrip(tripId, userId);
+        return buildTripVoteResponse(trip, userId);
+    }
+
+    private TripVoteResponse buildTripVoteResponse(Trip trip, UUID userId) {
+        return TripVoteResponse.builder()
+                .tripId(trip.getId())
+                .helpfulVotes(trip.getHelpfulVotes() != null ? trip.getHelpfulVotes() : 0)
+                .unhelpfulVotes(trip.getUnhelpfulVotes() != null ? trip.getUnhelpfulVotes() : 0)
+                .hasVotedHelpful(resolveTripHasVotedHelpful(trip.getId(), userId))
+                .build();
     }
 
     private void ensurePublicTripVotable(Trip trip) {
