@@ -4,11 +4,13 @@ import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.UpdateProfileRequest;
 import com.ds.goroute.dto.request.UpdateSettingsRequest;
 import com.ds.goroute.dto.response.DiscoverUserResponse;
+import com.ds.goroute.dto.response.PublicUserProfileResponse;
 import com.ds.goroute.dto.response.UserProfileResponse;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.UserReviewRepository;
 import com.ds.goroute.repository.UserRepository;
+import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.service.UserService;
 import com.ds.goroute.service.StorageService;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +21,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -28,6 +32,7 @@ public class UserServiceImpl implements UserService {
     
     private final UserRepository userRepository;
     private final UserReviewRepository userReviewRepository;
+    private final TripRepository tripRepository;
     private final StorageService storageService;
 
     @Override
@@ -104,9 +109,14 @@ public class UserServiceImpl implements UserService {
     @Transactional(readOnly = true)
     public List<DiscoverUserResponse> discoverUsers(UUID userId, int limit) {
         int resolvedLimit = Math.max(1, Math.min(limit, 20));
+        Set<UUID> followingIds = userRepository.findFollowing(userId).stream()
+                .map(User::getId)
+                .collect(Collectors.toSet());
+
         return userRepository.findAll().stream()
                 .filter(user -> user.getDeletedAt() == null)
                 .filter(user -> !user.getId().equals(userId))
+                .filter(user -> !followingIds.contains(user.getId()))
                 .map(this::toDiscoverUserResponse)
                 .sorted(Comparator.comparingInt(DiscoverUserResponse::getReviewCount).reversed())
                 .limit(resolvedLimit)
@@ -214,6 +224,37 @@ public class UserServiceImpl implements UserService {
                 .reviewCount(userReviewRepository.countByUserId(user.getId()))
                 .followersCount(userRepository.countFollowers(user.getId()))
                 .followingCount(userRepository.countFollowing(user.getId()))
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PublicUserProfileResponse getPublicProfile(UUID targetUserId, UUID viewerId) {
+        User user = userRepository.findById(targetUserId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
+
+        boolean isSelf = viewerId != null && viewerId.equals(targetUserId);
+        int tripCount = isSelf
+                ? tripRepository.countTripsByOwnerId(targetUserId)
+                : tripRepository.countPublicTripsByOwnerId(targetUserId);
+        boolean isFollowing = viewerId != null
+                && !isSelf
+                && userRepository.isFollowing(viewerId, targetUserId);
+        boolean isFollowedBy = viewerId != null
+                && !isSelf
+                && userRepository.isFollowing(targetUserId, viewerId);
+
+        return PublicUserProfileResponse.builder()
+                .id(user.getId())
+                .fullName(user.getFullName())
+                .username(user.getUsername())
+                .avatarUrl(user.getAvatarUrl())
+                .tripCount(tripCount)
+                .reviewCount(userReviewRepository.countByUserId(targetUserId))
+                .followersCount(userRepository.countFollowers(targetUserId))
+                .followingCount(userRepository.countFollowing(targetUserId))
+                .isFollowing(isFollowing)
+                .isFollowedBy(isFollowedBy)
                 .build();
     }
 }

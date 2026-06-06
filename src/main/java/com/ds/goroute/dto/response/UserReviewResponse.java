@@ -1,5 +1,6 @@
 package com.ds.goroute.dto.response;
 
+import com.ds.goroute.type.PlaceGroup;
 import com.ds.goroute.type.UserTier;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -20,6 +21,21 @@ public class UserReviewResponse {
     private UUID userId;
     private UUID placeId;
     private UUID tripId;
+    
+    // Place info
+    private String placeName;
+    private String placeAddress;
+    private String placeThumbnail;
+    private Integer placeReviewCount;
+    private BigDecimal placeReviewRating;
+    private String placeCategory;
+    private PlaceGroup placeGroup;
+    private BigDecimal placeLatitude;
+    private BigDecimal placeLongitude;
+    private String placePhone;
+    private String placeWebsite;
+    private String placePriceRange;
+    private Integer placeVisitDurationMinutes;
     
     // User info
     private String userName;

@@ -186,6 +186,18 @@ public class ReviewServiceImpl implements ReviewService {
     }
 
     @Override
+    public List<UserReviewResponse> getUserReviewsForProfile(UUID targetUserId, UUID viewerId, int page, int size) {
+        userRepository.findById(targetUserId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.USER_NOT_FOUND, "User not found"));
+        int offset = page * size;
+        List<UserReview> reviews = reviewRepository.findByUserId(targetUserId, size, offset);
+
+        return reviews.stream()
+                .map(review -> mapToResponse(review, viewerId))
+                .collect(Collectors.toList());
+    }
+
+    @Override
     public List<UserReviewResponse> getFeedReviews(UUID currentUserId, int page, int size) {
         int offset = page * size;
         List<UserReview> reviews = reviewRepository.findFeedReviews(currentUserId, size, offset);
@@ -344,6 +356,7 @@ public class ReviewServiceImpl implements ReviewService {
     private UserReviewResponse mapToResponse(UserReview review, UUID currentUserId) {
         User user = userRepository.findById(review.getUserId()).orElse(null);
         UserReviewProfile profile = profileRepository.findByUserId(review.getUserId()).orElse(null);
+        Place place = placeRepository.findById(review.getPlaceId()).orElse(null);
 
         // Get current user's vote status: true = helpful, false = unhelpful, null = no vote
         Boolean hasVotedHelpful = null;
@@ -359,6 +372,19 @@ public class ReviewServiceImpl implements ReviewService {
                 .userId(review.getUserId())
                 .placeId(review.getPlaceId())
                 .tripId(review.getTripId())
+                .placeName(place != null ? place.getTitle() : null)
+                .placeAddress(place != null ? place.getAddress() : null)
+                .placeThumbnail(place != null ? place.getThumbnail() : null)
+                .placeReviewCount(place != null ? place.getReviewCount() : null)
+                .placeReviewRating(place != null ? place.getReviewRating() : null)
+                .placeCategory(place != null ? place.getCategory() : null)
+                .placeGroup(place != null ? place.getPlaceGroup() : null)
+                .placeLatitude(place != null ? place.getLatitude() : null)
+                .placeLongitude(place != null ? place.getLongitude() : null)
+                .placePhone(place != null ? place.getPhone() : null)
+                .placeWebsite(place != null ? place.getWebsite() : null)
+                .placePriceRange(place != null ? place.getPriceRange() : null)
+                .placeVisitDurationMinutes(place != null ? place.getVisitDurationMinutes() : null)
                 .userName(user != null ? user.getFullName() : "Unknown")
                 .userAvatar(user != null ? user.getAvatarUrl() : null)
                 .userTier(profile != null ? profile.getTier() : UserTier.NEWCOMER)

@@ -80,6 +80,11 @@ public class UserRepositoryImpl implements UserRepository {
     public void unfollow(UUID followerId, UUID followingId) {
         userMapper.deleteFollow(followerId, followingId);
     }
+
+    @Override
+    public boolean isFollowing(UUID followerId, UUID followingId) {
+        return userMapper.existsFollow(followerId, followingId);
+    }
     
     @Override
     public void updateById(User user) {

@@ -31,6 +31,8 @@ public interface UserRepository {
     void follow(UUID followerId, UUID followingId);
 
     void unfollow(UUID followerId, UUID followingId);
+
+    boolean isFollowing(UUID followerId, UUID followingId);
     
     void updateById(User user);
     

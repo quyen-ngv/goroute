@@ -39,4 +39,12 @@ public interface TripMapper {
     int incrementCopyCount(@Param("id") UUID id);
     
     Trip selectMostRecentByUserId(@Param("userId") UUID userId);
+
+    List<Trip> selectPublicTripsByOwnerId(@Param("ownerId") UUID ownerId);
+
+    int countPublicTripsByOwnerId(@Param("ownerId") UUID ownerId);
+
+    int countTripsByOwnerId(@Param("ownerId") UUID ownerId);
+
+    int updateVoteCounts(Trip trip);
 }

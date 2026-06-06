@@ -29,8 +29,26 @@ public class PublicTripController extends BaseService {
     }
 
     @GetMapping("/v1/api/public/trips/{tripId}")
-    public ResponseEntity<BaseResponse<PublicTripResponse>> getPublicTrip(@PathVariable UUID tripId) {
-        PublicTripResponse trip = tripService.getPublicTrip(tripId);
+    public ResponseEntity<BaseResponse<PublicTripResponse>> getPublicTrip(
+            @PathVariable UUID tripId,
+            @RequestAttribute(value = "userId", required = false) UUID userId) {
+        PublicTripResponse trip = tripService.getPublicTrip(tripId, userId);
+        return ResponseEntity.ok(ofSucceeded(trip));
+    }
+
+    @PostMapping("/v1/api/public/trips/{tripId}/helpful")
+    public ResponseEntity<BaseResponse<PublicTripResponse>> voteTripHelpful(
+            @PathVariable UUID tripId,
+            @RequestAttribute("userId") UUID userId) {
+        PublicTripResponse trip = tripService.voteTripHelpful(tripId, userId);
+        return ResponseEntity.ok(ofSucceeded(trip));
+    }
+
+    @PostMapping("/v1/api/public/trips/{tripId}/unhelpful")
+    public ResponseEntity<BaseResponse<PublicTripResponse>> voteTripUnhelpful(
+            @PathVariable UUID tripId,
+            @RequestAttribute("userId") UUID userId) {
+        PublicTripResponse trip = tripService.voteTripUnhelpful(tripId, userId);
         return ResponseEntity.ok(ofSucceeded(trip));
     }
     

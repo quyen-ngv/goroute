@@ -29,6 +29,8 @@
         <result column="starting_point_time" property="startingPointTime" jdbcType="TIMESTAMP"/>
         <result column="view_count" property="viewCount" jdbcType="INTEGER"/>
         <result column="copy_count" property="copyCount" jdbcType="INTEGER"/>
+        <result column="helpful_votes" property="helpfulVotes" jdbcType="INTEGER"/>
+        <result column="unhelpful_votes" property="unhelpfulVotes" jdbcType="INTEGER"/>
         <result column="is_deleted" property="isDeleted" jdbcType="BOOLEAN"/>
         <result column="deleted_at" property="deletedAt" jdbcType="TIMESTAMP"/>
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
@@ -171,5 +173,36 @@
         ORDER BY sort_date DESC
         LIMIT 1
     </select>
+
+    <select id="selectPublicTripsByOwnerId" parameterType="java.util.UUID" resultMap="TripResultMap">
+        SELECT * FROM trips
+        WHERE owner_id = #{ownerId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND visibility = 'PUBLIC'
+          AND is_deleted = FALSE
+        ORDER BY start_date DESC
+    </select>
+
+    <select id="countPublicTripsByOwnerId" parameterType="java.util.UUID" resultType="int">
+        SELECT COUNT(*)
+        FROM trips
+        WHERE owner_id = #{ownerId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND visibility = 'PUBLIC'
+          AND is_deleted = FALSE
+    </select>
+
+    <select id="countTripsByOwnerId" parameterType="java.util.UUID" resultType="int">
+        SELECT COUNT(*)
+        FROM trips
+        WHERE owner_id = #{ownerId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND is_deleted = FALSE
+    </select>
+
+    <update id="updateVoteCounts" parameterType="com.ds.goroute.entity.Trip">
+        UPDATE trips
+        SET helpful_votes = #{helpfulVotes},
+            unhelpful_votes = #{unhelpfulVotes},
+            updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
 
 </mapper>

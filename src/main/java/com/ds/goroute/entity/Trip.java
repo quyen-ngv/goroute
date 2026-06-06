@@ -48,6 +48,8 @@ public class Trip {
     
     private Integer viewCount;
     private Integer copyCount;
+    private Integer helpfulVotes;
+    private Integer unhelpfulVotes;
     
     private Boolean isDeleted;
     private LocalDateTime deletedAt;

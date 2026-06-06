@@ -131,6 +131,14 @@
           AND following_id = #{followingId,javaType=java.util.UUID,jdbcType=OTHER}
     </delete>
 
+    <select id="existsFollow" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1 FROM user_follows
+            WHERE follower_id = #{followerId,javaType=java.util.UUID,jdbcType=OTHER}
+              AND following_id = #{followingId,javaType=java.util.UUID,jdbcType=OTHER}
+        )
+    </select>
+
     <delete id="deleteById" parameterType="java.util.UUID">
         DELETE FROM users WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </delete>

@@ -26,6 +26,14 @@ public interface TripRepository {
     void incrementViewCount(UUID id);
     
     void incrementCopyCount(UUID id);
-    
+
+    void updateVoteCounts(Trip trip);
+
     Optional<Trip> findMostRecentByUserId(UUID userId);
+
+    List<Trip> findPublicTripsByOwnerId(UUID ownerId);
+
+    int countPublicTripsByOwnerId(UUID ownerId);
+
+    int countTripsByOwnerId(UUID ownerId);
 }

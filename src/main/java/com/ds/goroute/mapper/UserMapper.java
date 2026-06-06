@@ -33,6 +33,8 @@ public interface UserMapper {
     int insertFollow(@Param("followerId") UUID followerId, @Param("followingId") UUID followingId);
 
     int deleteFollow(@Param("followerId") UUID followerId, @Param("followingId") UUID followingId);
+
+    boolean existsFollow(@Param("followerId") UUID followerId, @Param("followingId") UUID followingId);
     
     int updateById(User user);
     

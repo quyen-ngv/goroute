@@ -67,9 +67,29 @@ public class TripRepositoryImpl implements TripRepository {
     public void incrementCopyCount(UUID id) {
         tripMapper.incrementCopyCount(id);
     }
+
+    @Override
+    public void updateVoteCounts(Trip trip) {
+        tripMapper.updateVoteCounts(trip);
+    }
     
     @Override
     public Optional<Trip> findMostRecentByUserId(UUID userId) {
         return Optional.ofNullable(tripMapper.selectMostRecentByUserId(userId));
+    }
+
+    @Override
+    public List<Trip> findPublicTripsByOwnerId(UUID ownerId) {
+        return tripMapper.selectPublicTripsByOwnerId(ownerId);
+    }
+
+    @Override
+    public int countPublicTripsByOwnerId(UUID ownerId) {
+        return tripMapper.countPublicTripsByOwnerId(ownerId);
+    }
+
+    @Override
+    public int countTripsByOwnerId(UUID ownerId) {
+        return tripMapper.countTripsByOwnerId(ownerId);
     }
 }

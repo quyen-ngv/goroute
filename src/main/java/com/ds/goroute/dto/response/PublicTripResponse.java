@@ -25,6 +25,7 @@ public class PublicTripResponse {
     private LocalDate startDate;
     private LocalDate endDate;
     private String currency;
+    private UUID ownerId;
     private String ownerName;
     private String ownerAvatarUrl;
     private List<PublicActivityResponse> activities;
@@ -32,4 +33,8 @@ public class PublicTripResponse {
     private List<PublicNoteResponse> notes;
     private Integer viewCount;
     private Integer copyCount;
+    private Integer helpfulVotes;
+    private Integer unhelpfulVotes;
+    private Boolean hasVotedHelpful;
+    private Boolean isOwnTrip;
 }

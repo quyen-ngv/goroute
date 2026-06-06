@@ -38,7 +38,11 @@ public interface TripService {
 
     List<TripInvitationResponse> getPendingInvitations(UUID userId);
 
-    PublicTripResponse getPublicTrip(UUID tripId);
+    PublicTripResponse getPublicTrip(UUID tripId, UUID viewerId);
+
+    PublicTripResponse voteTripHelpful(UUID tripId, UUID userId);
+
+    PublicTripResponse voteTripUnhelpful(UUID tripId, UUID userId);
 
     TripResponse joinTripByCode(String code, UUID userId);
 
@@ -56,4 +60,6 @@ public interface TripService {
                                                UUID excludeUserId);
 
     TripRecentLocationResponse getRecentLocation(UUID userId);
+
+    List<TripResponse> getProfileTrips(UUID targetUserId, UUID viewerId);
 }

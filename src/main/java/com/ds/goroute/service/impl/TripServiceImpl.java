@@ -45,6 +45,8 @@ public class TripServiceImpl implements TripService {
     private final ExpenseService expenseService;
     private final UserReviewRepository userReviewRepository;
     private final UserReviewProfileRepository userReviewProfileRepository;
+    private final ReviewHelpfulVoteRepository reviewHelpfulVoteRepository;
+    private final TripHelpfulVoteRepository tripHelpfulVoteRepository;
     private final PlaceScoreRepository placeScoreRepository;
 
     @Override
@@ -526,6 +528,10 @@ public class TripServiceImpl implements TripService {
                 .description(trip.getDescription())
                 .stats(stats)
                 .userRole(userRole)
+                .viewCount(trip.getViewCount())
+                .copyCount(trip.getCopyCount())
+                .helpfulVotes(trip.getHelpfulVotes() != null ? trip.getHelpfulVotes() : 0)
+                .unhelpfulVotes(trip.getUnhelpfulVotes() != null ? trip.getUnhelpfulVotes() : 0)
                 .build();
     }
 
@@ -612,7 +618,8 @@ public class TripServiceImpl implements TripService {
     private List<UserReviewResponse> buildSharedTripReviews(
             UUID placeId,
             UUID ownerId,
-            Set<UUID> memberUserIds
+            Set<UUID> memberUserIds,
+            UUID viewerId
     ) {
         List<UserReview> reviews = userReviewRepository.findByPlaceId(placeId, 1000, 0).stream()
                 .filter(review -> memberUserIds.contains(review.getUserId()))
@@ -620,7 +627,7 @@ public class TripServiceImpl implements TripService {
                 .collect(Collectors.toList());
 
         return reviews.stream()
-                .map(this::mapToSharedTripUserReviewResponse)
+                .map(review -> mapToSharedTripUserReviewResponse(review, viewerId))
                 .collect(Collectors.toList());
     }
 
@@ -633,9 +640,20 @@ public class TripServiceImpl implements TripService {
                 .thenComparing(UserReview::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()));
     }
 
-    private UserReviewResponse mapToSharedTripUserReviewResponse(UserReview review) {
+    private UserReviewResponse mapToSharedTripUserReviewResponse(UserReview review, UUID viewerId) {
         User user = userRepository.findById(review.getUserId()).orElse(null);
         UserReviewProfile profile = userReviewProfileRepository.findByUserId(review.getUserId()).orElse(null);
+
+        Boolean hasVotedHelpful = null;
+        boolean isOwnReview = false;
+        if (viewerId != null) {
+            isOwnReview = review.getUserId().equals(viewerId);
+            ReviewHelpfulVote vote = reviewHelpfulVoteRepository.findByReviewIdAndUserId(
+                    review.getId(), viewerId);
+            if (vote != null) {
+                hasVotedHelpful = vote.isHelpful();
+            }
+        }
 
         return UserReviewResponse.builder()
                 .id(review.getId())
@@ -655,8 +673,8 @@ public class TripServiceImpl implements TripService {
                 .weight(review.getWeight() != null ? review.getWeight() : BigDecimal.ONE)
                 .helpfulVotes(review.getHelpfulVotes() != null ? review.getHelpfulVotes() : 0)
                 .unhelpfulVotes(review.getUnhelpfulVotes() != null ? review.getUnhelpfulVotes() : 0)
-                .hasVotedHelpful(null)
-                .isOwnReview(false)
+                .hasVotedHelpful(hasVotedHelpful)
+                .isOwnReview(isOwnReview)
                 .createdAt(review.getCreatedAt())
                 .updatedAt(review.getUpdatedAt())
                 .build();
@@ -825,7 +843,7 @@ public class TripServiceImpl implements TripService {
 
     @Override
     @Transactional(readOnly = true)
-    public PublicTripResponse getPublicTrip(UUID tripId) {
+    public PublicTripResponse getPublicTrip(UUID tripId, UUID viewerId) {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
 
@@ -909,7 +927,7 @@ public class TripServiceImpl implements TripService {
                 .map(a -> {
                     UUID placeId = parseActivityPlaceId(a.getPlaceId());
                     List<UserReviewResponse> memberReviews = placeId != null
-                            ? buildSharedTripReviews(placeId, trip.getOwnerId(), memberUserIds)
+                            ? buildSharedTripReviews(placeId, trip.getOwnerId(), memberUserIds, viewerId)
                             : null;
                     return PublicActivityResponse.builder()
                             .id(a.getId())
@@ -952,6 +970,7 @@ public class TripServiceImpl implements TripService {
                 .startDate(trip.getStartDate())
                 .endDate(trip.getEndDate())
                 .currency(trip.getCurrency())
+                .ownerId(trip.getOwnerId())
                 .ownerName(ownerName)
                 .ownerAvatarUrl(ownerAvatarUrl)
                 .activities(activityResponses)
@@ -959,7 +978,100 @@ public class TripServiceImpl implements TripService {
                 .notes(tripLevelNotes.isEmpty() ? null : tripLevelNotes)
                 .viewCount(trip.getViewCount())
                 .copyCount(trip.getCopyCount())
+                .helpfulVotes(trip.getHelpfulVotes() != null ? trip.getHelpfulVotes() : 0)
+                .unhelpfulVotes(trip.getUnhelpfulVotes() != null ? trip.getUnhelpfulVotes() : 0)
+                .hasVotedHelpful(resolveTripHasVotedHelpful(trip.getId(), viewerId))
+                .isOwnTrip(viewerId != null && trip.getOwnerId().equals(viewerId))
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public PublicTripResponse voteTripHelpful(UUID tripId, UUID userId) {
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+        ensurePublicTripVotable(trip);
+
+        if (trip.getOwnerId().equals(userId)) {
+            throw new BusinessException(ErrorConstant.UNAUTHORIZED, "Cannot vote on your own trip");
+        }
+
+        TripHelpfulVote existingVote = tripHelpfulVoteRepository.findByTripIdAndUserId(tripId, userId);
+        if (existingVote != null) {
+            if (existingVote.isHelpful()) {
+                tripHelpfulVoteRepository.delete(tripId, userId);
+            } else {
+                existingVote.setHelpful(true);
+                tripHelpfulVoteRepository.update(existingVote);
+            }
+        } else {
+            tripHelpfulVoteRepository.save(TripHelpfulVote.builder()
+                    .tripId(tripId)
+                    .userId(userId)
+                    .isHelpful(true)
+                    .createdAt(LocalDateTime.now())
+                    .build());
+        }
+
+        syncTripVoteCounts(trip);
+        return getPublicTrip(tripId, userId);
+    }
+
+    @Override
+    @Transactional
+    public PublicTripResponse voteTripUnhelpful(UUID tripId, UUID userId) {
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+        ensurePublicTripVotable(trip);
+
+        if (trip.getOwnerId().equals(userId)) {
+            throw new BusinessException(ErrorConstant.UNAUTHORIZED, "Cannot vote on your own trip");
+        }
+
+        TripHelpfulVote existingVote = tripHelpfulVoteRepository.findByTripIdAndUserId(tripId, userId);
+        if (existingVote != null) {
+            if (!existingVote.isHelpful()) {
+                tripHelpfulVoteRepository.delete(tripId, userId);
+            } else {
+                existingVote.setHelpful(false);
+                tripHelpfulVoteRepository.update(existingVote);
+            }
+        } else {
+            tripHelpfulVoteRepository.save(TripHelpfulVote.builder()
+                    .tripId(tripId)
+                    .userId(userId)
+                    .isHelpful(false)
+                    .createdAt(LocalDateTime.now())
+                    .build());
+        }
+
+        syncTripVoteCounts(trip);
+        return getPublicTrip(tripId, userId);
+    }
+
+    private void ensurePublicTripVotable(Trip trip) {
+        if (trip.getVisibility() == TripVisibility.PRIVATE) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Trip is not shared");
+        }
+    }
+
+    private void syncTripVoteCounts(Trip trip) {
+        int helpfulCount = tripHelpfulVoteRepository.countByTripIdAndIsHelpful(trip.getId(), true);
+        int unhelpfulCount = tripHelpfulVoteRepository.countByTripIdAndIsHelpful(trip.getId(), false);
+        trip.setHelpfulVotes(helpfulCount);
+        trip.setUnhelpfulVotes(unhelpfulCount);
+        tripRepository.updateVoteCounts(trip);
+    }
+
+    private Boolean resolveTripHasVotedHelpful(UUID tripId, UUID viewerId) {
+        if (viewerId == null) {
+            return null;
+        }
+        TripHelpfulVote vote = tripHelpfulVoteRepository.findByTripIdAndUserId(tripId, viewerId);
+        if (vote == null) {
+            return null;
+        }
+        return vote.isHelpful();
     }
 
     @Override
@@ -1193,6 +1305,7 @@ public class TripServiceImpl implements TripService {
                             .startDate(trip.getStartDate())
                             .endDate(trip.getEndDate())
                             .currency(trip.getCurrency())
+                            .ownerId(trip.getOwnerId())
                             .ownerName(ownerName)
                             .ownerAvatarUrl(ownerAvatarUrl)
                             .activities(null)
@@ -1200,6 +1313,10 @@ public class TripServiceImpl implements TripService {
                             .notes(null)
                             .viewCount(trip.getViewCount())
                             .copyCount(trip.getCopyCount())
+                            .helpfulVotes(trip.getHelpfulVotes() != null ? trip.getHelpfulVotes() : 0)
+                            .unhelpfulVotes(trip.getUnhelpfulVotes() != null ? trip.getUnhelpfulVotes() : 0)
+                            .hasVotedHelpful(resolveTripHasVotedHelpful(trip.getId(), excludeUserId))
+                            .isOwnTrip(excludeUserId != null && trip.getOwnerId().equals(excludeUserId))
                             .build();
                 })
                 .collect(Collectors.toList());
@@ -1216,6 +1333,23 @@ public class TripServiceImpl implements TripService {
                 .lat(recentTrip.getDestinationLat())
                 .lng(recentTrip.getDestinationLng())
                 .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<TripResponse> getProfileTrips(UUID targetUserId, UUID viewerId) {
+        userRepository.findById(targetUserId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
+
+        boolean isSelf = viewerId != null && viewerId.equals(targetUserId);
+        List<Trip> trips = isSelf
+                ? tripRepository.findByOwnerId(targetUserId)
+                : tripRepository.findPublicTripsByOwnerId(targetUserId);
+
+        UUID mapViewerId = viewerId != null ? viewerId : targetUserId;
+        return trips.stream()
+                .map(trip -> mapToTripResponse(trip, mapViewerId))
+                .collect(Collectors.toList());
     }
 
     private void incrementViewCountAsync(UUID tripId) {

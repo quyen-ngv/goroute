@@ -3,6 +3,7 @@ package com.ds.goroute.service;
 import com.ds.goroute.dto.request.UpdateProfileRequest;
 import com.ds.goroute.dto.request.UpdateSettingsRequest;
 import com.ds.goroute.dto.response.DiscoverUserResponse;
+import com.ds.goroute.dto.response.PublicUserProfileResponse;
 import com.ds.goroute.dto.response.UserProfileResponse;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -20,4 +21,5 @@ public interface UserService {
     void unfollowUser(UUID userId, UUID targetUserId);
     String updateAvatar(UUID userId, MultipartFile file);
     void deleteAccount(UUID userId);
+    PublicUserProfileResponse getPublicProfile(UUID targetUserId, UUID viewerId);
 }
