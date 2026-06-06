@@ -3,6 +3,7 @@ package com.ds.goroute.controller;
 import com.ds.goroute.dto.request.CreateReviewRequest;
 import com.ds.goroute.dto.request.UpdateReviewRequest;
 import com.ds.goroute.dto.response.PlaceScoreResponse;
+import com.ds.goroute.dto.response.ReviewScoreResponse;
 import com.ds.goroute.dto.response.UserReviewProfileResponse;
 import com.ds.goroute.dto.response.UserReviewResponse;
 import com.ds.goroute.service.BaseService;
@@ -66,6 +67,17 @@ public class ReviewController extends BaseService {
         return ResponseEntity.ok(ofSucceeded(reviews));
     }
 
+    @GetMapping("/activity-bookings/{activityBookingId}")
+    @Operation(summary = "Get reviews for an activity booking")
+    public ResponseEntity getActivityBookingReviews(
+            @PathVariable UUID activityBookingId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestAttribute(value = "userId", required = false) UUID userId) {
+        List<UserReviewResponse> reviews = reviewService.getActivityBookingReviews(activityBookingId, userId, page, size);
+        return ResponseEntity.ok(ofSucceeded(reviews));
+    }
+
     @GetMapping("/users/me")
     @Operation(summary = "Get current user's reviews")
     public ResponseEntity getMyReviews(
@@ -108,6 +120,13 @@ public class ReviewController extends BaseService {
     @Operation(summary = "Get aggregated score for a place")
     public ResponseEntity getPlaceScore(@PathVariable UUID placeId) {
         PlaceScoreResponse response = reviewService.getPlaceScore(placeId);
+        return ResponseEntity.ok(ofSucceeded(response));
+    }
+
+    @GetMapping("/activity-bookings/{activityBookingId}/score")
+    @Operation(summary = "Get aggregated score for an activity booking")
+    public ResponseEntity getActivityBookingScore(@PathVariable UUID activityBookingId) {
+        ReviewScoreResponse response = reviewService.getActivityBookingScore(activityBookingId);
         return ResponseEntity.ok(ofSucceeded(response));
     }
 

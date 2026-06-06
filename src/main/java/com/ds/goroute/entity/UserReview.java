@@ -17,6 +17,7 @@ public class UserReview {
     private UUID id;
     private UUID userId;
     private UUID placeId;
+    private UUID activityBookingId;
     private UUID tripId;
     
     // Ratings

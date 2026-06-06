@@ -3,6 +3,7 @@ package com.ds.goroute.service.impl;
 import com.ds.goroute.dto.request.CreateReviewRequest;
 import com.ds.goroute.dto.request.UpdateReviewRequest;
 import com.ds.goroute.dto.response.PlaceScoreResponse;
+import com.ds.goroute.dto.response.ReviewScoreResponse;
 import com.ds.goroute.dto.response.UserReviewProfileResponse;
 import com.ds.goroute.dto.response.UserReviewResponse;
 import com.ds.goroute.entity.*;
@@ -20,8 +21,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -35,6 +38,7 @@ public class ReviewServiceImpl implements ReviewService {
     private final ReviewHelpfulVoteRepository voteRepository;
     private final UserRepository userRepository;
     private final PlaceRepository placeRepository;
+    private final ActivityBookingRepository activityBookingRepository;
 
     private final ReviewScoringService scoringService;
     private final ReviewFraudDetectionService fraudDetectionService;
@@ -45,23 +49,32 @@ public class ReviewServiceImpl implements ReviewService {
     @Override
     @Transactional
     public UserReviewResponse createReview(UUID userId, CreateReviewRequest request) {
-        // Check if user already reviewed this place
-        Optional<UserReview> existingReview = reviewRepository.findByUserAndPlace(userId, request.getPlaceId());
+        validateReviewTarget(request.getPlaceId(), request.getActivityBookingId());
+
+        Optional<UserReview> existingReview = request.getPlaceId() != null
+                ? reviewRepository.findByUserAndPlace(userId, request.getPlaceId())
+                : reviewRepository.findByUserAndActivityBooking(userId, request.getActivityBookingId());
         if (existingReview.isPresent()) {
-            log.warn("User {} already reviewed place {}. Existing review ID: {}",
-                userId, request.getPlaceId(), existingReview.get().getId());
+            log.warn("User {} already reviewed target placeId={}, activityBookingId={}. Existing review ID: {}",
+                userId, request.getPlaceId(), request.getActivityBookingId(), existingReview.get().getId());
             throw new BusinessException(ErrorConstant.REVIEW_ALREADY_EXISTS,
-                "You have already reviewed this place. Please update your existing review instead.");
+                "You have already reviewed this item. Please update your existing review instead.");
         }
 
-        // Verify place exists
-        Place place = placeRepository.findById(request.getPlaceId()).orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND, "Place not found"));
+        if (request.getPlaceId() != null) {
+            placeRepository.findById(request.getPlaceId())
+                    .orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND, "Place not found"));
+        } else {
+            activityBookingRepository.findById(request.getActivityBookingId())
+                    .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity booking not found"));
+        }
 
         // Create review
         UserReview review = UserReview.builder()
                 .id(UUID.randomUUID())
                 .userId(userId)
                 .placeId(request.getPlaceId())
+                .activityBookingId(request.getActivityBookingId())
                 .tripId(null)
                 .overallRating(request.getOverallRating())
                 .foodRating(request.getFoodRating())
@@ -86,8 +99,9 @@ public class ReviewServiceImpl implements ReviewService {
         profileRepository.incrementReviewCount(userId);
         scoringService.updateUserTier(userId);
 
-        // Recalculate place scores
-        scoringService.recalculatePlaceScores(request.getPlaceId());
+        if (request.getPlaceId() != null) {
+            scoringService.recalculatePlaceScores(request.getPlaceId());
+        }
 
         return mapToResponse(review, userId);
     }
@@ -132,8 +146,9 @@ public class ReviewServiceImpl implements ReviewService {
         review.setUpdatedAt(LocalDateTime.now());
         reviewRepository.update(review);
 
-        // Recalculate scores
-        scoringService.recalculatePlaceScores(review.getPlaceId());
+        if (review.getPlaceId() != null) {
+            scoringService.recalculatePlaceScores(review.getPlaceId());
+        }
 
         return mapToResponse(review, userId);
     }
@@ -156,7 +171,9 @@ public class ReviewServiceImpl implements ReviewService {
         reviewRepository.delete(reviewId);
         profileRepository.decrementReviewCount(userId);
         scoringService.updateUserTier(userId);
-        scoringService.recalculatePlaceScores(placeId);
+        if (placeId != null) {
+            scoringService.recalculatePlaceScores(placeId);
+        }
     }
 
     /**
@@ -166,6 +183,18 @@ public class ReviewServiceImpl implements ReviewService {
     public List<UserReviewResponse> getPlaceReviews(UUID placeId, UUID currentUserId, int page, int size) {
         int offset = page * size;
         List<UserReview> reviews = reviewRepository.findByPlaceId(placeId, size, offset);
+
+        return reviews.stream()
+                .map(review -> mapToResponse(review, currentUserId))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<UserReviewResponse> getActivityBookingReviews(UUID activityBookingId, UUID currentUserId, int page, int size) {
+        activityBookingRepository.findById(activityBookingId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity booking not found"));
+        int offset = page * size;
+        List<UserReview> reviews = reviewRepository.findByActivityBookingId(activityBookingId, size, offset);
 
         return reviews.stream()
                 .map(review -> mapToResponse(review, currentUserId))
@@ -332,6 +361,34 @@ public class ReviewServiceImpl implements ReviewService {
                 .build();
     }
 
+    @Override
+    public ReviewScoreResponse getActivityBookingScore(UUID activityBookingId) {
+        activityBookingRepository.findById(activityBookingId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity booking not found"));
+
+        List<UserReview> reviews = reviewRepository.findByActivityBookingId(activityBookingId, 1000, 0);
+        int reviewCount = reviews.size();
+        BigDecimal score = averageRating(reviews, UserReview::getOverallRating);
+        BigDecimal foodScore = averageRating(reviews, UserReview::getFoodRating);
+        BigDecimal priceScore = averageRating(reviews, UserReview::getPriceRating);
+        BigDecimal ambianceScore = averageRating(reviews, UserReview::getAmbianceRating);
+        BigDecimal serviceScore = averageRating(reviews, UserReview::getServiceRating);
+
+        return ReviewScoreResponse.builder()
+                .targetId(activityBookingId)
+                .targetType("ACTIVITY_BOOKING")
+                .score(score)
+                .reviewCount(reviewCount)
+                .foodScore(foodScore)
+                .priceScore(priceScore)
+                .ambianceScore(ambianceScore)
+                .serviceScore(serviceScore)
+                .displayScore(score != null ? score.toString() : "N/A")
+                .displayLabel(reviewCount == 0 ? "Not enough reviews" : "TripMind Score")
+                .lastCalculatedAt(LocalDateTime.now())
+                .build();
+    }
+
     /**
      * Get user review profile
      */
@@ -356,7 +413,12 @@ public class ReviewServiceImpl implements ReviewService {
     private UserReviewResponse mapToResponse(UserReview review, UUID currentUserId) {
         User user = userRepository.findById(review.getUserId()).orElse(null);
         UserReviewProfile profile = profileRepository.findByUserId(review.getUserId()).orElse(null);
-        Place place = placeRepository.findById(review.getPlaceId()).orElse(null);
+        Place place = review.getPlaceId() != null
+                ? placeRepository.findById(review.getPlaceId()).orElse(null)
+                : null;
+        ActivityBooking activityBooking = review.getActivityBookingId() != null
+                ? activityBookingRepository.findById(review.getActivityBookingId()).orElse(null)
+                : null;
 
         // Get current user's vote status: true = helpful, false = unhelpful, null = no vote
         Boolean hasVotedHelpful = null;
@@ -371,6 +433,7 @@ public class ReviewServiceImpl implements ReviewService {
                 .id(review.getId())
                 .userId(review.getUserId())
                 .placeId(review.getPlaceId())
+                .activityBookingId(review.getActivityBookingId())
                 .tripId(review.getTripId())
                 .placeName(place != null ? place.getTitle() : null)
                 .placeAddress(place != null ? place.getAddress() : null)
@@ -385,6 +448,12 @@ public class ReviewServiceImpl implements ReviewService {
                 .placeWebsite(place != null ? place.getWebsite() : null)
                 .placePriceRange(place != null ? place.getPriceRange() : null)
                 .placeVisitDurationMinutes(place != null ? place.getVisitDurationMinutes() : null)
+                .activityBookingTitle(activityBooking != null ? activityBooking.getTitle() : null)
+                .activityBookingThumbnail(activityBooking != null ? activityBooking.getThumbnail() : null)
+                .activityBookingRating(activityBooking != null ? activityBooking.getRating() : null)
+                .activityBookingReviewCount(activityBooking != null ? activityBooking.getReviewCount() : null)
+                .activityBookingPriceAmount(activityBooking != null ? activityBooking.getPriceAmount() : null)
+                .activityBookingPriceCurrency(activityBooking != null ? activityBooking.getPriceCurrency() : null)
                 .userName(user != null ? user.getFullName() : "Unknown")
                 .userAvatar(user != null ? user.getAvatarUrl() : null)
                 .userTier(profile != null ? profile.getTier() : UserTier.NEWCOMER)
@@ -403,6 +472,32 @@ public class ReviewServiceImpl implements ReviewService {
                 .createdAt(review.getCreatedAt())
                 .updatedAt(review.getUpdatedAt())
                 .build();
+    }
+
+    private void validateReviewTarget(UUID placeId, UUID activityBookingId) {
+        boolean hasPlace = placeId != null;
+        boolean hasActivityBooking = activityBookingId != null;
+        if (hasPlace == hasActivityBooking) {
+            throw new BusinessException(
+                    ErrorConstant.INVALID_PARAMETERS,
+                    "Exactly one review target is required: placeId or activityBookingId"
+            );
+        }
+    }
+
+    private BigDecimal averageRating(List<UserReview> reviews, Function<UserReview, Integer> ratingGetter) {
+        List<Integer> ratings = reviews.stream()
+                .map(ratingGetter)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        if (ratings.isEmpty()) {
+            return null;
+        }
+        double average = ratings.stream()
+                .mapToInt(Integer::intValue)
+                .average()
+                .orElse(0);
+        return BigDecimal.valueOf(average).setScale(1, RoundingMode.HALF_UP);
     }
 
     private String getTierDisplay(UserTier tier) {

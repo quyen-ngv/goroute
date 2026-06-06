@@ -8,6 +8,7 @@
         <id property="id" column="id"/>
         <result property="userId" column="user_id"/>
         <result property="placeId" column="place_id"/>
+        <result property="activityBookingId" column="activity_booking_id"/>
         <result property="tripId" column="trip_id"/>
         <result property="overallRating" column="overall_rating"/>
         <result property="foodRating" column="food_rating"/>
@@ -25,11 +26,11 @@
 
     <insert id="insert" parameterType="com.ds.goroute.entity.UserReview">
         INSERT INTO user_reviews (
-            id, user_id, place_id, trip_id,
+            id, user_id, place_id, activity_booking_id, trip_id,
             overall_rating, food_rating, price_rating, ambiance_rating, service_rating,
             text, photos, weight, helpful_votes, unhelpful_votes
         ) VALUES (
-            #{id}, #{userId}, #{placeId}, #{tripId},
+            #{id}, #{userId}, #{placeId}, #{activityBookingId}, #{tripId},
             #{overallRating}, #{foodRating}, #{priceRating}, #{ambianceRating}, #{serviceRating},
             #{text}, #{photos}::text, #{weight}, #{helpfulVotes}, #{unhelpfulVotes}
         )
@@ -69,9 +70,22 @@
         LIMIT 1
     </select>
 
+    <select id="findByUserAndActivityBooking" resultMap="UserReviewResultMap">
+        SELECT * FROM user_reviews
+        WHERE user_id = #{userId} AND activity_booking_id = #{activityBookingId}
+        LIMIT 1
+    </select>
+
     <select id="findByPlaceId" resultMap="UserReviewResultMap">
         SELECT * FROM user_reviews
         WHERE place_id = #{placeId}
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findByActivityBookingId" resultMap="UserReviewResultMap">
+        SELECT * FROM user_reviews
+        WHERE activity_booking_id = #{activityBookingId}
         ORDER BY created_at DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
@@ -107,6 +121,11 @@
     <select id="countByPlaceId" resultType="int">
         SELECT COUNT(*) FROM user_reviews
         WHERE place_id = #{placeId}
+    </select>
+
+    <select id="countByActivityBookingId" resultType="int">
+        SELECT COUNT(*) FROM user_reviews
+        WHERE activity_booking_id = #{activityBookingId}
     </select>
 
     <select id="countByUserId" resultType="int">

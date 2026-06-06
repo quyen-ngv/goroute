@@ -8,13 +8,13 @@ import java.util.Optional;
 
 @Getter
 public enum CitySlug {
-    HANOI("hanoi", "HÃ  Ná»™i"),
-    HCMC("hcmc", "TP. Há»“ ChÃ­ Minh"),
-    DANANG("danang", "ÄÃ  Náºµng"),
-    HOIAN("hoian", "Há»™i An"),
-    HUE("hue", "Huáº¿"),
+    HANOI("hanoi", "Hà Nội"),
+    HCMC("hcmc", "TP. Hồ Chí Minh"),
+    DANANG("danang", "Đà Nẵng"),
+    HOIAN("hoian", "Hội An"),
+    HUE("hue", "Huế"),
     NHATRANG("nhatrang", "Nha Trang"),
-    PHUQUOC("phuquoc", "PhÃº Quá»‘c");
+    PHUQUOC("phuquoc", "Phú Quốc");
 
     private final String slug;
     private final String displayName;

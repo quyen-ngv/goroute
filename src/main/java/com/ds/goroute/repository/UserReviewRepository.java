@@ -19,13 +19,19 @@ public interface UserReviewRepository {
 
     Optional<UserReview> findByUserAndPlace(UUID userId, UUID placeId);
 
+    Optional<UserReview> findByUserAndActivityBooking(UUID userId, UUID activityBookingId);
+
     List<UserReview> findByPlaceId(UUID placeId, int limit, int offset);
+
+    List<UserReview> findByActivityBookingId(UUID activityBookingId, int limit, int offset);
 
     List<UserReview> findByUserId(UUID userId, int limit, int offset);
 
     List<UserReview> findFeedReviews(UUID excludeUserId, int limit, int offset);
 
     int countByPlaceId(UUID placeId);
+
+    int countByActivityBookingId(UUID activityBookingId);
 
     int countByUserId(UUID userId);
 

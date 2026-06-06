@@ -94,8 +94,10 @@ public class ReviewFraudDetectionService {
             return false;
         }
         
-        // Get other reviews for same place
-        List<UserReview> otherReviews = reviewRepository.findByPlaceId(review.getPlaceId(), 100, 0);
+        // Get other reviews for the same target.
+        List<UserReview> otherReviews = review.getPlaceId() != null
+                ? reviewRepository.findByPlaceId(review.getPlaceId(), 100, 0)
+                : reviewRepository.findByActivityBookingId(review.getActivityBookingId(), 100, 0);
         
         for (UserReview other : otherReviews) {
             if (other.getId().equals(review.getId())) {

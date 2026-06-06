@@ -15,8 +15,9 @@ import java.util.UUID;
 @AllArgsConstructor
 public class CreateReviewRequest {
 
-    @NotNull(message = "Place ID is required")
     private UUID placeId;
+
+    private UUID activityBookingId;
 
     private UUID tripId; // Deprecated: reviews are scoped to place, not trip.
 

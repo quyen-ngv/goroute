@@ -946,6 +946,7 @@ public class TripServiceImpl implements TripService {
                             .rating(a.getRating())
                             .reviewCount(memberReviews != null ? memberReviews.size() : null)
                             .photoUrl(a.getPhotoUrl())
+                            .memoryImageUrls(getActivityMemoryImageUrls(a.getId()))
                             .description(a.getDescription())
                             .platformScore(placeId != null ? buildPlatformScore(placeId) : null)
                             .tripAvgScore(calculateTripAverage(memberReviews))
@@ -1338,6 +1339,14 @@ public class TripServiceImpl implements TripService {
 
     private List<String> getTripMemoryImageUrls(UUID tripId) {
         return mediaAssetRepository.findByTripId(tripId).stream()
+                .map(MediaAsset::getUrl)
+                .filter(url -> url != null && !url.isBlank())
+                .distinct()
+                .toList();
+    }
+
+    private List<String> getActivityMemoryImageUrls(UUID activityId) {
+        return mediaAssetRepository.findByActivityId(activityId).stream()
                 .map(MediaAsset::getUrl)
                 .filter(url -> url != null && !url.isBlank())
                 .distinct()

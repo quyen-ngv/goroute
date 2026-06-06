@@ -43,8 +43,18 @@ public class UserReviewRepositoryImpl implements UserReviewRepository {
     }
 
     @Override
+    public Optional<UserReview> findByUserAndActivityBooking(UUID userId, UUID activityBookingId) {
+        return Optional.ofNullable(mapper.findByUserAndActivityBooking(userId, activityBookingId));
+    }
+
+    @Override
     public List<UserReview> findByPlaceId(UUID placeId, int limit, int offset) {
         return mapper.findByPlaceId(placeId, limit, offset);
+    }
+
+    @Override
+    public List<UserReview> findByActivityBookingId(UUID activityBookingId, int limit, int offset) {
+        return mapper.findByActivityBookingId(activityBookingId, limit, offset);
     }
 
     @Override
@@ -60,6 +70,11 @@ public class UserReviewRepositoryImpl implements UserReviewRepository {
     @Override
     public int countByPlaceId(UUID placeId) {
         return mapper.countByPlaceId(placeId);
+    }
+
+    @Override
+    public int countByActivityBookingId(UUID activityBookingId) {
+        return mapper.countByActivityBookingId(activityBookingId);
     }
 
     @Override

@@ -21,9 +21,16 @@ public interface UserReviewMapper {
 
     UserReview findByUserAndPlace(@Param("userId") UUID userId, @Param("placeId") UUID placeId);
 
+    UserReview findByUserAndActivityBooking(@Param("userId") UUID userId,
+                                            @Param("activityBookingId") UUID activityBookingId);
+
     List<UserReview> findByPlaceId(@Param("placeId") UUID placeId,
                                    @Param("limit") int limit,
                                    @Param("offset") int offset);
+
+    List<UserReview> findByActivityBookingId(@Param("activityBookingId") UUID activityBookingId,
+                                             @Param("limit") int limit,
+                                             @Param("offset") int offset);
 
     List<UserReview> findByUserId(@Param("userId") UUID userId,
                                   @Param("limit") int limit,
@@ -34,6 +41,8 @@ public interface UserReviewMapper {
                                      @Param("offset") int offset);
 
     int countByPlaceId(@Param("placeId") UUID placeId);
+
+    int countByActivityBookingId(@Param("activityBookingId") UUID activityBookingId);
 
     int countByUserId(@Param("userId") UUID userId);
 

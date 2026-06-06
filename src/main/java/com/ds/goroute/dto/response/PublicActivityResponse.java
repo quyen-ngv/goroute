@@ -29,6 +29,7 @@ public class PublicActivityResponse {
     private BigDecimal rating;
     private Integer reviewCount;
     private String photoUrl;
+    private List<String> memoryImageUrls;
     private String description;
     private PlaceScoreResponse platformScore;
     private BigDecimal tripAvgScore;

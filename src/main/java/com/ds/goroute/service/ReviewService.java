@@ -3,6 +3,7 @@ package com.ds.goroute.service;
 import com.ds.goroute.dto.request.CreateReviewRequest;
 import com.ds.goroute.dto.request.UpdateReviewRequest;
 import com.ds.goroute.dto.response.PlaceScoreResponse;
+import com.ds.goroute.dto.response.ReviewScoreResponse;
 import com.ds.goroute.dto.response.UserReviewProfileResponse;
 import com.ds.goroute.dto.response.UserReviewResponse;
 
@@ -19,6 +20,8 @@ public interface ReviewService {
 
     List<UserReviewResponse> getPlaceReviews(UUID placeId, UUID currentUserId, int page, int size);
 
+    List<UserReviewResponse> getActivityBookingReviews(UUID activityBookingId, UUID currentUserId, int page, int size);
+
     List<UserReviewResponse> getUserReviews(UUID userId, int page, int size);
 
     List<UserReviewResponse> getUserReviewsForProfile(UUID targetUserId, UUID viewerId, int page, int size);
@@ -30,6 +33,8 @@ public interface ReviewService {
     UserReviewResponse voteUnhelpful(UUID userId, UUID reviewId);
 
     PlaceScoreResponse getPlaceScore(UUID placeId);
+
+    ReviewScoreResponse getActivityBookingScore(UUID activityBookingId);
 
     UserReviewProfileResponse getUserProfile(UUID userId);
 }

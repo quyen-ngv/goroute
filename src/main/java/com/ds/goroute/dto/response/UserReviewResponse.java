@@ -20,6 +20,7 @@ public class UserReviewResponse {
     private UUID id;
     private UUID userId;
     private UUID placeId;
+    private UUID activityBookingId;
     private UUID tripId;
     
     // Place info
@@ -36,6 +37,14 @@ public class UserReviewResponse {
     private String placeWebsite;
     private String placePriceRange;
     private Integer placeVisitDurationMinutes;
+
+    // Activity booking info
+    private String activityBookingTitle;
+    private String activityBookingThumbnail;
+    private BigDecimal activityBookingRating;
+    private Integer activityBookingReviewCount;
+    private BigDecimal activityBookingPriceAmount;
+    private String activityBookingPriceCurrency;
     
     // User info
     private String userName;
