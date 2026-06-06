@@ -18,6 +18,7 @@ public class PublicTripResponse {
     private UUID id;
     private String name;
     private String coverImageUrl;
+    private List<String> memoryImageUrls;
     private String description;
     private String destination;
     private BigDecimal lat;

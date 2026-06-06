@@ -48,6 +48,7 @@ public class TripServiceImpl implements TripService {
     private final ReviewHelpfulVoteRepository reviewHelpfulVoteRepository;
     private final TripHelpfulVoteRepository tripHelpfulVoteRepository;
     private final PlaceScoreRepository placeScoreRepository;
+    private final MediaAssetRepository mediaAssetRepository;
 
     @Override
     @Transactional
@@ -859,6 +860,7 @@ public class TripServiceImpl implements TripService {
         if (coverImageUrl == null || coverImageUrl.isEmpty()) {
             coverImageUrl = locationImageService.getImageForDestination(trip.getDestination());
         }
+        List<String> memoryImageUrls = getTripMemoryImageUrls(tripId);
 
         // Get activities
         List<com.ds.goroute.entity.Activity> activities = activityRepository.findByTripId(tripId);
@@ -963,6 +965,7 @@ public class TripServiceImpl implements TripService {
                 .id(trip.getId())
                 .name(trip.getName())
                 .coverImageUrl(coverImageUrl)
+                .memoryImageUrls(memoryImageUrls)
                 .description(trip.getDescription())
                 .destination(trip.getDestination())
                 .lat(trip.getDestinationLat())
@@ -1297,6 +1300,7 @@ public class TripServiceImpl implements TripService {
                     if (coverImageUrl == null || coverImageUrl.isEmpty()) {
                         coverImageUrl = locationImageService.getImageForDestination(trip.getDestination());
                     }
+                    List<String> memoryImageUrls = getTripMemoryImageUrls(trip.getId());
 
                     // Get owner info
                     User owner = userRepository.findById(trip.getOwnerId()).orElse(null);
@@ -1307,6 +1311,7 @@ public class TripServiceImpl implements TripService {
                             .id(trip.getId())
                             .name(trip.getName())
                             .coverImageUrl(coverImageUrl)
+                            .memoryImageUrls(memoryImageUrls)
                             .description(trip.getDescription())
                             .destination(trip.getDestination())
                             .lat(trip.getDestinationLat())
@@ -1329,6 +1334,14 @@ public class TripServiceImpl implements TripService {
                             .build();
                 })
                 .collect(Collectors.toList());
+    }
+
+    private List<String> getTripMemoryImageUrls(UUID tripId) {
+        return mediaAssetRepository.findByTripId(tripId).stream()
+                .map(MediaAsset::getUrl)
+                .filter(url -> url != null && !url.isBlank())
+                .distinct()
+                .toList();
     }
 
     @Override
