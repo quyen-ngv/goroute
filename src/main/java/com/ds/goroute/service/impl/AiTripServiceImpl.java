@@ -54,6 +54,10 @@ public class AiTripServiceImpl implements AiTripService {
     private static final int FREE_LIMIT = 3;
     private static final int PRO_LIMIT = 10;
     private static final double SEARCH_RADIUS_KM = 80.0;
+    private static final String AI_TRIP_SYSTEM_CONTEXT = """
+            This is a travel planning app for foreign tourists visiting Vietnam.
+            Place names, addresses, and descriptions may be in Vietnamese - treat them as ground truth.
+            """;
 
     private final AiTripRepository aiTripRepository;
     private final PlaceRepository placeRepository;
@@ -312,7 +316,8 @@ public class AiTripServiceImpl implements AiTripService {
     }
 
     private boolean matchesCity(String destinationsJson, String address, String cityName, String cityKey) {
-        List<String> destinations = JsonUtils.fromJson(destinationsJson, new TypeReference<List<String>>() {});
+        List<String> destinations = JsonUtils.fromJson(destinationsJson, new TypeReference<List<String>>() {
+        });
         if (DestinationMatchUtils.matches(destinations, List.of(cityName))) {
             return true;
         }
@@ -396,7 +401,7 @@ public class AiTripServiceImpl implements AiTripService {
         if (candidates.isEmpty()) {
             return candidates;
         }
-        String system = """
+        String system = AI_TRIP_SYSTEM_CONTEXT + """
                 You rank real travel candidates for a trip. Return strict JSON only.
                 Do not invent places. Use only candidate IDs provided by the server.
                 Rank using real-world fit: place type/category, opening rhythm, trip dates, likely local weather/season,
@@ -404,22 +409,35 @@ public class AiTripServiceImpl implements AiTripService {
                 Avoid generic tourist-only lists when stronger local, food, culture, or weather-appropriate options exist.
                 """ + "\n" + AiTripLanguageSupport.claudeLanguageRule();
         String prompt = """
-                Trip city: %s
-                Days: %d
-                Trip dates: %s to %s
+                Trip city: %s (lat: %s, lng: %s)
+                Trip dates: %s to %s (%d days)
                 Pace: %s
                 User preferences: %s
-                Candidate fields include placeGroup, category, sourceType, visitDurationMinutes, rating, reviewCount, lat/lng, address, price, and description.
-                Return JSON: {"candidateIds":["id1"],"reasons":{"id1":"short concrete reason using timing/place/weather fit"}}
+
+                Climate context: infer from city location and month.
+                Vietnam north (lat>20): Nov–Mar is cool/dry, Apr–Oct is warm/rainy.
+                Vietnam central (lat 12–20): Sep–Dec is rainy/flood risk, Jan–Aug is dry/hot.
+                Vietnam south (lat<12): Nov–Apr is dry, May–Oct is rainy.
+                Highlands (Sa Pa, Da Lat): always 5–10°C cooler than coastal cities at same latitude.
+
+                Ranking rules (apply in order):
+                1. ACCOMMODATION: rank low — exclude from top positions, place near end.
+                2. FOOD_AND_DRINK: prefer stops that fit a natural meal window (breakfast ~07:30, lunch ~12:00, dinner ~18:30).
+                3. NATURE_AND_OUTDOORS: rank higher if trip month has good weather; rank lower during likely rainy/hot months.
+                4. Prioritize higher rating + review count when other factors are equal.
+                5. Prefer variety across placeGroups — avoid clustering 4+ stops of the same group consecutively.
+
+                Return JSON only:
+                {"candidateIds":["id1","id2"],"reasons":{"id1":"concrete reason: place type + timing + weather fit"}}
                 Candidates:
                 %s
                 """.formatted(
                 request.getCityName(),
+                request.getCityLat(), request.getCityLng(),
+                request.getStartDate(), request.getEndDate(),
                 resolveDayCount(request),
-                request.getStartDate(),
-                request.getEndDate(),
                 normalizePace(request.getPace()),
-                Optional.ofNullable(request.getPreferenceText()).orElse(""),
+                Optional.ofNullable(request.getPreferenceText()).orElse("none"),
                 JsonUtils.toJson(candidates));
 
         return claudeClient.completeJson(system, prompt)
@@ -456,7 +474,7 @@ public class AiTripServiceImpl implements AiTripService {
     }
 
     private List<ScheduledCandidate> scheduleCandidatesWithClaude(AiTripDraft draft,
-                                                                 List<AiTripCandidateResponse> selected) {
+                                                                  List<AiTripCandidateResponse> selected) {
         if (selected.isEmpty()) {
             return List.of();
         }
@@ -466,7 +484,7 @@ public class AiTripServiceImpl implements AiTripService {
 
     private List<AiTripCandidateResponse> orderByClaudeOrDistance(AiTripDraft draft,
                                                                   List<AiTripCandidateResponse> selected) {
-        String system = """
+        String system = AI_TRIP_SYSTEM_CONTEXT + """
                 You order real travel candidates for an itinerary. Return strict JSON only.
                 Cluster by geographic proximity using lat/lng. Use only candidate IDs provided by the server.
                 Use each candidate's placeGroup, category, visitDurationMinutes, address, rating, reviewCount, price, and description.
@@ -480,18 +498,44 @@ public class AiTripServiceImpl implements AiTripService {
                 Prefer realistic transitions and avoid generic ordering.
                 """ + "\n" + AiTripLanguageSupport.claudeLanguageRule();
         String prompt = """
-                City: %s
-                Days: %d
-                Trip dates: %s to %s
+                City: %s (lat: %s, lng: %s)
+                Trip dates: %s to %s (%d days)
                 Pace: %s
-                Preference: %s
-                Candidate fields include placeGroup, category, sourceType, visitDurationMinutes, rating, reviewCount, lat/lng, address, price, and description.
-                Return JSON: {"candidateIds":["id1","id2"]}.
+                Preferences: %s
+
+                Climate context: infer from city location and month.
+                Vietnam north (lat>20): Nov–Mar is cool/dry, Apr–Oct is warm/rainy.
+                Vietnam central (lat 12–20): Sep–Dec is rainy/flood risk, Jan–Aug is dry/hot.
+                Vietnam south (lat<12): Nov–Apr is dry, May–Oct is rainy.
+                Highlands (Sa Pa, Da Lat): always 5–10°C cooler than coastal cities at same latitude.
+
+                Ordering rules — apply strictly:
+                1. Each day starts around 09:00 and ends around 18:00. RELAXED pace: max 5 stops/day. BALANCED: max 7. EAGER: max 9.
+                2. FOOD_AND_DRINK must land in a meal window:
+                   - First FOOD stop of the day → breakfast slot (before 09:30)
+                   - Second FOOD stop → lunch slot (11:30–13:30)
+                   - Third FOOD stop → dinner slot (18:00–20:30)
+                   If there are more FOOD stops than meal windows in a day, push extras to the next day.
+                3. ACCOMMODATION must be placed as the last stop of its day (check-in logic).
+                   If multiple ACCOMMODATION stops exist, keep only the most relevant one per day.
+                4. NATURE_AND_OUTDOORS: place in morning (before 11:00) or late afternoon (after 15:00).
+                   Never place outdoor/nature stops at midday during hot/rainy months.
+                5. Cluster geographically within each day — minimize backtracking.
+                   Stops in the same district or within walking distance should be consecutive.
+                6. Do not repeat the same placeGroup more than 3 times in a row.
+
+                Return JSON only — same candidates, reordered:
+                {"candidateIds":["id1","id2","id3"]}
                 Candidates:
                 %s
-                """.formatted(draft.getCityName(), draft.getDayCount(), draft.getStartDate(), draft.getEndDate(), draft.getPace(),
-                Optional.ofNullable(draft.getPreferenceText()).orElse(""), JsonUtils.toJson(selected));
-
+                """.formatted(
+                draft.getCityName(),
+                draft.getCityLat(), draft.getCityLng(),
+                draft.getStartDate(), draft.getEndDate(),
+                draft.getDayCount(),
+                draft.getPace(),
+                Optional.ofNullable(draft.getPreferenceText()).orElse("none"),
+                JsonUtils.toJson(selected));
         return claudeClient.completeJson(system, prompt)
                 .map(json -> parseCandidateOrder(json, selected))
                 .orElseGet(() -> nearestNeighborOrder(draft, selected));
@@ -729,6 +773,9 @@ public class AiTripServiceImpl implements AiTripService {
             row.put("placeGroup", candidate.getPlaceGroup());
             row.put("category", candidate.getCategory());
             row.put("sourceType", candidate.getSourceType());
+            row.put("description", trimText(candidate.getDescription(), 120));
+            row.put("address", candidate.getAddress());
+            row.put("rating", candidate.getRating());
             row.put("dayNumber", item.dayNumber());
             row.put("startTime", item.startTime().toString());
             row.put("endTime", item.endTime().toString());
@@ -736,7 +783,7 @@ public class AiTripServiceImpl implements AiTripService {
             payload.add(row);
         }
 
-        String system = """
+        String system = AI_TRIP_SYSTEM_CONTEXT + """
                 You write very short practical visit tips for a travel itinerary.
                 Return strict JSON only: {"tips":{"candidateId":"short tip text"}}.
                 Each tip: 1 short sentence (max 160 chars) on HOW to visit or enjoy the place.
@@ -747,9 +794,36 @@ public class AiTripServiceImpl implements AiTripService {
                 City: %s
                 Trip dates: %s to %s
                 Pace: %s
+
+                User preferences: %s
+
+                Climate context: infer from city location and month.
+                Vietnam north (lat>20): Nov-Mar is cool/dry, Apr-Oct is warm/rainy.
+                Vietnam central (lat 12-20): Sep-Dec is rainy/flood risk, Jan-Aug is dry/hot.
+                Vietnam south (lat<12): Nov-Apr is dry, May-Oct is rainy.
+                Highlands (Sa Pa, Da Lat): always 5-10 C cooler than coastal cities at same latitude.
+
+                Write one practical tip per activity. Rules:
+                - Max 120 characters per tip.
+                - Be specific to the place - use name, category, and description as context.
+                - Focus on HOW to visit: best time to arrive, what to bring, what to avoid, local tip.
+                - Use scheduled startTime to make timing-relevant tips (e.g. "arrive early before crowds" for an 08:00 slot).
+                - For FOOD_AND_DRINK: mention a dish or ordering tip if inferable from description.
+                - For NATURE_AND_OUTDOORS: mention weather/clothing/sun protection relevant to the trip month.
+                - For ACCOMMODATION: mention check-in tip or nearby amenity.
+                - Never use generic phrases like "enjoy your visit" or "have a great time".
+                - Write in the same language as the user preferences field. If preferences is "none", use English.
+
+                Return JSON only:
+                {"tips":{"candidateId":"tip text"}}
                 Activities:
                 %s
-                """.formatted(draft.getCityName(), draft.getStartDate(), draft.getEndDate(), draft.getPace(), JsonUtils.toJson(payload));
+                """.formatted(
+                draft.getCityName(),
+                draft.getStartDate(), draft.getEndDate(),
+                draft.getPace(),
+                Optional.ofNullable(draft.getPreferenceText()).orElse("none"),
+                JsonUtils.toJson(payload));
 
         Map<String, String> tips = claudeClient.completeJson(system, prompt)
                 .map(this::parseVisitTips)
@@ -835,7 +909,8 @@ public class AiTripServiceImpl implements AiTripService {
 
     private List<AiTripCandidateResponse> parseCandidates(String json) {
         List<AiTripCandidateResponse> candidates = JsonUtils.fromJson(json,
-                new TypeReference<List<AiTripCandidateResponse>>() {});
+                new TypeReference<List<AiTripCandidateResponse>>() {
+                });
         return candidates != null ? candidates : List.of();
     }
 
