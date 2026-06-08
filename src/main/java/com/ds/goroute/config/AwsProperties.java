@@ -13,4 +13,5 @@ public class AwsProperties {
     private String region;
     private String s3BucketName;
     private String cloudfrontDomain;
+    private String endpoint;
 }

@@ -13,6 +13,8 @@ public interface ExpenseMapper {
     
     Expense selectById(@Param("id") UUID id);
     
+    List<Expense> selectAll();
+    
     List<Expense> selectByTripId(@Param("tripId") UUID tripId);
     
     List<Expense> selectByActivityId(@Param("activityId") UUID activityId);

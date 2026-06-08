@@ -25,7 +25,7 @@ public class ExpenseRepositoryImpl implements ExpenseRepository {
     public Optional<Expense> findById(UUID id) {
         return Optional.ofNullable(expenseMapper.selectById(id));
     }
-    
+
     @Override
     public List<Expense> findByTripId(UUID tripId) {
         return expenseMapper.selectByTripId(tripId);
@@ -44,6 +44,16 @@ public class ExpenseRepositoryImpl implements ExpenseRepository {
     @Override
     public void updateById(Expense expense) {
         expenseMapper.updateById(expense);
+    }
+    
+    @Override
+    public void update(Expense expense) {
+        expenseMapper.updateById(expense);
+    }
+    
+    @Override
+    public List<Expense> findAll() {
+        return expenseMapper.selectAll();
     }
     
     @Override

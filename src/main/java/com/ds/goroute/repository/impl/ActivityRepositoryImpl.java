@@ -42,6 +42,16 @@ public class ActivityRepositoryImpl implements ActivityRepository {
     }
     
     @Override
+    public void update(Activity activity) {
+        activityMapper.updateById(activity);
+    }
+    
+    @Override
+    public List<Activity> findAll() {
+        return activityMapper.selectAll();
+    }
+    
+    @Override
     public void deleteById(UUID id) {
         activityMapper.deleteById(id);
     }

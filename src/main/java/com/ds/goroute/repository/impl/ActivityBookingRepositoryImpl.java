@@ -45,6 +45,11 @@ public class ActivityBookingRepositoryImpl implements ActivityBookingRepository 
     public List<ActivityBooking> findPage(int limit, int offset) {
         return mapper.findAll(limit, offset);
     }
+    
+    @Override
+    public List<ActivityBooking> findAll() {
+        return mapper.findAll(10000, 0); // Large limit for full scan
+    }
 
     @Override
     public long countAll() {

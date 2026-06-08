@@ -30,6 +30,11 @@ public class FoodRepositoryImpl implements FoodRepository {
     public void updateFood(Food food) {
         foodMapper.updateFood(food);
     }
+    
+    @Override
+    public void update(Food food) {
+        foodMapper.updateFood(food);
+    }
 
     @Override
     public void deleteFood(UUID id) {
@@ -39,6 +44,11 @@ public class FoodRepositoryImpl implements FoodRepository {
     @Override
     public Optional<Food> findFoodById(UUID id) {
         return Optional.ofNullable(foodMapper.findFoodById(id));
+    }
+    
+    @Override
+    public List<Food> findAll() {
+        return foodMapper.findAllFoods(null, 10000, 0);
     }
 
     @Override

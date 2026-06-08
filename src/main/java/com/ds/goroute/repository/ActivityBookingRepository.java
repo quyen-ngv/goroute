@@ -12,6 +12,8 @@ public interface ActivityBookingRepository {
     void insert(ActivityBooking booking);
 
     Optional<ActivityBooking> findById(UUID id);
+    
+    List<ActivityBooking> findAll();
 
     List<ActivityBooking> findByIds(List<UUID> ids);
 

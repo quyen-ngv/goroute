@@ -10,6 +10,8 @@ public interface ExpenseRepository {
     
     Optional<Expense> findById(UUID id);
     
+    List<Expense> findAll();
+    
     List<Expense> findByTripId(UUID tripId);
     
     List<Expense> findByActivityId(UUID activityId);
@@ -17,6 +19,8 @@ public interface ExpenseRepository {
     List<Expense> findByPaidBy(UUID userId);
     
     void updateById(Expense expense);
+    
+    void update(Expense expense); // Alias for updateById
     
     void deleteById(UUID id);
     

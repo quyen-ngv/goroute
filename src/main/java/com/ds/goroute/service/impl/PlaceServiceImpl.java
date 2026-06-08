@@ -1,6 +1,7 @@
 package com.ds.goroute.service.impl;
 
 import com.ds.goroute.dto.request.ImportPlaceRequest;
+import com.ds.goroute.dto.request.ReviewInput;
 import com.ds.goroute.dto.request.UpdatePlaceRequest;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.response.PlaceAboutDto;
@@ -16,11 +17,15 @@ import com.ds.goroute.entity.FoodTagRow;
 import com.ds.goroute.repository.FoodRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.PlaceReviewRepository;
+import com.ds.goroute.service.PlaceReviewService;
 import com.ds.goroute.service.PlaceService;
+import com.ds.goroute.service.ImageMigrationService;
 import com.ds.goroute.utils.CitySlugResolver;
 import com.ds.goroute.utils.FoodNameResolver;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -41,6 +46,8 @@ public class PlaceServiceImpl implements PlaceService {
     private final PlaceRepository placeRepository;
     private final PlaceReviewRepository placeReviewRepository;
     private final FoodRepository foodRepository;
+    private final PlaceReviewService placeReviewService;
+    private final ImageMigrationService imageMigrationService;
     private final ObjectMapper objectMapper;
 
     private static final Integer maxReview = 50;
@@ -50,32 +57,97 @@ public class PlaceServiceImpl implements PlaceService {
     public PlaceResponse importPlace(ImportPlaceRequest request) {
         log.info("Importing place: {}", request.getPlaceId());
 
-        // Check if place already exists
-        Place existingPlace = placeRepository.findByPlaceId(request.getPlaceId());
-        if (existingPlace != null) {
-            log.info("Place already exists, updating: {}", request.getPlaceId());
-            return updateExistingPlace(existingPlace, request);
+        try {
+            // Migrate images before creating place (only if imageMigrationService is available)
+            if (imageMigrationService != null) {
+                String targetPath = "places/" + request.getPlaceId() + "/";
+                
+                // Migrate thumbnail
+                if (request.getThumbnail() != null && !request.getThumbnail().trim().isEmpty()) {
+                    try {
+                        String newThumbnail = imageMigrationService.migrateImage(request.getThumbnail(), targetPath);
+                        if (newThumbnail != null) {
+                            request.setThumbnail(newThumbnail);
+                        } else {
+                            log.warn("Failed to migrate thumbnail for place: {}", request.getPlaceId());
+                        }
+                    } catch (Exception e) {
+                        log.error("Error migrating thumbnail: {}", e.getMessage());
+                    }
+                }
+                
+                // Migrate place images
+                if (request.getImages() != null && !request.getImages().trim().isEmpty() && !request.getImages().equals("[]")) {
+                    try {
+                        String newImages = imageMigrationService.migrateImagesJson(request.getImages(), targetPath);
+                        if (!newImages.equals("[]")) {
+                            request.setImages(newImages);
+                        } else {
+                            log.warn("No place images migrated successfully for: {}", request.getPlaceId());
+                        }
+                    } catch (Exception e) {
+                        log.error("Error migrating place images: {}", e.getMessage());
+                    }
+                }
+                
+                // Migrate review images within userReviews JSON
+                if (request.getUserReviews() != null && !request.getUserReviews().trim().isEmpty()) {
+                    try {
+                        request.setUserReviews(migrateReviewImages(request.getUserReviews(), targetPath + "reviews/"));
+                    } catch (Exception e) {
+                        log.error("Error migrating review images: {}", e.getMessage());
+                    }
+                }
+            } else {
+                log.warn("ImageMigrationService not available, skipping image migration");
+            }
+
+            // Check if place already exists
+            Place existingPlace = placeRepository.findByPlaceId(request.getPlaceId());
+            if (existingPlace != null) {
+                log.info("Place already exists, updating: {}", request.getPlaceId());
+                return updateExistingPlace(existingPlace, request);
+            }
+
+            // Create new place
+            Place place = buildPlaceFromRequest(request);
+            placeRepository.insert(place);
+
+            // Import reviews using PlaceReviewService for smart duplicate handling
+            if (request.getUserReviews() != null && !request.getUserReviews().isEmpty()) {
+                importReviewsViaService(request.getUserReviews());
+            }
+
+            return toPlaceResponse(place);
+            
+        } catch (Exception e) {
+            log.error("Failed to import place {}: {}", request.getPlaceId(), e.getMessage());
+            return null; // Skip this place on error
         }
-
-        // Create new place
-        Place place = buildPlaceFromRequest(request);
-        placeRepository.insert(place);
-
-        // Import reviews if provided
-        if (request.getUserReviews() != null && !request.getUserReviews().isEmpty()) {
-            importReviews(place.getId(), request.getUserReviews());
-        }
-
-        return toPlaceResponse(place);
     }
 
     @Override
     @Transactional
     public List<PlaceResponse> importPlaces(List<ImportPlaceRequest> requests) {
         log.info("Importing {} places", requests.size());
-        return requests.stream()
-                .map(this::importPlace)
-                .collect(Collectors.toList());
+        
+        List<PlaceResponse> responses = new ArrayList<>();
+        int successCount = 0;
+        int failCount = 0;
+        
+        for (ImportPlaceRequest request : requests) {
+            PlaceResponse response = importPlace(request);
+            if (response != null) {
+                responses.add(response);
+                successCount++;
+            } else {
+                failCount++;
+                log.warn("Skipped place due to errors: {}", request.getPlaceId());
+            }
+        }
+        
+        log.info("Import completed: {} succeeded, {} failed", successCount, failCount);
+        return responses;
     }
 
     @Override
@@ -423,10 +495,9 @@ public class PlaceServiceImpl implements PlaceService {
 
         placeRepository.update(updated);
 
-        // Update reviews
+        // Update reviews using PlaceReviewService for smart duplicate handling
         if (request.getUserReviews() != null && !request.getUserReviews().isEmpty()) {
-            placeReviewRepository.deleteByPlaceId(existingPlace.getId());
-            importReviews(existingPlace.getId(), request.getUserReviews());
+            importReviewsViaService(request.getUserReviews());
         }
 
         return toPlaceResponse(updated);
@@ -474,6 +545,240 @@ public class PlaceServiceImpl implements PlaceService {
                 .build();
     }
 
+    /**
+     * Migrate review images within reviews JSON
+     */
+    private String migrateReviewImages(String reviewsJson, String targetPath) {
+        try {
+            JsonNode reviewsNode = objectMapper.readTree(reviewsJson);
+            if (!reviewsNode.isArray()) {
+                return reviewsJson;
+            }
+            
+            ArrayNode resultArray = objectMapper.createArrayNode();
+            
+            for (JsonNode reviewNode : reviewsNode) {
+                ObjectNode mutableReview = ((ObjectNode) reviewNode).deepCopy();
+                
+                // Migrate profilePicture if exists
+                if (reviewNode.has("profilePicture") && reviewNode.get("profilePicture").isTextual()) {
+                    String profilePic = reviewNode.get("profilePicture").asText();
+                    if (profilePic != null && !profilePic.isEmpty()) {
+                        String newProfilePic = imageMigrationService.migrateImage(profilePic, targetPath);
+                        if (newProfilePic != null) {
+                            mutableReview.put("profilePicture", newProfilePic);
+                        }
+                    }
+                }
+                
+                // Migrate images field if exists
+                if (reviewNode.has("images") && reviewNode.get("images").isArray()) {
+                    ArrayNode imagesArray = (ArrayNode) reviewNode.get("images");
+                    List<String> imageUrls = new ArrayList<>();
+                    
+                    for (JsonNode imgNode : imagesArray) {
+                        if (imgNode.isTextual()) {
+                            imageUrls.add(imgNode.asText());
+                        }
+                    }
+                    
+                    if (!imageUrls.isEmpty()) {
+                        Map<String, String> migratedUrls = imageMigrationService.migrateImages(imageUrls, targetPath);
+                        
+                        // Build new images array with migrated URLs
+                        ArrayNode newImagesArray = objectMapper.createArrayNode();
+                        for (String oldUrl : imageUrls) {
+                            String newUrl = migratedUrls.get(oldUrl);
+                            if (newUrl != null) {
+                                newImagesArray.add(newUrl);
+                            }
+                        }
+                        
+                        mutableReview.set("images", newImagesArray);
+                    }
+                }
+                
+                resultArray.add(mutableReview);
+            }
+            
+            return objectMapper.writeValueAsString(resultArray);
+            
+        } catch (Exception e) {
+            log.error("Error migrating review images: {}", e.getMessage());
+            return reviewsJson; // Return original on error
+        }
+    }
+
+    /**
+     * Import reviews via PlaceReviewService to leverage smart duplicate handling
+     * Converts old JSON format to ReviewInput format
+     */
+    private void importReviewsViaService(String reviewsJson) {
+        try {
+            JsonNode reviewsNode = objectMapper.readTree(reviewsJson);
+            if (!reviewsNode.isArray()) {
+                return;
+            }
+
+            List<ReviewInput> reviewInputs = new ArrayList<>();
+
+            for (JsonNode reviewNode : reviewsNode) {
+                try {
+                    // Extract required fields
+                    String reviewId = getTextValue(reviewNode, "reviewId");
+                    String googlePlaceId = getTextValue(reviewNode, "googlePlaceId");
+                    String authorName = getTextValue(reviewNode, "name");
+
+                    // Skip if missing required fields
+                    if (reviewId == null || googlePlaceId == null || authorName == null) {
+                        log.warn("Skipping review with missing required fields");
+                        continue;
+                    }
+
+                    // Extract rating
+                    Integer rating = null;
+                    if (reviewNode.has("rating") && !reviewNode.get("rating").isNull()) {
+                        int ratingValue = reviewNode.get("rating").asInt();
+                        if (ratingValue >= 1 && ratingValue <= 5) {
+                            rating = ratingValue;
+                        }
+                    }
+
+                    if (rating == null) {
+                        log.warn("Skipping review {} with invalid rating", reviewId);
+                        continue;
+                    }
+
+                    // Extract description and build reviewText map
+                    String description = getTextValue(reviewNode, "description");
+                    Map<String, String> reviewText = new HashMap<>();
+                    if (description != null && !description.isEmpty()) {
+                        // Detect language or default to "en"
+                        String language = detectLanguage(description);
+                        reviewText.put(language, description);
+                    }
+
+                    // Extract images
+                    List<String> userImages = new ArrayList<>();
+                    if (reviewNode.has("images") && reviewNode.get("images").isArray()) {
+                        for (JsonNode imgNode : reviewNode.get("images")) {
+                            if (imgNode.isTextual()) {
+                                userImages.add(imgNode.asText());
+                            }
+                        }
+                    }
+
+                    // Parse review date
+                    String reviewDate = getTextValue(reviewNode, "when");
+                    if (reviewDate == null || reviewDate.isEmpty()) {
+                        reviewDate = LocalDateTime.now().toString(); // Fallback to now
+                    } else {
+                        // Try to convert old format to ISO 8601
+                        reviewDate = convertToIso8601(reviewDate);
+                    }
+
+                    // Build ReviewInput
+                    ReviewInput reviewInput = ReviewInput.builder()
+                            .reviewId(reviewId)
+                            .googlePlaceId(googlePlaceId)
+                            .authorName(authorName)
+                            .profileUrl(getTextValue(reviewNode, "profileUrl"))
+                            .profilePicture(getTextValue(reviewNode, "profilePicture"))
+                            .isLocalGuide(reviewNode.has("isLocalGuide") && reviewNode.get("isLocalGuide").asBoolean())
+                            .totalReviews(reviewNode.has("totalReviews") ? reviewNode.get("totalReviews").asInt() : 0)
+                            .totalPhotos(reviewNode.has("totalPhotos") ? reviewNode.get("totalPhotos").asInt() : 0)
+                            .rating(rating)
+                            .reviewText(reviewText)
+                            .reviewDate(reviewDate)
+                            .userImages(userImages)
+                            .likes(reviewNode.has("likes") ? reviewNode.get("likes").asInt() : 0)
+                            .contentHash(generateContentHash(authorName, rating, description, reviewDate))
+                            .isDeleted(false)
+                            .build();
+
+                    reviewInputs.add(reviewInput);
+
+                } catch (Exception e) {
+                    log.error("Error parsing review node: {}", e.getMessage());
+                }
+            }
+
+            // Call PlaceReviewService to handle batch insert with duplicate checking
+            if (!reviewInputs.isEmpty()) {
+                Map<String, Object> result = placeReviewService.batchInsertReviews(reviewInputs);
+                log.info("Review import result: {}", result);
+            }
+
+        } catch (Exception e) {
+            log.error("Error parsing reviews JSON: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Detect language from text content (basic heuristic)
+     */
+    private String detectLanguage(String text) {
+        if (text == null || text.isEmpty()) {
+            return "en";
+        }
+        
+        // Simple heuristic: check for Vietnamese characters
+        if (text.matches(".*[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ].*")) {
+            return "vi";
+        }
+        
+        // Check for Japanese characters
+        if (text.matches(".*[\\u3040-\\u309F\\u30A0-\\u30FF\\u4E00-\\u9FFF].*")) {
+            return "ja";
+        }
+        
+        // Check for Korean characters
+        if (text.matches(".*[\\uAC00-\\uD7AF].*")) {
+            return "ko";
+        }
+        
+        // Check for Chinese characters
+        if (text.matches(".*[\\u4E00-\\u9FFF].*")) {
+            return "zh";
+        }
+        
+        return "en"; // Default to English
+    }
+
+    /**
+     * Convert old date format to ISO 8601
+     */
+    private String convertToIso8601(String dateStr) {
+        try {
+            // Try parsing "yyyy-M-d" format
+            LocalDate date = LocalDate.parse(dateStr, DateTimeFormatter.ofPattern("yyyy-M-d"));
+            return date.atStartOfDay().toString();
+        } catch (Exception e1) {
+            try {
+                // Try ISO 8601 format (already correct)
+                LocalDateTime.parse(dateStr);
+                return dateStr;
+            } catch (Exception e2) {
+                // Return current timestamp as fallback
+                return LocalDateTime.now().toString();
+            }
+        }
+    }
+
+    /**
+     * Generate content hash for duplicate detection
+     */
+    private String generateContentHash(String authorName, Integer rating, String description, String reviewDate) {
+        String content = String.format("%s|%d|%s|%s", 
+            authorName != null ? authorName : "",
+            rating != null ? rating : 0,
+            description != null ? description : "",
+            reviewDate != null ? reviewDate : ""
+        );
+        return String.valueOf(content.hashCode());
+    }
+
+    @Deprecated
     private void importReviews(UUID placeId, String reviewsJson) {
         try {
             JsonNode reviewsNode = objectMapper.readTree(reviewsJson);

@@ -13,6 +13,8 @@ public interface ActivityMapper {
     
     Activity selectById(@Param("id") UUID id);
     
+    List<Activity> selectAll();
+    
     List<Activity> selectByTripId(@Param("tripId") UUID tripId);
     
     List<Activity> selectByTripIdAndDay(@Param("tripId") UUID tripId, @Param("dayNumber") Integer dayNumber);

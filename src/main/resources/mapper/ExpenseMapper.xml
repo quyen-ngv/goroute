@@ -78,4 +78,8 @@
         DELETE FROM expenses WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
     </delete>
 
+    <select id="selectAll" resultMap="ExpenseResultMap">
+        SELECT * FROM expenses ORDER BY created_at DESC
+    </select>
+
 </mapper>

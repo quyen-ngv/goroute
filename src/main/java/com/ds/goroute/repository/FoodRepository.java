@@ -16,10 +16,14 @@ public interface FoodRepository {
     void insertFood(Food food);
 
     void updateFood(Food food);
+    
+    void update(Food food); // Alias for updateFood
 
     void deleteFood(UUID id);
 
     Optional<Food> findFoodById(UUID id);
+    
+    List<Food> findAll();
 
     List<Food> findAllFoods(String q, int limit, int offset);
 

@@ -127,4 +127,8 @@
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </update>
 
+    <select id="selectAll" resultMap="ActivityResultMap">
+        SELECT * FROM activities ORDER BY created_at DESC
+    </select>
+
 </mapper>

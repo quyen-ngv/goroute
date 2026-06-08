@@ -10,11 +10,15 @@ public interface ActivityRepository {
     
     Optional<Activity> findById(UUID id);
     
+    List<Activity> findAll();
+    
     List<Activity> findByTripId(UUID tripId);
     
     List<Activity> findByTripIdAndDayNumber(UUID tripId, int dayNumber);
     
     void updateById(Activity activity);
+    
+    void update(Activity activity); // Alias for updateById
     
     void deleteById(UUID id);
     

@@ -36,10 +36,16 @@ public class AwsService implements StorageService {
         var provider = StaticCredentialsProvider.create(credentials);
         var region = Region.of(awsProperties.getRegion());
 
-        this.s3Client = S3Client.builder()
+        var s3Builder = S3Client.builder()
                 .credentialsProvider(provider)
-                .region(region)
-                .build();
+                .region(region);
+
+        if (awsProperties.getEndpoint() != null && !awsProperties.getEndpoint().isBlank()) {
+            s3Builder.endpointOverride(java.net.URI.create(awsProperties.getEndpoint()))
+                     .forcePathStyle(true);
+        }
+
+        this.s3Client = s3Builder.build();
 
         this.pollyClient = PollyClient.builder()
                 .credentialsProvider(provider)
