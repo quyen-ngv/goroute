@@ -269,7 +269,7 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
         
         HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
         
-        String url = imgpressUrl + "/compress/one?format=webp&quality=80&width=1600&autoOrient=true";
+        String url = imgpressUrl + "/compress/one?format=webp&quality=40&width=1600&autoOrient=true";
         ResponseEntity<Map> response = restTemplate.postForEntity(url, requestEntity, Map.class);
         
         if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {

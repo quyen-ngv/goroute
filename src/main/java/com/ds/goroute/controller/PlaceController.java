@@ -1,5 +1,6 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.dto.request.BatchUpdatePlaceImagesRequest;
 import com.ds.goroute.dto.request.ImportPlaceRequest;
 import com.ds.goroute.dto.request.UpdatePlaceRequest;
 import com.ds.goroute.dto.response.PlaceResponse;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -89,9 +91,12 @@ public class PlaceController extends BaseService {
     }
 
     @GetMapping("/{id}/reviews")
-    @Operation(summary = "Get reviews for a place")
-    public ResponseEntity getPlaceReviews(@PathVariable UUID id) {
-        List<PlaceReviewResponse> reviews = placeService.getPlaceReviews(id);
+    @Operation(summary = "Get reviews for a place with pagination")
+    public ResponseEntity getPlaceReviews(
+            @PathVariable UUID id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        List<PlaceReviewResponse> reviews = placeService.getPlaceReviews(id, page, size);
         return ResponseEntity.ok(ofSucceeded(reviews));
     }
 
@@ -125,6 +130,13 @@ public class PlaceController extends BaseService {
         return ResponseEntity.ok(ofSucceeded(null));
     }
 
+    @PostMapping("/indexing/trigger")
+    @Operation(summary = "Trigger Lucene reindexing for places")
+    public ResponseEntity triggerSearchReindex() {
+        placeService.triggerSearchReindex();
+        return ResponseEntity.ok(ofSucceeded(null));
+    }
+
     @DeleteMapping("/{id}")
     @Operation(summary = "Delete a place")
     public ResponseEntity deletePlace(@PathVariable UUID id) {
@@ -137,5 +149,12 @@ public class PlaceController extends BaseService {
     public ResponseEntity updatePlace(@PathVariable UUID id, @Valid @RequestBody UpdatePlaceRequest request) {
         PlaceResponse response = placeService.updatePlace(id, request);
         return ResponseEntity.ok(ofSucceeded(response));
+    }
+
+    @PostMapping("/batch-update-images")
+    @Operation(summary = "Batch update place images (thumbnail & images)")
+    public ResponseEntity batchUpdatePlaceImages(@Valid @RequestBody BatchUpdatePlaceImagesRequest request) {
+        Map<String, Object> result = placeService.batchUpdatePlaceImages(request);
+        return ResponseEntity.ok(ofSucceeded(result));
     }
 }

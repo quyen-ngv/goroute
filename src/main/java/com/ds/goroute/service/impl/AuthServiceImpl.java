@@ -213,6 +213,7 @@ public class AuthServiceImpl implements AuthService {
                     User newUser = User.builder()
                             .id(UUID.randomUUID())
                             .username(username)
+                            .fullName(username)
                             .provider(AuthProvider.APPLE)
                             .providerId(tokenInfo.getSub())
                             .email(tokenInfo.getEmail())

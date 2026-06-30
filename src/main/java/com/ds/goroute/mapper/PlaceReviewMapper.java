@@ -16,6 +16,8 @@ public interface PlaceReviewMapper {
     void insertBatch(@Param("reviews") List<PlaceReview> reviews);
 
     void update(PlaceReview review);
+    
+    void updateBatch(List<PlaceReview> reviews);
 
     List<PlaceReview> findByPlaceId(@Param("placeId") UUID placeId);
 
@@ -35,8 +37,16 @@ public interface PlaceReviewMapper {
             @Param("minAuthScore") BigDecimal minAuthScore,
             @Param("limit") int limit
     );
+    
+    List<PlaceReview> findByPlaceIdPaginated(
+            @Param("placeId") UUID placeId,
+            @Param("limit") int limit,
+            @Param("offset") int offset
+    );
 
     BigDecimal getAvgAuthenticityScore(@Param("placeId") UUID placeId);
 
     void deleteByPlaceId(@Param("placeId") UUID placeId);
+    
+    void deleteByIds(@Param("ids") List<UUID> ids);
 }

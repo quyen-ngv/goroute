@@ -30,5 +30,9 @@ public interface ActivityBookingMapper {
 
     List<ActivityBooking> findWithinRadius(@Param("p") ActivityBookingGeoSearchParams params);
 
+    List<ActivityBooking> searchByKeyword(@Param("keyword") String keyword,
+                                          @Param("limit") int limit,
+                                          @Param("offset") int offset);
+
     void delete(@Param("id") UUID id);
 }

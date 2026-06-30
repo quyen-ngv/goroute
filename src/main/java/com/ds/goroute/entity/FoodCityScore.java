@@ -19,6 +19,7 @@ public class FoodCityScore {
     private Integer score;
     private String localDescription;
     private String imageUrl;
+    private String introductionImages;
     private String flavorProfile;
     private String funFact;
     private OffsetDateTime createdAt;

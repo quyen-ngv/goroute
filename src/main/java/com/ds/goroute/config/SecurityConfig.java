@@ -42,6 +42,13 @@ public class SecurityConfig {
                         .requestMatchers("/v1/api/activity-bookings/**").permitAll()
                         .requestMatchers("/v1/api/foods/**").permitAll()
                         .requestMatchers("/v1/api/admin/foods/**").permitAll()
+                        .requestMatchers(
+                                "/v1/api/admin/contributions",
+                                "/v1/api/admin/contributions/**"
+                        ).permitAll()
+                        .requestMatchers("/v1/api/internal/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/v1/api/contributions/check").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/v1/api/contributions/places/*/contributors").permitAll()
                         .requestMatchers("/share/**").permitAll()
                         .requestMatchers("/goroute/share/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
@@ -50,6 +57,7 @@ public class SecurityConfig {
                         // Static admin/share assets (PathPattern: ** must be last â€” no /**/*.css)
                         .requestMatchers(
                                 "/admin-*.html",
+                                "/admin-contributions.html",
                                 "/*.html",
                                 "/goroute-theme.css",
                                 "/goroute-admin-utils.js",

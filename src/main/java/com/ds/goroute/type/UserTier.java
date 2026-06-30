@@ -4,10 +4,10 @@ import lombok.Getter;
 
 @Getter
 public enum UserTier {
-    NEWCOMER(0.6, 0, 2),
-    TRAVELER(0.8, 3, 9),
-    EXPLORER(1.0, 10, 29),
-    EXPERT(1.4, 30, Integer.MAX_VALUE);
+    NEWCOMER(0.6, 0, 4),
+    TRAVELER(0.8, 5, 24),
+    EXPLORER(1.0, 25, 99),
+    EXPERT(1.2, 100, Integer.MAX_VALUE);
     
     private final double baseWeight;
     private final int minReviews;

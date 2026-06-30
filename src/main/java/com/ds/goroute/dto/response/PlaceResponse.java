@@ -33,6 +33,8 @@ public class PlaceResponse {
 
     private Integer reviewCount;
     private BigDecimal reviewRating;
+    private BigDecimal adjustedRating;
+    private BigDecimal placeOverallScore;
     private Map<String, Integer> reviewsPerRating; // {"1": 53, "2": 12, ...}
 
     private String thumbnail;

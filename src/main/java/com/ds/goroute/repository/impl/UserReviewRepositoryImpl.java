@@ -91,4 +91,12 @@ public class UserReviewRepositoryImpl implements UserReviewRepository {
     public void delete(UUID id) {
         mapper.delete(id);
     }
+    
+    @Override
+    public void deleteByIds(List<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        mapper.deleteByIds(ids);
+    }
 }

@@ -17,6 +17,8 @@ import software.amazon.awssdk.services.s3.model.GetUrlRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import java.io.InputStream;
 import java.net.URL;
+import java.util.List;
+import java.util.Objects;
 
 @Slf4j
 @Service
@@ -157,5 +159,92 @@ public class AwsService implements StorageService {
                 .bucket(awsProperties.getS3BucketName())
                 .key(fileName)
                 .build()).toExternalForm();
+    }
+
+    @Override
+    public void deleteFile(String fileUrl) {
+        if (fileUrl == null || fileUrl.isEmpty()) {
+            return;
+        }
+        
+        try {
+            String key = extractKeyFromUrl(fileUrl);
+            if (key != null) {
+                s3Client.deleteObject(builder -> builder
+                        .bucket(awsProperties.getS3BucketName())
+                        .key(key));
+                log.debug("Deleted S3 object: {}", key);
+            }
+        } catch (Exception e) {
+            log.error("Failed to delete S3 object {}: {}", fileUrl, e.getMessage());
+        }
+    }
+
+    @Override
+    public void deleteFiles(List<String> fileUrls) {
+        if (fileUrls == null || fileUrls.isEmpty()) {
+            return;
+        }
+        
+        try {
+            // Batch delete (up to 1000 objects per request)
+            List<String> keys = fileUrls.stream()
+                    .map(this::extractKeyFromUrl)
+                    .filter(Objects::nonNull)
+                    .toList();
+            
+            if (keys.isEmpty()) {
+                return;
+            }
+            
+            // S3 batch delete supports max 1000 objects
+            for (int i = 0; i < keys.size(); i += 1000) {
+                List<String> batch = keys.subList(i, Math.min(i + 1000, keys.size()));
+                
+                var objectIdentifiers = batch.stream()
+                        .map(key -> software.amazon.awssdk.services.s3.model.ObjectIdentifier.builder()
+                                .key(key)
+                                .build())
+                        .toList();
+                
+                s3Client.deleteObjects(builder -> builder
+                        .bucket(awsProperties.getS3BucketName())
+                        .delete(del -> del.objects(objectIdentifiers)));
+                
+                log.debug("Deleted {} S3 objects", batch.size());
+            }
+        } catch (Exception e) {
+            log.error("Failed to batch delete S3 objects: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Extract S3 key from full URL
+     * https://onestudy.id.vn/resource/goroute/reviews/xxx.webp -> reviews/xxx.webp
+     */
+    private String extractKeyFromUrl(String url) {
+        if (url == null || !url.contains("onestudy.id.vn")) {
+            return null;
+        }
+        
+        try {
+            // Extract path after domain
+            int domainIndex = url.indexOf("onestudy.id.vn");
+            String afterDomain = url.substring(domainIndex + "onestudy.id.vn".length());
+            
+            // Remove /resource/goroute/ or /resource/ prefix
+            if (afterDomain.startsWith("/resource/goroute/")) {
+                return afterDomain.substring("/resource/goroute/".length());
+            } else if (afterDomain.startsWith("/resource/")) {
+                return afterDomain.substring("/resource/".length());
+            } else if (afterDomain.startsWith("/")) {
+                return afterDomain.substring(1);
+            }
+            
+            return afterDomain;
+        } catch (Exception e) {
+            log.warn("Failed to extract key from URL: {}", url);
+            return null;
+        }
     }
 }

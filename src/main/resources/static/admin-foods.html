@@ -253,6 +253,18 @@
                                     <input type="url" id="image-url" class="form-input" placeholder="https://...">
                                 </div>
                             </div>
+                            <div class="form-group" style="margin-top: 16px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+                                    <div>
+                                        <label class="form-label" style="margin-bottom: 0;">Ảnh giới thiệu</label>
+                                        <small class="form-help">Carousel hiển thị trên màn chi tiết món (title + URL).</small>
+                                    </div>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="addFoodImageItem()">➕ Thêm ảnh</button>
+                                </div>
+                                <div id="food-images-list-container" style="margin-top: 12px;">
+                                    <div id="food-images-list"></div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -302,6 +314,18 @@
                                     <label class="form-label">URL ảnh riêng cho city</label>
                                     <input type="url" id="score-image-url" class="form-input" placeholder="https://...">
                                     <small class="form-help">Để trống thì app dùng ảnh chung của món.</small>
+                                </div>
+                                <div class="form-group">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+                                        <div>
+                                            <label class="form-label" style="margin-bottom: 0;">Ảnh giới thiệu theo city</label>
+                                            <small class="form-help">Để trống thì app dùng ảnh giới thiệu chung của món.</small>
+                                        </div>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="addScoreImageItem()">➕ Thêm ảnh</button>
+                                    </div>
+                                    <div id="score-images-list-container" style="margin-top: 12px;">
+                                        <div id="score-images-list"></div>
+                                    </div>
                                 </div>
                                 <div class="form-group">
                                     <label class="form-label">Fun fact</label>
@@ -356,6 +380,8 @@
         let currentDetail = null;
         let searchTimer = null;
         let isEditMode = false;
+        let foodImagesList = [];
+        let scoreImagesList = [];
 
         const tableChrome = () => ({
             loadingEl: document.getElementById('loading'),
@@ -518,6 +544,8 @@
             document.getElementById('description').value = '';
             document.getElementById('category').value = 'NOODLE';
             document.getElementById('image-url').value = '';
+            foodImagesList = [];
+            renderFoodImagesList();
             renderScoresSection([]);
             renderLinkedSection([], 0);
             resetScoreForm();
@@ -541,6 +569,13 @@
                 document.getElementById('description').value = detail.description || '';
                 document.getElementById('category').value = detail.category || 'NOODLE';
                 document.getElementById('image-url').value = detail.imageUrl || '';
+                foodImagesList = Array.isArray(detail.introductionImages)
+                    ? detail.introductionImages.map(item => ({
+                        title: item.title || '',
+                        image: item.image || '',
+                    }))
+                    : [];
+                renderFoodImagesList();
                 renderScoresSection(detail.cityScores || []);
                 resetScoreForm();
                 setPostSaveControlsVisible(true);
@@ -609,6 +644,8 @@
             document.getElementById('score-local-desc').value = '';
             document.getElementById('score-image-url').value = '';
             document.getElementById('score-fun-fact').value = '';
+            scoreImagesList = [];
+            renderScoreImagesList();
             document.getElementById('score-form-title').textContent = 'Thêm điểm thành phố';
             document.getElementById('score-save-btn').textContent = 'Thêm điểm';
             document.getElementById('score-cancel-btn').style.display = 'none';
@@ -624,6 +661,13 @@
             document.getElementById('score-local-desc').value = score.localDescription || '';
             document.getElementById('score-image-url').value = score.imageUrl || '';
             document.getElementById('score-fun-fact').value = score.funFact || '';
+            scoreImagesList = Array.isArray(score.introductionImages)
+                ? score.introductionImages.map(item => ({
+                    title: item.title || '',
+                    image: item.image || '',
+                }))
+                : [];
+            renderScoreImagesList();
             document.getElementById('score-form-title').textContent = 'Sửa điểm thành phố';
             document.getElementById('score-save-btn').textContent = 'Cập nhật điểm';
             document.getElementById('score-cancel-btn').style.display = 'inline-flex';
@@ -678,7 +722,14 @@
                 return;
             }
 
-            const body = { nameVi, nameEn, description, category, imageUrl };
+            const body = {
+                nameVi,
+                nameEn,
+                description,
+                category,
+                imageUrl,
+                introductionImages: foodImagesList.filter(item => item.image?.trim()),
+            };
             const foodId = document.getElementById('food-id').value;
             const url = isEditMode && foodId ? `${API_BASE_URL}/${foodId}` : API_BASE_URL;
             const method = isEditMode && foodId ? 'PUT' : 'POST';
@@ -733,6 +784,7 @@
                 score: scoreValue,
                 localDescription: document.getElementById('score-local-desc').value.trim(),
                 imageUrl: document.getElementById('score-image-url').value.trim() || null,
+                introductionImages: scoreImagesList.filter(item => item.image?.trim()),
                 funFact: document.getElementById('score-fun-fact').value.trim(),
             };
             const url = scoreId
@@ -835,6 +887,96 @@
                 }
             } catch (error) {
                 showError('Lỗi xóa: ' + error.message);
+            }
+        }
+
+        function renderImagesListFor(list, containerId, previewPrefix) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            if (!list.length) {
+                container.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 16px;">Chưa có ảnh. Nhấn "➕ Thêm ảnh" để bắt đầu.</div>';
+                return;
+            }
+
+            container.innerHTML = list.map((img, index) => `
+                <div class="image-item">
+                    <div class="image-item-header">
+                        <span style="font-weight: 600; color: #1f2937;">Ảnh #${index + 1}</span>
+                        <div class="image-item-actions">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="moveImageUp('${previewPrefix}', ${index})" ${index === 0 ? 'disabled' : ''}>⬆️</button>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="moveImageDown('${previewPrefix}', ${index})" ${index === list.length - 1 ? 'disabled' : ''}>⬇️</button>
+                            <button type="button" class="btn btn-danger btn-sm" onclick="removeImageItem('${previewPrefix}', ${index})">🗑️</button>
+                        </div>
+                    </div>
+                    <div class="image-item-preview" id="${previewPrefix}-preview-${index}">
+                        ${img.image ? `<img src="${escapeHtml(img.image)}" onerror="this.style.display='none'" style="cursor: pointer;">` : '<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#f3f4f6;color:#9ca3af;font-size:12px;">No image</div>'}
+                    </div>
+                    <div class="image-item-inputs">
+                        <input type="text" class="image-item-input" placeholder="Title / nhãn badge" value="${escapeHtml(img.title || '')}" onchange="updateImageItemField('${previewPrefix}', ${index}, 'title', this.value)">
+                        <input type="url" class="image-item-input" placeholder="Image URL" value="${escapeHtml(img.image || '')}" onchange="updateImageItemField('${previewPrefix}', ${index}, 'image', this.value); updateImageItemPreview('${previewPrefix}', ${index})">
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function getImagesListByPrefix(prefix) {
+            return prefix === 'food' ? foodImagesList : scoreImagesList;
+        }
+
+        function renderFoodImagesList() {
+            renderImagesListFor(foodImagesList, 'food-images-list', 'food');
+        }
+
+        function renderScoreImagesList() {
+            renderImagesListFor(scoreImagesList, 'score-images-list', 'score');
+        }
+
+        function addFoodImageItem() {
+            foodImagesList.push({ title: '', image: '' });
+            renderFoodImagesList();
+        }
+
+        function addScoreImageItem() {
+            scoreImagesList.push({ title: '', image: '' });
+            renderScoreImagesList();
+        }
+
+        function removeImageItem(prefix, index) {
+            const list = getImagesListByPrefix(prefix);
+            list.splice(index, 1);
+            if (prefix === 'food') renderFoodImagesList();
+            else renderScoreImagesList();
+        }
+
+        function moveImageUp(prefix, index) {
+            const list = getImagesListByPrefix(prefix);
+            if (index <= 0) return;
+            [list[index], list[index - 1]] = [list[index - 1], list[index]];
+            if (prefix === 'food') renderFoodImagesList();
+            else renderScoreImagesList();
+        }
+
+        function moveImageDown(prefix, index) {
+            const list = getImagesListByPrefix(prefix);
+            if (index >= list.length - 1) return;
+            [list[index], list[index + 1]] = [list[index + 1], list[index]];
+            if (prefix === 'food') renderFoodImagesList();
+            else renderScoreImagesList();
+        }
+
+        function updateImageItemField(prefix, index, field, value) {
+            getImagesListByPrefix(prefix)[index][field] = value;
+        }
+
+        function updateImageItemPreview(prefix, index) {
+            const list = getImagesListByPrefix(prefix);
+            const previewDiv = document.getElementById(`${prefix}-preview-${index}`);
+            if (!previewDiv) return;
+            const imageUrl = list[index].image;
+            if (imageUrl) {
+                previewDiv.innerHTML = `<img src="${escapeHtml(imageUrl)}" onerror="this.parentElement.innerHTML='<div style=\\'display:flex;align-items:center;justify-content:center;height:100%;background:#f3f4f6;color:#9ca3af;font-size:12px;\\'>Invalid URL</div>'" style="cursor: pointer;">`;
+            } else {
+                previewDiv.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#f3f4f6;color:#9ca3af;font-size:12px;">No image</div>';
             }
         }
 

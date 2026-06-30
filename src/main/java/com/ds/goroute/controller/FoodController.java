@@ -1,5 +1,6 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.dto.response.CitySlugOptionResponse;
 import com.ds.goroute.dto.response.FoodDetailResponse;
 import com.ds.goroute.dto.response.FoodPlacePageResponse;
 import com.ds.goroute.dto.response.FoodSummaryResponse;
@@ -40,6 +41,13 @@ public class FoodController extends BaseService {
             @RequestParam String citySlug) {
         FoodDetailResponse detail = foodService.getDetail(id, citySlug);
         return ResponseEntity.ok(ofSucceeded(detail));
+    }
+
+    @GetMapping("/{id}/cities")
+    @Operation(summary = "Cities where this food is available")
+    public ResponseEntity listCities(@PathVariable UUID id) {
+        List<CitySlugOptionResponse> cities = foodService.listCitiesForFood(id);
+        return ResponseEntity.ok(ofSucceeded(cities));
     }
 
     @GetMapping("/{id}/places")

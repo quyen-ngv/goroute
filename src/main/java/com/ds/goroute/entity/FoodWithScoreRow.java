@@ -20,6 +20,7 @@ public class FoodWithScoreRow {
     private String description;
     private String category;
     private String imageUrl;
+    private String introductionImages;
     private Integer score;
     private String citySlug;
     private String localDescription;

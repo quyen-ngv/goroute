@@ -1,5 +1,6 @@
 # Build stage
 FROM maven:3.9.9-eclipse-temurin-21 AS builder
+ENV JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8"
 WORKDIR /app
 
 # Copy pom.xml trước để cache dependencies
@@ -51,7 +52,7 @@ COPY --from=builder --chown=spring:spring /app/target/ticketmaster-0.0.1-SNAPSHO
 COPY --from=builder --chown=spring:spring /app/src/main/resources/firebase-credentials.json /app/goroute-credentials.json
 
 # Biến môi trường quan trọng giúp tránh lỗi SSL/Networking khi khởi tạo
-ENV JAVA_OPTS="-Djava.net.preferIPv4Stack=true -Djava.security.egd=file:/dev/./urandom"
+ENV JAVA_OPTS="-Djava.net.preferIPv4Stack=true -Djava.security.egd=file:/dev/./urandom -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8"
 ENV FIREBASE_CREDENTIAL_PATH=/app/goroute-credentials.json
 
 USER spring

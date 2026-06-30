@@ -27,6 +27,8 @@ public interface ActivityBookingRepository {
 
     List<ActivityBooking> findWithinRadius(ActivityBookingGeoSearchParams params);
 
+    List<ActivityBooking> searchByKeyword(String keyword, int limit, int offset);
+
     void update(ActivityBooking booking);
 
     void delete(UUID id);

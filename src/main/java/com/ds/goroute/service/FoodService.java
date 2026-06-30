@@ -13,6 +13,8 @@ public interface FoodService {
 
     FoodDetailResponse getDetail(UUID foodId, String citySlug);
 
+    List<CitySlugOptionResponse> listCitiesForFood(UUID foodId);
+
     FoodPlacePageResponse listPlacesForFood(UUID foodId, String citySlug, BigDecimal lat, BigDecimal lng, int page, int size);
 
     List<FoodSummaryResponse> listFoodsForPlace(UUID placeId, String citySlug);

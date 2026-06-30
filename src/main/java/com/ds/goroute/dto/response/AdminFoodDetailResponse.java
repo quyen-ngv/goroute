@@ -22,6 +22,7 @@ public class AdminFoodDetailResponse {
     private String description;
     private String category;
     private String imageUrl;
+    private List<PlaceImagesDto> introductionImages;
     private List<FoodCityScoreResponse> cityScores;
     private long linkedPlacesCount;
     private OffsetDateTime createdAt;

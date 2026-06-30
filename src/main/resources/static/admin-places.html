@@ -425,17 +425,28 @@
             tableEl: document.getElementById('table-container'),
         });
 
+        function placeCreatedAtMs(place) {
+            if (!place?.createdAt) return 0;
+            const time = new Date(place.createdAt).getTime();
+            return Number.isFinite(time) ? time : 0;
+        }
+
+        function sortPlacesNewestFirst(list) {
+            list.sort((a, b) => placeCreatedAtMs(b) - placeCreatedAtMs(a));
+        }
+
         async function loadData(silent = false) {
             const chrome = tableChrome();
             try {
                 GorouteAdmin.beginLoading({ silent, ...chrome });
                 if (!silent) hideMessages();
 
-                const response = await fetch(`${API_BASE_URL}/places/search?latitude=16&longitude=108&radius=1000&page=0&size=1000`);
+                const response = await fetch(`${API_BASE_URL}/places`);
                 const data = await response.json();
 
                 if (data.meta && data.meta.code === 200000) {
                     places = data.data || [];
+                    sortPlacesNewestFirst(places);
                     filteredPlaces = [...places];
                     renderTable({ silent });
                     updateStats();
@@ -450,6 +461,7 @@
 
         function applyPlaceMutation(place) {
             GorouteAdmin.upsertById(places, place);
+            sortPlacesNewestFirst(places);
             filterPlaces();
             updateStats();
         }
@@ -703,6 +715,7 @@
                     closeBatchModal();
                     if (Array.isArray(result.data) && result.data.length > 0) {
                         GorouteAdmin.upsertManyById(places, result.data);
+                        sortPlacesNewestFirst(places);
                         filterPlaces();
                         updateStats();
                     } else {

@@ -305,6 +305,66 @@ public class PlaceReviewScoringService {
     }
 
     /**
+     * Calculate review weight for cleanup/ranking purposes
+     * Higher weight = more valuable review (should be kept)
+     * 
+     * Factors:
+     * - Authenticity score (40%)
+     * - Review age (20%) - newer is better
+     * - Helpful votes/likes (20%)
+     * - Content quality (20%) - text length, has photos
+     */
+    public double calculateReviewWeight(PlaceReview review, int totalReviewCount) {
+        // 1. Authenticity score (40%)
+        double authenticityWeight = 0.0;
+        if (review.getAuthenticityScore() != null) {
+            authenticityWeight = review.getAuthenticityScore().doubleValue();
+        }
+        
+        // 2. Review age (20%) - newer reviews get higher weight
+        double ageWeight = 0.0;
+        if (review.getReviewDate() != null) {
+            long daysSinceReview = java.time.temporal.ChronoUnit.DAYS.between(
+                review.getReviewDate().atStartOfDay(), 
+                LocalDateTime.now()
+            );
+            // Reviews from last year get full weight, older reviews get less
+            ageWeight = Math.max(0.0, 1.0 - (daysSinceReview / 365.0));
+        }
+        
+        // 3. Helpful votes/likes (20%)
+        double likesWeight = 0.0;
+        if (review.getLikes() != null && review.getLikes() > 0) {
+            // Normalize likes based on average likes for this place
+            double avgLikes = Math.max(1.0, totalReviewCount / 10.0);
+            likesWeight = Math.min(1.0, review.getLikes() / avgLikes);
+        }
+        
+        // 4. Content quality (20%)
+        double contentWeight = 0.0;
+        
+        // Text length score
+        double textScore = 0.0;
+        if (review.getDescription() != null && !review.getDescription().isEmpty()) {
+            textScore = Math.min(1.0, review.getDescription().length() / 200.0);
+        }
+        
+        // Has photos
+        List<String> imageList = JsonUtils.fromJson(review.getImages(), List.class);
+        double photoScore = (imageList != null && !imageList.isEmpty()) ? 1.0 : 0.0;
+        
+        contentWeight = (textScore + photoScore) / 2.0;
+        
+        // Calculate final weight
+        double weight = 0.40 * authenticityWeight
+                      + 0.20 * ageWeight
+                      + 0.20 * likesWeight
+                      + 0.20 * contentWeight;
+        
+        return weight;
+    }
+
+    /**
      * Full scoring job: Step 1 + Step 2
      */
     public Map<String, Integer> runFullScoringJob(String googlePlaceId, boolean forceRecalculate) {

@@ -38,4 +38,6 @@ public interface UserReviewRepository {
     int countByUserInTimeRange(UUID userId, LocalDateTime startTime, LocalDateTime endTime);
 
     void delete(UUID id);
+    
+    void deleteByIds(List<UUID> ids);
 }

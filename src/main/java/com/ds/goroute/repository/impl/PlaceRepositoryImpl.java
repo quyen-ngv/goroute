@@ -45,6 +45,24 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     }
 
     @Override
+    public long countAll() {
+        return placeMapper.countAll();
+    }
+
+    @Override
+    public List<Place> findPage(int limit, int offset) {
+        return placeMapper.findPage(limit, offset);
+    }
+
+    @Override
+    public List<Place> findByIds(List<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        return placeMapper.findByIds(ids);
+    }
+
+    @Override
     public List<Place> findNearby(String keyword, BigDecimal latitude, BigDecimal longitude, BigDecimal radius,
                                  String category, String placeGroup, BigDecimal minRating, int limit, int offset) {
         return placeMapper.findNearby(

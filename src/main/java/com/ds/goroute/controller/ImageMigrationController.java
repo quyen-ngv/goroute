@@ -2,11 +2,15 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.job.ImageMigrationJob;
+import com.ds.goroute.job.ReviewCleanupJob;
 import com.ds.goroute.service.BaseService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/v1/api/admin/images")
@@ -15,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 public class ImageMigrationController extends BaseService {
 
     private final ImageMigrationJob imageMigrationJob;
+    private final ReviewCleanupJob reviewCleanupJob;
 
     /**
      * Trigger full image migration (async)
@@ -127,6 +132,42 @@ public class ImageMigrationController extends BaseService {
         } catch (Exception e) {
             return ResponseEntity.internalServerError()
                     .body(ofFailed(500, e.getMessage()));
+        }
+    }
+
+    // ==================== REVIEW CLEANUP ====================
+
+    /**
+     * Cleanup low-quality reviews - keep only top 200 reviews per place
+     */
+    @PostMapping("/reviews/cleanup")
+    public ResponseEntity<BaseResponse<String>> cleanupReviews() {
+        log.info("Triggering review cleanup job");
+        
+        try {
+            reviewCleanupJob.cleanupAllPlaces();
+            return ResponseEntity.ok(ofSucceeded("Review cleanup started. Check logs for progress."));
+        } catch (Exception e) {
+            log.error("Failed to start review cleanup: {}", e.getMessage());
+            return ResponseEntity.internalServerError()
+                    .body(ofFailed(500, "Failed to start review cleanup: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Cleanup reviews for a specific place
+     */
+    @PostMapping("/reviews/cleanup/{placeId}")
+    public ResponseEntity<BaseResponse<?>> cleanupPlaceReviews(@PathVariable UUID placeId) {
+        log.info("Triggering review cleanup for place: {}", placeId);
+        
+        try {
+            Map<String, Integer> result = reviewCleanupJob.cleanupPlaceReviews(placeId);
+            return ResponseEntity.ok(ofSucceeded(result));
+        } catch (Exception e) {
+            log.error("Failed to cleanup reviews for place {}: {}", placeId, e.getMessage());
+            return ResponseEntity.internalServerError()
+                    .body(ofFailed(500, "Failed to cleanup reviews: " + e.getMessage()));
         }
     }
 }

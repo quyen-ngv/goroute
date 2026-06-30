@@ -140,6 +140,24 @@
         ORDER BY created_at DESC
     </select>
 
+    <select id="countAll" resultType="long">
+        SELECT COUNT(*) FROM places
+    </select>
+
+    <select id="findPage" resultMap="PlaceResultMap">
+        SELECT * FROM places
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findByIds" resultMap="PlaceResultMap">
+        SELECT * FROM places
+        WHERE id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
     <select id="findNearby" resultMap="PlaceResultMap">
         SELECT *
         FROM (
@@ -151,17 +169,6 @@
                 )) AS distance
             FROM places
             WHERE 1=1
-            <if test="keyword != null and keyword != ''">
-                AND (
-                    to_tsvector('simple', COALESCE(title, '') || ' ' || COALESCE(address, '') || ' ' || COALESCE(category, '') || ' ' || COALESCE(descriptions, '') || ' ' || COALESCE(destinations::text, ''))
-                    @@ plainto_tsquery('simple', #{keyword})
-                    OR LOWER(title) LIKE CONCAT('%', LOWER(#{keyword}), '%')
-                    OR LOWER(address) LIKE CONCAT('%', LOWER(#{keyword}), '%')
-                    OR LOWER(category) LIKE CONCAT('%', LOWER(#{keyword}), '%')
-                    OR LOWER(descriptions) LIKE CONCAT('%', LOWER(#{keyword}), '%')
-                    OR LOWER(destinations::text) LIKE CONCAT('%', LOWER(#{keyword}), '%')
-                )
-            </if>
             <if test="category != null and category != ''">
                 AND category = #{category}
             </if>
@@ -206,17 +213,6 @@
             </if>
             <if test="excludeLinkedFoodPlaces != null and excludeLinkedFoodPlaces">
                 AND NOT EXISTS (SELECT 1 FROM place_foods pfx WHERE pfx.place_id = p.id)
-            </if>
-            <if test="keyword != null and keyword != ''">
-                AND (
-                    to_tsvector('simple', COALESCE(p.title, '') || ' ' || COALESCE(p.address, '') || ' ' || COALESCE(p.category, '') || ' ' || COALESCE(p.descriptions, '') || ' ' || COALESCE(p.destinations::text, ''))
-                    @@ plainto_tsquery('simple', #{keyword})
-                    OR LOWER(p.title) LIKE CONCAT('%', LOWER(#{keyword}), '%')
-                    OR LOWER(p.address) LIKE CONCAT('%', LOWER(#{keyword}), '%')
-                    OR LOWER(p.category) LIKE CONCAT('%', LOWER(#{keyword}), '%')
-                    OR LOWER(p.descriptions) LIKE CONCAT('%', LOWER(#{keyword}), '%')
-                    OR LOWER(p.destinations::text) LIKE CONCAT('%', LOWER(#{keyword}), '%')
-                )
             </if>
             <if test="category != null and category != ''">
                 AND p.category = #{category}

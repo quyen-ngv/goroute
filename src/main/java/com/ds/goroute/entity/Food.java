@@ -21,6 +21,7 @@ public class Food {
     private String description;
     private String category;
     private String imageUrl;
+    private String introductionImages;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
 }

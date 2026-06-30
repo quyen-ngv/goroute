@@ -19,6 +19,12 @@ public interface PlaceRepository {
 
     List<Place> findAll();
 
+    long countAll();
+
+    List<Place> findPage(int limit, int offset);
+
+    List<Place> findByIds(List<UUID> ids);
+
     List<Place> findNearby(String keyword, BigDecimal latitude, BigDecimal longitude, BigDecimal radius,
                           String category, String placeGroup, BigDecimal minRating, int limit, int offset);
 

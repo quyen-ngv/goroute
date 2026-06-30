@@ -5,41 +5,203 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="agd-partner-manual-verification" />
-    <title>Shared Trip - GoRoute</title>
+    <title>Shared Trip - Ondetour</title>
     <link rel="stylesheet" href="/goroute/goroute-theme.css">
 </head>
 
 <body class="share-page">
-    <div class="container">
-        <div id="loading" class="loading">
-            <h2>Loading trip...</h2>
+    <div id="loading" class="share-loading">
+        <div class="share-loading-spinner"></div>
+        <p>Loading itinerary...</p>
+    </div>
+    <div id="error" class="share-error" style="display: none;">
+        <h2>Trip not found</h2>
+        <p>This link may have expired or does not exist.</p>
+    </div>
+    <div id="content" style="display: none;"></div>
+
+    <div id="image-viewer" class="image-viewer" aria-hidden="true">
+        <div class="image-viewer-backdrop" onclick="closeImageViewer()"></div>
+        <div class="image-viewer-content">
+            <button type="button" class="image-viewer-close" aria-label="Close" onclick="closeImageViewer()">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            <button type="button" id="viewer-prev" class="image-viewer-nav image-viewer-nav--prev" aria-label="Previous image" onclick="viewerGo(-1)">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <img id="viewer-image" class="image-viewer-img" src="" alt="">
+            <button type="button" id="viewer-next" class="image-viewer-nav image-viewer-nav--next" aria-label="Next image" onclick="viewerGo(1)">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+            <span id="viewer-counter" class="image-viewer-counter"></span>
         </div>
-        <div id="error" class="error" style="display: none;">
-            <h2>Trip not found</h2>
-        </div>
-        <div id="content" style="display: none;"></div>
     </div>
 
     <script>
         const API_BASE_URL = 'https://onestudy.id.vn/goroute';
+        const APP_STORE_URL = 'https://apps.apple.com/us/app/ondetour/id6775022752';
+
+        const APP_STORE_BTN = `
+            <a href="${APP_STORE_URL}" class="app-store-btn" target="_blank" rel="noopener noreferrer">
+                <svg class="app-store-btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+                </svg>
+                <span class="app-store-btn-text">
+                    <span class="app-store-btn-label">Download on the</span>
+                    <span class="app-store-btn-store">App Store</span>
+                </span>
+            </a>
+        `;
+
+        function renderAppDownload(variant) {
+            if (variant === 'sidebar') {
+                return `
+                    <div class="sidebar-card sidebar-card--app">
+                        <span class="app-download-badge">iOS only</span>
+                        <h3 class="app-download-title app-download-title--sm">Get the Ondetour app</h3>
+                        <p class="app-download-desc app-download-desc--sm">Plan trips, track expenses &amp; share itineraries on iPhone.</p>
+                        ${APP_STORE_BTN}
+                    </div>
+                `;
+            }
+            if (variant === 'sticky') {
+                return `
+                    <div class="app-download-sticky" id="app-download-sticky">
+                        <div class="app-download-sticky-inner">
+                            <div class="app-download-sticky-text">
+                                <strong>Ondetour</strong>
+                                <span>Available on iOS</span>
+                            </div>
+                            ${APP_STORE_BTN.replace('app-store-btn', 'app-store-btn app-store-btn--sm')}
+                        </div>
+                    </div>
+                `;
+            }
+            return `
+                <section class="app-download app-download--banner">
+                    <div class="app-download-glow"></div>
+                    <div class="app-download-inner">
+                        <div class="app-download-content">
+                            <span class="app-download-badge">Available on iOS</span>
+                            <h3 class="app-download-title">Plan your own Vietnam trip with Ondetour</h3>
+                            <p class="app-download-desc">Create day-by-day itineraries, log expenses, save memories, and share your journey — all from your iPhone.</p>
+                        </div>
+                        <div class="app-download-action">
+                            ${APP_STORE_BTN}
+                            <p class="app-download-note">Android coming soon</p>
+                        </div>
+                    </div>
+                </section>
+            `;
+        }
+
+        const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+        let activeDay = 1;
+        let tripData = null;
+        let viewerState = { images: [], index: 0 };
+
+        function openImageViewer(images, index) {
+            if (!images || !images.length) return;
+            viewerState = { images, index: Math.max(0, Math.min(index, images.length - 1)) };
+            updateImageViewer();
+            const viewer = document.getElementById('image-viewer');
+            viewer.classList.add('image-viewer--open');
+            viewer.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('image-viewer-open');
+        }
+
+        function openImageViewerFromEl(el) {
+            openImageViewer(JSON.parse(el.dataset.images), Number(el.dataset.index || 0));
+        }
+
+        function openImageViewerFromCarousel(carouselId) {
+            const el = document.getElementById(carouselId);
+            if (!el) return;
+            openImageViewer(JSON.parse(el.dataset.images), Number(el.dataset.index || 0));
+        }
+
+        function closeImageViewer() {
+            const viewer = document.getElementById('image-viewer');
+            viewer.classList.remove('image-viewer--open');
+            viewer.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('image-viewer-open');
+            document.getElementById('viewer-image').src = '';
+        }
+
+        function viewerGo(direction) {
+            const total = viewerState.images.length;
+            if (total <= 1) return;
+            viewerState.index = (viewerState.index + direction + total) % total;
+            updateImageViewer();
+        }
+
+        function updateImageViewer() {
+            const { images, index } = viewerState;
+            document.getElementById('viewer-image').src = images[index];
+            const counter = document.getElementById('viewer-counter');
+            const showNav = images.length > 1;
+            counter.textContent = showNav ? `${index + 1} / ${images.length}` : '';
+            counter.style.display = showNav ? '' : 'none';
+            document.getElementById('viewer-prev').style.display = showNav ? '' : 'none';
+            document.getElementById('viewer-next').style.display = showNav ? '' : 'none';
+        }
+
+        document.addEventListener('keydown', (e) => {
+            const viewer = document.getElementById('image-viewer');
+            if (!viewer.classList.contains('image-viewer--open')) return;
+            if (e.key === 'Escape') closeImageViewer();
+            if (e.key === 'ArrowLeft') viewerGo(-1);
+            if (e.key === 'ArrowRight') viewerGo(1);
+        });
+
+        function encodeImagesAttr(images) {
+            return escapeHtml(JSON.stringify(images));
+        }
 
         function getTripIdFromUrl() {
             const pathParts = window.location.pathname.split('/');
             return pathParts[pathParts.length - 1].replace('.html', '');
         }
 
-        function formatDate(dateStr) {
-            const date = new Date(dateStr);
-            return date.toLocaleDateString('vi-VN', { day: 'numeric', month: 'short', year: 'numeric' });
+        function escapeHtml(str) {
+            if (str == null) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function parseLocalDate(dateStr) {
+            const [y, m, d] = dateStr.split('-').map(Number);
+            return new Date(y, m - 1, d);
+        }
+
+        function formatDateFull(dateStr) {
+            const date = parseLocalDate(dateStr);
+            return date.toLocaleDateString('en-US', { day: 'numeric', month: 'numeric', year: 'numeric' });
         }
 
         function formatDateShort(dateStr) {
-            const date = new Date(dateStr);
-            return date.toLocaleDateString('vi-VN', { weekday: 'short', day: 'numeric', month: 'numeric' });
+            const date = parseLocalDate(dateStr);
+            return `${WEEKDAYS[date.getDay()]}, ${date.getDate()}/${date.getMonth() + 1}`;
+        }
+
+        function formatDateShortFromDate(date) {
+            return `${WEEKDAYS[date.getDay()]}, ${date.getDate()}/${date.getMonth() + 1}`;
+        }
+
+        function formatDateRange(startDate, endDate) {
+            const start = parseLocalDate(startDate);
+            const end = parseLocalDate(endDate);
+            const monthName = end.toLocaleDateString('en-US', { month: 'long' });
+            return `${start.getDate()} – ${end.getDate()} ${monthName}`;
         }
 
         function getDateForDay(startDate, dayNumber) {
-            const date = new Date(startDate);
+            const date = parseLocalDate(startDate);
             date.setDate(date.getDate() + (dayNumber - 1));
             return date;
         }
@@ -50,10 +212,78 @@
         }
 
         function formatMoney(amount, currency) {
+            const value = Number(amount);
             if (currency === 'VND') {
-                return new Intl.NumberFormat('vi-VN').format(amount) + 'đ';
+                return new Intl.NumberFormat('en-US').format(value) + ' ₫';
             }
-            return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(value);
+        }
+
+        function getDayCount(startDate, endDate) {
+            const start = parseLocalDate(startDate);
+            const end = parseLocalDate(endDate);
+            return Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+        }
+
+        function getDayNumbers(startDate, endDate) {
+            const count = getDayCount(startDate, endDate);
+            return Array.from({ length: count }, (_, i) => i + 1);
+        }
+
+        function getNightCount(dayCount) {
+            return Math.max(0, dayCount - 1);
+        }
+
+        function getCategoryLabel(category) {
+            if (!category) return null;
+            const cat = category.toLowerCase();
+            const labels = {
+                restaurant: 'Food & Drink',
+                food: 'Food & Drink',
+                activity: 'Activity',
+                shopping: 'Shopping',
+                attraction: 'Attraction',
+                nature: 'Nature',
+                hotel: 'Accommodation',
+                accommodation: 'Accommodation',
+                transport: 'Transport',
+                transportation: 'Transport',
+                departure: 'Departure',
+                sightseeing: 'Sightseeing',
+                bridge: 'Bridge',
+                'tourist attraction': 'Tourist Attraction'
+            };
+            return labels[cat] || category;
+        }
+
+        function getCategoryIcon(category) {
+            const cat = (category || '').toLowerCase();
+            const icons = {
+                restaurant: '🍽️', food: '🍽️', activity: '⚓', shopping: '🛍️',
+                attraction: '📷', nature: '🌿', hotel: '🏨', accommodation: '🏨',
+                transport: '🚗', transportation: '🚗', departure: '✈️',
+                sightseeing: '📷', bridge: '🌉', 'tourist attraction': '📷'
+            };
+            return icons[cat] || '📍';
+        }
+
+        function getActivityImages(activity) {
+            const images = [];
+            if (activity.memoryImageUrls && activity.memoryImageUrls.length > 0) {
+                images.push(...activity.memoryImageUrls);
+            } else if (activity.photoUrl) {
+                images.push(activity.photoUrl);
+            }
+            return images;
+        }
+
+        function hasLocation(activity) {
+            return (activity.lat && activity.lng) || activity.address;
+        }
+
+        function cleanAddress(address) {
+            if (!address) return '';
+            return address.replace(/^Address:\s*/i, '').trim();
         }
 
         function openGoogleMaps(lat, lng, address) {
@@ -64,339 +294,473 @@
                 } else if (address) {
                     window.location.href = `google.navigation:q=${encodeURIComponent(address)}`;
                 }
-            } else {
-                if (lat && lng) {
-                    window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank');
-                } else if (address) {
-                    window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`, '_blank');
-                }
+            } else if (lat && lng) {
+                window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank');
+            } else if (address) {
+                window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`, '_blank');
             }
         }
 
-        function getCategoryClass(category) {
-            const cat = (category || '').toUpperCase();
-            const classes = {
-                'DEPARTURE': 'type-departure', 'FOOD': 'type-food',
-                'ACCOMMODATION': 'type-hotel', 'HOTEL': 'type-hotel',
-                'TRANSPORTATION': 'type-transport', 'TRANSPORT': 'type-transport',
-                'ACTIVITY': 'type-activity', 'SIGHTSEEING': 'type-attraction',
-                'ATTRACTION': 'type-attraction', 'SHOPPING': 'type-activity', 'OTHER': 'type-transport'
-            };
-            return classes[cat] || 'type-transport';
+        function groupActivitiesByDay(activities) {
+            const grouped = {};
+            activities.forEach(activity => {
+                if (!grouped[activity.dayNumber]) grouped[activity.dayNumber] = [];
+                grouped[activity.dayNumber].push(activity);
+            });
+            Object.keys(grouped).forEach(day => {
+                grouped[day].sort((a, b) => {
+                    if (!a.startTime) return 1;
+                    if (!b.startTime) return -1;
+                    return a.startTime.localeCompare(b.startTime);
+                });
+            });
+            return grouped;
         }
 
-        function getDotClass(category) {
-            const cat = (category || '').toUpperCase();
-            const classes = {
-                'DEPARTURE': 'dot-violet', 'FOOD': 'dot-green',
-                'ACCOMMODATION': 'dot-blue', 'HOTEL': 'dot-blue',
-                'TRANSPORTATION': 'dot-gray', 'TRANSPORT': 'dot-gray',
-                'ACTIVITY': 'dot-pink', 'SIGHTSEEING': 'dot-orange',
-                'ATTRACTION': 'dot-orange', 'SHOPPING': 'dot-violet', 'OTHER': 'dot-gray'
-            };
-            return classes[cat] || 'dot-gray';
+        function renderActivityImages(images, carouselId) {
+            if (!images.length) return '';
+            const imagesAttr = encodeImagesAttr(images);
+            if (images.length === 1) {
+                return `
+                    <button type="button" class="activity-card-image activity-card-image--clickable"
+                        data-images="${imagesAttr}" data-index="0"
+                        onclick="openImageViewerFromEl(this)" aria-label="View image">
+                        <img src="${escapeHtml(images[0])}" alt="" loading="lazy">
+                        <span class="activity-image-zoom" aria-hidden="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                        </span>
+                    </button>
+                `;
+            }
+            const id = `carousel-${carouselId}`;
+            return `
+                <div class="activity-carousel" id="${id}" data-images="${imagesAttr}" data-index="0">
+                    <div class="activity-carousel-track">
+                        ${images.map((url, i) => `
+                            <button type="button" class="activity-carousel-slide activity-card-image--clickable"
+                                aria-label="View image ${i + 1}"
+                                onclick="openImageViewerFromCarousel('${id}')">
+                                <img src="${escapeHtml(url)}" alt="" loading="lazy">
+                                <span class="activity-image-zoom" aria-hidden="true">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                                </span>
+                            </button>
+                        `).join('')}
+                    </div>
+                    <button type="button" class="carousel-btn carousel-btn--prev" aria-label="Previous image" onclick="event.stopPropagation(); carouselGo('${id}', -1)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                    </button>
+                    <button type="button" class="carousel-btn carousel-btn--next" aria-label="Next image" onclick="event.stopPropagation(); carouselGo('${id}', 1)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                    </button>
+                    <div class="carousel-dots">
+                        ${images.map((_, i) => `
+                            <button type="button" class="carousel-dot${i === 0 ? ' carousel-dot--active' : ''}" aria-label="Image ${i + 1}" onclick="event.stopPropagation(); carouselGoTo('${id}', ${i})"></button>
+                        `).join('')}
+                    </div>
+                    <span class="carousel-counter">1 / ${images.length}</span>
+                </div>
+            `;
         }
 
-        function getCategoryIcon(category) {
-            const cat = (category || '').toUpperCase();
-            const icons = {
-                'DEPARTURE': '✈️', 'FOOD': '🍽️', 'ACCOMMODATION': '🏨', 'HOTEL': '🏨',
-                'TRANSPORTATION': '🚗', 'TRANSPORT': '🚗', 'ACTIVITY': '⚓',
-                'SIGHTSEEING': '📷', 'ATTRACTION': '📷', 'SHOPPING': '🛍️', 'OTHER': '📌'
-            };
-            return icons[cat] || '📌';
+        function carouselGo(id, direction) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const total = el.querySelectorAll('.activity-carousel-slide').length;
+            let index = Number(el.dataset.index || 0);
+            index = (index + direction + total) % total;
+            carouselGoTo(id, index);
         }
 
-        function getCategoryLabel(category) {
-            const cat = (category || '').toUpperCase();
-            const labels = {
-                'DEPARTURE': 'Bay', 'FOOD': 'Ăn uống', 'ACCOMMODATION': 'Lưu trú', 'HOTEL': 'Lưu trú',
-                'TRANSPORTATION': 'Di chuyển', 'TRANSPORT': 'Di chuyển', 'ACTIVITY': 'Hoạt động',
-                'SIGHTSEEING': 'Địa điểm', 'ATTRACTION': 'Địa điểm', 'SHOPPING': 'Mua sắm', 'OTHER': 'Khác'
-            };
-            return labels[cat] || 'Khác';
+        function carouselGoTo(id, index) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.dataset.index = index;
+            el.querySelector('.activity-carousel-track').style.transform = `translateX(-${index * 100}%)`;
+            el.querySelectorAll('.carousel-dot').forEach((dot, i) => {
+                dot.classList.toggle('carousel-dot--active', i === index);
+            });
+            const counter = el.querySelector('.carousel-counter');
+            if (counter) {
+                const total = el.querySelectorAll('.activity-carousel-slide').length;
+                counter.textContent = `${index + 1} / ${total}`;
+            }
         }
 
-        function totalExpenses(expenses) {
-            return expenses.reduce((sum, e) => sum + e.amount, 0);
+        function renderExpenses(expenses, currency) {
+            if (!expenses || !expenses.length) return '';
+            return `
+                <div class="activity-section activity-section--expenses">
+                    <div class="activity-section-header">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+                        <span>EXPENSES</span>
+                    </div>
+                    <div class="expense-list">
+                        ${expenses.map(e => `
+                            <div class="expense-row">
+                                <div class="expense-row-icon">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M12 12h.01"/></svg>
+                                </div>
+                                <span class="expense-row-label">${escapeHtml(e.description || e.category || 'Expense')}</span>
+                                <span class="expense-row-amount">${formatMoney(e.amount, e.currency || currency)}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderNotes(notes) {
+            if (!notes || !notes.length) return '';
+            return `
+                <div class="activity-section activity-section--notes">
+                    <div class="activity-section-header">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                        <span>NOTES</span>
+                    </div>
+                    <div class="note-list">
+                        ${notes.map(n => `
+                            <div class="note-row">${escapeHtml(n.content)}</div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderActivityCard(activity, trip) {
+            const images = getActivityImages(activity);
+            const categoryLabel = getCategoryLabel(activity.category);
+            const address = cleanAddress(activity.address);
+            const hasMap = hasLocation(activity);
+            const isCompact = !images.length && !activity.description;
+
+            const mapsBtn = hasMap ? `
+                <button type="button" class="maps-link" onclick="openGoogleMaps(${activity.lat || 'null'}, ${activity.lng || 'null'}, '${escapeHtml(address).replace(/'/g, "\\'")}')">
+                    Open Maps
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                </button>
+            ` : '';
+
+            const metaRow = `
+                <div class="activity-card-meta">
+                    ${address ? `
+                        <div class="activity-card-address">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                            <span>${escapeHtml(address)}</span>
+                        </div>
+                    ` : ''}
+                    <div class="activity-card-meta-bottom">
+                        ${categoryLabel ? `<span class="activity-tag">${escapeHtml(categoryLabel)}</span>` : ''}
+                        ${activity.endTime ? `<span class="activity-tag">${escapeHtml(formatTime(activity.startTime))} – ${escapeHtml(formatTime(activity.endTime))}</span>` : ''}
+                        ${mapsBtn}
+                    </div>
+                </div>
+            `;
+
+            if (isCompact) {
+                return `
+                    <div class="timeline-entry">
+                        <div class="timeline-time">${formatTime(activity.startTime) || ''}</div>
+                        <div class="timeline-dot"></div>
+                        <div class="activity-card activity-card--compact">
+                            <div class="activity-card-compact-icon">${getCategoryIcon(activity.category)}</div>
+                            <div class="activity-card-body">
+                                <h3 class="activity-card-title">${escapeHtml(activity.name)}</h3>
+                                ${categoryLabel ? `<p class="activity-card-subtitle">${escapeHtml(categoryLabel)}</p>` : ''}
+                                ${activity.description ? `<p class="activity-card-desc">${escapeHtml(activity.description)}</p>` : ''}
+                                ${metaRow}
+                                ${renderExpenses(activity.expenses, trip.currency)}
+                                ${renderNotes(activity.notes)}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="timeline-entry">
+                    <div class="timeline-time">${formatTime(activity.startTime) || ''}</div>
+                    <div class="timeline-dot"></div>
+                    <div class="activity-card">
+                        ${renderActivityImages(images, activity.id)}
+                        <div class="activity-card-body">
+                            <h3 class="activity-card-title">${escapeHtml(activity.name)}</h3>
+                            ${activity.description ? `<p class="activity-card-desc">${escapeHtml(activity.description)}</p>` : ''}
+                            ${metaRow}
+                            ${renderExpenses(activity.expenses, trip.currency)}
+                            ${renderNotes(activity.notes)}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderDayContent(trip, dayNumber, activitiesByDay) {
+            const activities = activitiesByDay[dayNumber] || [];
+            const dayDate = getDateForDay(trip.startDate, dayNumber);
+
+            return `
+                <div class="day-panel" id="day-panel-${dayNumber}" data-day="${dayNumber}" style="${dayNumber === activeDay ? '' : 'display:none;'}">
+                    <div class="day-panel-header">
+                        <span class="day-panel-label">DAY ${dayNumber}</span>
+                        <h2 class="day-panel-date">${formatDateShortFromDate(dayDate)}</h2>
+                    </div>
+                    <div class="timeline">
+                        ${activities.length
+                            ? activities.map(a => renderActivityCard(a, trip)).join('')
+                            : '<p class="day-empty">No activities scheduled for this day.</p>'
+                        }
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderSidebar(trip, dayNumbers, activitiesByDay) {
+            const dayCount = getDayCount(trip.startDate, trip.endDate);
+            const nights = getNightCount(dayCount);
+            const maxActivities = Math.max(...dayNumbers.map(d => (activitiesByDay[d] || []).length), 1);
+            const tripTitle = trip.destination
+                ? `${trip.destination} ${parseLocalDate(trip.startDate).getFullYear()}`
+                : trip.name;
+
+            return `
+                <aside class="share-sidebar">
+                    <div class="sidebar-card sidebar-card--summary">
+                        <h3 class="sidebar-section-title sidebar-section-title--inset">TRIP OVERVIEW</h3>
+                        ${trip.coverImageUrl ? `
+                            <div class="sidebar-cover">
+                                <img src="${escapeHtml(trip.coverImageUrl)}" alt="">
+                                <div class="sidebar-cover-overlay">
+                                    <span class="sidebar-cover-title">${escapeHtml(tripTitle)}</span>
+                                </div>
+                            </div>
+                        ` : `
+                            <div class="sidebar-cover sidebar-cover--plain">
+                                <span class="sidebar-cover-title">${escapeHtml(tripTitle)}</span>
+                            </div>
+                        `}
+                        <div class="sidebar-details">
+                            <div class="sidebar-detail-row">
+                                <span class="sidebar-detail-label">Start date</span>
+                                <span class="sidebar-detail-value">${formatDateFull(trip.startDate)}</span>
+                            </div>
+                            <div class="sidebar-detail-row">
+                                <span class="sidebar-detail-label">End date</span>
+                                <span class="sidebar-detail-value">${formatDateFull(trip.endDate)}</span>
+                            </div>
+                            <div class="sidebar-detail-row">
+                                <span class="sidebar-detail-label">Duration</span>
+                                <span class="sidebar-detail-value">${dayCount} day${dayCount !== 1 ? 's' : ''} ${nights} night${nights !== 1 ? 's' : ''}</span>
+                            </div>
+                            <div class="sidebar-detail-row">
+                                <span class="sidebar-detail-label">Activities</span>
+                                <span class="sidebar-detail-value">${trip.activities.length} activit${trip.activities.length !== 1 ? 'ies' : 'y'}</span>
+                            </div>
+                            ${trip.totalMembers ? `
+                                <div class="sidebar-detail-row">
+                                    <span class="sidebar-detail-label">Members</span>
+                                    <span class="sidebar-detail-value">${trip.totalMembers} member${trip.totalMembers !== 1 ? 's' : ''}</span>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+
+                    <div class="sidebar-card">
+                        <h3 class="sidebar-section-title">DAYS</h3>
+                        <nav class="sidebar-nav">
+                            ${dayNumbers.map(day => {
+                                const dayDate = getDateForDay(trip.startDate, day);
+                                const isActive = day === activeDay;
+                                return `
+                                    <button type="button" class="sidebar-nav-item${isActive ? ' sidebar-nav-item--active' : ''}" data-day="${day}" onclick="selectDay(${day})">
+                                        <span class="sidebar-nav-day">Day ${day}</span>
+                                        <span class="sidebar-nav-date">${formatDateShortFromDate(dayDate)}</span>
+                                    </button>
+                                `;
+                            }).join('')}
+                        </nav>
+                        <div class="sidebar-stats">
+                            ${dayNumbers.map(day => {
+                                const count = (activitiesByDay[day] || []).length;
+                                const pct = maxActivities > 0 ? (count / maxActivities) * 100 : 0;
+                                const isActive = day === activeDay;
+                                return `
+                                    <div class="sidebar-stat-row" data-day="${day}">
+                                        <span class="sidebar-stat-label">Day ${day}</span>
+                                        <div class="sidebar-stat-bar-wrap">
+                                            <div class="sidebar-stat-bar${isActive ? ' sidebar-stat-bar--active' : ''}" style="width: ${pct}%"></div>
+                                        </div>
+                                        <span class="sidebar-stat-count">${count}</span>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+
+                    ${renderAppDownload('sidebar')}
+                </aside>
+            `;
+        }
+
+        function renderTripExtras(trip) {
+            let html = '';
+
+            if (trip.description) {
+                html += `
+                    <div class="trip-extra-card">
+                        <h3 class="trip-extra-title">About this trip</h3>
+                        <p class="trip-extra-text">${escapeHtml(trip.description)}</p>
+                    </div>
+                `;
+            }
+
+            if (trip.expenses && trip.expenses.length) {
+                html += `
+                    <div class="trip-extra-card">
+                        <div class="activity-section-header">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+                            <span>TRIP EXPENSES</span>
+                        </div>
+                        <div class="expense-list">
+                            ${trip.expenses.map(e => `
+                                <div class="expense-row">
+                                    <div class="expense-row-icon">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/></svg>
+                                    </div>
+                                    <span class="expense-row-label">${escapeHtml(e.description || e.category || 'Expense')}</span>
+                                    <span class="expense-row-amount">${formatMoney(e.amount, e.currency || trip.currency)}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            if (trip.notes && trip.notes.length) {
+                html += `
+                    <div class="trip-extra-card">
+                        <div class="activity-section-header">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+                            <span>TRIP NOTES</span>
+                        </div>
+                        <div class="note-list">
+                            ${trip.notes.map(n => `<div class="note-row">${escapeHtml(n.content)}</div>`).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            return html;
+        }
+
+        function selectDay(day) {
+            activeDay = day;
+            document.querySelectorAll('.day-panel').forEach(el => {
+                el.style.display = Number(el.dataset.day) === day ? '' : 'none';
+            });
+            document.querySelectorAll('.day-tab').forEach(el => {
+                el.classList.toggle('day-tab--active', Number(el.dataset.day) === day);
+            });
+            document.querySelectorAll('.sidebar-nav-item').forEach(el => {
+                el.classList.toggle('sidebar-nav-item--active', Number(el.dataset.day) === day);
+            });
+            document.querySelectorAll('.sidebar-stat-row').forEach(el => {
+                const bar = el.querySelector('.sidebar-stat-bar');
+                if (bar) bar.classList.toggle('sidebar-stat-bar--active', Number(el.dataset.day) === day);
+            });
+            const panel = document.getElementById(`day-panel-${day}`);
+            const stickyTabs = document.getElementById('day-tabs-sticky');
+            if (panel && stickyTabs) {
+                const top = panel.getBoundingClientRect().top + window.scrollY - stickyTabs.offsetHeight - 8;
+                window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+            }
         }
 
         function renderTrip(trip) {
+            tripData = trip;
             const content = document.getElementById('content');
+            const activitiesByDay = groupActivitiesByDay(trip.activities);
+            const dayNumbers = getDayNumbers(trip.startDate, trip.endDate);
+            activeDay = dayNumbers[0];
 
-            // Calculate totals
-            const allActivityExpenses = trip.activities.flatMap(a => a.expenses || []);
-            const grandTotal = totalExpenses([...allActivityExpenses, ...(trip.expenses || [])]);
+            const dayCount = getDayCount(trip.startDate, trip.endDate);
+            const tripTitle = trip.destination
+                ? `${trip.destination} ${parseLocalDate(trip.startDate).getFullYear()}`
+                : trip.name;
 
-            let html = `
-                <div class="header">
-                    <h1>${trip.name}</h1>
-                    <div class="info">
-                        ${trip.destination ? `<div>📍 ${trip.destination}</div>` : ''}
-                        <div>📅 ${formatDate(trip.startDate)} – ${formatDate(trip.endDate)}</div>
-                    </div>
-                    <div class="stats">
-                        <span class="stat-pill">${Math.ceil((new Date(trip.endDate) - new Date(trip.startDate)) / (1000 * 60 * 60 * 24)) + 1} ngày</span>
-                        <span class="stat-pill">${trip.activities.length} hoạt động</span>
-                        <span class="stat-pill">Tổng ${formatMoney(grandTotal, trip.currency)}</span>
-                    </div>
+            content.innerHTML = `
+                <div class="share-layout">
+                    <main class="share-main">
+                        <section class="share-hero">
+                            ${trip.coverImageUrl ? `
+                                <img class="share-hero-image" src="${escapeHtml(trip.coverImageUrl)}" alt="">
+                            ` : `<div class="share-hero-image share-hero-image--placeholder"></div>`}
+                            <div class="share-hero-overlay"></div>
+                            <div class="share-hero-brand">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>
+                                Ondetour
+                            </div>
+                            <div class="share-hero-content">
+                                <h1 class="share-hero-title">${escapeHtml(tripTitle)}</h1>
+                                <p class="share-hero-meta">
+                                    ${formatDateRange(trip.startDate, trip.endDate)} · ${dayCount} day${dayCount !== 1 ? 's' : ''} · ${trip.activities.length} activit${trip.activities.length !== 1 ? 'ies' : 'y'}
+                                </p>
+                            </div>
+                        </section>
+
+                        <div class="share-main-body">
+                            <div class="day-tabs-sticky" id="day-tabs-sticky">
+                                <div class="day-tabs">
+                                    ${dayNumbers.map(day => `
+                                        <button type="button" class="day-tab${day === activeDay ? ' day-tab--active' : ''}" data-day="${day}" onclick="selectDay(${day})">
+                                            Day ${day}
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            ${dayNumbers.map(day => renderDayContent(trip, day, activitiesByDay)).join('')}
+
+                            ${renderTripExtras(trip)}
+
+                            ${renderAppDownload('banner')}
+
+                            <footer class="share-footer">
+                                <div class="share-footer-brand">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>
+                                    Ondetour
+                                </div>
+                                ${trip.ownerName ? `
+                                    <div class="share-footer-credit">
+                                        ${trip.ownerAvatarUrl ? `<img src="${escapeHtml(trip.ownerAvatarUrl)}" alt="" class="share-footer-avatar">` : ''}
+                                        <span>Created by <strong>${escapeHtml(trip.ownerName)}</strong></span>
+                                    </div>
+                                ` : ''}
+                            </footer>
+                        </div>
+                    </main>
+
+                    ${renderSidebar(trip, dayNumbers, activitiesByDay)}
                 </div>
-                <div class="content">
-                    <div class="section-title">
-                        <span style="font-size: 16px;">🗺️</span>
-                        <span class="section-title-text">Lịch trình</span>
-                    </div>
+                ${renderAppDownload('sticky')}
             `;
 
-            // Group activities by day
-            const activitiesByDay = {};
-            trip.activities.forEach(activity => {
-                if (!activitiesByDay[activity.dayNumber]) {
-                    activitiesByDay[activity.dayNumber] = [];
-                }
-                activitiesByDay[activity.dayNumber].push(activity);
-            });
-
-            // Desktop table
-            html += `
-                <div class="desktop-table">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style="width: 56px;">Ngày</th>
-                                <th style="width: 60px;">Giờ</th>
-                                <th>Hoạt động</th>
-                                <th style="width: 155px;">Địa điểm</th>
-                                <th style="width: 100px;">Loại</th>
-                                <th style="width: 80px;">Chi phí</th>
-                                <th style="width: 24px;"></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-            `;
-
-            Object.keys(activitiesByDay).sort((a, b) => a - b).forEach(day => {
-                const dayActivities = activitiesByDay[day].sort((a, b) => {
-                    if (!a.startTime) return 1;
-                    if (!b.startTime) return -1;
-                    return a.startTime.localeCompare(b.startTime);
-                });
-
-                dayActivities.forEach((activity, idx) => {
-                    const icon = getCategoryIcon(activity.category);
-                    const label = getCategoryLabel(activity.category);
-                    const hasLocation = (activity.lat && activity.lng) || activity.address;
-                    const badgeClass = idx === 0 ? 'day-badge' : 'day-badge day-badge-inactive';
-                    const activityTotal = activity.expenses ? totalExpenses(activity.expenses) : 0;
-                    const hasDetail = (activity.expenses && activity.expenses.length > 0) || (activity.notes && activity.notes.length > 0);
-
-                    html += `
-                        <tr class="activity-row" data-activity-id="${activity.id}" onclick="toggleDetail('${activity.id}')">
-                            <td><div class="${badgeClass}">${day}</div></td>
-                            <td class="time-cell">🕐 ${formatTime(activity.startTime) || '-'}</td>
-                            <td class="name-cell">${activity.name}</td>
-                            <td class="location-cell" onclick="event.stopPropagation(); openGoogleMaps(${activity.lat}, ${activity.lng}, '${(activity.address || '').replace(/'/g, "\\'")}')">${hasLocation ? '📍 ' + activity.address : '-'}</td>
-                            <td><span class="type-badge ${getCategoryClass(activity.category)}">${icon} ${label}</span></td>
-                            <td style="text-align: right; font-weight: ${activityTotal > 0 ? 600 : 400}; color: ${activityTotal > 0 ? '#1f2937' : '#e5e7eb'};">${activityTotal > 0 ? formatMoney(activityTotal, trip.currency) : '—'}</td>
-                            <td>${hasDetail ? '<span style="font-size: 13px; color: #9ca3af;">▼</span>' : ''}</td>
-                        </tr>
-                    `;
-
-                    if (hasDetail) {
-                        html += `<tr id="detail-${activity.id}" style="display: none;"><td colspan="7" class="detail-panel">`;
-
-                        if (activity.expenses && activity.expenses.length > 0) {
-                            html += `<div class="detail-section"><div class="detail-header">💳 Chi phí</div>`;
-                            activity.expenses.forEach(e => {
-                                html += `<div class="expense-item"><span>💰</span><span>${e.description}</span><span class="expense-amount">${formatMoney(e.amount, e.currency)}</span></div>`;
-                            });
-                            html += `</div>`;
-                        }
-
-                        if (activity.notes && activity.notes.length > 0) {
-                            html += `<div class="detail-section"><div class="detail-header">📝 Ghi chú</div>`;
-                            activity.notes.forEach(n => {
-                                html += `<div class="note-item"><span>📌</span><span>${n.content}</span></div>`;
-                            });
-                            html += `</div>`;
-                        }
-
-                        html += `</td></tr>`;
-                    }
-                });
-            });
-
-            html += `</tbody></table></div>`;
-
-            // Mobile timeline
-            html += `<div class="mobile-timeline">`;
-
-            Object.keys(activitiesByDay).sort((a, b) => a - b).forEach(day => {
-                const dayActivities = activitiesByDay[day].sort((a, b) => {
-                    if (!a.startTime) return 1;
-                    if (!b.startTime) return -1;
-                    return a.startTime.localeCompare(b.startTime);
-                });
-
-                const dayDate = getDateForDay(trip.startDate, parseInt(day));
-                const dayDateLabel = formatDateShort(dayDate.toISOString());
-
-                html += `
-                    <div class="day-group">
-                        <div class="day-header">
-                            <div class="day-badge-mobile">${day}</div>
-                            <span class="day-date">${dayDateLabel}</span>
-                            <div class="day-divider"></div>
-                        </div>
-                        <div class="activity-card">
-                `;
-
-                dayActivities.forEach(activity => {
-                    const icon = getCategoryIcon(activity.category);
-                    const dotClass = getDotClass(activity.category);
-                    const hasLocation = (activity.lat && activity.lng) || activity.address;
-                    const activityTotal = activity.expenses ? totalExpenses(activity.expenses) : 0;
-                    const hasDetail = (activity.expenses && activity.expenses.length > 0) || (activity.notes && activity.notes.length > 0);
-
-                    html += `
-                        <div class="activity-item" data-activity-id="${activity.id}" onclick="toggleDetailMobile('${activity.id}')">
-                            <div class="type-dot ${dotClass}"></div>
-                            <div class="activity-info">
-                                <div class="activity-top">
-                                    <div class="activity-name">${activity.name}</div>
-                                    <span class="type-badge ${getCategoryClass(activity.category)}">${icon}</span>
-                                </div>
-                                <div class="activity-meta">
-                                    ${activity.startTime ? `<div class="activity-meta-item">🕐 ${formatTime(activity.startTime)}</div>` : ''}
-                                    ${activity.address ? `<div class="activity-meta-item ${hasLocation ? 'clickable' : ''}" onclick="event.stopPropagation(); openGoogleMaps(${activity.lat}, ${activity.lng}, '${(activity.address || '').replace(/'/g, "\\'")}')">${hasLocation ? '📍' : ''} ${activity.address}</div>` : ''}
-                                    ${activityTotal > 0 ? `<div class="activity-meta-item activity-meta-expense">💳 ${formatMoney(activityTotal, trip.currency)}</div>` : ''}
-                                    ${activity.notes && activity.notes.length > 0 ? `<div class="activity-meta-item activity-meta-notes">📝 ${activity.notes.length}</div>` : ''}
-                                </div>
-                            </div>
-                            ${hasDetail ? '<span class="chevron-icon">▼</span>' : ''}
-                        </div>
-                    `;
-
-                    if (hasDetail) {
-                        html += `<div id="detail-mobile-${activity.id}" style="display: none;" class="detail-panel">`;
-
-                        if (activity.expenses && activity.expenses.length > 0) {
-                            html += `<div class="detail-section"><div class="detail-header">💳 Chi phí</div>`;
-                            activity.expenses.forEach(e => {
-                                html += `<div class="expense-item"><span>💰</span><span>${e.description}</span><span class="expense-amount">${formatMoney(e.amount, e.currency)}</span></div>`;
-                            });
-                            html += `</div>`;
-                        }
-
-                        if (activity.notes && activity.notes.length > 0) {
-                            html += `<div class="detail-section"><div class="detail-header">📝 Ghi chú</div>`;
-                            activity.notes.forEach(n => {
-                                html += `<div class="note-item"><span>📌</span><span>${n.content}</span></div>`;
-                            });
-                            html += `</div>`;
-                        }
-
-                        html += `</div>`;
-                    }
-                });
-
-                html += `</div></div>`;
-            });
-
-            html += `</div>`;
-
-            // Trip-level expenses and notes
-            if ((trip.expenses && trip.expenses.length > 0) || (trip.notes && trip.notes.length > 0)) {
-                html += `
-                    <div class="trip-section">
-                        <div class="section-title">
-                            <span style="font-size: 16px;">📋</span>
-                            <span class="section-title-text">Thông tin chuyến đi</span>
-                            <div style="flex: 1; height: 1px; background: #e5e7eb;"></div>
-                        </div>
-                `;
-
-                if (trip.expenses && trip.expenses.length > 0) {
-                    const tripExpenseTotal = totalExpenses(trip.expenses);
-                    html += `
-                        <div class="trip-card">
-                            <div class="trip-card-header" onclick="toggleTripDetail('trip-expenses')">
-                                <div class="trip-icon trip-icon-expense">💳</div>
-                                <div style="flex: 1;">
-                                    <div class="trip-card-title">Chi phí chuyến đi</div>
-                                    <div class="trip-card-subtitle">${trip.expenses.length} khoản · tổng ${formatMoney(tripExpenseTotal, trip.currency)}</div>
-                                </div>
-                                <span style="font-size: 13px; color: #9ca3af;">▼</span>
-                            </div>
-                            <div id="trip-expenses" style="display: none;" class="detail-panel">
-                                <div class="detail-section">
-                    `;
-                    trip.expenses.forEach(e => {
-                        html += `<div class="expense-item"><span>💰</span><span>${e.description}</span><span class="expense-amount">${formatMoney(e.amount, e.currency)}</span></div>`;
-                    });
-                    html += `</div></div></div>`;
-                }
-
-                if (trip.notes && trip.notes.length > 0) {
-                    html += `
-                        <div class="trip-card">
-                            <div class="trip-card-header" onclick="toggleTripDetail('trip-notes')">
-                                <div class="trip-icon trip-icon-note">📝</div>
-                                <div style="flex: 1;">
-                                    <div class="trip-card-title">Ghi chú chuyến đi</div>
-                                    <div class="trip-card-subtitle">${trip.notes.length} ghi chú</div>
-                                </div>
-                                <span style="font-size: 13px; color: #9ca3af;">▼</span>
-                            </div>
-                            <div id="trip-notes" style="display: none;" class="detail-panel">
-                                <div class="detail-section">
-                    `;
-                    trip.notes.forEach(n => {
-                        html += `<div class="note-item"><span>📌</span><span>${n.content}</span></div>`;
-                    });
-                    html += `</div></div></div>`;
-                }
-
-                html += `</div>`;
-            }
-
-            html += `</div>`; // Close content
-
-            content.innerHTML = html;
             content.style.display = 'block';
+            document.body.classList.add('has-sticky-app');
+            initDayTabsSticky();
         }
 
-        function toggleDetail(activityId) {
-            const detailRow = document.getElementById(`detail-${activityId}`);
-            const activityRow = document.querySelector(`[data-activity-id="${activityId}"]`);
-            if (detailRow.style.display === 'none') {
-                detailRow.style.display = 'table-row';
-                activityRow.classList.add('expanded');
-            } else {
-                detailRow.style.display = 'none';
-                activityRow.classList.remove('expanded');
-            }
-        }
-
-        function toggleDetailMobile(activityId) {
-            const detailPanel = document.getElementById(`detail-mobile-${activityId}`);
-            const activityItem = document.querySelector(`.mobile-timeline [data-activity-id="${activityId}"]`);
-            if (detailPanel.style.display === 'none') {
-                detailPanel.style.display = 'block';
-                activityItem.classList.add('expanded');
-            } else {
-                detailPanel.style.display = 'none';
-                activityItem.classList.remove('expanded');
-            }
-        }
-
-        function toggleTripDetail(id) {
-            const panel = document.getElementById(id);
-            if (panel.style.display === 'none') {
-                panel.style.display = 'block';
-            } else {
-                panel.style.display = 'none';
-            }
+        function initDayTabsSticky() {
+            const sticky = document.getElementById('day-tabs-sticky');
+            if (!sticky) return;
+            const observer = new IntersectionObserver(
+                ([entry]) => sticky.classList.toggle('is-stuck', !entry.isIntersecting),
+                { threshold: 1, rootMargin: '-1px 0px 0px 0px' }
+            );
+            const sentinel = document.createElement('div');
+            sentinel.className = 'day-tabs-sentinel';
+            sticky.parentNode.insertBefore(sentinel, sticky);
+            observer.observe(sentinel);
         }
 
         async function loadTrip() {
@@ -414,7 +778,7 @@
             } catch (error) {
                 console.error('Error loading trip:', error);
                 document.getElementById('loading').style.display = 'none';
-                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').style.display = 'flex';
             }
         }
 

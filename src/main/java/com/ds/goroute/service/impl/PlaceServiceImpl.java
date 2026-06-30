@@ -1,5 +1,6 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.dto.request.BatchUpdatePlaceImagesRequest;
 import com.ds.goroute.dto.request.ImportPlaceRequest;
 import com.ds.goroute.dto.request.ReviewInput;
 import com.ds.goroute.dto.request.UpdatePlaceRequest;
@@ -18,10 +19,16 @@ import com.ds.goroute.repository.FoodRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.PlaceReviewRepository;
 import com.ds.goroute.service.PlaceReviewService;
+import com.ds.goroute.service.PlaceSearchIndexService;
 import com.ds.goroute.service.PlaceService;
 import com.ds.goroute.service.ImageMigrationService;
+import com.ds.goroute.type.PlaceGroup;
 import com.ds.goroute.utils.CitySlugResolver;
+import com.ds.goroute.utils.DestinationMatchUtils;
 import com.ds.goroute.utils.FoodNameResolver;
+import com.ds.goroute.utils.GeoDistanceUtils;
+import com.ds.goroute.utils.JsonUtils;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -48,9 +55,11 @@ public class PlaceServiceImpl implements PlaceService {
     private final FoodRepository foodRepository;
     private final PlaceReviewService placeReviewService;
     private final ImageMigrationService imageMigrationService;
+    private final PlaceSearchIndexService placeSearchIndexService;
     private final ObjectMapper objectMapper;
 
     private static final Integer maxReview = 50;
+    private static final int MAX_PLACE_LUCENE_FETCH = 500;
 
     @Override
     @Transactional
@@ -61,7 +70,7 @@ public class PlaceServiceImpl implements PlaceService {
             // Migrate images before creating place (only if imageMigrationService is available)
             if (imageMigrationService != null) {
                 String targetPath = "places/" + request.getPlaceId() + "/";
-                
+
                 // Migrate thumbnail
                 if (request.getThumbnail() != null && !request.getThumbnail().trim().isEmpty()) {
                     try {
@@ -75,7 +84,7 @@ public class PlaceServiceImpl implements PlaceService {
                         log.error("Error migrating thumbnail: {}", e.getMessage());
                     }
                 }
-                
+
                 // Migrate place images
                 if (request.getImages() != null && !request.getImages().trim().isEmpty() && !request.getImages().equals("[]")) {
                     try {
@@ -89,15 +98,9 @@ public class PlaceServiceImpl implements PlaceService {
                         log.error("Error migrating place images: {}", e.getMessage());
                     }
                 }
-                
-                // Migrate review images within userReviews JSON
-                if (request.getUserReviews() != null && !request.getUserReviews().trim().isEmpty()) {
-                    try {
-                        request.setUserReviews(migrateReviewImages(request.getUserReviews(), targetPath + "reviews/"));
-                    } catch (Exception e) {
-                        log.error("Error migrating review images: {}", e.getMessage());
-                    }
-                }
+
+                // NOTE: Review images will be migrated by PlaceReviewService.batchInsertReviews()
+                // No need to migrate here to avoid double migration
             } else {
                 log.warn("ImageMigrationService not available, skipping image migration");
             }
@@ -112,6 +115,7 @@ public class PlaceServiceImpl implements PlaceService {
             // Create new place
             Place place = buildPlaceFromRequest(request);
             placeRepository.insert(place);
+            placeSearchIndexService.indexPlace(place);
 
             // Import reviews using PlaceReviewService for smart duplicate handling
             if (request.getUserReviews() != null && !request.getUserReviews().isEmpty()) {
@@ -119,7 +123,7 @@ public class PlaceServiceImpl implements PlaceService {
             }
 
             return toPlaceResponse(place);
-            
+
         } catch (Exception e) {
             log.error("Failed to import place {}: {}", request.getPlaceId(), e.getMessage());
             return null; // Skip this place on error
@@ -130,11 +134,11 @@ public class PlaceServiceImpl implements PlaceService {
     @Transactional
     public List<PlaceResponse> importPlaces(List<ImportPlaceRequest> requests) {
         log.info("Importing {} places", requests.size());
-        
+
         List<PlaceResponse> responses = new ArrayList<>();
         int successCount = 0;
         int failCount = 0;
-        
+
         for (ImportPlaceRequest request : requests) {
             PlaceResponse response = importPlace(request);
             if (response != null) {
@@ -145,7 +149,7 @@ public class PlaceServiceImpl implements PlaceService {
                 log.warn("Skipped place due to errors: {}", request.getPlaceId());
             }
         }
-        
+
         log.info("Import completed: {} succeeded, {} failed", successCount, failCount);
         return responses;
     }
@@ -175,17 +179,38 @@ public class PlaceServiceImpl implements PlaceService {
 
     @Override
     public List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
-                                           BigDecimal radius, String category, String placeGroup,
-                                           BigDecimal minRating, int page, int size) {
+                                            BigDecimal radius, String category, String placeGroup,
+                                            BigDecimal minRating, int page, int size) {
         return searchPlaces(keyword, latitude, longitude, radius, category, placeGroup,
                 minRating, null, null, null, page, size);
     }
 
     @Override
     public List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
-                                           BigDecimal radius, String category, String placeGroup,
-                                           BigDecimal minRating, String citySlug, List<UUID> foodIds,
-                                           Boolean excludeLinkedFoodPlaces, int page, int size) {
+                                            BigDecimal radius, String category, String placeGroup,
+                                            BigDecimal minRating, String citySlug, List<UUID> foodIds,
+                                            Boolean excludeLinkedFoodPlaces, int page, int size) {
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            List<Place> places = searchPlacesByTitleLucene(
+                    keyword.trim(),
+                    latitude,
+                    longitude,
+                    radius,
+                    category,
+                    placeGroup,
+                    minRating,
+                    citySlug,
+                    foodIds,
+                    excludeLinkedFoodPlaces,
+                    page,
+                    size);
+            List<PlaceResponse> responses = places.stream()
+                    .map(this::toPlaceResponse)
+                    .collect(Collectors.toList());
+            attachFoodTags(responses);
+            return responses;
+        }
+
         int offset = page * size;
         boolean extended = (foodIds != null && !foodIds.isEmpty())
                 || (citySlug != null && !citySlug.isBlank())
@@ -199,11 +224,11 @@ public class PlaceServiceImpl implements PlaceService {
         List<Place> places;
         if (extended) {
             places = placeRepository.findNearbyExtended(
-                    keyword, latitude, longitude, radius, category, placeGroup, minRating,
+                    null, latitude, longitude, radius, category, placeGroup, minRating,
                     citySlugJson, foodIds, excludeLinkedFoodPlaces, size, offset);
         } else {
             places = placeRepository.findNearby(
-                    keyword, latitude, longitude, radius, category, placeGroup, minRating, size, offset);
+                    null, latitude, longitude, radius, category, placeGroup, minRating, size, offset);
         }
 
         List<PlaceResponse> responses = places.stream()
@@ -211,6 +236,149 @@ public class PlaceServiceImpl implements PlaceService {
                 .collect(Collectors.toList());
         attachFoodTags(responses);
         return responses;
+    }
+
+    private List<Place> searchPlacesByTitleLucene(
+            String keyword,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            BigDecimal radius,
+            String category,
+            String placeGroup,
+            BigDecimal minRating,
+            String citySlug,
+            List<UUID> foodIds,
+            Boolean excludeLinkedFoodPlaces,
+            int page,
+            int size) {
+        try {
+            List<UUID> orderedIds = placeSearchIndexService.searchTitleIds(keyword, MAX_PLACE_LUCENE_FETCH);
+            if (orderedIds.isEmpty()) {
+                return List.of();
+            }
+
+            Map<UUID, Place> placesById = placeRepository.findByIds(orderedIds).stream()
+                    .collect(Collectors.toMap(Place::getId, place -> place, (left, right) -> left));
+
+            List<Place> matched = new ArrayList<>();
+            for (UUID id : orderedIds) {
+                Place place = placesById.get(id);
+                if (place == null || !matchesPlaceSearchFilters(
+                        place,
+                        latitude,
+                        longitude,
+                        radius,
+                        category,
+                        placeGroup,
+                        minRating,
+                        citySlug)) {
+                    continue;
+                }
+                matched.add(place);
+            }
+
+            if (Boolean.TRUE.equals(excludeLinkedFoodPlaces) || (foodIds != null && !foodIds.isEmpty())) {
+                matched = applyExtendedFoodFilters(matched, foodIds, excludeLinkedFoodPlaces);
+            }
+
+            return matched.stream()
+                    .skip((long) page * size)
+                    .limit(size)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            log.error("Place Lucene search failed", e);
+            throw new BusinessException(ErrorConstant.INTERNAL_SERVER_ERROR, "Place search failed");
+        }
+    }
+
+    private boolean matchesPlaceSearchFilters(
+            Place place,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            BigDecimal radius,
+            String category,
+            String placeGroup,
+            BigDecimal minRating,
+            String citySlug) {
+        if (category != null && !category.isBlank()
+                && (place.getCategory() == null || !category.equalsIgnoreCase(place.getCategory()))) {
+            return false;
+        }
+
+        if (placeGroup != null && !placeGroup.isBlank()) {
+            PlaceGroup group = place.getPlaceGroup();
+            if (group == null || !placeGroup.equalsIgnoreCase(group.name())) {
+                return false;
+            }
+        }
+
+        if (minRating != null
+                && (place.getReviewRating() == null || place.getReviewRating().compareTo(minRating) < 0)) {
+            return false;
+        }
+
+        if (latitude != null && longitude != null && radius != null) {
+            double distanceKm = GeoDistanceUtils.distanceKm(
+                    latitude, longitude, place.getLatitude(), place.getLongitude());
+            if (distanceKm > radius.doubleValue()) {
+                return false;
+            }
+        }
+
+        if (citySlug != null && !citySlug.isBlank() && !matchesCitySlug(place, citySlug)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private boolean matchesCitySlug(Place place, String citySlug) {
+        String normalizedSlug = DestinationMatchUtils.normalizeKey(CitySlugResolver.normalizeRequired(citySlug));
+        List<String> destinations = JsonUtils.fromJson(place.getDestinations(), new TypeReference<List<String>>() {});
+        if (destinations == null || destinations.isEmpty()) {
+            return false;
+        }
+        return destinations.stream()
+                .map(DestinationMatchUtils::normalizeKey)
+                .anyMatch(normalizedSlug::equals);
+    }
+
+    private List<Place> applyExtendedFoodFilters(
+            List<Place> places,
+            List<UUID> foodIds,
+            Boolean excludeLinkedFoodPlaces) {
+        if (places.isEmpty()) {
+            return places;
+        }
+
+        List<UUID> placeIds = places.stream().map(Place::getId).filter(Objects::nonNull).toList();
+        List<FoodTagRow> tagRows = foodRepository.findFoodTagsByPlaceIds(placeIds);
+        Map<UUID, Set<UUID>> foodIdsByPlace = new HashMap<>();
+        for (FoodTagRow row : tagRows) {
+            foodIdsByPlace.computeIfAbsent(row.getPlaceId(), ignored -> new HashSet<>()).add(row.getFoodId());
+        }
+
+        Set<UUID> requiredFoodIds = foodIds == null
+                ? Set.of()
+                : foodIds.stream().filter(Objects::nonNull).collect(Collectors.toSet());
+
+        return places.stream()
+                .filter(place -> {
+                    Set<UUID> linkedFoodIds = foodIdsByPlace.getOrDefault(place.getId(), Set.of());
+                    if (Boolean.TRUE.equals(excludeLinkedFoodPlaces) && !linkedFoodIds.isEmpty()) {
+                        return false;
+                    }
+                    if (!requiredFoodIds.isEmpty()) {
+                        return linkedFoodIds.stream().anyMatch(requiredFoodIds::contains);
+                    }
+                    return true;
+                })
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public void triggerSearchReindex() {
+        placeSearchIndexService.triggerReindex();
     }
 
     private void attachFoodTags(List<PlaceResponse> responses) {
@@ -245,106 +413,16 @@ public class PlaceServiceImpl implements PlaceService {
     }
 
     @Override
-    public List<PlaceReviewResponse> getPlaceReviews(UUID placeId) {
+    public List<PlaceReviewResponse> getPlaceReviews(UUID placeId, int page, int size) {
         Place place = placeRepository.findById(placeId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND));
 
-        // Get avg authenticity score
-        BigDecimal avgAuthScore = placeReviewRepository.getAvgAuthenticityScore(placeId);
-        if (avgAuthScore == null) {
-            avgAuthScore = BigDecimal.ZERO;
-        }
+        int offset = page * size;
+        
+        // Simple paginated query sorted by authenticity_score DESC, review_date DESC
+        List<PlaceReview> reviews = placeReviewRepository.findByPlaceIdPaginated(placeId, size, offset);
 
-        // Parse reviews_per_rating
-        Map<String, Integer> reviewsPerRating = parseJsonToMap(place.getReviewsPerRating());
-        if (reviewsPerRating == null || reviewsPerRating.isEmpty()) {
-            // Fallback: get top maxReview reviews
-            return placeReviewRepository.findTopReviewsByPlaceId(placeId, maxReview, 0).stream()
-                    .map(this::toReviewResponse)
-                    .collect(Collectors.toList());
-        }
-
-        // Calculate initial distribution for maxReview slots
-        Map<Integer, Integer> targetDistribution = calculateReviewDistribution(reviewsPerRating, maxReview);
-
-        // Fetch reviews by rating and track actual counts
-        List<PlaceReview> result = new ArrayList<>();
-        Map<Integer, Integer> actualCounts = new HashMap<>();
-
-        for (int rating = 1; rating <= 5; rating++) {
-            int targetCount = targetDistribution.getOrDefault(rating, 0);
-            if (targetCount > 0) {
-                List<PlaceReview> reviews = placeReviewRepository.findReviewsByPlaceIdAndRating(
-                        placeId, rating, avgAuthScore, targetCount);
-                result.addAll(reviews);
-                actualCounts.put(rating, reviews.size());
-            }
-        }
-
-        // Handle shortage: redistribute missing slots
-        int totalActual = actualCounts.values().stream().mapToInt(Integer::intValue).sum();
-        int shortage = maxReview - totalActual;
-
-        if (shortage > 0) {
-            log.info("Review shortage detected: {} slots missing. Redistributing...", shortage);
-
-            // Sort ratings by ratio (descending) to prioritize high-ratio stars
-            List<Integer> ratingsByRatio = reviewsPerRating.entrySet().stream()
-                    .sorted((e1, e2) -> Integer.compare(
-                            Integer.parseInt(e2.getValue().toString()),
-                            Integer.parseInt(e1.getValue().toString())))
-                    .map(e -> Integer.parseInt(e.getKey()))
-                    .collect(Collectors.toList());
-
-            // Try to fill shortage from high-ratio stars
-            for (int rating : ratingsByRatio) {
-                if (shortage <= 0) break;
-
-                int currentCount = actualCounts.getOrDefault(rating, 0);
-                int targetCount = targetDistribution.getOrDefault(rating, 0);
-
-                // Can we get more from this rating?
-                if (currentCount < targetCount) {
-                    continue; // Already maxed out
-                }
-
-                // Try to fetch additional reviews
-                int additionalNeeded = Math.min(shortage, 5); // Max 5 extra per rating
-                List<PlaceReview> additionalReviews = placeReviewRepository.findReviewsByPlaceIdAndRating(
-                        placeId, rating, avgAuthScore, currentCount + additionalNeeded);
-
-                int additionalFetched = additionalReviews.size() - currentCount;
-                if (additionalFetched > 0) {
-                    // Add only the new ones
-                    result.addAll(additionalReviews.subList(currentCount, additionalReviews.size()));
-                    actualCounts.put(rating, additionalReviews.size());
-                    shortage -= additionalFetched;
-                    log.info("Added {} extra reviews from {}â˜…", additionalFetched, rating);
-                }
-            }
-        }
-
-        // Sort final result by authenticity_score DESC, likes DESC, review_date DESC
-        result.sort((r1, r2) -> {
-            int authCompare = compareNullable(r2.getAuthenticityScore(), r1.getAuthenticityScore());
-            if (authCompare != 0) return authCompare;
-
-            int likesCompare = Integer.compare(
-                    r2.getLikes() != null ? r2.getLikes() : 0,
-                    r1.getLikes() != null ? r1.getLikes() : 0
-            );
-            if (likesCompare != 0) return likesCompare;
-
-            if (r1.getReviewDate() != null && r2.getReviewDate() != null) {
-                return r2.getReviewDate().compareTo(r1.getReviewDate());
-            }
-            return 0;
-        });
-
-        log.info("Final review distribution: {}", actualCounts);
-
-        return result.stream()
-                .limit(maxReview) // Ensure max maxReview
+        return reviews.stream()
                 .map(this::toReviewResponse)
                 .collect(Collectors.toList());
     }
@@ -438,6 +516,7 @@ public class PlaceServiceImpl implements PlaceService {
 
         // Delete place
         placeRepository.delete(id);
+        placeSearchIndexService.deletePlace(id);
         log.info("Deleted place: {}", id);
     }
 
@@ -450,7 +529,7 @@ public class PlaceServiceImpl implements PlaceService {
         place.setTitle(request.getTitle());
         place.setCategory(request.getCategory());
         place.setPlaceGroup(request.getPlaceGroup() != null ?
-            com.ds.goroute.type.PlaceGroup.valueOf(request.getPlaceGroup()) : null);
+                com.ds.goroute.type.PlaceGroup.valueOf(request.getPlaceGroup()) : null);
         place.setAddress(request.getAddress());
         place.setDestinations(toJson(request.getDestinations()));
         place.setLatitude(request.getLatitude());
@@ -480,6 +559,7 @@ public class PlaceServiceImpl implements PlaceService {
         place.setUpdatedAt(LocalDateTime.now());
 
         placeRepository.update(place);
+        placeSearchIndexService.indexPlace(place);
         log.info("Updated place: {}", id);
 
         return toPlaceResponse(place);
@@ -494,6 +574,7 @@ public class PlaceServiceImpl implements PlaceService {
         updated.setUpdatedAt(LocalDateTime.now());
 
         placeRepository.update(updated);
+        placeSearchIndexService.indexPlace(updated);
 
         // Update reviews using PlaceReviewService for smart duplicate handling
         if (request.getUserReviews() != null && !request.getUserReviews().isEmpty()) {
@@ -512,7 +593,7 @@ public class PlaceServiceImpl implements PlaceService {
                 .title(request.getTitle())
                 .category(request.getCategory())
                 .placeGroup(request.getPlaceGroup() != null ?
-                    com.ds.goroute.type.PlaceGroup.valueOf(request.getPlaceGroup()) : null)
+                        com.ds.goroute.type.PlaceGroup.valueOf(request.getPlaceGroup()) : null)
                 .address(request.getAddress())
                 .destinations(toJson(request.getDestinations()))
                 .latitude(request.getLatitude())
@@ -547,19 +628,21 @@ public class PlaceServiceImpl implements PlaceService {
 
     /**
      * Migrate review images within reviews JSON
+     * DEPRECATED: No longer used. Review migration is handled by PlaceReviewService.batchInsertReviews()
      */
+    @Deprecated
     private String migrateReviewImages(String reviewsJson, String targetPath) {
         try {
             JsonNode reviewsNode = objectMapper.readTree(reviewsJson);
             if (!reviewsNode.isArray()) {
                 return reviewsJson;
             }
-            
+
             ArrayNode resultArray = objectMapper.createArrayNode();
-            
+
             for (JsonNode reviewNode : reviewsNode) {
                 ObjectNode mutableReview = ((ObjectNode) reviewNode).deepCopy();
-                
+
                 // Migrate profilePicture if exists
                 if (reviewNode.has("profilePicture") && reviewNode.get("profilePicture").isTextual()) {
                     String profilePic = reviewNode.get("profilePicture").asText();
@@ -570,21 +653,21 @@ public class PlaceServiceImpl implements PlaceService {
                         }
                     }
                 }
-                
+
                 // Migrate images field if exists
                 if (reviewNode.has("images") && reviewNode.get("images").isArray()) {
                     ArrayNode imagesArray = (ArrayNode) reviewNode.get("images");
                     List<String> imageUrls = new ArrayList<>();
-                    
+
                     for (JsonNode imgNode : imagesArray) {
                         if (imgNode.isTextual()) {
                             imageUrls.add(imgNode.asText());
                         }
                     }
-                    
+
                     if (!imageUrls.isEmpty()) {
                         Map<String, String> migratedUrls = imageMigrationService.migrateImages(imageUrls, targetPath);
-                        
+
                         // Build new images array with migrated URLs
                         ArrayNode newImagesArray = objectMapper.createArrayNode();
                         for (String oldUrl : imageUrls) {
@@ -593,16 +676,16 @@ public class PlaceServiceImpl implements PlaceService {
                                 newImagesArray.add(newUrl);
                             }
                         }
-                        
+
                         mutableReview.set("images", newImagesArray);
                     }
                 }
-                
+
                 resultArray.add(mutableReview);
             }
-            
+
             return objectMapper.writeValueAsString(resultArray);
-            
+
         } catch (Exception e) {
             log.error("Error migrating review images: {}", e.getMessage());
             return reviewsJson; // Return original on error
@@ -721,27 +804,27 @@ public class PlaceServiceImpl implements PlaceService {
         if (text == null || text.isEmpty()) {
             return "en";
         }
-        
+
         // Simple heuristic: check for Vietnamese characters
         if (text.matches(".*[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ].*")) {
             return "vi";
         }
-        
+
         // Check for Japanese characters
         if (text.matches(".*[\\u3040-\\u309F\\u30A0-\\u30FF\\u4E00-\\u9FFF].*")) {
             return "ja";
         }
-        
+
         // Check for Korean characters
         if (text.matches(".*[\\uAC00-\\uD7AF].*")) {
             return "ko";
         }
-        
+
         // Check for Chinese characters
         if (text.matches(".*[\\u4E00-\\u9FFF].*")) {
             return "zh";
         }
-        
+
         return "en"; // Default to English
     }
 
@@ -769,11 +852,11 @@ public class PlaceServiceImpl implements PlaceService {
      * Generate content hash for duplicate detection
      */
     private String generateContentHash(String authorName, Integer rating, String description, String reviewDate) {
-        String content = String.format("%s|%d|%s|%s", 
-            authorName != null ? authorName : "",
-            rating != null ? rating : 0,
-            description != null ? description : "",
-            reviewDate != null ? reviewDate : ""
+        String content = String.format("%s|%d|%s|%s",
+                authorName != null ? authorName : "",
+                rating != null ? rating : 0,
+                description != null ? description : "",
+                reviewDate != null ? reviewDate : ""
         );
         return String.valueOf(content.hashCode());
     }
@@ -861,6 +944,8 @@ public class PlaceServiceImpl implements PlaceService {
                 .googleMapsLink(place.getGoogleMapsLink())
                 .reviewCount(place.getReviewCount())
                 .reviewRating(place.getReviewRating())
+                .adjustedRating(place.getAdjustedRating())
+                .placeOverallScore(place.getPlaceOverallScore())
                 .reviewsPerRating(parseJsonToMap(place.getReviewsPerRating()))
                 .thumbnail(place.getThumbnail())
                 .images(parseJsonToList(place.getImages(), PlaceImagesDto.class))
@@ -881,7 +966,8 @@ public class PlaceServiceImpl implements PlaceService {
         }
         try {
             return objectMapper.readValue(jsonString,
-                new com.fasterxml.jackson.core.type.TypeReference<Map<String, Integer>>() {});
+                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Integer>>() {
+                    });
         } catch (Exception e) {
             log.warn("Failed to parse JSON to Map: {}", e.getMessage());
             return null;
@@ -894,7 +980,7 @@ public class PlaceServiceImpl implements PlaceService {
         }
         try {
             return objectMapper.readValue(jsonString,
-                objectMapper.getTypeFactory().constructCollectionType(List.class, clazz));
+                    objectMapper.getTypeFactory().constructCollectionType(List.class, clazz));
         } catch (Exception e) {
             log.warn("Failed to parse JSON to List: {}", e.getMessage());
             return null;
@@ -907,7 +993,8 @@ public class PlaceServiceImpl implements PlaceService {
         }
         try {
             return objectMapper.readValue(jsonString,
-                    new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
+                    new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {
+                    });
         } catch (Exception e) {
             log.warn("Failed to parse destinations JSON: {}", e.getMessage());
             return Collections.emptyList();
@@ -932,7 +1019,8 @@ public class PlaceServiceImpl implements PlaceService {
         }
         try {
             return objectMapper.readValue(jsonString,
-                new com.fasterxml.jackson.core.type.TypeReference<Map<String, List<String>>>() {});
+                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, List<String>>>() {
+                    });
         } catch (Exception e) {
             log.warn("Failed to parse JSON to Map<String, List<String>>: {}", e.getMessage());
             return null;
@@ -945,7 +1033,8 @@ public class PlaceServiceImpl implements PlaceService {
         }
         try {
             return objectMapper.readValue(jsonString,
-                new com.fasterxml.jackson.core.type.TypeReference<Map<String, Map<String, Integer>>>() {});
+                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Map<String, Integer>>>() {
+                    });
         } catch (Exception e) {
             log.warn("Failed to parse JSON to Map<String, Map<String, Integer>>: {}", e.getMessage());
             return null;
@@ -970,5 +1059,63 @@ public class PlaceServiceImpl implements PlaceService {
                 .authenticityScore(review.getAuthenticityScore())
                 .authenticityLevel(review.getAuthenticityLevel() != null ? review.getAuthenticityLevel().name() : null)
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> batchUpdatePlaceImages(BatchUpdatePlaceImagesRequest request) {
+        log.info("Batch updating images for {} places", request.getPlaces().size());
+
+        int updated = 0;
+        int failed = 0;
+        List<String> errors = new ArrayList<>();
+
+        for (BatchUpdatePlaceImagesRequest.PlaceImageUpdate update : request.getPlaces()) {
+            try {
+                Place place = placeRepository.findById(update.getId())
+                        .orElseThrow(() -> new BusinessException(
+                                ErrorConstant.PLACE_NOT_FOUND,
+                                "Place not found: " + update.getId()));
+
+                boolean hasChanges = false;
+
+                // Update thumbnail if provided
+                if (update.getThumbnail() != null && !update.getThumbnail().isEmpty()) {
+                    place.setThumbnail(update.getThumbnail());
+                    hasChanges = true;
+                }
+
+                // Update images if provided
+                if (update.getImages() != null && !update.getImages().isEmpty()) {
+                    place.setImages(update.getImages());
+                    hasChanges = true;
+                }
+
+                if (hasChanges) {
+                    place.setUpdatedAt(LocalDateTime.now());
+                    placeRepository.update(place);
+                    updated++;
+
+                    log.debug("Updated images for place: {} ({})",
+                            place.getTitle(), place.getPlaceId());
+                }
+
+            } catch (Exception e) {
+                failed++;
+                String errorMsg = "Failed to update place " + update.getId() + ": " + e.getMessage();
+                errors.add(errorMsg);
+                log.error(errorMsg, e);
+            }
+        }
+
+        log.info("Batch update completed: {} updated, {} failed", updated, failed);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("totalInput", request.getPlaces().size());
+        result.put("updated", updated);
+        result.put("failed", failed);
+        result.put("errors", errors);
+
+        return result;
     }
 }

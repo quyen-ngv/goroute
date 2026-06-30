@@ -64,6 +64,20 @@ public class FoodServiceImpl implements FoodService {
     }
 
     @Override
+    public List<CitySlugOptionResponse> listCitiesForFood(UUID foodId) {
+        foodRepository.findFoodById(foodId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Food not found"));
+        return foodRepository.findCityScoresByFoodId(foodId).stream()
+                .filter(score -> score.getScore() != null && score.getScore() >= MIN_SCORE_PUBLIC)
+                .sorted(Comparator.comparing(FoodCityScore::getScore).reversed())
+                .map(score -> CitySlugOptionResponse.builder()
+                        .slug(score.getCitySlug())
+                        .label(CitySlugResolver.displayName(score.getCitySlug()))
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    @Override
     public FoodPlacePageResponse listPlacesForFood(UUID foodId, String citySlug, BigDecimal lat, BigDecimal lng,
                                                    int page, int size) {
         String normalizedCitySlug = CitySlugResolver.normalizeRequired(citySlug);
@@ -185,6 +199,7 @@ public class FoodServiceImpl implements FoodService {
                 .description(request.getDescription())
                 .category(request.getCategory())
                 .imageUrl(request.getImageUrl())
+                .introductionImages(toIntroductionImagesJson(request.getIntroductionImages()))
                 .createdAt(OffsetDateTime.now())
                 .updatedAt(OffsetDateTime.now())
                 .build();
@@ -205,6 +220,9 @@ public class FoodServiceImpl implements FoodService {
         if (request.getDescription() != null) food.setDescription(request.getDescription());
         if (request.getCategory() != null) food.setCategory(request.getCategory());
         if (request.getImageUrl() != null) food.setImageUrl(request.getImageUrl());
+        if (request.getIntroductionImages() != null) {
+            food.setIntroductionImages(toIntroductionImagesJson(request.getIntroductionImages()));
+        }
         food.setUpdatedAt(OffsetDateTime.now());
         foodRepository.updateFood(food);
         return toAdminDetail(food);
@@ -241,6 +259,7 @@ public class FoodServiceImpl implements FoodService {
                 .score(request.getScore())
                 .localDescription(request.getLocalDescription())
                 .imageUrl(blankToNull(request.getImageUrl()))
+                .introductionImages(toIntroductionImagesJson(request.getIntroductionImages()))
                 .flavorProfile(toJson(request.getFlavorProfile()))
                 .funFact(request.getFunFact())
                 .createdAt(OffsetDateTime.now())
@@ -266,6 +285,9 @@ public class FoodServiceImpl implements FoodService {
         if (request.getScore() != null) score.setScore(request.getScore());
         if (request.getLocalDescription() != null) score.setLocalDescription(request.getLocalDescription());
         if (request.getImageUrl() != null) score.setImageUrl(blankToNull(request.getImageUrl()));
+        if (request.getIntroductionImages() != null) {
+            score.setIntroductionImages(toIntroductionImagesJson(request.getIntroductionImages()));
+        }
         if (request.getFlavorProfile() != null) score.setFlavorProfile(toJson(request.getFlavorProfile()));
         if (request.getFunFact() != null) score.setFunFact(request.getFunFact());
         score.setUpdatedAt(OffsetDateTime.now());
@@ -340,6 +362,7 @@ public class FoodServiceImpl implements FoodService {
                 .description(food.getDescription())
                 .category(food.getCategory())
                 .imageUrl(food.getImageUrl())
+                .introductionImages(parseIntroductionImages(food.getIntroductionImages()))
                 .cityScores(scores)
                 .linkedPlacesCount(foodRepository.countLinkedPlaces(food.getId(), null))
                 .createdAt(food.getCreatedAt())
@@ -398,6 +421,7 @@ public class FoodServiceImpl implements FoodService {
                 .scoreLabelKey(FoodScoreLabelResolver.toLabelKey(row.getScore()))
                 .category(row.getCategory())
                 .imageUrl(row.getImageUrl())
+                .introductionImages(parseIntroductionImages(row.getIntroductionImages()))
                 .citySlug(citySlug)
                 .cityDisplayName(CitySlugResolver.displayName(citySlug))
                 .flavorProfile(parseFlavor(row.getFlavorProfile()))
@@ -431,6 +455,7 @@ public class FoodServiceImpl implements FoodService {
                 .score(score.getScore())
                 .localDescription(score.getLocalDescription())
                 .imageUrl(score.getImageUrl())
+                .introductionImages(parseIntroductionImages(score.getIntroductionImages()))
                 .flavorProfile(parseFlavor(score.getFlavorProfile()))
                 .funFact(score.getFunFact())
                 .build();
@@ -465,5 +490,19 @@ public class FoodServiceImpl implements FoodService {
 
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private List<PlaceImagesDto> parseIntroductionImages(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        return JsonUtils.fromJson(json, new TypeReference<List<PlaceImagesDto>>() {});
+    }
+
+    private String toIntroductionImagesJson(List<PlaceImagesDto> images) {
+        if (images == null || images.isEmpty()) {
+            return null;
+        }
+        return JsonUtils.toJson(images);
     }
 }

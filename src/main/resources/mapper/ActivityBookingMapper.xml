@@ -193,6 +193,14 @@
         LIMIT #{p.limit} OFFSET #{p.offset}
     </select>
 
+    <select id="searchByKeyword" resultMap="ActivityBookingResultMap">
+        SELECT <include refid="ActivityBookingListColumns"/>
+        FROM activity_bookings
+        WHERE LOWER(title) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+        ORDER BY updated_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
     <delete id="delete">
         DELETE FROM activity_bookings WHERE id = #{id}
     </delete>

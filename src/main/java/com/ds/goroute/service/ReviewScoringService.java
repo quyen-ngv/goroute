@@ -29,9 +29,10 @@ public class ReviewScoringService {
     private final PlaceScoreRepository scoreRepository;
     private final ReviewFlagRepository flagRepository;
 
-    private static final double GLOBAL_MEAN = 3.8;
-    private static final int MIN_VOTES = 10;
+    private static final double GLOBAL_MEAN = 3.8; // Will be updated dynamically
+    private static final int MIN_VOTES = 50; // Updated from 10 to 50
     private static final int TIME_DECAY_DAYS = 365;
+    private static final int SMOOTH_REVIEW_THRESHOLD = 200; // Reviews threshold for time decay
 
     /**
      * Calculate weighted average score for a place
@@ -43,11 +44,12 @@ public class ReviewScoringService {
             return null;
         }
 
+        int reviewCount = reviews.size();
         double weightedSum = 0;
         double totalWeight = 0;
 
         for (UserReview review : reviews) {
-            double weight = calculateReviewWeight(review);
+            double weight = calculateReviewWeight(review, reviewCount);
             weightedSum += review.getOverallRating() * weight;
             totalWeight += weight;
         }
@@ -57,7 +59,7 @@ public class ReviewScoringService {
         }
 
         double rawScore = weightedSum / totalWeight;
-        double bayesianScore = applyBayesianSmoothing(rawScore, reviews.size());
+        double bayesianScore = applyBayesianSmoothing(rawScore, reviewCount);
 
         return BigDecimal.valueOf(bayesianScore).setScale(1, RoundingMode.HALF_UP);
     }
@@ -65,7 +67,7 @@ public class ReviewScoringService {
     /**
      * Calculate review weight based on user tier, trust score, flags, and time decay
      */
-    public double calculateReviewWeight(UserReview review) {
+    public double calculateReviewWeight(UserReview review, int placeReviewCount) {
         UserReviewProfile profile = profileRepository.findByUserId(review.getUserId())
                 .orElse(createDefaultProfile(review.getUserId()));
 
@@ -75,12 +77,12 @@ public class ReviewScoringService {
         // Quality bonus from trust score (max +0.3)
         double qualityBonus = Math.min(profile.getTrustScore().doubleValue() / 100.0, 0.3);
 
-        // Time decay
-        double timeDecay = calculateTimeDecay(review.getCreatedAt());
+        // Time decay - smooth transition based on place review count
+        double timeDecay = calculateSmoothTimeDecay(review.getCreatedAt(), placeReviewCount);
 
-        // Flag penalty
+        // Flag penalty - graduated
         int flagCount = flagRepository.countByReviewId(review.getId());
-        double flagPenalty = flagCount >= 2 ? 0 : (flagCount == 1 ? 0.3 : 1.0);
+        double flagPenalty = calculateFlagPenalty(flagCount);
 
         return (baseWeight + qualityBonus) * timeDecay * flagPenalty;
     }
@@ -93,11 +95,31 @@ public class ReviewScoringService {
     }
 
     /**
-     * Calculate time decay factor (exponential decay)
+     * Calculate smooth time decay - places with many reviews have less decay
      */
-    private double calculateTimeDecay(LocalDateTime createdAt) {
+    private double calculateSmoothTimeDecay(LocalDateTime createdAt, int placeReviewCount) {
         long daysSince = ChronoUnit.DAYS.between(createdAt, LocalDateTime.now());
-        return Math.exp(-daysSince / (double) TIME_DECAY_DAYS);
+        
+        // Calculate decay strength based on review count
+        // Places with ≥200 reviews: almost no decay (strength near 0)
+        // Places with few reviews: normal decay (strength = 1)
+        double decayStrength = Math.max(0, 1.0 - (placeReviewCount / (double) SMOOTH_REVIEW_THRESHOLD));
+        
+        // Apply exponential decay with adjusted strength
+        return Math.exp(-daysSince * decayStrength / (double) TIME_DECAY_DAYS);
+    }
+    
+    /**
+     * Calculate graduated flag penalty
+     * 0 flags → 1.0, 1 flag → 0.7, 2 flags → 0.4, 3+ flags → 0
+     */
+    private double calculateFlagPenalty(int flagCount) {
+        switch (flagCount) {
+            case 0: return 1.0;
+            case 1: return 0.7;
+            case 2: return 0.4;
+            default: return 0.0; // 3+ flags
+        }
     }
 
     /**
@@ -105,12 +127,13 @@ public class ReviewScoringService {
      */
     public Map<String, BigDecimal> calculateAspectScores(UUID placeId) {
         List<UserReview> reviews = reviewRepository.findByPlaceId(placeId, 1000, 0);
+        int reviewCount = reviews.size();
 
         Map<String, Double> weightedSums = new HashMap<>();
         Map<String, Double> totalWeights = new HashMap<>();
 
         for (UserReview review : reviews) {
-            double weight = calculateReviewWeight(review);
+            double weight = calculateReviewWeight(review, reviewCount);
 
             if (review.getFoodRating() != null) {
                 weightedSums.merge("food", review.getFoodRating() * weight, Double::sum);
@@ -140,18 +163,26 @@ public class ReviewScoringService {
     }
 
     /**
-     * Calculate user trust score
+     * Calculate user trust score (updated formula)
      */
     public BigDecimal calculateUserTrustScore(UUID userId) {
         UserReviewProfile profile = profileRepository.findByUserId(userId)
                 .orElse(createDefaultProfile(userId));
 
-        double reviewCountScore = Math.min(profile.getReviewCount() * 0.3, 30.0);
-        double avgLengthScore = Math.min(profile.getAvgReviewLength() * 0.2 / 10.0, 20.0);
-        double helpfulScore = Math.min(profile.getHelpfulVotesReceived() * 0.3, 30.0);
-        double verifiedTripsScore = Math.min(profile.getVerifiedTripsCount() * 0.2 * 5, 20.0);
+        // Review count: 0.1 per review, max 60
+        double reviewCountScore = Math.min(profile.getReviewCount() * 0.1, 60.0);
+        
+        // Avg length: log scale, max 30
+        // log10(length) scaled to max 30 (assumes avg length ~1000 chars = max score)
+        double avgLengthScore = 0;
+        if (profile.getAvgReviewLength() > 0) {
+            avgLengthScore = Math.min(Math.log10(profile.getAvgReviewLength() + 1) * 10, 30.0);
+        }
+        
+        // Helpful votes: 0.5 per vote, max 10
+        double helpfulScore = Math.min(profile.getHelpfulVotesReceived() * 0.5, 10.0);
 
-        double totalScore = reviewCountScore + avgLengthScore + helpfulScore + verifiedTripsScore;
+        double totalScore = reviewCountScore + avgLengthScore + helpfulScore;
 
         return BigDecimal.valueOf(Math.min(totalScore, 100.0)).setScale(2, RoundingMode.HALF_UP);
     }

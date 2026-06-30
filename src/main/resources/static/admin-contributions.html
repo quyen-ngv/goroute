@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Duyệt đóng góp địa điểm - GoRoute Admin</title>
+    <link rel="stylesheet" href="/goroute/goroute-theme.css">
+</head>
+
+<body>
+    <div class="page-header">
+        <h1>🤝 Duyệt đóng góp địa điểm</h1>
+        <p>Moderate user-submitted Google Maps places before scrape/import</p>
+    </div>
+
+    <div class="container container--wide">
+        <div class="toolbar">
+            <select id="status-filter" class="search-box" onchange="loadGroups()">
+                <option value="PENDING">Pending</option>
+                <option value="SCRAPING">Scraping</option>
+                <option value="COMPLETED">Completed</option>
+                <option value="MERGED_TO_EXISTING">Merged to existing</option>
+                <option value="REJECTED">Rejected</option>
+                <option value="FAILED">Failed</option>
+            </select>
+            <button class="btn btn-secondary" onclick="loadGroups()">🔄 Refresh</button>
+        </div>
+
+        <div id="error-message" class="error" style="display:none;"></div>
+        <div id="success-message" class="success" style="display:none;"></div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Contribution groups</div>
+            </div>
+            <div class="card-body">
+                <div id="loading" class="loading">Loading...</div>
+                <div id="empty" class="empty" style="display:none;">No groups</div>
+                <div id="table-container" class="table-container" style="display:none;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Place hint</th>
+                                <th>URL</th>
+                                <th>Contributors</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="groups-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="detail-modal" class="modal" style="display:none;">
+        <div class="modal-content modal-content--wide">
+            <div class="modal-header">
+                <h2 id="detail-title">Group detail</h2>
+                <button class="btn btn-secondary" onclick="closeDetail()">Close</button>
+            </div>
+            <div id="detail-body" class="modal-body"></div>
+            <div class="modal-footer">
+                <button class="btn btn-success" onclick="approveCurrent()">✅ Approve & scrape</button>
+                <button class="btn btn-danger" onclick="rejectCurrent()">❌ Reject</button>
+                <button class="btn btn-secondary" onclick="syncCurrent()">🔄 Sync scrape job</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/goroute/goroute-admin-utils.js"></script>
+    <script>
+        const API_BASE_URL = window.GOROUTE_ADMIN_API || '/goroute/v1/api';
+        let currentGroupId = null;
+
+        function showError(msg) {
+            const el = document.getElementById('error-message');
+            el.textContent = msg;
+            el.style.display = 'block';
+            setTimeout(() => el.style.display = 'none', 5000);
+        }
+
+        function showSuccess(msg) {
+            const el = document.getElementById('success-message');
+            el.textContent = msg;
+            el.style.display = 'block';
+            setTimeout(() => el.style.display = 'none', 4000);
+        }
+
+        async function loadGroups() {
+            const status = document.getElementById('status-filter').value;
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('empty').style.display = 'none';
+            document.getElementById('table-container').style.display = 'none';
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/contributions?status=${status}`);
+                const result = await response.json();
+                const groups = result.data || [];
+                document.getElementById('loading').style.display = 'none';
+                if (!groups.length) {
+                    document.getElementById('empty').style.display = 'block';
+                    return;
+                }
+                document.getElementById('table-container').style.display = 'block';
+                document.getElementById('groups-body').innerHTML = groups.map(group => `
+                    <tr>
+                        <td>${escapeHtml(group.placeNameHint || group.resolvedGooglePlaceId || '—')}</td>
+                        <td><a href="${group.googleMapsUrl}" target="_blank" rel="noopener">Open Maps</a></td>
+                        <td>${group.contributorCount || 0}</td>
+                        <td>${group.status}</td>
+                        <td>${formatDate(group.createdAt)}</td>
+                        <td>
+                            <button class="btn btn-secondary btn-sm" onclick="openDetail('${group.id}')">View</button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                document.getElementById('loading').style.display = 'none';
+                showError('Failed to load groups: ' + e.message);
+            }
+        }
+
+        async function openDetail(groupId) {
+            currentGroupId = groupId;
+            const response = await fetch(`${API_BASE_URL}/admin/contributions/${groupId}`);
+            const result = await response.json();
+            const group = result.data;
+            document.getElementById('detail-title').textContent = group.placeNameHint || 'Contribution group';
+            const contributions = (group.contributions || []).map(item => `
+                <div class="card" style="margin-bottom:12px;padding:12px;">
+                    <strong>${escapeHtml(item.userName || item.userId)}</strong>
+                    <div>Status: ${item.status}</div>
+                    <div>Rating: ${item.pendingReview?.overallRating || '—'}/5</div>
+                    <div>${escapeHtml(item.pendingReview?.text || '')}</div>
+                </div>
+            `).join('');
+            document.getElementById('detail-body').innerHTML = `
+                <p><strong>URL:</strong> <a href="${group.googleMapsUrl}" target="_blank">${group.googleMapsUrl}</a></p>
+                <p><strong>Status:</strong> ${group.status}</p>
+                <p><strong>Resolved place id:</strong> ${group.resolvedGooglePlaceId || '—'}</p>
+                <p><strong>Scrape job:</strong> ${group.scrapeJobId || '—'}</p>
+                <p><strong>Linked place:</strong> ${group.linkedPlaceTitle || group.linkedPlaceId || '—'}</p>
+                <h3>Contributors</h3>
+                ${contributions || '<p>No contributors</p>'}
+            `;
+            document.getElementById('detail-modal').style.display = 'flex';
+        }
+
+        function closeDetail() {
+            document.getElementById('detail-modal').style.display = 'none';
+            currentGroupId = null;
+        }
+
+        async function approveCurrent() {
+            if (!currentGroupId) return;
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/contributions/${currentGroupId}/approve`, { method: 'POST' });
+                const result = await response.json();
+                if (!response.ok) {
+                    showError(result.meta?.message || 'Approve failed');
+                    return;
+                }
+                showSuccess('Approved and scrape job triggered');
+                closeDetail();
+                loadGroups();
+            } catch (e) {
+                showError('Approve failed: ' + e.message);
+            }
+        }
+
+        async function rejectCurrent() {
+            if (!currentGroupId) return;
+            const reason = prompt('Rejection reason (optional)') || '';
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/contributions/${currentGroupId}/reject`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reason })
+                });
+                const result = await response.json();
+                if (!response.ok) {
+                    showError(result.meta?.message || 'Reject failed');
+                    return;
+                }
+                showSuccess('Rejected');
+                closeDetail();
+                loadGroups();
+            } catch (e) {
+                showError('Reject failed: ' + e.message);
+            }
+        }
+
+        async function syncCurrent() {
+            if (!currentGroupId) return;
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/contributions/${currentGroupId}/sync`, { method: 'POST' });
+                const result = await response.json();
+                if (!response.ok) {
+                    showError(result.meta?.message || 'Sync failed');
+                    return;
+                }
+                showSuccess('Synced scrape job status');
+                openDetail(currentGroupId);
+                loadGroups();
+            } catch (e) {
+                showError('Sync failed: ' + e.message);
+            }
+        }
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function formatDate(value) {
+            if (!value) return '—';
+            return new Date(value).toLocaleString();
+        }
+
+        loadGroups();
+    </script>
+</body>
+
+</html>

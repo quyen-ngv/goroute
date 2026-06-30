@@ -18,5 +18,6 @@ public class CityStoryPlaceSummary {
     private String thumbnail;
     private String address;
     private BigDecimal reviewRating;
+    private BigDecimal adjustedRating;
     private Integer reviewCount;
 }

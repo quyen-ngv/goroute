@@ -936,15 +936,12 @@ public class AiTripServiceImpl implements AiTripService {
     }
 
     private String formatDuration(Integer minutes) {
-        if (minutes == null || minutes <= 0) {
-            return null;
-        }
+        if (minutes == null || minutes <= 0) return null;
         int hours = minutes / 60;
         int mins = minutes % 60;
-        if (hours == 0) {
-            return mins + " phÃºt";
-        }
-        return mins == 0 ? hours + " giá»" : hours + " giá» " + mins + " phÃºt";
+        if (hours == 0) return mins + "m";
+        if (mins == 0) return hours + "h";
+        return hours + "h " + mins + "m";
     }
 
     private String firstNonBlank(String first, String second) {

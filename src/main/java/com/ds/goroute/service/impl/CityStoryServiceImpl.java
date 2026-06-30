@@ -241,6 +241,7 @@ public class CityStoryServiceImpl implements CityStoryService {
                 .thumbnail(place.getThumbnail())
                 .address(place.getAddress())
                 .reviewRating(place.getReviewRating())
+                .adjustedRating(place.getAdjustedRating())
                 .reviewCount(place.getReviewCount())
                 .build();
     }

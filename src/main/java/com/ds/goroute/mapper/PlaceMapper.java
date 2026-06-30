@@ -21,6 +21,12 @@ public interface PlaceMapper {
 
     List<Place> findAll();
 
+    long countAll();
+
+    List<Place> findPage(@Param("limit") int limit, @Param("offset") int offset);
+
+    List<Place> findByIds(@Param("ids") List<UUID> ids);
+
     List<Place> findNearby(@Param("keyword") String keyword,
                           @Param("latitude") BigDecimal latitude,
                           @Param("longitude") BigDecimal longitude,

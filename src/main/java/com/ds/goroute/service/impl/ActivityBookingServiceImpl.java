@@ -24,13 +24,13 @@ import com.ds.goroute.service.ExchangeRateService;
 import com.ds.goroute.utils.ActivityBookingSearchFieldHelper;
 import com.ds.goroute.utils.DestinationMatchUtils;
 import com.ds.goroute.utils.JsonUtils;
+import com.ds.goroute.utils.LuceneTitleQueryBuilder;
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.*;
 import org.apache.lucene.index.*;
-import org.apache.lucene.queryparser.classic.MultiFieldQueryParser;
 import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.*;
 import org.apache.lucene.store.Directory;
@@ -76,6 +76,23 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
         writer = new IndexWriter(directory, config);
         searcherManager = new SearcherManager(writer, new SearcherFactory());
         log.info("Lucene index initialized at: {}", indexDir.toAbsolutePath());
+        ensureSearchIndexPopulated();
+    }
+
+    private void ensureSearchIndexPopulated() {
+        try {
+            IndexSearcher searcher = searcherManager.acquire();
+            try {
+                if (searcher.getIndexReader().numDocs() == 0 && repository.countAll() > 0) {
+                    log.warn("Activity booking Lucene index is empty but DB has data — reindexing");
+                    triggerReindex();
+                }
+            } finally {
+                searcherManager.release(searcher);
+            }
+        } catch (IOException e) {
+            log.warn("Could not verify activity booking Lucene index: {}", e.getMessage());
+        }
     }
 
     @PreDestroy
@@ -201,8 +218,7 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
                 BooleanQuery.Builder booleanQuery = new BooleanQuery.Builder();
 
                 if (query != null && !query.trim().isEmpty()) {
-                    QueryParser parser = new QueryParser("searchText", analyzer);
-                    Query textQuery = parser.parse(QueryParser.escape(query.trim()));
+                    Query textQuery = buildTextSearchQuery(query.trim());
                     booleanQuery.add(textQuery, BooleanClause.Occur.MUST);
                 } else {
                     booleanQuery.add(new MatchAllDocsQuery(), BooleanClause.Occur.MUST);
@@ -251,6 +267,9 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
                     if (results.size() >= size) {
                         break;
                     }
+                }
+                if (results.isEmpty() && query != null && !query.trim().isEmpty()) {
+                    log.debug("No Lucene matches for activity booking title query: {}", query.trim());
                 }
                 return results;
             } finally {
@@ -440,6 +459,10 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
 
         doc.add(new StringField("id", booking.getId().toString(), Field.Store.YES));
         doc.add(new TextField("title", booking.getTitle() != null ? booking.getTitle() : "", Field.Store.YES));
+        doc.add(new TextField(
+                "description",
+                booking.getDescription() != null ? booking.getDescription() : "",
+                Field.Store.NO));
 
         String searchText = buildSearchText(booking);
         doc.add(new TextField("searchText", searchText, Field.Store.NO));
@@ -459,6 +482,16 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
 
     private String buildSearchText(ActivityBooking booking) {
         List<String> terms = new ArrayList<>();
+
+        if (booking.getTitle() != null && !booking.getTitle().isBlank()) {
+            terms.add(booking.getTitle());
+            terms.add(booking.getTitle());
+            terms.add(booking.getTitle());
+        }
+
+        if (booking.getDescription() != null && !booking.getDescription().isBlank()) {
+            terms.add(booking.getDescription());
+        }
 
         if (booking.getActivityAddress() != null) {
             terms.add(booking.getActivityAddress());
@@ -496,6 +529,10 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
         }
 
         return String.join(" ", terms);
+    }
+
+    private Query buildTextSearchQuery(String query) throws Exception {
+        return LuceneTitleQueryBuilder.build(query, analyzer);
     }
 
     private ActivityBookingResponse mapToResponse(ActivityBooking booking) {
@@ -848,11 +885,7 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
     private List<ActivityBooking> sortBookingsByRelevance(List<ActivityBooking> bookings, String query) throws Exception {
         IndexSearcher searcher = searcherManager.acquire();
         try {
-            String[] fields = {"title", "searchText"};
-            Map<String, Float> boosts = Map.of("title", 3.0f, "searchText", 1.0f);
-            MultiFieldQueryParser parser = new MultiFieldQueryParser(fields, analyzer, boosts);
-            parser.setDefaultOperator(QueryParser.Operator.OR);
-            Query textQuery = parser.parse(QueryParser.escape(query));
+            Query textQuery = LuceneTitleQueryBuilder.build(query, analyzer);
 
             List<ScoredBooking> scoredBookings = new ArrayList<>();
             for (ActivityBooking booking : bookings) {

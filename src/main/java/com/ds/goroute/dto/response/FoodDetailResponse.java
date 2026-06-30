@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -24,6 +25,7 @@ public class FoodDetailResponse {
     private String scoreLabelKey;
     private String category;
     private String imageUrl;
+    private List<PlaceImagesDto> introductionImages;
     private String citySlug;
     private String cityDisplayName;
     private Map<String, Object> flavorProfile;

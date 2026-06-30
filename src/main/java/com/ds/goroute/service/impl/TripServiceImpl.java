@@ -584,9 +584,7 @@ public class TripServiceImpl implements TripService {
     private TripStatsResponse calculateTripStats(UUID tripId) {
         int totalItems = activityRepository.findByTripId(tripId).size();
         int checkedInItems = checkinRepository.findByTripId(tripId).size();
-        int totalMembers = (int) tripMemberRepository.findByTripId(tripId).stream()
-                .filter(m -> m.getStatus() == MemberStatus.ACCEPTED)
-                .count();
+        int totalMembers = countAcceptedMembers(tripId);
         BigDecimal totalExpenses = expenseRepository.findByTripId(tripId).stream()
                 .map(e -> e.getAmountInTripCurrency() != null ? e.getAmountInTripCurrency() : e.getAmount())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -986,6 +984,7 @@ public class TripServiceImpl implements TripService {
                 .unhelpfulVotes(trip.getUnhelpfulVotes() != null ? trip.getUnhelpfulVotes() : 0)
                 .hasVotedHelpful(resolveTripHasVotedHelpful(trip.getId(), viewerId))
                 .isOwnTrip(viewerId != null && trip.getOwnerId().equals(viewerId))
+                .totalMembers(countAcceptedMembers(trip.getId()))
                 .build();
     }
 
@@ -1332,9 +1331,16 @@ public class TripServiceImpl implements TripService {
                             .unhelpfulVotes(trip.getUnhelpfulVotes() != null ? trip.getUnhelpfulVotes() : 0)
                             .hasVotedHelpful(resolveTripHasVotedHelpful(trip.getId(), excludeUserId))
                             .isOwnTrip(excludeUserId != null && trip.getOwnerId().equals(excludeUserId))
+                            .totalMembers(countAcceptedMembers(trip.getId()))
                             .build();
                 })
                 .collect(Collectors.toList());
+    }
+
+    private int countAcceptedMembers(UUID tripId) {
+        return (int) tripMemberRepository.findByTripId(tripId).stream()
+                .filter(m -> m.getStatus() == MemberStatus.ACCEPTED)
+                .count();
     }
 
     private List<String> getTripMemoryImageUrls(UUID tripId) {

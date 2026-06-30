@@ -51,4 +51,6 @@ public interface UserReviewMapper {
                                @Param("endTime") LocalDateTime endTime);
 
     void delete(@Param("id") UUID id);
+    
+    void deleteByIds(@Param("ids") List<UUID> ids);
 }

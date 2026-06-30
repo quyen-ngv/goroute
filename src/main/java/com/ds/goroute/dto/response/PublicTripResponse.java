@@ -38,4 +38,5 @@ public class PublicTripResponse {
     private Integer unhelpfulVotes;
     private Boolean hasVotedHelpful;
     private Boolean isOwnTrip;
+    private Integer totalMembers;
 }

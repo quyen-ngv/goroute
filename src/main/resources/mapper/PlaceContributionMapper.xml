@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ds.goroute.mapper.PlaceContributionMapper">
+
+    <resultMap id="GroupResultMap" type="com.ds.goroute.entity.PlaceContributionGroup">
+        <id property="id" column="id"/>
+        <result property="normalizedUrlHash" column="normalized_url_hash"/>
+        <result property="googleMapsUrl" column="google_maps_url"/>
+        <result property="placeNameHint" column="place_name_hint"/>
+        <result property="resolvedGooglePlaceId" column="resolved_google_place_id"/>
+        <result property="status" column="status" javaType="com.ds.goroute.type.ContributionGroupStatus"/>
+        <result property="linkedPlaceId" column="linked_place_id"/>
+        <result property="scrapeJobId" column="scrape_job_id"/>
+        <result property="gorouteJobId" column="goroute_job_id"/>
+        <result property="adminNote" column="admin_note"/>
+        <result property="rejectionReason" column="rejection_reason"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <resultMap id="ContributionResultMap" type="com.ds.goroute.entity.PlaceContribution">
+        <id property="id" column="id"/>
+        <result property="groupId" column="group_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="googleMapsUrl" column="google_maps_url"/>
+        <result property="placeNameHint" column="place_name_hint"/>
+        <result property="status" column="status" javaType="com.ds.goroute.type.ContributionStatus"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <resultMap id="PendingReviewResultMap" type="com.ds.goroute.entity.PendingContributionReview">
+        <id property="id" column="id"/>
+        <result property="contributionId" column="contribution_id"/>
+        <result property="overallRating" column="overall_rating"/>
+        <result property="foodRating" column="food_rating"/>
+        <result property="priceRating" column="price_rating"/>
+        <result property="ambianceRating" column="ambiance_rating"/>
+        <result property="serviceRating" column="service_rating"/>
+        <result property="text" column="text"/>
+        <result property="photos" column="photos"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <resultMap id="ContributorResultMap" type="com.ds.goroute.entity.PlaceContributor">
+        <result property="placeId" column="place_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="contributionId" column="contribution_id"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <resultMap id="ImportLogResultMap" type="com.ds.goroute.entity.PlaceContributionImportLog">
+        <id property="id" column="id"/>
+        <result property="contributionGroupId" column="contribution_group_id"/>
+        <result property="gorouteJobId" column="goroute_job_id"/>
+        <result property="scrapeJobId" column="scrape_job_id"/>
+        <result property="goroutePlaceId" column="goroute_place_id"/>
+        <result property="placeAlreadyExists" column="place_already_exists"/>
+        <result property="reviewsPublished" column="reviews_published"/>
+        <result property="contributorsAdded" column="contributors_added"/>
+        <result property="processedAt" column="processed_at"/>
+    </resultMap>
+
+    <resultMap id="PlaceResultMap" type="com.ds.goroute.entity.Place">
+        <id property="id" column="id"/>
+        <result property="placeId" column="place_id"/>
+        <result property="cid" column="cid"/>
+        <result property="title" column="title"/>
+        <result property="address" column="address"/>
+        <result property="googleMapsLink" column="google_maps_link"/>
+    </resultMap>
+
+    <insert id="insertGroup" parameterType="com.ds.goroute.entity.PlaceContributionGroup">
+        INSERT INTO place_contribution_groups (
+            id, normalized_url_hash, google_maps_url, place_name_hint,
+            resolved_google_place_id, status, linked_place_id,
+            scrape_job_id, goroute_job_id, admin_note, rejection_reason,
+            created_at, updated_at
+        ) VALUES (
+            #{id}, #{normalizedUrlHash}, #{googleMapsUrl}, #{placeNameHint},
+            #{resolvedGooglePlaceId},
+            #{status, javaType=com.ds.goroute.type.ContributionGroupStatus},
+            #{linkedPlaceId}, #{scrapeJobId}, #{gorouteJobId},
+            #{adminNote}, #{rejectionReason}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <update id="updateGroup" parameterType="com.ds.goroute.entity.PlaceContributionGroup">
+        UPDATE place_contribution_groups SET
+            resolved_google_place_id = #{resolvedGooglePlaceId},
+            status = #{status, javaType=com.ds.goroute.type.ContributionGroupStatus},
+            linked_place_id = #{linkedPlaceId},
+            scrape_job_id = #{scrapeJobId},
+            goroute_job_id = #{gorouteJobId},
+            admin_note = #{adminNote},
+            rejection_reason = #{rejectionReason},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <select id="findGroupById" resultMap="GroupResultMap">
+        SELECT * FROM place_contribution_groups WHERE id = #{id}
+    </select>
+
+    <select id="findActiveGroupByUrlHash" resultMap="GroupResultMap">
+        SELECT * FROM place_contribution_groups
+        WHERE normalized_url_hash = #{normalizedUrlHash}
+        AND status IN
+        <foreach collection="statuses" item="s" open="(" separator="," close=")">
+            #{s, javaType=com.ds.goroute.type.ContributionGroupStatus}
+        </foreach>
+        ORDER BY created_at DESC
+        LIMIT 1
+    </select>
+
+    <select id="findGroupsByStatus" resultMap="GroupResultMap">
+        SELECT * FROM place_contribution_groups
+        WHERE status = #{status, javaType=com.ds.goroute.type.ContributionGroupStatus}
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countGroupsByStatus" resultType="long">
+        SELECT COUNT(*) FROM place_contribution_groups
+        WHERE status = #{status, javaType=com.ds.goroute.type.ContributionGroupStatus}
+    </select>
+
+    <select id="findGroupsInScrapingStatus" resultMap="GroupResultMap">
+        SELECT * FROM place_contribution_groups
+        WHERE status = 'SCRAPING' AND scrape_job_id IS NOT NULL
+        ORDER BY updated_at ASC
+    </select>
+
+    <insert id="insertContribution" parameterType="com.ds.goroute.entity.PlaceContribution">
+        INSERT INTO place_contributions (
+            id, group_id, user_id, google_maps_url, place_name_hint, status, created_at, updated_at
+        ) VALUES (
+            #{id}, #{groupId}, #{userId}, #{googleMapsUrl}, #{placeNameHint},
+            #{status, javaType=com.ds.goroute.type.ContributionStatus},
+            #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <update id="updateContribution" parameterType="com.ds.goroute.entity.PlaceContribution">
+        UPDATE place_contributions SET
+            status = #{status, javaType=com.ds.goroute.type.ContributionStatus},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <select id="findContributionById" resultMap="ContributionResultMap">
+        SELECT * FROM place_contributions WHERE id = #{id}
+    </select>
+
+    <select id="findContributionByUserAndGroup" resultMap="ContributionResultMap">
+        SELECT * FROM place_contributions
+        WHERE user_id = #{userId} AND group_id = #{groupId}
+        LIMIT 1
+    </select>
+
+    <select id="findContributionsByUserId" resultMap="ContributionResultMap">
+        SELECT * FROM place_contributions
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findContributionsByGroupId" resultMap="ContributionResultMap">
+        SELECT * FROM place_contributions
+        WHERE group_id = #{groupId}
+        ORDER BY created_at ASC
+    </select>
+
+    <insert id="insertPendingReview" parameterType="com.ds.goroute.entity.PendingContributionReview">
+        INSERT INTO pending_contribution_reviews (
+            id, contribution_id, overall_rating, food_rating, price_rating,
+            ambiance_rating, service_rating, text, photos, created_at, updated_at
+        ) VALUES (
+            #{id}, #{contributionId}, #{overallRating}, #{foodRating}, #{priceRating},
+            #{ambianceRating}, #{serviceRating}, #{text}, #{photos}::text,
+            #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <update id="updatePendingReview" parameterType="com.ds.goroute.entity.PendingContributionReview">
+        UPDATE pending_contribution_reviews SET
+            overall_rating = #{overallRating},
+            food_rating = #{foodRating},
+            price_rating = #{priceRating},
+            ambiance_rating = #{ambianceRating},
+            service_rating = #{serviceRating},
+            text = #{text},
+            photos = #{photos}::text,
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <select id="findPendingReviewByContributionId" resultMap="PendingReviewResultMap">
+        SELECT * FROM pending_contribution_reviews WHERE contribution_id = #{contributionId}
+    </select>
+
+    <delete id="deletePendingReviewByContributionId">
+        DELETE FROM pending_contribution_reviews WHERE contribution_id = #{contributionId}
+    </delete>
+
+    <delete id="deleteContributionById">
+        DELETE FROM place_contributions WHERE id = #{id}
+    </delete>
+
+    <delete id="deleteGroupById">
+        DELETE FROM place_contribution_groups WHERE id = #{id}
+    </delete>
+
+    <select id="findPendingReviewsByGroupId" resultMap="PendingReviewResultMap">
+        SELECT pcr.* FROM pending_contribution_reviews pcr
+        INNER JOIN place_contributions pc ON pc.id = pcr.contribution_id
+        WHERE pc.group_id = #{groupId}
+    </select>
+
+    <insert id="insertContributor" parameterType="com.ds.goroute.entity.PlaceContributor">
+        INSERT INTO place_contributors (place_id, user_id, contribution_id, created_at)
+        VALUES (#{placeId}, #{userId}, #{contributionId}, #{createdAt})
+        ON CONFLICT (place_id, user_id) DO NOTHING
+    </insert>
+
+    <select id="findContributorsByPlaceId" resultMap="ContributorResultMap">
+        SELECT * FROM place_contributors WHERE place_id = #{placeId} ORDER BY created_at ASC
+    </select>
+
+    <select id="findContributorsByUserId" resultMap="ContributorResultMap">
+        SELECT * FROM place_contributors
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <insert id="insertImportLog" parameterType="com.ds.goroute.entity.PlaceContributionImportLog">
+        INSERT INTO place_contribution_import_logs (
+            id, contribution_group_id, goroute_job_id, scrape_job_id,
+            goroute_place_id, place_already_exists, reviews_published, contributors_added, processed_at
+        ) VALUES (
+            #{id}, #{contributionGroupId}, #{gorouteJobId}, #{scrapeJobId},
+            #{goroutePlaceId}, #{placeAlreadyExists}, #{reviewsPublished}, #{contributorsAdded}, #{processedAt}
+        )
+    </insert>
+
+    <select id="findImportLogByGroupId" resultMap="ImportLogResultMap">
+        SELECT * FROM place_contribution_import_logs WHERE contribution_group_id = #{groupId}
+    </select>
+
+    <select id="findImportLogByGorouteJobId" resultMap="ImportLogResultMap">
+        SELECT * FROM place_contribution_import_logs WHERE goroute_job_id = #{gorouteJobId}
+    </select>
+
+    <select id="findPlaceByCid" resultMap="PlaceResultMap">
+        SELECT id, place_id, cid, title, address, google_maps_link
+        FROM places WHERE cid = #{cid} LIMIT 1
+    </select>
+
+    <select id="findPlaceByGoogleMapsLink" resultMap="PlaceResultMap">
+        SELECT id, place_id, cid, title, address, google_maps_link
+        FROM places WHERE google_maps_link = #{googleMapsLink} LIMIT 1
+    </select>
+
+</mapper>

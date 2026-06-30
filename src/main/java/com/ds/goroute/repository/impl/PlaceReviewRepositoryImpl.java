@@ -33,6 +33,13 @@ public class PlaceReviewRepositoryImpl implements PlaceReviewRepository {
     public void update(PlaceReview review) {
         placeReviewMapper.update(review);
     }
+    
+    @Override
+    public void updateBatch(List<PlaceReview> reviews) {
+        if (reviews != null && !reviews.isEmpty()) {
+            placeReviewMapper.updateBatch(reviews);
+        }
+    }
 
     @Override
     public List<PlaceReview> findByPlaceId(UUID placeId) {
@@ -58,6 +65,11 @@ public class PlaceReviewRepositoryImpl implements PlaceReviewRepository {
     public List<PlaceReview> findReviewsByPlaceIdAndRating(UUID placeId, int rating, BigDecimal minAuthScore, int limit) {
         return placeReviewMapper.findReviewsByPlaceIdAndRating(placeId, rating, minAuthScore, limit);
     }
+    
+    @Override
+    public List<PlaceReview> findByPlaceIdPaginated(UUID placeId, int limit, int offset) {
+        return placeReviewMapper.findByPlaceIdPaginated(placeId, limit, offset);
+    }
 
     @Override
     public BigDecimal getAvgAuthenticityScore(UUID placeId) {
@@ -67,5 +79,12 @@ public class PlaceReviewRepositoryImpl implements PlaceReviewRepository {
     @Override
     public void deleteByPlaceId(UUID placeId) {
         placeReviewMapper.deleteByPlaceId(placeId);
+    }
+    
+    @Override
+    public void deleteByIds(List<UUID> ids) {
+        if (ids != null && !ids.isEmpty()) {
+            placeReviewMapper.deleteByIds(ids);
+        }
     }
 }

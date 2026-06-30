@@ -97,6 +97,114 @@
             updated_at = #{updatedAt}
         WHERE id = #{id}
     </update>
+    
+    <update id="updateBatch" parameterType="java.util.List">
+        UPDATE place_reviews SET
+            place_id = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.placeId}
+                </foreach>
+            END,
+            google_place_id = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.googlePlaceId}
+                </foreach>
+            END,
+            reviewer_name = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.reviewerName}
+                </foreach>
+            END,
+            profile_url = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.profileUrl}
+                </foreach>
+            END,
+            profile_picture = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.profilePicture}
+                </foreach>
+            END,
+            is_local_guide = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.isLocalGuide}
+                </foreach>
+            END,
+            total_reviews = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.totalReviews}
+                </foreach>
+            END,
+            total_photos = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.totalPhotos}
+                </foreach>
+            END,
+            rating = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.rating}
+                </foreach>
+            END,
+            description = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.description}
+                </foreach>
+            END,
+            language = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.language}
+                </foreach>
+            END,
+            review_date = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.reviewDate}
+                </foreach>
+            END,
+            images = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.images}
+                </foreach>
+            END,
+            likes = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.likes}
+                </foreach>
+            END,
+            content_hash = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.contentHash}
+                </foreach>
+            END,
+            is_deleted = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.isDeleted}
+                </foreach>
+            END,
+            authenticity_score = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.authenticityScore}
+                </foreach>
+            END,
+            authenticity_level = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.authenticityLevel}
+                </foreach>
+            END,
+            score_calculated_at = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.scoreCalculatedAt}
+                </foreach>
+            END,
+            updated_at = CASE
+                <foreach collection="list" item="review">
+                    WHEN id = #{review.id} THEN #{review.updatedAt}
+                </foreach>
+            END
+        WHERE id IN
+        <foreach collection="list" item="review" open="(" separator="," close=")">
+            #{review.id}
+        </foreach>
+    </update>
 
     <select id="findByPlaceId" resultMap="PlaceReviewResultMap">
         SELECT * FROM place_reviews
@@ -138,6 +246,17 @@
             review_date DESC
         LIMIT #{limit}
     </select>
+    
+    <select id="findByPlaceIdPaginated" resultMap="PlaceReviewResultMap">
+        SELECT * FROM place_reviews
+        WHERE place_id = #{placeId}
+          AND (is_deleted IS NULL OR is_deleted = false)
+        ORDER BY
+            authenticity_score DESC NULLS LAST,
+            review_date DESC,
+            id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
 
     <select id="getAvgAuthenticityScore" resultType="java.math.BigDecimal">
         SELECT AVG(authenticity_score)
@@ -149,6 +268,14 @@
 
     <delete id="deleteByPlaceId">
         DELETE FROM place_reviews WHERE place_id = #{placeId}
+    </delete>
+    
+    <delete id="deleteByIds">
+        DELETE FROM place_reviews
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
     </delete>
 
 </mapper>

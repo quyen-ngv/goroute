@@ -54,6 +54,7 @@ public class ErrorConstant {
      * 409
      */
     public static final int REVIEW_ALREADY_EXISTS = 4090001;
+    public static final int ALREADY_PROCESSED = 4090002;
  
     /**
      * Write the error code prefixed with 500 below

@@ -12,6 +12,7 @@
         <result property="description" column="description"/>
         <result property="category" column="category"/>
         <result property="imageUrl" column="image_url"/>
+        <result property="introductionImages" column="introduction_images"/>
         <result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
     </resultMap>
@@ -25,6 +26,7 @@
         <result property="description" column="description"/>
         <result property="category" column="category"/>
         <result property="imageUrl" column="image_url"/>
+        <result property="introductionImages" column="introduction_images"/>
         <result property="score" column="score"/>
         <result property="citySlug" column="city_slug"/>
         <result property="localDescription" column="local_description"/>
@@ -39,6 +41,7 @@
         <result property="score" column="score"/>
         <result property="localDescription" column="local_description"/>
         <result property="imageUrl" column="image_url"/>
+        <result property="introductionImages" column="introduction_images"/>
         <result property="flavorProfile" column="flavor_profile"/>
         <result property="funFact" column="fun_fact"/>
         <result property="createdAt" column="created_at"/>
@@ -67,8 +70,8 @@
     </resultMap>
 
     <insert id="insertFood">
-        INSERT INTO foods (id, name_vi, name_en, name_ja, name_ko, description, category, image_url, created_at, updated_at)
-        VALUES (#{id}, #{nameVi}, #{nameEn}, #{nameJa}, #{nameKo}, #{description}, #{category}, #{imageUrl}, #{createdAt}, #{updatedAt})
+        INSERT INTO foods (id, name_vi, name_en, name_ja, name_ko, description, category, image_url, introduction_images, created_at, updated_at)
+        VALUES (#{id}, #{nameVi}, #{nameEn}, #{nameJa}, #{nameKo}, #{description}, #{category}, #{imageUrl}, #{introductionImages}, #{createdAt}, #{updatedAt})
     </insert>
 
     <update id="updateFood">
@@ -80,6 +83,7 @@
             description = #{description},
             category = #{category},
             image_url = #{imageUrl},
+            introduction_images = #{introductionImages},
             updated_at = #{updatedAt}
         WHERE id = #{id}
     </update>
@@ -132,6 +136,7 @@
     <select id="findFoodsByCity" resultMap="FoodWithScoreResultMap">
         SELECT f.id, f.name_vi, f.name_en, f.name_ja, f.name_ko, f.description, f.category,
                COALESCE(fcs.image_url, f.image_url) AS image_url,
+               COALESCE(fcs.introduction_images, f.introduction_images) AS introduction_images,
                fcs.score, fcs.city_slug, fcs.local_description, fcs.flavor_profile::text AS flavor_profile, fcs.fun_fact
         FROM foods f
         INNER JOIN food_city_scores fcs ON fcs.food_id = f.id
@@ -143,6 +148,7 @@
     <select id="findFoodDetailByCity" resultMap="FoodWithScoreResultMap">
         SELECT f.id, f.name_vi, f.name_en, f.name_ja, f.name_ko, f.description, f.category,
                COALESCE(fcs.image_url, f.image_url) AS image_url,
+               COALESCE(fcs.introduction_images, f.introduction_images) AS introduction_images,
                fcs.score, fcs.city_slug, fcs.local_description, fcs.flavor_profile::text AS flavor_profile, fcs.fun_fact
         FROM foods f
         INNER JOIN food_city_scores fcs ON fcs.food_id = f.id
@@ -150,8 +156,8 @@
     </select>
 
     <insert id="insertCityScore">
-        INSERT INTO food_city_scores (id, food_id, city_slug, score, local_description, image_url, flavor_profile, fun_fact, created_at, updated_at)
-        VALUES (#{id}, #{foodId}, #{citySlug}, #{score}, #{localDescription}, #{imageUrl}, #{flavorProfile}::jsonb, #{funFact}, #{createdAt}, #{updatedAt})
+        INSERT INTO food_city_scores (id, food_id, city_slug, score, local_description, image_url, introduction_images, flavor_profile, fun_fact, created_at, updated_at)
+        VALUES (#{id}, #{foodId}, #{citySlug}, #{score}, #{localDescription}, #{imageUrl}, #{introductionImages}, #{flavorProfile}::jsonb, #{funFact}, #{createdAt}, #{updatedAt})
     </insert>
 
     <update id="updateCityScore">
@@ -160,6 +166,7 @@
             score = #{score},
             local_description = #{localDescription},
             image_url = #{imageUrl},
+            introduction_images = #{introductionImages},
             flavor_profile = #{flavorProfile}::jsonb,
             fun_fact = #{funFact},
             updated_at = #{updatedAt}
@@ -259,6 +266,7 @@
     <select id="findFoodsByPlaceId" resultMap="FoodWithScoreResultMap">
         SELECT f.id, f.name_vi, f.name_en, f.name_ja, f.name_ko, f.description, f.category,
                COALESCE(fcs.image_url, f.image_url) AS image_url,
+               COALESCE(fcs.introduction_images, f.introduction_images) AS introduction_images,
                fcs.score, fcs.city_slug, fcs.local_description,
                fcs.flavor_profile::text AS flavor_profile, fcs.fun_fact
         FROM place_foods pf

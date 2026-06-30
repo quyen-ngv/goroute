@@ -67,6 +67,14 @@ public class ActivityBookingRepositoryImpl implements ActivityBookingRepository 
     }
 
     @Override
+    public List<ActivityBooking> searchByKeyword(String keyword, int limit, int offset) {
+        if (keyword == null || keyword.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+        return mapper.searchByKeyword(keyword.trim(), limit, offset);
+    }
+
+    @Override
     public void update(ActivityBooking booking) {
         mapper.update(booking);
     }

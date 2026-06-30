@@ -14,6 +14,8 @@ public interface PlaceReviewRepository {
     void insertBatch(List<PlaceReview> reviews);
 
     void update(PlaceReview review);
+    
+    void updateBatch(List<PlaceReview> reviews);
 
     List<PlaceReview> findByPlaceId(UUID placeId);
 
@@ -24,8 +26,12 @@ public interface PlaceReviewRepository {
     List<PlaceReview> findTopReviewsByPlaceId(UUID placeId, int limit, int offset);
 
     List<PlaceReview> findReviewsByPlaceIdAndRating(UUID placeId, int rating, BigDecimal minAuthScore, int limit);
+    
+    List<PlaceReview> findByPlaceIdPaginated(UUID placeId, int limit, int offset);
 
     BigDecimal getAvgAuthenticityScore(UUID placeId);
 
     void deleteByPlaceId(UUID placeId);
+    
+    void deleteByIds(List<UUID> ids);
 }
