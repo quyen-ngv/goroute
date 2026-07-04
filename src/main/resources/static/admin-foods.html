@@ -235,6 +235,84 @@
                             <div class="form-group">
                                 <label class="form-label">Mô tả *</label>
                                 <textarea id="description" class="form-input form-textarea" required></textarea>
+                                <small class="form-help">Hỗ trợ Markdown (Tổng quan trên app).</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Lịch sử & nguồn gốc</label>
+                                <textarea id="history-origin" class="form-input form-textarea" rows="4" placeholder="Markdown — section History & origin"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Nguyên liệu & chế biến</label>
+                                <textarea id="ingredients-preparation" class="form-input form-textarea" rows="4" placeholder="Markdown — section Nguyên liệu & chế biến"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Fun fact (chung)</label>
+                                <textarea id="fun-fact" class="form-input form-textarea" rows="3" placeholder="Markdown — Bạn có biết không? (không đổi theo thành phố)"></textarea>
+                            </div>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label class="form-label">Phụ đề (VI)</label>
+                                    <input type="text" id="subtitle-vi" class="form-input" placeholder="Linh hồn ẩm thực Việt">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Phụ đề (EN)</label>
+                                    <input type="text" id="subtitle-en" class="form-input" placeholder="The soul of Vietnamese cuisine">
+                                </div>
+                            </div>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label class="form-label">Phụ đề (JA)</label>
+                                    <input type="text" id="subtitle-ja" class="form-input" placeholder="ベトナム料理の魂">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Phụ đề (KO)</label>
+                                    <input type="text" id="subtitle-ko" class="form-input" placeholder="베트남 요리의 영혼">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Tagline hero (VI)</label>
+                                <input type="text" id="hero-tagline-vi" class="form-input" placeholder="Giòn rụm bên ngoài, đậm đà bên trong.">
+                                <small class="form-help">Khẩu hiệu ngắn hiển thị ngay dưới tên món trên hero.</small>
+                            </div>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label class="form-label">Tagline hero (EN)</label>
+                                    <input type="text" id="hero-tagline-en" class="form-input" placeholder="Crispy outside. Full of flavor inside.">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Tagline hero (JA)</label>
+                                    <input type="text" id="hero-tagline-ja" class="form-input" placeholder="外はサクサク、中は旨味たっぷり。">
+                                </div>
+                            </div>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label class="form-label">Tagline hero (KO)</label>
+                                    <input type="text" id="hero-tagline-ko" class="form-input" placeholder="겉은 바삭, 속은 풍미 가득.">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Màu chủ đề (theme color)</label>
+                                    <input type="text" id="theme-color" class="form-input" placeholder="#F4E7C3 hoặc #FFF4E7C3">
+                                    <small class="form-help">HEX (#RRGGBB / #AARRGGBB). Trống = màu mặc định.</small>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Tags</label>
+                                <input type="text" id="tags" class="form-input" placeholder="Sandwich, Đường phố, Nhanh, Truyền thống">
+                                <small class="form-help">Ngăn cách bằng dấu phẩy. Hiển thị dạng #tag trên app.</small>
+                            </div>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label class="form-label">Giá tối thiểu</label>
+                                    <input type="number" id="price-min" class="form-input" min="0" placeholder="35000">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Giá tối đa</label>
+                                    <input type="number" id="price-max" class="form-input" min="0" placeholder="120000">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Tiền tệ</label>
+                                    <input type="text" id="price-currency" class="form-input" value="VND" maxlength="3" placeholder="VND">
+                                </div>
                             </div>
                             <div class="form-grid">
                                 <div class="form-group">
@@ -264,6 +342,36 @@
                                 <div id="food-images-list-container" style="margin-top: 12px;">
                                     <div id="food-images-list"></div>
                                 </div>
+                            </div>
+                            <div class="form-group" style="margin-top: 16px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+                                    <div>
+                                        <label class="form-label" style="margin-bottom: 0;">Nguyên liệu cốt lõi</label>
+                                        <small class="form-help">JSON list: image, name, description (không đổi theo vùng).</small>
+                                    </div>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="addCoreIngredientItem()">➕ Thêm nguyên liệu</button>
+                                </div>
+                                <div id="core-ingredients-list" style="margin-top: 12px;"></div>
+                            </div>
+                            <div class="form-group" style="margin-top: 16px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+                                    <div>
+                                        <label class="form-label" style="margin-bottom: 0;">Biến thể món</label>
+                                        <small class="form-help">VD: phở bò tái, nạm, gầu — image, name, description.</small>
+                                    </div>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="addVarietyItem()">➕ Thêm biến thể</button>
+                                </div>
+                                <div id="varieties-list" style="margin-top: 12px;"></div>
+                            </div>
+                            <div class="form-group" style="margin-top: 16px;">
+                                <label class="form-label">Cách ăn (hướng dẫn)</label>
+                                <small class="form-help">Mô tả chung + các bước (ảnh + mô tả từng ảnh) cho khách nước ngoài.</small>
+                                <textarea id="how-to-eat-description" class="form-input form-textarea" rows="4" placeholder="Markdown — giới thiệu chung cách ăn" style="margin-top: 8px;"></textarea>
+                                <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px;">
+                                    <small class="form-help" style="margin: 0;">Các bước minh họa (image URL + mô tả)</small>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="addHowToEatStepItem()">➕ Thêm bước</button>
+                                </div>
+                                <div id="how-to-eat-steps-list" style="margin-top: 12px;"></div>
                             </div>
                         </div>
                     </div>
@@ -307,8 +415,24 @@
                                     </div>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">Mô tả địa phương</label>
+                                    <label class="form-label">Vùng miền</label>
+                                    <select id="score-region-key" class="form-input">
+                                        <option value="">— Không chọn —</option>
+                                        <option value="north">Miền Bắc (north)</option>
+                                        <option value="central">Miền Trung (central)</option>
+                                        <option value="south">Miền Nam (south)</option>
+                                    </select>
+                                    <small class="form-help">Dùng cho tag miền trên thẻ vùng miền ở app.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Mô tả ngắn (thẻ vùng miền)</label>
+                                    <input type="text" id="score-short-desc" class="form-input" maxlength="300" placeholder="Nhân đơn giản, tinh tế — thường chỉ giò lụa, pate và dưa chua">
+                                    <small class="form-help">Teaser 1-2 dòng hiển thị trên thẻ vùng miền.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Mô tả địa phương (chi tiết)</label>
                                     <textarea id="score-local-desc" class="form-input form-textarea" rows="3"></textarea>
+                                    <small class="form-help">Hỗ trợ Markdown, hiển thị khi mở rộng thẻ vùng miền.</small>
                                 </div>
                                 <div class="form-group">
                                     <label class="form-label">URL ảnh riêng cho city</label>
@@ -326,10 +450,6 @@
                                     <div id="score-images-list-container" style="margin-top: 12px;">
                                         <div id="score-images-list"></div>
                                     </div>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Fun fact</label>
-                                    <input type="text" id="score-fun-fact" class="form-input">
                                 </div>
                                 <div class="score-editor-actions">
                                     <button type="button" class="btn btn-primary btn-sm" id="score-save-btn" onclick="saveCityScore()">Thêm điểm</button>
@@ -381,6 +501,9 @@
         let searchTimer = null;
         let isEditMode = false;
         let foodImagesList = [];
+        let coreIngredientsList = [];
+        let varietiesList = [];
+        let howToEatStepsList = [];
         let scoreImagesList = [];
 
         const tableChrome = () => ({
@@ -542,10 +665,33 @@
             document.getElementById('name-vi').value = '';
             document.getElementById('name-en').value = '';
             document.getElementById('description').value = '';
+            document.getElementById('history-origin').value = '';
+            document.getElementById('ingredients-preparation').value = '';
+            document.getElementById('fun-fact').value = '';
+            document.getElementById('how-to-eat-description').value = '';
+            document.getElementById('subtitle-vi').value = '';
+            document.getElementById('subtitle-en').value = '';
+            document.getElementById('subtitle-ja').value = '';
+            document.getElementById('subtitle-ko').value = '';
+            document.getElementById('hero-tagline-vi').value = '';
+            document.getElementById('hero-tagline-en').value = '';
+            document.getElementById('hero-tagline-ja').value = '';
+            document.getElementById('hero-tagline-ko').value = '';
+            document.getElementById('theme-color').value = '';
+            document.getElementById('tags').value = '';
+            document.getElementById('price-min').value = '';
+            document.getElementById('price-max').value = '';
+            document.getElementById('price-currency').value = 'VND';
             document.getElementById('category').value = 'NOODLE';
             document.getElementById('image-url').value = '';
             foodImagesList = [];
+            coreIngredientsList = [];
+            varietiesList = [];
+            howToEatStepsList = [];
             renderFoodImagesList();
+            renderCoreIngredientsList();
+            renderVarietiesList();
+            renderHowToEatStepsList();
             renderScoresSection([]);
             renderLinkedSection([], 0);
             resetScoreForm();
@@ -567,6 +713,23 @@
                 document.getElementById('name-vi').value = detail.names?.vi || '';
                 document.getElementById('name-en').value = detail.names?.en || '';
                 document.getElementById('description').value = detail.description || '';
+                document.getElementById('history-origin').value = detail.historyOrigin || '';
+                document.getElementById('ingredients-preparation').value = detail.ingredientsPreparation || '';
+                document.getElementById('fun-fact').value = detail.funFact || '';
+                document.getElementById('how-to-eat-description').value = detail.howToEatDescription || '';
+                document.getElementById('subtitle-vi').value = detail.subtitles?.vi || '';
+                document.getElementById('subtitle-en').value = detail.subtitles?.en || '';
+                document.getElementById('subtitle-ja').value = detail.subtitles?.ja || '';
+                document.getElementById('subtitle-ko').value = detail.subtitles?.ko || '';
+                document.getElementById('hero-tagline-vi').value = detail.heroTaglines?.vi || '';
+                document.getElementById('hero-tagline-en').value = detail.heroTaglines?.en || '';
+                document.getElementById('hero-tagline-ja').value = detail.heroTaglines?.ja || '';
+                document.getElementById('hero-tagline-ko').value = detail.heroTaglines?.ko || '';
+                document.getElementById('theme-color').value = detail.themeColor || '';
+                document.getElementById('tags').value = Array.isArray(detail.tags) ? detail.tags.join(', ') : '';
+                document.getElementById('price-min').value = detail.priceMin ?? '';
+                document.getElementById('price-max').value = detail.priceMax ?? '';
+                document.getElementById('price-currency').value = detail.priceCurrency || 'VND';
                 document.getElementById('category').value = detail.category || 'NOODLE';
                 document.getElementById('image-url').value = detail.imageUrl || '';
                 foodImagesList = Array.isArray(detail.introductionImages)
@@ -575,7 +738,30 @@
                         image: item.image || '',
                     }))
                     : [];
+                coreIngredientsList = Array.isArray(detail.coreIngredients)
+                    ? detail.coreIngredients.map(item => ({
+                        name: item.name || '',
+                        image: item.image || '',
+                        description: item.description || '',
+                    }))
+                    : [];
+                varietiesList = Array.isArray(detail.varieties)
+                    ? detail.varieties.map(item => ({
+                        name: item.name || '',
+                        image: item.image || '',
+                        description: item.description || '',
+                    }))
+                    : [];
+                howToEatStepsList = Array.isArray(detail.howToEatSteps)
+                    ? detail.howToEatSteps.map(item => ({
+                        image: item.image || '',
+                        description: item.description || '',
+                    }))
+                    : [];
                 renderFoodImagesList();
+                renderCoreIngredientsList();
+                renderVarietiesList();
+                renderHowToEatStepsList();
                 renderScoresSection(detail.cityScores || []);
                 resetScoreForm();
                 setPostSaveControlsVisible(true);
@@ -615,9 +801,8 @@
             wrap.style.display = 'block';
             tbody.innerHTML = currentScores.map(score => {
                 const localDesc = escapeHtml(score.localDescription || '');
-                const funFact = escapeHtml(score.funFact || '');
                 const imageNote = score.imageUrl ? `Ảnh city: ${escapeHtml(score.imageUrl)}` : '';
-                const description = [localDesc, imageNote, funFact ? `Fun fact: ${funFact}` : ''].filter(Boolean).join('<br>');
+                const description = [localDesc, imageNote].filter(Boolean).join('<br>');
                 return `
                     <tr>
                         <td>
@@ -641,9 +826,10 @@
         function resetScoreForm() {
             document.getElementById('score-id').value = '';
             document.getElementById('score-value').value = '80';
+            document.getElementById('score-region-key').value = '';
+            document.getElementById('score-short-desc').value = '';
             document.getElementById('score-local-desc').value = '';
             document.getElementById('score-image-url').value = '';
-            document.getElementById('score-fun-fact').value = '';
             scoreImagesList = [];
             renderScoreImagesList();
             document.getElementById('score-form-title').textContent = 'Thêm điểm thành phố';
@@ -658,9 +844,10 @@
             document.getElementById('score-id').value = score.id;
             renderCitySlugSelect(score.citySlug);
             document.getElementById('score-value').value = score.score ?? 80;
+            document.getElementById('score-region-key').value = score.regionKey || '';
+            document.getElementById('score-short-desc').value = score.shortDescription || '';
             document.getElementById('score-local-desc').value = score.localDescription || '';
             document.getElementById('score-image-url').value = score.imageUrl || '';
-            document.getElementById('score-fun-fact').value = score.funFact || '';
             scoreImagesList = Array.isArray(score.introductionImages)
                 ? score.introductionImages.map(item => ({
                     title: item.title || '',
@@ -722,6 +909,12 @@
                 return;
             }
 
+            const priceMinRaw = document.getElementById('price-min').value.trim();
+            const priceMaxRaw = document.getElementById('price-max').value.trim();
+            const tagsRaw = document.getElementById('tags').value.trim();
+            const tags = tagsRaw
+                ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean)
+                : [];
             const body = {
                 nameVi,
                 nameEn,
@@ -729,6 +922,26 @@
                 category,
                 imageUrl,
                 introductionImages: foodImagesList.filter(item => item.image?.trim()),
+                subtitleVi: document.getElementById('subtitle-vi').value.trim() || null,
+                subtitleEn: document.getElementById('subtitle-en').value.trim() || null,
+                subtitleJa: document.getElementById('subtitle-ja').value.trim() || null,
+                subtitleKo: document.getElementById('subtitle-ko').value.trim() || null,
+                heroTaglineVi: document.getElementById('hero-tagline-vi').value.trim() || null,
+                heroTaglineEn: document.getElementById('hero-tagline-en').value.trim() || null,
+                heroTaglineJa: document.getElementById('hero-tagline-ja').value.trim() || null,
+                heroTaglineKo: document.getElementById('hero-tagline-ko').value.trim() || null,
+                themeColor: document.getElementById('theme-color').value.trim() || null,
+                tags,
+                priceMin: priceMinRaw ? Number(priceMinRaw) : null,
+                priceMax: priceMaxRaw ? Number(priceMaxRaw) : null,
+                priceCurrency: document.getElementById('price-currency').value.trim() || 'VND',
+                coreIngredients: coreIngredientsList.filter(item => item.name?.trim()),
+                varieties: varietiesList.filter(item => item.name?.trim()),
+                historyOrigin: document.getElementById('history-origin').value.trim() || null,
+                ingredientsPreparation: document.getElementById('ingredients-preparation').value.trim() || null,
+                funFact: document.getElementById('fun-fact').value.trim() || null,
+                howToEatDescription: document.getElementById('how-to-eat-description').value.trim() || null,
+                howToEatSteps: howToEatStepsList.filter(item => item.image?.trim()),
             };
             const foodId = document.getElementById('food-id').value;
             const url = isEditMode && foodId ? `${API_BASE_URL}/${foodId}` : API_BASE_URL;
@@ -782,10 +995,11 @@
             const body = {
                 citySlug,
                 score: scoreValue,
+                regionKey: document.getElementById('score-region-key').value || null,
+                shortDescription: document.getElementById('score-short-desc').value.trim() || null,
                 localDescription: document.getElementById('score-local-desc').value.trim(),
                 imageUrl: document.getElementById('score-image-url').value.trim() || null,
                 introductionImages: scoreImagesList.filter(item => item.image?.trim()),
-                funFact: document.getElementById('score-fun-fact').value.trim(),
             };
             const url = scoreId
                 ? `${API_BASE_URL}/${foodId}/city-scores/${scoreId}`
@@ -978,6 +1192,107 @@
             } else {
                 previewDiv.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#f3f4f6;color:#9ca3af;font-size:12px;">No image</div>';
             }
+        }
+
+        function renderCoreIngredientsList() {
+            const container = document.getElementById('core-ingredients-list');
+            if (!container) return;
+            if (!coreIngredientsList.length) {
+                container.innerHTML = '<div class="form-help">Chưa có nguyên liệu.</div>';
+                return;
+            }
+            container.innerHTML = coreIngredientsList.map((item, index) => `
+                <div class="score-editor" style="margin-bottom: 10px;">
+                    <div class="inline-actions" style="margin-bottom: 8px;">
+                        <strong>Nguyên liệu #${index + 1}</strong>
+                        <button type="button" class="btn btn-danger btn-sm" onclick="removeCoreIngredientItem(${index})">🗑️</button>
+                    </div>
+                    <input type="text" class="form-input" placeholder="Tên" value="${escapeHtml(item.name || '')}" onchange="updateCoreIngredientField(${index}, 'name', this.value)" style="margin-bottom: 8px;">
+                    <input type="url" class="form-input" placeholder="Image URL" value="${escapeHtml(item.image || '')}" onchange="updateCoreIngredientField(${index}, 'image', this.value)" style="margin-bottom: 8px;">
+                    <input type="text" class="form-input" placeholder="Mô tả ngắn" value="${escapeHtml(item.description || '')}" onchange="updateCoreIngredientField(${index}, 'description', this.value)">
+                </div>
+            `).join('');
+        }
+
+        function addCoreIngredientItem() {
+            coreIngredientsList.push({ name: '', image: '', description: '' });
+            renderCoreIngredientsList();
+        }
+
+        function removeCoreIngredientItem(index) {
+            coreIngredientsList.splice(index, 1);
+            renderCoreIngredientsList();
+        }
+
+        function updateCoreIngredientField(index, field, value) {
+            coreIngredientsList[index][field] = value;
+        }
+
+        function renderVarietiesList() {
+            const container = document.getElementById('varieties-list');
+            if (!container) return;
+            if (!varietiesList.length) {
+                container.innerHTML = '<div class="form-help">Chưa có biến thể.</div>';
+                return;
+            }
+            container.innerHTML = varietiesList.map((item, index) => `
+                <div class="score-editor" style="margin-bottom: 10px;">
+                    <div class="inline-actions" style="margin-bottom: 8px;">
+                        <strong>Biến thể #${index + 1}</strong>
+                        <button type="button" class="btn btn-danger btn-sm" onclick="removeVarietyItem(${index})">🗑️</button>
+                    </div>
+                    <input type="text" class="form-input" placeholder="Tên biến thể" value="${escapeHtml(item.name || '')}" onchange="updateVarietyField(${index}, 'name', this.value)" style="margin-bottom: 8px;">
+                    <input type="url" class="form-input" placeholder="Image URL" value="${escapeHtml(item.image || '')}" onchange="updateVarietyField(${index}, 'image', this.value)" style="margin-bottom: 8px;">
+                    <textarea class="form-input" placeholder="Mô tả chi tiết" rows="3" onchange="updateVarietyField(${index}, 'description', this.value)">${escapeHtml(item.description || '')}</textarea>
+                </div>
+            `).join('');
+        }
+
+        function addVarietyItem() {
+            varietiesList.push({ name: '', image: '', description: '' });
+            renderVarietiesList();
+        }
+
+        function removeVarietyItem(index) {
+            varietiesList.splice(index, 1);
+            renderVarietiesList();
+        }
+
+        function updateVarietyField(index, field, value) {
+            varietiesList[index][field] = value;
+        }
+
+        function renderHowToEatStepsList() {
+            const container = document.getElementById('how-to-eat-steps-list');
+            if (!container) return;
+            if (!howToEatStepsList.length) {
+                container.innerHTML = '<div class="form-help">Chưa có bước minh họa.</div>';
+                return;
+            }
+            container.innerHTML = howToEatStepsList.map((item, index) => `
+                <div class="score-editor" style="margin-bottom: 10px;">
+                    <div class="inline-actions" style="margin-bottom: 8px;">
+                        <strong>Bước #${index + 1}</strong>
+                        <button type="button" class="btn btn-danger btn-sm" onclick="removeHowToEatStepItem(${index})">🗑️</button>
+                    </div>
+                    <input type="url" class="form-input" placeholder="Image URL" value="${escapeHtml(item.image || '')}" onchange="updateHowToEatStepField(${index}, 'image', this.value)" style="margin-bottom: 8px;">
+                    <textarea class="form-input" placeholder="Mô tả bước này" rows="3" onchange="updateHowToEatStepField(${index}, 'description', this.value)">${escapeHtml(item.description || '')}</textarea>
+                </div>
+            `).join('');
+        }
+
+        function addHowToEatStepItem() {
+            howToEatStepsList.push({ image: '', description: '' });
+            renderHowToEatStepsList();
+        }
+
+        function removeHowToEatStepItem(index) {
+            howToEatStepsList.splice(index, 1);
+            renderHowToEatStepsList();
+        }
+
+        function updateHowToEatStepField(index, field, value) {
+            howToEatStepsList[index][field] = value;
         }
 
         loadCitySlugs();

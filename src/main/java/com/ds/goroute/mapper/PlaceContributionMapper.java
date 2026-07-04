@@ -46,6 +46,8 @@ public interface PlaceContributionMapper {
             @Param("limit") int limit,
             @Param("offset") int offset);
 
+    int countContributionsByUserId(@Param("userId") UUID userId);
+
     List<PlaceContribution> findContributionsByGroupId(@Param("groupId") UUID groupId);
 
     void insertPendingReview(PendingContributionReview review);
@@ -70,6 +72,8 @@ public interface PlaceContributionMapper {
             @Param("userId") UUID userId,
             @Param("limit") int limit,
             @Param("offset") int offset);
+
+    int countContributedPlacesByUserId(@Param("userId") UUID userId);
 
     void insertImportLog(PlaceContributionImportLog log);
 

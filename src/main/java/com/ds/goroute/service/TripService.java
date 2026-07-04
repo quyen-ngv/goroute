@@ -38,6 +38,8 @@ public interface TripService {
 
     List<TripInvitationResponse> getPendingInvitations(UUID userId);
 
+    List<TripAccessRequestResponse> getPendingAccessRequests(UUID userId);
+
     PublicTripResponse getPublicTrip(UUID tripId, UUID viewerId);
 
     TripVoteResponse voteTripHelpful(UUID tripId, UUID userId);

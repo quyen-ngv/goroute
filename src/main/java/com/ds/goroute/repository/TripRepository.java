@@ -36,4 +36,8 @@ public interface TripRepository {
     int countPublicTripsByOwnerId(UUID ownerId);
 
     int countTripsByOwnerId(UUID ownerId);
+
+    int sumCopyCountByOwnerId(UUID ownerId);
+
+    int sumHelpfulVotesByOwnerId(UUID ownerId);
 }

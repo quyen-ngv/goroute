@@ -15,8 +15,9 @@ public class UpdateFoodCityScoreRequest {
     @Max(100)
     private Integer score;
     private String localDescription;
+    private String shortDescription;
+    private String regionKey;
     private String imageUrl;
     private List<PlaceImagesDto> introductionImages;
     private Map<String, Object> flavorProfile;
-    private String funFact;
 }

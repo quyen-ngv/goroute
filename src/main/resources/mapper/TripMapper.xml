@@ -197,6 +197,20 @@
           AND is_deleted = FALSE
     </select>
 
+    <select id="sumCopyCountByOwnerId" parameterType="java.util.UUID" resultType="int">
+        SELECT COALESCE(SUM(copy_count), 0)
+        FROM trips
+        WHERE owner_id = #{ownerId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND is_deleted = FALSE
+    </select>
+
+    <select id="sumHelpfulVotesByOwnerId" parameterType="java.util.UUID" resultType="int">
+        SELECT COALESCE(SUM(helpful_votes), 0)
+        FROM trips
+        WHERE owner_id = #{ownerId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND is_deleted = FALSE
+    </select>
+
     <update id="updateVoteCounts" parameterType="com.ds.goroute.entity.Trip">
         UPDATE trips
         SET helpful_votes = #{helpfulVotes},

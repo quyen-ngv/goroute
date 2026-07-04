@@ -168,6 +168,11 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
+    <select id="countContributionsByUserId" resultType="int">
+        SELECT COUNT(*) FROM place_contributions
+        WHERE user_id = #{userId}
+    </select>
+
     <select id="findContributionsByGroupId" resultMap="ContributionResultMap">
         SELECT * FROM place_contributions
         WHERE group_id = #{groupId}
@@ -235,6 +240,11 @@
         WHERE user_id = #{userId}
         ORDER BY created_at DESC
         LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countContributedPlacesByUserId" resultType="int">
+        SELECT COUNT(*) FROM place_contributors
+        WHERE user_id = #{userId}
     </select>
 
     <insert id="insertImportLog" parameterType="com.ds.goroute.entity.PlaceContributionImportLog">

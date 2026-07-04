@@ -92,4 +92,14 @@ public class TripRepositoryImpl implements TripRepository {
     public int countTripsByOwnerId(UUID ownerId) {
         return tripMapper.countTripsByOwnerId(ownerId);
     }
+
+    @Override
+    public int sumCopyCountByOwnerId(UUID ownerId) {
+        return tripMapper.sumCopyCountByOwnerId(ownerId);
+    }
+
+    @Override
+    public int sumHelpfulVotesByOwnerId(UUID ownerId) {
+        return tripMapper.sumHelpfulVotesByOwnerId(ownerId);
+    }
 }

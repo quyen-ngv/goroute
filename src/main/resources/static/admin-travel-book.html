@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Travel Book Skeleton Admin</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f5f0e8;
+      color: #1f2933;
+    }
+    header {
+      padding: 18px 24px;
+      background: #fffaf2;
+      border-bottom: 1px solid #e6dac7;
+    }
+    main {
+      display: grid;
+      grid-template-columns: 360px minmax(420px, 1fr) 420px;
+      gap: 16px;
+      padding: 16px;
+    }
+    section {
+      background: #fff;
+      border: 1px solid #e6dac7;
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 8px 24px rgba(31, 41, 51, 0.08);
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      margin: 12px 0 6px;
+      color: #6b5a46;
+    }
+    input, textarea, select, button {
+      font: inherit;
+    }
+    input, textarea, select {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #d6c8b7;
+      border-radius: 10px;
+      padding: 10px;
+      background: #fffdf8;
+    }
+    textarea {
+      min-height: 360px;
+      font-family: Consolas, monospace;
+      font-size: 12px;
+    }
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 14px;
+      cursor: pointer;
+      background: #d71920;
+      color: #fff;
+      font-weight: 700;
+    }
+    button.secondary {
+      background: #3b8fa0;
+    }
+    .list {
+      display: grid;
+      gap: 8px;
+      max-height: 72vh;
+      overflow: auto;
+    }
+    .item {
+      padding: 10px;
+      border: 1px solid #eadfce;
+      border-radius: 10px;
+      cursor: pointer;
+      background: #fffdf8;
+    }
+    .item:hover {
+      border-color: #d71920;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .previewWrap {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 560px;
+      background: radial-gradient(circle at top, #fff7ea, #eadfce);
+      border-radius: 12px;
+    }
+    .canvas {
+      position: relative;
+      width: 375px;
+      height: 500px;
+      background: #fff6e8;
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: 0 16px 42px rgba(31, 41, 51, 0.18);
+    }
+    .slot {
+      position: absolute;
+      box-sizing: border-box;
+      border: 1px dashed rgba(31, 41, 51, 0.4);
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      font-size: 11px;
+      color: #2f2a21;
+      background: rgba(255, 255, 255, 0.55);
+    }
+    .photo { background: rgba(255,255,255,0.9); border: 8px solid white; }
+    .text { background: rgba(255, 246, 214, 0.75); }
+    .sticker { background: rgba(215, 25, 32, 0.12); }
+    .background { background: linear-gradient(135deg, #fff7ea, #eadcc7); border: 0; }
+    .status {
+      margin-top: 12px;
+      white-space: pre-wrap;
+      color: #6b5a46;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Travel Book Skeleton Admin</h1>
+  <p>Edit versioned skeleton JSON and preview slot layout before Flutter renders it.</p>
+</header>
+<main>
+  <section>
+    <h2>Skeletons</h2>
+    <div class="actions">
+      <button class="secondary" onclick="loadSkeletons()">Reload</button>
+      <button onclick="newSkeleton()">New</button>
+    </div>
+    <div id="list" class="list"></div>
+  </section>
+
+  <section>
+    <h2>Editor</h2>
+    <div class="row">
+      <div>
+        <label>Skeleton Key</label>
+        <input id="skeletonKey" placeholder="three_photo">
+      </div>
+      <div>
+        <label>Version</label>
+        <input id="version" type="number" value="1">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Name</label>
+        <input id="name" placeholder="Three photo">
+      </div>
+      <div>
+        <label>Page Type</label>
+        <select id="pageType">
+          <option value="cover">cover</option>
+          <option value="place">place</option>
+          <option value="summary">summary</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Canvas Width</label>
+        <input id="canvasWidth" type="number" value="375">
+      </div>
+      <div>
+        <label>Canvas Height</label>
+        <input id="canvasHeight" type="number" value="500">
+      </div>
+    </div>
+    <label>Slot Definitions JSON</label>
+    <textarea id="slotDefs" oninput="preview()"></textarea>
+    <div class="actions">
+      <button class="secondary" onclick="preview()">Preview</button>
+      <button onclick="saveSkeleton()">Save Skeleton</button>
+    </div>
+    <div id="status" class="status"></div>
+  </section>
+
+  <section>
+    <h2>Preview</h2>
+    <div class="previewWrap">
+      <div id="canvas" class="canvas"></div>
+    </div>
+  </section>
+</main>
+<script>
+  async function loadSkeletons() {
+    const res = await fetch('/v1/api/book/skeletons');
+    const body = await res.json();
+    const items = body.data || [];
+    document.getElementById('list').innerHTML = items.map((item, index) => `
+      <div class="item" onclick="selectSkeleton(${index})">
+        <strong>${item.skeletonKey}</strong> v${item.version}<br>
+        <small>${item.pageType} · ${item.canvasWidth}x${item.canvasHeight}</small>
+      </div>
+    `).join('');
+    window.skeletonItems = items;
+    setStatus(`Loaded ${items.length} skeletons`);
+  }
+
+  function selectSkeleton(index) {
+    const item = window.skeletonItems[index];
+    document.getElementById('skeletonKey').value = item.skeletonKey || '';
+    document.getElementById('version').value = item.version || 1;
+    document.getElementById('name').value = item.name || '';
+    document.getElementById('pageType').value = item.pageType || 'place';
+    document.getElementById('canvasWidth').value = item.canvasWidth || 375;
+    document.getElementById('canvasHeight').value = item.canvasHeight || 500;
+    document.getElementById('slotDefs').value = JSON.stringify(item.slotDefs || [], null, 2);
+    preview();
+  }
+
+  function newSkeleton() {
+    document.getElementById('skeletonKey').value = '';
+    document.getElementById('version').value = 1;
+    document.getElementById('name').value = '';
+    document.getElementById('pageType').value = 'place';
+    document.getElementById('canvasWidth').value = 375;
+    document.getElementById('canvasHeight').value = 500;
+    document.getElementById('slotDefs').value = JSON.stringify([
+      { slotId: 'background', type: 'background', x: 0, y: 0, w: 375, h: 500, rotation: 0, zIndex: 0 },
+      { slotId: 'photo_1', type: 'photo', x: 40, y: 80, w: 220, h: 260, rotation: -4, zIndex: 2 },
+      { slotId: 'place_name', type: 'text', x: 28, y: 28, w: 240, h: 40, rotation: 0, zIndex: 5 }
+    ], null, 2);
+    preview();
+  }
+
+  function readPayload() {
+    const slotDefs = JSON.parse(document.getElementById('slotDefs').value || '[]');
+    validateSlotDefs(slotDefs);
+    return {
+      skeletonKey: document.getElementById('skeletonKey').value.trim(),
+      version: Number(document.getElementById('version').value || 1),
+      name: document.getElementById('name').value.trim(),
+      pageType: document.getElementById('pageType').value,
+      canvasWidth: Number(document.getElementById('canvasWidth').value || 375),
+      canvasHeight: Number(document.getElementById('canvasHeight').value || 500),
+      slotDefs,
+      isActive: true
+    };
+  }
+
+  function validateSlotDefs(slotDefs) {
+    const ids = new Set();
+    for (const slot of slotDefs) {
+      if (!slot.slotId) throw new Error('slotId is required');
+      if (ids.has(slot.slotId)) throw new Error(`Duplicate slotId: ${slot.slotId}`);
+      ids.add(slot.slotId);
+      if (!slot.type) throw new Error(`type is required: ${slot.slotId}`);
+      if (!(slot.w > 0) || !(slot.h > 0)) throw new Error(`positive w/h required: ${slot.slotId}`);
+    }
+  }
+
+  function preview() {
+    try {
+      const payload = readPayload();
+      const canvas = document.getElementById('canvas');
+      canvas.style.width = `${payload.canvasWidth}px`;
+      canvas.style.height = `${payload.canvasHeight}px`;
+      canvas.innerHTML = payload.slotDefs
+        .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0))
+        .map(slot => `
+          <div class="slot ${slot.type}" style="
+            left:${slot.x || 0}px; top:${slot.y || 0}px; width:${slot.w}px; height:${slot.h}px;
+            transform: rotate(${slot.rotation || 0}deg); z-index:${slot.zIndex || 0};
+          ">${slot.slotId}</div>
+        `).join('');
+      setStatus('Preview OK');
+    } catch (error) {
+      setStatus(`Preview error: ${error.message}`);
+    }
+  }
+
+  async function saveSkeleton() {
+    try {
+      const payload = readPayload();
+      const res = await fetch('/v1/api/admin/book/skeletons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(JSON.stringify(body));
+      setStatus('Saved skeleton');
+      await loadSkeletons();
+    } catch (error) {
+      setStatus(`Save error: ${error.message}`);
+    }
+  }
+
+  function setStatus(text) {
+    document.getElementById('status').textContent = text;
+  }
+
+  newSkeleton();
+  loadSkeletons();
+</script>
+</body>
+</html>

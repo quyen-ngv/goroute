@@ -133,6 +133,11 @@
         WHERE user_id = #{userId}
     </select>
 
+    <select id="sumHelpfulVotesByUserId" resultType="int">
+        SELECT COALESCE(SUM(helpful_votes), 0) FROM user_reviews
+        WHERE user_id = #{userId}
+    </select>
+
     <select id="countByUserInTimeRange" resultType="int">
         SELECT COUNT(*) FROM user_reviews
         WHERE user_id = #{userId}

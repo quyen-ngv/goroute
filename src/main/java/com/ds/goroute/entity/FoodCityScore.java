@@ -18,6 +18,8 @@ public class FoodCityScore {
     private String citySlug;
     private Integer score;
     private String localDescription;
+    private String shortDescription;
+    private String regionKey;
     private String imageUrl;
     private String introductionImages;
     private String flavorProfile;

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ds.goroute.mapper.TripBookMapper">
+    <resultMap id="TripBookResultMap" type="com.ds.goroute.entity.TripBook">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="trip_id" property="tripId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="status" property="status"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.TripBook">
+        INSERT INTO trip_books (id, trip_id, status, created_at, updated_at)
+        VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER},
+                #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{status},
+                NOW(),
+                NOW())
+    </insert>
+
+    <select id="selectById" parameterType="java.util.UUID" resultMap="TripBookResultMap">
+        SELECT * FROM trip_books WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <select id="selectByTripId" parameterType="java.util.UUID" resultMap="TripBookResultMap">
+        SELECT * FROM trip_books WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <update id="updateStatus">
+        UPDATE trip_books
+        SET status = #{status}, updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+</mapper>

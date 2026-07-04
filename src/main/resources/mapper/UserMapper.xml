@@ -9,6 +9,8 @@
         <result column="full_name" property="fullName" jdbcType="VARCHAR"/>
         <result column="username" property="username" jdbcType="VARCHAR"/>
         <result column="avatar_url" property="avatarUrl" jdbcType="VARCHAR"/>
+        <result column="bio" property="bio" jdbcType="VARCHAR"/>
+        <result column="social_links" property="socialLinks" jdbcType="VARCHAR"/>
         <result column="provider" property="provider" jdbcType="VARCHAR"/>
         <result column="provider_id" property="providerId" jdbcType="VARCHAR"/>
         <result column="default_currency" property="defaultCurrency" jdbcType="VARCHAR"/>
@@ -27,12 +29,12 @@
     </resultMap>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.User">
-        INSERT INTO users (id, email, password_hash, full_name, username, avatar_url, provider, provider_id,
+        INSERT INTO users (id, email, password_hash, full_name, username, avatar_url, bio, social_links, provider, provider_id,
                           default_currency, default_travel_mode, location_tracking, auto_checkin_radius,
                           budget_alert_threshold, budget_alert_daily, default_trip_visibility, language, theme,
                           onboarding_completed, created_at, updated_at)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{email}, #{passwordHash}, #{fullName}, #{username},
-                #{avatarUrl}, #{provider}, #{providerId}, #{defaultCurrency}, #{defaultTravelMode},
+                #{avatarUrl}, #{bio}, COALESCE(#{socialLinks,jdbcType=VARCHAR}::jsonb, '{}'::jsonb), #{provider}, #{providerId}, #{defaultCurrency}, #{defaultTravelMode},
                 #{locationTracking}, #{autoCheckinRadius}, #{budgetAlertThreshold}, #{budgetAlertDaily},
                 #{defaultTripVisibility}, #{language}, #{theme}, #{onboardingCompleted}, NOW(), NOW())
     </insert>
@@ -60,6 +62,8 @@
             full_name = #{fullName},
             username = #{username},
             avatar_url = #{avatarUrl},
+            bio = #{bio},
+            social_links = COALESCE(#{socialLinks,jdbcType=VARCHAR}::jsonb, '{}'::jsonb),
             default_currency = #{defaultCurrency},
             default_travel_mode = #{defaultTravelMode},
             location_tracking = #{locationTracking},

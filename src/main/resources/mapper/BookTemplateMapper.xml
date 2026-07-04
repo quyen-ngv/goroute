@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ds.goroute.mapper.BookTemplateMapper">
+    <resultMap id="BookTemplateResultMap" type="com.ds.goroute.entity.BookTemplate">
+        <id column="id" property="id"/>
+        <result column="template_type" property="templateType"/>
+        <result column="ref_id" property="refId"/>
+        <result column="ref_name" property="refName"/>
+        <result column="backgrounds" property="backgrounds"/>
+        <result column="stickers" property="stickers"/>
+        <result column="frame_styles" property="frameStyles"/>
+        <result column="color_palette" property="colorPalette"/>
+        <result column="version" property="version"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <select id="selectByTypeAndRefId" resultMap="BookTemplateResultMap">
+        SELECT *
+        FROM book_templates
+        WHERE template_type = #{templateType}
+          AND ref_id = #{refId}
+        ORDER BY version DESC, updated_at DESC
+        LIMIT 1
+    </select>
+</mapper>

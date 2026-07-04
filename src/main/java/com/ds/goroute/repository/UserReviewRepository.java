@@ -35,6 +35,8 @@ public interface UserReviewRepository {
 
     int countByUserId(UUID userId);
 
+    int sumHelpfulVotesByUserId(UUID userId);
+
     int countByUserInTimeRange(UUID userId, LocalDateTime startTime, LocalDateTime endTime);
 
     void delete(UUID id);

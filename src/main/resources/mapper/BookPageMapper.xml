@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ds.goroute.mapper.BookPageMapper">
+    <resultMap id="BookPageResultMap" type="com.ds.goroute.entity.BookPage">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="book_id" property="bookId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="activity_id" property="activityId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="page_type" property="pageType"/>
+        <result column="page_order" property="pageOrder"/>
+        <result column="skeleton_id" property="skeletonId"/>
+        <result column="skeleton_key" property="skeletonKey"/>
+        <result column="skeleton_version" property="skeletonVersion"/>
+        <result column="template_id" property="templateId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="slots" property="slots"/>
+        <result column="layout_mode" property="layoutMode"/>
+        <result column="layout_edited_at" property="layoutEditedAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.BookPage">
+        INSERT INTO book_pages (id, book_id, activity_id, page_type, page_order, skeleton_id, skeleton_key,
+                                skeleton_version, template_id, slots, layout_mode, created_at, updated_at)
+        VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER},
+                #{bookId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{activityId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{pageType},
+                #{pageOrder},
+                #{skeletonId},
+                #{skeletonKey},
+                #{skeletonVersion},
+                #{templateId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{slots}::jsonb,
+                COALESCE(#{layoutMode}, 'skeleton'),
+                NOW(),
+                NOW())
+    </insert>
+
+    <select id="selectById" parameterType="java.util.UUID" resultMap="BookPageResultMap">
+        SELECT * FROM book_pages WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <select id="selectByBookId" parameterType="java.util.UUID" resultMap="BookPageResultMap">
+        SELECT * FROM book_pages
+        WHERE book_id = #{bookId,javaType=java.util.UUID,jdbcType=OTHER}
+        ORDER BY page_order ASC
+    </select>
+
+    <update id="updateSlots">
+        UPDATE book_pages
+        SET slots = #{slots}::jsonb, layout_edited_at = NOW(), updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <update id="markLayoutEdited" parameterType="java.util.UUID">
+        UPDATE book_pages
+        SET layout_mode = 'customized', layout_edited_at = NOW(), updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <update id="resetLayoutMode" parameterType="java.util.UUID">
+        UPDATE book_pages
+        SET layout_mode = 'skeleton', layout_edited_at = NULL, updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <delete id="deleteByBookId" parameterType="java.util.UUID">
+        DELETE FROM book_pages WHERE book_id = #{bookId,javaType=java.util.UUID,jdbcType=OTHER}
+    </delete>
+</mapper>

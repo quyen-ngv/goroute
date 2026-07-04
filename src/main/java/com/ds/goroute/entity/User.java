@@ -21,6 +21,8 @@ public class User {
     private String fullName;
     private String username;
     private String avatarUrl;
+    private String bio;
+    private String socialLinks;
     private AuthProvider provider;
     private String providerId;
     private String defaultCurrency;

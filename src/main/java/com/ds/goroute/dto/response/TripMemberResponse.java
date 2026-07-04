@@ -17,6 +17,7 @@ public class TripMemberResponse {
     private UserResponse user;
     private String role;
     private String status;
+    private UUID invitedBy;
     private LocalDateTime joinedAt;
     private Boolean isGuest; // true nếu là guest member
 }

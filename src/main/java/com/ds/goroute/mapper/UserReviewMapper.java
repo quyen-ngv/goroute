@@ -46,6 +46,8 @@ public interface UserReviewMapper {
 
     int countByUserId(@Param("userId") UUID userId);
 
+    int sumHelpfulVotesByUserId(@Param("userId") UUID userId);
+
     int countByUserInTimeRange(@Param("userId") UUID userId,
                                @Param("startTime") LocalDateTime startTime,
                                @Param("endTime") LocalDateTime endTime);

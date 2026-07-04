@@ -24,7 +24,9 @@ import com.ds.goroute.thirdparty.google.GoogleTokenInfo;
 import com.ds.goroute.thirdparty.google.GoogleTokenVerifier;
 import com.ds.goroute.type.AuthProvider;
 import com.ds.goroute.type.MemberStatus;
+import com.ds.goroute.utils.JsonUtils;
 import com.ds.goroute.utils.JwtUtils;
+import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -285,8 +287,13 @@ public class AuthServiceImpl implements AuthService {
                 .email(user.getEmail())
                 .username(user.getUsername())
                 .avatarUrl(user.getAvatarUrl())
+                .bio(user.getBio())
+                .socialLinks(parseSocialLinks(user.getSocialLinks()))
                 .defaultCurrency(user.getDefaultCurrency())
+                .defaultTravelMode(user.getDefaultTravelMode())
                 .language(user.getLanguage())
+                .theme(user.getTheme())
+                .onboardingCompleted(user.getOnboardingCompleted())
                 .build();
 
         return AuthResponse.builder()
@@ -314,6 +321,14 @@ public class AuthServiceImpl implements AuthService {
             username = baseUsername + suffix;
         }
         return username;
+    }
+
+    private Map<String, String> parseSocialLinks(String rawJson) {
+        if (rawJson == null || rawJson.isBlank()) {
+            return Map.of();
+        }
+        Map<String, String> links = JsonUtils.fromJson(rawJson, new TypeReference<Map<String, String>>() {});
+        return links == null ? Map.of() : links;
     }
 
     private void autoLinkGuestMembers(User user) {

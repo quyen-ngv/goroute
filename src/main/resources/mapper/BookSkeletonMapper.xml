@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ds.goroute.mapper.BookSkeletonMapper">
+    <resultMap id="BookSkeletonResultMap" type="com.ds.goroute.entity.BookSkeleton">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="skeleton_key" property="skeletonKey"/>
+        <result column="version" property="version"/>
+        <result column="name" property="name"/>
+        <result column="page_type" property="pageType"/>
+        <result column="photo_count" property="photoCount"/>
+        <result column="canvas_width" property="canvasWidth"/>
+        <result column="canvas_height" property="canvasHeight"/>
+        <result column="slot_defs" property="slotDefs"/>
+        <result column="is_active" property="isActive"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.BookSkeleton">
+        INSERT INTO book_skeletons (id, skeleton_key, version, name, page_type, photo_count,
+                                    canvas_width, canvas_height, slot_defs, is_active, created_at, updated_at)
+        VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER},
+                #{skeletonKey},
+                #{version},
+                #{name},
+                #{pageType},
+                #{photoCount},
+                #{canvasWidth},
+                #{canvasHeight},
+                #{slotDefs}::jsonb,
+                COALESCE(#{isActive,jdbcType=BOOLEAN}, TRUE),
+                NOW(),
+                NOW())
+    </insert>
+
+    <update id="update" parameterType="com.ds.goroute.entity.BookSkeleton">
+        UPDATE book_skeletons
+        SET name = #{name},
+            page_type = #{pageType},
+            photo_count = #{photoCount},
+            canvas_width = #{canvasWidth},
+            canvas_height = #{canvasHeight},
+            slot_defs = #{slotDefs}::jsonb,
+            is_active = #{isActive,jdbcType=BOOLEAN},
+            updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <select id="selectById" parameterType="java.util.UUID" resultMap="BookSkeletonResultMap">
+        SELECT * FROM book_skeletons WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <select id="selectActiveByKey" parameterType="String" resultMap="BookSkeletonResultMap">
+        SELECT * FROM book_skeletons
+        WHERE skeleton_key = #{skeletonKey}
+          AND is_active = TRUE
+        ORDER BY version DESC, updated_at DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectByKeyAndVersion" resultMap="BookSkeletonResultMap">
+        SELECT * FROM book_skeletons
+        WHERE skeleton_key = #{skeletonKey}
+          AND version = #{version}
+        LIMIT 1
+    </select>
+
+    <select id="selectAll" resultMap="BookSkeletonResultMap">
+        SELECT * FROM book_skeletons
+        ORDER BY skeleton_key ASC, version DESC
+    </select>
+
+    <select id="selectByKeysAndVersions" resultMap="BookSkeletonResultMap">
+        SELECT * FROM book_skeletons
+        <where>
+            <if test="keys != null and keys.size() > 0">
+                skeleton_key IN
+                <foreach collection="keys" item="key" open="(" separator="," close=")">
+                    #{key}
+                </foreach>
+            </if>
+        </where>
+        ORDER BY skeleton_key ASC, version DESC
+    </select>
+</mapper>

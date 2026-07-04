@@ -13,6 +13,26 @@
         <result property="category" column="category"/>
         <result property="imageUrl" column="image_url"/>
         <result property="introductionImages" column="introduction_images"/>
+        <result property="subtitleVi" column="subtitle_vi"/>
+        <result property="subtitleEn" column="subtitle_en"/>
+        <result property="subtitleJa" column="subtitle_ja"/>
+        <result property="subtitleKo" column="subtitle_ko"/>
+        <result property="heroTaglineVi" column="hero_tagline_vi"/>
+        <result property="heroTaglineEn" column="hero_tagline_en"/>
+        <result property="heroTaglineJa" column="hero_tagline_ja"/>
+        <result property="heroTaglineKo" column="hero_tagline_ko"/>
+        <result property="priceMin" column="price_min"/>
+        <result property="priceMax" column="price_max"/>
+        <result property="priceCurrency" column="price_currency"/>
+        <result property="coreIngredients" column="core_ingredients"/>
+        <result property="varieties" column="varieties"/>
+        <result property="historyOrigin" column="history_origin"/>
+        <result property="ingredientsPreparation" column="ingredients_preparation"/>
+        <result property="funFact" column="fun_fact"/>
+        <result property="howToEatDescription" column="how_to_eat_description"/>
+        <result property="howToEatSteps" column="how_to_eat_steps"/>
+        <result property="themeColor" column="theme_color"/>
+        <result property="tags" column="tags"/>
         <result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
     </resultMap>
@@ -27,11 +47,30 @@
         <result property="category" column="category"/>
         <result property="imageUrl" column="image_url"/>
         <result property="introductionImages" column="introduction_images"/>
+        <result property="subtitleVi" column="subtitle_vi"/>
+        <result property="subtitleEn" column="subtitle_en"/>
+        <result property="subtitleJa" column="subtitle_ja"/>
+        <result property="subtitleKo" column="subtitle_ko"/>
+        <result property="heroTaglineVi" column="hero_tagline_vi"/>
+        <result property="heroTaglineEn" column="hero_tagline_en"/>
+        <result property="heroTaglineJa" column="hero_tagline_ja"/>
+        <result property="heroTaglineKo" column="hero_tagline_ko"/>
+        <result property="priceMin" column="price_min"/>
+        <result property="priceMax" column="price_max"/>
+        <result property="priceCurrency" column="price_currency"/>
+        <result property="coreIngredients" column="core_ingredients"/>
+        <result property="varieties" column="varieties"/>
+        <result property="historyOrigin" column="history_origin"/>
+        <result property="ingredientsPreparation" column="ingredients_preparation"/>
+        <result property="funFact" column="fun_fact"/>
+        <result property="howToEatDescription" column="how_to_eat_description"/>
+        <result property="howToEatSteps" column="how_to_eat_steps"/>
+        <result property="themeColor" column="theme_color"/>
+        <result property="tags" column="tags"/>
         <result property="score" column="score"/>
         <result property="citySlug" column="city_slug"/>
         <result property="localDescription" column="local_description"/>
         <result property="flavorProfile" column="flavor_profile"/>
-        <result property="funFact" column="fun_fact"/>
     </resultMap>
 
     <resultMap id="FoodCityScoreResultMap" type="com.ds.goroute.entity.FoodCityScore">
@@ -40,6 +79,8 @@
         <result property="citySlug" column="city_slug"/>
         <result property="score" column="score"/>
         <result property="localDescription" column="local_description"/>
+        <result property="shortDescription" column="short_description"/>
+        <result property="regionKey" column="region_key"/>
         <result property="imageUrl" column="image_url"/>
         <result property="introductionImages" column="introduction_images"/>
         <result property="flavorProfile" column="flavor_profile"/>
@@ -70,8 +111,20 @@
     </resultMap>
 
     <insert id="insertFood">
-        INSERT INTO foods (id, name_vi, name_en, name_ja, name_ko, description, category, image_url, introduction_images, created_at, updated_at)
-        VALUES (#{id}, #{nameVi}, #{nameEn}, #{nameJa}, #{nameKo}, #{description}, #{category}, #{imageUrl}, #{introductionImages}, #{createdAt}, #{updatedAt})
+        INSERT INTO foods (id, name_vi, name_en, name_ja, name_ko, description, category, image_url, introduction_images,
+                           subtitle_vi, subtitle_en, subtitle_ja, subtitle_ko,
+                           hero_tagline_vi, hero_tagline_en, hero_tagline_ja, hero_tagline_ko,
+                           price_min, price_max, price_currency, core_ingredients, varieties,
+                           history_origin, ingredients_preparation, fun_fact,
+                           how_to_eat_description, how_to_eat_steps, theme_color, tags,
+                           created_at, updated_at)
+        VALUES (#{id}, #{nameVi}, #{nameEn}, #{nameJa}, #{nameKo}, #{description}, #{category}, #{imageUrl}, #{introductionImages},
+                #{subtitleVi}, #{subtitleEn}, #{subtitleJa}, #{subtitleKo},
+                #{heroTaglineVi}, #{heroTaglineEn}, #{heroTaglineJa}, #{heroTaglineKo},
+                #{priceMin}, #{priceMax}, #{priceCurrency}, #{coreIngredients}, #{varieties},
+                #{historyOrigin}, #{ingredientsPreparation}, #{funFact},
+                #{howToEatDescription}, #{howToEatSteps}, #{themeColor}, #{tags},
+                #{createdAt}, #{updatedAt})
     </insert>
 
     <update id="updateFood">
@@ -84,6 +137,26 @@
             category = #{category},
             image_url = #{imageUrl},
             introduction_images = #{introductionImages},
+            subtitle_vi = #{subtitleVi},
+            subtitle_en = #{subtitleEn},
+            subtitle_ja = #{subtitleJa},
+            subtitle_ko = #{subtitleKo},
+            hero_tagline_vi = #{heroTaglineVi},
+            hero_tagline_en = #{heroTaglineEn},
+            hero_tagline_ja = #{heroTaglineJa},
+            hero_tagline_ko = #{heroTaglineKo},
+            price_min = #{priceMin},
+            price_max = #{priceMax},
+            price_currency = #{priceCurrency},
+            core_ingredients = #{coreIngredients},
+            varieties = #{varieties},
+            history_origin = #{historyOrigin},
+            ingredients_preparation = #{ingredientsPreparation},
+            fun_fact = #{funFact},
+            how_to_eat_description = #{howToEatDescription},
+            how_to_eat_steps = #{howToEatSteps},
+            theme_color = #{themeColor},
+            tags = #{tags},
             updated_at = #{updatedAt}
         WHERE id = #{id}
     </update>
@@ -133,11 +206,22 @@
         ORDER BY city_slug
     </select>
 
+    <sql id="foodWithScoreColumns">
+        f.id, f.name_vi, f.name_en, f.name_ja, f.name_ko, f.description, f.category,
+        f.subtitle_vi, f.subtitle_en, f.subtitle_ja, f.subtitle_ko,
+        f.hero_tagline_vi, f.hero_tagline_en, f.hero_tagline_ja, f.hero_tagline_ko,
+        f.price_min, f.price_max, f.price_currency, f.core_ingredients, f.varieties,
+        f.history_origin, f.ingredients_preparation, f.fun_fact,
+        f.how_to_eat_description, f.how_to_eat_steps,
+        f.theme_color, f.tags,
+        COALESCE(fcs.image_url, f.image_url) AS image_url,
+        COALESCE(fcs.introduction_images, f.introduction_images) AS introduction_images,
+        fcs.score, fcs.city_slug, fcs.local_description,
+        fcs.flavor_profile::text AS flavor_profile
+    </sql>
+
     <select id="findFoodsByCity" resultMap="FoodWithScoreResultMap">
-        SELECT f.id, f.name_vi, f.name_en, f.name_ja, f.name_ko, f.description, f.category,
-               COALESCE(fcs.image_url, f.image_url) AS image_url,
-               COALESCE(fcs.introduction_images, f.introduction_images) AS introduction_images,
-               fcs.score, fcs.city_slug, fcs.local_description, fcs.flavor_profile::text AS flavor_profile, fcs.fun_fact
+        SELECT <include refid="foodWithScoreColumns"/>
         FROM foods f
         INNER JOIN food_city_scores fcs ON fcs.food_id = f.id
         WHERE fcs.city_slug = #{citySlug} AND fcs.score &gt;= #{minScore}
@@ -146,18 +230,15 @@
     </select>
 
     <select id="findFoodDetailByCity" resultMap="FoodWithScoreResultMap">
-        SELECT f.id, f.name_vi, f.name_en, f.name_ja, f.name_ko, f.description, f.category,
-               COALESCE(fcs.image_url, f.image_url) AS image_url,
-               COALESCE(fcs.introduction_images, f.introduction_images) AS introduction_images,
-               fcs.score, fcs.city_slug, fcs.local_description, fcs.flavor_profile::text AS flavor_profile, fcs.fun_fact
+        SELECT <include refid="foodWithScoreColumns"/>
         FROM foods f
         INNER JOIN food_city_scores fcs ON fcs.food_id = f.id
         WHERE f.id = #{foodId} AND fcs.city_slug = #{citySlug}
     </select>
 
     <insert id="insertCityScore">
-        INSERT INTO food_city_scores (id, food_id, city_slug, score, local_description, image_url, introduction_images, flavor_profile, fun_fact, created_at, updated_at)
-        VALUES (#{id}, #{foodId}, #{citySlug}, #{score}, #{localDescription}, #{imageUrl}, #{introductionImages}, #{flavorProfile}::jsonb, #{funFact}, #{createdAt}, #{updatedAt})
+        INSERT INTO food_city_scores (id, food_id, city_slug, score, local_description, short_description, region_key, image_url, introduction_images, flavor_profile, created_at, updated_at)
+        VALUES (#{id}, #{foodId}, #{citySlug}, #{score}, #{localDescription}, #{shortDescription}, #{regionKey}, #{imageUrl}, #{introductionImages}, #{flavorProfile}::jsonb, #{createdAt}, #{updatedAt})
     </insert>
 
     <update id="updateCityScore">
@@ -165,10 +246,11 @@
             city_slug = #{citySlug},
             score = #{score},
             local_description = #{localDescription},
+            short_description = #{shortDescription},
+            region_key = #{regionKey},
             image_url = #{imageUrl},
             introduction_images = #{introductionImages},
             flavor_profile = #{flavorProfile}::jsonb,
-            fun_fact = #{funFact},
             updated_at = #{updatedAt}
         WHERE id = #{id}
     </update>
@@ -268,7 +350,7 @@
                COALESCE(fcs.image_url, f.image_url) AS image_url,
                COALESCE(fcs.introduction_images, f.introduction_images) AS introduction_images,
                fcs.score, fcs.city_slug, fcs.local_description,
-               fcs.flavor_profile::text AS flavor_profile, fcs.fun_fact
+               fcs.flavor_profile::text AS flavor_profile, f.fun_fact
         FROM place_foods pf
         INNER JOIN foods f ON f.id = pf.food_id
         LEFT JOIN food_city_scores fcs ON fcs.food_id = f.id AND fcs.city_slug = #{citySlug}

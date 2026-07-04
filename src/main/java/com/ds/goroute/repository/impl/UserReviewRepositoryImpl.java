@@ -83,6 +83,11 @@ public class UserReviewRepositoryImpl implements UserReviewRepository {
     }
 
     @Override
+    public int sumHelpfulVotesByUserId(UUID userId) {
+        return mapper.sumHelpfulVotesByUserId(userId);
+    }
+
+    @Override
     public int countByUserInTimeRange(UUID userId, LocalDateTime startTime, LocalDateTime endTime) {
         return mapper.countByUserInTimeRange(userId, startTime, endTime);
     }

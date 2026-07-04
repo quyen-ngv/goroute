@@ -78,6 +78,13 @@ public class TripController extends BaseService {
         return ResponseEntity.ok(ofSucceeded(invitations));
     }
 
+    @GetMapping("/access-requests/pending")
+    public ResponseEntity<BaseResponse<List<TripAccessRequestResponse>>> getPendingAccessRequests(
+            @RequestAttribute("userId") UUID userId) {
+        List<TripAccessRequestResponse> requests = tripService.getPendingAccessRequests(userId);
+        return ResponseEntity.ok(ofSucceeded(requests));
+    }
+
     @PostMapping("/{tripId}/members")
     public ResponseEntity<BaseResponse<TripMemberResponse>> inviteMember(
             @PathVariable UUID tripId,

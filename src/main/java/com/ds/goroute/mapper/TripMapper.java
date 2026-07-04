@@ -46,5 +46,9 @@ public interface TripMapper {
 
     int countTripsByOwnerId(@Param("ownerId") UUID ownerId);
 
+    int sumCopyCountByOwnerId(@Param("ownerId") UUID ownerId);
+
+    int sumHelpfulVotesByOwnerId(@Param("ownerId") UUID ownerId);
+
     int updateVoteCounts(Trip trip);
 }

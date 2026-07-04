@@ -550,6 +550,7 @@ public class TripServiceImpl implements TripService {
                             .build())
                     .role(member.getRole().toString())
                     .status(member.getStatus().toString())
+                    .invitedBy(member.getInvitedBy())
                     .joinedAt(member.getJoinedAt())
                     .isGuest(true)
                     .build();
@@ -563,6 +564,7 @@ public class TripServiceImpl implements TripService {
                 .user(mapToUserResponse(user))
                 .role(member.getRole().toString())
                 .status(member.getStatus().toString())
+                .invitedBy(member.getInvitedBy())
                 .joinedAt(member.getJoinedAt())
                 .isGuest(false)
                 .build();
@@ -741,6 +743,7 @@ public class TripServiceImpl implements TripService {
         List<TripMember> pendingMembers = tripMemberRepository.findPendingByUserId(userId);
 
         return pendingMembers.stream()
+                .filter(member -> member.getInvitedBy() != null)
                 .map(member -> {
                     try {
                         Trip trip = tripRepository.findById(member.getTripId())
@@ -790,6 +793,47 @@ public class TripServiceImpl implements TripService {
                     }
                 })
                 .filter(Objects::nonNull) // Filter out failed invitations
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<TripAccessRequestResponse> getPendingAccessRequests(UUID userId) {
+        List<TripMember> pendingMembers = tripMemberRepository.findPendingByUserId(userId);
+
+        return pendingMembers.stream()
+                .filter(member -> member.getInvitedBy() == null)
+                .map(member -> {
+                    try {
+                        Trip trip = tripRepository.findById(member.getTripId())
+                                .orElse(null);
+
+                        if (trip == null) {
+                            log.warn("Trip not found for pending access request: tripId={}", member.getTripId());
+                            return null;
+                        }
+
+                        String coverImageUrl = trip.getCoverImageUrl();
+                        if (coverImageUrl == null || coverImageUrl.isEmpty()) {
+                            coverImageUrl = locationImageService.getImageForDestination(trip.getDestination());
+                        }
+
+                        return TripAccessRequestResponse.builder()
+                                .memberId(member.getId())
+                                .tripId(trip.getId())
+                                .tripName(trip.getName())
+                                .coverImageUrl(coverImageUrl)
+                                .destination(trip.getDestination())
+                                .startDate(trip.getStartDate())
+                                .endDate(trip.getEndDate())
+                                .role(member.getRole().toString())
+                                .requestedAt(member.getCreatedAt())
+                                .build();
+                    } catch (Exception e) {
+                        log.error("Error processing pending access request for member: {}, error: {}", member.getId(), e.getMessage());
+                        return null;
+                    }
+                })
+                .filter(Objects::nonNull)
                 .collect(Collectors.toList());
     }
 
@@ -1137,6 +1181,13 @@ public class TripServiceImpl implements TripService {
         // Check if member is in PENDING status
         if (member.getStatus() != MemberStatus.PENDING) {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Member is not in pending status");
+        }
+
+        if (member.getInvitedBy() != null) {
+            throw new BusinessException(
+                    ErrorConstant.INVALID_PARAMETERS,
+                    "Invited members must accept the invitation themselves"
+            );
         }
 
         member.setStatus(MemberStatus.ACCEPTED);
