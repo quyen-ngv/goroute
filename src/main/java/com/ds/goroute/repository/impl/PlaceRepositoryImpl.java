@@ -64,18 +64,19 @@ public class PlaceRepositoryImpl implements PlaceRepository {
 
     @Override
     public List<Place> findNearby(String keyword, BigDecimal latitude, BigDecimal longitude, BigDecimal radius,
-                                 String category, String placeGroup, BigDecimal minRating, int limit, int offset) {
+                                 String category, List<String> placeGroups, BigDecimal minRating,
+                                 int limit, int offset) {
         return placeMapper.findNearby(
-                keyword, latitude, longitude, radius, category, placeGroup, minRating, limit, offset);
+                keyword, latitude, longitude, radius, category, placeGroups, minRating, limit, offset);
     }
 
     @Override
     public List<Place> findNearbyExtended(String keyword, BigDecimal latitude, BigDecimal longitude,
-                                          BigDecimal radius, String category, String placeGroup,
+                                          BigDecimal radius, String category, List<String> placeGroups,
                                           BigDecimal minRating, String citySlugJson, List<UUID> foodIds,
                                           Boolean excludeLinkedFoodPlaces, int limit, int offset) {
         return placeMapper.findNearbyExtended(
-                keyword, latitude, longitude, radius, category, placeGroup, minRating,
+                keyword, latitude, longitude, radius, category, placeGroups, minRating,
                 citySlugJson, foodIds, excludeLinkedFoodPlaces, limit, offset);
     }
 

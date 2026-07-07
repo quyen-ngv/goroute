@@ -172,8 +172,11 @@
             <if test="category != null and category != ''">
                 AND category = #{category}
             </if>
-            <if test="placeGroup != null and placeGroup != ''">
-                AND place_group = #{placeGroup}
+            <if test="placeGroups != null and placeGroups.size() > 0">
+                AND place_group IN
+                <foreach collection="placeGroups" item="group" open="(" separator="," close=")">
+                    #{group}
+                </foreach>
             </if>
             <if test="minRating != null">
                 AND review_rating &gt;= #{minRating}
@@ -217,8 +220,11 @@
             <if test="category != null and category != ''">
                 AND p.category = #{category}
             </if>
-            <if test="placeGroup != null and placeGroup != ''">
-                AND p.place_group = #{placeGroup}
+            <if test="placeGroups != null and placeGroups.size() > 0">
+                AND p.place_group IN
+                <foreach collection="placeGroups" item="group" open="(" separator="," close=")">
+                    #{group}
+                </foreach>
             </if>
             <if test="minRating != null">
                 AND p.review_rating &gt;= #{minRating}

@@ -76,7 +76,7 @@ public class PlaceController extends BaseService {
             @RequestParam BigDecimal longitude,
             @RequestParam(defaultValue = "0.1") BigDecimal radius,
             @RequestParam(required = false) String category,
-            @RequestParam(required = false) String placeGroup,
+            @RequestParam(required = false) List<String> placeGroups,
             @RequestParam(required = false) BigDecimal minRating,
             @RequestParam(required = false) String citySlug,
             @RequestParam(required = false) List<UUID> foodIds,
@@ -85,7 +85,7 @@ public class PlaceController extends BaseService {
             @RequestParam(defaultValue = "20") int size
     ) {
         List<PlaceResponse> responses = placeService.searchPlaces(
-                keyword, latitude, longitude, radius, category, placeGroup, minRating,
+                keyword, latitude, longitude, radius, category, placeGroups, minRating,
                 citySlug, foodIds, excludeLinkedFoodPlaces, page, size);
         return ResponseEntity.ok(ofSucceeded(responses));
     }

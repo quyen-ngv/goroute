@@ -39,11 +39,11 @@ public interface PlaceService {
     List<PlaceResponse> getAllPlaces();
 
     List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
-                                     BigDecimal radius, String category, String placeGroup,
+                                     BigDecimal radius, String category, List<String> placeGroups,
                                      BigDecimal minRating, int page, int size);
 
     List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
-                                     BigDecimal radius, String category, String placeGroup,
+                                     BigDecimal radius, String category, List<String> placeGroups,
                                      BigDecimal minRating, String citySlug, List<UUID> foodIds,
                                      Boolean excludeLinkedFoodPlaces, int page, int size);
 

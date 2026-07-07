@@ -179,15 +179,15 @@ public class PlaceServiceImpl implements PlaceService {
 
     @Override
     public List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
-                                            BigDecimal radius, String category, String placeGroup,
+                                            BigDecimal radius, String category, List<String> placeGroups,
                                             BigDecimal minRating, int page, int size) {
-        return searchPlaces(keyword, latitude, longitude, radius, category, placeGroup,
+        return searchPlaces(keyword, latitude, longitude, radius, category, placeGroups,
                 minRating, null, null, null, page, size);
     }
 
     @Override
     public List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
-                                            BigDecimal radius, String category, String placeGroup,
+                                            BigDecimal radius, String category, List<String> placeGroups,
                                             BigDecimal minRating, String citySlug, List<UUID> foodIds,
                                             Boolean excludeLinkedFoodPlaces, int page, int size) {
         if (keyword != null && !keyword.trim().isEmpty()) {
@@ -197,7 +197,7 @@ public class PlaceServiceImpl implements PlaceService {
                     longitude,
                     radius,
                     category,
-                    placeGroup,
+                    placeGroups,
                     minRating,
                     citySlug,
                     foodIds,
@@ -224,11 +224,11 @@ public class PlaceServiceImpl implements PlaceService {
         List<Place> places;
         if (extended) {
             places = placeRepository.findNearbyExtended(
-                    null, latitude, longitude, radius, category, placeGroup, minRating,
+                    null, latitude, longitude, radius, category, placeGroups, minRating,
                     citySlugJson, foodIds, excludeLinkedFoodPlaces, size, offset);
         } else {
             places = placeRepository.findNearby(
-                    null, latitude, longitude, radius, category, placeGroup, minRating, size, offset);
+                    null, latitude, longitude, radius, category, placeGroups, minRating, size, offset);
         }
 
         List<PlaceResponse> responses = places.stream()
@@ -244,7 +244,7 @@ public class PlaceServiceImpl implements PlaceService {
             BigDecimal longitude,
             BigDecimal radius,
             String category,
-            String placeGroup,
+            List<String> placeGroups,
             BigDecimal minRating,
             String citySlug,
             List<UUID> foodIds,
@@ -269,7 +269,7 @@ public class PlaceServiceImpl implements PlaceService {
                         longitude,
                         radius,
                         category,
-                        placeGroup,
+                        placeGroups,
                         minRating,
                         citySlug)) {
                     continue;
@@ -297,7 +297,7 @@ public class PlaceServiceImpl implements PlaceService {
             BigDecimal longitude,
             BigDecimal radius,
             String category,
-            String placeGroup,
+            List<String> placeGroups,
             BigDecimal minRating,
             String citySlug) {
         if (category != null && !category.isBlank()
@@ -305,9 +305,9 @@ public class PlaceServiceImpl implements PlaceService {
             return false;
         }
 
-        if (placeGroup != null && !placeGroup.isBlank()) {
+        if (placeGroups != null && !placeGroups.isEmpty()) {
             PlaceGroup group = place.getPlaceGroup();
-            if (group == null || !placeGroup.equalsIgnoreCase(group.name())) {
+            if (group == null || placeGroups.stream().noneMatch(g -> g.equalsIgnoreCase(group.name()))) {
                 return false;
             }
         }

@@ -26,10 +26,11 @@ public interface PlaceRepository {
     List<Place> findByIds(List<UUID> ids);
 
     List<Place> findNearby(String keyword, BigDecimal latitude, BigDecimal longitude, BigDecimal radius,
-                          String category, String placeGroup, BigDecimal minRating, int limit, int offset);
+                          String category, List<String> placeGroups, BigDecimal minRating,
+                          int limit, int offset);
 
     List<Place> findNearbyExtended(String keyword, BigDecimal latitude, BigDecimal longitude, BigDecimal radius,
-                                   String category, String placeGroup, BigDecimal minRating, String citySlugJson,
+                                   String category, List<String> placeGroups, BigDecimal minRating, String citySlugJson,
                                    List<UUID> foodIds, Boolean excludeLinkedFoodPlaces, int limit, int offset);
 
     void delete(UUID id);

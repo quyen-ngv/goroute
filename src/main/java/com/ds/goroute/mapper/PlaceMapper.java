@@ -32,7 +32,7 @@ public interface PlaceMapper {
                           @Param("longitude") BigDecimal longitude,
                           @Param("radius") BigDecimal radius,
                           @Param("category") String category,
-                          @Param("placeGroup") String placeGroup,
+                          @Param("placeGroups") List<String> placeGroups,
                           @Param("minRating") BigDecimal minRating,
                           @Param("limit") int limit,
                           @Param("offset") int offset);
@@ -42,7 +42,7 @@ public interface PlaceMapper {
                                    @Param("longitude") BigDecimal longitude,
                                    @Param("radius") BigDecimal radius,
                                    @Param("category") String category,
-                                   @Param("placeGroup") String placeGroup,
+                                   @Param("placeGroups") List<String> placeGroups,
                                    @Param("minRating") BigDecimal minRating,
                                    @Param("citySlugJson") String citySlugJson,
                                    @Param("foodIds") List<UUID> foodIds,
