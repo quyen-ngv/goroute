@@ -28,8 +28,8 @@ public class UpdateFoodRequest {
     private String heroTaglineKo;
     private String themeColor;
     private List<String> tags;
-    private Long priceMin;
-    private Long priceMax;
+    private java.math.BigDecimal priceMin;
+    private java.math.BigDecimal priceMax;
     private String priceCurrency;
     private List<FoodCoreIngredientDto> coreIngredients;
     private List<FoodVarietyDto> varieties;

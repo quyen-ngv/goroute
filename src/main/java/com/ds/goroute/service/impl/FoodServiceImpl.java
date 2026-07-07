@@ -460,8 +460,8 @@ public class FoodServiceImpl implements FoodService {
                 ? row.getLocalDescription()
                 : null;
         String targetCurrency = AcceptCurrencyFilter.current();
-        Long priceMin = convertPriceAmount(row.getPriceMin(), row.getPriceCurrency(), targetCurrency);
-        Long priceMax = convertPriceAmount(row.getPriceMax(), row.getPriceCurrency(), targetCurrency);
+        BigDecimal priceMin = convertPriceAmount(row.getPriceMin(), row.getPriceCurrency(), targetCurrency);
+        BigDecimal priceMax = convertPriceAmount(row.getPriceMax(), row.getPriceCurrency(), targetCurrency);
         return FoodDetailResponse.builder()
                 .id(row.getId())
                 .name(FoodNameResolver.resolveName(food))
@@ -637,7 +637,7 @@ public class FoodServiceImpl implements FoodService {
         return currency.trim().toUpperCase(Locale.ROOT);
     }
 
-    private Long convertPriceAmount(Long amount, String storedCurrency, String targetCurrency) {
+    private BigDecimal convertPriceAmount(BigDecimal amount, String storedCurrency, String targetCurrency) {
         if (amount == null) {
             return null;
         }
@@ -647,11 +647,7 @@ public class FoodServiceImpl implements FoodService {
         if (targetCurrency == null || targetCurrency.isBlank() || stored.equalsIgnoreCase(targetCurrency)) {
             return amount;
         }
-        return exchangeRateService.convert(
-                BigDecimal.valueOf(amount),
-                stored,
-                targetCurrency
-        ).longValue();
+        return exchangeRateService.convert(amount, stored, targetCurrency);
     }
 
     private String resolveDisplayCurrency(String storedCurrency, String targetCurrency) {

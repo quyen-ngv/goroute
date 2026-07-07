@@ -29,8 +29,8 @@ public class FoodWithScoreRow {
     private String heroTaglineEn;
     private String heroTaglineJa;
     private String heroTaglineKo;
-    private Long priceMin;
-    private Long priceMax;
+    private java.math.BigDecimal priceMin;
+    private java.math.BigDecimal priceMax;
     private String priceCurrency;
     private String coreIngredients;
     private String varieties;
