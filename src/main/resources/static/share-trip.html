@@ -3,787 +3,1166 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#F5F0EB">
     <meta name="agd-partner-manual-verification" />
     <title>Shared Trip - Ondetour</title>
-    <link rel="stylesheet" href="/goroute/goroute-theme.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --pink: #F4538A;
+            --pink-dark: #D63D72;
+            --pink-pale: #F9C3D6;
+            --pink-mist: #FDEBF1;
+            --cream: #F5F0EB;
+            --cream-deep: #ECE1D2;
+            --paper: #FFFFFF;
+            --ink: #2B2420;
+            --ink-soft: #7A6E62;
+            --ink-faint: #B2A798;
+            --line: #E7DCCC;
+            --shadow-sm: 0 2px 10px rgba(43, 32, 20, .07);
+            --shadow-md: 0 10px 28px rgba(43, 32, 20, .10);
+            --radius-s: 10px;
+            --radius-m: 18px;
+            --radius-l: 26px;
+            --radius-pill: 999px;
+            --font-display: 'Fraunces', Georgia, serif;
+            --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+
+        * , *::before, *::after { box-sizing: border-box; }
+        html { -webkit-text-size-adjust: 100%; }
+        body {
+            margin: 0;
+            background: var(--cream);
+            color: var(--ink);
+            font-family: var(--font-body);
+            font-size: 15px;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+        img { max-width: 100%; display: block; }
+        button { font: inherit; border: none; background: none; cursor: pointer; color: inherit; padding: 0; }
+        a { color: inherit; text-decoration: none; }
+        h1, h2, h3 { margin: 0; font-family: var(--font-display); }
+        p { margin: 0; }
+        :focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
+
+        /* ---------- category palette ---------- */
+        .cat-food { background: #FBE0D0; color: #A85423; }
+        .cat-activity { background: #D2EFE5; color: #12805F; }
+        .cat-shopping { background: #E9DFFA; color: #6C41B4; }
+        .cat-attraction { background: #D6E9FA; color: #1C6FA6; }
+        .cat-nature { background: #DFF0D5; color: #3C7A34; }
+        .cat-stay { background: #DEE2FA; color: #4048B0; }
+        .cat-transport { background: #FBE7BE; color: #97690F; }
+        .cat-default { background: var(--pink-mist); color: var(--pink-dark); }
+
+        /* ---------- loading / error ---------- */
+        .loading-screen, .error-screen {
+            min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+            justify-content: center; gap: 16px; padding: 24px; text-align: center;
+        }
+        .loading-spinner {
+            width: 34px; height: 34px; border-radius: 50%;
+            border: 3px solid var(--pink-mist); border-top-color: var(--pink);
+            animation: spin .8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-screen p, .error-screen p { color: var(--ink-soft); font-size: 14px; }
+        .error-screen h2 { font-size: 21px; }
+        .error-screen p { max-width: 280px; }
+
+        /* ---------- hero ---------- */
+        .hero {
+            position: relative; min-height: 42vh; max-height: 480px;
+            display: flex; align-items: flex-end; overflow: hidden; background: var(--ink);
+        }
+        .hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+        .hero-img--placeholder { background: linear-gradient(135deg, var(--pink) 0%, #F2916C 100%); }
+        .hero-scrim {
+            position: absolute; inset: 0;
+            background: linear-gradient(180deg, rgba(20,14,10,0) 25%, rgba(20,14,10,.72) 100%);
+        }
+        .hero-brand {
+            position: absolute; top: max(16px, env(safe-area-inset-top)); left: 16px;
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 7px 14px 7px 10px; border-radius: var(--radius-pill);
+            background: rgba(255,255,255,.22); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+            color: #fff; font-weight: 700; font-size: 13px; letter-spacing: .2px;
+        }
+        .hero-content { position: relative; padding: 18px 18px 22px; color: #fff; width: 100%; }
+        .hero-title {
+            font-size: clamp(25px, 7vw, 36px); font-weight: 600; line-height: 1.14;
+            text-shadow: 0 2px 14px rgba(0,0,0,.28);
+        }
+        .hero-dates {
+            display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;
+            padding: 6px 13px; border-radius: var(--radius-pill);
+            background: rgba(255,255,255,.18); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+            font-size: 12.5px; font-weight: 500;
+        }
+
+        /* ---------- sticky day nav ---------- */
+        .day-tabs-bar {
+            position: sticky; top: 0; z-index: 30;
+            background: rgba(245,240,235,.9); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+            border-bottom: 1px solid transparent; transition: border-color .25s, box-shadow .25s;
+        }
+        .day-tabs-bar.is-stuck { border-color: var(--line); box-shadow: 0 6px 18px rgba(43,32,20,.06); }
+        .day-tabs-scroll {
+            max-width: 680px; margin: 0 auto;
+            display: flex; gap: 8px; padding: 12px 16px;
+            overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity;
+            -webkit-overflow-scrolling: touch;
+        }
+        .day-tabs-scroll::-webkit-scrollbar { display: none; }
+        .day-tab {
+            scroll-snap-align: start; flex: 0 0 auto;
+            display: flex; flex-direction: column; align-items: center; gap: 1px;
+            padding: 7px 16px; border-radius: var(--radius-pill);
+            background: var(--paper); border: 1px solid var(--line); min-width: 62px;
+            transition: background .18s, border-color .18s, color .18s, transform .12s;
+        }
+        .day-tab-num { font-size: 12.5px; font-weight: 700; }
+        .day-tab-date { font-size: 10.5px; color: var(--ink-soft); }
+        .day-tab--active { background: var(--pink); border-color: var(--pink); color: #fff; box-shadow: var(--shadow-sm); }
+        .day-tab--active .day-tab-date { color: rgba(255,255,255,.85); }
+        .day-tab:active { transform: scale(.95); }
+
+        /* ---------- shell ---------- */
+        .page-shell { max-width: 680px; margin: 0 auto; }
+
+        /* ---------- stats strip ---------- */
+        .stats-strip {
+            display: flex; gap: 10px; padding: 18px 16px 2px; overflow-x: auto; scrollbar-width: none;
+            -webkit-overflow-scrolling: touch;
+        }
+        .stats-strip::-webkit-scrollbar { display: none; }
+        .stat-chip {
+            flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+            background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-m);
+            padding: 10px 15px; box-shadow: var(--shadow-sm);
+        }
+        .stat-chip-icon {
+            width: 34px; height: 34px; border-radius: 50%; background: var(--pink-mist);
+            display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0;
+        }
+        .stat-chip-value { font-size: 14px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
+        .stat-chip-label { font-size: 11px; color: var(--ink-soft); }
+
+        /* ---------- about ---------- */
+        .about-card {
+            margin: 18px 16px 0; padding: 18px; background: var(--paper);
+            border-radius: var(--radius-m); box-shadow: var(--shadow-sm);
+        }
+        .card-eyebrow {
+            font-size: 11px; letter-spacing: .07em; text-transform: uppercase;
+            color: var(--ink-soft); margin-bottom: 8px; font-weight: 700;
+        }
+        .about-card p { font-size: 14.5px; color: var(--ink); line-height: 1.6; }
+
+        /* ---------- reveal on scroll ---------- */
+        .reveal { opacity: 0; transform: translateY(10px); transition: opacity .5s ease-out, transform .5s ease-out; }
+        .reveal.is-visible { opacity: 1; transform: none; }
+
+        /* ---------- route / timeline ---------- */
+        .route { position: relative; padding: 26px 16px 4px; }
+        .route::before {
+            content: ''; position: absolute; left: 40px; top: 40px; bottom: 20px; width: 2px;
+            background: repeating-linear-gradient(to bottom, var(--pink-pale) 0 6px, transparent 6px 13px);
+        }
+        .day-block:not(:first-child) { margin-top: 8px; }
+        .route-day-marker {
+            display: grid; grid-template-columns: 50px 1fr; column-gap: 12px; align-items: center;
+            margin: 30px 0 16px; position: relative; z-index: 1;
+        }
+        .day-block:first-child .route-day-marker { margin-top: 0; }
+        .route-day-dot {
+            width: 40px; height: 40px; border-radius: 50%; background: var(--pink); color: #fff;
+            display: flex; align-items: center; justify-content: center;
+            font-family: var(--font-display); font-weight: 600; font-size: 16px;
+            box-shadow: 0 6px 14px rgba(244,83,138,.35);
+        }
+        .route-day-label {
+            display: block; font-size: 10.5px; font-weight: 700; letter-spacing: .07em;
+            text-transform: uppercase; color: var(--pink-dark); margin-bottom: 2px;
+        }
+        .route-day-date { font-size: 18px; font-weight: 600; color: var(--ink); }
+        .route-day-count { font-size: 12px; color: var(--ink-soft); font-weight: 400; margin-left: 6px; }
+
+        .route-row { display: grid; grid-template-columns: 50px 1fr; column-gap: 12px; margin-bottom: 14px; position: relative; z-index: 1; }
+        .route-marker { display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 16px; }
+        .route-time { font-size: 10.5px; font-weight: 700; color: var(--ink-soft); white-space: nowrap; }
+        .route-time-end { font-size: 9px; font-weight: 500; color: var(--ink-faint); white-space: nowrap; margin-top: -3px; }
+        .route-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--pink); box-shadow: 0 0 0 4px var(--cream); flex-shrink: 0; }
+        .route-dot--empty { background: var(--ink-faint); }
+
+        .day-empty {
+            background: var(--paper); border: 1px dashed var(--line); border-radius: var(--radius-m);
+            padding: 18px; color: var(--ink-faint); font-size: 13px; font-style: italic; display: flex; align-items: center;
+        }
+
+        /* ---------- activity card ---------- */
+        .activity-card { background: var(--paper); border-radius: var(--radius-m); overflow: hidden; box-shadow: var(--shadow-sm); }
+        .activity-media { position: relative; margin: 10px -12px 0; }
+        .activity-body { padding: 12px; }
+        .activity-head { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: flex-start; gap: 10px; }
+        .activity-icon {
+            width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center;
+            justify-content: center; font-size: 16px; flex-shrink: 0;
+        }
+        .activity-head-text { flex: 1; min-width: 0; }
+        .activity-title { font-size: 16.5px; font-weight: 600; line-height: 1.32; color: var(--ink); word-break: break-word; }
+        .activity-category { font-size: 12px; color: var(--ink-soft); }
+        .activity-desc {
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+            font-size: 13px; color: var(--ink-soft); line-height: 1.48; margin-top: 8px;
+        }
+        .activity-address {
+            display: flex; align-items: center; gap: 5px; min-width: 0; margin-top: 8px;
+            font-size: 12px; color: var(--ink-soft);
+        }
+        .activity-address svg { flex-shrink: 0; color: var(--pink); }
+        .activity-address span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .activity-compact-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 10px; }
+        .activity-actions { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; }
+        .maps-btn {
+            display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px;
+            border-radius: var(--radius-pill); border: 1px solid var(--pink-pale); color: var(--pink-dark);
+            font-size: 11.5px; font-weight: 700; white-space: nowrap;
+        }
+        .maps-btn:active { background: var(--pink-mist); }
+        .activity-expand-btn {
+            width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line);
+            display: flex; align-items: center; justify-content: center; color: var(--ink-soft);
+            background: var(--paper); transition: transform .18s, background .18s, color .18s;
+        }
+        .activity-card.is-expanded .activity-expand-btn { transform: rotate(180deg); color: var(--pink-dark); background: var(--pink-mist); }
+        .activity-thumbs { display: flex; gap: 5px; min-width: 0; }
+        .activity-thumb {
+            position: relative; width: 42px; height: 42px; border-radius: 8px; overflow: hidden;
+            border: 1px solid var(--line); background: var(--cream); flex: 0 0 auto;
+        }
+        .activity-thumb img { width: 100%; height: 100%; object-fit: cover; }
+        .activity-thumb-more {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            background: rgba(20,15,12,.52); color: #fff; font-size: 11px; font-weight: 800;
+        }
+        .activity-cost-chip {
+            display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 5px 9px;
+            border-radius: var(--radius-pill); background: var(--cream); color: var(--ink);
+            font-size: 11.5px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap;
+        }
+        .activity-more { margin-top: 11px; padding-top: 10px; border-top: 1px dashed var(--line); }
+        .activity-more[hidden] { display: none; }
+
+        /* ---------- media / carousel ---------- */
+        .media-single { position: relative; height: 200px; width: 100%; }
+        .media-single img { width: 100%; height: 100%; object-fit: cover; }
+        .media-zoom {
+            position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; border-radius: 50%;
+            background: rgba(20,15,12,.45); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+            display: flex; align-items: center; justify-content: center; color: #fff; z-index: 5;
+        }
+        .carousel { position: relative; height: 200px; overflow: hidden; touch-action: pan-y; }
+        .carousel-track { display: flex; height: 100%; transition: transform .35s cubic-bezier(.4,0,.2,1); }
+        .carousel-slide { flex: 0 0 100%; height: 100%; position: relative; }
+        .carousel-slide img { width: 100%; height: 100%; object-fit: cover; -webkit-user-drag: none; user-select: none; }
+        .carousel-nav {
+            position: absolute; top: 50%; transform: translateY(-50%); width: 30px; height: 30px; border-radius: 50%;
+            background: rgba(20,15,12,.4); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+            color: #fff; display: flex; align-items: center; justify-content: center; z-index: 6;
+        }
+        .carousel-nav--prev { left: 10px; }
+        .carousel-nav--next { right: 10px; }
+        .carousel-dots { position: absolute; bottom: 10px; left: 0; right: 0; display: flex; justify-content: center; gap: 5px; z-index: 6; }
+        .carousel-dot { width: 5px; height: 5px; border-radius: 50%; background: rgba(255,255,255,.5); transition: background .2s, width .2s; }
+        .carousel-dot--active { background: #fff; width: 14px; border-radius: 3px; }
+        .carousel-counter {
+            position: absolute; bottom: 10px; right: 12px; background: rgba(20,15,12,.5); color: #fff;
+            font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: var(--radius-pill); z-index: 6;
+        }
+
+        /* ---------- expenses / notes ---------- */
+        .sub-section { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+        .sub-section-head {
+            display: flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700;
+            letter-spacing: .07em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 8px;
+        }
+        .expense-row-wrap + .expense-row-wrap { border-top: 1px solid var(--cream-deep); }
+        .expense-row { display: flex; align-items: center; gap: 9px; padding: 7px 0; font-size: 13px; }
+        .expense-icon {
+            width: 22px; height: 22px; border-radius: 50%; background: var(--pink-mist); color: var(--pink-dark);
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .expense-label { flex: 1; color: var(--ink); min-width: 0; }
+        .expense-split {
+            font-size: 10.5px; font-weight: 600; color: var(--ink-soft); background: var(--cream-deep);
+            padding: 2px 8px; border-radius: var(--radius-pill); white-space: nowrap; flex-shrink: 0;
+        }
+        .expense-amount { font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .expense-images { display: flex; gap: 6px; padding: 2px 0 9px 31px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+        .expense-images::-webkit-scrollbar { display: none; }
+        .expense-thumb { flex: 0 0 auto; width: 52px; height: 52px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+        .expense-thumb img { width: 100%; height: 100%; object-fit: cover; }
+        .note-row { font-size: 13px; color: var(--ink-soft); padding: 8px 11px; background: var(--cream); border-radius: var(--radius-s); margin-bottom: 6px; line-height: 1.55; }
+        .note-row:last-child { margin-bottom: 0; }
+
+        /* ---------- trip extras ---------- */
+        .extra-card { margin: 20px 16px 0; padding: 18px; background: var(--paper); border-radius: var(--radius-m); box-shadow: var(--shadow-sm); }
+        .extra-card .sub-section { border-top: none; padding-top: 0; margin-top: 0; }
+
+        /* ---------- app download banner ---------- */
+        .app-banner {
+            position: relative; margin: 28px 16px 0; padding: 26px 20px; border-radius: var(--radius-l);
+            background: linear-gradient(135deg, #2B2420 0%, #3d281f 55%, #5c2a3a 100%); color: #fff; overflow: hidden;
+        }
+        .app-banner::before {
+            content: ''; position: absolute; width: 220px; height: 220px;
+            background: radial-gradient(circle, rgba(244,83,138,.45), transparent 70%); top: -80px; right: -60px;
+        }
+        .app-banner-badge {
+            position: relative; display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .06em;
+            text-transform: uppercase; color: var(--pink-pale); margin-bottom: 10px;
+        }
+        .app-banner h3 { position: relative; font-size: 20px; font-weight: 600; line-height: 1.32; margin-bottom: 8px; }
+        .app-banner p { position: relative; font-size: 13.5px; color: rgba(255,255,255,.75); line-height: 1.56; margin-bottom: 18px; }
+        .app-store-btn {
+            position: relative; display: inline-flex; align-items: center; gap: 9px; background: #fff; color: var(--ink);
+            padding: 10px 18px; border-radius: var(--radius-pill); font-weight: 700;
+        }
+        .app-store-btn-icon { width: 22px; height: 22px; flex-shrink: 0; }
+        .app-store-btn-label { display: block; font-size: 9.5px; color: var(--ink-soft); font-weight: 600; }
+        .app-store-btn-store { display: block; font-size: 14.5px; line-height: 1.15; }
+        .app-banner-note { position: relative; font-size: 11.5px; color: rgba(255,255,255,.5); margin-top: 10px; }
+
+        /* ---------- sticky bottom app bar ---------- */
+        .sticky-app-bar {
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+            background: rgba(255,255,255,.92); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+            border-top: 1px solid var(--line); box-shadow: 0 -8px 22px rgba(43,32,20,.09);
+            padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+        }
+        .sticky-app-bar-inner { max-width: 680px; margin: 0 auto; display: flex; align-items: center; gap: 10px; }
+        .sticky-app-bar-icon {
+            width: 36px; height: 36px; border-radius: 11px; background: var(--pink); color: #fff;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .sticky-app-bar-text { flex: 1; min-width: 0; }
+        .sticky-app-bar-text strong { display: block; font-size: 13px; }
+        .sticky-app-bar-text span { font-size: 11px; color: var(--ink-soft); }
+        .sticky-app-bar .app-store-btn { padding: 7px 14px; flex-shrink: 0; }
+        .sticky-app-bar .app-store-btn-label { display: none; }
+        .sticky-app-bar .app-store-btn-store { font-size: 13px; }
+        .sticky-app-bar-close {
+            width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            color: var(--ink-faint); flex-shrink: 0;
+        }
+        body.has-sticky-bar { padding-bottom: 66px; }
+
+        /* ---------- footer ---------- */
+        .share-footer { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 34px 20px 44px; text-align: center; }
+        .footer-brand { display: flex; align-items: center; gap: 6px; font-family: var(--font-display); font-weight: 600; font-size: 15px; color: var(--ink-soft); }
+        .footer-credit { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-faint); }
+        .footer-credit img { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
+
+        /* ---------- image viewer / lightbox ---------- */
+        .image-viewer { position: fixed; inset: 0; z-index: 100; display: none; align-items: center; justify-content: center; }
+        .image-viewer--open { display: flex; }
+        .image-viewer-backdrop { position: absolute; inset: 0; background: rgba(10,8,6,.92); }
+        .image-viewer-content { position: relative; max-width: 100vw; max-height: 100vh; padding: 0 12px; }
+        .image-viewer-img { max-width: 100%; max-height: 88vh; border-radius: 8px; object-fit: contain; margin: 0 auto; }
+        .image-viewer-close {
+            position: fixed; top: max(16px, env(safe-area-inset-top)); right: 16px; width: 38px; height: 38px;
+            border-radius: 50%; background: rgba(255,255,255,.12); color: #fff; display: flex; align-items: center; justify-content: center; z-index: 5;
+        }
+        .image-viewer-nav {
+            position: fixed; top: 50%; transform: translateY(-50%); width: 42px; height: 42px; border-radius: 50%;
+            background: rgba(255,255,255,.12); color: #fff; display: flex; align-items: center; justify-content: center;
+        }
+        .image-viewer-nav--prev { left: 12px; }
+        .image-viewer-nav--next { right: 12px; }
+        .image-viewer-counter { position: absolute; bottom: -34px; left: 0; right: 0; text-align: center; color: rgba(255,255,255,.7); font-size: 12.5px; }
+        body.image-viewer-open { overflow: hidden; }
+
+        /* ---------- desktop / wide ---------- */
+        @media (min-width: 720px) {
+            .hero { border-radius: 0 0 28px 28px; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+        }
+    </style>
 </head>
 
 <body class="share-page">
-    <div id="loading" class="share-loading">
-        <div class="share-loading-spinner"></div>
-        <p>Loading itinerary...</p>
+<div id="loading" class="loading-screen">
+    <div class="loading-spinner"></div>
+    <p>Loading itinerary…</p>
+</div>
+<div id="error" class="error-screen" style="display: none;">
+    <h2>Trip not found</h2>
+    <p>This link may have expired, or the trip is no longer shared.</p>
+</div>
+<div id="content" style="display: none;"></div>
+
+<div id="image-viewer" class="image-viewer" aria-hidden="true">
+    <div class="image-viewer-backdrop" onclick="closeImageViewer()"></div>
+    <div class="image-viewer-content">
+        <button type="button" class="image-viewer-close" aria-label="Close" onclick="closeImageViewer()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <button type="button" id="viewer-prev" class="image-viewer-nav image-viewer-nav--prev" aria-label="Previous image" onclick="viewerGo(-1)">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <img id="viewer-image" class="image-viewer-img" src="" alt="">
+        <button type="button" id="viewer-next" class="image-viewer-nav image-viewer-nav--next" aria-label="Next image" onclick="viewerGo(1)">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <span id="viewer-counter" class="image-viewer-counter"></span>
     </div>
-    <div id="error" class="share-error" style="display: none;">
-        <h2>Trip not found</h2>
-        <p>This link may have expired or does not exist.</p>
-    </div>
-    <div id="content" style="display: none;"></div>
+</div>
 
-    <div id="image-viewer" class="image-viewer" aria-hidden="true">
-        <div class="image-viewer-backdrop" onclick="closeImageViewer()"></div>
-        <div class="image-viewer-content">
-            <button type="button" class="image-viewer-close" aria-label="Close" onclick="closeImageViewer()">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-            <button type="button" id="viewer-prev" class="image-viewer-nav image-viewer-nav--prev" aria-label="Previous image" onclick="viewerGo(-1)">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-            </button>
-            <img id="viewer-image" class="image-viewer-img" src="" alt="">
-            <button type="button" id="viewer-next" class="image-viewer-nav image-viewer-nav--next" aria-label="Next image" onclick="viewerGo(1)">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-            </button>
-            <span id="viewer-counter" class="image-viewer-counter"></span>
-        </div>
-    </div>
+<script>
+    const API_BASE_URL = 'https://onestudy.id.vn/goroute';
+    const APP_STORE_URL = 'https://apps.apple.com/us/app/ondetour/id6775022752';
+    const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const REDUCE_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    <script>
-        const API_BASE_URL = 'https://onestudy.id.vn/goroute';
-        const APP_STORE_URL = 'https://apps.apple.com/us/app/ondetour/id6775022752';
+    let activeDay = null;
+    let tripData = null;
+    let viewerState = { images: [], index: 0 };
 
-        const APP_STORE_BTN = `
-            <a href="${APP_STORE_URL}" class="app-store-btn" target="_blank" rel="noopener noreferrer">
-                <svg class="app-store-btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
-                </svg>
-                <span class="app-store-btn-text">
-                    <span class="app-store-btn-label">Download on the</span>
-                    <span class="app-store-btn-store">App Store</span>
-                </span>
-            </a>
-        `;
+    /* ============ small icons (verified inline SVG, brand-consistent) ============ */
+    const ICON_PIN = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+    const ICON_MAPS = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+    const ICON_EXPENSE = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M12 12h.01"/></svg>';
+    const ICON_NOTES = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>';
+    const ICON_ZOOM = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>';
+    const ICON_CLOSE_SM = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+    const ICON_CHEV_L = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>';
+    const ICON_CHEV_R = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>';
+    const ICON_CHEV_D = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
+    const ICON_PIN_LOGO = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>';
+    const ICON_APPLE = '<svg class="app-store-btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>';
 
-        function renderAppDownload(variant) {
-            if (variant === 'sidebar') {
-                return `
-                    <div class="sidebar-card sidebar-card--app">
-                        <span class="app-download-badge">iOS only</span>
-                        <h3 class="app-download-title app-download-title--sm">Get the Ondetour app</h3>
-                        <p class="app-download-desc app-download-desc--sm">Plan trips, track expenses &amp; share itineraries on iPhone.</p>
-                        ${APP_STORE_BTN}
-                    </div>
-                `;
-            }
-            if (variant === 'sticky') {
-                return `
-                    <div class="app-download-sticky" id="app-download-sticky">
-                        <div class="app-download-sticky-inner">
-                            <div class="app-download-sticky-text">
-                                <strong>Ondetour</strong>
-                                <span>Available on iOS</span>
-                            </div>
-                            ${APP_STORE_BTN.replace('app-store-btn', 'app-store-btn app-store-btn--sm')}
-                        </div>
-                    </div>
-                `;
-            }
-            return `
-                <section class="app-download app-download--banner">
-                    <div class="app-download-glow"></div>
-                    <div class="app-download-inner">
-                        <div class="app-download-content">
-                            <span class="app-download-badge">Available on iOS</span>
-                            <h3 class="app-download-title">Plan your own Vietnam trip with Ondetour</h3>
-                            <p class="app-download-desc">Create day-by-day itineraries, log expenses, save memories, and share your journey — all from your iPhone.</p>
-                        </div>
-                        <div class="app-download-action">
-                            ${APP_STORE_BTN}
-                            <p class="app-download-note">Android coming soon</p>
-                        </div>
-                    </div>
-                </section>
-            `;
-        }
+    const APP_STORE_BTN = `
+        <a href="${APP_STORE_URL}" class="app-store-btn" target="_blank" rel="noopener noreferrer">
+            ${ICON_APPLE}
+            <span>
+                <span class="app-store-btn-label">Download on the</span>
+                <span class="app-store-btn-store">App Store</span>
+            </span>
+        </a>
+    `;
 
-        const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    /* ============ helpers ============ */
+    function escapeHtml(str) {
+        if (str == null) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
 
-        let activeDay = 1;
-        let tripData = null;
-        let viewerState = { images: [], index: 0 };
+    function encodeImagesAttr(images) { return escapeHtml(JSON.stringify(images)); }
 
-        function openImageViewer(images, index) {
-            if (!images || !images.length) return;
-            viewerState = { images, index: Math.max(0, Math.min(index, images.length - 1)) };
-            updateImageViewer();
-            const viewer = document.getElementById('image-viewer');
-            viewer.classList.add('image-viewer--open');
-            viewer.setAttribute('aria-hidden', 'false');
-            document.body.classList.add('image-viewer-open');
-        }
+    function getTripIdFromUrl() {
+        const pathParts = window.location.pathname.split('/');
+        return pathParts[pathParts.length - 1].replace('.html', '');
+    }
 
-        function openImageViewerFromEl(el) {
-            openImageViewer(JSON.parse(el.dataset.images), Number(el.dataset.index || 0));
-        }
+    function parseLocalDate(dateStr) {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        return new Date(y, m - 1, d);
+    }
 
-        function openImageViewerFromCarousel(carouselId) {
-            const el = document.getElementById(carouselId);
-            if (!el) return;
-            openImageViewer(JSON.parse(el.dataset.images), Number(el.dataset.index || 0));
-        }
+    function formatDateShortFromDate(date) {
+        return `${WEEKDAYS[date.getDay()]}, ${date.getDate()}/${date.getMonth() + 1}`;
+    }
 
-        function closeImageViewer() {
-            const viewer = document.getElementById('image-viewer');
-            viewer.classList.remove('image-viewer--open');
-            viewer.setAttribute('aria-hidden', 'true');
-            document.body.classList.remove('image-viewer-open');
-            document.getElementById('viewer-image').src = '';
-        }
+    function formatDateRange(startDate, endDate) {
+        const start = parseLocalDate(startDate);
+        const end = parseLocalDate(endDate);
+        const monthName = end.toLocaleDateString('en-US', { month: 'long' });
+        return `${start.getDate()} – ${end.getDate()} ${monthName}`;
+    }
 
-        function viewerGo(direction) {
-            const total = viewerState.images.length;
-            if (total <= 1) return;
-            viewerState.index = (viewerState.index + direction + total) % total;
-            updateImageViewer();
-        }
+    function getDateForDay(startDate, dayNumber) {
+        const date = parseLocalDate(startDate);
+        date.setDate(date.getDate() + (dayNumber - 1));
+        return date;
+    }
 
-        function updateImageViewer() {
-            const { images, index } = viewerState;
-            document.getElementById('viewer-image').src = images[index];
-            const counter = document.getElementById('viewer-counter');
-            const showNav = images.length > 1;
-            counter.textContent = showNav ? `${index + 1} / ${images.length}` : '';
-            counter.style.display = showNav ? '' : 'none';
-            document.getElementById('viewer-prev').style.display = showNav ? '' : 'none';
-            document.getElementById('viewer-next').style.display = showNav ? '' : 'none';
-        }
+    function formatTime(timeStr) {
+        if (!timeStr) return '';
+        return timeStr.substring(0, 5);
+    }
 
-        document.addEventListener('keydown', (e) => {
-            const viewer = document.getElementById('image-viewer');
-            if (!viewer.classList.contains('image-viewer--open')) return;
-            if (e.key === 'Escape') closeImageViewer();
-            if (e.key === 'ArrowLeft') viewerGo(-1);
-            if (e.key === 'ArrowRight') viewerGo(1);
+    function formatMoney(amount, currency) {
+        const value = Number(amount);
+        if (currency === 'VND') return new Intl.NumberFormat('en-US').format(value) + ' ₫';
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(value);
+    }
+
+    function formatExpenseSummary(expenses, fallbackCurrency) {
+        if (!expenses || !expenses.length) return '';
+        const totals = {};
+        expenses.forEach(e => {
+            const currency = e.currency || fallbackCurrency || 'USD';
+            totals[currency] = (totals[currency] || 0) + Number(e.amount || 0);
         });
+        return Object.keys(totals).map(currency => formatMoney(totals[currency], currency)).join(' + ');
+    }
 
-        function encodeImagesAttr(images) {
-            return escapeHtml(JSON.stringify(images));
+    function getDayCount(startDate, endDate) {
+        const start = parseLocalDate(startDate);
+        const end = parseLocalDate(endDate);
+        return Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+    }
+
+    function getDayNumbers(startDate, endDate) {
+        const count = getDayCount(startDate, endDate);
+        return Array.from({ length: count }, (_, i) => i + 1);
+    }
+
+    function getNightCount(dayCount) { return Math.max(0, dayCount - 1); }
+
+    function getCategoryLabel(category) {
+        if (!category) return null;
+        const labels = {
+            restaurant: 'Food & Drink', food: 'Food & Drink', activity: 'Activity', shopping: 'Shopping',
+            attraction: 'Attraction', nature: 'Nature', hotel: 'Accommodation', accommodation: 'Accommodation',
+            transport: 'Transport', transportation: 'Transport', departure: 'Departure', sightseeing: 'Sightseeing',
+            bridge: 'Bridge', 'tourist attraction': 'Tourist Attraction'
+        };
+        return labels[category.toLowerCase()] || category;
+    }
+
+    function getCategoryIcon(category) {
+        const map = {
+            restaurant: { icon: '🍜', cls: 'cat-food' }, food: { icon: '🍜', cls: 'cat-food' },
+            activity: { icon: '🎯', cls: 'cat-activity' }, shopping: { icon: '🛍️', cls: 'cat-shopping' },
+            attraction: { icon: '📷', cls: 'cat-attraction' }, sightseeing: { icon: '📷', cls: 'cat-attraction' },
+            'tourist attraction': { icon: '📷', cls: 'cat-attraction' }, nature: { icon: '🌿', cls: 'cat-nature' },
+            hotel: { icon: '🏨', cls: 'cat-stay' }, accommodation: { icon: '🏨', cls: 'cat-stay' },
+            transport: { icon: '🚗', cls: 'cat-transport' }, transportation: { icon: '🚗', cls: 'cat-transport' },
+            departure: { icon: '✈️', cls: 'cat-transport' }, bridge: { icon: '🌉', cls: 'cat-attraction' }
+        };
+        return map[(category || '').toLowerCase()] || { icon: '📍', cls: 'cat-default' };
+    }
+
+    function getActivityImages(activity) {
+        const images = [];
+        if (activity.memoryImageUrls && activity.memoryImageUrls.length > 0) images.push(...activity.memoryImageUrls);
+        else if (activity.photoUrl) images.push(activity.photoUrl);
+        return images;
+    }
+
+    function hasLocation(activity) { return (activity.lat && activity.lng) || activity.address; }
+
+    // NOTE: field names for receipt images / split-count aren't confirmed against the backend yet —
+    // this checks a few likely candidates. Tell me the real field names and I'll lock these down.
+    function getExpenseImages(e) {
+        return e.imageUrls || e.images || e.receiptUrls || e.receiptImages || e.photoUrls || [];
+    }
+    function getExpenseSplitCount(e) {
+        return e.splitCount ?? e.peopleCount ?? e.numPeople ?? e.splitBetween ?? e.paxCount ?? null;
+    }
+
+    function cleanAddress(address) {
+        if (!address) return '';
+        return address.replace(/^Address:\s*/i, '').trim();
+    }
+
+    function openGoogleMaps(lat, lng, address) {
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        if (isMobile) {
+            if (lat && lng) window.location.href = `google.navigation:q=${lat},${lng}`;
+            else if (address) window.location.href = `google.navigation:q=${encodeURIComponent(address)}`;
+        } else if (lat && lng) {
+            window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank');
+        } else if (address) {
+            window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`, '_blank');
         }
+    }
 
-        function getTripIdFromUrl() {
-            const pathParts = window.location.pathname.split('/');
-            return pathParts[pathParts.length - 1].replace('.html', '');
-        }
-
-        function escapeHtml(str) {
-            if (str == null) return '';
-            return String(str)
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        }
-
-        function parseLocalDate(dateStr) {
-            const [y, m, d] = dateStr.split('-').map(Number);
-            return new Date(y, m - 1, d);
-        }
-
-        function formatDateFull(dateStr) {
-            const date = parseLocalDate(dateStr);
-            return date.toLocaleDateString('en-US', { day: 'numeric', month: 'numeric', year: 'numeric' });
-        }
-
-        function formatDateShort(dateStr) {
-            const date = parseLocalDate(dateStr);
-            return `${WEEKDAYS[date.getDay()]}, ${date.getDate()}/${date.getMonth() + 1}`;
-        }
-
-        function formatDateShortFromDate(date) {
-            return `${WEEKDAYS[date.getDay()]}, ${date.getDate()}/${date.getMonth() + 1}`;
-        }
-
-        function formatDateRange(startDate, endDate) {
-            const start = parseLocalDate(startDate);
-            const end = parseLocalDate(endDate);
-            const monthName = end.toLocaleDateString('en-US', { month: 'long' });
-            return `${start.getDate()} – ${end.getDate()} ${monthName}`;
-        }
-
-        function getDateForDay(startDate, dayNumber) {
-            const date = parseLocalDate(startDate);
-            date.setDate(date.getDate() + (dayNumber - 1));
-            return date;
-        }
-
-        function formatTime(timeStr) {
-            if (!timeStr) return '';
-            return timeStr.substring(0, 5);
-        }
-
-        function formatMoney(amount, currency) {
-            const value = Number(amount);
-            if (currency === 'VND') {
-                return new Intl.NumberFormat('en-US').format(value) + ' ₫';
-            }
-            return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(value);
-        }
-
-        function getDayCount(startDate, endDate) {
-            const start = parseLocalDate(startDate);
-            const end = parseLocalDate(endDate);
-            return Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
-        }
-
-        function getDayNumbers(startDate, endDate) {
-            const count = getDayCount(startDate, endDate);
-            return Array.from({ length: count }, (_, i) => i + 1);
-        }
-
-        function getNightCount(dayCount) {
-            return Math.max(0, dayCount - 1);
-        }
-
-        function getCategoryLabel(category) {
-            if (!category) return null;
-            const cat = category.toLowerCase();
-            const labels = {
-                restaurant: 'Food & Drink',
-                food: 'Food & Drink',
-                activity: 'Activity',
-                shopping: 'Shopping',
-                attraction: 'Attraction',
-                nature: 'Nature',
-                hotel: 'Accommodation',
-                accommodation: 'Accommodation',
-                transport: 'Transport',
-                transportation: 'Transport',
-                departure: 'Departure',
-                sightseeing: 'Sightseeing',
-                bridge: 'Bridge',
-                'tourist attraction': 'Tourist Attraction'
-            };
-            return labels[cat] || category;
-        }
-
-        function getCategoryIcon(category) {
-            const cat = (category || '').toLowerCase();
-            const icons = {
-                restaurant: '🍽️', food: '🍽️', activity: '⚓', shopping: '🛍️',
-                attraction: '📷', nature: '🌿', hotel: '🏨', accommodation: '🏨',
-                transport: '🚗', transportation: '🚗', departure: '✈️',
-                sightseeing: '📷', bridge: '🌉', 'tourist attraction': '📷'
-            };
-            return icons[cat] || '📍';
-        }
-
-        function getActivityImages(activity) {
-            const images = [];
-            if (activity.memoryImageUrls && activity.memoryImageUrls.length > 0) {
-                images.push(...activity.memoryImageUrls);
-            } else if (activity.photoUrl) {
-                images.push(activity.photoUrl);
-            }
-            return images;
-        }
-
-        function hasLocation(activity) {
-            return (activity.lat && activity.lng) || activity.address;
-        }
-
-        function cleanAddress(address) {
-            if (!address) return '';
-            return address.replace(/^Address:\s*/i, '').trim();
-        }
-
-        function openGoogleMaps(lat, lng, address) {
-            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-            if (isMobile) {
-                if (lat && lng) {
-                    window.location.href = `google.navigation:q=${lat},${lng}`;
-                } else if (address) {
-                    window.location.href = `google.navigation:q=${encodeURIComponent(address)}`;
-                }
-            } else if (lat && lng) {
-                window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank');
-            } else if (address) {
-                window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`, '_blank');
-            }
-        }
-
-        function groupActivitiesByDay(activities) {
-            const grouped = {};
-            activities.forEach(activity => {
-                if (!grouped[activity.dayNumber]) grouped[activity.dayNumber] = [];
-                grouped[activity.dayNumber].push(activity);
+    function groupActivitiesByDay(activities) {
+        const grouped = {};
+        activities.forEach(activity => {
+            if (!grouped[activity.dayNumber]) grouped[activity.dayNumber] = [];
+            grouped[activity.dayNumber].push(activity);
+        });
+        Object.keys(grouped).forEach(day => {
+            grouped[day].sort((a, b) => {
+                if (!a.startTime) return 1;
+                if (!b.startTime) return -1;
+                return a.startTime.localeCompare(b.startTime);
             });
-            Object.keys(grouped).forEach(day => {
-                grouped[day].sort((a, b) => {
-                    if (!a.startTime) return 1;
-                    if (!b.startTime) return -1;
-                    return a.startTime.localeCompare(b.startTime);
-                });
-            });
-            return grouped;
-        }
+        });
+        return grouped;
+    }
 
-        function renderActivityImages(images, carouselId) {
-            if (!images.length) return '';
-            const imagesAttr = encodeImagesAttr(images);
-            if (images.length === 1) {
-                return `
-                    <button type="button" class="activity-card-image activity-card-image--clickable"
-                        data-images="${imagesAttr}" data-index="0"
-                        onclick="openImageViewerFromEl(this)" aria-label="View image">
-                        <img src="${escapeHtml(images[0])}" alt="" loading="lazy">
-                        <span class="activity-image-zoom" aria-hidden="true">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-                        </span>
-                    </button>
-                `;
-            }
-            const id = `carousel-${carouselId}`;
+    /* ============ image viewer (lightbox) ============ */
+    function openImageViewer(images, index) {
+        if (!images || !images.length) return;
+        viewerState = { images, index: Math.max(0, Math.min(index, images.length - 1)) };
+        updateImageViewer();
+        const viewer = document.getElementById('image-viewer');
+        viewer.classList.add('image-viewer--open');
+        viewer.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('image-viewer-open');
+    }
+    function openImageViewerFromEl(el) { openImageViewer(JSON.parse(el.dataset.images), Number(el.dataset.index || 0)); }
+    function openImageViewerFromCarousel(carouselId) {
+        const el = document.getElementById(carouselId);
+        if (!el || el.dataset.dragging === '1') return; // swallow the click that follows a swipe
+        openImageViewer(JSON.parse(el.dataset.images), Number(el.dataset.index || 0));
+    }
+    function closeImageViewer() {
+        const viewer = document.getElementById('image-viewer');
+        viewer.classList.remove('image-viewer--open');
+        viewer.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('image-viewer-open');
+        document.getElementById('viewer-image').src = '';
+    }
+    function viewerGo(direction) {
+        const total = viewerState.images.length;
+        if (total <= 1) return;
+        viewerState.index = (viewerState.index + direction + total) % total;
+        updateImageViewer();
+    }
+    function updateImageViewer() {
+        const { images, index } = viewerState;
+        document.getElementById('viewer-image').src = images[index];
+        const counter = document.getElementById('viewer-counter');
+        const showNav = images.length > 1;
+        counter.textContent = showNav ? `${index + 1} / ${images.length}` : '';
+        counter.style.display = showNav ? '' : 'none';
+        document.getElementById('viewer-prev').style.display = showNav ? '' : 'none';
+        document.getElementById('viewer-next').style.display = showNav ? '' : 'none';
+    }
+    document.addEventListener('keydown', (e) => {
+        const viewer = document.getElementById('image-viewer');
+        if (!viewer.classList.contains('image-viewer--open')) return;
+        if (e.key === 'Escape') closeImageViewer();
+        if (e.key === 'ArrowLeft') viewerGo(-1);
+        if (e.key === 'ArrowRight') viewerGo(1);
+    });
+
+    /* ============ media (single image / carousel) ============ */
+    function renderMedia(images, id) {
+        if (!images.length) return '';
+        const imagesAttr = encodeImagesAttr(images);
+        if (images.length === 1) {
             return `
-                <div class="activity-carousel" id="${id}" data-images="${imagesAttr}" data-index="0">
-                    <div class="activity-carousel-track">
-                        ${images.map((url, i) => `
-                            <button type="button" class="activity-carousel-slide activity-card-image--clickable"
-                                aria-label="View image ${i + 1}"
-                                onclick="openImageViewerFromCarousel('${id}')">
-                                <img src="${escapeHtml(url)}" alt="" loading="lazy">
-                                <span class="activity-image-zoom" aria-hidden="true">
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-                                </span>
-                            </button>
-                        `).join('')}
-                    </div>
-                    <button type="button" class="carousel-btn carousel-btn--prev" aria-label="Previous image" onclick="event.stopPropagation(); carouselGo('${id}', -1)">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-                    </button>
-                    <button type="button" class="carousel-btn carousel-btn--next" aria-label="Next image" onclick="event.stopPropagation(); carouselGo('${id}', 1)">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-                    </button>
-                    <div class="carousel-dots">
-                        ${images.map((_, i) => `
-                            <button type="button" class="carousel-dot${i === 0 ? ' carousel-dot--active' : ''}" aria-label="Image ${i + 1}" onclick="event.stopPropagation(); carouselGoTo('${id}', ${i})"></button>
-                        `).join('')}
-                    </div>
-                    <span class="carousel-counter">1 / ${images.length}</span>
-                </div>
-            `;
-        }
-
-        function carouselGo(id, direction) {
-            const el = document.getElementById(id);
-            if (!el) return;
-            const total = el.querySelectorAll('.activity-carousel-slide').length;
-            let index = Number(el.dataset.index || 0);
-            index = (index + direction + total) % total;
-            carouselGoTo(id, index);
-        }
-
-        function carouselGoTo(id, index) {
-            const el = document.getElementById(id);
-            if (!el) return;
-            el.dataset.index = index;
-            el.querySelector('.activity-carousel-track').style.transform = `translateX(-${index * 100}%)`;
-            el.querySelectorAll('.carousel-dot').forEach((dot, i) => {
-                dot.classList.toggle('carousel-dot--active', i === index);
-            });
-            const counter = el.querySelector('.carousel-counter');
-            if (counter) {
-                const total = el.querySelectorAll('.activity-carousel-slide').length;
-                counter.textContent = `${index + 1} / ${total}`;
-            }
-        }
-
-        function renderExpenses(expenses, currency) {
-            if (!expenses || !expenses.length) return '';
-            return `
-                <div class="activity-section activity-section--expenses">
-                    <div class="activity-section-header">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
-                        <span>EXPENSES</span>
-                    </div>
-                    <div class="expense-list">
-                        ${expenses.map(e => `
-                            <div class="expense-row">
-                                <div class="expense-row-icon">
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M12 12h.01"/></svg>
-                                </div>
-                                <span class="expense-row-label">${escapeHtml(e.description || e.category || 'Expense')}</span>
-                                <span class="expense-row-amount">${formatMoney(e.amount, e.currency || currency)}</span>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            `;
-        }
-
-        function renderNotes(notes) {
-            if (!notes || !notes.length) return '';
-            return `
-                <div class="activity-section activity-section--notes">
-                    <div class="activity-section-header">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
-                        <span>NOTES</span>
-                    </div>
-                    <div class="note-list">
-                        ${notes.map(n => `
-                            <div class="note-row">${escapeHtml(n.content)}</div>
-                        `).join('')}
-                    </div>
-                </div>
-            `;
-        }
-
-        function renderActivityCard(activity, trip) {
-            const images = getActivityImages(activity);
-            const categoryLabel = getCategoryLabel(activity.category);
-            const address = cleanAddress(activity.address);
-            const hasMap = hasLocation(activity);
-            const isCompact = !images.length && !activity.description;
-
-            const mapsBtn = hasMap ? `
-                <button type="button" class="maps-link" onclick="openGoogleMaps(${activity.lat || 'null'}, ${activity.lng || 'null'}, '${escapeHtml(address).replace(/'/g, "\\'")}')">
-                    Open Maps
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                <button type="button" class="media-single" data-images="${imagesAttr}" data-index="0"
+                    onclick="openImageViewerFromEl(this)" aria-label="View image">
+                    <img src="${escapeHtml(images[0])}" alt="" loading="lazy">
+                    <span class="media-zoom" aria-hidden="true">${ICON_ZOOM}</span>
                 </button>
-            ` : '';
+            `;
+        }
+        const carouselId = `carousel-${id}`;
+        return `
+            <div class="carousel" id="${carouselId}" data-images="${imagesAttr}" data-index="0">
+                <div class="carousel-track">
+                    ${images.map((url, i) => `
+                        <button type="button" class="carousel-slide" aria-label="View image ${i + 1}"
+                            onclick="openImageViewerFromCarousel('${carouselId}')">
+                            <img src="${escapeHtml(url)}" alt="" loading="lazy">
+                        </button>
+                    `).join('')}
+                </div>
+                <span class="media-zoom" aria-hidden="true">${ICON_ZOOM}</span>
+                <button type="button" class="carousel-nav carousel-nav--prev" aria-label="Previous image" onclick="event.stopPropagation(); carouselGo('${carouselId}', -1)">${ICON_CHEV_L}</button>
+                <button type="button" class="carousel-nav carousel-nav--next" aria-label="Next image" onclick="event.stopPropagation(); carouselGo('${carouselId}', 1)">${ICON_CHEV_R}</button>
+                <div class="carousel-dots">
+                    ${images.map((_, i) => `<button type="button" class="carousel-dot${i === 0 ? ' carousel-dot--active' : ''}" aria-label="Image ${i + 1}" onclick="event.stopPropagation(); carouselGoTo('${carouselId}', ${i})"></button>`).join('')}
+                </div>
+                <span class="carousel-counter">1 / ${images.length}</span>
+            </div>
+        `;
+    }
+    function carouselGo(id, direction) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const total = el.querySelectorAll('.carousel-slide').length;
+        let index = Number(el.dataset.index || 0);
+        carouselGoTo(id, (index + direction + total) % total);
+    }
+    function carouselGoTo(id, index) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.dataset.index = index;
+        el.querySelector('.carousel-track').style.transform = `translateX(-${index * 100}%)`;
+        el.querySelectorAll('.carousel-dot').forEach((dot, i) => dot.classList.toggle('carousel-dot--active', i === index));
+        const counter = el.querySelector('.carousel-counter');
+        if (counter) counter.textContent = `${index + 1} / ${el.querySelectorAll('.carousel-slide').length}`;
+    }
 
-            const metaRow = `
-                <div class="activity-card-meta">
-                    ${address ? `
-                        <div class="activity-card-address">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                            <span>${escapeHtml(address)}</span>
+    // Finger-swipe support for carousels (buttons/dots still work alongside this).
+    function initCarouselSwipe() {
+        document.querySelectorAll('.carousel').forEach(el => {
+            const track = el.querySelector('.carousel-track');
+            let startX = 0, startY = 0, deltaX = 0, dragging = false;
+
+            el.addEventListener('touchstart', (e) => {
+                const t = e.touches[0];
+                startX = t.clientX; startY = t.clientY; deltaX = 0; dragging = true;
+                track.style.transition = 'none';
+            }, { passive: true });
+
+            el.addEventListener('touchmove', (e) => {
+                if (!dragging) return;
+                const t = e.touches[0];
+                deltaX = t.clientX - startX;
+                const deltaY = t.clientY - startY;
+                if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                    if (Math.abs(deltaX) > 8) el.dataset.dragging = '1';
+                    e.preventDefault();
+                    const index = Number(el.dataset.index || 0);
+                    const percent = (-index * 100) + (deltaX / el.offsetWidth * 100);
+                    track.style.transform = `translateX(${percent}%)`;
+                }
+            }, { passive: false });
+
+            el.addEventListener('touchend', () => {
+                if (!dragging) return;
+                dragging = false;
+                track.style.transition = '';
+                const total = el.querySelectorAll('.carousel-slide').length;
+                const index = Number(el.dataset.index || 0);
+                const threshold = el.offsetWidth * 0.16;
+                let nextIndex = index;
+                if (deltaX < -threshold && index < total - 1) nextIndex = index + 1;
+                else if (deltaX > threshold && index > 0) nextIndex = index - 1;
+                carouselGoTo(el.id, nextIndex);
+                setTimeout(() => { el.dataset.dragging = '0'; }, 60);
+            });
+        });
+    }
+
+    /* ============ expenses / notes ============ */
+    function renderExpenseImages(images) {
+        if (!images.length) return '';
+        const imagesAttr = encodeImagesAttr(images);
+        return `
+            <div class="expense-images">
+                ${images.map((url, i) => `
+                    <button type="button" class="expense-thumb" data-images="${imagesAttr}" data-index="${i}" onclick="openImageViewerFromEl(this)" aria-label="View receipt image ${i + 1}">
+                        <img src="${escapeHtml(url)}" alt="" loading="lazy">
+                    </button>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function renderActivityThumbs(images) {
+        if (!images.length) return '';
+        const visible = images.slice(0, 4);
+        const imagesAttr = encodeImagesAttr(images);
+        return `
+            <div class="activity-thumbs" aria-label="${images.length} photo${images.length !== 1 ? 's' : ''}">
+                ${visible.map((url, i) => `
+                    <button type="button" class="activity-thumb" data-images="${imagesAttr}" data-index="${i}" onclick="openImageViewerFromEl(this)" aria-label="View image ${i + 1}">
+                        <img src="${escapeHtml(url)}" alt="" loading="lazy">
+                        ${i === visible.length - 1 && images.length > visible.length ? `<span class="activity-thumb-more">+${images.length - visible.length}</span>` : ''}
+                    </button>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function toggleActivityDetails(id) {
+        const card = document.getElementById(id);
+        if (!card) return;
+        const panel = card.querySelector('.activity-more');
+        const btn = card.querySelector('.activity-expand-btn');
+        if (!panel || !btn) return;
+        const expanded = panel.hasAttribute('hidden');
+        panel.toggleAttribute('hidden', !expanded);
+        card.classList.toggle('is-expanded', expanded);
+        btn.setAttribute('aria-expanded', String(expanded));
+        btn.setAttribute('aria-label', expanded ? 'Hide details' : 'Show details');
+    }
+
+    function renderExpenses(expenses, currency, label) {
+        if (!expenses || !expenses.length) return '';
+        return `
+            <div class="sub-section">
+                <div class="sub-section-head">${ICON_EXPENSE}<span>${label || 'EXPENSES'}</span></div>
+                ${expenses.map(e => {
+                    const images = getExpenseImages(e);
+                    const splitCount = getExpenseSplitCount(e);
+                    return `
+                        <div class="expense-row-wrap">
+                            <div class="expense-row">
+                                <span class="expense-icon">${ICON_EXPENSE}</span>
+                                <span class="expense-label">${escapeHtml(e.description || e.category || 'Expense')}</span>
+                                ${splitCount ? `<span class="expense-split">👥 ${escapeHtml(String(splitCount))}</span>` : ''}
+                                <span class="expense-amount">${formatMoney(e.amount, e.currency || currency)}</span>
+                            </div>
+                            ${renderExpenseImages(images)}
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+    function renderNotes(notes, label) {
+        if (!notes || !notes.length) return '';
+        return `
+            <div class="sub-section">
+                <div class="sub-section-head">${ICON_NOTES}<span>${label || 'NOTES'}</span></div>
+                ${notes.map(n => `<div class="note-row">${escapeHtml(n.content)}</div>`).join('')}
+            </div>
+        `;
+    }
+
+    /* ============ activity card ============ */
+    function renderActivityCard(activity) {
+        const images = getActivityImages(activity);
+        const categoryLabel = getCategoryLabel(activity.category);
+        const { icon, cls } = getCategoryIcon(activity.category);
+        const address = cleanAddress(activity.address);
+        const hasImages = images.length > 0;
+        const cardId = `activity-card-${String(activity.id || `${activity.dayNumber || ''}-${activity.startTime || ''}-${activity.name || ''}`).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+        const expenseSummary = formatExpenseSummary(activity.expenses, tripData.currency);
+        const hasDetails = hasImages || (activity.expenses && activity.expenses.length) || (activity.notes && activity.notes.length);
+
+        const mapsBtn = hasLocation(activity) ? `
+            <button type="button" class="maps-btn" onclick="openGoogleMaps(${activity.lat || 'null'}, ${activity.lng || 'null'}, '${escapeHtml(address).replace(/'/g, "\\'")}')">
+                ${ICON_MAPS}<span>Directions</span>
+            </button>
+        ` : '';
+        const expandBtn = hasDetails ? `
+            <button type="button" class="activity-expand-btn" aria-label="Show details" aria-expanded="false" aria-controls="${cardId}-details" onclick="toggleActivityDetails('${cardId}')">
+                ${ICON_CHEV_D}
+            </button>
+        ` : '';
+
+        return `
+            <article class="activity-card" id="${cardId}">
+                <div class="activity-body">
+                    <div class="activity-head">
+                        <span class="activity-icon ${cls}">${icon}</span>
+                        <div class="activity-head-text">
+                            <h3 class="activity-title">${escapeHtml(activity.name)}</h3>
+                            ${categoryLabel ? `<span class="activity-category">${escapeHtml(categoryLabel)}</span>` : ''}
+                        </div>
+                    </div>
+                    ${activity.description ? `<p class="activity-desc">${escapeHtml(activity.description)}</p>` : ''}
+                    ${address ? `<span class="activity-address">${ICON_PIN}<span>${escapeHtml(address)}</span></span>` : ''}
+                    ${(hasImages || expenseSummary || mapsBtn || expandBtn) ? `
+                        <div class="activity-compact-row">
+                            ${renderActivityThumbs(images)}
+                            ${expenseSummary ? `<span class="activity-cost-chip">${ICON_EXPENSE}<span>${expenseSummary}</span></span>` : ''}
+                            ${(mapsBtn || expandBtn) ? `<span class="activity-actions">${mapsBtn}${expandBtn}</span>` : ''}
                         </div>
                     ` : ''}
-                    <div class="activity-card-meta-bottom">
-                        ${categoryLabel ? `<span class="activity-tag">${escapeHtml(categoryLabel)}</span>` : ''}
-                        ${activity.endTime ? `<span class="activity-tag">${escapeHtml(formatTime(activity.startTime))} – ${escapeHtml(formatTime(activity.endTime))}</span>` : ''}
-                        ${mapsBtn}
-                    </div>
-                </div>
-            `;
-
-            if (isCompact) {
-                return `
-                    <div class="timeline-entry">
-                        <div class="timeline-time">${formatTime(activity.startTime) || ''}</div>
-                        <div class="timeline-dot"></div>
-                        <div class="activity-card activity-card--compact">
-                            <div class="activity-card-compact-icon">${getCategoryIcon(activity.category)}</div>
-                            <div class="activity-card-body">
-                                <h3 class="activity-card-title">${escapeHtml(activity.name)}</h3>
-                                ${categoryLabel ? `<p class="activity-card-subtitle">${escapeHtml(categoryLabel)}</p>` : ''}
-                                ${activity.description ? `<p class="activity-card-desc">${escapeHtml(activity.description)}</p>` : ''}
-                                ${metaRow}
-                                ${renderExpenses(activity.expenses, trip.currency)}
-                                ${renderNotes(activity.notes)}
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }
-
-            return `
-                <div class="timeline-entry">
-                    <div class="timeline-time">${formatTime(activity.startTime) || ''}</div>
-                    <div class="timeline-dot"></div>
-                    <div class="activity-card">
-                        ${renderActivityImages(images, activity.id)}
-                        <div class="activity-card-body">
-                            <h3 class="activity-card-title">${escapeHtml(activity.name)}</h3>
-                            ${activity.description ? `<p class="activity-card-desc">${escapeHtml(activity.description)}</p>` : ''}
-                            ${metaRow}
-                            ${renderExpenses(activity.expenses, trip.currency)}
+                    ${hasDetails ? `
+                        <div class="activity-more" id="${cardId}-details" hidden>
+                            ${hasImages ? `<div class="activity-media">${renderMedia(images, activity.id || cardId)}</div>` : ''}
+                            ${renderExpenses(activity.expenses, tripData.currency)}
                             ${renderNotes(activity.notes)}
                         </div>
+                    ` : ''}
+                </div>
+            </article>
+        `;
+    }
+
+    /* ============ route (continuous multi-day timeline) ============ */
+    function renderDayBlock(trip, dayNumber, activitiesByDay) {
+        const activities = activitiesByDay[dayNumber] || [];
+        const dayDate = getDateForDay(trip.startDate, dayNumber);
+        return `
+            <section class="day-block reveal" id="day-${dayNumber}" data-day="${dayNumber}">
+                <div class="route-day-marker">
+                    <div class="route-day-dot">${dayNumber}</div>
+                    <div>
+                        <span class="route-day-label">Day ${dayNumber}</span>
+                        <span class="route-day-date">${formatDateShortFromDate(dayDate)}${activities.length ? `<span class="route-day-count">· ${activities.length} stop${activities.length !== 1 ? 's' : ''}</span>` : ''}</span>
                     </div>
                 </div>
-            `;
-        }
-
-        function renderDayContent(trip, dayNumber, activitiesByDay) {
-            const activities = activitiesByDay[dayNumber] || [];
-            const dayDate = getDateForDay(trip.startDate, dayNumber);
-
-            return `
-                <div class="day-panel" id="day-panel-${dayNumber}" data-day="${dayNumber}" style="${dayNumber === activeDay ? '' : 'display:none;'}">
-                    <div class="day-panel-header">
-                        <span class="day-panel-label">DAY ${dayNumber}</span>
-                        <h2 class="day-panel-date">${formatDateShortFromDate(dayDate)}</h2>
+                ${activities.length ? activities.map(a => `
+                    <div class="route-row">
+                        <div class="route-marker">
+                            ${a.startTime ? `<span class="route-time">${escapeHtml(formatTime(a.startTime))}</span>` : ''}
+                            <span class="route-dot"></span>
+                            ${a.endTime ? `<span class="route-time-end">${escapeHtml(formatTime(a.endTime))}</span>` : ''}
+                        </div>
+                        ${renderActivityCard(a)}
                     </div>
-                    <div class="timeline">
-                        ${activities.length
-                            ? activities.map(a => renderActivityCard(a, trip)).join('')
-                            : '<p class="day-empty">No activities scheduled for this day.</p>'
-                        }
+                `).join('') : `
+                    <div class="route-row">
+                        <div class="route-marker"><span class="route-dot route-dot--empty"></span></div>
+                        <div class="day-empty">No stops planned for this day yet.</div>
                     </div>
+                `}
+            </section>
+        `;
+    }
+
+    /* ============ page sections ============ */
+    function renderHero(trip, tripTitle, dayCount) {
+        return `
+            <section class="hero">
+                ${trip.coverImageUrl
+                    ? `<img class="hero-img" src="${escapeHtml(trip.coverImageUrl)}" alt="">`
+                    : `<div class="hero-img hero-img--placeholder"></div>`}
+                <div class="hero-scrim"></div>
+                <div class="hero-brand">${ICON_PIN_LOGO}<span>Ondetour</span></div>
+                <div class="hero-content">
+                    <h1 class="hero-title">${escapeHtml(tripTitle)}</h1>
+                    <span class="hero-dates">${formatDateRange(trip.startDate, trip.endDate)}</span>
                 </div>
-            `;
-        }
+            </section>
+        `;
+    }
 
-        function renderSidebar(trip, dayNumbers, activitiesByDay) {
-            const dayCount = getDayCount(trip.startDate, trip.endDate);
-            const nights = getNightCount(dayCount);
-            const maxActivities = Math.max(...dayNumbers.map(d => (activitiesByDay[d] || []).length), 1);
-            const tripTitle = trip.destination
-                ? `${trip.destination} ${parseLocalDate(trip.startDate).getFullYear()}`
-                : trip.name;
-
-            return `
-                <aside class="share-sidebar">
-                    <div class="sidebar-card sidebar-card--summary">
-                        <h3 class="sidebar-section-title sidebar-section-title--inset">TRIP OVERVIEW</h3>
-                        ${trip.coverImageUrl ? `
-                            <div class="sidebar-cover">
-                                <img src="${escapeHtml(trip.coverImageUrl)}" alt="">
-                                <div class="sidebar-cover-overlay">
-                                    <span class="sidebar-cover-title">${escapeHtml(tripTitle)}</span>
-                                </div>
-                            </div>
-                        ` : `
-                            <div class="sidebar-cover sidebar-cover--plain">
-                                <span class="sidebar-cover-title">${escapeHtml(tripTitle)}</span>
-                            </div>
-                        `}
-                        <div class="sidebar-details">
-                            <div class="sidebar-detail-row">
-                                <span class="sidebar-detail-label">Start date</span>
-                                <span class="sidebar-detail-value">${formatDateFull(trip.startDate)}</span>
-                            </div>
-                            <div class="sidebar-detail-row">
-                                <span class="sidebar-detail-label">End date</span>
-                                <span class="sidebar-detail-value">${formatDateFull(trip.endDate)}</span>
-                            </div>
-                            <div class="sidebar-detail-row">
-                                <span class="sidebar-detail-label">Duration</span>
-                                <span class="sidebar-detail-value">${dayCount} day${dayCount !== 1 ? 's' : ''} ${nights} night${nights !== 1 ? 's' : ''}</span>
-                            </div>
-                            <div class="sidebar-detail-row">
-                                <span class="sidebar-detail-label">Activities</span>
-                                <span class="sidebar-detail-value">${trip.activities.length} activit${trip.activities.length !== 1 ? 'ies' : 'y'}</span>
-                            </div>
-                            ${trip.totalMembers ? `
-                                <div class="sidebar-detail-row">
-                                    <span class="sidebar-detail-label">Members</span>
-                                    <span class="sidebar-detail-value">${trip.totalMembers} member${trip.totalMembers !== 1 ? 's' : ''}</span>
-                                </div>
-                            ` : ''}
-                        </div>
-                    </div>
-
-                    <div class="sidebar-card">
-                        <h3 class="sidebar-section-title">DAYS</h3>
-                        <nav class="sidebar-nav">
-                            ${dayNumbers.map(day => {
-                                const dayDate = getDateForDay(trip.startDate, day);
-                                const isActive = day === activeDay;
-                                return `
-                                    <button type="button" class="sidebar-nav-item${isActive ? ' sidebar-nav-item--active' : ''}" data-day="${day}" onclick="selectDay(${day})">
-                                        <span class="sidebar-nav-day">Day ${day}</span>
-                                        <span class="sidebar-nav-date">${formatDateShortFromDate(dayDate)}</span>
-                                    </button>
-                                `;
-                            }).join('')}
-                        </nav>
-                        <div class="sidebar-stats">
-                            ${dayNumbers.map(day => {
-                                const count = (activitiesByDay[day] || []).length;
-                                const pct = maxActivities > 0 ? (count / maxActivities) * 100 : 0;
-                                const isActive = day === activeDay;
-                                return `
-                                    <div class="sidebar-stat-row" data-day="${day}">
-                                        <span class="sidebar-stat-label">Day ${day}</span>
-                                        <div class="sidebar-stat-bar-wrap">
-                                            <div class="sidebar-stat-bar${isActive ? ' sidebar-stat-bar--active' : ''}" style="width: ${pct}%"></div>
-                                        </div>
-                                        <span class="sidebar-stat-count">${count}</span>
-                                    </div>
-                                `;
-                            }).join('')}
-                        </div>
-                    </div>
-
-                    ${renderAppDownload('sidebar')}
-                </aside>
-            `;
-        }
-
-        function renderTripExtras(trip) {
-            let html = '';
-
-            if (trip.description) {
-                html += `
-                    <div class="trip-extra-card">
-                        <h3 class="trip-extra-title">About this trip</h3>
-                        <p class="trip-extra-text">${escapeHtml(trip.description)}</p>
-                    </div>
-                `;
-            }
-
-            if (trip.expenses && trip.expenses.length) {
-                html += `
-                    <div class="trip-extra-card">
-                        <div class="activity-section-header">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
-                            <span>TRIP EXPENSES</span>
-                        </div>
-                        <div class="expense-list">
-                            ${trip.expenses.map(e => `
-                                <div class="expense-row">
-                                    <div class="expense-row-icon">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/></svg>
-                                    </div>
-                                    <span class="expense-row-label">${escapeHtml(e.description || e.category || 'Expense')}</span>
-                                    <span class="expense-row-amount">${formatMoney(e.amount, e.currency || trip.currency)}</span>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                `;
-            }
-
-            if (trip.notes && trip.notes.length) {
-                html += `
-                    <div class="trip-extra-card">
-                        <div class="activity-section-header">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
-                            <span>TRIP NOTES</span>
-                        </div>
-                        <div class="note-list">
-                            ${trip.notes.map(n => `<div class="note-row">${escapeHtml(n.content)}</div>`).join('')}
-                        </div>
-                    </div>
-                `;
-            }
-
-            return html;
-        }
-
-        function selectDay(day) {
-            activeDay = day;
-            document.querySelectorAll('.day-panel').forEach(el => {
-                el.style.display = Number(el.dataset.day) === day ? '' : 'none';
-            });
-            document.querySelectorAll('.day-tab').forEach(el => {
-                el.classList.toggle('day-tab--active', Number(el.dataset.day) === day);
-            });
-            document.querySelectorAll('.sidebar-nav-item').forEach(el => {
-                el.classList.toggle('sidebar-nav-item--active', Number(el.dataset.day) === day);
-            });
-            document.querySelectorAll('.sidebar-stat-row').forEach(el => {
-                const bar = el.querySelector('.sidebar-stat-bar');
-                if (bar) bar.classList.toggle('sidebar-stat-bar--active', Number(el.dataset.day) === day);
-            });
-            const panel = document.getElementById(`day-panel-${day}`);
-            const stickyTabs = document.getElementById('day-tabs-sticky');
-            if (panel && stickyTabs) {
-                const top = panel.getBoundingClientRect().top + window.scrollY - stickyTabs.offsetHeight - 8;
-                window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
-            }
-        }
-
-        function renderTrip(trip) {
-            tripData = trip;
-            const content = document.getElementById('content');
-            const activitiesByDay = groupActivitiesByDay(trip.activities);
-            const dayNumbers = getDayNumbers(trip.startDate, trip.endDate);
-            activeDay = dayNumbers[0];
-
-            const dayCount = getDayCount(trip.startDate, trip.endDate);
-            const tripTitle = trip.destination
-                ? `${trip.destination} ${parseLocalDate(trip.startDate).getFullYear()}`
-                : trip.name;
-
-            content.innerHTML = `
-                <div class="share-layout">
-                    <main class="share-main">
-                        <section class="share-hero">
-                            ${trip.coverImageUrl ? `
-                                <img class="share-hero-image" src="${escapeHtml(trip.coverImageUrl)}" alt="">
-                            ` : `<div class="share-hero-image share-hero-image--placeholder"></div>`}
-                            <div class="share-hero-overlay"></div>
-                            <div class="share-hero-brand">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>
-                                Ondetour
-                            </div>
-                            <div class="share-hero-content">
-                                <h1 class="share-hero-title">${escapeHtml(tripTitle)}</h1>
-                                <p class="share-hero-meta">
-                                    ${formatDateRange(trip.startDate, trip.endDate)} · ${dayCount} day${dayCount !== 1 ? 's' : ''} · ${trip.activities.length} activit${trip.activities.length !== 1 ? 'ies' : 'y'}
-                                </p>
-                            </div>
-                        </section>
-
-                        <div class="share-main-body">
-                            <div class="day-tabs-sticky" id="day-tabs-sticky">
-                                <div class="day-tabs">
-                                    ${dayNumbers.map(day => `
-                                        <button type="button" class="day-tab${day === activeDay ? ' day-tab--active' : ''}" data-day="${day}" onclick="selectDay(${day})">
-                                            Day ${day}
-                                        </button>
-                                    `).join('')}
-                                </div>
-                            </div>
-
-                            ${dayNumbers.map(day => renderDayContent(trip, day, activitiesByDay)).join('')}
-
-                            ${renderTripExtras(trip)}
-
-                            ${renderAppDownload('banner')}
-
-                            <footer class="share-footer">
-                                <div class="share-footer-brand">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>
-                                    Ondetour
-                                </div>
-                                ${trip.ownerName ? `
-                                    <div class="share-footer-credit">
-                                        ${trip.ownerAvatarUrl ? `<img src="${escapeHtml(trip.ownerAvatarUrl)}" alt="" class="share-footer-avatar">` : ''}
-                                        <span>Created by <strong>${escapeHtml(trip.ownerName)}</strong></span>
-                                    </div>
-                                ` : ''}
-                            </footer>
-                        </div>
-                    </main>
-
-                    ${renderSidebar(trip, dayNumbers, activitiesByDay)}
+    function renderDayTabsBar(dayNumbers, startDate) {
+        return `
+            <nav class="day-tabs-bar" id="day-tabs-bar">
+                <div class="day-tabs-scroll" id="day-tabs-scroll">
+                    ${dayNumbers.map(day => {
+                        const d = getDateForDay(startDate, day);
+                        return `
+                            <button type="button" class="day-tab" data-day="${day}" onclick="scrollToDay(${day})" aria-current="false">
+                                <span class="day-tab-num">Day ${day}</span>
+                                <span class="day-tab-date">${d.getDate()}/${d.getMonth() + 1}</span>
+                            </button>
+                        `;
+                    }).join('')}
                 </div>
-                ${renderAppDownload('sticky')}
-            `;
+            </nav>
+        `;
+    }
 
-            content.style.display = 'block';
-            document.body.classList.add('has-sticky-app');
-            initDayTabsSticky();
+    function renderStatsStrip(trip, dayCount, nights) {
+        const stats = [
+            { icon: '📅', value: `${dayCount} day${dayCount !== 1 ? 's' : ''} · ${nights} night${nights !== 1 ? 's' : ''}`, label: 'Duration' },
+            { icon: '🧭', value: `${trip.activities.length}`, label: `Activit${trip.activities.length !== 1 ? 'ies' : 'y'}` }
+        ];
+        if (trip.totalMembers) stats.push({ icon: '👥', value: `${trip.totalMembers}`, label: `Member${trip.totalMembers !== 1 ? 's' : ''}` });
+        return `
+            <div class="stats-strip">
+                ${stats.map(s => `
+                    <div class="stat-chip reveal">
+                        <span class="stat-chip-icon">${s.icon}</span>
+                        <span>
+                            <span class="stat-chip-value">${escapeHtml(s.value)}</span><br>
+                            <span class="stat-chip-label">${escapeHtml(s.label)}</span>
+                        </span>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function renderAbout(trip) {
+        if (!trip.description) return '';
+        return `
+            <div class="about-card reveal">
+                <h3 class="card-eyebrow">About this trip</h3>
+                <p>${escapeHtml(trip.description)}</p>
+            </div>
+        `;
+    }
+
+    function renderTripExtras(trip) {
+        let html = '';
+        if (trip.expenses && trip.expenses.length) {
+            html += `<div class="extra-card reveal">${renderExpenses(trip.expenses, trip.currency, 'TRIP BUDGET')}</div>`;
         }
-
-        function initDayTabsSticky() {
-            const sticky = document.getElementById('day-tabs-sticky');
-            if (!sticky) return;
-            const observer = new IntersectionObserver(
-                ([entry]) => sticky.classList.toggle('is-stuck', !entry.isIntersecting),
-                { threshold: 1, rootMargin: '-1px 0px 0px 0px' }
-            );
-            const sentinel = document.createElement('div');
-            sentinel.className = 'day-tabs-sentinel';
-            sticky.parentNode.insertBefore(sentinel, sticky);
-            observer.observe(sentinel);
+        if (trip.notes && trip.notes.length) {
+            html += `<div class="extra-card reveal">${renderNotes(trip.notes, 'TRIP NOTES')}</div>`;
         }
+        return html;
+    }
 
-        async function loadTrip() {
-            const tripId = getTripIdFromUrl();
-            try {
-                const response = await fetch(`${API_BASE_URL}/v1/api/public/trips/${tripId}`);
-                if (!response.ok) throw new Error('Trip not found');
-                const data = await response.json();
-                if (data.meta && data.meta.code === 200000 && data.data) {
-                    document.getElementById('loading').style.display = 'none';
-                    renderTrip(data.data);
-                } else {
-                    throw new Error('Invalid response');
+    function renderAppBanner() {
+        return `
+            <section class="app-banner reveal">
+                <span class="app-banner-badge">Available on iOS</span>
+                <h3>Plan your own Vietnam trip with Ondetour</h3>
+                <p>Build day-by-day itineraries, track expenses, and save memories — all from your iPhone.</p>
+                ${APP_STORE_BTN}
+                <p class="app-banner-note">Android coming soon</p>
+            </section>
+        `;
+    }
+
+    function renderFooter(trip) {
+        return `
+            <footer class="share-footer">
+                <div class="footer-brand">${ICON_PIN_LOGO}<span>Ondetour</span></div>
+                ${trip.ownerName ? `
+                    <div class="footer-credit">
+                        ${trip.ownerAvatarUrl ? `<img src="${escapeHtml(trip.ownerAvatarUrl)}" alt="">` : ''}
+                        <span>Created by <strong>${escapeHtml(trip.ownerName)}</strong></span>
+                    </div>
+                ` : ''}
+            </footer>
+        `;
+    }
+
+    function renderStickyAppBar() {
+        return `
+            <div class="sticky-app-bar" id="sticky-app-bar">
+                <div class="sticky-app-bar-inner">
+                    <span class="sticky-app-bar-icon">${ICON_PIN_LOGO}</span>
+                    <div class="sticky-app-bar-text">
+                        <strong>Ondetour</strong>
+                        <span>Available on iOS</span>
+                    </div>
+                    ${APP_STORE_BTN}
+                    <button type="button" class="sticky-app-bar-close" aria-label="Dismiss" onclick="dismissStickyAppBar()">${ICON_CLOSE_SM}</button>
+                </div>
+            </div>
+        `;
+    }
+
+    /* ============ scroll spy + sticky-nav interactions ============ */
+    function scrollToDay(day) {
+        const section = document.getElementById(`day-${day}`);
+        const bar = document.getElementById('day-tabs-bar');
+        if (!section) return;
+        const barHeight = bar ? bar.getBoundingClientRect().height : 0;
+        const top = section.getBoundingClientRect().top + window.scrollY - barHeight - 10;
+        window.scrollTo({ top: Math.max(0, top), behavior: REDUCE_MOTION ? 'auto' : 'smooth' });
+        setActiveDay(day);
+    }
+
+    function setActiveDay(day) {
+        if (day === activeDay) return;
+        activeDay = day;
+        document.querySelectorAll('.day-tab').forEach(el => {
+            const isActive = Number(el.dataset.day) === day;
+            el.classList.toggle('day-tab--active', isActive);
+            el.setAttribute('aria-current', isActive ? 'true' : 'false');
+            if (isActive) el.scrollIntoView({ behavior: REDUCE_MOTION ? 'auto' : 'smooth', inline: 'center', block: 'nearest' });
+        });
+    }
+
+    function initScrollSpy(dayNumbers) {
+        const sections = dayNumbers.map(d => document.getElementById(`day-${d}`)).filter(Boolean);
+        if (!sections.length) return;
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => { if (entry.isIntersecting) setActiveDay(Number(entry.target.dataset.day)); });
+        }, { rootMargin: '-42% 0px -52% 0px', threshold: 0 });
+        sections.forEach(s => observer.observe(s));
+    }
+
+    function initStickyBarShadow() {
+        const bar = document.getElementById('day-tabs-bar');
+        if (!bar) return;
+        const sentinel = document.createElement('div');
+        sentinel.style.cssText = 'position:absolute;height:1px;width:1px;';
+        bar.parentNode.insertBefore(sentinel, bar);
+        const observer = new IntersectionObserver(([entry]) => bar.classList.toggle('is-stuck', !entry.isIntersecting), { threshold: 1, rootMargin: '-1px 0px 0px 0px' });
+        observer.observe(sentinel);
+    }
+
+    function initReveal() {
+        const els = document.querySelectorAll('.reveal');
+        if (!els.length) return;
+        const vh = window.innerHeight || document.documentElement.clientHeight;
+        const toObserve = [];
+        els.forEach(el => {
+            // Already on screen (or above it) at load time — show right away, don't wait on the observer.
+            if (el.getBoundingClientRect().top < vh) el.classList.add('is-visible');
+            else toObserve.push(el);
+        });
+        if (!toObserve.length) return;
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('is-visible');
+                    observer.unobserve(entry.target);
                 }
-            } catch (error) {
-                console.error('Error loading trip:', error);
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('error').style.display = 'flex';
-            }
-        }
+            });
+        }, { threshold: 0.1, rootMargin: '0px 0px -60px 0px' });
+        toObserve.forEach(el => observer.observe(el));
+    }
 
-        loadTrip();
-    </script>
+    function dismissStickyAppBar() {
+        const el = document.getElementById('sticky-app-bar');
+        if (el) el.remove();
+        document.body.classList.remove('has-sticky-bar');
+    }
+
+    /* ============ main render ============ */
+    function renderTrip(trip) {
+        tripData = trip;
+        const content = document.getElementById('content');
+        const activitiesByDay = groupActivitiesByDay(trip.activities);
+        const dayNumbers = getDayNumbers(trip.startDate, trip.endDate);
+        const dayCount = getDayCount(trip.startDate, trip.endDate);
+        const nights = getNightCount(dayCount);
+        const tripTitle = trip.destination ? `${trip.destination} ${parseLocalDate(trip.startDate).getFullYear()}` : trip.name;
+        activeDay = dayNumbers[0];
+
+        document.title = `${tripTitle} | Ondetour`;
+
+        content.innerHTML = `
+            ${renderHero(trip, tripTitle, dayCount)}
+            ${renderDayTabsBar(dayNumbers, trip.startDate)}
+            <main class="page-shell">
+                ${renderStatsStrip(trip, dayCount, nights)}
+                ${renderAbout(trip)}
+                <div class="route">
+                    ${dayNumbers.map(day => renderDayBlock(trip, day, activitiesByDay)).join('')}
+                </div>
+                ${renderTripExtras(trip)}
+                ${renderAppBanner()}
+                ${renderFooter(trip)}
+            </main>
+            ${renderStickyAppBar()}
+        `;
+
+        content.style.display = 'block';
+        document.body.classList.add('has-sticky-bar');
+
+        const firstTab = document.querySelector('.day-tab');
+        if (firstTab) { firstTab.classList.add('day-tab--active'); firstTab.setAttribute('aria-current', 'true'); }
+
+        initScrollSpy(dayNumbers);
+        initStickyBarShadow();
+        initReveal();
+        initCarouselSwipe();
+    }
+
+    /* ============ fetch ============ */
+    async function loadTrip() {
+        const tripId = getTripIdFromUrl();
+        try {
+            const response = await fetch(`${API_BASE_URL}/v1/api/public/trips/${tripId}`);
+            if (!response.ok) throw new Error('Trip not found');
+            const data = await response.json();
+            if (data.meta && data.meta.code === 200000 && data.data) {
+                document.getElementById('loading').style.display = 'none';
+                renderTrip(data.data);
+            } else {
+                throw new Error('Invalid response');
+            }
+        } catch (error) {
+            console.error('Error loading trip:', error);
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'flex';
+        }
+    }
+
+    loadTrip();
+</script>
 </body>
 
 </html>

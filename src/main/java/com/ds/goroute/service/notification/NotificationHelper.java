@@ -6,8 +6,9 @@ import com.ds.goroute.service.notification.event.*;
 import com.ds.goroute.type.NotificationType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -32,7 +33,20 @@ public class NotificationHelper {
         return metadata;
     }
 
-    @Async
+    private void dispatchAfterCommit(TripEvent event) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    notificationDispatcher.dispatch(event);
+                }
+            });
+            return;
+        }
+
+        notificationDispatcher.dispatch(event);
+    }
+
     public void emitTripUpdated(Trip trip, UUID actorId) {
         try {
             User actor = userRepository.findById(actorId).orElse(null);
@@ -50,13 +64,12 @@ public class NotificationHelper {
                     ))
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit TRIP_UPDATED: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitTripDeleted(Trip trip, UUID actorId) {
         try {
             User actor = userRepository.findById(actorId).orElse(null);
@@ -71,13 +84,12 @@ public class NotificationHelper {
                     .metadata(buildMetadata(trip.getId().toString(), "/trip/" + trip.getId()))
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit TRIP_DELETED: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitActivityCreated(Activity activity, UUID actorId) {
         try {
             Trip trip = tripRepository.findById(activity.getTripId()).orElse(null);
@@ -99,13 +111,12 @@ public class NotificationHelper {
                     ))
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit ACTIVITY_ADDED: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitActivityUpdated(Activity activity, UUID actorId) {
         try {
             Trip trip = tripRepository.findById(activity.getTripId()).orElse(null);
@@ -127,13 +138,12 @@ public class NotificationHelper {
                     ))
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit ACTIVITY_UPDATED: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitActivityDeleted(Activity activity, UUID actorId) {
         try {
             Trip trip = tripRepository.findById(activity.getTripId()).orElse(null);
@@ -152,13 +162,12 @@ public class NotificationHelper {
                     .metadata(buildMetadata(activity.getTripId().toString(), "/trip/" + activity.getTripId()))
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit ACTIVITY_DELETED: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitMemberAdded(TripMember member, Trip trip, UUID actorId) {
         try {
             User actor = userRepository.findById(actorId).orElse(null);
@@ -180,13 +189,12 @@ public class NotificationHelper {
                     .metadata(buildMetadata(trip.getId().toString(), "/trip/" + trip.getId() + "/members"))
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit MEMBER_ADDED: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitMemberRemoved(TripMember member, Trip trip, UUID actorId) {
         try {
             User actor = userRepository.findById(actorId).orElse(null);
@@ -217,13 +225,12 @@ public class NotificationHelper {
                     .metadata(metadata)
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit MEMBER_REMOVED: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitMemberAccepted(TripMember member, Trip trip, UUID actorId) {
         try {
             User actor = userRepository.findById(actorId).orElse(null);
@@ -246,13 +253,12 @@ public class NotificationHelper {
                     ))
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit MEMBER_ACCEPTED: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitMemberLeft(TripMember member, Trip trip, UUID actorId) {
         try {
             User actor = userRepository.findById(actorId).orElse(null);
@@ -272,13 +278,12 @@ public class NotificationHelper {
                     ))
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit MEMBER_LEFT: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitGuestLinked(TripMember guestMember, UUID targetUserId, UUID tripId, UUID actorId) {
         try {
             Trip trip = tripRepository.findById(tripId).orElse(null);
@@ -297,13 +302,12 @@ public class NotificationHelper {
                     .metadata(buildMetadata(tripId.toString(), "/trip/" + tripId + "/members"))
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit GUEST_LINKED: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitExpenseCreated(Expense expense, UUID actorId) {
         try {
             Trip trip = tripRepository.findById(expense.getTripId()).orElse(null);
@@ -331,13 +335,12 @@ public class NotificationHelper {
                     .metadata(metadata)
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit EXPENSE_ADDED: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitExpenseUpdated(Expense expense, UUID actorId) {
         try {
             Trip trip = tripRepository.findById(expense.getTripId()).orElse(null);
@@ -365,13 +368,12 @@ public class NotificationHelper {
                     .metadata(metadata)
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit EXPENSE_UPDATED: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitExpenseDeleted(Expense expense, UUID actorId) {
         try {
             Trip trip = tripRepository.findById(expense.getTripId()).orElse(null);
@@ -394,13 +396,12 @@ public class NotificationHelper {
                     .metadata(metadata)
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit EXPENSE_DELETED: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitPaymentMarked(UUID tripId, UUID expenseId, UUID splitId, ExpenseSplit split,
                                   String expenseDescription, String currency, Boolean isPaid, UUID actorId) {
         try {
@@ -438,13 +439,12 @@ public class NotificationHelper {
                     .metadata(metadata)
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit PAYMENT_MARKED: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitPaymentAllMarked(UUID tripId, UUID expenseId, String expenseDescription,
                                      Boolean isPaid, UUID actorId) {
         try {
@@ -468,13 +468,12 @@ public class NotificationHelper {
                     .metadata(metadata)
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit PAYMENT_ALL_MARKED: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitPaymentTripMarked(UUID tripId, Boolean isPaid, UUID actorId) {
         try {
             Trip trip = tripRepository.findById(tripId).orElse(null);
@@ -493,13 +492,12 @@ public class NotificationHelper {
                     .metadata(buildMetadata(tripId.toString(), "/trip/" + tripId + "/expenses"))
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit PAYMENT_TRIP_MARKED: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitCheckin(UUID tripId, UUID activityId, UUID actorId) {
         try {
             Trip trip = tripRepository.findById(tripId).orElse(null);
@@ -524,13 +522,12 @@ public class NotificationHelper {
                     ))
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit CHECKIN: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitNoteCreated(UUID tripId, UUID activityId, UUID actorId) {
         try {
             Trip trip = tripRepository.findById(tripId).orElse(null);
@@ -556,13 +553,12 @@ public class NotificationHelper {
                     .metadata(buildMetadata(tripId.toString(), deepLink))
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit NOTE_ADDED: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitNoteDeleted(UUID tripId, UUID activityId, UUID actorId) {
         try {
             Trip trip = tripRepository.findById(tripId).orElse(null);
@@ -588,13 +584,12 @@ public class NotificationHelper {
                     .metadata(buildMetadata(tripId.toString(), deepLink))
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit NOTE_DELETED: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitCommentCreated(UUID tripId, UUID activityId, UUID actorId) {
         try {
             Trip trip = tripRepository.findById(tripId).orElse(null);
@@ -619,13 +614,12 @@ public class NotificationHelper {
                     ))
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit COMMENT_ADDED: {}", e.getMessage());
         }
     }
 
-    @Async
     public void emitCommentDeleted(UUID tripId, UUID activityId, UUID actorId) {
         try {
             Trip trip = tripRepository.findById(tripId).orElse(null);
@@ -650,10 +644,9 @@ public class NotificationHelper {
                     ))
                     .build();
 
-            notificationDispatcher.dispatch(event);
+            dispatchAfterCommit(event);
         } catch (Exception e) {
             log.error("Failed to emit COMMENT_DELETED: {}", e.getMessage());
         }
     }
 }
-

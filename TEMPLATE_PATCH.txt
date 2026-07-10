@@ -1,0 +1,19 @@
+Thêm 2 dòng này vào cuối mỗi language method, TRƯỚC dấu );
+
+=== Vietnamese (line ~125) ===
+THÊM TRƯỚC dòng:         );
+                entry(NotificationType.ADMIN_ANNOUNCEMENT, "Thông báo từ TripMind", "{title}"),
+                entry(NotificationType.ADMIN_MESSAGE, "Tin nhắn từ TripMind", "{title}")
+
+=== Japanese (line ~153) ===
+THÊM TRƯỚC dòng:         );
+                entry(NotificationType.ADMIN_ANNOUNCEMENT, "TripMindからのお知らせ", "{title}"),
+                entry(NotificationType.ADMIN_MESSAGE, "TripMindからのメッセージ", "{title}")
+
+=== Korean (line ~181) ===
+THÊM TRƯỚC dòng:         );
+                entry(NotificationType.ADMIN_ANNOUNCEMENT, "TripMind 공지사항", "{title}"),
+                entry(NotificationType.ADMIN_MESSAGE, "TripMind 메시지", "{title}")
+
+NOTE: Dùng {title} thay vì {body} vì trong sendAdminPushNotification, 
+title & body từ request được đưa vào data map, và template sẽ render từ đó.

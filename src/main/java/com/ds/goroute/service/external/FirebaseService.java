@@ -22,22 +22,25 @@ public class FirebaseService {
     private final UserDeviceMapper userDeviceMapper;
     private final NotificationTemplateRenderer templateRenderer;
 
-    public void sendPushToUser(UUID userId, NotificationType type, Map<String, Object> data) {
+    public boolean sendPushToUser(UUID userId, NotificationType type, Map<String, Object> data) {
         List<UserDevice> devices = userDeviceMapper.findActiveByUserId(userId);
 
         if (devices.isEmpty()) {
             log.warn("No active devices found for user: {}", userId);
-            return;
+            return false;
         }
 
+        boolean sent = false;
         for (UserDevice device : devices) {
             try {
                 NotificationMessage message = templateRenderer.render(type, data, device.getLanguage());
                 sendPush(device.getFcmToken(), message.title(), message.body(), data);
+                sent = true;
             } catch (Exception e) {
                 log.error("Failed to send push to device {}: {}", device.getId(), e.getMessage());
             }
         }
+        return sent;
     }
 
     public void sendPush(String fcmToken, String title, String body, Map<String, Object> data) {
@@ -55,6 +58,13 @@ public class FirebaseService {
                             .build())
                     .setApnsConfig(ApnsConfig.builder()
                             .putHeader("apns-priority", "10")
+                            .setAps(Aps.builder()
+                                    .setAlert(ApsAlert.builder()
+                                            .setTitle(title)
+                                            .setBody(body)
+                                            .build())
+                                    .setSound("default")
+                                    .build())
                             .build());
 
             if (data != null && !data.isEmpty()) {

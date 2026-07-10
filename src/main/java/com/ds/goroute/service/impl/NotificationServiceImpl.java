@@ -1,9 +1,11 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.response.NotificationResponse;
 import com.ds.goroute.dto.response.UserResponse;
 import com.ds.goroute.entity.Notification;
 import com.ds.goroute.entity.User;
+import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.NotificationRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.NotificationService;
@@ -37,6 +39,7 @@ public class NotificationServiceImpl implements NotificationService {
     private final UserRepository userRepository;
     private final FirebaseService firebaseService;
     private final NotificationPayloadFactory payloadFactory;
+    private final com.ds.goroute.mapper.UserDeviceMapper userDeviceMapper;
     // private final RedisTemplate<String, Object> redisTemplate;
     private final Gson gson;
 
@@ -45,25 +48,25 @@ public class NotificationServiceImpl implements NotificationService {
     // @CacheEvict(value = "notifications", key = "#userId + '_unread'")
     public void createNotification(UUID userId, UUID tripId, NotificationType type,
                                    String title, String body, Map<String, Object> data, UUID actorId) {
-        createNotification(userId, tripId, type, data, actorId);
+        createNotificationInternal(userId, tripId, type, title, body, data, actorId);
     }
 
     @Override
     @Transactional
     public void createNotification(UUID userId, TripEvent event) {
         Map<String, Object> data = payloadFactory.build(event);
-        createNotification(userId, event.getTripId(), event.getType(), data, event.getActorId());
+        createNotificationInternal(userId, event.getTripId(), event.getType(), null, null, data, event.getActorId());
     }
 
-    private void createNotification(UUID userId, UUID tripId, NotificationType type,
-                                    Map<String, Object> data, UUID actorId) {
+    private boolean createNotificationInternal(UUID userId, UUID tripId, NotificationType type,
+                                               String title, String body, Map<String, Object> data, UUID actorId) {
         Notification notification = Notification.builder()
                 .id(UUID.randomUUID())
                 .userId(userId)
                 .tripId(tripId)
                 .type(type)
-                .title(null)
-                .body(null)
+                .title(title)
+                .body(body)
                 .data(data != null ? gson.toJson(data) : null)
                 .actorId(actorId)
                 .isRead(false)
@@ -73,20 +76,22 @@ public class NotificationServiceImpl implements NotificationService {
         notificationRepository.insert(notification);
         log.info("Created notification: userId={}, type={}", userId, type);
 
-        // Send push notification async
+        // Send push notification and report whether at least one device accepted it.
         try {
-            sendPushNotification(userId, type, data);
+            return sendPushNotification(userId, type, data);
         } catch (Exception e) {
             log.error("Failed to send push notification: {}", e.getMessage(), e);
+            return false;
         }
     }
 
     @Override
-    public void sendPushNotification(UUID userId, NotificationType type, Map<String, Object> data) {
+    public boolean sendPushNotification(UUID userId, NotificationType type, Map<String, Object> data) {
         try {
-            firebaseService.sendPushToUser(userId, type, data);
+            return firebaseService.sendPushToUser(userId, type, data);
         } catch (Exception e) {
             log.error("Error sending push notification to user {}: {}", userId, e.getMessage(), e);
+            return false;
         }
     }
 
@@ -145,6 +150,155 @@ public class NotificationServiceImpl implements NotificationService {
         return (int) notificationRepository.findUnreadByUserId(userId).size();
     }
 
+    @Override
+    public com.ds.goroute.dto.response.AdminPushNotificationResponse sendAdminPushNotification(
+            List<String> emails,
+            String title,
+            String body,
+            String deepLink,
+            Map<String, Object> data,
+            String imageUrl,
+            String priority) {
+
+        List<String> notFoundEmails = new java.util.ArrayList<>();
+        List<String> noDeviceEmails = new java.util.ArrayList<>();
+        List<String> failedEmails = new java.util.ArrayList<>();
+        int successCount = 0;
+
+        for (String email : emails) {
+            try {
+                // Find user by email
+                var userOpt = userRepository.findByEmail(email);
+                if (userOpt.isEmpty()) {
+                    notFoundEmails.add(email);
+                    continue;
+                }
+
+                UUID userId = userOpt.get().getId();
+
+                // Check if user has active devices
+                java.util.List<com.ds.goroute.entity.UserDevice> devices = 
+                    userDeviceMapper.findActiveByUserId(userId);
+                
+                if (devices.isEmpty()) {
+                    noDeviceEmails.add(email);
+                    continue;
+                }
+
+                Map<String, Object> notificationData = buildAdminNotificationData(
+                        title,
+                        body,
+                        deepLink,
+                        data,
+                        imageUrl
+                );
+
+                // Create notification record in DB
+                boolean sent = createNotificationInternal(
+                    userId,
+                    null, // no tripId for admin notifications
+                    NotificationType.ADMIN_ANNOUNCEMENT,
+                    title,
+                    body,
+                    notificationData,
+                    null // no actor for admin notifications
+                );
+
+                if (sent) {
+                    successCount++;
+                    log.info("Successfully sent admin push to: {}", email);
+                } else {
+                    failedEmails.add(email);
+                    log.warn("Created admin notification but failed to send push to: {}", email);
+                }
+
+            } catch (Exception e) {
+                log.error("Failed to send admin push to {}: {}", email, e.getMessage());
+                failedEmails.add(email);
+            }
+        }
+
+        String message = String.format(
+            "Sent %d/%d notifications successfully, failed=%d",
+            successCount,
+            emails.size(),
+            failedEmails.size()
+        );
+
+        return com.ds.goroute.dto.response.AdminPushNotificationResponse.builder()
+                .totalRequested(emails.size())
+                .successCount(successCount)
+                .notFoundCount(notFoundEmails.size())
+                .notFoundEmails(notFoundEmails)
+                .noDeviceCount(noDeviceEmails.size())
+                .noDeviceEmails(noDeviceEmails)
+                .failedCount(failedEmails.size())
+                .failedEmails(failedEmails)
+                .message(message)
+                .build();
+    }
+
+    @Override
+    public com.ds.goroute.dto.response.AdminPushNotificationResponse sendAdminPushNotificationToUser(
+            UUID userId,
+            String email,
+            String title,
+            String body,
+            String deepLink,
+            Map<String, Object> data,
+            String imageUrl,
+            String priority) {
+
+        if (userId == null && (email == null || email.isBlank())) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Either userId or email is required");
+        }
+
+        if (email != null && !email.isBlank()) {
+            return sendAdminPushNotification(
+                    List.of(email),
+                    title,
+                    body,
+                    deepLink,
+                    data,
+                    imageUrl,
+                    priority
+            );
+        }
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.USER_NOT_FOUND, "User not found"));
+
+        return sendAdminPushNotification(
+                List.of(user.getEmail()),
+                title,
+                body,
+                deepLink,
+                data,
+                imageUrl,
+                priority
+        );
+    }
+
+    private Map<String, Object> buildAdminNotificationData(String title,
+                                                           String body,
+                                                           String deepLink,
+                                                           Map<String, Object> data,
+                                                           String imageUrl) {
+        Map<String, Object> notificationData = new java.util.HashMap<>();
+        if (data != null) {
+            notificationData.putAll(data);
+        }
+        if (deepLink != null) {
+            notificationData.put("deepLink", deepLink);
+        }
+        if (imageUrl != null) {
+            notificationData.put("imageUrl", imageUrl);
+        }
+        notificationData.put("title", title);
+        notificationData.put("body", body);
+        return notificationData;
+    }
+
     private NotificationResponse toResponse(Notification notification) {
         UserResponse actor = null;
         if (notification.getActorId() != null) {
@@ -181,6 +335,8 @@ public class NotificationServiceImpl implements NotificationService {
                 .id(notification.getId())
                 .type(notification.getType())
                 .tripId(notification.getTripId())
+                .title(notification.getTitle())
+                .body(notification.getBody())
                 .deepLink(deepLink)
                 .actor(actor)
                 .data(data)

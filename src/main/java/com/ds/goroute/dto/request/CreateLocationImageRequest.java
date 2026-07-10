@@ -7,6 +7,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -18,6 +20,8 @@ public class CreateLocationImageRequest {
     @NotBlank(message = "Image URL is required")
     private String imageUrl;
     private String avatarUrl;
+    private BigDecimal latitude;
+    private BigDecimal longitude;
     
     @NotNull(message = "Priority is required")
     private Integer priority;

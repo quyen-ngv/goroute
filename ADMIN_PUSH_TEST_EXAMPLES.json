@@ -1,0 +1,184 @@
+{
+  "info": {
+    "name": "Admin Push Notification API",
+    "description": "Collection for testing admin push notification endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Send Admin Push - Single User",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"emails\": [\"user@example.com\"],\n  \"title\": \"Welcome to TripMind!\",\n  \"body\": \"Start planning your perfect trip today\",\n  \"deepLink\": \"/home\",\n  \"priority\": \"high\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/api/notifications/admin/push",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "api", "notifications", "admin", "push"]
+        }
+      }
+    },
+    {
+      "name": "Send Admin Push - Multiple Users",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"emails\": [\n    \"user1@example.com\",\n    \"user2@example.com\",\n    \"user3@example.com\"\n  ],\n  \"title\": \"New Feature Alert\",\n  \"body\": \"Check out our new expense splitting feature!\",\n  \"deepLink\": \"/features/expense-split\",\n  \"data\": {\n    \"featureId\": \"expense-split\",\n    \"version\": \"2.0\"\n  },\n  \"imageUrl\": \"https://tripmind.com/images/feature-expense.png\",\n  \"priority\": \"high\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/api/notifications/admin/push",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "api", "notifications", "admin", "push"]
+        }
+      }
+    },
+    {
+      "name": "Send Admin Push - Maintenance Notice",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"emails\": [\"all-users@example.com\"],\n  \"title\": \"Scheduled Maintenance\",\n  \"body\": \"TripMind will be under maintenance from 2AM to 4AM on Sunday. Thank you for your patience!\",\n  \"deepLink\": \"/notifications\",\n  \"data\": {\n    \"type\": \"maintenance\",\n    \"startTime\": \"2026-07-12T02:00:00Z\",\n    \"endTime\": \"2026-07-12T04:00:00Z\"\n  },\n  \"priority\": \"high\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/api/notifications/admin/push",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "api", "notifications", "admin", "push"]
+        }
+      }
+    },
+    {
+      "name": "Send Admin Push - Promotional",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"emails\": [\n    \"premium-user1@example.com\",\n    \"premium-user2@example.com\"\n  ],\n  \"title\": \"🎉 Special Offer\",\n  \"body\": \"Get 20% off on Premium plan this month!\",\n  \"deepLink\": \"/subscription/premium\",\n  \"data\": {\n    \"promoCode\": \"SUMMER20\",\n    \"discount\": 20,\n    \"validUntil\": \"2026-07-31\"\n  },\n  \"imageUrl\": \"https://tripmind.com/images/promo-summer.png\",\n  \"priority\": \"normal\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/api/notifications/admin/push",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "api", "notifications", "admin", "push"]
+        }
+      }
+    },
+    {
+      "name": "Send Admin Push - Security Alert",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"emails\": [\"user@example.com\"],\n  \"title\": \"🔒 Security Alert\",\n  \"body\": \"We detected a login from a new device. If this wasn't you, please secure your account immediately.\",\n  \"deepLink\": \"/security/sessions\",\n  \"data\": {\n    \"deviceType\": \"android\",\n    \"location\": \"Ho Chi Minh City, Vietnam\",\n    \"timestamp\": \"2026-07-08T10:30:00Z\"\n  },\n  \"priority\": \"high\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/api/notifications/admin/push",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "api", "notifications", "admin", "push"]
+        }
+      }
+    },
+    {
+      "name": "Send Admin Push - With Invalid Emails",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"emails\": [\n    \"valid-user@example.com\",\n    \"notfound@example.com\",\n    \"another-valid@example.com\"\n  ],\n  \"title\": \"Test Notification\",\n  \"body\": \"Testing with mix of valid and invalid emails\",\n  \"deepLink\": \"/test\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/api/notifications/admin/push",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "api", "notifications", "admin", "push"]
+        },
+        "description": "This will show which emails were not found in the response"
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "jwt_token",
+      "value": "your_jwt_token_here",
+      "type": "string"
+    }
+  ]
+}

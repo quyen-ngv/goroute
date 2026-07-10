@@ -53,6 +53,7 @@ public class Trip {
     
     private Boolean isDeleted;
     private LocalDateTime deletedAt;
+    private LocalDateTime publicSharedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

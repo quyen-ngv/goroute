@@ -18,6 +18,8 @@ public class NotificationResponse {
     private UUID id;
     private NotificationType type;
     private UUID tripId;
+    private String title;
+    private String body;
     private String deepLink;
     private UserResponse actor;
     private Map<String, Object> data;

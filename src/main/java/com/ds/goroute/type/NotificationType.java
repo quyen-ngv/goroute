@@ -42,5 +42,9 @@ public enum NotificationType {
     
     // Other
     ROUTE_OPTIMIZED,
-    TRIP_REMINDER
+    TRIP_REMINDER,
+    
+    // Admin notifications
+    ADMIN_ANNOUNCEMENT,
+    ADMIN_MESSAGE
 }

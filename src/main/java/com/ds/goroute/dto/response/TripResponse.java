@@ -7,6 +7,8 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Data
@@ -17,6 +19,7 @@ public class TripResponse {
     private UUID id;
     private String name;
     private String coverImageUrl;
+    private List<String> memoryImageUrls;
     private String destination;
     private BigDecimal lat;
     private BigDecimal lng;
@@ -36,4 +39,5 @@ public class TripResponse {
     private Integer copyCount;
     private Integer helpfulVotes;
     private Integer unhelpfulVotes;
+    private LocalDateTime publicSharedAt;
 }

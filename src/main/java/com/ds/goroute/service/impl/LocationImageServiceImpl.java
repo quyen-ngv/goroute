@@ -69,6 +69,8 @@ public class LocationImageServiceImpl implements LocationImageService {
             .fullAddress(request.getFullAddress())
             .imageUrl(request.getImageUrl())
             .avatarUrl(resolveAvatarUrl(request.getAvatarUrl(), request.getImageUrl()))
+            .latitude(request.getLatitude())
+            .longitude(request.getLongitude())
             .priority(request.getPriority())
             .createdAt(LocalDateTime.now())
             .updatedAt(LocalDateTime.now())
@@ -102,6 +104,12 @@ public class LocationImageServiceImpl implements LocationImageService {
         }
         if (request.getPriority() != null) {
             locationImage.setPriority(request.getPriority());
+        }
+        if (request.getLatitude() != null) {
+            locationImage.setLatitude(request.getLatitude());
+        }
+        if (request.getLongitude() != null) {
+            locationImage.setLongitude(request.getLongitude());
         }
 
         locationImage.setUpdatedAt(LocalDateTime.now());
@@ -148,6 +156,8 @@ public class LocationImageServiceImpl implements LocationImageService {
                     && !locationImage.getAvatarUrl().isBlank()
                     ? locationImage.getAvatarUrl()
                     : locationImage.getImageUrl())
+            .latitude(locationImage.getLatitude())
+            .longitude(locationImage.getLongitude())
             .priority(locationImage.getPriority())
             .createdAt(locationImage.getCreatedAt())
             .updatedAt(locationImage.getUpdatedAt())

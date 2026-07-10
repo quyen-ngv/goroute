@@ -64,6 +64,7 @@
                             <tr>
                                 <th style="width: 100px;">Ảnh</th>
                                 <th>Địa chỉ đầy đủ</th>
+                                <th style="width: 160px;">Tọa độ</th>
                                 <th style="width: 100px;">Độ ưu tiên</th>
                                 <th style="width: 150px;">Thao tác</th>
                             </tr>
@@ -91,6 +92,19 @@
                             placeholder="VD: Bà Nà Hills, Thôn An Sơn, Xã Hòa Ninh, Huyện Hòa Vang, Thành phố Đà Nẵng"
                             required></textarea>
                         <small class="form-help">Copy địa chỉ từ Goong API hoặc nhập thủ công</small>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Latitude</label>
+                            <input type="number" id="latitude" class="form-input" step="any" placeholder="21.0285">
+                            <small class="form-help">Vĩ độ trung tâm city / destination</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Longitude</label>
+                            <input type="number" id="longitude" class="form-input" step="any" placeholder="105.8542">
+                            <small class="form-help">Kinh độ trung tâm city / destination</small>
+                        </div>
                     </div>
 
                     <div class="form-group">
@@ -229,6 +243,13 @@
             renderTable({ silent: true });
         }
 
+        function formatCoordinates(latitude, longitude) {
+            if (latitude === null || latitude === undefined || longitude === null || longitude === undefined) {
+                return '<span class="muted">Chưa có</span>';
+            }
+            return `${Number(latitude).toFixed(5)}, ${Number(longitude).toFixed(5)}`;
+        }
+
         function renderTable(options = {}) {
             const silent = options.silent === true;
             GorouteAdmin.syncTableChrome({
@@ -245,11 +266,13 @@
             locations.forEach(loc => {
                 const priorityClass = loc.priority >= 100 ? 'priority-high' : loc.priority >= 50 ? 'priority-medium' : 'priority-low';
                 const priorityLabel = loc.priority >= 100 ? 'Cao' : loc.priority >= 50 ? 'Trung bình' : 'Thấp';
+                const coordinates = formatCoordinates(loc.latitude, loc.longitude);
 
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td><img src="${loc.imageUrl}" class="img-preview location-image-thumb" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E'"></td>
                     <td>${loc.fullAddress}</td>
+                    <td>${coordinates}</td>
                     <td><span class="priority-badge ${priorityClass}">${priorityLabel} (${loc.priority})</span></td>
                     <td>
                         <div class="action-btns">
@@ -268,6 +291,8 @@
             document.getElementById('modal-title').textContent = 'Thêm địa điểm mới';
             document.getElementById('location-form').reset();
             document.getElementById('location-id').value = '';
+            document.getElementById('latitude').value = '';
+            document.getElementById('longitude').value = '';
             document.getElementById('priority').value = '50';
             document.getElementById('preview-container').style.display = 'none';
             document.getElementById('modal').classList.add('active');
@@ -283,6 +308,8 @@
             document.getElementById('full-address').value = location.fullAddress;
             document.getElementById('image-url').value = location.imageUrl;
             document.getElementById('avatar-url').value = location.avatarUrl || '';
+            document.getElementById('latitude').value = location.latitude ?? '';
+            document.getElementById('longitude').value = location.longitude ?? '';
             document.getElementById('priority').value = location.priority;
 
             document.getElementById('preview-container').style.display = 'block';
@@ -299,10 +326,22 @@
             const fullAddress = document.getElementById('full-address').value.trim();
             const imageUrl = document.getElementById('image-url').value.trim();
             const avatarUrl = document.getElementById('avatar-url').value.trim();
+            const latitudeRaw = document.getElementById('latitude').value.trim();
+            const longitudeRaw = document.getElementById('longitude').value.trim();
+            const latitude = latitudeRaw ? Number(latitudeRaw) : null;
+            const longitude = longitudeRaw ? Number(longitudeRaw) : null;
             const priority = parseInt(document.getElementById('priority').value);
 
             if (!fullAddress || !imageUrl) {
                 alert('Vui lòng điền đầy đủ thông tin');
+                return;
+            }
+            if ((latitudeRaw && !Number.isFinite(latitude)) || (longitudeRaw && !Number.isFinite(longitude))) {
+                alert('Tọa độ không hợp lệ');
+                return;
+            }
+            if ((latitude === null) !== (longitude === null)) {
+                alert('Vui lòng nhập cả latitude và longitude, hoặc để trống cả hai');
                 return;
             }
 
@@ -318,6 +357,8 @@
                         fullAddress,
                         imageUrl,
                         avatarUrl: avatarUrl || null,
+                        latitude,
+                        longitude,
                         priority
                     })
                 });

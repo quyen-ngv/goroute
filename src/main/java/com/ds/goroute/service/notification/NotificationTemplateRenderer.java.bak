@@ -1,0 +1,185 @@
+package com.ds.goroute.service.notification;
+
+import com.ds.goroute.type.NotificationType;
+import org.springframework.stereotype.Component;
+
+import java.util.Map;
+import java.util.HashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+@Component
+public class NotificationTemplateRenderer {
+    private static final Pattern PLACEHOLDER = Pattern.compile("\\{([A-Za-z0-9_]+)}");
+
+    private final Map<String, Map<NotificationType, NotificationMessage>> templates = Map.of(
+            "en", english(),
+            "vi", vietnamese(),
+            "ja", japanese(),
+            "ko", korean()
+    );
+
+    public NotificationMessage render(NotificationType type, Map<String, Object> data, String language) {
+        String lang = NotificationLanguage.normalize(language);
+        Map<String, Object> normalizedData = normalizeData(data, lang);
+        NotificationMessage template = templates
+                .getOrDefault(lang, templates.get(NotificationLanguage.DEFAULT))
+                .get(type);
+
+        if (template == null) {
+            template = templates.get(NotificationLanguage.DEFAULT).get(type);
+        }
+        if (template == null) {
+            return new NotificationMessage("Trip update", "There is a new update in your trip");
+        }
+
+        return new NotificationMessage(
+                interpolate(template.title(), normalizedData),
+                interpolate(template.body(), normalizedData)
+        );
+    }
+
+    private Map<String, Object> normalizeData(Map<String, Object> data, String language) {
+        Map<String, Object> normalized = new HashMap<>();
+        if (data != null) {
+            normalized.putAll(data);
+        }
+        Object isPaid = normalized.get("isPaid");
+        if (isPaid instanceof Boolean paid) {
+            normalized.put("paidStatus", paidStatus(paid, language));
+        } else if (isPaid != null) {
+            normalized.put("paidStatus", isPaid);
+        }
+        return normalized;
+    }
+
+    private String paidStatus(boolean paid, String language) {
+        return switch (language) {
+            case "vi" -> paid ? "Ä‘Ã£ thanh toÃ¡n" : "chÆ°a thanh toÃ¡n";
+            case "ja" -> paid ? "æ”¯æ‰•ã„æ¸ˆã¿" : "æœªæ‰•ã„";
+            case "ko" -> paid ? "ê²°ì œ ì™„ë£Œ" : "ë¯¸ê²°ì œ";
+            default -> paid ? "paid" : "unpaid";
+        };
+    }
+
+    private String interpolate(String template, Map<String, Object> data) {
+        Matcher matcher = PLACEHOLDER.matcher(template);
+        StringBuilder result = new StringBuilder();
+        while (matcher.find()) {
+            Object value = data != null ? data.get(matcher.group(1)) : null;
+            matcher.appendReplacement(result, Matcher.quoteReplacement(value != null ? String.valueOf(value) : ""));
+        }
+        matcher.appendTail(result);
+        return result.toString().replaceAll("\\s+", " ").trim();
+    }
+
+    private Map<NotificationType, NotificationMessage> english() {
+        return Map.ofEntries(
+                entry(NotificationType.EXPENSE_ADDED, "New expense added", "{actorName} added \"{expenseName}\" {amount} {currency} to {tripName}"),
+                entry(NotificationType.EXPENSE_UPDATED, "Expense updated", "{actorName} updated \"{expenseName}\" in {tripName}"),
+                entry(NotificationType.EXPENSE_DELETED, "Expense deleted", "{actorName} deleted \"{expenseName}\" from {tripName}"),
+                entry(NotificationType.ACTIVITY_ADDED, "Activity added", "{actorName} added \"{activityName}\" to {tripName}"),
+                entry(NotificationType.ACTIVITY_UPDATED, "Activity updated", "{actorName} updated \"{activityName}\" in {tripName}"),
+                entry(NotificationType.ACTIVITY_DELETED, "Activity deleted", "{actorName} deleted \"{activityName}\" from {tripName}"),
+                entry(NotificationType.MEMBER_ADDED, "New member", "{actorName} added {newMemberName} to {tripName}"),
+                entry(NotificationType.MEMBER_REMOVED, "Member removed", "{actorName} removed {removedMemberName} from {tripName}"),
+                entry(NotificationType.MEMBER_ACCEPTED, "Member accepted", "{memberName} joined {tripName}"),
+                entry(NotificationType.MEMBER_LEFT, "Member left", "{actorName} left {tripName}"),
+                entry(NotificationType.GUEST_LINKED, "Guest linked", "{guestName} has been linked to {linkedUserName} in {tripName}"),
+                entry(NotificationType.TRIP_UPDATED, "Trip updated", "{actorName} updated trip {tripName}"),
+                entry(NotificationType.TRIP_DELETED, "Trip deleted", "{actorName} deleted trip {tripName}"),
+                entry(NotificationType.PAYMENT_MARKED, "Payment updated", "{payerName} updated {payeeName}'s payment of {amount} {currency} for \"{expenseDescription}\""),
+                entry(NotificationType.PAYMENT_ALL_MARKED, "Expense payments updated", "{actorName} marked payments for \"{expenseDescription}\" as {paidStatus}"),
+                entry(NotificationType.PAYMENT_TRIP_MARKED, "Trip payments updated", "{actorName} marked payments in {tripName} as {paidStatus}"),
+                entry(NotificationType.CHECKIN, "Check-in", "{actorName} checked in at \"{activityName}\" in {tripName}"),
+                entry(NotificationType.NOTE_ADDED, "Note added", "{actorName} added a note to {activityName} {tripName}"),
+                entry(NotificationType.NOTE_DELETED, "Note deleted", "{actorName} deleted a note from {activityName} {tripName}"),
+                entry(NotificationType.COMMENT_ADDED, "Comment added", "{actorName} commented on \"{activityName}\" in {tripName}"),
+                entry(NotificationType.COMMENT_DELETED, "Comment deleted", "{actorName} deleted a comment from \"{activityName}\" in {tripName}"),
+                entry(NotificationType.ADMIN_ANNOUNCEMENT, "TripMind Announcement", "{body}"),
+                entry(NotificationType.ADMIN_MESSAGE, "Message from TripMind", "{body}")
+        );
+    }
+
+    private Map<NotificationType, NotificationMessage> vietnamese() {
+        return Map.ofEntries(
+                entry(NotificationType.EXPENSE_ADDED, "ÄÃ£ thÃªm chi phÃ­", "{actorName} Ä‘Ã£ thÃªm \"{expenseName}\" {amount} {currency} vÃ o {tripName}"),
+                entry(NotificationType.EXPENSE_UPDATED, "ÄÃ£ cáº­p nháº­t chi phÃ­", "{actorName} Ä‘Ã£ cáº­p nháº­t \"{expenseName}\" trong {tripName}"),
+                entry(NotificationType.EXPENSE_DELETED, "ÄÃ£ xÃ³a chi phÃ­", "{actorName} Ä‘Ã£ xÃ³a \"{expenseName}\" khá»i {tripName}"),
+                entry(NotificationType.ACTIVITY_ADDED, "ÄÃ£ thÃªm hoáº¡t Ä‘á»™ng", "{actorName} Ä‘Ã£ thÃªm \"{activityName}\" vÃ o {tripName}"),
+                entry(NotificationType.ACTIVITY_UPDATED, "ÄÃ£ cáº­p nháº­t hoáº¡t Ä‘á»™ng", "{actorName} Ä‘Ã£ cáº­p nháº­t \"{activityName}\" trong {tripName}"),
+                entry(NotificationType.ACTIVITY_DELETED, "ÄÃ£ xÃ³a hoáº¡t Ä‘á»™ng", "{actorName} Ä‘Ã£ xÃ³a \"{activityName}\" khá»i {tripName}"),
+                entry(NotificationType.MEMBER_ADDED, "ThÃ nh viÃªn má»›i", "{actorName} Ä‘Ã£ thÃªm {newMemberName} vÃ o {tripName}"),
+                entry(NotificationType.MEMBER_REMOVED, "ÄÃ£ xÃ³a thÃ nh viÃªn", "{actorName} Ä‘Ã£ xÃ³a {removedMemberName} khá»i {tripName}"),
+                entry(NotificationType.MEMBER_ACCEPTED, "ThÃ nh viÃªn Ä‘Ã£ tham gia", "{memberName} Ä‘Ã£ tham gia {tripName}"),
+                entry(NotificationType.MEMBER_LEFT, "ThÃ nh viÃªn Ä‘Ã£ rá»i Ä‘i", "{actorName} Ä‘Ã£ rá»i khá»i {tripName}"),
+                entry(NotificationType.GUEST_LINKED, "ÄÃ£ liÃªn káº¿t khÃ¡ch", "{guestName} Ä‘Ã£ Ä‘Æ°á»£c liÃªn káº¿t vá»›i {linkedUserName} trong {tripName}"),
+                entry(NotificationType.TRIP_UPDATED, "ÄÃ£ cáº­p nháº­t chuyáº¿n Ä‘i", "{actorName} Ä‘Ã£ cáº­p nháº­t chuyáº¿n Ä‘i {tripName}"),
+                entry(NotificationType.TRIP_DELETED, "ÄÃ£ xÃ³a chuyáº¿n Ä‘i", "{actorName} Ä‘Ã£ xÃ³a chuyáº¿n Ä‘i {tripName}"),
+                entry(NotificationType.PAYMENT_MARKED, "ÄÃ£ cáº­p nháº­t thanh toÃ¡n", "{payerName} Ä‘Ã£ cáº­p nháº­t thanh toÃ¡n {amount} {currency} cá»§a {payeeName} cho \"{expenseDescription}\""),
+                entry(NotificationType.PAYMENT_ALL_MARKED, "ÄÃ£ cáº­p nháº­t thanh toÃ¡n chi phÃ­", "{actorName} Ä‘Ã£ Ä‘Ã¡nh dáº¥u thanh toÃ¡n cho \"{expenseDescription}\" lÃ  {paidStatus}"),
+                entry(NotificationType.PAYMENT_TRIP_MARKED, "ÄÃ£ cáº­p nháº­t thanh toÃ¡n chuyáº¿n Ä‘i", "{actorName} Ä‘Ã£ Ä‘Ã¡nh dáº¥u thanh toÃ¡n trong {tripName} lÃ  {paidStatus}"),
+                entry(NotificationType.CHECKIN, "Check-in", "{actorName} Ä‘Ã£ check-in táº¡i \"{activityName}\" trong {tripName}"),
+                entry(NotificationType.NOTE_ADDED, "ÄÃ£ thÃªm ghi chÃº", "{actorName} Ä‘Ã£ thÃªm ghi chÃº vÃ o {activityName} {tripName}"),
+                entry(NotificationType.NOTE_DELETED, "ÄÃ£ xÃ³a ghi chÃº", "{actorName} Ä‘Ã£ xÃ³a ghi chÃº khá»i {activityName} {tripName}"),
+                entry(NotificationType.COMMENT_ADDED, "ÄÃ£ thÃªm bÃ¬nh luáº­n", "{actorName} Ä‘Ã£ bÃ¬nh luáº­n á»Ÿ \"{activityName}\" trong {tripName}"),
+                entry(NotificationType.COMMENT_DELETED, "ÄÃ£ xÃ³a bÃ¬nh luáº­n", "{actorName} Ä‘Ã£ xÃ³a bÃ¬nh luáº­n khá»i \"{activityName}\" trong {tripName}")
+        );
+    }
+
+    private Map<NotificationType, NotificationMessage> japanese() {
+        return Map.ofEntries(
+                entry(NotificationType.EXPENSE_ADDED, "æ”¯å‡ºãŒè¿½åŠ ã•ã‚Œã¾ã—ãŸ", "{actorName}ãŒ{tripName}ã«ã€Œ{expenseName}ã€{amount} {currency}ã‚’è¿½åŠ ã—ã¾ã—ãŸ"),
+                entry(NotificationType.EXPENSE_UPDATED, "æ”¯å‡ºãŒæ›´æ–°ã•ã‚Œã¾ã—ãŸ", "{actorName}ãŒ{tripName}ã®ã€Œ{expenseName}ã€ã‚’æ›´æ–°ã—ã¾ã—ãŸ"),
+                entry(NotificationType.EXPENSE_DELETED, "æ”¯å‡ºãŒå‰Šé™¤ã•ã‚Œã¾ã—ãŸ", "{actorName}ãŒ{tripName}ã‹ã‚‰ã€Œ{expenseName}ã€ã‚’å‰Šé™¤ã—ã¾ã—ãŸ"),
+                entry(NotificationType.ACTIVITY_ADDED, "äºˆå®šãŒè¿½åŠ ã•ã‚Œã¾ã—ãŸ", "{actorName}ãŒ{tripName}ã«ã€Œ{activityName}ã€ã‚’è¿½åŠ ã—ã¾ã—ãŸ"),
+                entry(NotificationType.ACTIVITY_UPDATED, "äºˆå®šãŒæ›´æ–°ã•ã‚Œã¾ã—ãŸ", "{actorName}ãŒ{tripName}ã®ã€Œ{activityName}ã€ã‚’æ›´æ–°ã—ã¾ã—ãŸ"),
+                entry(NotificationType.ACTIVITY_DELETED, "äºˆå®šãŒå‰Šé™¤ã•ã‚Œã¾ã—ãŸ", "{actorName}ãŒ{tripName}ã‹ã‚‰ã€Œ{activityName}ã€ã‚’å‰Šé™¤ã—ã¾ã—ãŸ"),
+                entry(NotificationType.MEMBER_ADDED, "æ–°ã—ã„ãƒ¡ãƒ³ãƒãƒ¼", "{actorName}ãŒ{newMemberName}ã‚’{tripName}ã«è¿½åŠ ã—ã¾ã—ãŸ"),
+                entry(NotificationType.MEMBER_REMOVED, "ãƒ¡ãƒ³ãƒãƒ¼ãŒå‰Šé™¤ã•ã‚Œã¾ã—ãŸ", "{actorName}ãŒ{removedMemberName}ã‚’{tripName}ã‹ã‚‰å‰Šé™¤ã—ã¾ã—ãŸ"),
+                entry(NotificationType.MEMBER_ACCEPTED, "ãƒ¡ãƒ³ãƒãƒ¼ãŒå‚åŠ ã—ã¾ã—ãŸ", "{memberName}ãŒ{tripName}ã«å‚åŠ ã—ã¾ã—ãŸ"),
+                entry(NotificationType.MEMBER_LEFT, "ãƒ¡ãƒ³ãƒãƒ¼ãŒé€€å‡ºã—ã¾ã—ãŸ", "{actorName}ãŒ{tripName}ã‹ã‚‰é€€å‡ºã—ã¾ã—ãŸ"),
+                entry(NotificationType.GUEST_LINKED, "ã‚²ã‚¹ãƒˆãŒãƒªãƒ³ã‚¯ã•ã‚Œã¾ã—ãŸ", "{guestName}ãŒ{tripName}ã§{linkedUserName}ã«ãƒªãƒ³ã‚¯ã•ã‚Œã¾ã—ãŸ"),
+                entry(NotificationType.TRIP_UPDATED, "æ—…è¡ŒãŒæ›´æ–°ã•ã‚Œã¾ã—ãŸ", "{actorName}ãŒæ—…è¡Œ{tripName}ã‚’æ›´æ–°ã—ã¾ã—ãŸ"),
+                entry(NotificationType.TRIP_DELETED, "æ—…è¡ŒãŒå‰Šé™¤ã•ã‚Œã¾ã—ãŸ", "{actorName}ãŒæ—…è¡Œ{tripName}ã‚’å‰Šé™¤ã—ã¾ã—ãŸ"),
+                entry(NotificationType.PAYMENT_MARKED, "æ”¯æ‰•ã„ãŒæ›´æ–°ã•ã‚Œã¾ã—ãŸ", "{payerName}ãŒã€Œ{expenseDescription}ã€ã®{payeeName}ã®æ”¯æ‰•ã„{amount} {currency}ã‚’æ›´æ–°ã—ã¾ã—ãŸ"),
+                entry(NotificationType.PAYMENT_ALL_MARKED, "æ”¯æ‰•ã„ãŒæ›´æ–°ã•ã‚Œã¾ã—ãŸ", "{actorName}ãŒã€Œ{expenseDescription}ã€ã®æ”¯æ‰•ã„ã‚’{paidStatus}ã«ã—ã¾ã—ãŸ"),
+                entry(NotificationType.PAYMENT_TRIP_MARKED, "æ—…è¡Œã®æ”¯æ‰•ã„ãŒæ›´æ–°ã•ã‚Œã¾ã—ãŸ", "{actorName}ãŒ{tripName}ã®æ”¯æ‰•ã„ã‚’{paidStatus}ã«ã—ã¾ã—ãŸ"),
+                entry(NotificationType.CHECKIN, "ãƒã‚§ãƒƒã‚¯ã‚¤ãƒ³", "{actorName}ãŒ{tripName}ã®ã€Œ{activityName}ã€ã«ãƒã‚§ãƒƒã‚¯ã‚¤ãƒ³ã—ã¾ã—ãŸ"),
+                entry(NotificationType.NOTE_ADDED, "ãƒŽãƒ¼ãƒˆãŒè¿½åŠ ã•ã‚Œã¾ã—ãŸ", "{actorName}ãŒ{activityName} {tripName}ã«ãƒŽãƒ¼ãƒˆã‚’è¿½åŠ ã—ã¾ã—ãŸ"),
+                entry(NotificationType.NOTE_DELETED, "ãƒŽãƒ¼ãƒˆãŒå‰Šé™¤ã•ã‚Œã¾ã—ãŸ", "{actorName}ãŒ{activityName} {tripName}ã‹ã‚‰ãƒŽãƒ¼ãƒˆã‚’å‰Šé™¤ã—ã¾ã—ãŸ"),
+                entry(NotificationType.COMMENT_ADDED, "ã‚³ãƒ¡ãƒ³ãƒˆãŒè¿½åŠ ã•ã‚Œã¾ã—ãŸ", "{actorName}ãŒ{tripName}ã®ã€Œ{activityName}ã€ã«ã‚³ãƒ¡ãƒ³ãƒˆã—ã¾ã—ãŸ"),
+                entry(NotificationType.COMMENT_DELETED, "ã‚³ãƒ¡ãƒ³ãƒˆãŒå‰Šé™¤ã•ã‚Œã¾ã—ãŸ", "{actorName}ãŒ{tripName}ã®ã€Œ{activityName}ã€ã‹ã‚‰ã‚³ãƒ¡ãƒ³ãƒˆã‚’å‰Šé™¤ã—ã¾ã—ãŸ")
+        );
+    }
+
+    private Map<NotificationType, NotificationMessage> korean() {
+        return Map.ofEntries(
+                entry(NotificationType.EXPENSE_ADDED, "ë¹„ìš©ì´ ì¶”ê°€ë˜ì—ˆìŠµë‹ˆë‹¤", "{actorName}ë‹˜ì´ {tripName}ì— \"{expenseName}\" {amount} {currency}ë¥¼ ì¶”ê°€í–ˆìŠµë‹ˆë‹¤"),
+                entry(NotificationType.EXPENSE_UPDATED, "ë¹„ìš©ì´ ìˆ˜ì •ë˜ì—ˆìŠµë‹ˆë‹¤", "{actorName}ë‹˜ì´ {tripName}ì˜ \"{expenseName}\"ì„ ìˆ˜ì •í–ˆìŠµë‹ˆë‹¤"),
+                entry(NotificationType.EXPENSE_DELETED, "ë¹„ìš©ì´ ì‚­ì œë˜ì—ˆìŠµë‹ˆë‹¤", "{actorName}ë‹˜ì´ {tripName}ì—ì„œ \"{expenseName}\"ì„ ì‚­ì œí–ˆìŠµë‹ˆë‹¤"),
+                entry(NotificationType.ACTIVITY_ADDED, "ì¼ì •ì´ ì¶”ê°€ë˜ì—ˆìŠµë‹ˆë‹¤", "{actorName}ë‹˜ì´ {tripName}ì— \"{activityName}\"ì„ ì¶”ê°€í–ˆìŠµë‹ˆë‹¤"),
+                entry(NotificationType.ACTIVITY_UPDATED, "ì¼ì •ì´ ìˆ˜ì •ë˜ì—ˆìŠµë‹ˆë‹¤", "{actorName}ë‹˜ì´ {tripName}ì˜ \"{activityName}\"ì„ ìˆ˜ì •í–ˆìŠµë‹ˆë‹¤"),
+                entry(NotificationType.ACTIVITY_DELETED, "ì¼ì •ì´ ì‚­ì œë˜ì—ˆìŠµë‹ˆë‹¤", "{actorName}ë‹˜ì´ {tripName}ì—ì„œ \"{activityName}\"ì„ ì‚­ì œí–ˆìŠµë‹ˆë‹¤"),
+                entry(NotificationType.MEMBER_ADDED, "ìƒˆ ë©¤ë²„", "{actorName}ë‹˜ì´ {newMemberName}ë‹˜ì„ {tripName}ì— ì¶”ê°€í–ˆìŠµë‹ˆë‹¤"),
+                entry(NotificationType.MEMBER_REMOVED, "ë©¤ë²„ê°€ ì‚­ì œë˜ì—ˆìŠµë‹ˆë‹¤", "{actorName}ë‹˜ì´ {tripName}ì—ì„œ {removedMemberName}ë‹˜ì„ ì‚­ì œí–ˆìŠµë‹ˆë‹¤"),
+                entry(NotificationType.MEMBER_ACCEPTED, "ë©¤ë²„ê°€ ì°¸ì—¬í–ˆìŠµë‹ˆë‹¤", "{memberName}ë‹˜ì´ {tripName}ì— ì°¸ì—¬í–ˆìŠµë‹ˆë‹¤"),
+                entry(NotificationType.MEMBER_LEFT, "ë©¤ë²„ê°€ ë‚˜ê°”ìŠµë‹ˆë‹¤", "{actorName}ë‹˜ì´ {tripName}ì—ì„œ ë‚˜ê°”ìŠµë‹ˆë‹¤"),
+                entry(NotificationType.GUEST_LINKED, "ê²ŒìŠ¤íŠ¸ê°€ ì—°ê²°ë˜ì—ˆìŠµë‹ˆë‹¤", "{guestName}ë‹˜ì´ {tripName}ì—ì„œ {linkedUserName}ë‹˜ê³¼ ì—°ê²°ë˜ì—ˆìŠµë‹ˆë‹¤"),
+                entry(NotificationType.TRIP_UPDATED, "ì—¬í–‰ì´ ìˆ˜ì •ë˜ì—ˆìŠµë‹ˆë‹¤", "{actorName}ë‹˜ì´ {tripName} ì—¬í–‰ì„ ìˆ˜ì •í–ˆìŠµë‹ˆë‹¤"),
+                entry(NotificationType.TRIP_DELETED, "ì—¬í–‰ì´ ì‚­ì œë˜ì—ˆìŠµë‹ˆë‹¤", "{actorName}ë‹˜ì´ {tripName} ì—¬í–‰ì„ ì‚­ì œí–ˆìŠµë‹ˆë‹¤"),
+                entry(NotificationType.PAYMENT_MARKED, "ê²°ì œê°€ ì—…ë°ì´íŠ¸ë˜ì—ˆìŠµë‹ˆë‹¤", "{payerName}ë‹˜ì´ \"{expenseDescription}\"ì˜ {payeeName}ë‹˜ ê²°ì œ {amount} {currency}ë¥¼ ì—…ë°ì´íŠ¸í–ˆìŠµë‹ˆë‹¤"),
+                entry(NotificationType.PAYMENT_ALL_MARKED, "ë¹„ìš© ê²°ì œê°€ ì—…ë°ì´íŠ¸ë˜ì—ˆìŠµë‹ˆë‹¤", "{actorName}ë‹˜ì´ \"{expenseDescription}\" ê²°ì œë¥¼ {paidStatus}(ìœ¼)ë¡œ í‘œì‹œí–ˆìŠµë‹ˆë‹¤"),
+                entry(NotificationType.PAYMENT_TRIP_MARKED, "ì—¬í–‰ ê²°ì œê°€ ì—…ë°ì´íŠ¸ë˜ì—ˆìŠµë‹ˆë‹¤", "{actorName}ë‹˜ì´ {tripName} ê²°ì œë¥¼ {paidStatus}(ìœ¼)ë¡œ í‘œì‹œí–ˆìŠµë‹ˆë‹¤"),
+                entry(NotificationType.CHECKIN, "ì²´í¬ì¸", "{actorName}ë‹˜ì´ {tripName}ì˜ \"{activityName}\"ì— ì²´í¬ì¸í–ˆìŠµë‹ˆë‹¤"),
+                entry(NotificationType.NOTE_ADDED, "ë…¸íŠ¸ê°€ ì¶”ê°€ë˜ì—ˆìŠµë‹ˆë‹¤", "{actorName}ë‹˜ì´ {activityName} {tripName}ì— ë…¸íŠ¸ë¥¼ ì¶”ê°€í–ˆìŠµë‹ˆë‹¤"),
+                entry(NotificationType.NOTE_DELETED, "ë…¸íŠ¸ê°€ ì‚­ì œë˜ì—ˆìŠµë‹ˆë‹¤", "{actorName}ë‹˜ì´ {activityName} {tripName}ì—ì„œ ë…¸íŠ¸ë¥¼ ì‚­ì œí–ˆìŠµë‹ˆë‹¤"),
+                entry(NotificationType.COMMENT_ADDED, "ëŒ“ê¸€ì´ ì¶”ê°€ë˜ì—ˆìŠµë‹ˆë‹¤", "{actorName}ë‹˜ì´ {tripName}ì˜ \"{activityName}\"ì— ëŒ“ê¸€ì„ ë‚¨ê²¼ìŠµë‹ˆë‹¤"),
+                entry(NotificationType.COMMENT_DELETED, "ëŒ“ê¸€ì´ ì‚­ì œë˜ì—ˆìŠµë‹ˆë‹¤", "{actorName}ë‹˜ì´ {tripName}ì˜ \"{activityName}\"ì—ì„œ ëŒ“ê¸€ì„ ì‚­ì œí–ˆìŠµë‹ˆë‹¤")
+        );
+    }
+
+    private Map.Entry<NotificationType, NotificationMessage> entry(NotificationType type, String title, String body) {
+        return Map.entry(type, new NotificationMessage(title, body));
+    }
+}

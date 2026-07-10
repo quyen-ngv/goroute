@@ -206,7 +206,14 @@ public class TripServiceImpl implements TripService {
             trip.setCurrency(request.getCurrency());
         }
         if (request.getStatus() != null) trip.setStatus(TripStatus.valueOf(request.getStatus()));
-        if (request.getVisibility() != null) trip.setVisibility(TripVisibility.valueOf(request.getVisibility()));
+        TripVisibility previousVisibility = trip.getVisibility();
+        if (request.getVisibility() != null) {
+            TripVisibility nextVisibility = TripVisibility.valueOf(request.getVisibility());
+            trip.setVisibility(nextVisibility);
+            if (nextVisibility == TripVisibility.PUBLIC && previousVisibility != TripVisibility.PUBLIC) {
+                trip.setPublicSharedAt(LocalDateTime.now());
+            }
+        }
         if (request.getShareExpenses() != null) trip.setShareExpenses(request.getShareExpenses());
         if (request.getShareNotes() != null) trip.setShareNotes(request.getShareNotes());
         if (request.getDescription() != null) trip.setDescription(request.getDescription());
@@ -510,10 +517,13 @@ public class TripServiceImpl implements TripService {
             }
         }
 
+        List<String> memoryImageUrls = getTripMemoryImageUrls(trip.getId());
+
         return TripResponse.builder()
                 .id(trip.getId())
                 .name(trip.getName())
                 .coverImageUrl(coverImageUrl)
+                .memoryImageUrls(memoryImageUrls)
                 .destination(trip.getDestination())
                 .lat(trip.getDestinationLat())
                 .lng(trip.getDestinationLng())
@@ -533,6 +543,7 @@ public class TripServiceImpl implements TripService {
                 .copyCount(trip.getCopyCount())
                 .helpfulVotes(trip.getHelpfulVotes() != null ? trip.getHelpfulVotes() : 0)
                 .unhelpfulVotes(trip.getUnhelpfulVotes() != null ? trip.getUnhelpfulVotes() : 0)
+                .publicSharedAt(trip.getPublicSharedAt())
                 .build();
     }
 
@@ -1029,6 +1040,7 @@ public class TripServiceImpl implements TripService {
                 .hasVotedHelpful(resolveTripHasVotedHelpful(trip.getId(), viewerId))
                 .isOwnTrip(viewerId != null && trip.getOwnerId().equals(viewerId))
                 .totalMembers(countAcceptedMembers(trip.getId()))
+                .publicSharedAt(trip.getPublicSharedAt())
                 .build();
     }
 
@@ -1383,6 +1395,7 @@ public class TripServiceImpl implements TripService {
                             .hasVotedHelpful(resolveTripHasVotedHelpful(trip.getId(), excludeUserId))
                             .isOwnTrip(excludeUserId != null && trip.getOwnerId().equals(excludeUserId))
                             .totalMembers(countAcceptedMembers(trip.getId()))
+                            .publicSharedAt(trip.getPublicSharedAt())
                             .build();
                 })
                 .collect(Collectors.toList());

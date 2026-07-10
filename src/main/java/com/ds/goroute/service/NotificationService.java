@@ -14,7 +14,7 @@ public interface NotificationService {
 
     void createNotification(UUID userId, TripEvent event);
 
-    void sendPushNotification(UUID userId, NotificationType type, Map<String, Object> data);
+    boolean sendPushNotification(UUID userId, NotificationType type, Map<String, Object> data);
 
     List<NotificationResponse> getNotifications(UUID userId, Integer page, Integer size, Boolean unreadOnly, UUID tripId);
 
@@ -25,4 +25,37 @@ public interface NotificationService {
     void deleteNotification(UUID notificationId);
 
     Integer getUnreadCount(UUID userId);
+
+    /**
+     * Send admin push notification to multiple users by emails
+     * @param emails List of recipient emails
+     * @param title Notification title
+     * @param body Notification body
+     * @param deepLink Optional deep link for redirect
+     * @param data Optional custom data
+     * @param imageUrl Optional image URL
+     * @param priority Priority (high/normal)
+     * @return Response with success/failure counts
+     */
+    com.ds.goroute.dto.response.AdminPushNotificationResponse sendAdminPushNotification(
+            List<String> emails,
+            String title,
+            String body,
+            String deepLink,
+            Map<String, Object> data,
+            String imageUrl,
+            String priority
+    );
+
+    com.ds.goroute.dto.response.AdminPushNotificationResponse sendAdminPushNotificationToUser(
+            UUID userId,
+            String email,
+            String title,
+            String body,
+            String deepLink,
+            Map<String, Object> data,
+            String imageUrl,
+            String priority
+    );
+
 }

@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.text.Normalizer;
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.util.UUID;
 
 @Data
@@ -20,6 +21,8 @@ public class LocationImage {
     private String imageUrl;
     private String avatarUrl;
     private String citySlug;
+    private BigDecimal latitude;
+    private BigDecimal longitude;
     private Integer priority;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

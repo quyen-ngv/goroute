@@ -1,6 +1,8 @@
 package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.BaseResponse;
+import com.ds.goroute.dto.request.AdminPushNotificationRequest;
+import com.ds.goroute.dto.request.AdminSinglePushNotificationRequest;
 import com.ds.goroute.dto.request.RegisterDeviceRequest;
 import com.ds.goroute.dto.request.UpdateDeviceRequest;
 import com.ds.goroute.dto.response.NotificationResponse;
@@ -66,6 +68,71 @@ public class NotificationController {
             @PathVariable UUID notificationId) {
         notificationService.deleteNotification(notificationId);
         return ResponseEntity.ok(BaseResponse.ofSucceeded());
+    }
+
+    @PostMapping("/admin/push")
+    public ResponseEntity<BaseResponse<com.ds.goroute.dto.response.AdminPushNotificationResponse>> sendAdminPush(
+            @RequestAttribute("userId") UUID adminUserId,
+            @RequestBody @jakarta.validation.Valid AdminPushNotificationRequest request) {
+        
+        log.info("Admin push notification request from userId: {}, recipients: {}", 
+                adminUserId, request.getEmails().size());
+        
+        // TODO: Add admin permission check here if needed
+        // if (!userService.isAdmin(adminUserId)) {
+        //     throw new UnauthorizedException("Only admins can send push notifications");
+        // }
+
+        var response = notificationService.sendAdminPushNotification(
+                request.getEmails(),
+                request.getTitle(),
+                request.getBody(),
+                request.getDeepLink(),
+                request.getData(),
+                request.getImageUrl(),
+                request.getPriority()
+        );
+
+        log.info("Admin push completed: success={}, notFound={}, noDevice={}, failed={}",
+                response.getSuccessCount(), 
+                response.getNotFoundCount(), 
+                response.getNoDeviceCount(),
+                response.getFailedCount());
+
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(response));
+    }
+
+    @PostMapping("/admin/push/user")
+    public ResponseEntity<BaseResponse<com.ds.goroute.dto.response.AdminPushNotificationResponse>> sendAdminPushToUser(
+            @RequestAttribute("userId") UUID adminUserId,
+            @RequestBody @jakarta.validation.Valid AdminSinglePushNotificationRequest request) {
+
+        log.info("Single admin push notification request from userId: {}, targetEmail: {}",
+                adminUserId, request.getEmail());
+
+        // TODO: Add admin permission check here if needed
+        // if (!userService.isAdmin(adminUserId)) {
+        //     throw new UnauthorizedException("Only admins can send push notifications");
+        // }
+
+        var response = notificationService.sendAdminPushNotificationToUser(
+                request.getUserId(),
+                request.getEmail(),
+                request.getTitle(),
+                request.getBody(),
+                request.getDeepLink(),
+                request.getData(),
+                request.getImageUrl(),
+                request.getPriority()
+        );
+
+        log.info("Single admin push completed: success={}, notFound={}, noDevice={}, failed={}",
+                response.getSuccessCount(),
+                response.getNotFoundCount(),
+                response.getNoDeviceCount(),
+                response.getFailedCount());
+
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(response));
     }
 
     @PostMapping("/devices")

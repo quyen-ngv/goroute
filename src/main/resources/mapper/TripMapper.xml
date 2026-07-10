@@ -33,6 +33,7 @@
         <result column="unhelpful_votes" property="unhelpfulVotes" jdbcType="INTEGER"/>
         <result column="is_deleted" property="isDeleted" jdbcType="BOOLEAN"/>
         <result column="deleted_at" property="deletedAt" jdbcType="TIMESTAMP"/>
+        <result column="public_shared_at" property="publicSharedAt" jdbcType="TIMESTAMP"/>
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
         <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
     </resultMap>
@@ -40,14 +41,14 @@
     <insert id="insert" parameterType="com.ds.goroute.entity.Trip">
         INSERT INTO trips (id, name, cover_image_url, destination, destination_place_id, destination_lat, destination_lng,
                           start_date, end_date, budget, currency, status, visibility, share_code, timezone, owner_id,
-                          share_expenses, share_notes, is_deleted, created_at, updated_at)
+                          share_expenses, share_notes, is_deleted, public_shared_at, created_at, updated_at)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{name}, #{coverImageUrl}, #{destination},
                 #{destinationPlaceId}, #{destinationLat}, #{destinationLng}, #{startDate}, #{endDate}, #{budget},
                 #{currency}, #{status},
                 #{visibility}, #{shareCode}, #{timezone},
                 #{ownerId,javaType=java.util.UUID,jdbcType=OTHER},
                 #{shareExpenses,jdbcType=BOOLEAN}, #{shareNotes,jdbcType=BOOLEAN},
-                FALSE, NOW(), NOW())
+                FALSE, #{publicSharedAt,jdbcType=TIMESTAMP}, NOW(), NOW())
     </insert>
 
     <select id="selectById" parameterType="java.util.UUID" resultMap="TripResultMap">
@@ -83,6 +84,7 @@
             currency = #{currency},
             status = #{status},
             visibility = #{visibility},
+            public_shared_at = #{publicSharedAt,jdbcType=TIMESTAMP},
             share_expenses = #{shareExpenses},
             share_notes = #{shareNotes},
             description = #{description},
@@ -130,7 +132,7 @@
               </if>
         ) AS t
         WHERE distance &lt;= #{radiusKm}
-        ORDER BY distance ASC
+        ORDER BY COALESCE(public_shared_at, created_at) DESC, distance ASC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
@@ -168,7 +170,8 @@
         SELECT id, name, cover_image_url, destination, destination_place_id, destination_lat, destination_lng,
                start_date, end_date, budget, currency, status, visibility, share_code, share_expenses, share_notes,
                description, timezone, owner_id, starting_point_name, starting_point_address, starting_point_lat,
-               starting_point_lng, starting_point_time, view_count, copy_count, is_deleted, deleted_at, created_at, updated_at
+               starting_point_lng, starting_point_time, view_count, copy_count, helpful_votes, unhelpful_votes,
+               is_deleted, deleted_at, public_shared_at, created_at, updated_at
         FROM user_trips
         ORDER BY sort_date DESC
         LIMIT 1
@@ -179,7 +182,7 @@
         WHERE owner_id = #{ownerId,javaType=java.util.UUID,jdbcType=OTHER}
           AND visibility = 'PUBLIC'
           AND is_deleted = FALSE
-        ORDER BY start_date DESC
+        ORDER BY COALESCE(public_shared_at, created_at) DESC
     </select>
 
     <select id="countPublicTripsByOwnerId" parameterType="java.util.UUID" resultType="int">

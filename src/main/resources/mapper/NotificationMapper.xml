@@ -64,30 +64,26 @@
     <select id="selectByUserId" parameterType="java.util.UUID" resultMap="NotificationResultMap">
         SELECT * FROM notifications 
         WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
-        OR actor_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
         ORDER BY created_at DESC
     </select>
     
     <select id="selectByUserIdAndTripId" resultMap="NotificationResultMap">
         SELECT * FROM notifications 
-        WHERE (user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
-        OR actor_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER})
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
         AND trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
         ORDER BY created_at DESC
     </select>
 
     <select id="selectUnreadByUserId" parameterType="java.util.UUID" resultMap="NotificationResultMap">
         SELECT * FROM notifications 
-        WHERE (user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
-        OR actor_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER})
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
         AND is_read = FALSE
         ORDER BY created_at DESC
     </select>
     
     <select id="selectUnreadByUserIdAndTripId" resultMap="NotificationResultMap">
         SELECT * FROM notifications 
-        WHERE (user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
-        OR actor_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER})
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
         AND trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
         AND is_read = FALSE
         ORDER BY created_at DESC
