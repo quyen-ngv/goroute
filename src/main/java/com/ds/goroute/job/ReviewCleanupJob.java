@@ -4,6 +4,7 @@ import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.PlaceReview;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.PlaceReviewRepository;
+import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.PlaceReviewScoringService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +22,7 @@ public class ReviewCleanupJob {
     private final PlaceReviewRepository reviewRepository;
     private final PlaceRepository placeRepository;
     private final PlaceReviewScoringService scoringService;
+    private final ImageStorageCleanupService imageStorageCleanupService;
 
     private static final int MAX_REVIEWS_PER_PLACE = 200;
 
@@ -101,6 +103,7 @@ public class ReviewCleanupJob {
                 .collect(Collectors.toList());
 
         if (!reviewsToDelete.isEmpty()) {
+            reviewsToDelete.forEach(id -> imageStorageCleanupService.deleteImagesForEntityRecord("PLACE_REVIEW", id));
             reviewRepository.deleteByIds(reviewsToDelete);
             log.info("Place {}: Kept {} reviews, deleted {} reviews",
                     placeId, reviewsToKeep.size(), reviewsToDelete.size());

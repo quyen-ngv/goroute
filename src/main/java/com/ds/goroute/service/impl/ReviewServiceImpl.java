@@ -10,6 +10,7 @@ import com.ds.goroute.entity.*;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.*;
+import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.ReviewService;
 import com.ds.goroute.service.ReviewScoringService;
 import com.ds.goroute.service.ReviewFraudDetectionService;
@@ -42,6 +43,7 @@ public class ReviewServiceImpl implements ReviewService {
 
     private final ReviewScoringService scoringService;
     private final ReviewFraudDetectionService fraudDetectionService;
+    private final ImageStorageCleanupService imageStorageCleanupService;
 
     /**
      * Create a new review
@@ -168,6 +170,7 @@ public class ReviewServiceImpl implements ReviewService {
 
         UUID placeId = review.getPlaceId();
 
+        imageStorageCleanupService.deleteImagesForEntityRecord("USER_REVIEW", reviewId);
         reviewRepository.delete(reviewId);
         profileRepository.decrementReviewCount(userId);
         scoringService.updateUserTier(userId);

@@ -10,4 +10,8 @@ public interface StorageService {
     String uploadBytes(byte[] data, String fileName, String contentType);
     void deleteFile(String fileUrl);
     void deleteFiles(List<String> fileUrls);
+    List<String> listObjectKeys(String prefix);
+    void copyObjectKeys(List<String> keys, String targetPrefix);
+    void deleteObjectKeys(List<String> keys);
+    String extractObjectKey(String fileUrl);
 }

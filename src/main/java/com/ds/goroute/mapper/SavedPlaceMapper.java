@@ -15,10 +15,13 @@ public interface SavedPlaceMapper {
     
     List<SavedPlace> findByUserId(@Param("userId") UUID userId, 
                                    @Param("category") String category,
+                                   @Param("itemType") String itemType,
                                    @Param("limit") Integer limit, 
                                    @Param("offset") Integer offset);
     
-    SavedPlace findByUserIdAndPlaceId(@Param("userId") UUID userId, @Param("placeId") String placeId);
+    SavedPlace findByUserIdAndPlaceId(@Param("userId") UUID userId,
+                                      @Param("placeId") String placeId,
+                                      @Param("itemType") String itemType);
     
     void updateTags(@Param("id") UUID id, @Param("tags") String[] tags);
     

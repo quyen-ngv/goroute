@@ -13,6 +13,7 @@ import com.ds.goroute.mapper.PlaceContributionMapper;
 import com.ds.goroute.repository.UserReviewRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.repository.TripRepository;
+import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.UserService;
 import com.ds.goroute.service.StorageService;
 import com.ds.goroute.utils.JsonUtils;
@@ -50,6 +51,7 @@ public class UserServiceImpl implements UserService {
     private final TripRepository tripRepository;
     private final PlaceContributionMapper placeContributionMapper;
     private final StorageService storageService;
+    private final ImageStorageCleanupService imageStorageCleanupService;
 
     @Override
     @Transactional(readOnly = true)
@@ -181,6 +183,7 @@ public class UserServiceImpl implements UserService {
         try {
             User user = userRepository.findById(userId)
                     .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
+            String oldAvatarUrl = user.getAvatarUrl();
 
             if (file.isEmpty()) {
                 throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "File is empty");
@@ -203,6 +206,9 @@ public class UserServiceImpl implements UserService {
             
             user.setAvatarUrl(avatarUrl);
             userRepository.updateById(user);
+            if (oldAvatarUrl != null && !oldAvatarUrl.equals(avatarUrl)) {
+                storageService.deleteFile(oldAvatarUrl);
+            }
             
             log.info("User avatar updated: {} -> {}", userId, avatarUrl);
             return avatarUrl;
@@ -219,6 +225,7 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
 
+        imageStorageCleanupService.deleteImagesForEntityRecord("USER", userId);
         // Soft delete user
         userRepository.softDeleteById(userId);
         

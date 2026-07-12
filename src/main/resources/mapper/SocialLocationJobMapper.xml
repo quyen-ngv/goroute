@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ds.goroute.mapper.SocialLocationJobMapper">
+
+    <resultMap id="SocialLocationJobResultMap" type="com.ds.goroute.entity.SocialLocationJob">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="sourceUrl" column="source_url"/>
+        <result property="platform" column="platform"/>
+        <result property="status" column="status" javaType="com.ds.goroute.type.SocialLocationJobStatus"/>
+        <result property="pythonJobId" column="python_job_id"/>
+        <result property="language" column="language"/>
+        <result property="requestPayload" column="request_payload"/>
+        <result property="resultPayload" column="result_payload"/>
+        <result property="errorCode" column="error_code"/>
+        <result property="errorMessage" column="error_message"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="startedAt" column="started_at"/>
+        <result property="completedAt" column="completed_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.SocialLocationJob">
+        INSERT INTO social_location_jobs (
+            id, user_id, source_url, platform, status, python_job_id, language,
+            request_payload, result_payload, error_code, error_message,
+            created_at, started_at, completed_at, updated_at
+        ) VALUES (
+            #{id}, #{userId}, #{sourceUrl}, #{platform},
+            #{status, javaType=com.ds.goroute.type.SocialLocationJobStatus},
+            #{pythonJobId}, #{language}, #{requestPayload}, #{resultPayload},
+            #{errorCode}, #{errorMessage}, #{createdAt}, #{startedAt},
+            #{completedAt}, #{updatedAt}
+        )
+    </insert>
+
+    <update id="update" parameterType="com.ds.goroute.entity.SocialLocationJob">
+        UPDATE social_location_jobs SET
+            source_url = #{sourceUrl},
+            platform = #{platform},
+            status = #{status, javaType=com.ds.goroute.type.SocialLocationJobStatus},
+            python_job_id = #{pythonJobId},
+            language = #{language},
+            request_payload = #{requestPayload},
+            result_payload = #{resultPayload},
+            error_code = #{errorCode},
+            error_message = #{errorMessage},
+            started_at = #{startedAt},
+            completed_at = #{completedAt},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <select id="findById" resultMap="SocialLocationJobResultMap">
+        SELECT * FROM social_location_jobs WHERE id = #{id}
+    </select>
+
+    <select id="findByPythonJobId" resultMap="SocialLocationJobResultMap">
+        SELECT * FROM social_location_jobs WHERE python_job_id = #{pythonJobId} LIMIT 1
+    </select>
+
+    <select id="findByUserId" resultMap="SocialLocationJobResultMap">
+        SELECT * FROM social_location_jobs
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+</mapper>

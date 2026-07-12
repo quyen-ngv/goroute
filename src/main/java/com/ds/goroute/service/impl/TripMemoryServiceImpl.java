@@ -15,6 +15,7 @@ import com.ds.goroute.repository.MediaAssetRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.UserRepository;
+import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.TripMemoryService;
 import com.ds.goroute.type.MemberStatus;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +36,7 @@ public class TripMemoryServiceImpl implements TripMemoryService {
     private final ActivityRepository activityRepository;
     private final UserRepository userRepository;
     private final AiTripRepository aiTripRepository;
+    private final ImageStorageCleanupService imageStorageCleanupService;
 
     @Override
     @Transactional(readOnly = true)
@@ -95,6 +97,7 @@ public class TripMemoryServiceImpl implements TripMemoryService {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You cannot delete this memory");
         }
 
+        imageStorageCleanupService.deleteImagesForEntityRecord("MEDIA_ASSET", memoryId);
         mediaAssetRepository.softDelete(memoryId);
     }
 

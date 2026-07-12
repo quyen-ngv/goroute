@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -19,6 +20,7 @@ public class UpdatePlaceRequest {
     // Basic Info
     @NotBlank(message = "Title is required")
     private String title;
+    private Map<String, PlaceTranslationRequest> translations;
 
     private String category;
     private String placeGroup;

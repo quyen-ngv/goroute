@@ -54,6 +54,20 @@ public class TripController extends BaseService {
         return ResponseEntity.ok(ofSucceeded(trip));
     }
 
+    @GetMapping("/{tripId}/search-bias")
+    public ResponseEntity<BaseResponse<TripSearchBiasResponse>> resolveSearchBias(
+            @PathVariable UUID tripId,
+            @RequestParam int dayNumber,
+            @RequestParam(required = false) UUID overrideDestinationId,
+            @RequestAttribute("userId") UUID userId) {
+        TripSearchBiasResponse bias = tripService.resolveSearchBias(
+                tripId,
+                dayNumber,
+                userId,
+                overrideDestinationId);
+        return ResponseEntity.ok(ofSucceeded(bias));
+    }
+
     @PutMapping("/{tripId}")
     public ResponseEntity<BaseResponse<TripResponse>> updateTrip(
             @PathVariable UUID tripId,

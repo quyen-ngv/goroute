@@ -31,20 +31,27 @@ public class GoongController {
             @RequestParam String input,
             @RequestParam(required = false) String location,
             @RequestParam(required = false) Integer radius,
-            @RequestParam(required = false) Integer limit) {
+            @RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) String sessiontoken,
+            @RequestParam(required = false) Boolean more_compound) {
         MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
         params.add("input", input);
         if (location != null) params.add("location", location);
         if (radius != null) params.add("radius", String.valueOf(radius));
         if (limit != null) params.add("limit", String.valueOf(limit));
+        if (sessiontoken != null) params.add("sessiontoken", sessiontoken);
+        if (more_compound != null) params.add("more_compound", String.valueOf(more_compound));
         return goongClient.forward("/Place/AutoComplete", params);
     }
 
     @GetMapping("/place-detail")
     @Operation(summary = "Place details by place_id")
-    public ResponseEntity<String> placeDetail(@RequestParam("place_id") String placeId) {
+    public ResponseEntity<String> placeDetail(
+            @RequestParam("place_id") String placeId,
+            @RequestParam(required = false) String sessiontoken) {
         MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
         params.add("place_id", placeId);
+        if (sessiontoken != null) params.add("sessiontoken", sessiontoken);
         return goongClient.forward("/Place/Detail", params);
     }
 

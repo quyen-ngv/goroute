@@ -6,6 +6,7 @@
         <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="trip_id" property="tripId" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="day_number" property="dayNumber" jdbcType="INTEGER"/>
+        <result column="sort_order" property="sortOrder" jdbcType="INTEGER"/>
         <result column="place_id" property="placeId" jdbcType="VARCHAR"/>
         <result column="name" property="name" jdbcType="VARCHAR"/>
         <result column="address" property="address" jdbcType="VARCHAR"/>
@@ -36,7 +37,7 @@
     </resultMap>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.Activity">
-        INSERT INTO activities (id, trip_id, day_number, place_id, custom_place_id, name, address,
+        INSERT INTO activities (id, trip_id, day_number, sort_order, place_id, custom_place_id, name, address,
                                lat, lng, end_lat, end_lng, end_address,
                                start_time, end_time, estimated_cost, cost_currency, category,
                                transport_mode, rating, photo_url, notes, description, status, added_by,
@@ -44,7 +45,7 @@
                                booking_id, booking_source, created_at, updated_at)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER},
                 #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
-                #{dayNumber}, #{placeId}, #{customPlaceId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{dayNumber}, #{sortOrder}, #{placeId}, #{customPlaceId,javaType=java.util.UUID,jdbcType=OTHER},
                 #{name}, #{address}, #{lat}, #{lng},
                 #{endLat}, #{endLng}, #{endAddress},
                 #{startTime,javaType=java.time.LocalTime,jdbcType=TIME},
@@ -65,13 +66,13 @@
 
     <select id="selectByTripId" parameterType="java.util.UUID" resultMap="ActivityResultMap">
         SELECT * FROM activities WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
-        ORDER BY day_number, start_time
+        ORDER BY day_number, start_time NULLS LAST, sort_order NULLS LAST, created_at
     </select>
 
     <select id="selectByTripIdAndDay" resultMap="ActivityResultMap">
         SELECT * FROM activities WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
         AND day_number = #{dayNumber}
-        ORDER BY start_time
+        ORDER BY start_time NULLS LAST, sort_order NULLS LAST, created_at
     </select>
 
     <update id="updateById" parameterType="com.ds.goroute.entity.Activity">
@@ -87,6 +88,7 @@
             <if test="endLng != null">end_lng = #{endLng},</if>
             <if test="endAddress != null">end_address = #{endAddress},</if>
             <if test="dayNumber != null">day_number = #{dayNumber},</if>
+            <if test="sortOrder != null">sort_order = #{sortOrder},</if>
             <if test="startTime != null">start_time = #{startTime,javaType=java.time.LocalTime,jdbcType=TIME},</if>
             <if test="endTime != null">end_time = #{endTime,javaType=java.time.LocalTime,jdbcType=TIME},</if>
             <if test="estimatedCost != null">estimated_cost = #{estimatedCost},</if>
@@ -115,7 +117,7 @@
     <select id="selectByTripIdAndDayNumber" resultMap="ActivityResultMap">
         SELECT * FROM activities WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
         AND day_number = #{dayNumber}
-        ORDER BY start_time
+        ORDER BY start_time NULLS LAST, sort_order NULLS LAST, created_at
     </select>
 
     <delete id="deleteByTripId" parameterType="java.util.UUID">

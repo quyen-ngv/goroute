@@ -20,6 +20,7 @@ public class Activity {
     private UUID id;
     private UUID tripId;
     private Integer dayNumber;
+    private Integer sortOrder;
     private String placeId;
     private UUID customPlaceId;  // Custom place reference
     private String name;

@@ -51,6 +51,30 @@
             gap: 8px;
             align-items: center;
         }
+
+        .translation-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 12px;
+        }
+
+        .translation-panel {
+            border: 1px solid var(--color-chalk);
+            border-radius: 8px;
+            padding: 12px;
+            background: #ffffff;
+        }
+
+        .translation-panel-title {
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: #1f2937;
+        }
+
+        .translation-panel textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
     </style>
 </head>
 
@@ -232,6 +256,11 @@
                     <div class="form-group">
                         <label class="form-label">Địa chỉ</label>
                         <input type="text" id="edit-address" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Multi-language name & description</label>
+                        <div id="edit-translations" class="translation-grid"></div>
+                        <small class="form-help">Vietnamese is the default source. If the requested language is missing, API falls back to English.</small>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Destinations (dấu phẩy)</label>
@@ -418,6 +447,19 @@
         let filteredPlaces = [];
         let foodCatalog = [];
         let currentPlaceFoodTags = [];
+        const PLACE_TRANSLATION_LOCALES = [
+            { code: 'vi', label: 'Vietnamese' },
+            { code: 'en', label: 'English' },
+            { code: 'th', label: 'Thai' },
+            { code: 'ja', label: 'Japanese' },
+            { code: 'ko', label: 'Korean' },
+            { code: 'zh-TW', label: 'Taiwan' },
+            { code: 'ru', label: 'Russian' },
+            { code: 'hi', label: 'Hindi' },
+            { code: 'de', label: 'German' },
+            { code: 'es', label: 'Spanish' },
+            { code: 'pt', label: 'Portuguese' }
+        ];
 
         const tableChrome = () => ({
             loadingEl: document.getElementById('loading'),
@@ -588,7 +630,7 @@
                 row.innerHTML = `
                     <td><img src="${place.thumbnail || ''}" class="img-preview" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E'"></td>
                     <td>
-                        <div style="font-weight: 600;">${place.title || 'N/A'}</div>
+                        <div style="font-weight: 600;">${place.name || place.title || 'N/A'}</div>
                         <div style="font-size: 12px; color: #6b7280;">${place.category || ''}</div>
                         <div style="font-size: 12px; color: #6366f1;">${(place.destinations || []).join(' • ')}</div>
                     </td>
@@ -622,7 +664,7 @@
         function filterPlaces() {
             const query = document.getElementById('search-input').value.toLowerCase();
             filteredPlaces = places.filter(place =>
-                (place.title || '').toLowerCase().includes(query) ||
+                (place.name || place.title || '').toLowerCase().includes(query) ||
                 (place.address || '').toLowerCase().includes(query) ||
                 (place.category || '').toLowerCase().includes(query)
             );
@@ -825,6 +867,7 @@
                 cid: placeData.cid,
                 dataId: placeData.dataId,
                 title: placeData.title,
+                translations: normalizeImportTranslations(placeData),
                 placeGroup: placeGroup,
                 category: placeData.category,
                 address: placeData.address,
@@ -858,6 +901,26 @@
             };
         }
 
+        function normalizeImportTranslations(placeData) {
+            const translations = {};
+            if (placeData.translations && typeof placeData.translations === 'object') {
+                Object.entries(placeData.translations).forEach(([locale, value]) => {
+                    if (!value) return;
+                    translations[locale] = {
+                        name: value.name || value.title || '',
+                        description: value.description || value.descriptions || ''
+                    };
+                });
+            }
+            if (!translations.vi) {
+                translations.vi = {
+                    name: placeData.title || '',
+                    description: placeData.descriptions || ''
+                };
+            }
+            return translations;
+        }
+
         async function viewDetails(placeId) {
             try {
                 const response = await fetch(`${API_BASE_URL}/places/${placeId}`);
@@ -865,7 +928,7 @@
 
                 if (result.meta && result.meta.code === 200000) {
                     const place = result.data;
-                    document.getElementById('details-title').textContent = place.title;
+                    document.getElementById('details-title').textContent = place.name || place.title;
 
                     // Render images
                     let imagesHtml = '';
@@ -941,7 +1004,8 @@
 
                     // Fill form - Basic Info
                     setVal('edit-place-id', place.id);
-                    setVal('edit-title', place.title);
+                    setVal('edit-title', place.name || place.title);
+                    renderTranslationFields(place);
                     setVal('edit-place-group', place.placeGroup);
                     setVal('edit-category', place.category);
                     setVal('edit-address', place.address);
@@ -1154,6 +1218,49 @@
             document.getElementById('edit-modal').classList.remove('active');
         }
 
+        function translationFor(place, locale) {
+            const translations = place?.translations || {};
+            return translations[locale] || translations[locale.toLowerCase()] || {};
+        }
+
+        function renderTranslationFields(place = {}) {
+            const container = document.getElementById('edit-translations');
+            if (!container) return;
+
+            container.innerHTML = PLACE_TRANSLATION_LOCALES.map(locale => {
+                const translation = translationFor(place, locale.code);
+                const name = translation.name || (locale.code === 'en' ? (place.name || place.title || '') : '');
+                const description = translation.description || (locale.code === 'en' ? (place.descriptions || '') : '');
+                return `
+                    <div class="translation-panel">
+                        <div class="translation-panel-title">${escapeHtml(locale.label)} (${escapeHtml(locale.code)})</div>
+                        <div class="form-group">
+                            <label class="form-label">Name</label>
+                            <input type="text" class="form-input translation-name" data-locale="${escapeHtml(locale.code)}" value="${escapeHtml(name)}">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label class="form-label">Description</label>
+                            <textarea class="form-input translation-description" data-locale="${escapeHtml(locale.code)}">${escapeHtml(description)}</textarea>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function getTranslationPayload() {
+            const translations = {};
+            PLACE_TRANSLATION_LOCALES.forEach(locale => {
+                const nameEl = document.querySelector(`.translation-name[data-locale="${locale.code}"]`);
+                const descEl = document.querySelector(`.translation-description[data-locale="${locale.code}"]`);
+                const name = nameEl?.value?.trim() || '';
+                const description = descEl?.value?.trim() || '';
+                if (name || description) {
+                    translations[locale.code] = { name, description };
+                }
+            });
+            return translations;
+        }
+
         async function savePlace() {
             const placeId = document.getElementById('edit-place-id').value;
 
@@ -1176,6 +1283,7 @@
             const updateData = {
                 // Basic Info
                 title: getVal('edit-title'),
+                translations: getTranslationPayload(),
                 placeGroup: getVal('edit-place-group') || null,
                 category: getVal('edit-category') || null,
                 address: getVal('edit-address') || null,

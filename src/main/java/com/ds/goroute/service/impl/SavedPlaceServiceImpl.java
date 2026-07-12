@@ -3,10 +3,13 @@ package com.ds.goroute.service.impl;
 import com.ds.goroute.dto.request.SavePlaceRequest;
 import com.ds.goroute.dto.response.SavedPlaceResponse;
 import com.ds.goroute.entity.SavedPlace;
+import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.SavedPlaceMapper;
+import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.SavedPlaceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,12 +23,18 @@ import java.util.stream.Collectors;
 @Slf4j
 public class SavedPlaceServiceImpl implements SavedPlaceService {
 
+    private static final String DEFAULT_ITEM_TYPE = "PLACE";
+
     private final SavedPlaceMapper savedPlaceMapper;
+    private final ImageStorageCleanupService imageStorageCleanupService;
 
     @Override
-    public List<SavedPlaceResponse> getSavedPlaces(UUID userId, String category, Integer page, Integer size) {
+    public List<SavedPlaceResponse> getSavedPlaces(UUID userId, String category, String itemType, Integer page, Integer size) {
         int offset = page * size;
-        List<SavedPlace> places = savedPlaceMapper.findByUserId(userId, category, size, offset);
+        String normalizedItemType = itemType == null || itemType.trim().isEmpty()
+                ? null
+                : normalizeItemType(itemType);
+        List<SavedPlace> places = savedPlaceMapper.findByUserId(userId, category, normalizedItemType, size, offset);
         
         return places.stream()
                 .map(this::toResponse)
@@ -35,16 +44,17 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
     @Override
     @Transactional
     public SavedPlaceResponse savePlace(UUID userId, SavePlaceRequest request) {
-        // Check if already saved
-        SavedPlace existing = savedPlaceMapper.findByUserIdAndPlaceId(userId, request.getPlaceId());
+        String itemType = normalizeItemType(request.getItemType());
+        SavedPlace existing = savedPlaceMapper.findByUserIdAndPlaceId(userId, request.getPlaceId(), itemType);
         if (existing != null) {
-            throw new RuntimeException("Place already saved");
+            return toResponse(existing);
         }
 
         SavedPlace savedPlace = SavedPlace.builder()
                 .id(UUID.randomUUID())
                 .userId(userId)
                 .placeId(request.getPlaceId())
+                .itemType(itemType)
                 .name(request.getName())
                 .address(request.getAddress())
                 .lat(request.getLat())
@@ -57,30 +67,52 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
                 .build();
 
         savedPlaceMapper.insert(savedPlace);
-        log.info("Saved place: userId={}, placeId={}", userId, request.getPlaceId());
+        log.info("Saved item: userId={}, itemType={}, placeId={}", userId, itemType, request.getPlaceId());
         
         return toResponse(savedPlace);
     }
 
     @Override
     @Transactional
-    public void unsavePlace(UUID savedPlaceId) {
+    public void unsavePlace(UUID userId, UUID savedPlaceId) {
+        SavedPlace savedPlace = requireOwnedSavedPlace(userId, savedPlaceId);
+        imageStorageCleanupService.deleteImagesForEntityRecord("SAVED_PLACE", savedPlaceId);
         savedPlaceMapper.deleteById(savedPlaceId);
-        log.info("Unsaved place: id={}", savedPlaceId);
+        log.info("Unsaved item: userId={}, id={}, itemType={}", userId, savedPlaceId, savedPlace.getItemType());
     }
 
     @Override
     @Transactional
-    public SavedPlaceResponse updateTags(UUID savedPlaceId, List<String> tags) {
+    public SavedPlaceResponse updateTags(UUID userId, UUID savedPlaceId, List<String> tags) {
+        requireOwnedSavedPlace(userId, savedPlaceId);
         savedPlaceMapper.updateTags(savedPlaceId, tags.toArray(new String[0]));
         SavedPlace updated = savedPlaceMapper.findById(savedPlaceId);
         return toResponse(updated);
+    }
+
+    private SavedPlace requireOwnedSavedPlace(UUID userId, UUID savedPlaceId) {
+        SavedPlace savedPlace = savedPlaceMapper.findById(savedPlaceId);
+        if (savedPlace == null) {
+            throw new BusinessException(404, "Saved item not found", HttpStatus.NOT_FOUND);
+        }
+        if (!userId.equals(savedPlace.getUserId())) {
+            throw new BusinessException(403, "Saved item access denied", HttpStatus.FORBIDDEN);
+        }
+        return savedPlace;
+    }
+
+    private String normalizeItemType(String itemType) {
+        if (itemType == null || itemType.trim().isEmpty()) {
+            return DEFAULT_ITEM_TYPE;
+        }
+        return itemType.trim().toUpperCase();
     }
 
     private SavedPlaceResponse toResponse(SavedPlace place) {
         return SavedPlaceResponse.builder()
                 .id(place.getId())
                 .placeId(place.getPlaceId())
+                .itemType(normalizeItemType(place.getItemType()))
                 .name(place.getName())
                 .address(place.getAddress())
                 .lat(place.getLat())

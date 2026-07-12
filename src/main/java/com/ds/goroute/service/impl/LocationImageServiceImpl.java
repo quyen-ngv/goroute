@@ -9,6 +9,7 @@ import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.LocationImageRepository;
 import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.utils.CitySlugResolver;
+import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.StorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +30,7 @@ public class LocationImageServiceImpl implements LocationImageService {
 
     private final LocationImageRepository locationImageRepository;
     private final StorageService storageService;
+    private final ImageStorageCleanupService imageStorageCleanupService;
 
     private static final String DEFAULT_IMAGE = "https://images.unsplash.com/photo-1488646953014-85cb44e25828";
 
@@ -126,6 +128,7 @@ public class LocationImageServiceImpl implements LocationImageService {
         LocationImage locationImage = locationImageRepository.findById(id)
             .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Location image not found"));
 
+        imageStorageCleanupService.deleteImagesForEntityRecord("LOCATION_IMAGE", id);
         locationImageRepository.deleteById(id);
         log.info("Location image deleted: {}", id);
     }

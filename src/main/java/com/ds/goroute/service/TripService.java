@@ -63,5 +63,7 @@ public interface TripService {
 
     TripRecentLocationResponse getRecentLocation(UUID userId);
 
+    TripSearchBiasResponse resolveSearchBias(UUID tripId, int dayNumber, UUID userId, UUID overrideDestinationId);
+
     List<TripResponse> getProfileTrips(UUID targetUserId, UUID viewerId);
 }

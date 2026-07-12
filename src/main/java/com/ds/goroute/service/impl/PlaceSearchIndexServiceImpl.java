@@ -2,7 +2,9 @@ package com.ds.goroute.service.impl;
 
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.entity.Place;
+import com.ds.goroute.entity.PlaceTranslation;
 import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.mapper.PlaceTranslationMapper;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.PlaceSearchIndexService;
 import com.ds.goroute.utils.LuceneTitleQueryBuilder;
@@ -19,6 +21,7 @@ import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.SearcherFactory;
@@ -33,8 +36,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -42,8 +49,10 @@ import java.util.UUID;
 public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
 
     private static final int REINDEX_BATCH_SIZE = 200;
+    private static final String INDEX_SCHEMA_VERSION = "2";
 
     private final PlaceRepository placeRepository;
+    private final PlaceTranslationMapper placeTranslationMapper;
 
     private Directory directory;
     private IndexWriter writer;
@@ -67,8 +76,14 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         try {
             IndexSearcher searcher = searcherManager.acquire();
             try {
-                if (searcher.getIndexReader().numDocs() == 0 && placeRepository.countAll() > 0) {
+                int docCount = searcher.getIndexReader().numDocs();
+                if (docCount == 0 && placeRepository.countAll() > 0) {
                     log.warn("Place Lucene index is empty but DB has data — reindexing");
+                    triggerReindex();
+                    return;
+                }
+                if (docCount > 0 && !isCurrentSchema(searcher)) {
+                    log.warn("Place Lucene index schema is outdated; reindexing");
                     triggerReindex();
                 }
             } finally {
@@ -135,8 +150,12 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
                 if (batch.isEmpty()) {
                     break;
                 }
+                Map<UUID, List<PlaceTranslation>> translationsByPlaceId = placeTranslationMapper.findByPlaceIds(
+                                batch.stream().map(Place::getId).toList())
+                        .stream()
+                        .collect(Collectors.groupingBy(PlaceTranslation::getPlaceId));
                 for (Place place : batch) {
-                    writer.addDocument(toDocument(place));
+                    writer.addDocument(toDocument(place, translationsByPlaceId.getOrDefault(place.getId(), List.of())));
                 }
                 total += batch.size();
                 offset += batch.size();
@@ -173,10 +192,40 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     }
 
     private Document toDocument(Place place) {
+        return toDocument(place, placeTranslationMapper.findByPlaceId(place.getId()));
+    }
+
+    private Document toDocument(Place place, List<PlaceTranslation> translations) {
         Document doc = new Document();
         doc.add(new StringField("id", place.getId().toString(), Field.Store.YES));
+        doc.add(new StringField("schema_version", INDEX_SCHEMA_VERSION, Field.Store.YES));
+        doc.add(new TextField("name", buildSearchableName(place, translations), Field.Store.YES));
         doc.add(new TextField("title", place.getTitle() != null ? place.getTitle() : "", Field.Store.YES));
         return doc;
+    }
+
+    private String buildSearchableName(Place place, List<PlaceTranslation> translations) {
+        Set<String> names = new LinkedHashSet<>();
+        addSearchName(names, place.getTitle());
+        if (translations != null) {
+            translations.forEach(translation -> addSearchName(names, translation.getName()));
+        }
+        return String.join(" ", names);
+    }
+
+    private void addSearchName(Set<String> names, String name) {
+        if (name != null && !name.isBlank()) {
+            names.add(name.trim());
+        }
+    }
+
+    private boolean isCurrentSchema(IndexSearcher searcher) throws IOException {
+        TopDocs docs = searcher.search(new MatchAllDocsQuery(), 1);
+        if (docs.scoreDocs.length == 0) {
+            return true;
+        }
+        Document doc = searcher.doc(docs.scoreDocs[0].doc);
+        return INDEX_SCHEMA_VERSION.equals(doc.get("schema_version")) && doc.get("name") != null;
     }
 
     private void refreshSearchIndex() {

@@ -15,6 +15,7 @@ import com.ds.goroute.mapper.CityStoryMapper;
 import com.ds.goroute.repository.LocationImageRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.CityStoryService;
+import com.ds.goroute.service.ImageStorageCleanupService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -40,6 +41,7 @@ public class CityStoryServiceImpl implements CityStoryService {
     private final CityStoryMapper cityStoryMapper;
     private final LocationImageRepository locationImageRepository;
     private final PlaceRepository placeRepository;
+    private final ImageStorageCleanupService imageStorageCleanupService;
 
     @Override
     @Transactional(readOnly = true)
@@ -156,6 +158,7 @@ public class CityStoryServiceImpl implements CityStoryService {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Story not found");
         }
 
+        imageStorageCleanupService.deleteImagesForEntityRecord("CITY_STORY", storyId);
         LocalDateTime now = LocalDateTime.now();
         story.setDeletedAt(now);
         story.setUpdatedAt(now);

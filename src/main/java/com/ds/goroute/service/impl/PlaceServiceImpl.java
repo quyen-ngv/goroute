@@ -9,8 +9,10 @@ import com.ds.goroute.dto.response.PlaceAboutDto;
 import com.ds.goroute.dto.response.PlaceImagesDto;
 import com.ds.goroute.dto.response.PlaceResponse;
 import com.ds.goroute.dto.response.PlaceReviewResponse;
+import com.ds.goroute.config.filter.AcceptLanguageFilter;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.PlaceReview;
+import com.ds.goroute.entity.PlaceTranslation;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.dto.response.FoodTagResponse;
 import com.ds.goroute.entity.Food;
@@ -21,7 +23,9 @@ import com.ds.goroute.repository.PlaceReviewRepository;
 import com.ds.goroute.service.PlaceReviewService;
 import com.ds.goroute.service.PlaceSearchIndexService;
 import com.ds.goroute.service.PlaceService;
+import com.ds.goroute.service.PlaceTranslationService;
 import com.ds.goroute.service.ImageMigrationService;
+import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.type.PlaceGroup;
 import com.ds.goroute.utils.CitySlugResolver;
 import com.ds.goroute.utils.DestinationMatchUtils;
@@ -56,6 +60,8 @@ public class PlaceServiceImpl implements PlaceService {
     private final PlaceReviewService placeReviewService;
     private final ImageMigrationService imageMigrationService;
     private final PlaceSearchIndexService placeSearchIndexService;
+    private final ImageStorageCleanupService imageStorageCleanupService;
+    private final PlaceTranslationService placeTranslationService;
     private final ObjectMapper objectMapper;
 
     private static final Integer maxReview = 50;
@@ -115,6 +121,7 @@ public class PlaceServiceImpl implements PlaceService {
             // Create new place
             Place place = buildPlaceFromRequest(request);
             placeRepository.insert(place);
+            placeTranslationService.syncTranslations(place, request.getTranslations());
             placeSearchIndexService.indexPlace(place);
 
             // Import reviews using PlaceReviewService for smart duplicate handling
@@ -279,6 +286,14 @@ public class PlaceServiceImpl implements PlaceService {
 
             if (Boolean.TRUE.equals(excludeLinkedFoodPlaces) || (foodIds != null && !foodIds.isEmpty())) {
                 matched = applyExtendedFoodFilters(matched, foodIds, excludeLinkedFoodPlaces);
+            }
+
+            if (latitude != null && longitude != null) {
+                for (Place place : matched) {
+                    place.setDistance(GeoDistanceUtils.distanceKm(
+                            latitude, longitude, place.getLatitude(), place.getLongitude()));
+                }
+                matched.sort(Comparator.comparing(Place::getDistance));
             }
 
             return matched.stream()
@@ -511,6 +526,7 @@ public class PlaceServiceImpl implements PlaceService {
     public void deletePlace(UUID id) {
         Place place = placeRepository.findById(id).orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND));
 
+        imageStorageCleanupService.deleteImagesForEntityRecord("PLACE", id);
         // Delete reviews first
         placeReviewRepository.deleteByPlaceId(id);
 
@@ -559,6 +575,7 @@ public class PlaceServiceImpl implements PlaceService {
         place.setUpdatedAt(LocalDateTime.now());
 
         placeRepository.update(place);
+        placeTranslationService.syncTranslations(place, request.getTranslations());
         placeSearchIndexService.indexPlace(place);
         log.info("Updated place: {}", id);
 
@@ -571,9 +588,12 @@ public class PlaceServiceImpl implements PlaceService {
         Place updated = buildPlaceFromRequest(request);
         updated.setId(existingPlace.getId());
         updated.setCreatedAt(existingPlace.getCreatedAt());
+        updated.setCategory(existingPlace.getCategory() != null ? existingPlace.getCategory() : request.getCategory());
+        updated.setDescriptions(existingPlace.getDescriptions() != null ? existingPlace.getDescriptions() : request.getDescriptions());
         updated.setUpdatedAt(LocalDateTime.now());
 
         placeRepository.update(updated);
+        placeTranslationService.syncTranslations(updated, request.getTranslations());
         placeSearchIndexService.indexPlace(updated);
 
         // Update reviews using PlaceReviewService for smart duplicate handling
@@ -929,10 +949,20 @@ public class PlaceServiceImpl implements PlaceService {
     }
 
     private PlaceResponse toPlaceResponse(Place place) {
+        PlaceTranslation translation = placeTranslationService.resolve(place.getId(), AcceptLanguageFilter.currentCode());
+        String resolvedTitle = translation != null && translation.getName() != null
+                ? translation.getName()
+                : place.getTitle();
+        String resolvedDescription = translation != null && translation.getDescription() != null
+                ? translation.getDescription()
+                : place.getDescriptions();
         return PlaceResponse.builder()
                 .id(place.getId())
                 .placeId(place.getPlaceId())
-                .title(place.getTitle())
+                .locale(translation != null ? translation.getLocale().code() : null)
+                .name(resolvedTitle)
+                .title(resolvedTitle)
+                .translations(placeTranslationService.allResponses(place.getId()))
                 .category(place.getCategory())
                 .placeGroup(place.getPlaceGroup() != null ? place.getPlaceGroup().name() : null)
                 .address(place.getAddress())
@@ -949,7 +979,7 @@ public class PlaceServiceImpl implements PlaceService {
                 .reviewsPerRating(parseJsonToMap(place.getReviewsPerRating()))
                 .thumbnail(place.getThumbnail())
                 .images(parseJsonToList(place.getImages(), PlaceImagesDto.class))
-                .descriptions(place.getDescriptions())
+                .descriptions(resolvedDescription)
                 .priceRange(place.getPriceRange())
                 .openHours(parseJsonToMapOfList(place.getOpenHours()))
                 .popularTimes(parseJsonToMapOfMap(place.getPopularTimes()))

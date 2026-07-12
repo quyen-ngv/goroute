@@ -5,12 +5,14 @@ import com.ds.goroute.dto.request.CloneTripRequest;
 import com.ds.goroute.dto.request.CreateTripRequest;
 import com.ds.goroute.dto.request.InviteMemberRequest;
 import com.ds.goroute.dto.request.LinkGuestRequest;
+import com.ds.goroute.dto.request.TripDestinationRequest;
 import com.ds.goroute.dto.request.UpdateTripRequest;
 import com.ds.goroute.dto.response.*;
 import com.ds.goroute.entity.*;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.*;
 import com.ds.goroute.service.ExpenseService;
+import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.service.notification.NotificationHelper;
@@ -23,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -49,6 +52,175 @@ public class TripServiceImpl implements TripService {
     private final TripHelpfulVoteRepository tripHelpfulVoteRepository;
     private final PlaceScoreRepository placeScoreRepository;
     private final MediaAssetRepository mediaAssetRepository;
+    private final ImageStorageCleanupService imageStorageCleanupService;
+    private final TripDestinationRepository tripDestinationRepository;
+
+    private List<TripDestination> buildDestinationsForTrip(
+            UUID tripId,
+            List<TripDestinationRequest> requests,
+            String fallbackDestination,
+            String fallbackPlaceId,
+            BigDecimal fallbackLat,
+            BigDecimal fallbackLng,
+            LocalDate tripStartDate,
+            LocalDate tripEndDate) {
+        List<TripDestination> destinations = new ArrayList<>();
+        if (requests != null && !requests.isEmpty()) {
+            int index = 0;
+            for (TripDestinationRequest request : requests) {
+                String name = firstNonBlank(request.getName(), request.getAddress(), fallbackDestination);
+                if (name == null) {
+                    continue;
+                }
+                LocalDate startDate = request.getStartDate();
+                LocalDate endDate = request.getEndDate();
+                if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
+                    throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Destination start date must be before end date");
+                }
+                if ((startDate != null && (startDate.isBefore(tripStartDate) || startDate.isAfter(tripEndDate))) ||
+                        (endDate != null && (endDate.isBefore(tripStartDate) || endDate.isAfter(tripEndDate)))) {
+                    throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Destination date range must be inside trip date range");
+                }
+                destinations.add(TripDestination.builder()
+                        .id(UUID.randomUUID())
+                        .tripId(tripId)
+                        .name(name)
+                        .address(firstNonBlank(request.getAddress(), request.getName()))
+                        .placeId(request.getPlaceId())
+                        .lat(request.getLat())
+                        .lng(request.getLng())
+                        .orderIndex(request.getOrderIndex() != null ? request.getOrderIndex() : index)
+                        .startDate(startDate)
+                        .endDate(endDate)
+                        .isPrimary(destinations.isEmpty() || Boolean.TRUE.equals(request.getIsPrimary()))
+                        .build());
+                index++;
+            }
+        }
+
+        if (destinations.isEmpty() && firstNonBlank(fallbackDestination) != null) {
+            destinations.add(TripDestination.builder()
+                    .id(UUID.randomUUID())
+                    .tripId(tripId)
+                    .name(fallbackDestination)
+                    .address(fallbackDestination)
+                    .placeId(fallbackPlaceId)
+                    .lat(fallbackLat)
+                    .lng(fallbackLng)
+                    .orderIndex(0)
+                    .startDate(tripStartDate)
+                    .endDate(tripEndDate)
+                    .isPrimary(true)
+                    .build());
+        }
+
+        destinations.sort(Comparator.comparing(
+                TripDestination::getOrderIndex,
+                Comparator.nullsLast(Integer::compareTo)
+        ));
+        if (!destinations.isEmpty()) {
+            for (int i = 0; i < destinations.size(); i++) {
+                destinations.get(i).setOrderIndex(i);
+                destinations.get(i).setIsPrimary(i == 0);
+            }
+        }
+        return destinations;
+    }
+
+    private List<TripDestination> cloneDestinationsForTrip(
+            Trip originalTrip,
+            UUID newTripId,
+            LocalDate newStartDate,
+            LocalDate newEndDate) {
+        List<TripDestination> originals = tripDestinationRepository.findByTripId(originalTrip.getId());
+        if (originals.isEmpty()) {
+            originals = buildDestinationsForTrip(
+                    originalTrip.getId(),
+                    null,
+                    originalTrip.getDestination(),
+                    originalTrip.getDestinationPlaceId(),
+                    originalTrip.getDestinationLat(),
+                    originalTrip.getDestinationLng(),
+                    originalTrip.getStartDate(),
+                    originalTrip.getEndDate()
+            );
+        }
+
+        List<TripDestination> cloned = new ArrayList<>();
+        for (TripDestination original : originals) {
+            cloned.add(TripDestination.builder()
+                    .id(UUID.randomUUID())
+                    .tripId(newTripId)
+                    .name(original.getName())
+                    .address(original.getAddress())
+                    .placeId(original.getPlaceId())
+                    .lat(original.getLat())
+                    .lng(original.getLng())
+                    .orderIndex(original.getOrderIndex())
+                    .startDate(newStartDate)
+                    .endDate(newEndDate)
+                    .isPrimary(Boolean.TRUE.equals(original.getIsPrimary()))
+                    .build());
+        }
+        return cloned;
+    }
+
+    private List<TripDestinationResponse> destinationResponses(Trip trip) {
+        List<TripDestination> destinations = tripDestinationRepository.findByTripId(trip.getId());
+        if (destinations.isEmpty()) {
+            destinations = buildDestinationsForTrip(
+                    trip.getId(),
+                    null,
+                    trip.getDestination(),
+                    trip.getDestinationPlaceId(),
+                    trip.getDestinationLat(),
+                    trip.getDestinationLng(),
+                    trip.getStartDate(),
+                    trip.getEndDate()
+            );
+        }
+        return destinations.stream()
+                .sorted(Comparator.comparing(TripDestination::getOrderIndex, Comparator.nullsLast(Integer::compareTo)))
+                .map(this::mapToTripDestinationResponse)
+                .toList();
+    }
+
+    private TripDestinationResponse mapToTripDestinationResponse(TripDestination destination) {
+        return TripDestinationResponse.builder()
+                .id(destination.getId())
+                .name(destination.getName())
+                .address(destination.getAddress())
+                .placeId(destination.getPlaceId())
+                .lat(destination.getLat())
+                .lng(destination.getLng())
+                .orderIndex(destination.getOrderIndex())
+                .startDate(destination.getStartDate())
+                .endDate(destination.getEndDate())
+                .isPrimary(destination.getIsPrimary())
+                .build();
+    }
+
+    private String routeSummary(List<TripDestinationResponse> destinations) {
+        if (destinations == null || destinations.isEmpty()) {
+            return null;
+        }
+        return destinations.stream()
+                .map(TripDestinationResponse::getName)
+                .filter(name -> name != null && !name.isBlank())
+                .collect(Collectors.joining(" → "));
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
 
     @Override
     @Transactional
@@ -58,17 +230,34 @@ public class TripServiceImpl implements TripService {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Start date must be before end date");
         }
 
-        // Auto set cover image based on destination
-        String coverImage = locationImageService.getImageForDestination(request.getDestination());
+        List<TripDestination> destinations = buildDestinationsForTrip(
+                null,
+                request.getDestinations(),
+                request.getDestination(),
+                request.getDestinationPlaceId(),
+                request.getDestinationLat(),
+                request.getDestinationLng(),
+                request.getStartDate(),
+                request.getEndDate()
+        );
+        TripDestination primaryDestination = destinations.isEmpty() ? null : destinations.get(0);
+        String destinationName = primaryDestination != null ? primaryDestination.getName() : request.getDestination();
+        String destinationAddress = primaryDestination != null ? primaryDestination.getAddress() : request.getDestination();
+        String destinationPlaceId = primaryDestination != null ? primaryDestination.getPlaceId() : request.getDestinationPlaceId();
+        BigDecimal destinationLat = primaryDestination != null ? primaryDestination.getLat() : request.getDestinationLat();
+        BigDecimal destinationLng = primaryDestination != null ? primaryDestination.getLng() : request.getDestinationLng();
+
+        // Auto set cover image based on primary destination
+        String coverImage = locationImageService.getImageForDestination(destinationAddress);
 
         Trip trip = Trip.builder()
                 .id(UUID.randomUUID())
                 .name(request.getName())
                 .coverImageUrl(coverImage)
-                .destination(request.getDestination())
-                .destinationPlaceId(request.getDestinationPlaceId())
-                .destinationLat(request.getDestinationLat())
-                .destinationLng(request.getDestinationLng())
+                .destination(destinationAddress != null ? destinationAddress : destinationName)
+                .destinationPlaceId(destinationPlaceId)
+                .destinationLat(destinationLat)
+                .destinationLng(destinationLng)
                 .startDate(request.getStartDate())
                 .endDate(request.getEndDate())
                 .budget(request.getBudget())
@@ -83,6 +272,8 @@ public class TripServiceImpl implements TripService {
                 .build();
 
         tripRepository.insert(trip);
+        destinations.forEach(destination -> destination.setTripId(trip.getId()));
+        destinations.forEach(tripDestinationRepository::insert);
 
         // Add owner as member
         TripMember owner = TripMember.builder()
@@ -148,6 +339,8 @@ public class TripServiceImpl implements TripService {
             coverImageUrl = locationImageService.getImageForDestination(trip.getDestination());
         }
 
+        List<TripDestinationResponse> destinationResponses = destinationResponses(trip);
+
         return TripDetailResponse.builder()
                 .id(trip.getId())
                 .name(trip.getName())
@@ -155,6 +348,8 @@ public class TripServiceImpl implements TripService {
                 .destination(trip.getDestination())
                 .lat(trip.getDestinationLat())
                 .lng(trip.getDestinationLng())
+                .destinations(destinationResponses)
+                .routeSummary(routeSummary(destinationResponses))
                 .startDate(trip.getStartDate())
                 .endDate(trip.getEndDate())
                 .status(trip.getStatus().toString())
@@ -196,6 +391,26 @@ public class TripServiceImpl implements TripService {
         if (request.getDestination() != null) trip.setDestination(request.getDestination());
         if (request.getDestinationLat() != null) trip.setDestinationLat(request.getDestinationLat());
         if (request.getDestinationLng() != null) trip.setDestinationLng(request.getDestinationLng());
+        if (request.getDestinations() != null) {
+            List<TripDestination> destinations = buildDestinationsForTrip(
+                    tripId,
+                    request.getDestinations(),
+                    trip.getDestination(),
+                    trip.getDestinationPlaceId(),
+                    trip.getDestinationLat(),
+                    trip.getDestinationLng(),
+                    trip.getStartDate(),
+                    trip.getEndDate()
+            );
+            tripDestinationRepository.replaceForTrip(tripId, destinations);
+            if (!destinations.isEmpty()) {
+                TripDestination primary = destinations.get(0);
+                trip.setDestination(primary.getAddress() != null ? primary.getAddress() : primary.getName());
+                trip.setDestinationPlaceId(primary.getPlaceId());
+                trip.setDestinationLat(primary.getLat());
+                trip.setDestinationLng(primary.getLng());
+            }
+        }
         if (request.getStartDate() != null) trip.setStartDate(request.getStartDate());
         if (request.getEndDate() != null) trip.setEndDate(request.getEndDate());
         if (request.getBudget() != null) trip.setBudget(request.getBudget());
@@ -247,6 +462,7 @@ public class TripServiceImpl implements TripService {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only owner can delete trip");
         }
 
+        imageStorageCleanupService.deleteImagesForEntityRecord("TRIP", tripId);
         tripRepository.deleteById(tripId);
         log.info("Trip deleted: {}", tripId);
 
@@ -518,6 +734,7 @@ public class TripServiceImpl implements TripService {
         }
 
         List<String> memoryImageUrls = getTripMemoryImageUrls(trip.getId());
+        List<TripDestinationResponse> destinationResponses = destinationResponses(trip);
 
         return TripResponse.builder()
                 .id(trip.getId())
@@ -527,6 +744,8 @@ public class TripServiceImpl implements TripService {
                 .destination(trip.getDestination())
                 .lat(trip.getDestinationLat())
                 .lng(trip.getDestinationLng())
+                .destinations(destinationResponses)
+                .routeSummary(routeSummary(destinationResponses))
                 .startDate(trip.getStartDate())
                 .endDate(trip.getEndDate())
                 .status(trip.getStatus() != null ? trip.getStatus().toString() : null)
@@ -1014,6 +1233,7 @@ public class TripServiceImpl implements TripService {
         User owner = userRepository.findById(trip.getOwnerId()).orElse(null);
         String ownerName = owner != null ? owner.getFullName() : null;
         String ownerAvatarUrl = owner != null ? owner.getAvatarUrl() : null;
+        List<TripDestinationResponse> destinationResponses = destinationResponses(trip);
 
         return PublicTripResponse.builder()
                 .id(trip.getId())
@@ -1024,6 +1244,8 @@ public class TripServiceImpl implements TripService {
                 .destination(trip.getDestination())
                 .lat(trip.getDestinationLat())
                 .lng(trip.getDestinationLng())
+                .destinations(destinationResponses)
+                .routeSummary(routeSummary(destinationResponses))
                 .startDate(trip.getStartDate())
                 .endDate(trip.getEndDate())
                 .currency(trip.getCurrency())
@@ -1290,6 +1512,13 @@ public class TripServiceImpl implements TripService {
                 .build();
 
         tripRepository.insert(newTrip);
+        List<TripDestination> clonedDestinations = cloneDestinationsForTrip(
+                originalTrip,
+                newTrip.getId(),
+                request.getStartDate(),
+                request.getEndDate()
+        );
+        clonedDestinations.forEach(tripDestinationRepository::insert);
         log.info("Cloned trip created: originalTripId={}, newTripId={}, userId={}", tripId, newTrip.getId(), userId);
 
         // 5. Add user as owner member
@@ -1317,6 +1546,7 @@ public class TripServiceImpl implements TripService {
                     .id(UUID.randomUUID())
                     .tripId(newTrip.getId())
                     .dayNumber(originalActivity.getDayNumber())
+                    .sortOrder(originalActivity.getSortOrder())
                     .placeId(originalActivity.getPlaceId())
                     .customPlaceId(originalActivity.getCustomPlaceId())
                     .name(originalActivity.getName())
@@ -1369,6 +1599,7 @@ public class TripServiceImpl implements TripService {
                     User owner = userRepository.findById(trip.getOwnerId()).orElse(null);
                     String ownerName = owner != null ? owner.getFullName() : null;
                     String ownerAvatarUrl = owner != null ? owner.getAvatarUrl() : null;
+                    List<TripDestinationResponse> destinationResponses = destinationResponses(trip);
 
                     return PublicTripResponse.builder()
                             .id(trip.getId())
@@ -1379,6 +1610,8 @@ public class TripServiceImpl implements TripService {
                             .destination(trip.getDestination())
                             .lat(trip.getDestinationLat())
                             .lng(trip.getDestinationLng())
+                            .destinations(destinationResponses)
+                            .routeSummary(routeSummary(destinationResponses))
                             .startDate(trip.getStartDate())
                             .endDate(trip.getEndDate())
                             .currency(trip.getCurrency())
@@ -1434,6 +1667,143 @@ public class TripServiceImpl implements TripService {
                 .lat(recentTrip.getDestinationLat())
                 .lng(recentTrip.getDestinationLng())
                 .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public TripSearchBiasResponse resolveSearchBias(UUID tripId, int dayNumber, UUID userId, UUID overrideDestinationId) {
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+        ensureTripAccess(trip, userId);
+
+        if (overrideDestinationId != null) {
+            Optional<TripDestination> override = tripDestinationRepository.findById(overrideDestinationId)
+                    .filter(destination -> tripId.equals(destination.getTripId()));
+            if (override.isPresent() && hasCoordinates(override.get())) {
+                TripDestination destination = override.get();
+                return TripSearchBiasResponse.builder()
+                        .lat(destination.getLat())
+                        .lng(destination.getLng())
+                        .source("USER_OVERRIDE")
+                        .label("User selected search area")
+                        .destinationId(destination.getId())
+                        .destinationName(destination.getName())
+                        .build();
+            }
+        }
+
+        Optional<Activity> currentDayLast = latestActivityWithCoordinates(tripId, dayNumber);
+        if (currentDayLast.isPresent()) {
+            Activity activity = currentDayLast.get();
+            return TripSearchBiasResponse.builder()
+                    .lat(activity.getLat())
+                    .lng(activity.getLng())
+                    .source("CURRENT_DAY_LAST_ITEM")
+                    .label("Last item on this day")
+                    .build();
+        }
+
+        for (int previousDay = dayNumber - 1; previousDay >= 1; previousDay--) {
+            Optional<Activity> previousDayLast = latestActivityWithCoordinates(tripId, previousDay);
+            if (previousDayLast.isPresent()) {
+                Activity activity = previousDayLast.get();
+                return TripSearchBiasResponse.builder()
+                        .lat(activity.getLat())
+                        .lng(activity.getLng())
+                        .source("PREVIOUS_DAY_LAST_ITEM")
+                        .label("Last item from previous day")
+                        .build();
+            }
+        }
+
+        LocalDate targetDate = trip.getStartDate().plusDays(Math.max(0, dayNumber - 1));
+        List<TripDestination> matchingDestinations = tripDestinationRepository.findByTripId(tripId).stream()
+                .filter(this::hasCoordinates)
+                .filter(destination -> containsDate(destination, targetDate))
+                .sorted(Comparator.comparing(TripDestination::getOrderIndex, Comparator.nullsLast(Integer::compareTo)))
+                .toList();
+        if (matchingDestinations.size() == 1) {
+            TripDestination destination = matchingDestinations.get(0);
+            return TripSearchBiasResponse.builder()
+                    .lat(destination.getLat())
+                    .lng(destination.getLng())
+                    .source("DESTINATION_DATE_RANGE")
+                    .label("Trip area for this day")
+                    .destinationId(destination.getId())
+                    .destinationName(destination.getName())
+                    .build();
+        }
+        if (matchingDestinations.size() > 1) {
+            TripDestination destination = matchingDestinations.get(0);
+            return TripSearchBiasResponse.builder()
+                    .lat(destination.getLat())
+                    .lng(destination.getLng())
+                    .source("DESTINATION_OVERLAP_DEFAULT")
+                    .label("Default area for overlapping destination day")
+                    .destinationId(destination.getId())
+                    .destinationName(destination.getName())
+                    .build();
+        }
+
+        if (trip.getDestinationLat() != null && trip.getDestinationLng() != null) {
+            return TripSearchBiasResponse.builder()
+                    .lat(trip.getDestinationLat())
+                    .lng(trip.getDestinationLng())
+                    .source("TRIP_CENTER")
+                    .label("Primary trip area")
+                    .destinationName(trip.getDestination())
+                    .build();
+        }
+
+        return TripSearchBiasResponse.builder()
+                .source("NONE")
+                .label("Search without location bias")
+                .build();
+    }
+
+    private void ensureTripAccess(Trip trip, UUID userId) {
+        var member = tripMemberRepository.findByTripIdAndUserId(trip.getId(), userId);
+        boolean hasAccess = trip.getOwnerId().equals(userId) ||
+                (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
+        if (!hasAccess) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
+        }
+    }
+
+    private Optional<Activity> latestActivityWithCoordinates(UUID tripId, int dayNumber) {
+        List<Activity> activities = activityRepository.findByTripIdAndDayNumber(tripId, dayNumber).stream()
+                .filter(activity -> activity.getLat() != null && activity.getLng() != null)
+                .toList();
+        if (activities.isEmpty()) {
+            return Optional.empty();
+        }
+
+        List<Activity> withTime = activities.stream()
+                .filter(activity -> activity.getStartTime() != null)
+                .toList();
+        if (!withTime.isEmpty()) {
+            return withTime.stream().max(
+                    Comparator.comparing(Activity::getStartTime)
+                            .thenComparing(Activity::getSortOrder, Comparator.nullsFirst(Integer::compareTo))
+                            .thenComparing(Activity::getCreatedAt, Comparator.nullsFirst(LocalDateTime::compareTo))
+            );
+        }
+
+        return activities.stream().max(
+                Comparator.comparing(Activity::getSortOrder, Comparator.nullsFirst(Integer::compareTo))
+                        .thenComparing(Activity::getCreatedAt, Comparator.nullsFirst(LocalDateTime::compareTo))
+        );
+    }
+
+    private boolean hasCoordinates(TripDestination destination) {
+        return destination.getLat() != null && destination.getLng() != null;
+    }
+
+    private boolean containsDate(TripDestination destination, LocalDate date) {
+        if (destination.getStartDate() == null || destination.getEndDate() == null || date == null) {
+            return false;
+        }
+        return !date.isBefore(destination.getStartDate()) && !date.isAfter(destination.getEndDate());
     }
 
     @Override

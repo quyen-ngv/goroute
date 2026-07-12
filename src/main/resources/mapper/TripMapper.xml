@@ -76,6 +76,7 @@
             name = #{name},
             cover_image_url = #{coverImageUrl},
             destination = #{destination},
+            destination_place_id = #{destinationPlaceId},
             destination_lat = #{destinationLat},
             destination_lng = #{destinationLng},
             start_date = #{startDate},
@@ -108,28 +109,39 @@
 
     <select id="searchPublicTrips" resultMap="TripResultMap">
         SELECT * FROM (
-            SELECT *,
-                (6371 * acos(
-                    cos(radians(#{latitude})) * cos(radians(destination_lat)) *
-                    cos(radians(destination_lng) - radians(#{longitude})) +
-                    sin(radians(#{latitude})) * sin(radians(destination_lat))
+            SELECT t.*,
+                MIN(6371 * acos(
+                    cos(radians(#{latitude})) * cos(radians(COALESCE(td.lat, t.destination_lat))) *
+                    cos(radians(COALESCE(td.lng, t.destination_lng)) - radians(#{longitude})) +
+                    sin(radians(#{latitude})) * sin(radians(COALESCE(td.lat, t.destination_lat)))
                 )) AS distance
-            FROM trips
-            WHERE visibility = 'PUBLIC'
-              AND is_deleted = FALSE
-              AND destination_lat IS NOT NULL
-              AND destination_lng IS NOT NULL
+            FROM trips t
+            LEFT JOIN trip_destinations td
+              ON td.trip_id = t.id
+             AND td.lat IS NOT NULL
+             AND td.lng IS NOT NULL
+            WHERE t.visibility = 'PUBLIC'
+              AND t.is_deleted = FALSE
+              AND (
+                  (t.destination_lat IS NOT NULL AND t.destination_lng IS NOT NULL)
+                  OR td.id IS NOT NULL
+              )
               <if test="excludeUserId != null">
-                  AND owner_id != #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
-                  AND id NOT IN (
+                  AND t.owner_id != #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
+                  AND t.id NOT IN (
                       SELECT trip_id FROM trip_members
                       WHERE user_id = #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
                       AND status = 'ACCEPTED'
                   )
               </if>
               <if test="destination != null and destination != ''">
-                  AND LOWER(destination) LIKE LOWER(CONCAT('%', #{destination}, '%'))
+                  AND (
+                      LOWER(t.destination) LIKE LOWER(CONCAT('%', #{destination}, '%'))
+                      OR LOWER(td.name) LIKE LOWER(CONCAT('%', #{destination}, '%'))
+                      OR LOWER(td.address) LIKE LOWER(CONCAT('%', #{destination}, '%'))
+                  )
               </if>
+            GROUP BY t.id
         ) AS t
         WHERE distance &lt;= #{radiusKm}
         ORDER BY COALESCE(public_shared_at, created_at) DESC, distance ASC

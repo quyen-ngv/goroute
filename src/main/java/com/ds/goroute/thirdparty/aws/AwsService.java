@@ -13,10 +13,14 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.polly.PollyClient;
 import software.amazon.awssdk.services.polly.model.*;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetUrlRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import java.io.InputStream;
+import java.net.URI;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -168,7 +172,7 @@ public class AwsService implements StorageService {
         }
         
         try {
-            String key = extractKeyFromUrl(fileUrl);
+            String key = extractObjectKey(fileUrl);
             if (key != null) {
                 s3Client.deleteObject(builder -> builder
                         .bucket(awsProperties.getS3BucketName())
@@ -189,7 +193,7 @@ public class AwsService implements StorageService {
         try {
             // Batch delete (up to 1000 objects per request)
             List<String> keys = fileUrls.stream()
-                    .map(this::extractKeyFromUrl)
+                    .map(this::extractObjectKey)
                     .filter(Objects::nonNull)
                     .toList();
             
@@ -218,33 +222,190 @@ public class AwsService implements StorageService {
         }
     }
 
+    @Override
+    public List<String> listObjectKeys(String prefix) {
+        List<String> keys = new ArrayList<>();
+        String continuationToken = null;
+
+        do {
+            var requestBuilder = ListObjectsV2Request.builder()
+                    .bucket(awsProperties.getS3BucketName())
+                    .prefix(prefix == null ? "" : prefix);
+            if (continuationToken != null) {
+                requestBuilder.continuationToken(continuationToken);
+            }
+
+            var response = s3Client.listObjectsV2(requestBuilder.build());
+            response.contents().forEach(object -> keys.add(object.key()));
+            continuationToken = response.nextContinuationToken();
+        } while (continuationToken != null);
+
+        return keys;
+    }
+
+    @Override
+    public void copyObjectKeys(List<String> keys, String targetPrefix) {
+        if (keys == null || keys.isEmpty()) {
+            return;
+        }
+        String normalizedPrefix = normalizePrefix(targetPrefix);
+        if (normalizedPrefix.isBlank()) {
+            throw new IllegalArgumentException("targetPrefix is required");
+        }
+
+        for (String key : keys.stream().filter(Objects::nonNull).distinct().toList()) {
+            try {
+                CopyObjectRequest request = CopyObjectRequest.builder()
+                        .sourceBucket(awsProperties.getS3BucketName())
+                        .sourceKey(key)
+                        .destinationBucket(awsProperties.getS3BucketName())
+                        .destinationKey(normalizedPrefix + key)
+                        .build();
+                s3Client.copyObject(request);
+            } catch (Exception e) {
+                log.error("Failed to backup S3 object key {} to {}: {}", key, normalizedPrefix, e.getMessage());
+                throw new RuntimeException("S3 backup failed for key: " + key, e);
+            }
+        }
+        log.info("Backed up {} S3 object keys to {}", keys.size(), normalizedPrefix);
+    }
+
+    @Override
+    public void deleteObjectKeys(List<String> keys) {
+        if (keys == null || keys.isEmpty()) {
+            return;
+        }
+
+        try {
+            List<String> cleanedKeys = keys.stream()
+                    .filter(Objects::nonNull)
+                    .map(String::trim)
+                    .filter(key -> !key.isEmpty())
+                    .distinct()
+                    .toList();
+
+            for (int i = 0; i < cleanedKeys.size(); i += 1000) {
+                List<String> batch = cleanedKeys.subList(i, Math.min(i + 1000, cleanedKeys.size()));
+                var objectIdentifiers = batch.stream()
+                        .map(key -> software.amazon.awssdk.services.s3.model.ObjectIdentifier.builder()
+                                .key(key)
+                                .build())
+                        .toList();
+
+                s3Client.deleteObjects(builder -> builder
+                        .bucket(awsProperties.getS3BucketName())
+                        .delete(del -> del.objects(objectIdentifiers)));
+
+                log.debug("Deleted {} S3 object keys", batch.size());
+            }
+        } catch (Exception e) {
+            log.error("Failed to batch delete S3 object keys: {}", e.getMessage());
+        }
+    }
+
+    private String normalizePrefix(String prefix) {
+        if (prefix == null) {
+            return "";
+        }
+        String normalized = prefix.trim();
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        return normalized.endsWith("/") ? normalized : normalized + "/";
+    }
+
     /**
      * Extract S3 key from full URL
-     * https://onestudy.id.vn/resource/goroute/reviews/xxx.webp -> reviews/xxx.webp
+     * https://onestudy.id.vn/resource/vietdetour/reviews/xxx.webp -> reviews/xxx.webp
      */
-    private String extractKeyFromUrl(String url) {
-        if (url == null || !url.contains("onestudy.id.vn")) {
+    @Override
+    public String extractObjectKey(String url) {
+        if (url == null || url.isBlank()) {
             return null;
         }
-        
+
         try {
-            // Extract path after domain
-            int domainIndex = url.indexOf("onestudy.id.vn");
-            String afterDomain = url.substring(domainIndex + "onestudy.id.vn".length());
-            
-            // Remove /resource/goroute/ or /resource/ prefix
-            if (afterDomain.startsWith("/resource/goroute/")) {
-                return afterDomain.substring("/resource/goroute/".length());
-            } else if (afterDomain.startsWith("/resource/")) {
-                return afterDomain.substring("/resource/".length());
-            } else if (afterDomain.startsWith("/")) {
-                return afterDomain.substring(1);
+            String trimmedUrl = url.trim();
+            if (!trimmedUrl.startsWith("http://") && !trimmedUrl.startsWith("https://")) {
+                return stripStoragePathPrefix(trimmedUrl);
             }
-            
-            return afterDomain;
+
+            String cloudfrontDomain = awsProperties.getCloudfrontDomain();
+            String host = URI.create(trimmedUrl).getHost();
+            String configuredHost = null;
+            if (cloudfrontDomain != null && !cloudfrontDomain.isBlank()) {
+                String normalizedDomain = cloudfrontDomain.startsWith("http")
+                        ? cloudfrontDomain
+                        : "https://" + cloudfrontDomain;
+                configuredHost = URI.create(normalizedDomain).getHost();
+            }
+            String configuredEndpointHost = null;
+            if (awsProperties.getEndpoint() != null && !awsProperties.getEndpoint().isBlank()) {
+                configuredEndpointHost = URI.create(awsProperties.getEndpoint()).getHost();
+            }
+            boolean isConfiguredCloudfront = cloudfrontDomain != null
+                    && !cloudfrontDomain.isBlank()
+                    && host != null
+                    && configuredHost != null
+                    && host.equalsIgnoreCase(configuredHost);
+            boolean isConfiguredEndpoint = configuredEndpointHost != null
+                    && host != null
+                    && host.equalsIgnoreCase(configuredEndpointHost);
+            boolean isBucketHost = host != null
+                    && host.toLowerCase().startsWith(awsProperties.getS3BucketName().toLowerCase() + ".");
+            boolean isLegacyDomain = trimmedUrl.contains("onestudy.id.vn");
+
+            if (!isConfiguredCloudfront && !isConfiguredEndpoint && !isBucketHost && !isLegacyDomain) {
+                return null;
+            }
+
+            String path = URI.create(trimmedUrl).getPath();
+            if (path == null || path.isBlank()) {
+                return null;
+            }
+
+            String bucketPrefix = "/" + awsProperties.getS3BucketName() + "/";
+            String resourceBucketPrefix = "/resource/" + awsProperties.getS3BucketName() + "/";
+            if (path.startsWith(resourceBucketPrefix)) {
+                return stripStoragePathPrefix(path.substring(resourceBucketPrefix.length()));
+            }
+            if (path.startsWith(bucketPrefix)) {
+                return stripStoragePathPrefix(path.substring(bucketPrefix.length()));
+            }
+
+            if (path.startsWith("/resource/goroute/")) {
+                return stripStoragePathPrefix(path.substring("/resource/goroute/".length()));
+            } else if (path.startsWith("/resource/")) {
+                return stripStoragePathPrefix(path.substring("/resource/".length()));
+            } else if (path.startsWith("/")) {
+                return stripStoragePathPrefix(path.substring(1));
+            }
+
+            return stripStoragePathPrefix(path);
         } catch (Exception e) {
             log.warn("Failed to extract key from URL: {}", url);
             return null;
         }
+    }
+
+    private String stripStoragePathPrefix(String key) {
+        if (key == null || key.isBlank()) {
+            return key;
+        }
+        String normalized = key;
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        if (normalized.startsWith("resource/")) {
+            normalized = normalized.substring("resource/".length());
+        }
+        String bucketPrefix = awsProperties.getS3BucketName() + "/";
+        if (normalized.startsWith(bucketPrefix)) {
+            return normalized.substring(bucketPrefix.length());
+        }
+        if (normalized.startsWith("goroute/")) {
+            return normalized.substring("goroute/".length());
+        }
+        return normalized;
     }
 }

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.TripDestinationMapper">
+
+    <resultMap id="TripDestinationResultMap" type="com.ds.goroute.entity.TripDestination">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="trip_id" property="tripId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="name" property="name" jdbcType="VARCHAR"/>
+        <result column="address" property="address" jdbcType="VARCHAR"/>
+        <result column="place_id" property="placeId" jdbcType="VARCHAR"/>
+        <result column="lat" property="lat" jdbcType="DECIMAL"/>
+        <result column="lng" property="lng" jdbcType="DECIMAL"/>
+        <result column="order_index" property="orderIndex" jdbcType="INTEGER"/>
+        <result column="start_date" property="startDate" jdbcType="DATE"/>
+        <result column="end_date" property="endDate" jdbcType="DATE"/>
+        <result column="is_primary" property="isPrimary" jdbcType="BOOLEAN"/>
+        <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
+        <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.TripDestination">
+        INSERT INTO trip_destinations (
+            id, trip_id, name, address, place_id, lat, lng, order_index,
+            start_date, end_date, is_primary, created_at, updated_at
+        )
+        VALUES (
+            #{id,javaType=java.util.UUID,jdbcType=OTHER},
+            #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
+            #{name}, #{address}, #{placeId}, #{lat}, #{lng}, #{orderIndex},
+            #{startDate}, #{endDate}, #{isPrimary}, NOW(), NOW()
+        )
+    </insert>
+
+    <select id="selectByTripId" resultMap="TripDestinationResultMap">
+        SELECT * FROM trip_destinations
+        WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+        ORDER BY order_index ASC, created_at ASC
+    </select>
+
+    <select id="selectById" resultMap="TripDestinationResultMap">
+        SELECT * FROM trip_destinations
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <delete id="deleteByTripId">
+        DELETE FROM trip_destinations
+        WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+    </delete>
+</mapper>

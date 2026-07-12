@@ -21,6 +21,7 @@ import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.service.ActivityBookingService;
 import com.ds.goroute.service.ActivityService;
 import com.ds.goroute.service.ExchangeRateService;
+import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.utils.ActivityBookingSearchFieldHelper;
 import com.ds.goroute.utils.DestinationMatchUtils;
 import com.ds.goroute.utils.JsonUtils;
@@ -60,6 +61,7 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
     private final TripRepository tripRepository;
     private final ActivityService activityService;
     private final ExchangeRateService exchangeRateService;
+    private final ImageStorageCleanupService imageStorageCleanupService;
 
     private Directory directory;
     private IndexWriter writer;
@@ -411,6 +413,7 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
         ActivityBooking booking = repository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity booking not found"));
 
+        imageStorageCleanupService.deleteImagesForEntityRecord("ACTIVITY_BOOKING", id);
         repository.delete(id);
 
         try {

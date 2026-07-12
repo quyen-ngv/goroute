@@ -47,6 +47,21 @@ public class ScrapeServiceClient {
         }
     }
 
+    public ScrapeSocialLocationJobResponse triggerSocialLocationJob(ScrapeSocialLocationJobRequest request) {
+        String url = baseUrl + "/api/v1/social-location/jobs";
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<ScrapeSocialLocationJobRequest> entity = new HttpEntity<>(request, headers);
+        try {
+            ResponseEntity<ScrapeSocialLocationJobResponse> response =
+                    restTemplate.postForEntity(url, entity, ScrapeSocialLocationJobResponse.class);
+            return response.getBody();
+        } catch (Exception e) {
+            log.error("Social location trigger failed for url {}: {}", request.getUrl(), e.getMessage());
+            return null;
+        }
+    }
+
     public ScrapeJobStatusResponse pollJob(String jobId) {
         String url = baseUrl + "/api/v1/jobs/" + jobId;
         try {

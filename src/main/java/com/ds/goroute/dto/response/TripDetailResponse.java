@@ -22,6 +22,8 @@ public class TripDetailResponse {
     private String destination;
     private BigDecimal lat;
     private BigDecimal lng;
+    private List<TripDestinationResponse> destinations;
+    private String routeSummary;
     private LocalDate startDate;
     private LocalDate endDate;
     private String status;

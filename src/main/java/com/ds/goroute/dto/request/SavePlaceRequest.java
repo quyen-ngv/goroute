@@ -15,6 +15,8 @@ public class SavePlaceRequest {
     
     @NotBlank(message = "Place ID is required")
     private String placeId;
+
+    private String itemType;
     
     @NotBlank(message = "Name is required")
     private String name;

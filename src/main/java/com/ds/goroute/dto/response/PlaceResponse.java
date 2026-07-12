@@ -20,7 +20,10 @@ import java.util.UUID;
 public class PlaceResponse {
     private UUID id;
     private String placeId;
+    private String locale;
+    private String name;
     private String title;
+    private Map<String, PlaceTranslationResponse> translations;
     private String category;
     private String placeGroup;
     private String address;

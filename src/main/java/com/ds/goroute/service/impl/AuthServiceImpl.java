@@ -266,11 +266,11 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private AuthResponse generateAuthResponse(User user) {
-        // Generate access token (15 minutes)
+        // Generate access token (1 day)
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", user.getId().toString());
         claims.put("email", user.getEmail());
-        String accessToken = jwtUtils.generateToken(claims, user.getId().toString(), 900000L);
+        String accessToken = jwtUtils.generateToken(claims, user.getId().toString());
 
         // Generate refresh token (30 days)
         RefreshToken refreshToken = RefreshToken.builder()

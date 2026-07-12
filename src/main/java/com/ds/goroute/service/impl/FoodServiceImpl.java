@@ -14,6 +14,7 @@ import com.ds.goroute.repository.FoodRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.ExchangeRateService;
 import com.ds.goroute.service.FoodService;
+import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.utils.CitySlugResolver;
 import com.ds.goroute.utils.FoodNameResolver;
 import com.ds.goroute.utils.FoodScoreLabelResolver;
@@ -42,6 +43,7 @@ public class FoodServiceImpl implements FoodService {
     private final FoodRepository foodRepository;
     private final PlaceRepository placeRepository;
     private final ExchangeRateService exchangeRateService;
+    private final ImageStorageCleanupService imageStorageCleanupService;
 
     @Override
     @Cacheable(
@@ -264,6 +266,7 @@ public class FoodServiceImpl implements FoodService {
         if (foodRepository.findFoodById(foodId).isEmpty()) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Food not found");
         }
+        imageStorageCleanupService.deleteImagesForEntityRecord("FOOD", foodId);
         foodRepository.deleteFood(foodId);
     }
 
@@ -336,6 +339,7 @@ public class FoodServiceImpl implements FoodService {
         if (!score.getFoodId().equals(foodId)) {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Score does not belong to food");
         }
+        imageStorageCleanupService.deleteImagesForEntityRecord("FOOD_CITY_SCORE", scoreId);
         foodRepository.deleteCityScore(scoreId);
     }
 

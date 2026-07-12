@@ -6,8 +6,8 @@ import java.util.List;
 import java.util.UUID;
 
 public interface SavedPlaceService {
-    List<SavedPlaceResponse> getSavedPlaces(UUID userId, String category, Integer page, Integer size);
+    List<SavedPlaceResponse> getSavedPlaces(UUID userId, String category, String itemType, Integer page, Integer size);
     SavedPlaceResponse savePlace(UUID userId, SavePlaceRequest request);
-    void unsavePlace(UUID savedPlaceId);
-    SavedPlaceResponse updateTags(UUID savedPlaceId, List<String> tags);
+    void unsavePlace(UUID userId, UUID savedPlaceId);
+    SavedPlaceResponse updateTags(UUID userId, UUID savedPlaceId, List<String> tags);
 }

@@ -22,6 +22,7 @@ import com.ds.goroute.dto.response.ExpenseResponse;
 import com.ds.goroute.dto.response.UserResponse;
 import com.ds.goroute.dto.response.ExpenseSplitResponse;
 import com.ds.goroute.service.ActivityService;
+import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.redis.RedisService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.ActivityStatus;
@@ -52,6 +53,7 @@ public class ActivityServiceImpl implements ActivityService {
     private final UserRepository userRepository;
     private final ExpenseSplitRepository expenseSplitRepository;
     private final NotificationHelper notificationHelper;
+    private final ImageStorageCleanupService imageStorageCleanupService;
 
     @Override
     @Transactional
@@ -199,6 +201,7 @@ public class ActivityServiceImpl implements ActivityService {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
         }
 
+        imageStorageCleanupService.deleteImagesForEntityRecord("ACTIVITY", activityId);
         activityRepository.deleteById(activityId);
 
         String cacheKey = "activities:" + tripId;

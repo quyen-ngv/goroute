@@ -15,6 +15,7 @@ public class SavedPlace {
     private UUID id;
     private UUID userId;
     private String placeId;
+    private String itemType;
     private UUID customPlaceId;
     private String name;
     private String address;

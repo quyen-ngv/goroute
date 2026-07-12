@@ -14,11 +14,11 @@ import org.apache.lucene.search.WildcardQuery;
 import java.util.Locale;
 
 /**
- * Builds flexible title-only Lucene queries: token match, prefix, substring, fuzzy.
+ * Builds flexible name-only Lucene queries: token match, prefix, substring, fuzzy.
  */
 public final class LuceneTitleQueryBuilder {
 
-    private static final String TITLE_FIELD = "title";
+    private static final String NAME_FIELD = "name";
 
     private LuceneTitleQueryBuilder() {
     }
@@ -30,7 +30,7 @@ public final class LuceneTitleQueryBuilder {
         }
 
         BooleanQuery.Builder builder = new BooleanQuery.Builder();
-        QueryParser parser = new QueryParser(TITLE_FIELD, analyzer);
+        QueryParser parser = new QueryParser(NAME_FIELD, analyzer);
         parser.setDefaultOperator(QueryParser.Operator.OR);
         parser.setAllowLeadingWildcard(true);
 
@@ -47,13 +47,13 @@ public final class LuceneTitleQueryBuilder {
                 continue;
             }
 
-            builder.add(new PrefixQuery(new Term(TITLE_FIELD, normalized)), BooleanClause.Occur.SHOULD);
+            builder.add(new PrefixQuery(new Term(NAME_FIELD, normalized)), BooleanClause.Occur.SHOULD);
             builder.add(
-                    new WildcardQuery(new Term(TITLE_FIELD, "*" + normalized + "*")),
+                    new WildcardQuery(new Term(NAME_FIELD, "*" + normalized + "*")),
                     BooleanClause.Occur.SHOULD);
 
             if (normalized.length() >= 4) {
-                builder.add(new FuzzyQuery(new Term(TITLE_FIELD, normalized), 1), BooleanClause.Occur.SHOULD);
+                builder.add(new FuzzyQuery(new Term(NAME_FIELD, normalized), 1), BooleanClause.Occur.SHOULD);
             }
         }
 
@@ -63,7 +63,7 @@ public final class LuceneTitleQueryBuilder {
             if (fallback.isEmpty()) {
                 throw new IllegalArgumentException("Query contains no searchable characters");
             }
-            return new WildcardQuery(new Term(TITLE_FIELD, "*" + fallback + "*"));
+            return new WildcardQuery(new Term(NAME_FIELD, "*" + fallback + "*"));
         }
 
         return booleanQuery;

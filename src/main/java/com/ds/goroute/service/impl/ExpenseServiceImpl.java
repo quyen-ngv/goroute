@@ -23,6 +23,7 @@ import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.ExpenseService;
 import com.ds.goroute.service.ExchangeRateService;
+import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.ExpenseCategory;
 import com.ds.goroute.type.MemberStatus;
@@ -53,6 +54,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     private final UserRepository userRepository;
     private final NotificationHelper notificationHelper;
     private final ExchangeRateService exchangeRateService;
+    private final ImageStorageCleanupService imageStorageCleanupService;
 
     /**
      * Check if user has access to trip (must be owner or ACCEPTED member, not LEFT)
@@ -251,6 +253,7 @@ public class ExpenseServiceImpl implements ExpenseService {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
         }
 
+        imageStorageCleanupService.deleteImagesForEntityRecord("EXPENSE", expenseId);
         expenseSplitRepository.deleteByExpenseId(expenseId);
         expenseRepository.deleteById(expenseId);
         log.info("Expense deleted: {}", expenseId);

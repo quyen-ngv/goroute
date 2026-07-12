@@ -162,11 +162,11 @@
         SELECT *
         FROM (
             SELECT *,
-                (6371 * acos(
+                (6371 * acos(LEAST(1, GREATEST(-1,
                     cos(radians(#{latitude})) * cos(radians(latitude)) *
                     cos(radians(longitude) - radians(#{longitude})) +
                     sin(radians(#{latitude})) * sin(radians(latitude))
-                )) AS distance
+                )))) AS distance
             FROM places
             WHERE 1=1
             <if test="category != null and category != ''">
@@ -195,11 +195,11 @@
         SELECT *
         FROM (
             SELECT p.*,
-                (6371 * acos(
+                (6371 * acos(LEAST(1, GREATEST(-1,
                     cos(radians(#{latitude})) * cos(radians(p.latitude)) *
                     cos(radians(p.longitude) - radians(#{longitude})) +
                     sin(radians(#{latitude})) * sin(radians(p.latitude))
-                )) AS distance
+                )))) AS distance
             FROM places p
             <if test="foodIds != null and foodIds.size() > 0">
                 INNER JOIN place_foods pf ON pf.place_id = p.id

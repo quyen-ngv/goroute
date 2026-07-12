@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 @Data
 @Builder
@@ -30,6 +31,7 @@ public class CreateTripRequest {
     private String destinationPlaceId;
     private BigDecimal destinationLat;
     private BigDecimal destinationLng;
+    private List<TripDestinationRequest> destinations;
     private BigDecimal budget;
     private String currency;
 }

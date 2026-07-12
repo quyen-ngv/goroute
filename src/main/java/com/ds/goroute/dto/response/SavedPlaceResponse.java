@@ -15,6 +15,7 @@ import java.util.UUID;
 public class SavedPlaceResponse {
     private UUID id;
     private String placeId;
+    private String itemType;
     private String name;
     private String address;
     private Double lat;

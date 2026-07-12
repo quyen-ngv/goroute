@@ -6,6 +6,7 @@
         <id property="id" column="id"/>
         <result property="userId" column="user_id"/>
         <result property="placeId" column="place_id"/>
+        <result property="itemType" column="item_type"/>
         <result property="customPlaceId" column="custom_place_id"/>
         <result property="name" column="name"/>
         <result property="address" column="address"/>
@@ -19,8 +20,8 @@
     </resultMap>
 
     <insert id="insert">
-        INSERT INTO saved_places (id, user_id, place_id, custom_place_id, name, address, lat, lng, category, rating, photo_url, tags, created_at)
-        VALUES (#{id}, #{userId}, #{placeId}, #{customPlaceId}, #{name}, #{address}, #{lat}, #{lng}, #{category}, #{rating}, #{photoUrl}, #{tags}, #{createdAt})
+        INSERT INTO saved_places (id, user_id, place_id, item_type, custom_place_id, name, address, lat, lng, category, rating, photo_url, tags, created_at)
+        VALUES (#{id}, #{userId}, #{placeId}, #{itemType}, #{customPlaceId}, #{name}, #{address}, #{lat}, #{lng}, #{category}, #{rating}, #{photoUrl}, #{tags}, #{createdAt})
     </insert>
 
     <select id="findById" resultMap="SavedPlaceResultMap">
@@ -33,13 +34,16 @@
         <if test="category != null">
             AND category = #{category}
         </if>
+        <if test="itemType != null">
+            AND item_type = #{itemType}
+        </if>
         ORDER BY created_at DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <select id="findByUserIdAndPlaceId" resultMap="SavedPlaceResultMap">
         SELECT * FROM saved_places 
-        WHERE user_id = #{userId} AND place_id = #{placeId}
+        WHERE user_id = #{userId} AND place_id = #{placeId} AND item_type = #{itemType}
     </select>
 
     <update id="updateTags">

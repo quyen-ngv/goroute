@@ -22,7 +22,7 @@ public class AcceptLanguageFilter implements Filter {
     public static final String DEFAULT_LANGUAGE = "en";
 
     private static final Set<String> ALLOWED = Set.of(
-            "en", "vi", "ko", "th", "ja", "zh-tw", "ru", "hi"
+            "en", "vi", "ko", "th", "ja", "zh-tw", "ru", "hi", "de", "es", "pt"
     );
 
     private static final ThreadLocal<String> LANGUAGE_HOLDER = new ThreadLocal<>();
