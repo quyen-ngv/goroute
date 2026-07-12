@@ -17,6 +17,10 @@ public interface PlaceRepository {
 
     Place findByPlaceId(String placeId);
 
+    Place findByCid(String cid);
+
+    Place findNearCoordinates(BigDecimal latitude, BigDecimal longitude, BigDecimal maxDistanceMeters);
+
     List<Place> findAll();
 
     long countAll();
@@ -27,11 +31,12 @@ public interface PlaceRepository {
 
     List<Place> findNearby(String keyword, BigDecimal latitude, BigDecimal longitude, BigDecimal radius,
                           String category, List<String> placeGroups, BigDecimal minRating,
-                          int limit, int offset);
+                          boolean includeInactive, int limit, int offset);
 
     List<Place> findNearbyExtended(String keyword, BigDecimal latitude, BigDecimal longitude, BigDecimal radius,
                                    String category, List<String> placeGroups, BigDecimal minRating, String citySlugJson,
-                                   List<UUID> foodIds, Boolean excludeLinkedFoodPlaces, int limit, int offset);
+                                   List<UUID> foodIds, Boolean excludeLinkedFoodPlaces, boolean includeInactive,
+                                   int limit, int offset);
 
     void delete(UUID id);
 }

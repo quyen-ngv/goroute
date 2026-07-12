@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ds.goroute.mapper.PlaceImportJobMapper">
+
+    <resultMap id="PlaceImportJobResultMap" type="com.ds.goroute.entity.PlaceImportJob">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="sourceType" column="source_type" javaType="com.ds.goroute.type.PlaceImportSourceType"/>
+        <result property="sourceRefId" column="source_ref_id"/>
+        <result property="status" column="status" javaType="com.ds.goroute.type.PlaceImportJobStatus"/>
+        <result property="maxReviews" column="max_reviews"/>
+        <result property="totalItems" column="total_items"/>
+        <result property="skippedExistingCount" column="skipped_existing_count"/>
+        <result property="triggeredCount" column="triggered_count"/>
+        <result property="completedCount" column="completed_count"/>
+        <result property="failedCount" column="failed_count"/>
+        <result property="requestPayload" column="request_payload"/>
+        <result property="errorMessage" column="error_message"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="startedAt" column="started_at"/>
+        <result property="completedAt" column="completed_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <resultMap id="PlaceImportJobItemResultMap" type="com.ds.goroute.entity.PlaceImportJobItem">
+        <id property="id" column="id"/>
+        <result property="jobId" column="job_id"/>
+        <result property="sourceRefId" column="source_ref_id"/>
+        <result property="activityId" column="activity_id"/>
+        <result property="sourceUrl" column="source_url"/>
+        <result property="sourceAddress" column="source_address"/>
+        <result property="sourceOriginalUrl" column="source_original_url"/>
+        <result property="sourceCandidateKey" column="source_candidate_key"/>
+        <result property="candidateName" column="candidate_name"/>
+        <result property="googlePlaceId" column="google_place_id"/>
+        <result property="cid" column="cid"/>
+        <result property="latitude" column="latitude"/>
+        <result property="longitude" column="longitude"/>
+        <result property="existingPlaceId" column="existing_place_id"/>
+        <result property="importedPlaceId" column="imported_place_id"/>
+        <result property="pythonJobId" column="python_job_id"/>
+        <result property="status" column="status" javaType="com.ds.goroute.type.PlaceImportJobItemStatus"/>
+        <result property="approvalStatus" column="approval_status" javaType="com.ds.goroute.type.PlaceImportApprovalStatus"/>
+        <result property="approvalNote" column="approval_note"/>
+        <result property="approvedAt" column="approved_at"/>
+        <result property="errorMessage" column="error_message"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insertJob" parameterType="com.ds.goroute.entity.PlaceImportJob">
+        INSERT INTO place_import_jobs (
+            id, user_id, source_type, source_ref_id, status, max_reviews,
+            total_items, skipped_existing_count, triggered_count, completed_count, failed_count,
+            request_payload, error_message, created_at, started_at, completed_at, updated_at
+        ) VALUES (
+            #{id}, #{userId}, #{sourceType, javaType=com.ds.goroute.type.PlaceImportSourceType},
+            #{sourceRefId}, #{status, javaType=com.ds.goroute.type.PlaceImportJobStatus},
+            #{maxReviews}, #{totalItems}, #{skippedExistingCount}, #{triggeredCount},
+            #{completedCount}, #{failedCount}, #{requestPayload}, #{errorMessage},
+            #{createdAt}, #{startedAt}, #{completedAt}, #{updatedAt}
+        )
+    </insert>
+
+    <update id="updateJob" parameterType="com.ds.goroute.entity.PlaceImportJob">
+        UPDATE place_import_jobs SET
+            status = #{status, javaType=com.ds.goroute.type.PlaceImportJobStatus},
+            total_items = #{totalItems},
+            skipped_existing_count = #{skippedExistingCount},
+            triggered_count = #{triggeredCount},
+            completed_count = #{completedCount},
+            failed_count = #{failedCount},
+            error_message = #{errorMessage},
+            started_at = #{startedAt},
+            completed_at = #{completedAt},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <select id="findJobById" resultMap="PlaceImportJobResultMap">
+        SELECT * FROM place_import_jobs WHERE id = #{id}
+    </select>
+
+    <select id="findJobsByUserId" resultMap="PlaceImportJobResultMap">
+        SELECT * FROM place_import_jobs
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findAdminJobs" resultMap="PlaceImportJobResultMap">
+        SELECT * FROM place_import_jobs
+        WHERE 1 = 1
+        <if test="userId != null">
+            AND user_id = #{userId}
+        </if>
+        <if test="status != null and status != ''">
+            AND status = #{status}
+        </if>
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <insert id="insertItem" parameterType="com.ds.goroute.entity.PlaceImportJobItem">
+        INSERT INTO place_import_job_items (
+            id, job_id, source_ref_id, activity_id, source_url, source_address, source_original_url,
+            source_candidate_key, candidate_name,
+            google_place_id, cid, latitude, longitude, existing_place_id, imported_place_id,
+            python_job_id, status, approval_status, approval_note, approved_at, error_message, created_at, updated_at
+        ) VALUES (
+            #{id}, #{jobId}, #{sourceRefId}, #{activityId}, #{sourceUrl}, #{sourceAddress}, #{sourceOriginalUrl},
+            #{sourceCandidateKey}, #{candidateName},
+            #{googlePlaceId}, #{cid}, #{latitude}, #{longitude}, #{existingPlaceId}, #{importedPlaceId},
+            #{pythonJobId}, #{status, javaType=com.ds.goroute.type.PlaceImportJobItemStatus},
+            #{approvalStatus, javaType=com.ds.goroute.type.PlaceImportApprovalStatus},
+            #{approvalNote}, #{approvedAt}, #{errorMessage}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <update id="updateItem" parameterType="com.ds.goroute.entity.PlaceImportJobItem">
+        UPDATE place_import_job_items SET
+            source_url = #{sourceUrl},
+            source_address = #{sourceAddress},
+            source_original_url = #{sourceOriginalUrl},
+            source_candidate_key = #{sourceCandidateKey},
+            candidate_name = #{candidateName},
+            google_place_id = #{googlePlaceId},
+            cid = #{cid},
+            latitude = #{latitude},
+            longitude = #{longitude},
+            existing_place_id = #{existingPlaceId},
+            imported_place_id = #{importedPlaceId},
+            python_job_id = #{pythonJobId},
+            status = #{status, javaType=com.ds.goroute.type.PlaceImportJobItemStatus},
+            approval_status = #{approvalStatus, javaType=com.ds.goroute.type.PlaceImportApprovalStatus},
+            approval_note = #{approvalNote},
+            approved_at = #{approvedAt},
+            error_message = #{errorMessage},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <select id="findItemsByJobId" resultMap="PlaceImportJobItemResultMap">
+        SELECT * FROM place_import_job_items
+        WHERE job_id = #{jobId}
+        ORDER BY created_at ASC
+    </select>
+
+    <select id="findItemById" resultMap="PlaceImportJobItemResultMap">
+        SELECT * FROM place_import_job_items WHERE id = #{id}
+    </select>
+
+    <select id="existsActivityItem" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM place_import_job_items
+            WHERE activity_id = #{activityId}
+              AND status &lt;&gt; 'FAILED'
+        )
+    </select>
+
+    <select id="existsSocialItem" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1 FROM place_import_job_items
+            WHERE source_ref_id = #{socialJobId}
+              AND activity_id IS NULL
+              AND source_candidate_key = #{sourceCandidateKey}
+        )
+    </select>
+
+    <select id="findSocialItemsBySocialJobId" resultMap="PlaceImportJobItemResultMap">
+        SELECT * FROM place_import_job_items
+        WHERE source_ref_id = #{socialJobId}
+          AND activity_id IS NULL
+          AND source_candidate_key IS NOT NULL
+        ORDER BY updated_at DESC
+    </select>
+
+    <resultMap id="AdminPlaceImportMappingResultMap" type="com.ds.goroute.dto.response.AdminPlaceImportMappingResponse">
+        <id property="id" column="id"/>
+        <result property="jobId" column="job_id"/>
+        <result property="sourceType" column="source_type" javaType="com.ds.goroute.type.PlaceImportSourceType"/>
+        <result property="sourceRefId" column="source_ref_id"/>
+        <result property="activityId" column="activity_id"/>
+        <result property="activityName" column="activity_name"/>
+        <result property="candidateName" column="candidate_name"/>
+        <result property="sourceUrl" column="source_url"/>
+        <result property="sourceAddress" column="source_address"/>
+        <result property="sourceOriginalUrl" column="source_original_url"/>
+        <result property="googlePlaceId" column="google_place_id"/>
+        <result property="cid" column="cid"/>
+        <result property="latitude" column="latitude"/>
+        <result property="longitude" column="longitude"/>
+        <result property="mappedPlaceId" column="mapped_place_id"/>
+        <result property="mappedPlaceName" column="mapped_place_name"/>
+        <result property="mappedPlaceAddress" column="mapped_place_address"/>
+        <result property="mappedPlaceGoogleMapsLink" column="mapped_place_google_maps_link"/>
+        <result property="mappedPlaceVisibilityStatus" column="mapped_place_visibility_status"/>
+        <result property="status" column="status" javaType="com.ds.goroute.type.PlaceImportJobItemStatus"/>
+        <result property="approvalStatus" column="approval_status" javaType="com.ds.goroute.type.PlaceImportApprovalStatus"/>
+        <result property="approvalNote" column="approval_note"/>
+        <result property="errorMessage" column="error_message"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="approvedAt" column="approved_at"/>
+    </resultMap>
+
+    <sql id="AdminMappingColumns">
+        i.id, i.job_id, j.source_type, i.source_ref_id, i.activity_id, a.name AS activity_name,
+        i.candidate_name, i.source_url, i.source_address, i.source_original_url,
+        i.google_place_id, i.cid, i.latitude, i.longitude,
+        COALESCE(i.imported_place_id, i.existing_place_id) AS mapped_place_id,
+        p.title AS mapped_place_name, p.address AS mapped_place_address,
+        p.google_maps_link AS mapped_place_google_maps_link,
+        p.visibility_status AS mapped_place_visibility_status,
+        i.status, i.approval_status, i.approval_note, i.error_message, i.created_at, i.approved_at
+    </sql>
+
+    <select id="findAdminMappings" resultMap="AdminPlaceImportMappingResultMap">
+        SELECT <include refid="AdminMappingColumns"/>
+        FROM place_import_job_items i
+        JOIN place_import_jobs j ON j.id = i.job_id
+        LEFT JOIN activities a ON a.id = i.activity_id
+        LEFT JOIN places p ON p.id = COALESCE(i.imported_place_id, i.existing_place_id)
+        WHERE 1 = 1
+        <if test="approvalStatus != null and approvalStatus != ''">
+            AND i.approval_status = #{approvalStatus}
+        </if>
+        ORDER BY i.created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findAdminMappingByItemId" resultMap="AdminPlaceImportMappingResultMap">
+        SELECT <include refid="AdminMappingColumns"/>
+        FROM place_import_job_items i
+        JOIN place_import_jobs j ON j.id = i.job_id
+        LEFT JOIN activities a ON a.id = i.activity_id
+        LEFT JOIN places p ON p.id = COALESCE(i.imported_place_id, i.existing_place_id)
+        WHERE i.id = #{itemId}
+    </select>
+</mapper>

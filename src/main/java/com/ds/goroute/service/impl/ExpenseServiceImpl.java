@@ -65,7 +65,7 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
         boolean hasAccess = trip.getOwnerId().equals(userId) ||
-                           (member.isPresent() && member.get().getStatus() == MemberStatus .ACCEPTED);
+                           (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
 
         if (!hasAccess) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
@@ -78,10 +78,6 @@ public class ExpenseServiceImpl implements ExpenseService {
         validateTripAccess(tripId, userId);
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-
-        if (!trip.getOwnerId().equals(userId) && !tripMemberRepository.findByTripIdAndUserId(tripId, userId).isPresent()) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
-        }
 
         UUID paidBy = request.getPaidBy() != null ? request.getPaidBy() : userId;
 
@@ -245,13 +241,7 @@ public class ExpenseServiceImpl implements ExpenseService {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found");
         }
 
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-
-        // Allow any trip member to delete expense
-        if (!trip.getOwnerId().equals(userId) && !tripMemberRepository.findByTripIdAndUserId(tripId, userId).isPresent()) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
-        }
+        validateTripAccess(tripId, userId);
 
         imageStorageCleanupService.deleteImagesForEntityRecord("EXPENSE", expenseId);
         expenseSplitRepository.deleteByExpenseId(expenseId);
@@ -276,15 +266,9 @@ public class ExpenseServiceImpl implements ExpenseService {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found");
         }
 
-        // 3. Validate user is member of trip
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-
-        // Allow any trip member to update expense
-        if (!trip.getOwnerId().equals(userId) && !tripMemberRepository.findByTripIdAndUserId(tripId, userId).isPresent()) {
-            log.warn("Unauthorized expense update attempt: expenseId={}, userId={}", expenseId, userId);
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
-        }
+        validateTripAccess(tripId, userId);
 
         // Track if amount or currency changed
         boolean amountChanged = request.getAmount() != null && request.getAmount().compareTo(expense.getAmount()) != 0;
@@ -637,13 +621,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     public ExpenseSplitResponse markPaymentForSplit(UUID tripId, UUID expenseId, UUID splitId, MarkPaymentRequest request, UUID userId) {
         log.info("Marking payment for split: splitId={}, expenseId={}, tripId={}, userId={}", splitId, expenseId, tripId, userId);
 
-        // 1. Validate user is member of trip
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-
-        if (!trip.getOwnerId().equals(userId) && !tripMemberRepository.findByTripIdAndUserId(tripId, userId).isPresent()) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
-        }
+        validateTripAccess(tripId, userId);
 
         // 2. Fetch expense
         Expense expense = expenseRepository.findById(expenseId)
@@ -657,20 +635,6 @@ public class ExpenseServiceImpl implements ExpenseService {
         ExpenseSplit split = expenseSplitRepository.findById(splitId);
         if (split == null || !split.getExpenseId().equals(expenseId)) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Split not found");
-        }
-
-        // 4. Validate permission: only payer or payee can mark as paid
-        boolean isExpensePayer = expense.getPaidBy() != null && expense.getPaidBy().equals(userId);
-        boolean isExpensePayee = split.getUserId() != null && split.getUserId().equals(userId);
-        boolean isGuestPayee = split.getGuestMemberId() != null || (split.getUserId() == null && split.getGuestName() != null);
-
-        // For guest, check if current user is payer, trip owner, or expense creator
-        if (isGuestPayee) {
-            if (!isExpensePayer && !trip.getOwnerId().equals(userId) && !expense.getCreatedBy().equals(userId)) {
-                throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only payer, trip owner, or expense creator can mark guest payment");
-            }
-        } else if (!isExpensePayer && !isExpensePayee) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only payer or payee can mark payment");
         }
 
         split.setIsSettled(request.getIsPaid());
@@ -690,13 +654,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     public ExpenseResponse markAllPaymentsForExpense(UUID tripId, UUID expenseId, MarkPaymentRequest request, UUID userId) {
         log.info("Marking all payments for expense: expenseId={}, tripId={}, userId={}", expenseId, tripId, userId);
 
-        // 1. Validate user is member of trip
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-
-        if (!trip.getOwnerId().equals(userId) && !tripMemberRepository.findByTripIdAndUserId(tripId, userId).isPresent()) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
-        }
+        validateTripAccess(tripId, userId);
 
         // 2. Fetch expense
         Expense expense = expenseRepository.findById(expenseId)
@@ -704,15 +662,6 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         if (!expense.getTripId().equals(tripId)) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found");
-        }
-
-        // 3. Validate permission: only payer or trip owner can mark all as paid
-
-        boolean isExpensePayer = expense.getPaidBy() != null && expense.getPaidBy().equals(userId);
-        boolean isTripOwner = trip.getOwnerId().equals(userId);
-
-        if (!isExpensePayer && !isTripOwner) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only payer or trip owner can mark all payments");
         }
 
         List<ExpenseSplit> splits = expenseSplitRepository.findByExpenseId(expenseId);
@@ -749,13 +698,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     public void markAllPaymentsForTrip(UUID tripId, MarkPaymentRequest request, UUID userId) {
         log.info("Marking all payments for trip: tripId={}, userId={}", tripId, userId);
 
-        // 1. Validate trip exists and user is owner
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-
-        if (!trip.getOwnerId().equals(userId)) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only trip owner can mark all payments for trip");
-        }
+        validateTripAccess(tripId, userId);
 
         // 2. Get all expenses for trip
         List<Expense> expenses = expenseRepository.findByTripId(tripId);

@@ -4,21 +4,30 @@ import com.ds.goroute.dto.request.CreateSocialLocationJobRequest;
 import com.ds.goroute.dto.request.SocialLocationJobCallbackRequest;
 import com.ds.goroute.dto.response.SocialLocationJobResponse;
 import com.ds.goroute.entity.SocialLocationJob;
+import com.ds.goroute.entity.PlaceImportJobItem;
+import com.ds.goroute.mapper.PlaceImportJobMapper;
 import com.ds.goroute.mapper.SocialLocationJobMapper;
 import com.ds.goroute.service.SocialLocationJobService;
 import com.ds.goroute.thirdparty.scrape.ScrapeServiceClient;
 import com.ds.goroute.thirdparty.scrape.ScrapeSocialLocationJobRequest;
 import com.ds.goroute.thirdparty.scrape.ScrapeSocialLocationJobResponse;
 import com.ds.goroute.type.SocialLocationJobStatus;
+import com.ds.goroute.type.PlaceImportJobItemStatus;
+import com.ds.goroute.util.SocialLocationSourceKey;
+import com.ds.goroute.util.PlaceImportCandidateKey;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
 import java.util.UUID;
 
 @Service
@@ -27,6 +36,7 @@ import java.util.UUID;
 public class SocialLocationJobServiceImpl implements SocialLocationJobService {
 
     private final SocialLocationJobMapper jobMapper;
+    private final PlaceImportJobMapper placeImportJobMapper;
     private final ScrapeServiceClient scrapeServiceClient;
     private final ObjectMapper objectMapper;
 
@@ -40,12 +50,18 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         if ("unknown".equals(platform)) {
             throw new IllegalArgumentException("URL must be a TikTok or Instagram URL");
         }
+        String sourceKey = SocialLocationSourceKey.fromUrl(sourceUrl);
+        SocialLocationJob reusableJob = jobMapper.findReusableByUserIdAndSourceKey(userId, sourceKey);
+        if (reusableJob != null) {
+            return toResponse(reusableJob);
+        }
 
         LocalDateTime now = LocalDateTime.now();
         SocialLocationJob job = SocialLocationJob.builder()
                 .id(UUID.randomUUID())
                 .userId(userId)
                 .sourceUrl(sourceUrl)
+                .sourceKey(sourceKey)
                 .platform(platform)
                 .status(SocialLocationJobStatus.QUEUED)
                 .language(cleanLanguage(request.getLanguage()))
@@ -53,7 +69,15 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
-        jobMapper.insert(job);
+        try {
+            jobMapper.insert(job);
+        } catch (DataIntegrityViolationException duplicate) {
+            SocialLocationJob existing = jobMapper.findReusableByUserIdAndSourceKey(userId, sourceKey);
+            if (existing != null) {
+                return toResponse(existing);
+            }
+            throw duplicate;
+        }
 
         ScrapeSocialLocationJobResponse trigger = scrapeServiceClient.triggerSocialLocationJob(
                 ScrapeSocialLocationJobRequest.builder()
@@ -201,6 +225,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     }
 
     private SocialLocationJobResponse toResponse(SocialLocationJob job) {
+        JsonNode result = enrichResultWithPlaceMappings(job.getId(), parseJson(job.getResultPayload()));
         return SocialLocationJobResponse.builder()
                 .id(job.getId())
                 .sourceUrl(job.getSourceUrl())
@@ -208,7 +233,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 .status(job.getStatus())
                 .pythonJobId(job.getPythonJobId())
                 .language(job.getLanguage())
-                .result(parseJson(job.getResultPayload()))
+                .result(result)
                 .errorCode(job.getErrorCode())
                 .errorMessage(job.getErrorMessage())
                 .createdAt(job.getCreatedAt())
@@ -216,5 +241,78 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 .completedAt(job.getCompletedAt())
                 .updatedAt(job.getUpdatedAt())
                 .build();
+    }
+
+    private JsonNode enrichResultWithPlaceMappings(UUID socialJobId, JsonNode result) {
+        if (result == null || !result.isObject()) {
+            return result;
+        }
+        Map<String, PlaceImportJobItem> mappings = placeImportJobMapper.findSocialItemsBySocialJobId(socialJobId)
+                .stream()
+                .filter(item -> item.getStatus() == PlaceImportJobItemStatus.COMPLETED
+                        || item.getStatus() == PlaceImportJobItemStatus.SKIPPED_EXISTING)
+                .collect(java.util.stream.Collectors.toMap(
+                        PlaceImportJobItem::getSourceCandidateKey,
+                        Function.identity(),
+                        (first, ignored) -> first));
+        if (mappings.isEmpty()) {
+            return result;
+        }
+
+        JsonNode extractionCandidates = result.path("extraction").path("candidates");
+        if (!extractionCandidates.isArray()) {
+            return result;
+        }
+        for (JsonNode candidate : extractionCandidates) {
+            JsonNode mapCandidates = candidate.path("mapSearch").path("candidates");
+            if (!mapCandidates.isArray()) {
+                continue;
+            }
+            for (JsonNode mapCandidate : mapCandidates) {
+                if (!(mapCandidate instanceof ObjectNode objectNode)) {
+                    continue;
+                }
+                String key = PlaceImportCandidateKey.of(
+                        text(mapCandidate, "placeId"),
+                        text(mapCandidate, "cid"),
+                        decimal(mapCandidate, "latitude"),
+                        decimal(mapCandidate, "longitude"),
+                        text(mapCandidate, "title", "name"),
+                        text(mapCandidate, "googleMapsLink", "resolvedUrl"));
+                PlaceImportJobItem item = mappings.get(key);
+                if (item == null) {
+                    continue;
+                }
+                ObjectNode mapping = objectNode.putObject("placeMapping");
+                mapping.put("placeId", item.getImportedPlaceId() != null
+                        ? item.getImportedPlaceId().toString()
+                        : item.getExistingPlaceId().toString());
+                mapping.put("approvalStatus", item.getApprovalStatus().name());
+                mapping.put("itemStatus", item.getStatus().name());
+            }
+        }
+        return result;
+    }
+
+    private String text(JsonNode node, String... fields) {
+        for (String field : fields) {
+            JsonNode value = node.get(field);
+            if (value != null && !value.isNull() && !value.asText().isBlank()) {
+                return value.asText();
+            }
+        }
+        return null;
+    }
+
+    private java.math.BigDecimal decimal(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        if (value == null || value.isNull() || value.asText().isBlank()) {
+            return null;
+        }
+        try {
+            return new java.math.BigDecimal(value.asText());
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 }

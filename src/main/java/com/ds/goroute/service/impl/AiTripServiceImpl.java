@@ -279,7 +279,7 @@ public class AiTripServiceImpl implements AiTripService {
     private List<Place> findPlaces(AiTripGenerateRequest request, PlaceGroup group, int limit) {
         if (request.getCityLat() != null && request.getCityLng() != null) {
             return placeRepository.findNearby(null, request.getCityLat(), request.getCityLng(),
-                    BigDecimal.valueOf(SEARCH_RADIUS_KM), null, List.of(group.name()), BigDecimal.valueOf(3.5), limit, 0);
+                    BigDecimal.valueOf(SEARCH_RADIUS_KM), null, List.of(group.name()), BigDecimal.valueOf(3.5), false, limit, 0);
         }
         String cityKey = DestinationMatchUtils.normalizeKey(request.getCityName());
         return placeRepository.findAll().stream()

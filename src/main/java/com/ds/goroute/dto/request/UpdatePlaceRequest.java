@@ -53,6 +53,7 @@ public class UpdatePlaceRequest {
     // Details
     private String descriptions;
     private String status;
+    private String visibilityStatus;
     private String priceRange;
 
     // Hours & Booking

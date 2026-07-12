@@ -83,18 +83,12 @@ public class TripMemoryServiceImpl implements TripMemoryService {
     @Override
     @Transactional
     public void deleteTripMemory(UUID tripId, UUID memoryId, UUID userId) {
-        Trip trip = getTripAndEnsureMember(tripId, userId);
+        getTripAndEnsureMember(tripId, userId);
         MediaAsset asset = mediaAssetRepository.findById(memoryId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Memory not found"));
 
         if (!tripId.equals(asset.getTripId())) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Memory not found");
-        }
-
-        boolean isOwner = trip.getOwnerId().equals(userId);
-        boolean isUploader = asset.getUploadedBy().equals(userId);
-        if (!isOwner && !isUploader) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You cannot delete this memory");
         }
 
         imageStorageCleanupService.deleteImagesForEntityRecord("MEDIA_ASSET", memoryId);

@@ -103,6 +103,7 @@
         <div class="toolbar">
             <button class="btn btn-primary" onclick="openImportModal()">📥 Import Place JSON</button>
             <button class="btn btn-success" onclick="openBatchImportModal()">📦 Import Batch</button>
+            <a class="btn btn-secondary" href="/goroute/admin-place-import-mappings.html">Duyệt mapping chờ</a>
             <button class="btn btn-secondary" onclick="loadData()">🔄 Làm mới</button>
             <input type="text" class="search-box" id="search-input" placeholder="Tìm kiếm theo tên, địa chỉ..."
                 onkeyup="filterPlaces()">
@@ -128,6 +129,7 @@
                                 <th>Địa chỉ</th>
                                 <th style="width: 100px;">Rating</th>
                                 <th style="width: 100px;">Reviews</th>
+                                <th style="width: 100px;">Hiển thị</th>
                                 <th style="width: 150px;">Thao tác</th>
                             </tr>
                         </thead>
@@ -225,6 +227,7 @@
             <div class="modal-body">
                 <form id="edit-form">
                     <input type="hidden" id="edit-place-id">
+                    <input type="hidden" id="edit-original-visibility-status">
 
                     <h4 style="margin-bottom: 16px; color: #6366f1;">📍 Thông tin cơ bản</h4>
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
@@ -367,6 +370,18 @@
                         <div class="form-group">
                             <label class="form-label">Status</label>
                             <input type="text" id="edit-status" class="form-input">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Visibility</label>
+                            <select id="edit-visibility-status" class="form-input">
+                                <option value="ACTIVE">ACTIVE</option>
+                                <option value="INACTIVE">INACTIVE</option>
+                            </select>
+                            <label style="display:flex; gap:8px; align-items:center; margin-top:8px; font-size:13px;">
+                                <input type="checkbox" id="edit-refresh-reviews-on-activate">
+                                Lấy thêm 5 reviews khi chuyển sang ACTIVE
+                            </label>
                         </div>
 
                         <div class="form-group">
@@ -637,6 +652,7 @@
                     <td>${place.address || 'N/A'}</td>
                     <td><span class="rating-badge">⭐ ${place.reviewRating || 0}</span></td>
                     <td>${place.reviewCount || 0}</td>
+                    <td><span class="rating-badge">${place.visibilityStatus || 'ACTIVE'}</span></td>
                     <td>
                         <div class="action-btns">
                             <button class="btn btn-secondary btn-sm" onclick="viewDetails('${place.id}')">👁️ Xem</button>
@@ -1035,6 +1051,9 @@
                     // Details
                     setVal('edit-descriptions', place.descriptions);
                     setVal('edit-status', place.status);
+                    setVal('edit-visibility-status', place.visibilityStatus || 'ACTIVE');
+                    setVal('edit-original-visibility-status', place.visibilityStatus || 'ACTIVE');
+                    document.getElementById('edit-refresh-reviews-on-activate').checked = false;
                     setVal('edit-price-range', place.priceRange);
 
                     // Hours & Booking
@@ -1312,6 +1331,7 @@
                 // Details
                 descriptions: getVal('edit-descriptions') || null,
                 status: getVal('edit-status') || null,
+                visibilityStatus: getVal('edit-visibility-status') || 'ACTIVE',
                 priceRange: getVal('edit-price-range') || null,
 
                 // Hours & Booking
@@ -1338,6 +1358,9 @@
                 const result = await response.json();
 
                 if (result.meta && result.meta.code === 200000) {
+                    const becameActive = getVal('edit-original-visibility-status') !== 'ACTIVE'
+                        && updateData.visibilityStatus === 'ACTIVE';
+                    const refreshReviews = document.getElementById('edit-refresh-reviews-on-activate').checked;
                     showSuccess('Cập nhật thành công!');
                     closeEditModal();
                     if (result.data) {
@@ -1345,11 +1368,32 @@
                     } else {
                         await refreshPlaceSilent(placeId);
                     }
+                    if (becameActive && refreshReviews) {
+                        await triggerReviewRefresh(placeId);
+                    }
                 } else {
                     throw new Error(result.meta?.message || 'Update failed');
                 }
             } catch (error) {
                 showError('Lỗi cập nhật: ' + error.message);
+            }
+        }
+
+        async function triggerReviewRefresh(placeId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/places/${placeId}/refresh-reviews`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ maxReviews: 5 })
+                });
+                const result = await response.json();
+                if (result.meta?.code === 200000) {
+                    showSuccess('Đã tạo job lấy thêm 5 reviews.');
+                } else {
+                    throw new Error(result.meta?.message || 'Không tạo được job reviews');
+                }
+            } catch (error) {
+                showError('Place đã active nhưng không tạo được job reviews: ' + error.message);
             }
         }
 

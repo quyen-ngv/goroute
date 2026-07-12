@@ -53,6 +53,7 @@ public class ImportPlaceRequest {
 
     private String descriptions;
     private String status;
+    private String visibilityStatus;
     private String priceRange;
 
     private String openHours; // JSON as String

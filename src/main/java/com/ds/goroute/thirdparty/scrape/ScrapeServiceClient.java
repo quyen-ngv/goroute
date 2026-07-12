@@ -8,6 +8,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.net.URI;
+
 @Component
 @RequiredArgsConstructor
 @Slf4j
@@ -19,15 +21,36 @@ public class ScrapeServiceClient {
     private String baseUrl;
 
     public ScrapeResolveResponse resolveUrl(String googleMapsUrl) {
-        String url = UriComponentsBuilder.fromHttpUrl(baseUrl + "/api/v1/places/resolve")
+        // Pass a URI, not an already encoded String, so RestTemplate does not
+        // encode the nested Google Maps query parameters a second time.
+        URI url = UriComponentsBuilder.fromHttpUrl(baseUrl + "/api/v1/places/resolve")
                 .queryParam("url", googleMapsUrl)
-                .toUriString();
+                .build()
+                .encode()
+                .toUri();
         try {
             ResponseEntity<ScrapeResolveResponse> response =
                     restTemplate.getForEntity(url, ScrapeResolveResponse.class);
             return response.getBody();
         } catch (Exception e) {
             log.warn("Scrape resolve failed for url {}: {}", googleMapsUrl, e.getMessage());
+            return null;
+        }
+    }
+
+    public ScrapePlaceSearchResponse searchPlaces(String query, int limit) {
+        URI url = UriComponentsBuilder.fromHttpUrl(baseUrl + "/api/v1/places/search")
+                .queryParam("query", query)
+                .queryParam("limit", limit)
+                .build()
+                .encode()
+                .toUri();
+        try {
+            ResponseEntity<ScrapePlaceSearchResponse> response =
+                    restTemplate.getForEntity(url, ScrapePlaceSearchResponse.class);
+            return response.getBody();
+        } catch (Exception e) {
+            log.warn("Place search failed for query {}: {}", query, e.getMessage());
             return null;
         }
     }
@@ -43,6 +66,21 @@ public class ScrapeServiceClient {
             return response.getBody();
         } catch (Exception e) {
             log.error("Scrape trigger failed for url {}: {}", request.getUrl(), e.getMessage());
+            return null;
+        }
+    }
+
+    public ScrapeJobTriggerResponse triggerPlaceScrapeImport(ScrapePlaceImportJobRequest request) {
+        String url = baseUrl + "/api/v1/places/scrape-and-import";
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<ScrapePlaceImportJobRequest> entity = new HttpEntity<>(request, headers);
+        try {
+            ResponseEntity<ScrapeJobTriggerResponse> response =
+                    restTemplate.postForEntity(url, entity, ScrapeJobTriggerResponse.class);
+            return response.getBody();
+        } catch (Exception e) {
+            log.error("Place scrape/import trigger failed for url {}: {}", request.getUrl(), e.getMessage());
             return null;
         }
     }

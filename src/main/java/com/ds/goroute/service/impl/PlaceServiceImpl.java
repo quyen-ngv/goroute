@@ -27,6 +27,7 @@ import com.ds.goroute.service.PlaceTranslationService;
 import com.ds.goroute.service.ImageMigrationService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.type.PlaceGroup;
+import com.ds.goroute.type.PlaceVisibilityStatus;
 import com.ds.goroute.utils.CitySlugResolver;
 import com.ds.goroute.utils.DestinationMatchUtils;
 import com.ds.goroute.utils.FoodNameResolver;
@@ -112,7 +113,7 @@ public class PlaceServiceImpl implements PlaceService {
             }
 
             // Check if place already exists
-            Place existingPlace = placeRepository.findByPlaceId(request.getPlaceId());
+            Place existingPlace = findExistingPlaceForImport(request);
             if (existingPlace != null) {
                 log.info("Place already exists, updating: {}", request.getPlaceId());
                 return updateExistingPlace(existingPlace, request);
@@ -189,14 +190,14 @@ public class PlaceServiceImpl implements PlaceService {
                                             BigDecimal radius, String category, List<String> placeGroups,
                                             BigDecimal minRating, int page, int size) {
         return searchPlaces(keyword, latitude, longitude, radius, category, placeGroups,
-                minRating, null, null, null, page, size);
+                minRating, null, null, null, false, page, size);
     }
 
     @Override
     public List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
                                             BigDecimal radius, String category, List<String> placeGroups,
                                             BigDecimal minRating, String citySlug, List<UUID> foodIds,
-                                            Boolean excludeLinkedFoodPlaces, int page, int size) {
+                                            Boolean excludeLinkedFoodPlaces, boolean includeInactive, int page, int size) {
         if (keyword != null && !keyword.trim().isEmpty()) {
             List<Place> places = searchPlacesByTitleLucene(
                     keyword.trim(),
@@ -209,6 +210,7 @@ public class PlaceServiceImpl implements PlaceService {
                     citySlug,
                     foodIds,
                     excludeLinkedFoodPlaces,
+                    includeInactive,
                     page,
                     size);
             List<PlaceResponse> responses = places.stream()
@@ -232,10 +234,10 @@ public class PlaceServiceImpl implements PlaceService {
         if (extended) {
             places = placeRepository.findNearbyExtended(
                     null, latitude, longitude, radius, category, placeGroups, minRating,
-                    citySlugJson, foodIds, excludeLinkedFoodPlaces, size, offset);
+                    citySlugJson, foodIds, excludeLinkedFoodPlaces, includeInactive, size, offset);
         } else {
             places = placeRepository.findNearby(
-                    null, latitude, longitude, radius, category, placeGroups, minRating, size, offset);
+                    null, latitude, longitude, radius, category, placeGroups, minRating, includeInactive, size, offset);
         }
 
         List<PlaceResponse> responses = places.stream()
@@ -256,6 +258,7 @@ public class PlaceServiceImpl implements PlaceService {
             String citySlug,
             List<UUID> foodIds,
             Boolean excludeLinkedFoodPlaces,
+            boolean includeInactive,
             int page,
             int size) {
         try {
@@ -278,7 +281,8 @@ public class PlaceServiceImpl implements PlaceService {
                         category,
                         placeGroups,
                         minRating,
-                        citySlug)) {
+                        citySlug,
+                        includeInactive)) {
                     continue;
                 }
                 matched.add(place);
@@ -314,7 +318,11 @@ public class PlaceServiceImpl implements PlaceService {
             String category,
             List<String> placeGroups,
             BigDecimal minRating,
-            String citySlug) {
+            String citySlug,
+            boolean includeInactive) {
+        if (!includeInactive && place.getVisibilityStatus() != PlaceVisibilityStatus.ACTIVE) {
+            return false;
+        }
         if (category != null && !category.isBlank()
                 && (place.getCategory() == null || !category.equalsIgnoreCase(place.getCategory()))) {
             return false;
@@ -562,6 +570,7 @@ public class PlaceServiceImpl implements PlaceService {
         place.setImages(request.getImages());
         place.setDescriptions(request.getDescriptions());
         place.setStatus(request.getStatus());
+        place.setVisibilityStatus(parseVisibilityStatus(request.getVisibilityStatus(), place.getVisibilityStatus()));
         place.setPriceRange(request.getPriceRange());
         place.setOpenHours(request.getOpenHours());
         place.setPopularTimes(request.getPopularTimes());
@@ -584,12 +593,38 @@ public class PlaceServiceImpl implements PlaceService {
 
     // Helper methods
 
+    private Place findExistingPlaceForImport(ImportPlaceRequest request) {
+        if (request.getPlaceId() != null && !request.getPlaceId().isBlank()) {
+            Place byPlaceId = placeRepository.findByPlaceId(request.getPlaceId());
+            if (byPlaceId != null) {
+                return byPlaceId;
+            }
+        }
+        if (request.getCid() != null && !request.getCid().isBlank()) {
+            Place byCid = placeRepository.findByCid(request.getCid());
+            if (byCid != null) {
+                return byCid;
+            }
+        }
+        if ((request.getPlaceId() == null || request.getPlaceId().isBlank())
+                && (request.getCid() == null || request.getCid().isBlank())
+                && request.getLatitude() != null
+                && request.getLongitude() != null) {
+            return placeRepository.findNearCoordinates(
+                    request.getLatitude(),
+                    request.getLongitude(),
+                    BigDecimal.valueOf(15));
+        }
+        return null;
+    }
+
     private PlaceResponse updateExistingPlace(Place existingPlace, ImportPlaceRequest request) {
         Place updated = buildPlaceFromRequest(request);
         updated.setId(existingPlace.getId());
         updated.setCreatedAt(existingPlace.getCreatedAt());
         updated.setCategory(existingPlace.getCategory() != null ? existingPlace.getCategory() : request.getCategory());
         updated.setDescriptions(existingPlace.getDescriptions() != null ? existingPlace.getDescriptions() : request.getDescriptions());
+        updated.setVisibilityStatus(parseVisibilityStatus(request.getVisibilityStatus(), existingPlace.getVisibilityStatus()));
         updated.setUpdatedAt(LocalDateTime.now());
 
         placeRepository.update(updated);
@@ -630,6 +665,7 @@ public class PlaceServiceImpl implements PlaceService {
                 .images(request.getImages())
                 .descriptions(request.getDescriptions())
                 .status(request.getStatus())
+                .visibilityStatus(parseVisibilityStatus(request.getVisibilityStatus(), PlaceVisibilityStatus.ACTIVE))
                 .priceRange(request.getPriceRange())
                 .openHours(request.getOpenHours())
                 .popularTimes(request.getPopularTimes())
@@ -948,6 +984,18 @@ public class PlaceServiceImpl implements PlaceService {
         }
     }
 
+    private PlaceVisibilityStatus parseVisibilityStatus(String value, PlaceVisibilityStatus fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback != null ? fallback : PlaceVisibilityStatus.ACTIVE;
+        }
+        try {
+            return PlaceVisibilityStatus.valueOf(value.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid place visibilityStatus '{}', using fallback {}", value, fallback);
+            return fallback != null ? fallback : PlaceVisibilityStatus.ACTIVE;
+        }
+    }
+
     private PlaceResponse toPlaceResponse(Place place) {
         PlaceTranslation translation = placeTranslationService.resolve(place.getId(), AcceptLanguageFilter.currentCode());
         String resolvedTitle = translation != null && translation.getName() != null
@@ -980,6 +1028,9 @@ public class PlaceServiceImpl implements PlaceService {
                 .thumbnail(place.getThumbnail())
                 .images(parseJsonToList(place.getImages(), PlaceImagesDto.class))
                 .descriptions(resolvedDescription)
+                .visibilityStatus(place.getVisibilityStatus() != null
+                        ? place.getVisibilityStatus().name()
+                        : PlaceVisibilityStatus.ACTIVE.name())
                 .priceRange(place.getPriceRange())
                 .openHours(parseJsonToMapOfList(place.getOpenHours()))
                 .popularTimes(parseJsonToMapOfMap(place.getPopularTimes()))

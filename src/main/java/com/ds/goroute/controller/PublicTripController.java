@@ -59,11 +59,25 @@ public class PublicTripController extends BaseService {
             @RequestParam BigDecimal longitude,
             @RequestParam(defaultValue = "50") BigDecimal radiusKm,
             @RequestParam(required = false) String destination,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "false") boolean allPublic,
+            @RequestParam(defaultValue = "true") boolean excludeUserTrips,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestAttribute(value = "userId", required = false) UUID userId
     ) {
-        List<PublicTripResponse> trips = tripService.searchPublicTrips(latitude, longitude, radiusKm, destination, page, size, userId);
+        UUID excludedUserId = excludeUserTrips ? userId : null;
+        List<PublicTripResponse> trips = tripService.searchPublicTrips(
+                latitude,
+                longitude,
+                radiusKm,
+                destination,
+                keyword,
+                allPublic,
+                page,
+                size,
+                excludedUserId
+        );
         return ResponseEntity.ok(ofSucceeded(trips));
     }
     

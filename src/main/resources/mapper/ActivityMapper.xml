@@ -8,6 +8,8 @@
         <result column="day_number" property="dayNumber" jdbcType="INTEGER"/>
         <result column="sort_order" property="sortOrder" jdbcType="INTEGER"/>
         <result column="place_id" property="placeId" jdbcType="VARCHAR"/>
+        <result column="custom_place_id" property="customPlaceId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="place_ref_id" property="placeRefId" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="name" property="name" jdbcType="VARCHAR"/>
         <result column="address" property="address" jdbcType="VARCHAR"/>
         <result column="lat" property="lat" jdbcType="DECIMAL"/>
@@ -37,7 +39,7 @@
     </resultMap>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.Activity">
-        INSERT INTO activities (id, trip_id, day_number, sort_order, place_id, custom_place_id, name, address,
+        INSERT INTO activities (id, trip_id, day_number, sort_order, place_id, custom_place_id, place_ref_id, name, address,
                                lat, lng, end_lat, end_lng, end_address,
                                start_time, end_time, estimated_cost, cost_currency, category,
                                transport_mode, rating, photo_url, notes, description, status, added_by,
@@ -46,6 +48,7 @@
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER},
                 #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
                 #{dayNumber}, #{sortOrder}, #{placeId}, #{customPlaceId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{placeRefId,javaType=java.util.UUID,jdbcType=OTHER},
                 #{name}, #{address}, #{lat}, #{lng},
                 #{endLat}, #{endLng}, #{endAddress},
                 #{startTime,javaType=java.time.LocalTime,jdbcType=TIME},
@@ -80,6 +83,7 @@
         <set>
             <if test="placeId != null">place_id = #{placeId},</if>
             <if test="customPlaceId != null">custom_place_id = #{customPlaceId,javaType=java.util.UUID,jdbcType=OTHER},</if>
+            <if test="placeRefId != null">place_ref_id = #{placeRefId,javaType=java.util.UUID,jdbcType=OTHER},</if>
             <if test="name != null">name = #{name},</if>
             <if test="address != null">address = #{address},</if>
             <if test="lat != null">lat = #{lat},</if>

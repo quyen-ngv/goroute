@@ -45,7 +45,7 @@ public interface PlaceService {
     List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
                                      BigDecimal radius, String category, List<String> placeGroups,
                                      BigDecimal minRating, String citySlug, List<UUID> foodIds,
-                                     Boolean excludeLinkedFoodPlaces, int page, int size);
+                                     Boolean excludeLinkedFoodPlaces, boolean includeInactive, int page, int size);
 
     /**
      * Get reviews for a place with pagination

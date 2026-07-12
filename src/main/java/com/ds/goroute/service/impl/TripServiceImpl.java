@@ -1584,8 +1584,26 @@ public class TripServiceImpl implements TripService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<PublicTripResponse> searchPublicTrips(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm, String destination, int page, int size, UUID excludeUserId) {
-        List<Trip> trips = tripRepository.searchPublicTrips(latitude, longitude, radiusKm, destination, page, size, excludeUserId);
+    public List<PublicTripResponse> searchPublicTrips(BigDecimal latitude,
+                                                       BigDecimal longitude,
+                                                       BigDecimal radiusKm,
+                                                       String destination,
+                                                       String keyword,
+                                                       boolean allPublic,
+                                                       int page,
+                                                       int size,
+                                                       UUID excludeUserId) {
+        List<Trip> trips = tripRepository.searchPublicTrips(
+                latitude,
+                longitude,
+                radiusKm,
+                destination,
+                keyword,
+                allPublic,
+                page,
+                size,
+                excludeUserId
+        );
 
         return trips.stream()
                 .map(trip -> {

@@ -29,6 +29,7 @@
         <result property="images" column="images"/>
         <result property="descriptions" column="descriptions"/>
         <result property="status" column="status"/>
+        <result property="visibilityStatus" column="visibility_status" javaType="com.ds.goroute.type.PlaceVisibilityStatus"/>
         <result property="priceRange" column="price_range"/>
         <result property="openHours" column="open_hours"/>
         <result property="visitDurationMinutes" column="visit_duration_minutes"/>
@@ -60,7 +61,7 @@
             title, place_group, category, address, destinations, latitude, longitude,
             plus_code, timezone, phone, website, google_maps_link,
             review_count, review_rating, reviews_per_rating,
-            thumbnail, images, descriptions, status, price_range,
+            thumbnail, images, descriptions, status, visibility_status, price_range,
             open_hours, visit_duration_minutes, popular_times, reservations, order_online, menu,
             complete_address, about, owner, emails, raw_data,
             avg_authenticity_score, place_overall_score, adjusted_rating,
@@ -72,7 +73,7 @@
             #{title}, #{placeGroup,typeHandler=org.apache.ibatis.type.EnumTypeHandler}, #{category}, #{address}, #{destinations}::jsonb, #{latitude}, #{longitude},
             #{plusCode}, #{timezone}, #{phone}, #{website}, #{googleMapsLink},
             #{reviewCount}, #{reviewRating}, #{reviewsPerRating},
-            #{thumbnail}, #{images}, #{descriptions}, #{status}, #{priceRange},
+            #{thumbnail}, #{images}, #{descriptions}, #{status}, #{visibilityStatus,javaType=com.ds.goroute.type.PlaceVisibilityStatus}, #{priceRange},
             #{openHours}, #{visitDurationMinutes}, #{popularTimes}, #{reservations}, #{orderOnline}, #{menu},
             #{completeAddress}, #{about}, #{owner}, #{emails}, #{rawData},
             #{avgAuthenticityScore}, #{placeOverallScore}, #{adjustedRating},
@@ -103,6 +104,7 @@
             images = #{images},
             descriptions = #{descriptions},
             status = #{status},
+            visibility_status = #{visibilityStatus,javaType=com.ds.goroute.type.PlaceVisibilityStatus},
             price_range = #{priceRange},
             open_hours = #{openHours},
             visit_duration_minutes = #{visitDurationMinutes},
@@ -133,6 +135,29 @@
 
     <select id="findByPlaceId" resultMap="PlaceResultMap">
         SELECT * FROM places WHERE place_id = #{placeId}
+    </select>
+
+    <select id="findByCid" resultMap="PlaceResultMap">
+        SELECT * FROM places WHERE cid = #{cid} LIMIT 1
+    </select>
+
+    <select id="findNearCoordinates" resultMap="PlaceResultMap">
+        SELECT *,
+            (6371000 * acos(LEAST(1, GREATEST(-1,
+                cos(radians(#{latitude})) * cos(radians(latitude)) *
+                cos(radians(longitude) - radians(#{longitude})) +
+                sin(radians(#{latitude})) * sin(radians(latitude))
+            )))) AS distance
+        FROM places
+        WHERE latitude IS NOT NULL
+          AND longitude IS NOT NULL
+          AND (6371000 * acos(LEAST(1, GREATEST(-1,
+                cos(radians(#{latitude})) * cos(radians(latitude)) *
+                cos(radians(longitude) - radians(#{longitude})) +
+                sin(radians(#{latitude})) * sin(radians(latitude))
+            )))) &lt;= #{maxDistanceMeters}
+        ORDER BY distance
+        LIMIT 1
     </select>
 
     <select id="findAll" resultMap="PlaceResultMap">
@@ -169,6 +194,9 @@
                 )))) AS distance
             FROM places
             WHERE 1=1
+            <if test="includeInactive == false">
+                AND visibility_status = 'ACTIVE'
+            </if>
             <if test="category != null and category != ''">
                 AND category = #{category}
             </if>
@@ -205,6 +233,9 @@
                 INNER JOIN place_foods pf ON pf.place_id = p.id
             </if>
             WHERE 1=1
+            <if test="includeInactive == false">
+                AND p.visibility_status = 'ACTIVE'
+            </if>
             <if test="foodIds != null and foodIds.size() > 0">
                 AND pf.food_id IN
                 <foreach collection="foodIds" item="fid" open="(" separator="," close=")">

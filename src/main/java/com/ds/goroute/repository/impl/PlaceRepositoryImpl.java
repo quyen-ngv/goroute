@@ -40,6 +40,22 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     }
 
     @Override
+    public Place findByCid(String cid) {
+        if (cid == null || cid.isBlank()) {
+            return null;
+        }
+        return placeMapper.findByCid(cid);
+    }
+
+    @Override
+    public Place findNearCoordinates(BigDecimal latitude, BigDecimal longitude, BigDecimal maxDistanceMeters) {
+        if (latitude == null || longitude == null || maxDistanceMeters == null) {
+            return null;
+        }
+        return placeMapper.findNearCoordinates(latitude, longitude, maxDistanceMeters);
+    }
+
+    @Override
     public List<Place> findAll() {
         return placeMapper.findAll();
     }
@@ -65,19 +81,19 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     @Override
     public List<Place> findNearby(String keyword, BigDecimal latitude, BigDecimal longitude, BigDecimal radius,
                                  String category, List<String> placeGroups, BigDecimal minRating,
-                                 int limit, int offset) {
+                                 boolean includeInactive, int limit, int offset) {
         return placeMapper.findNearby(
-                keyword, latitude, longitude, radius, category, placeGroups, minRating, limit, offset);
+                keyword, latitude, longitude, radius, category, placeGroups, minRating, includeInactive, limit, offset);
     }
 
     @Override
     public List<Place> findNearbyExtended(String keyword, BigDecimal latitude, BigDecimal longitude,
                                           BigDecimal radius, String category, List<String> placeGroups,
                                           BigDecimal minRating, String citySlugJson, List<UUID> foodIds,
-                                          Boolean excludeLinkedFoodPlaces, int limit, int offset) {
+                                          Boolean excludeLinkedFoodPlaces, boolean includeInactive, int limit, int offset) {
         return placeMapper.findNearbyExtended(
                 keyword, latitude, longitude, radius, category, placeGroups, minRating,
-                citySlugJson, foodIds, excludeLinkedFoodPlaces, limit, offset);
+                citySlugJson, foodIds, excludeLinkedFoodPlaces, includeInactive, limit, offset);
     }
 
     @Override

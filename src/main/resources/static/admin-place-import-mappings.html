@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Duyệt mapping địa điểm - GoRoute Admin</title>
+    <link rel="stylesheet" href="/goroute/goroute-theme.css">
+    <style>
+        #jobs-table-container {
+            max-height: 318px;
+            overflow: auto;
+        }
+
+        #jobs-table-container thead th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="page-header">
+        <h1>Duyệt mapping địa điểm</h1>
+        <p>Chỉ mapping được duyệt mới được gán vào activity hoặc danh sách địa điểm từ video của người dùng.</p>
+    </div>
+
+    <div class="container container--wide">
+        <div class="toolbar">
+            <a class="btn btn-secondary" href="/goroute/admin-places.html">Quản lý Places</a>
+            <select id="status-filter" class="search-box" onchange="loadMappings()">
+                <option value="ALL">All history</option>
+                <option value="PENDING">Chờ duyệt</option>
+                <option value="APPROVED">Đã duyệt</option>
+                <option value="REJECTED">Đã từ chối</option>
+            </select>
+            <button class="btn btn-secondary" onclick="loadMappings()">Làm mới</button>
+        </div>
+
+        <div id="error-message" class="error" style="display:none;"></div>
+        <div id="success-message" class="success" style="display:none;"></div>
+
+        <div class="card" style="margin-bottom:16px;">
+            <div class="card-header"><div class="card-title">Chạy place import</div></div>
+            <div class="card-body">
+                <div style="display:grid; grid-template-columns: minmax(260px, 2fr) minmax(160px, 1fr) minmax(180px, 1fr) minmax(120px, 0.6fr) minmax(120px, 0.6fr) auto; gap:12px; align-items:end;">
+                    <div class="form-group" style="margin:0;">
+                        <label class="form-label" for="run-user-id">User UUID</label>
+                        <input id="run-user-id" class="form-input" placeholder="UUID của user">
+                        <label style="display:flex; gap:8px; align-items:center; margin-top:8px; font-size:13px;">
+                            <input id="run-all-users" type="checkbox" onchange="syncImportFields()">
+                            Scan all users
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label class="form-label" for="run-source">Nguồn</label>
+                        <select id="run-source" class="form-input" onchange="syncImportFields()">
+                            <option value="social-locations">Social locations</option>
+                            <option value="activities">Activities</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label class="form-label" for="run-trip-id">Trip UUID</label>
+                        <input id="run-trip-id" class="form-input" placeholder="Tuỳ chọn">
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label class="form-label" for="run-limit">Giới hạn</label>
+                        <input id="run-limit" class="form-input" type="number" min="1" max="200" value="50">
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label class="form-label" for="run-max-reviews">Reviews</label>
+                        <input id="run-max-reviews" class="form-input" type="number" min="1" max="5" value="5">
+                    </div>
+                    <button id="run-import-button" class="btn btn-primary" onclick="runImport()">Chạy import</button>
+                </div>
+                <small id="run-import-help" class="form-help">Quét địa điểm từ các social job đã hoàn tất của user.</small>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px;">
+            <div class="card-header">
+                <div class="card-title">Theo dõi place import jobs</div>
+                <button class="btn btn-secondary btn-sm" onclick="loadJobs()">Refresh jobs</button>
+            </div>
+            <div class="card-body">
+                <div class="toolbar" style="margin:0 0 12px;">
+                    <select id="job-status-filter" class="search-box" onchange="loadJobs()">
+                        <option value="">Tất cả trạng thái</option>
+                        <option value="QUEUED">QUEUED</option>
+                        <option value="PROCESSING">PROCESSING</option>
+                        <option value="COMPLETED">COMPLETED</option>
+                        <option value="FAILED">FAILED</option>
+                    </select>
+                    <input id="job-user-filter" class="search-box" placeholder="Lọc theo User UUID">
+                    <button class="btn btn-secondary" onclick="loadJobs()">Lọc</button>
+                </div>
+                <div id="jobs-loading" class="loading">Đang tải jobs...</div>
+                <div id="jobs-empty" class="empty" style="display:none;">Chưa có place import job.</div>
+                <div id="jobs-table-container" class="table-container" style="display:none;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Job</th>
+                                <th>User</th>
+                                <th>Nguồn</th>
+                                <th>Trạng thái</th>
+                                <th>Tiến độ</th>
+                                <th>Lỗi</th>
+                                <th>Cập nhật</th>
+                            </tr>
+                        </thead>
+                        <tbody id="jobs-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><div class="card-title">Place import mappings</div></div>
+            <div class="card-body">
+                <div id="loading" class="loading">Đang tải...</div>
+                <div id="empty" class="empty" style="display:none;">Không có mapping nào.</div>
+                <div id="table-container" class="table-container" style="display:none;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Nguồn</th>
+                                <th>Địa điểm ứng viên</th>
+                                <th>Địa chỉ gốc</th>
+                                <th>Place đã resolve</th>
+                                <th>Địa chỉ job lấy</th>
+                                <th>Activity</th>
+                                <th>Trạng thái</th>
+                                <th>Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mappings-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = window.GOROUTE_ADMIN_API || '/goroute/v1/api';
+        let jobsLoaded = false;
+        let jobsRequestInFlight = false;
+        let jobsSignature = '';
+
+        function escapeHtml(value) {
+            const div = document.createElement('div');
+            div.textContent = value || '';
+            return div.innerHTML;
+        }
+
+        function showMessage(id, message) {
+            const element = document.getElementById(id);
+            element.textContent = message;
+            element.style.display = 'block';
+            setTimeout(() => element.style.display = 'none', 4500);
+        }
+
+        async function loadMappings() {
+            const status = document.getElementById('status-filter').value;
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('empty').style.display = 'none';
+            document.getElementById('table-container').style.display = 'none';
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/place-import-mappings?status=${status}`);
+                const result = await response.json();
+                if (result.meta?.code !== 200000) {
+                    throw new Error(result.meta?.message || 'Không tải được mappings');
+                }
+                const mappings = result.data || [];
+                document.getElementById('loading').style.display = 'none';
+                if (!mappings.length) {
+                    document.getElementById('empty').style.display = 'block';
+                    return;
+                }
+                document.getElementById('table-container').style.display = 'block';
+                document.getElementById('mappings-body').innerHTML = mappings.map(mapping => {
+                    const source = mapping.sourceType === 'ACTIVITY'
+                        ? 'Trip activity'
+                        : mapping.sourceType === 'MANUAL' ? 'Manual Google Maps link' : 'Social video';
+                    const mappedPlace = mapping.mappedPlaceName || mapping.mappedPlaceId || 'Chưa resolve';
+                    const originalUrl = mapping.sourceOriginalUrl
+                        ? `<a href="${escapeHtml(mapping.sourceOriginalUrl)}" target="_blank" rel="noopener">Link gốc</a>`
+                        : '<small>Không có link gốc</small>';
+                    const sourceJobUrl = mapping.sourceUrl
+                        ? `<a href="${escapeHtml(mapping.sourceUrl)}" target="_blank" rel="noopener">Link job</a>`
+                        : '';
+                    const manualLinkControl = mapping.sourceType === 'ACTIVITY' && mapping.activityId
+                        ? `<div style="display:flex; gap:6px; margin-top:8px; min-width:260px;">
+                               <input id="manual-link-${mapping.id}" class="form-input" type="url" placeholder="Google Maps link" aria-label="Google Maps link for activity">
+                               <button id="manual-import-${mapping.id}" class="btn btn-secondary btn-sm" onclick="runManualLinkImport('${mapping.activityId}', '${mapping.id}')">Import</button>
+                           </div>`
+                        : '';
+                    const actions = mapping.approvalStatus === 'PENDING'
+                        ? `<button class="btn btn-success btn-sm" onclick="moderate('${mapping.id}', 'approve')">Duyệt</button>
+                           <button class="btn btn-danger btn-sm" onclick="moderate('${mapping.id}', 'reject')">Từ chối</button>`
+                        : '';
+                    return `<tr>
+                        <td>${source}<br><small>${sourceJobUrl}</small></td>
+                        <td>${escapeHtml(mapping.candidateName || 'N/A')}</td>
+                        <td>${escapeHtml(mapping.sourceAddress || '-')}<br><small>${originalUrl}</small></td>
+                        <td>${escapeHtml(mappedPlace)}<br><small>${escapeHtml(mapping.mappedPlaceVisibilityStatus || '')}</small></td>
+                        <td>${escapeHtml(mapping.mappedPlaceAddress || '-')}<br>
+                            ${mapping.mappedPlaceGoogleMapsLink
+                                ? `<a href="${escapeHtml(mapping.mappedPlaceGoogleMapsLink)}" target="_blank" rel="noopener">Địa chỉ job lấy</a>`
+                                : '<small>Chưa có link place</small>'}</td>
+                        <td>${escapeHtml(mapping.activityName || '-')}${manualLinkControl}</td>
+                        <td>${escapeHtml(mapping.approvalStatus || '-')}<br><small>${escapeHtml(mapping.status || '-')}</small></td>
+                        <td><div class="action-btns">${actions}</div></td>
+                    </tr>`;
+                }).join('');
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                showMessage('error-message', error.message);
+            }
+        }
+
+        function formatDate(value) {
+            if (!value) return '-';
+            const date = new Date(value);
+            return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+        }
+
+        async function loadJobs(silent = false) {
+            if (jobsRequestInFlight) return;
+            jobsRequestInFlight = true;
+            const status = document.getElementById('job-status-filter').value;
+            const userId = document.getElementById('job-user-filter').value.trim();
+            const params = new URLSearchParams({ size: '50' });
+            if (status) params.set('status', status);
+            if (userId) params.set('userId', userId);
+            if (!silent && !jobsLoaded) {
+                document.getElementById('jobs-loading').style.display = 'block';
+                document.getElementById('jobs-empty').style.display = 'none';
+                document.getElementById('jobs-table-container').style.display = 'none';
+            }
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/place-import-jobs?${params}`);
+                const result = await response.json();
+                if (result.meta?.code !== 200000) {
+                    throw new Error(result.meta?.message || 'Không tải được place import jobs');
+                }
+                const jobs = result.data || [];
+                const signature = JSON.stringify(jobs);
+                document.getElementById('jobs-loading').style.display = 'none';
+                if (jobsLoaded && signature === jobsSignature) {
+                    return;
+                }
+                jobsLoaded = true;
+                jobsSignature = signature;
+                if (!jobs.length) {
+                    document.getElementById('jobs-empty').style.display = 'block';
+                    document.getElementById('jobs-table-container').style.display = 'none';
+                    return;
+                }
+                document.getElementById('jobs-empty').style.display = 'none';
+                document.getElementById('jobs-table-container').style.display = 'block';
+                const jobsTableContainer = document.getElementById('jobs-table-container');
+                const jobsScrollTop = jobsTableContainer.scrollTop;
+                document.getElementById('jobs-body').innerHTML = jobs.map(job => {
+                    const completed = job.completedCount || 0;
+                    const failed = job.failedCount || 0;
+                    const total = job.totalItems || 0;
+                    const progress = `${completed}/${total} completed${failed ? `, ${failed} failed` : ''}`;
+                    const statusClass = job.status === 'FAILED' ? 'style="color:#dc2626;font-weight:700"' : '';
+                    return `<tr>
+                        <td><button class="btn btn-secondary btn-sm" onclick="viewJob('${job.id}')">${escapeHtml(job.id)}</button></td>
+                        <td>${escapeHtml(job.userId || '-')}</td>
+                        <td>${escapeHtml(job.sourceType || '-')}</td>
+                        <td ${statusClass}>${escapeHtml(job.status || '-')}</td>
+                        <td>${escapeHtml(progress)}</td>
+                        <td>${escapeHtml(job.errorMessage || '-')}</td>
+                        <td>${escapeHtml(formatDate(job.updatedAt || job.createdAt))}</td>
+                    </tr>`;
+                }).join('');
+                jobsTableContainer.scrollTop = jobsScrollTop;
+            } catch (error) {
+                document.getElementById('jobs-loading').style.display = 'none';
+                showMessage('error-message', error.message);
+            } finally {
+                jobsRequestInFlight = false;
+            }
+        }
+
+        async function viewJob(jobId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/place-import-jobs/${jobId}`);
+                const result = await response.json();
+                if (result.meta?.code !== 200000) {
+                    throw new Error(result.meta?.message || 'Không tải được job detail');
+                }
+                const job = result.data;
+                const itemErrors = (job.items || [])
+                    .filter(item => item.errorMessage || item.status === 'FAILED')
+                    .map(item => `${item.candidateName || item.id}: ${item.errorMessage || item.status}`)
+                    .join('\n');
+                window.alert(`Job ${job.id}\nStatus: ${job.status}\nProgress: ${job.completedCount || 0}/${job.totalItems || 0}\nError: ${job.errorMessage || '-'}${itemErrors ? `\nItem errors:\n${itemErrors}` : ''}`);
+            } catch (error) {
+                showMessage('error-message', error.message);
+            }
+        }
+
+        async function moderate(itemId, action) {
+            const note = window.prompt(action === 'approve' ? 'Ghi chú duyệt (không bắt buộc)' : 'Lý do từ chối (không bắt buộc)');
+            if (note === null) return;
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/place-import-mappings/${itemId}/${action}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ note })
+                });
+                const result = await response.json();
+                if (result.meta?.code !== 200000) {
+                    throw new Error(result.meta?.message || 'Không cập nhật được mapping');
+                }
+                showMessage('success-message', action === 'approve' ? 'Đã duyệt mapping.' : 'Đã từ chối mapping.');
+                await loadMappings();
+            } catch (error) {
+                showMessage('error-message', error.message);
+            }
+        }
+
+        function syncImportFields() {
+            const isActivity = document.getElementById('run-source').value === 'activities';
+            const tripInput = document.getElementById('run-trip-id');
+            const userInput = document.getElementById('run-user-id');
+            const allUsers = document.getElementById('run-all-users').checked;
+            userInput.disabled = allUsers;
+            if (allUsers) userInput.value = '';
+            const limitInput = document.getElementById('run-limit');
+            tripInput.disabled = !isActivity || allUsers;
+            if (!isActivity || allUsers) tripInput.value = '';
+            limitInput.max = isActivity ? '200' : '100';
+            if (Number(limitInput.value) > Number(limitInput.max)) {
+                limitInput.value = limitInput.max;
+            }
+            document.getElementById('run-import-help').textContent = isActivity
+                ? 'Chỉ quét activity chưa có place, có tên và địa chỉ. Trip UUID là tuỳ chọn.'
+                : 'Quét địa điểm từ các social job đã hoàn tất của user.';
+        }
+
+        async function runImport() {
+            const userId = document.getElementById('run-user-id').value.trim();
+            const source = document.getElementById('run-source').value;
+            const tripId = document.getElementById('run-trip-id').value.trim();
+            const limit = Number(document.getElementById('run-limit').value);
+            const maxReviews = Number(document.getElementById('run-max-reviews').value);
+            const allUsers = document.getElementById('run-all-users').checked;
+            if (!userId && !allUsers) {
+                showMessage('error-message', 'Nhập User UUID hoặc chọn Scan all users.');
+                return;
+            }
+            if (!Number.isInteger(limit) || limit < 1 || limit > (source === 'activities' ? 200 : 100)) {
+                showMessage('error-message', 'Giới hạn không hợp lệ.');
+                return;
+            }
+            if (!Number.isInteger(maxReviews) || maxReviews < 1 || maxReviews > 5) {
+                showMessage('error-message', 'Số reviews phải từ 1 đến 5.');
+                return;
+            }
+            const button = document.getElementById('run-import-button');
+            button.disabled = true;
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/place-import-jobs/${source}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userId: userId || null,
+                        allUsers,
+                        tripId: source === 'activities' && tripId ? tripId : null,
+                        limit,
+                        maxReviews
+                    })
+                });
+                const result = await response.json();
+                if (result.meta?.code !== 200000) {
+                    throw new Error(result.meta?.message || 'Không tạo được job import');
+                }
+                showMessage('success-message', 'Đã đưa job import vào hàng đợi cho user này.');
+            } catch (error) {
+                showMessage('error-message', error.message);
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        async function runManualLinkImport(activityId, mappingId) {
+            const input = document.getElementById(`manual-link-${mappingId}`);
+            const googleMapsUrl = input.value.trim();
+            if (!googleMapsUrl) {
+                showMessage('error-message', 'Google Maps link is required.');
+                return;
+            }
+            const button = document.getElementById(`manual-import-${mappingId}`);
+            button.disabled = true;
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/place-import-jobs/manual-link`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ activityId, googleMapsUrl, maxReviews: 5 })
+                });
+                const result = await response.json();
+                if (result.meta?.code !== 200000) {
+                    throw new Error(result.meta?.message || 'Could not queue manual place import.');
+                }
+                showMessage('success-message', `Manual import job queued: ${result.data?.id || ''}`);
+                input.value = '';
+                await loadJobs();
+            } catch (error) {
+                showMessage('error-message', error.message);
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        syncImportFields();
+        loadMappings();
+        loadJobs();
+        window.setInterval(() => loadJobs(true), 5000);
+    </script>
+</body>
+
+</html>

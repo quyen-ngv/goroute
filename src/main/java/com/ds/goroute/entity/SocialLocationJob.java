@@ -17,6 +17,7 @@ public class SocialLocationJob {
     private UUID id;
     private UUID userId;
     private String sourceUrl;
+    private String sourceKey;
     private String platform;
     private SocialLocationJobStatus status;
     private String pythonJobId;

@@ -8,6 +8,7 @@
         <id property="id" column="id"/>
         <result property="userId" column="user_id"/>
         <result property="sourceUrl" column="source_url"/>
+        <result property="sourceKey" column="source_key"/>
         <result property="platform" column="platform"/>
         <result property="status" column="status" javaType="com.ds.goroute.type.SocialLocationJobStatus"/>
         <result property="pythonJobId" column="python_job_id"/>
@@ -24,11 +25,11 @@
 
     <insert id="insert" parameterType="com.ds.goroute.entity.SocialLocationJob">
         INSERT INTO social_location_jobs (
-            id, user_id, source_url, platform, status, python_job_id, language,
+            id, user_id, source_url, source_key, platform, status, python_job_id, language,
             request_payload, result_payload, error_code, error_message,
             created_at, started_at, completed_at, updated_at
         ) VALUES (
-            #{id}, #{userId}, #{sourceUrl}, #{platform},
+            #{id}, #{userId}, #{sourceUrl}, #{sourceKey}, #{platform},
             #{status, javaType=com.ds.goroute.type.SocialLocationJobStatus},
             #{pythonJobId}, #{language}, #{requestPayload}, #{resultPayload},
             #{errorCode}, #{errorMessage}, #{createdAt}, #{startedAt},
@@ -39,6 +40,7 @@
     <update id="update" parameterType="com.ds.goroute.entity.SocialLocationJob">
         UPDATE social_location_jobs SET
             source_url = #{sourceUrl},
+            source_key = #{sourceKey},
             platform = #{platform},
             status = #{status, javaType=com.ds.goroute.type.SocialLocationJobStatus},
             python_job_id = #{pythonJobId},
@@ -61,10 +63,34 @@
         SELECT * FROM social_location_jobs WHERE python_job_id = #{pythonJobId} LIMIT 1
     </select>
 
+    <select id="findReusableByUserIdAndSourceKey" resultMap="SocialLocationJobResultMap">
+        SELECT * FROM social_location_jobs
+        WHERE user_id = #{userId}
+          AND source_key = #{sourceKey}
+          AND status IN ('QUEUED', 'PROCESSING', 'COMPLETED')
+        ORDER BY created_at DESC
+        LIMIT 1
+    </select>
+
     <select id="findByUserId" resultMap="SocialLocationJobResultMap">
         SELECT * FROM social_location_jobs
         WHERE user_id = #{userId}
         ORDER BY created_at DESC
         LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findCompletedByUserId" resultMap="SocialLocationJobResultMap">
+        SELECT * FROM social_location_jobs
+        WHERE user_id = #{userId}
+          AND status = 'COMPLETED'
+          AND result_payload IS NOT NULL
+        <if test="ids != null and ids.size() > 0">
+          AND id IN
+          <foreach item="id" collection="ids" open="(" separator="," close=")">
+              #{id}
+          </foreach>
+        </if>
+        ORDER BY created_at DESC
+        LIMIT #{limit}
     </select>
 </mapper>

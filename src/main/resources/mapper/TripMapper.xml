@@ -110,22 +110,29 @@
     <select id="searchPublicTrips" resultMap="TripResultMap">
         SELECT * FROM (
             SELECT t.*,
-                MIN(6371 * acos(
-                    cos(radians(#{latitude})) * cos(radians(COALESCE(td.lat, t.destination_lat))) *
-                    cos(radians(COALESCE(td.lng, t.destination_lng)) - radians(#{longitude})) +
-                    sin(radians(#{latitude})) * sin(radians(COALESCE(td.lat, t.destination_lat)))
-                )) AS distance
+                MIN(
+                    CASE
+                        WHEN COALESCE(td.lat, t.destination_lat) IS NULL
+                          OR COALESCE(td.lng, t.destination_lng) IS NULL
+                        THEN NULL
+                        ELSE 6371 * acos(LEAST(1, GREATEST(-1,
+                            cos(radians(#{latitude})) * cos(radians(COALESCE(td.lat, t.destination_lat))) *
+                            cos(radians(COALESCE(td.lng, t.destination_lng)) - radians(#{longitude})) +
+                            sin(radians(#{latitude})) * sin(radians(COALESCE(td.lat, t.destination_lat)))
+                        )))
+                    END
+                ) AS distance
             FROM trips t
             LEFT JOIN trip_destinations td
               ON td.trip_id = t.id
-             AND td.lat IS NOT NULL
-             AND td.lng IS NOT NULL
             WHERE t.visibility = 'PUBLIC'
               AND t.is_deleted = FALSE
-              AND (
-                  (t.destination_lat IS NOT NULL AND t.destination_lng IS NOT NULL)
-                  OR td.id IS NOT NULL
-              )
+              <if test="!allPublic">
+                  AND (
+                      (t.destination_lat IS NOT NULL AND t.destination_lng IS NOT NULL)
+                      OR (td.lat IS NOT NULL AND td.lng IS NOT NULL)
+                  )
+              </if>
               <if test="excludeUserId != null">
                   AND t.owner_id != #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
                   AND t.id NOT IN (
@@ -141,10 +148,31 @@
                       OR LOWER(td.address) LIKE LOWER(CONCAT('%', #{destination}, '%'))
                   )
               </if>
+              <if test="keyword != null and keyword != ''">
+                  AND (
+                      LOWER(t.name) LIKE LOWER(CONCAT('%', #{keyword}, '%'))
+                      OR LOWER(t.destination) LIKE LOWER(CONCAT('%', #{keyword}, '%'))
+                      OR LOWER(t.description) LIKE LOWER(CONCAT('%', #{keyword}, '%'))
+                      OR LOWER(td.name) LIKE LOWER(CONCAT('%', #{keyword}, '%'))
+                      OR LOWER(td.address) LIKE LOWER(CONCAT('%', #{keyword}, '%'))
+                  )
+              </if>
             GROUP BY t.id
         ) AS t
-        WHERE distance &lt;= #{radiusKm}
-        ORDER BY COALESCE(public_shared_at, created_at) DESC, distance ASC
+        <if test="!allPublic">
+            WHERE distance &lt;= #{radiusKm}
+        </if>
+        ORDER BY
+            <choose>
+                <when test="allPublic">
+                    COALESCE(public_shared_at, created_at) DESC,
+                    distance ASC NULLS LAST
+                </when>
+                <otherwise>
+                    distance ASC,
+                    COALESCE(public_shared_at, created_at) DESC
+                </otherwise>
+            </choose>
         LIMIT #{limit} OFFSET #{offset}
     </select>
 

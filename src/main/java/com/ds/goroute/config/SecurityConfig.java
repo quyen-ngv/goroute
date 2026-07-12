@@ -42,6 +42,9 @@ public class SecurityConfig {
                         .requestMatchers("/v1/api/activity-bookings/**").permitAll()
                         .requestMatchers("/v1/api/foods/**").permitAll()
                         .requestMatchers("/v1/api/admin/foods/**").permitAll()
+                        .requestMatchers("/v1/api/admin/places/**").permitAll()
+                        .requestMatchers("/v1/api/admin/place-import-mappings/**").permitAll()
+                        .requestMatchers("/v1/api/admin/place-import-jobs/**").permitAll()
                         .requestMatchers(
                                 "/v1/api/admin/contributions",
                                 "/v1/api/admin/contributions/**"

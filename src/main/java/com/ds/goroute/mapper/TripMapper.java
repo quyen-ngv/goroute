@@ -29,6 +29,8 @@ public interface TripMapper {
         @Param("longitude") BigDecimal longitude,
         @Param("radiusKm") BigDecimal radiusKm,
         @Param("destination") String destination,
+        @Param("keyword") String keyword,
+        @Param("allPublic") boolean allPublic,
         @Param("offset") int offset,
         @Param("limit") int limit,
         @Param("excludeUserId") UUID excludeUserId

@@ -53,9 +53,27 @@ public class TripRepositoryImpl implements TripRepository {
     }
     
     @Override
-    public List<Trip> searchPublicTrips(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm, String destination, int page, int size, UUID excludeUserId) {
+    public List<Trip> searchPublicTrips(BigDecimal latitude,
+                                        BigDecimal longitude,
+                                        BigDecimal radiusKm,
+                                        String destination,
+                                        String keyword,
+                                        boolean allPublic,
+                                        int page,
+                                        int size,
+                                        UUID excludeUserId) {
         int offset = page * size;
-        return tripMapper.searchPublicTrips(latitude, longitude, radiusKm, destination, offset, size, excludeUserId);
+        return tripMapper.searchPublicTrips(
+                latitude,
+                longitude,
+                radiusKm,
+                destination,
+                keyword,
+                allPublic,
+                offset,
+                size,
+                excludeUserId
+        );
     }
     
     @Override

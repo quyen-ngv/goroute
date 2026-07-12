@@ -252,6 +252,7 @@ public class ActivityServiceImpl implements ActivityService {
                 .dayNumber(activity.getDayNumber())
                 .placeId(activity.getPlaceId())
                 .customPlaceId(activity.getCustomPlaceId())
+                .placeRefId(activity.getPlaceRefId())
                 .name(activity.getName())
                 .address(activity.getAddress())
                 .lat(activity.getLat())

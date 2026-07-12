@@ -23,6 +23,7 @@ public class ActivityResponse {
     private Integer sortOrder;
     private String placeId;
     private UUID customPlaceId;
+    private UUID placeRefId;
     private String name;
     private String address;
     private BigDecimal lat;

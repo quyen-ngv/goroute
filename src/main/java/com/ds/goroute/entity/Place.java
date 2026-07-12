@@ -2,6 +2,7 @@ package com.ds.goroute.entity;
 
 import com.ds.goroute.type.PlaceGroup;
 import com.ds.goroute.type.PlaceTrustLevel;
+import com.ds.goroute.type.PlaceVisibilityStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -52,6 +53,7 @@ public class Place {
     // Details
     private String descriptions;
     private String status;
+    private PlaceVisibilityStatus visibilityStatus;
     private String priceRange;
 
     // Hours & Booking

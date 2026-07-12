@@ -58,6 +58,8 @@ public interface TripService {
                                                BigDecimal longitude,
                                                BigDecimal radiusKm,
                                                String destination,
+                                               String keyword,
+                                               boolean allPublic,
                                                int page, int size,
                                                UUID excludeUserId);
 

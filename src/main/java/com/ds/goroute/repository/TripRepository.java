@@ -21,7 +21,15 @@ public interface TripRepository {
     
     Optional<Trip> findByShareCode(String shareCode);
     
-    List<Trip> searchPublicTrips(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm, String destination, int page, int size, UUID excludeUserId);
+    List<Trip> searchPublicTrips(BigDecimal latitude,
+                                 BigDecimal longitude,
+                                 BigDecimal radiusKm,
+                                 String destination,
+                                 String keyword,
+                                 boolean allPublic,
+                                 int page,
+                                 int size,
+                                 UUID excludeUserId);
     
     void incrementViewCount(UUID id);
     

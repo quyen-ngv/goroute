@@ -44,6 +44,7 @@ public class PlaceResponse {
     private List<PlaceImagesDto> images;
 
     private String descriptions;
+    private String visibilityStatus;
     private String priceRange;
 
     private Map<String, List<String>> openHours; // {"Monday": ["9 AM - 5 PM"], ...}
