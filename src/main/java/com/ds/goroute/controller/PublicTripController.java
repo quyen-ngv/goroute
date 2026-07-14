@@ -62,6 +62,7 @@ public class PublicTripController extends BaseService {
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "false") boolean allPublic,
             @RequestParam(defaultValue = "true") boolean excludeUserTrips,
+            @RequestParam(required = false) String randomSeed,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestAttribute(value = "userId", required = false) UUID userId
@@ -74,8 +75,10 @@ public class PublicTripController extends BaseService {
                 destination,
                 keyword,
                 allPublic,
+                randomSeed,
                 page,
                 size,
+                userId,
                 excludedUserId
         );
         return ResponseEntity.ok(ofSucceeded(trips));

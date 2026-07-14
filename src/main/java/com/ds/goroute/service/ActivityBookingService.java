@@ -24,6 +24,7 @@ public interface ActivityBookingService {
         BigDecimal latitude,
         BigDecimal longitude,
         Double radiusKm,
+        Float minLuceneScore,
         String targetCurrency,
         int page,
         int size

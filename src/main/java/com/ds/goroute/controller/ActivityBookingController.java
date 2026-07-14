@@ -50,12 +50,13 @@ public class ActivityBookingController extends BaseService {
             @RequestParam(required = false) BigDecimal latitude,
             @RequestParam(required = false) BigDecimal longitude,
             @RequestParam(defaultValue = "50") double radiusKm,
+            @RequestParam(required = false) Float minLuceneScore,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         String currency = AcceptCurrencyFilter.current();
         List<ActivityBookingResponse> responses = activityBookingService.search(
                 q, minPrice, maxPrice, minRating, destinations,
-                latitude, longitude, radiusKm, currency, page, size);
+                latitude, longitude, radiusKm, minLuceneScore, currency, page, size);
         return ResponseEntity.ok(ofSucceeded(responses));
     }
 

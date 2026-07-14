@@ -1590,8 +1590,10 @@ public class TripServiceImpl implements TripService {
                                                        String destination,
                                                        String keyword,
                                                        boolean allPublic,
+                                                       String randomSeed,
                                                        int page,
                                                        int size,
+                                                       UUID viewerId,
                                                        UUID excludeUserId) {
         List<Trip> trips = tripRepository.searchPublicTrips(
                 latitude,
@@ -1600,6 +1602,7 @@ public class TripServiceImpl implements TripService {
                 destination,
                 keyword,
                 allPublic,
+                randomSeed,
                 page,
                 size,
                 excludeUserId
@@ -1643,8 +1646,8 @@ public class TripServiceImpl implements TripService {
                             .copyCount(trip.getCopyCount())
                             .helpfulVotes(trip.getHelpfulVotes() != null ? trip.getHelpfulVotes() : 0)
                             .unhelpfulVotes(trip.getUnhelpfulVotes() != null ? trip.getUnhelpfulVotes() : 0)
-                            .hasVotedHelpful(resolveTripHasVotedHelpful(trip.getId(), excludeUserId))
-                            .isOwnTrip(excludeUserId != null && trip.getOwnerId().equals(excludeUserId))
+                            .hasVotedHelpful(resolveTripHasVotedHelpful(trip.getId(), viewerId))
+                            .isOwnTrip(viewerId != null && trip.getOwnerId().equals(viewerId))
                             .totalMembers(countAcceptedMembers(trip.getId()))
                             .publicSharedAt(trip.getPublicSharedAt())
                             .build();

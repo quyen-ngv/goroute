@@ -26,7 +26,7 @@ public interface ReviewService {
 
     List<UserReviewResponse> getUserReviewsForProfile(UUID targetUserId, UUID viewerId, int page, int size);
 
-    List<UserReviewResponse> getFeedReviews(UUID currentUserId, int page, int size);
+    List<UserReviewResponse> getFeedReviews(UUID currentUserId, int page, int size, String randomSeed);
 
     UserReviewResponse voteHelpful(UUID userId, UUID reviewId);
 

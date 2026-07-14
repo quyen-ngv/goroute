@@ -60,7 +60,9 @@ public interface TripService {
                                                String destination,
                                                String keyword,
                                                boolean allPublic,
+                                               String randomSeed,
                                                int page, int size,
+                                               UUID viewerId,
                                                UUID excludeUserId);
 
     TripRecentLocationResponse getRecentLocation(UUID userId);

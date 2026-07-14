@@ -230,9 +230,9 @@ public class ReviewServiceImpl implements ReviewService {
     }
 
     @Override
-    public List<UserReviewResponse> getFeedReviews(UUID currentUserId, int page, int size) {
+    public List<UserReviewResponse> getFeedReviews(UUID currentUserId, int page, int size, String randomSeed) {
         int offset = page * size;
-        List<UserReview> reviews = reviewRepository.findFeedReviews(currentUserId, size, offset);
+        List<UserReview> reviews = reviewRepository.findFeedReviews(currentUserId, size, offset, randomSeed);
 
         return reviews.stream()
                 .map(review -> mapToResponse(review, currentUserId))

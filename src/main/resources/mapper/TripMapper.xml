@@ -164,6 +164,9 @@
         </if>
         ORDER BY
             <choose>
+                <when test="randomSeed != null and randomSeed != ''">
+                    MD5(t.id::text || #{randomSeed})
+                </when>
                 <when test="allPublic">
                     COALESCE(public_shared_at, created_at) DESC,
                     distance ASC NULLS LAST

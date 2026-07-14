@@ -93,8 +93,9 @@ public class ReviewController extends BaseService {
     public ResponseEntity getFeedReviews(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String randomSeed,
             @RequestAttribute(value = "userId", required = false) UUID userId) {
-        List<UserReviewResponse> reviews = reviewService.getFeedReviews(userId, page, size);
+        List<UserReviewResponse> reviews = reviewService.getFeedReviews(userId, page, size, randomSeed);
         return ResponseEntity.ok(ofSucceeded(reviews));
     }
 

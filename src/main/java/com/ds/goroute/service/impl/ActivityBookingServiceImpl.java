@@ -177,7 +177,8 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
     public List<ActivityBookingResponse> search(String query, BigDecimal minPrice, BigDecimal maxPrice,
                                                 BigDecimal minRating, List<String> destinations,
                                                 BigDecimal latitude, BigDecimal longitude,
-                                                Double radiusKm, String targetCurrency, int page, int size) {
+                                                Double radiusKm, Float minLuceneScore,
+                                                String targetCurrency, int page, int size) {
         List<String> destinationFilters = normalizeDestinationFilter(destinations);
         List<String> destinationSqlKeys = toSqlDestinationKeys(destinationFilters);
         boolean hasGeo = latitude != null && longitude != null;
@@ -190,7 +191,7 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
             List<ActivityBooking> filtered = repository.findWithinRadius(geoParams).stream()
                     .filter(booking -> matchesDestinationsForGeo(booking, destinationFilters))
                     .collect(Collectors.toList());
-            filtered = applyTextFilter(filtered, query);
+            filtered = applyTextFilter(filtered, query, minLuceneScore);
             return paginateAndMap(filtered, page, size, targetCurrency);
         }
 
@@ -246,6 +247,9 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
 
                 List<UUID> orderedIds = new ArrayList<>();
                 for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
+                    if (minLuceneScore != null && scoreDoc.score < minLuceneScore) {
+                        continue;
+                    }
                     Document doc = searcher.doc(scoreDoc.doc);
                     orderedIds.add(UUID.fromString(doc.get("id")));
                 }
@@ -291,7 +295,7 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
 
         if (place.getLatitude() != null && place.getLongitude() != null) {
             return search(query, null, null, null, null,
-                    place.getLatitude(), place.getLongitude(), radiusKm, targetCurrency, page, size);
+                    place.getLatitude(), place.getLongitude(), radiusKm, null, targetCurrency, page, size);
         }
 
         List<String> destinations = JsonUtils.fromJson(place.getDestinations(), new TypeReference<List<String>>() {});
@@ -299,7 +303,7 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
             return Collections.emptyList();
         }
 
-        return search(query, null, null, null, destinations, null, null, radiusKm, targetCurrency, page, size);
+        return search(query, null, null, null, destinations, null, null, radiusKm, null, targetCurrency, page, size);
     }
 
     @Override
@@ -864,12 +868,13 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
         return storedCurrency != null ? storedCurrency : "USD";
     }
 
-    private List<ActivityBooking> applyTextFilter(List<ActivityBooking> bookings, String query) {
+    private List<ActivityBooking> applyTextFilter(
+            List<ActivityBooking> bookings, String query, Float minLuceneScore) {
         if (query == null || query.trim().isEmpty()) {
             return bookings;
         }
         try {
-            return sortBookingsByRelevance(bookings, query.trim());
+            return sortBookingsByRelevance(bookings, query.trim(), minLuceneScore);
         } catch (Exception e) {
             log.warn("Failed to rank activities by query: {}", e.getMessage());
             return bookings;
@@ -885,7 +890,8 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
                 .collect(Collectors.toList());
     }
 
-    private List<ActivityBooking> sortBookingsByRelevance(List<ActivityBooking> bookings, String query) throws Exception {
+    private List<ActivityBooking> sortBookingsByRelevance(
+            List<ActivityBooking> bookings, String query, Float minLuceneScore) throws Exception {
         IndexSearcher searcher = searcherManager.acquire();
         try {
             Query textQuery = LuceneTitleQueryBuilder.build(query, analyzer);
@@ -898,6 +904,7 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
 
             scoredBookings.sort((left, right) -> Float.compare(right.score, left.score));
             return scoredBookings.stream()
+                    .filter(scoredBooking -> minLuceneScore == null || scoredBooking.score >= minLuceneScore)
                     .map(scoredBooking -> scoredBooking.booking)
                     .collect(Collectors.toList());
         } finally {

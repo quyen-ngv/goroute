@@ -31,6 +31,7 @@ public interface TripMapper {
         @Param("destination") String destination,
         @Param("keyword") String keyword,
         @Param("allPublic") boolean allPublic,
+        @Param("randomSeed") String randomSeed,
         @Param("offset") int offset,
         @Param("limit") int limit,
         @Param("excludeUserId") UUID excludeUserId

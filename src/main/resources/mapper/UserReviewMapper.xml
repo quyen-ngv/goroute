@@ -106,6 +106,11 @@
             OR NULLIF(TRIM(COALESCE(photos, '')), '') IS NOT NULL
         )
         ORDER BY
+            <choose>
+                <when test="randomSeed != null and randomSeed != ''">
+                    MD5(id::text || #{randomSeed})
+                </when>
+                <otherwise>
             (
                 (overall_rating * 8)
                 + (LEAST(helpful_votes, 20) * 2)
@@ -115,6 +120,8 @@
                 + MOD(ABS(('x' || SUBSTR(MD5(id::text || TO_CHAR(NOW(), 'YYYY-MM-DD-HH12')), 1, 8))::bit(32)::bigint), 10)
             ) DESC,
             created_at DESC
+                </otherwise>
+            </choose>
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
