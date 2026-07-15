@@ -18,7 +18,12 @@ public class UserReview {
     private UUID userId;
     private UUID placeId;
     private UUID activityBookingId;
-    private UUID tripId;
+private UUID tripId;
+
+private BigDecimal checkinLat;
+private BigDecimal checkinLng;
+private BigDecimal checkinAccuracy;
+private Boolean locationVerified;
     
     // Ratings
     private Integer overallRating;

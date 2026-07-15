@@ -15,6 +15,7 @@ import com.ds.goroute.service.ExpenseService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.service.TripService;
+import com.ds.goroute.service.StarService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.*;
 import com.ds.goroute.utils.JsonUtils;
@@ -34,6 +35,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class TripServiceImpl implements TripService {
+    private final StarService starService;
 
     private final TripRepository tripRepository;
     private final TripMemberRepository tripMemberRepository;
@@ -229,6 +231,7 @@ public class TripServiceImpl implements TripService {
         if (request.getStartDate().isAfter(request.getEndDate())) {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Start date must be before end date");
         }
+        starService.reserveTripCreation(userId);
 
         List<TripDestination> destinations = buildDestinationsForTrip(
                 null,
@@ -561,6 +564,9 @@ public class TripServiceImpl implements TripService {
         member.setJoinedAt(LocalDateTime.now());
         tripMemberRepository.updateById(member);
         log.info("Member accepted invite: {} - {}", tripId, userId);
+        starService.grant(trip.getOwnerId(), 1, "INVITE_ACCEPTED",
+                "invite:" + trip.getOwnerId() + ":" + userId,
+                "Your invited traveler joined a trip");
 
         notificationHelper.emitMemberAccepted(member, trip, userId);
     }
@@ -1520,6 +1526,8 @@ public class TripServiceImpl implements TripService {
         );
         clonedDestinations.forEach(tripDestinationRepository::insert);
         log.info("Cloned trip created: originalTripId={}, newTripId={}, userId={}", tripId, newTrip.getId(), userId);
+        starService.grant(originalTrip.getOwnerId(), 2, "TRIP_CLONED",
+                "clone:" + tripId + ":" + userId, "Someone cloned your trip");
 
         // 5. Add user as owner member
         TripMember owner = TripMember.builder()

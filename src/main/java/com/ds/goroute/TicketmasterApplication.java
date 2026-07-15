@@ -2,6 +2,7 @@ package com.ds.goroute;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration;
 import org.springframework.context.annotation.ComponentScan;
@@ -10,6 +11,7 @@ import org.springframework.context.annotation.ComponentScan;
     RedisAutoConfiguration.class,
     RedisRepositoriesAutoConfiguration.class
 })
+@EnableScheduling
 @ComponentScan("com.ds.goroute")
 public class TicketmasterApplication {
 

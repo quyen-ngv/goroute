@@ -1,0 +1,4 @@
+ALTER TABLE user_reviews ADD COLUMN IF NOT EXISTS checkin_lat DECIMAL(10, 7);
+ALTER TABLE user_reviews ADD COLUMN IF NOT EXISTS checkin_lng DECIMAL(10, 7);
+ALTER TABLE user_reviews ADD COLUMN IF NOT EXISTS checkin_accuracy_m DECIMAL(8, 2);
+ALTER TABLE user_reviews ADD COLUMN IF NOT EXISTS location_verified BOOLEAN NOT NULL DEFAULT FALSE;

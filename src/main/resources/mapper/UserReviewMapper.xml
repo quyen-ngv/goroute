@@ -10,6 +10,10 @@
         <result property="placeId" column="place_id"/>
         <result property="activityBookingId" column="activity_booking_id"/>
         <result property="tripId" column="trip_id"/>
+        <result property="checkinLat" column="checkin_lat"/>
+        <result property="checkinLng" column="checkin_lng"/>
+        <result property="checkinAccuracy" column="checkin_accuracy_m"/>
+        <result property="locationVerified" column="location_verified"/>
         <result property="overallRating" column="overall_rating"/>
         <result property="foodRating" column="food_rating"/>
         <result property="priceRating" column="price_rating"/>
@@ -26,11 +30,11 @@
 
     <insert id="insert" parameterType="com.ds.goroute.entity.UserReview">
         INSERT INTO user_reviews (
-            id, user_id, place_id, activity_booking_id, trip_id,
+            id, user_id, place_id, activity_booking_id, trip_id, checkin_lat, checkin_lng, checkin_accuracy_m, location_verified,
             overall_rating, food_rating, price_rating, ambiance_rating, service_rating,
             text, photos, weight, helpful_votes, unhelpful_votes
         ) VALUES (
-            #{id}, #{userId}, #{placeId}, #{activityBookingId}, #{tripId},
+            #{id}, #{userId}, #{placeId}, #{activityBookingId}, #{tripId}, #{checkinLat}, #{checkinLng}, #{checkinAccuracy}, #{locationVerified},
             #{overallRating}, #{foodRating}, #{priceRating}, #{ambianceRating}, #{serviceRating},
             #{text}, #{photos}::text, #{weight}, #{helpfulVotes}, #{unhelpfulVotes}
         )

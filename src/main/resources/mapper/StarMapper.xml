@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.StarMapper">
+    <resultMap id="walletMap" type="com.ds.goroute.entity.UserStarWallet">
+        <id column="user_id" property="userId"/>
+        <result column="balance" property="balance"/>
+        <result column="free_trip_quota_used" property="freeTripQuotaUsed"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+    <resultMap id="transactionMap" type="com.ds.goroute.entity.StarTransaction">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="amount" property="amount"/>
+        <result column="transaction_type" property="transactionType"/>
+        <result column="reference_key" property="referenceKey"/>
+        <result column="description" property="description"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+    <resultMap id="entitlementMap" type="com.ds.goroute.entity.TripCreationEntitlement">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="stars_spent" property="starsSpent"/>
+        <result column="expires_at" property="expiresAt"/>
+        <result column="consumed_at" property="consumedAt"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+    <select id="findWallet" resultMap="walletMap">SELECT * FROM user_star_wallets WHERE user_id = #{userId}</select>
+    <insert id="createWallet">INSERT INTO user_star_wallets(user_id) VALUES(#{userId}) ON CONFLICT (user_id) DO NOTHING</insert>
+    <update id="incrementBalance">UPDATE user_star_wallets SET balance = balance + #{amount}, updated_at = CURRENT_TIMESTAMP WHERE user_id = #{userId}</update>
+    <update id="incrementFreeQuota">UPDATE user_star_wallets SET free_trip_quota_used = free_trip_quota_used + 1, updated_at = CURRENT_TIMESTAMP WHERE user_id = #{userId} AND free_trip_quota_used &lt; 2</update>
+    <insert id="insertTransaction">INSERT INTO star_transactions(id,user_id,amount,transaction_type,reference_key,description) VALUES(#{id},#{userId},#{amount},#{transactionType},#{referenceKey},#{description})</insert>
+    <select id="findTransactions" resultMap="transactionMap">SELECT * FROM star_transactions WHERE user_id = #{userId} ORDER BY created_at DESC LIMIT #{limit}</select>
+    <select id="countReference" resultType="int">SELECT COUNT(*) FROM star_transactions WHERE reference_key = #{referenceKey}</select>
+    <insert id="insertEntitlement">INSERT INTO trip_creation_entitlements(id,user_id,stars_spent,expires_at) VALUES(#{id},#{userId},#{starsSpent},#{expiresAt})</insert>
+    <select id="findActiveEntitlement" resultMap="entitlementMap">SELECT * FROM trip_creation_entitlements WHERE user_id=#{userId} AND consumed_at IS NULL AND expires_at &gt; #{now} ORDER BY expires_at ASC LIMIT 1 FOR UPDATE</select>
+    <update id="consumeEntitlement">UPDATE trip_creation_entitlements SET consumed_at=#{now} WHERE id=#{id} AND consumed_at IS NULL</update>
+    <select id="findEligibleCompletionCandidates" resultType="com.ds.goroute.entity.TripCompletionCandidate">
+        SELECT t.id AS trip_id, t.owner_id
+        FROM trips t
+        LEFT JOIN activities a ON a.trip_id = t.id
+        LEFT JOIN trip_photos tp ON tp.trip_id = t.id
+        WHERE t.end_date &lt; CURRENT_DATE
+          AND t.visibility = 'PUBLIC'
+          AND t.is_deleted = FALSE
+        GROUP BY t.id, t.owner_id
+        HAVING COUNT(DISTINCT a.id) &gt;= 5 AND COUNT(DISTINCT tp.id) &gt;= 5
+    </select>
+</mapper>

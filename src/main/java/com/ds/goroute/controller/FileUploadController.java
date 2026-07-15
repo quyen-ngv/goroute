@@ -31,7 +31,7 @@ public class FileUploadController extends BaseService {
     private String imgpressUrl;
 
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of("image/jpeg", "image/jpg", "image/png", "image/webp");
-    private static final long MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024; // 2MB
+    private static final long MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 
     @PostMapping("/upload")
     public ResponseEntity<BaseResponse<String>> uploadFile(
@@ -41,6 +41,11 @@ public class FileUploadController extends BaseService {
             if (file.isEmpty()) {
                 return ResponseEntity.badRequest()
                         .body(ofFailed(400, "File is empty"));
+            }
+
+            if (file.getSize() > MAX_FILE_SIZE_BYTES) {
+                return ResponseEntity.badRequest()
+                        .body(ofFailed(400, "Each image must be 5 MB or smaller"));
             }
 
             // Validate file type
@@ -64,7 +69,7 @@ public class FileUploadController extends BaseService {
                 log.warn("Image compression failed, checking file size: {}", e.getMessage());
                 if (imageBytes.length > MAX_FILE_SIZE_BYTES) {
                     return ResponseEntity.badRequest()
-                            .body(ofFailed(400, "File size exceeds 2MB limit"));
+                            .body(ofFailed(400, "Each image must be 5 MB or smaller"));
                 }
                 log.info("File size acceptable, proceeding without compression");
             }
@@ -94,6 +99,19 @@ public class FileUploadController extends BaseService {
     public ResponseEntity<BaseResponse<List<String>>> uploadMultipleFiles(
             @RequestParam("files") List<MultipartFile> files,
             @RequestAttribute("userId") UUID userId) throws IOException {
+        // Validate the full batch before uploading anything. Previously an
+        // oversized file was silently skipped and the client received 200.
+        for (MultipartFile file : files) {
+            if (file.getSize() > MAX_FILE_SIZE_BYTES) {
+                return ResponseEntity.badRequest()
+                        .body(this.<List<String>>ofFailed(
+                                getBusinessError(400),
+                                "Each image must be 5 MB or smaller",
+                                List.of()
+                        ));
+            }
+        }
+
         List<String> fileUrls = new ArrayList<>();
 
         for (MultipartFile file : files) {
@@ -117,8 +135,12 @@ public class FileUploadController extends BaseService {
                 } catch (Exception e) {
                     log.warn("Image compression failed for {}: {}", originalFilename, e.getMessage());
                     if (imageBytes.length > MAX_FILE_SIZE_BYTES) {
-                        log.warn("Skipping file exceeding 2MB: {}", originalFilename);
-                        continue;
+                        return ResponseEntity.badRequest()
+                                .body(this.<List<String>>ofFailed(
+                                        getBusinessError(400),
+                                        "Each image must be 5 MB or smaller",
+                                        List.of()
+                                ));
                     }
                 }
 

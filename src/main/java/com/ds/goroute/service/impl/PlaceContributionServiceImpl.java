@@ -14,6 +14,7 @@ import com.ds.goroute.repository.UserReviewRepository;
 import com.ds.goroute.service.PlaceContributionService;
 import com.ds.goroute.service.PlaceService;
 import com.ds.goroute.service.ReviewScoringService;
+import com.ds.goroute.service.StarService;
 import com.ds.goroute.thirdparty.scrape.*;
 import com.ds.goroute.type.ContributionGroupStatus;
 import com.ds.goroute.type.ContributionStatus;
@@ -50,6 +51,7 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
     private final UserReviewRepository reviewRepository;
     private final UserReviewProfileRepository profileRepository;
     private final ReviewScoringService scoringService;
+    private final StarService starService;
     private final ScrapeServiceClient scrapeServiceClient;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -691,6 +693,10 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
             contribution.setStatus(status);
             contribution.setUpdatedAt(LocalDateTime.now());
             contributionMapper.updateContribution(contribution);
+            if (status == ContributionStatus.COMPLETED || status == ContributionStatus.MERGED_TO_EXISTING) {
+                starService.grant(contribution.getUserId(), 1, "PLACE_CONTRIBUTION",
+                        "place_contribution:" + contribution.getId(), "Your new place contribution was approved");
+            }
         }
     }
 

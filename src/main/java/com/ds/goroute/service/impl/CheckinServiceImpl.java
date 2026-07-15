@@ -46,6 +46,13 @@ public class CheckinServiceImpl implements CheckinService {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Activity not found");
         }
 
+        if (request.getLat() == null || request.getLng() == null || activity.getLat() == null || activity.getLng() == null
+                || distanceMeters(request.getLat().doubleValue(), request.getLng().doubleValue(),
+                activity.getLat().doubleValue(), activity.getLng().doubleValue()) > 200) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "You must be within 200 meters of the activity to check in");
+        }
+
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
         
@@ -81,6 +88,15 @@ public class CheckinServiceImpl implements CheckinService {
         notificationHelper.emitCheckin(tripId, activityId, userId);
         
         return mapToCheckinResponse(checkin);
+    }
+
+    private double distanceMeters(double lat1, double lng1, double lat2, double lng2) {
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        return 6_371_000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
     @Override

@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 
 import java.util.List;
 import java.util.UUID;
+import java.math.BigDecimal;
 
 @Data
 @Builder
@@ -19,7 +20,11 @@ public class CreateReviewRequest {
 
     private UUID activityBookingId;
 
-    private UUID tripId; // Deprecated: reviews are scoped to place, not trip.
+private UUID tripId; // Deprecated: reviews are scoped to place, not trip.
+
+private BigDecimal checkinLat;
+private BigDecimal checkinLng;
+private BigDecimal checkinAccuracy;
 
     @NotNull(message = "Overall rating is required")
     @Min(value = 1, message = "Rating must be between 1 and 5")
