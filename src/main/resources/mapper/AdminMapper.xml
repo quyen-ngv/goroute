@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.AdminMapper">
+
+    <select id="hasPermission" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1
+            FROM admin_user_roles ur
+            JOIN admin_role_permissions rp ON rp.role_id = ur.role_id
+            JOIN admin_permissions p ON p.id = rp.permission_id
+            WHERE ur.user_id = #{userId, javaType=java.util.UUID, jdbcType=OTHER}
+              AND p.resource = #{resource}
+              AND p.action = #{action}
+        )
+    </select>
+
+    <select id="ownsResource" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1
+            FROM admin_resource_owners
+            WHERE owner_id = #{ownerId, javaType=java.util.UUID, jdbcType=OTHER}
+              AND resource = #{resource}
+              AND resource_id = #{resourceId, javaType=java.util.UUID, jdbcType=OTHER}
+        )
+    </select>
+
+    <select id="findUsers" resultType="map">
+        SELECT u.id, u.username, u.email, u.full_name, u.created_at,
+               COALESCE(string_agg(r.code, ',' ORDER BY r.code), '') AS roles
+        FROM users u
+        LEFT JOIN admin_user_roles ur ON ur.user_id = u.id
+        LEFT JOIN admin_roles r ON r.id = ur.role_id
+        WHERE u.deleted_at IS NULL
+          AND (u.username ILIKE CONCAT('%', #{search}, '%')
+            OR u.email ILIKE CONCAT('%', #{search}, '%')
+            OR u.full_name ILIKE CONCAT('%', #{search}, '%'))
+        GROUP BY u.id
+        ORDER BY u.created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findRoles" resultType="map">
+        SELECT r.id, r.code, r.name,
+               COALESCE(
+                   json_agg(json_build_object('resource', p.resource, 'action', p.action))
+                       FILTER (WHERE p.id IS NOT NULL),
+                   '[]'
+               ) AS permissions
+        FROM admin_roles r
+        LEFT JOIN admin_role_permissions rp ON rp.role_id = r.id
+        LEFT JOIN admin_permissions p ON p.id = rp.permission_id
+        GROUP BY r.id
+        ORDER BY r.name
+    </select>
+
+    <select id="findUserDetail" resultType="map">
+        SELECT u.id, u.username, u.email, u.full_name, u.avatar_url, u.bio, u.provider,
+               u.language, u.theme, u.created_at, u.updated_at,
+               COALESCE(string_agg(DISTINCT r.code, ',' ORDER BY r.code), '') AS roles,
+               (SELECT count(DISTINCT t.id)
+                FROM trips t
+                LEFT JOIN trip_members tm ON tm.trip_id = t.id
+                WHERE (t.owner_id = u.id OR tm.user_id = u.id)
+                  AND COALESCE(t.is_deleted, false) = false) AS trip_count,
+               (SELECT count(*) FROM place_contributions pc WHERE pc.user_id = u.id) AS contribution_count
+        FROM users u
+        LEFT JOIN admin_user_roles ur ON ur.user_id = u.id
+        LEFT JOIN admin_roles r ON r.id = ur.role_id
+        WHERE u.id = #{userId, javaType=java.util.UUID, jdbcType=OTHER}
+        GROUP BY u.id
+    </select>
+
+    <select id="findUserTrips" resultType="map">
+        SELECT t.id, t.name, t.destination, t.status, t.visibility, t.start_date, t.end_date, t.created_at,
+               (SELECT count(*) FROM activities a WHERE a.trip_id = t.id) AS activity_count,
+               (SELECT count(*) FROM trip_members m WHERE m.trip_id = t.id) AS member_count
+        FROM trips t
+        WHERE (t.owner_id = #{userId, javaType=java.util.UUID, jdbcType=OTHER}
+            OR EXISTS (
+                SELECT 1 FROM trip_members tm
+                WHERE tm.trip_id = t.id
+                  AND tm.user_id = #{userId, javaType=java.util.UUID, jdbcType=OTHER}
+            ))
+          AND COALESCE(t.is_deleted, false) = false
+        ORDER BY t.created_at DESC
+    </select>
+
+    <select id="findUserContributions" resultType="map">
+        SELECT pc.id, pc.group_id, pc.google_maps_url, pc.place_name_hint, pc.status, pc.created_at,
+               pcg.resolved_google_place_id, pcg.linked_place_id
+        FROM place_contributions pc
+        LEFT JOIN place_contribution_groups pcg ON pcg.id = pc.group_id
+        WHERE pc.user_id = #{userId, javaType=java.util.UUID, jdbcType=OTHER}
+        ORDER BY pc.created_at DESC
+    </select>
+
+    <select id="findUserMedia" resultType="map">
+        SELECT id, url, caption, entity_type, created_at
+        FROM media_assets
+        WHERE uploaded_by = #{userId, javaType=java.util.UUID, jdbcType=OTHER}
+          AND deleted_at IS NULL
+        ORDER BY created_at DESC
+    </select>
+
+    <delete id="deleteUserRoles">
+        DELETE FROM admin_user_roles
+        WHERE user_id = #{userId, javaType=java.util.UUID, jdbcType=OTHER}
+    </delete>
+
+    <insert id="insertUserRoles">
+        INSERT INTO admin_user_roles(user_id, role_id)
+        SELECT #{userId, javaType=java.util.UUID, jdbcType=OTHER}, id
+        FROM admin_roles
+        WHERE code IN
+        <foreach collection="roleCodes" item="code" open="(" separator="," close=")">
+            #{code}
+        </foreach>
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <select id="findMedia" resultType="map">
+        SELECT id, url, caption, entity_type, uploaded_by, created_at
+        FROM media_assets
+        WHERE deleted_at IS NULL
+          AND (url ILIKE CONCAT('%', #{search}, '%')
+            OR COALESCE(caption, '') ILIKE CONCAT('%', #{search}, '%'))
+        ORDER BY created_at DESC
+        LIMIT 300
+    </select>
+
+    <insert id="insertMedia">
+        INSERT INTO media_assets(id, entity_type, url, caption, uploaded_by)
+        VALUES (#{id, javaType=java.util.UUID, jdbcType=OTHER}, 'LIBRARY', #{url}, #{caption},
+                #{uploadedBy, javaType=java.util.UUID, jdbcType=OTHER})
+    </insert>
+
+    <update id="softDeleteMedia">
+        UPDATE media_assets
+        SET deleted_at = NOW()
+        WHERE id = #{id, javaType=java.util.UUID, jdbcType=OTHER}
+    </update>
+
+    <select id="findPlans" resultType="map">
+        SELECT t.id, t.name, t.destination, t.status, t.visibility, t.owner_id, t.created_at,
+               u.username,
+               (SELECT count(*) FROM activities a WHERE a.trip_id = t.id) AS activity_count,
+               (SELECT count(*) FROM trip_members m WHERE m.trip_id = t.id) AS member_count
+        FROM trips t
+        LEFT JOIN users u ON u.id = t.owner_id
+        WHERE COALESCE(t.is_deleted, false) = false
+          AND (t.name ILIKE CONCAT('%', #{search}, '%')
+            OR t.destination ILIKE CONCAT('%', #{search}, '%')
+            OR u.username ILIKE CONCAT('%', #{search}, '%'))
+        ORDER BY t.created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findPlanDetail" resultType="map">
+        SELECT t.*, u.username AS owner_username
+        FROM trips t
+        LEFT JOIN users u ON u.id = t.owner_id
+        WHERE t.id = #{planId, javaType=java.util.UUID, jdbcType=OTHER}
+    </select>
+
+    <select id="findPlanActivities" resultType="map">
+        SELECT *
+        FROM activities
+        WHERE trip_id = #{planId, javaType=java.util.UUID, jdbcType=OTHER}
+        ORDER BY day_number, sort_order
+    </select>
+
+    <select id="findPlanMembers" resultType="map">
+        SELECT m.*, u.username, u.full_name
+        FROM trip_members m
+        LEFT JOIN users u ON u.id = m.user_id
+        WHERE m.trip_id = #{planId, javaType=java.util.UUID, jdbcType=OTHER}
+    </select>
+</mapper>

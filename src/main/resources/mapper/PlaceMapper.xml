@@ -177,10 +177,17 @@
 
     <select id="findByIds" resultMap="PlaceResultMap">
         SELECT * FROM places
-        WHERE id IN
-        <foreach item="id" collection="ids" open="(" separator="," close=")">
-            #{id}
-        </foreach>
+        <choose>
+            <when test="ids != null and ids.size() > 0">
+                WHERE id IN
+                <foreach item="id" collection="ids" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>
+                WHERE 1 = 0
+            </otherwise>
+        </choose>
     </select>
 
     <select id="findNearby" resultMap="PlaceResultMap">
@@ -229,18 +236,20 @@
                     sin(radians(#{latitude})) * sin(radians(p.latitude))
                 )))) AS distance
             FROM places p
-            <if test="foodIds != null and foodIds.size() > 0">
-                INNER JOIN place_foods pf ON pf.place_id = p.id
-            </if>
             WHERE 1=1
             <if test="includeInactive == false">
                 AND p.visibility_status = 'ACTIVE'
             </if>
             <if test="foodIds != null and foodIds.size() > 0">
-                AND pf.food_id IN
-                <foreach collection="foodIds" item="fid" open="(" separator="," close=")">
-                    #{fid}
-                </foreach>
+                AND EXISTS (
+                    SELECT 1
+                    FROM place_foods pf
+                    WHERE pf.place_id = p.id
+                      AND pf.food_id IN
+                      <foreach collection="foodIds" item="fid" open="(" separator="," close=")">
+                          #{fid}
+                      </foreach>
+                )
             </if>
             <if test="citySlugJson != null and citySlugJson != ''">
                 AND p.destinations @&gt; #{citySlugJson}::jsonb

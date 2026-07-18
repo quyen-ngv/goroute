@@ -24,6 +24,8 @@ public interface SavedPlaceMapper {
                                       @Param("itemType") String itemType);
     
     void updateTags(@Param("id") UUID id, @Param("tags") String[] tags);
+
+    void updateCategory(@Param("id") UUID id, @Param("category") String category);
     
     void deleteById(@Param("id") UUID id);
 }

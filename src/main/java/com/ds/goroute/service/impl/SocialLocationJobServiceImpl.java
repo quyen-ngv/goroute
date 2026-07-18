@@ -2,12 +2,14 @@ package com.ds.goroute.service.impl;
 
 import com.ds.goroute.dto.request.CreateSocialLocationJobRequest;
 import com.ds.goroute.dto.request.SocialLocationJobCallbackRequest;
+import com.ds.goroute.dto.request.CreateSocialPlaceImportJobRequest;
 import com.ds.goroute.dto.response.SocialLocationJobResponse;
 import com.ds.goroute.entity.SocialLocationJob;
 import com.ds.goroute.entity.PlaceImportJobItem;
 import com.ds.goroute.mapper.PlaceImportJobMapper;
 import com.ds.goroute.mapper.SocialLocationJobMapper;
 import com.ds.goroute.service.SocialLocationJobService;
+import com.ds.goroute.service.PlaceImportJobService;
 import com.ds.goroute.thirdparty.scrape.ScrapeServiceClient;
 import com.ds.goroute.thirdparty.scrape.ScrapeSocialLocationJobRequest;
 import com.ds.goroute.thirdparty.scrape.ScrapeSocialLocationJobResponse;
@@ -39,6 +41,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     private final PlaceImportJobMapper placeImportJobMapper;
     private final ScrapeServiceClient scrapeServiceClient;
     private final ObjectMapper objectMapper;
+    private final PlaceImportJobService placeImportJobService;
 
     @Value("${goroute.internal.public-base-url:http://goroute-app:8080}")
     private String internalBaseUrl;
@@ -157,6 +160,20 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         }
         job.setUpdatedAt(LocalDateTime.now());
         jobMapper.update(job);
+        if (status == SocialLocationJobStatus.COMPLETED) {
+            try {
+                placeImportJobService.createFromSocialJobs(
+                        job.getUserId(),
+                        CreateSocialPlaceImportJobRequest.builder()
+                                .socialJobIds(List.of(job.getId()))
+                                .maxReviews(5)
+                                .limit(50)
+                                .build());
+            } catch (Exception e) {
+                log.warn("Could not queue automatic place import for social job {}: {}",
+                        job.getId(), e.getMessage());
+            }
+        }
         log.info("Social location callback processed: job_id={} python_job_id={} status={}",
                 job.getId(), job.getPythonJobId(), job.getStatus());
         return toResponse(job);

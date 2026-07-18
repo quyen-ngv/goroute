@@ -37,6 +37,9 @@ public class TripResponse {
     private String description;
     private TripStatsResponse stats;
     private String userRole; // Role of current user in this trip (OWNER, EDITOR, VIEWER)
+    private UUID ownerId;
+    private String ownerName;
+    private String ownerAvatarUrl;
     private Integer viewCount;
     private Integer copyCount;
     private Integer helpfulVotes;

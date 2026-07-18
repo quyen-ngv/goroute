@@ -649,12 +649,26 @@ public class TripServiceImpl implements TripService {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only owner can update member role");
         }
 
-        TripMember member = tripMemberRepository.findByTripIdAndUserId(tripId, memberId)
+        TripMember member = tripMemberRepository.findById(memberId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Member not found"));
 
-        member.setRole(MemberRole.valueOf(role));
+        if (!tripId.equals(member.getTripId())) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Member does not belong to this trip");
+        }
+
+        MemberRole newRole;
+        try {
+            newRole = MemberRole.valueOf(role.trim().toUpperCase());
+        } catch (IllegalArgumentException | NullPointerException exception) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Invalid member role");
+        }
+        if (newRole == MemberRole.OWNER) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Cannot assign owner role");
+        }
+
+        member.setRole(newRole);
         tripMemberRepository.updateById(member);
-        log.info("Member role updated: {} - {} - {}", tripId, memberId, role);
+        log.info("Member role updated: {} - {} - {}", tripId, memberId, newRole);
     }
 
     @Override
@@ -741,6 +755,14 @@ public class TripServiceImpl implements TripService {
 
         List<String> memoryImageUrls = getTripMemoryImageUrls(trip.getId());
         List<TripDestinationResponse> destinationResponses = destinationResponses(trip);
+        User owner = trip.getOwnerId() == null
+                ? null
+                : userRepository.findById(trip.getOwnerId()).orElse(null);
+        String ownerName = owner == null
+                ? null
+                : (owner.getFullName() != null && !owner.getFullName().isBlank()
+                    ? owner.getFullName()
+                    : owner.getUsername());
 
         return TripResponse.builder()
                 .id(trip.getId())
@@ -764,6 +786,9 @@ public class TripServiceImpl implements TripService {
                 .description(trip.getDescription())
                 .stats(stats)
                 .userRole(userRole)
+                .ownerId(trip.getOwnerId())
+                .ownerName(ownerName)
+                .ownerAvatarUrl(owner != null ? owner.getAvatarUrl() : null)
                 .viewCount(trip.getViewCount())
                 .copyCount(trip.getCopyCount())
                 .helpfulVotes(trip.getHelpfulVotes() != null ? trip.getHelpfulVotes() : 0)

@@ -52,6 +52,12 @@
         WHERE id = #{id}
     </update>
 
+    <update id="updateCategory">
+        UPDATE saved_places
+        SET category = #{category}
+        WHERE id = #{id}
+    </update>
+
     <delete id="deleteById">
         DELETE FROM saved_places WHERE id = #{id}
     </delete>

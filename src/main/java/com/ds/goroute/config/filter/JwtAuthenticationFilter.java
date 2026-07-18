@@ -51,10 +51,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     
                     // ✅ Set SecurityContext - THIS IS CRITICAL!
                     if (SecurityContextHolder.getContext().getAuthentication() == null) {
+                        var authorities = claims.get("admin", Boolean.class) == Boolean.TRUE
+                                ? java.util.List.of(new SimpleGrantedAuthority("ROLE_ADMIN"), new SimpleGrantedAuthority("ROLE_USER"))
+                                : java.util.List.of(new SimpleGrantedAuthority("ROLE_USER"));
                         UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                                 userId.toString(),
                                 null,
-                                Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER"))
+                                authorities
                         );
                         authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                         SecurityContextHolder.getContext().setAuthentication(authToken);

@@ -47,7 +47,8 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
         String itemType = normalizeItemType(request.getItemType());
         SavedPlace existing = savedPlaceMapper.findByUserIdAndPlaceId(userId, request.getPlaceId(), itemType);
         if (existing != null) {
-            return toResponse(existing);
+            savedPlaceMapper.updateCategory(existing.getId(), request.getCategory());
+            return toResponse(savedPlaceMapper.findById(existing.getId()));
         }
 
         SavedPlace savedPlace = SavedPlace.builder()
