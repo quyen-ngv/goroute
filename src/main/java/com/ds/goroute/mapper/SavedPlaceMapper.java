@@ -1,6 +1,7 @@
 package com.ds.goroute.mapper;
 
 import com.ds.goroute.entity.SavedPlace;
+import com.ds.goroute.dto.response.SavedItemTripResponse;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import java.util.List;
@@ -18,6 +19,10 @@ public interface SavedPlaceMapper {
                                    @Param("itemType") String itemType,
                                    @Param("limit") Integer limit, 
                                    @Param("offset") Integer offset);
+
+    List<SavedPlace> findAllByUserId(@Param("userId") UUID userId);
+
+    List<SavedItemTripResponse> findTripItemsByUserId(@Param("userId") UUID userId);
     
     SavedPlace findByUserIdAndPlaceId(@Param("userId") UUID userId,
                                       @Param("placeId") String placeId,

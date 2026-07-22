@@ -35,6 +35,8 @@ public interface UserRepository {
     boolean isFollowing(UUID followerId, UUID followingId);
     
     void updateById(User user);
+
+    void updateLastLoginAt(UUID id);
     
     void update(User user);
     

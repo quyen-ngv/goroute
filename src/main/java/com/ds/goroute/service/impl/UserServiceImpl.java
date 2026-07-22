@@ -54,8 +54,9 @@ public class UserServiceImpl implements UserService {
     private final ImageStorageCleanupService imageStorageCleanupService;
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public UserProfileResponse getProfile(UUID userId) {
+        userRepository.updateLastLoginAt(userId);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
 
@@ -243,6 +244,7 @@ public class UserServiceImpl implements UserService {
                 .fullName(user.getFullName())
                 .username(user.getUsername())
                 .avatarUrl(user.getAvatarUrl())
+                .tripCount(tripRepository.countPublicTripsByOwnerId(user.getId()))
                 .reviewCount(userReviewRepository.countByUserId(user.getId()))
                 .followersCount(userRepository.countFollowers(user.getId()))
                 .followingCount(userRepository.countFollowing(user.getId()))
@@ -297,6 +299,7 @@ public class UserServiceImpl implements UserService {
                 .defaultCurrency(user.getDefaultCurrency())
                 .defaultTravelMode(user.getDefaultTravelMode())
                 .locationTracking(user.getLocationTracking() != null ? user.getLocationTracking().toString() : null)
+                .lastLoginAt(user.getLastLoginAt())
                 .language(user.getLanguage())
                 .theme(user.getTheme())
                 .onboardingCompleted(user.getOnboardingCompleted())

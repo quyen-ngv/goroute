@@ -6,8 +6,7 @@ import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.dto.response.ReferralStatusResponse;
 import com.ds.goroute.mapper.ReferralMapper;
 import com.ds.goroute.repository.UserRepository;
-import static com.ds.goroute.constant.ErrorConstant.INVALID_PARAMETERS;
-import static com.ds.goroute.constant.ErrorConstant.USER_NOT_FOUND;
+import com.ds.goroute.constant.ErrorConstant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,7 +24,7 @@ public class ReferralService {
 
     public ReferralStatusResponse getStatus(UUID inviteeId) {
         User invitee = userRepository.findById(inviteeId)
-                .orElseThrow(() -> new BusinessException(USER_NOT_FOUND, "User not found"));
+                .orElseThrow(() -> new BusinessException(ErrorConstant.USER_NOT_FOUND, "User not found"));
         boolean hasApplied = referralMapper.countByInviteeId(inviteeId) > 0;
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime expiresAt = invitee.getCreatedAt() == null
@@ -47,20 +46,20 @@ public class ReferralService {
     @Transactional
     public void applyCode(UUID inviteeId, ApplyReferralCodeRequest request) {
         User invitee = userRepository.findById(inviteeId)
-                .orElseThrow(() -> new BusinessException(USER_NOT_FOUND, "User not found"));
+                .orElseThrow(() -> new BusinessException(ErrorConstant.USER_NOT_FOUND, "User not found"));
         if (invitee.getCreatedAt() == null || invitee.getCreatedAt().isBefore(LocalDateTime.now().minusDays(3))) {
-            throw new BusinessException(INVALID_PARAMETERS, "Invite codes are available only within 3 days of registration");
+            throw new BusinessException(ErrorConstant.REFERRAL_WINDOW_EXPIRED);
         }
         if (referralMapper.countByInviteeId(inviteeId) > 0) {
-            throw new BusinessException(INVALID_PARAMETERS, "You have already used an invite code");
+            throw new BusinessException(ErrorConstant.REFERRAL_ALREADY_APPLIED);
         }
 
         String code = request.getCode().trim();
         if (code.regionMatches(true, 0, "INV-", 0, 4)) code = code.substring(4);
         User inviter = userRepository.findByUsername(code)
-                .orElseThrow(() -> new BusinessException(INVALID_PARAMETERS, "Invite code is invalid"));
+                .orElseThrow(() -> new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Invite code is invalid"));
         if (inviter.getId().equals(inviteeId)) {
-            throw new BusinessException(INVALID_PARAMETERS, "You cannot use your own invite code");
+            throw new BusinessException(ErrorConstant.SELF_REFERRAL_NOT_ALLOWED);
         }
 
         referralMapper.insert(UUID.randomUUID(), inviter.getId(), inviteeId, "INV-" + code);

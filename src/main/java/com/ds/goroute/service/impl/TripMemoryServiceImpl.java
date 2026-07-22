@@ -59,10 +59,7 @@ public class TripMemoryServiceImpl implements TripMemoryService {
         validateActivity(tripId, request.getActivityId());
 
         if (!isProTripOwner(trip.getOwnerId()) && mediaAssetRepository.countByTripId(tripId) >= FREE_TRIP_MEMORY_LIMIT) {
-            throw new BusinessException(
-                    ErrorConstant.FORBIDDEN_ERROR,
-                    "Free trips can store up to " + FREE_TRIP_MEMORY_LIMIT + " memory photos"
-            );
+            throw new BusinessException(ErrorConstant.FREE_TRIP_MEMORY_LIMIT_REACHED);
         }
 
         MediaAsset mediaAsset = MediaAsset.builder()

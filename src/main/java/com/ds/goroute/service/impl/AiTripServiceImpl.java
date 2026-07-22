@@ -74,9 +74,7 @@ public class AiTripServiceImpl implements AiTripService {
 
         aiTripRepository.ensureSubscription(userId);
         if (aiTripRepository.consumeAiTripQuota(userId) == 0) {
-            String tier = aiTripRepository.getSubscriptionTier(userId);
-            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
-                    "AI trip limit reached for " + tier + " subscription");
+            throw new BusinessException(ErrorConstant.AI_TRIP_QUOTA_EXHAUSTED);
         }
 
         String tier = aiTripRepository.getSubscriptionTier(userId);
@@ -126,7 +124,7 @@ public class AiTripServiceImpl implements AiTripService {
             return completedResponse(draft);
         }
         if (!"PENDING".equals(draft.getStatus())) {
-            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "AI trip draft is not active");
+            throw new BusinessException(ErrorConstant.AI_TRIP_DRAFT_INACTIVE);
         }
 
         List<AiTripCandidateResponse> candidates = parseCandidates(draft.getCandidates());

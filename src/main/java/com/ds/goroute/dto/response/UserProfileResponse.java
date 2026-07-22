@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
 
@@ -23,6 +24,7 @@ public class UserProfileResponse {
     private String defaultCurrency;
     private String defaultTravelMode;
     private String locationTracking;
+    private LocalDateTime lastLoginAt;
     private String language;
     private String theme;
     private Boolean onboardingCompleted;

@@ -16,6 +16,7 @@ public class DiscoverUserResponse {
     private String fullName;
     private String username;
     private String avatarUrl;
+    private int tripCount;
     private int reviewCount;
     private int followersCount;
     private int followingCount;

@@ -90,6 +90,11 @@ public class UserRepositoryImpl implements UserRepository {
     public void updateById(User user) {
         userMapper.updateById(user);
     }
+
+    @Override
+    public void updateLastLoginAt(UUID id) {
+        userMapper.updateLastLoginAt(id);
+    }
     
     @Override
     public void update(User user) {

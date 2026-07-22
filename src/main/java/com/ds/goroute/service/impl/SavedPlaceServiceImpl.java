@@ -1,7 +1,9 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.SavePlaceRequest;
 import com.ds.goroute.dto.response.SavedPlaceResponse;
+import com.ds.goroute.dto.response.SavedItemsOverviewResponse;
 import com.ds.goroute.entity.SavedPlace;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.SavedPlaceMapper;
@@ -74,6 +76,19 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public SavedItemsOverviewResponse getSavedItemsOverview(UUID userId) {
+        List<SavedPlaceResponse> savedItems = savedPlaceMapper.findAllByUserId(userId)
+                .stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
+        return SavedItemsOverviewResponse.builder()
+                .savedItems(savedItems)
+                .tripItems(savedPlaceMapper.findTripItemsByUserId(userId))
+                .build();
+    }
+
+    @Override
     @Transactional
     public void unsavePlace(UUID userId, UUID savedPlaceId) {
         SavedPlace savedPlace = requireOwnedSavedPlace(userId, savedPlaceId);
@@ -94,10 +109,10 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
     private SavedPlace requireOwnedSavedPlace(UUID userId, UUID savedPlaceId) {
         SavedPlace savedPlace = savedPlaceMapper.findById(savedPlaceId);
         if (savedPlace == null) {
-            throw new BusinessException(404, "Saved item not found", HttpStatus.NOT_FOUND);
+            throw new BusinessException(ErrorConstant.NOT_FOUND, HttpStatus.NOT_FOUND);
         }
         if (!userId.equals(savedPlace.getUserId())) {
-            throw new BusinessException(403, "Saved item access denied", HttpStatus.FORBIDDEN);
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, HttpStatus.FORBIDDEN);
         }
         return savedPlace;
     }

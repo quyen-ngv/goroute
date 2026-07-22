@@ -35,6 +35,7 @@ public class User {
     private String language;
     private String theme;
     private Boolean onboardingCompleted;
+    private LocalDateTime lastLoginAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime deletedAt;

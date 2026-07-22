@@ -23,6 +23,7 @@
         <result column="language" property="language" jdbcType="VARCHAR"/>
         <result column="theme" property="theme" jdbcType="VARCHAR"/>
         <result column="onboarding_completed" property="onboardingCompleted" jdbcType="BOOLEAN"/>
+        <result column="last_login_at" property="lastLoginAt" jdbcType="TIMESTAMP"/>
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
         <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
         <result column="deleted_at" property="deletedAt" jdbcType="TIMESTAMP"/>
@@ -76,6 +77,13 @@
             deleted_at = #{deletedAt},
             updated_at = NOW()
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <update id="updateLastLoginAt" parameterType="java.util.UUID">
+        UPDATE users
+        SET last_login_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+          AND deleted_at IS NULL
     </update>
 
     <select id="selectByUsername" parameterType="String" resultMap="UserResultMap">

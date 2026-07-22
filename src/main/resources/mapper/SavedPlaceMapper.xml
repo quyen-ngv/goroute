@@ -41,6 +41,53 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
+    <select id="findAllByUserId" resultMap="SavedPlaceResultMap">
+        SELECT * FROM saved_places
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC, id DESC
+    </select>
+
+    <select id="findTripItemsByUserId" resultType="com.ds.goroute.dto.response.SavedItemTripResponse">
+        SELECT
+            a.place_id AS itemId,
+            'PLACE' AS itemType,
+            t.id AS tripId,
+            t.name AS tripName,
+            t.cover_image_url AS tripCoverImageUrl,
+            t.destination AS tripDestination,
+            a.id AS activityId,
+            a.day_number AS dayNumber
+        FROM activities a
+        INNER JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
+        LEFT JOIN trip_members tm
+            ON tm.trip_id = t.id
+            AND tm.user_id = #{userId}
+            AND tm.status = 'ACCEPTED'
+        WHERE a.place_id IS NOT NULL
+          AND (t.owner_id = #{userId} OR tm.user_id IS NOT NULL)
+
+        UNION ALL
+
+        SELECT
+            CAST(a.booking_id AS VARCHAR) AS itemId,
+            'ACTIVITY' AS itemType,
+            t.id AS tripId,
+            t.name AS tripName,
+            t.cover_image_url AS tripCoverImageUrl,
+            t.destination AS tripDestination,
+            a.id AS activityId,
+            a.day_number AS dayNumber
+        FROM activities a
+        INNER JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
+        LEFT JOIN trip_members tm
+            ON tm.trip_id = t.id
+            AND tm.user_id = #{userId}
+            AND tm.status = 'ACCEPTED'
+        WHERE a.booking_id IS NOT NULL
+          AND (t.owner_id = #{userId} OR tm.user_id IS NOT NULL)
+        ORDER BY tripName ASC, dayNumber ASC, activityId ASC
+    </select>
+
     <select id="findByUserIdAndPlaceId" resultMap="SavedPlaceResultMap">
         SELECT * FROM saved_places 
         WHERE user_id = #{userId} AND place_id = #{placeId} AND item_type = #{itemType}

@@ -524,7 +524,7 @@ public class TripServiceImpl implements TripService {
 
             var existingMember = tripMemberRepository.findByTripIdAndUserId(tripId, invitedUser.getId());
             if (existingMember.isPresent()) {
-                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "User is already a member");
+                throw new BusinessException(ErrorConstant.TRIP_MEMBER_ALREADY_EXISTS);
             }
 
             member = TripMember.builder()
@@ -557,7 +557,7 @@ public class TripServiceImpl implements TripService {
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Invitation not found"));
 
         if (member.getStatus() != MemberStatus.PENDING) {
-            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Invitation is not pending");
+            throw new BusinessException(ErrorConstant.TRIP_INVITATION_NOT_PENDING);
         }
 
         member.setStatus(MemberStatus.ACCEPTED);
@@ -578,7 +578,7 @@ public class TripServiceImpl implements TripService {
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Invitation not found"));
 
         if (member.getStatus() != MemberStatus.PENDING) {
-            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Invitation is not pending");
+            throw new BusinessException(ErrorConstant.TRIP_INVITATION_NOT_PENDING);
         }
 
         member.setStatus(MemberStatus.DECLINED);
@@ -1404,7 +1404,7 @@ public class TripServiceImpl implements TripService {
         // Check if user is already a member
         var existingMember = tripMemberRepository.findByTripIdAndUserId(trip.getId(), userId);
         if (existingMember.isPresent()) {
-            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "User is already a member of this trip");
+            throw new BusinessException(ErrorConstant.TRIP_MEMBER_ALREADY_EXISTS);
         }
 
         // Create new member with PENDING status

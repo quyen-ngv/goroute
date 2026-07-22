@@ -49,8 +49,7 @@ public class CheckinServiceImpl implements CheckinService {
         if (request.getLat() == null || request.getLng() == null || activity.getLat() == null || activity.getLng() == null
                 || distanceMeters(request.getLat().doubleValue(), request.getLng().doubleValue(),
                 activity.getLat().doubleValue(), activity.getLng().doubleValue()) > 200) {
-            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
-                    "You must be within 200 meters of the activity to check in");
+            throw new BusinessException(ErrorConstant.CHECKIN_DISTANCE_LIMIT_EXCEEDED);
         }
 
         Trip trip = tripRepository.findById(tripId)

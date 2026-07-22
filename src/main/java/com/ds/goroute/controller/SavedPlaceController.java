@@ -3,6 +3,7 @@ package com.ds.goroute.controller;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.SavePlaceRequest;
 import com.ds.goroute.dto.response.SavedPlaceResponse;
+import com.ds.goroute.dto.response.SavedItemsOverviewResponse;
 import com.ds.goroute.service.SavedPlaceService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,18 @@ public class SavedPlaceController {
         UUID userId = currentUserId(authentication);
         List<SavedPlaceResponse> places = savedPlaceService.getSavedPlaces(userId, category, itemType, page, size);
         return ResponseEntity.ok(BaseResponse.ofSucceeded(places));
+    }
+
+    /**
+     * Returns the current user's entire saved state in one request so clients
+     * can render favourite controls without issuing a request per card.
+     */
+    @GetMapping("/overview")
+    public ResponseEntity<BaseResponse<SavedItemsOverviewResponse>> getSavedItemsOverview(
+            Authentication authentication) {
+        UUID userId = currentUserId(authentication);
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(
+                savedPlaceService.getSavedItemsOverview(userId)));
     }
 
     @PostMapping

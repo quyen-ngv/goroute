@@ -37,6 +37,8 @@ public interface UserMapper {
     boolean existsFollow(@Param("followerId") UUID followerId, @Param("followingId") UUID followingId);
     
     int updateById(User user);
+
+    int updateLastLoginAt(@Param("id") UUID id);
     
     int deleteById(@Param("id") UUID id);
     

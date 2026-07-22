@@ -14,12 +14,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
-import static com.ds.goroute.constant.ErrorConstant.INVALID_PARAMETERS;
+import com.ds.goroute.constant.ErrorConstant;
 
 @Service
 @RequiredArgsConstructor
 public class StarService {
-    private static final int FREE_TRIP_QUOTA = 2;
+    private static final int FREE_TRIP_QUOTA = 3;
     private static final int TRIP_UNLOCK_COST = 10;
     private static final int TRANSACTION_LIMIT = 50;
 
@@ -34,8 +34,7 @@ public class StarService {
         }
         TripCreationEntitlement entitlement = starMapper.findActiveEntitlement(userId, LocalDateTime.now());
         if (entitlement == null || starMapper.consumeEntitlement(entitlement.getId(), LocalDateTime.now()) != 1) {
-            throw new BusinessException(INVALID_PARAMETERS,
-                    "You have used your 2 free trip slots. Unlock a new trip with 10 stars.");
+            throw new BusinessException(ErrorConstant.TRIP_CREATION_QUOTA_EXHAUSTED);
         }
     }
 
@@ -44,7 +43,7 @@ public class StarService {
         ensureWallet(userId);
         UserStarWallet wallet = starMapper.findWallet(userId);
         if (wallet.getBalance() < TRIP_UNLOCK_COST) {
-            throw new BusinessException(INVALID_PARAMETERS, "You need 10 stars to unlock a trip.");
+            throw new BusinessException(ErrorConstant.INSUFFICIENT_STARS_FOR_TRIP_UNLOCK);
         }
         String reference = "trip_unlock:" + userId + ":" + UUID.randomUUID();
         starMapper.incrementBalance(userId, -TRIP_UNLOCK_COST);

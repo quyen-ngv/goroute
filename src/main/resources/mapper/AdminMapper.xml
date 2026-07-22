@@ -25,7 +25,7 @@
     </select>
 
     <select id="findUsers" resultType="map">
-        SELECT u.id, u.username, u.email, u.full_name, u.created_at,
+        SELECT u.id, u.username, u.email, u.full_name, u.created_at, u.last_login_at,
                COALESCE(string_agg(r.code, ',' ORDER BY r.code), '') AS roles
         FROM users u
         LEFT JOIN admin_user_roles ur ON ur.user_id = u.id
@@ -55,7 +55,7 @@
 
     <select id="findUserDetail" resultType="map">
         SELECT u.id, u.username, u.email, u.full_name, u.avatar_url, u.bio, u.provider,
-               u.language, u.theme, u.created_at, u.updated_at,
+               u.language, u.theme, u.created_at, u.updated_at, u.last_login_at,
                COALESCE(string_agg(DISTINCT r.code, ',' ORDER BY r.code), '') AS roles,
                (SELECT count(DISTINCT t.id)
                 FROM trips t

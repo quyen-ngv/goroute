@@ -203,7 +203,7 @@ public class TripBookServiceImpl implements TripBookService {
         BookPageSlot slot = tripBookRepository.findPageSlot(pageId, slotId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Book page slot not found"));
         if (Boolean.TRUE.equals(slot.getLocked())) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "This slot is locked");
+            throw new BusinessException(ErrorConstant.TRIP_BOOK_SLOT_LOCKED);
         }
         if (request.getValue() != null) slot.setValue(valueToString(request.getValue()));
         if (request.getVisible() != null) slot.setVisible(request.getVisible());
