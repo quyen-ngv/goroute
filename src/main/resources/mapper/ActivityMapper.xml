@@ -23,6 +23,10 @@
         <result column="cost_currency" property="costCurrency" jdbcType="VARCHAR"/>
         <result column="category" property="category" jdbcType="VARCHAR"/>
         <result column="transport_mode" property="transportMode" jdbcType="VARCHAR"/>
+        <result column="distance_to_next" property="distanceToNext" jdbcType="VARCHAR"/>
+        <result column="duration_to_next" property="durationToNext" jdbcType="VARCHAR"/>
+        <result column="distance_value_to_next" property="distanceValueToNext" jdbcType="INTEGER"/>
+        <result column="duration_value_to_next" property="durationValueToNext" jdbcType="INTEGER"/>
         <result column="rating" property="rating" jdbcType="DECIMAL"/>
         <result column="photo_url" property="photoUrl" jdbcType="VARCHAR"/>
         <result column="notes" property="notes" jdbcType="VARCHAR"/>
@@ -42,7 +46,9 @@
         INSERT INTO activities (id, trip_id, day_number, sort_order, place_id, custom_place_id, place_ref_id, name, address,
                                lat, lng, end_lat, end_lng, end_address,
                                start_time, end_time, estimated_cost, cost_currency, category,
-                               transport_mode, rating, photo_url, notes, description, status, added_by,
+                               transport_mode, distance_to_next, duration_to_next,
+                               distance_value_to_next, duration_value_to_next,
+                               rating, photo_url, notes, description, status, added_by,
                                is_accommodation, is_starting_point, starting_point_date,
                                booking_id, booking_source, created_at, updated_at)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER},
@@ -54,7 +60,8 @@
                 #{startTime,javaType=java.time.LocalTime,jdbcType=TIME},
                 #{endTime,javaType=java.time.LocalTime,jdbcType=TIME},
                 #{estimatedCost}, #{costCurrency}, #{category},
-                #{transportMode},
+                #{transportMode}, #{distanceToNext}, #{durationToNext},
+                #{distanceValueToNext}, #{durationValueToNext},
                 #{rating}, #{photoUrl}, #{notes}, #{description},
                 #{status},
                 #{addedBy,javaType=java.util.UUID,jdbcType=OTHER},
@@ -99,6 +106,10 @@
             <if test="costCurrency != null">cost_currency = #{costCurrency},</if>
             <if test="category != null">category = #{category},</if>
             <if test="transportMode != null">transport_mode = #{transportMode},</if>
+            <if test="distanceToNext != null">distance_to_next = #{distanceToNext},</if>
+            <if test="durationToNext != null">duration_to_next = #{durationToNext},</if>
+            <if test="distanceValueToNext != null">distance_value_to_next = #{distanceValueToNext},</if>
+            <if test="durationValueToNext != null">duration_value_to_next = #{durationValueToNext},</if>
             <if test="rating != null">rating = #{rating},</if>
             <if test="photoUrl != null">photo_url = #{photoUrl},</if>
             <if test="notes != null">notes = #{notes},</if>

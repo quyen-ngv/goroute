@@ -161,6 +161,10 @@ public class ActivityServiceImpl implements ActivityService {
         if (request.getCostCurrency() != null) activity.setCostCurrency(request.getCostCurrency());
         if (request.getCategory() != null) activity.setCategory(request.getCategory());
         if (request.getTransportMode() != null) activity.setTransportMode(TransportMode.valueOf(request.getTransportMode()));
+        if (request.getDistanceToNext() != null) activity.setDistanceToNext(request.getDistanceToNext());
+        if (request.getDurationToNext() != null) activity.setDurationToNext(request.getDurationToNext());
+        if (request.getDistanceValueToNext() != null) activity.setDistanceValueToNext(request.getDistanceValueToNext());
+        if (request.getDurationValueToNext() != null) activity.setDurationValueToNext(request.getDurationValueToNext());
         if (request.getNotes() != null) activity.setNotes(request.getNotes());
         if (request.getDescription() != null) activity.setDescription(request.getDescription());
         if (request.getIsAccommodation() != null) activity.setIsAccommodation(request.getIsAccommodation());
@@ -266,6 +270,10 @@ public class ActivityServiceImpl implements ActivityService {
                 .costCurrency(activity.getCostCurrency())
                 .category(activity.getCategory())
                 .transportMode(activity.getTransportMode() != null ? activity.getTransportMode().toString() : null)
+                .distanceToNext(activity.getDistanceToNext())
+                .durationToNext(activity.getDurationToNext())
+                .distanceValueToNext(activity.getDistanceValueToNext())
+                .durationValueToNext(activity.getDurationValueToNext())
                 .rating(activity.getRating())
                 .photoUrl(activity.getPhotoUrl())
                 .notes(activity.getNotes())

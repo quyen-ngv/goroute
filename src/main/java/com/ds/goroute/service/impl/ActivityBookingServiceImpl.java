@@ -835,6 +835,7 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
                 .costCurrency(effectiveCurrency)
                 .category("activity")
                 .notes(request.getNotes())
+                .description(request.getDescription())
                 .bookingId(booking.getId())
                 .bookingSource(booking.getSource() != null ? booking.getSource() : "KLOOK")
                 .build();

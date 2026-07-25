@@ -47,4 +47,26 @@ public class AiTripGenerateRequest {
 
     @Size(max = 2000)
     private String preferenceText;
+
+    // Enhanced fields from best practices
+    @Size(max = 500)
+    private String groupComposition; // "Family of 4 (2 adults, 2 kids aged 8-12)"
+
+    private BigDecimal budgetMin;
+    private BigDecimal budgetMax;
+
+    @Size(max = 10)
+    private String budgetCurrency; // "VND", "USD"
+
+    @Size(max = 50)
+    private String travelStyle; // "Relaxed", "Adventure", "Luxury", "Cultural", "Family-friendly"
+
+    private List<String> activityTypes; // ["Food", "Nature", "Culture", "Adventure", "Photography", "Shopping", "Wellness"]
+
+    private List<String> dietaryRestrictions; // ["Vegetarian", "Halal", "Gluten-free", "Vegan", "No-pork"]
+
+    private List<String> mobilityConsiderations; // ["Elderly-friendly", "Wheelchair-accessible", "Kid-friendly"]
+
+    @Builder.Default
+    private Boolean includeBackupActivities = true; // For indoor alternatives during bad weather
 }

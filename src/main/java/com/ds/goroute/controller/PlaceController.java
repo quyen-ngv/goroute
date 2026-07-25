@@ -82,12 +82,13 @@ public class PlaceController extends BaseService {
             @RequestParam(required = false) List<UUID> foodIds,
             @RequestParam(required = false) Boolean excludeLinkedFoodPlaces,
             @RequestParam(defaultValue = "false") boolean includeInactive,
+            @RequestParam(required = false) Float minLuceneScore,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
         List<PlaceResponse> responses = placeService.searchPlaces(
                 keyword, latitude, longitude, radius, category, placeGroups, minRating,
-                citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, page, size);
+                citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, minLuceneScore, page, size);
         return ResponseEntity.ok(ofSucceeded(responses));
     }
 

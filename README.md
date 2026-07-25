@@ -111,6 +111,18 @@ JWT_SECRET=your-secret-key-here
 # Google Maps (optional)
 GOOGLE_MAPS_API_KEY=your-api-key
 
+# AI provider (DeepSeek is the default)
+AI_PROVIDER=deepseek
+AI_API_KEY=your-ai-api-key
+# Optional provider overrides:
+# AI_MODEL=deepseek-v4-flash
+# AI_API_URL=https://api.deepseek.com/chat/completions
+# AI_MAX_TOKENS=2500
+
+# To switch back to Claude:
+# AI_PROVIDER=claude
+# AI_API_KEY=your-claude-api-key
+
 # Firebase (optional)
 FIREBASE_CREDENTIALS_PATH=/path/to/firebase-credentials.json
 FIREBASE_PROJECT_ID=your-project-id

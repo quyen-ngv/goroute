@@ -35,6 +35,10 @@ public class UpdateActivityRequest {
     private String costCurrency;
     private String category;
     private String transportMode;
+    private String distanceToNext;
+    private String durationToNext;
+    private Integer distanceValueToNext;
+    private Integer durationValueToNext;
     private String notes;
     private String description;
     private Boolean isAccommodation;

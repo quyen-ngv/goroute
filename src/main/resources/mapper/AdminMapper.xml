@@ -175,4 +175,55 @@
         LEFT JOIN users u ON u.id = m.user_id
         WHERE m.trip_id = #{planId, javaType=java.util.UUID, jdbcType=OTHER}
     </select>
+
+    <select id="findDashboardStats" resultType="map">
+        SELECT
+            (SELECT count(*) FROM foods) AS foods,
+            (SELECT count(*) FROM places) AS places,
+            (SELECT count(*) FROM activity_bookings) AS activity_bookings,
+            (SELECT count(DISTINCT NULLIF(city_slug, '')) FROM location_images) AS location_cities,
+            (SELECT count(*) FROM users WHERE deleted_at IS NULL) AS users,
+            (SELECT count(*) FROM trips WHERE COALESCE(is_deleted, false) = false) AS plans,
+            (SELECT count(*) FROM activities) AS activities
+    </select>
+
+    <select id="findDashboardDailyStats" resultType="map">
+        WITH days AS (
+            SELECT generate_series(current_date - interval '29 days', current_date, interval '1 day')::date AS day
+        )
+        SELECT to_char(days.day, 'YYYY-MM-DD') AS day,
+               (SELECT count(*) FROM users u
+                WHERE u.deleted_at IS NULL AND u.created_at::date = days.day) AS users,
+               (SELECT count(*) FROM trips t
+                WHERE COALESCE(t.is_deleted, false) = false AND t.created_at::date = days.day) AS plans,
+               (SELECT count(*) FROM activities a WHERE a.created_at::date = days.day) AS activities
+        FROM days
+        ORDER BY days.day
+    </select>
+
+    <select id="findTopSelectedPlaces" resultType="map">
+        SELECT item_type, item_id, title, count(*) AS selection_count
+        FROM (
+            SELECT CASE WHEN p.id IS NOT NULL THEN 'PLACE' ELSE 'ACTIVITY_BOOKING' END AS item_type,
+                   COALESCE(p.id::text, b.id::text) AS item_id,
+                   COALESCE(p.title, b.title) AS title
+            FROM activities a
+            LEFT JOIN places p ON p.id::text = NULLIF(BTRIM(a.place_id), '') OR p.id = a.place_ref_id
+            LEFT JOIN activity_bookings b ON b.id = a.booking_id
+            WHERE p.id IS NOT NULL OR b.id IS NOT NULL
+        ) selected
+        GROUP BY item_type, item_id, title
+        ORDER BY selection_count DESC, title
+        LIMIT 10
+    </select>
+
+    <select id="findTopDestinations" resultType="map">
+        SELECT MIN(BTRIM(destination)) AS city, count(*) AS trip_count
+        FROM trips
+        WHERE COALESCE(is_deleted, false) = false
+          AND NULLIF(BTRIM(destination), '') IS NOT NULL
+        GROUP BY lower(BTRIM(destination))
+        ORDER BY trip_count DESC, city
+        LIMIT 10
+    </select>
 </mapper>

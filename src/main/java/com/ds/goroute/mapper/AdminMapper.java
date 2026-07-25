@@ -54,4 +54,12 @@ public interface AdminMapper {
     List<Map<String, Object>> findPlanActivities(@Param("planId") UUID planId);
 
     List<Map<String, Object>> findPlanMembers(@Param("planId") UUID planId);
+
+    Map<String, Object> findDashboardStats();
+
+    List<Map<String, Object>> findDashboardDailyStats();
+
+    List<Map<String, Object>> findTopSelectedPlaces();
+
+    List<Map<String, Object>> findTopDestinations();
 }

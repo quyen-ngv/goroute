@@ -7,6 +7,8 @@
     <sql id="AiTripDraftColumns">
         id, user_id, trip_name, city_id, city_name, city_lat, city_lng,
         start_date, end_date, day_count, place_groups, pace, preference_text,
+        group_composition, budget_min, budget_max, budget_currency, travel_style,
+        activity_types, dietary_restrictions, mobility_considerations, include_backup_activities,
         candidates, status, idempotency_key, created_trip_id, created_at, updated_at
     </sql>
 
@@ -24,6 +26,15 @@
         <result property="placeGroups" column="place_groups" jdbcType="VARCHAR"/>
         <result property="pace" column="pace" jdbcType="VARCHAR"/>
         <result property="preferenceText" column="preference_text" jdbcType="VARCHAR"/>
+        <result property="groupComposition" column="group_composition" jdbcType="VARCHAR"/>
+        <result property="budgetMin" column="budget_min" jdbcType="DECIMAL"/>
+        <result property="budgetMax" column="budget_max" jdbcType="DECIMAL"/>
+        <result property="budgetCurrency" column="budget_currency" jdbcType="VARCHAR"/>
+        <result property="travelStyle" column="travel_style" jdbcType="VARCHAR"/>
+        <result property="activityTypes" column="activity_types" jdbcType="VARCHAR"/>
+        <result property="dietaryRestrictions" column="dietary_restrictions" jdbcType="VARCHAR"/>
+        <result property="mobilityConsiderations" column="mobility_considerations" jdbcType="VARCHAR"/>
+        <result property="includeBackupActivities" column="include_backup_activities" jdbcType="BOOLEAN"/>
         <result property="candidates" column="candidates" jdbcType="VARCHAR"/>
         <result property="status" column="status" jdbcType="VARCHAR"/>
         <result property="idempotencyKey" column="idempotency_key" jdbcType="VARCHAR"/>
@@ -61,7 +72,10 @@
     <insert id="insertDraft" parameterType="com.ds.goroute.entity.AiTripDraft">
         INSERT INTO ai_trip_drafts (
             id, user_id, trip_name, city_id, city_name, city_lat, city_lng,
-            start_date, end_date, day_count, place_groups, pace, preference_text, candidates, status
+            start_date, end_date, day_count, place_groups, pace, preference_text,
+            group_composition, budget_min, budget_max, budget_currency, travel_style,
+            activity_types, dietary_restrictions, mobility_considerations, include_backup_activities,
+            candidates, status
         )
         VALUES (
             #{id,javaType=java.util.UUID,jdbcType=OTHER},
@@ -77,6 +91,15 @@
             #{placeGroups,jdbcType=VARCHAR}::jsonb,
             #{pace,jdbcType=VARCHAR},
             #{preferenceText,jdbcType=VARCHAR},
+            #{groupComposition,jdbcType=VARCHAR},
+            #{budgetMin,jdbcType=DECIMAL},
+            #{budgetMax,jdbcType=DECIMAL},
+            #{budgetCurrency,jdbcType=VARCHAR},
+            #{travelStyle,jdbcType=VARCHAR},
+            #{activityTypes,jdbcType=VARCHAR}::jsonb,
+            #{dietaryRestrictions,jdbcType=VARCHAR}::jsonb,
+            #{mobilityConsiderations,jdbcType=VARCHAR}::jsonb,
+            #{includeBackupActivities,jdbcType=BOOLEAN},
             #{candidates,jdbcType=VARCHAR}::jsonb,
             #{status,jdbcType=VARCHAR}
         )

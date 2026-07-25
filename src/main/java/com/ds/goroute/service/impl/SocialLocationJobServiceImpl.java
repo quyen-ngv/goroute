@@ -7,7 +7,9 @@ import com.ds.goroute.dto.response.SocialLocationJobResponse;
 import com.ds.goroute.entity.SocialLocationJob;
 import com.ds.goroute.entity.PlaceImportJobItem;
 import com.ds.goroute.mapper.PlaceImportJobMapper;
+import com.ds.goroute.mapper.PlaceMapper;
 import com.ds.goroute.mapper.SocialLocationJobMapper;
+import com.ds.goroute.entity.Place;
 import com.ds.goroute.service.SocialLocationJobService;
 import com.ds.goroute.service.PlaceImportJobService;
 import com.ds.goroute.thirdparty.scrape.ScrapeServiceClient;
@@ -39,6 +41,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
 
     private final SocialLocationJobMapper jobMapper;
     private final PlaceImportJobMapper placeImportJobMapper;
+    private final PlaceMapper placeMapper;
     private final ScrapeServiceClient scrapeServiceClient;
     private final ObjectMapper objectMapper;
     private final PlaceImportJobService placeImportJobService;
@@ -301,11 +304,19 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                     continue;
                 }
                 ObjectNode mapping = objectNode.putObject("placeMapping");
-                mapping.put("placeId", item.getImportedPlaceId() != null
-                        ? item.getImportedPlaceId().toString()
-                        : item.getExistingPlaceId().toString());
+                UUID placeId = item.getImportedPlaceId() != null
+                        ? item.getImportedPlaceId()
+                        : item.getExistingPlaceId();
+                if (placeId == null) {
+                    continue;
+                }
+                mapping.put("placeId", placeId.toString());
                 mapping.put("approvalStatus", item.getApprovalStatus().name());
                 mapping.put("itemStatus", item.getStatus().name());
+                Place place = placeMapper.findById(placeId);
+                if (place != null && place.getThumbnail() != null && !place.getThumbnail().isBlank()) {
+                    mapping.put("thumbnail", place.getThumbnail());
+                }
             }
         }
         return result;

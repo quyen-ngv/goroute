@@ -25,7 +25,7 @@ public class NotificationTemplateRenderer {
         if (isAdminNotification(type)) {
             NotificationMessage adminMessage = renderAdminMessage(normalizedData);
             if (adminMessage != null) {
-                return adminMessage;
+                return withLocalizedPunctuation(adminMessage, lang);
             }
         }
 
@@ -40,10 +40,24 @@ public class NotificationTemplateRenderer {
             return new NotificationMessage("Trip update", "There is a new update in your trip");
         }
 
-        return new NotificationMessage(
+        return withLocalizedPunctuation(new NotificationMessage(
                 interpolate(template.title(), normalizedData),
                 interpolate(template.body(), normalizedData)
-        );
+        ), lang);
+    }
+
+    private NotificationMessage withLocalizedPunctuation(NotificationMessage message, String language) {
+        if (!"vi".equals(language)) {
+            return message;
+        }
+        return new NotificationMessage(message.title(), ensureTerminalPunctuation(message.body()));
+    }
+
+    private String ensureTerminalPunctuation(String text) {
+        if (text == null || text.isBlank() || text.matches(".*[.!?…][”\"')\\]]?$")) {
+            return text;
+        }
+        return text + ".";
     }
 
     private boolean isAdminNotification(NotificationType type) {
@@ -87,7 +101,7 @@ public class NotificationTemplateRenderer {
 
     private String paidStatus(boolean paid, String language) {
         return switch (language) {
-            case "vi" -> paid ? "da thanh toan" : "chua thanh toan";
+            case "vi" -> paid ? "đã thanh toán" : "chưa thanh toán";
             case "ja" -> paid ? "shiharaizumi" : "mihiharai";
             case "ko" -> paid ? "gyeolje wanlyo" : "migyeolje";
             default -> paid ? "paid" : "unpaid";
@@ -135,29 +149,29 @@ public class NotificationTemplateRenderer {
 
     private Map<NotificationType, NotificationMessage> vietnamese() {
         return Map.ofEntries(
-                entry(NotificationType.EXPENSE_ADDED, "Da them chi phi", "{actorName} da them \"{expenseName}\" {amount} {currency} vao {tripName}"),
-                entry(NotificationType.EXPENSE_UPDATED, "Da cap nhat chi phi", "{actorName} da cap nhat \"{expenseName}\" trong {tripName}"),
-                entry(NotificationType.EXPENSE_DELETED, "Da xoa chi phi", "{actorName} da xoa \"{expenseName}\" khoi {tripName}"),
-                entry(NotificationType.ACTIVITY_ADDED, "Da them hoat dong", "{actorName} da them \"{activityName}\" vao {tripName}"),
-                entry(NotificationType.ACTIVITY_UPDATED, "Da cap nhat hoat dong", "{actorName} da cap nhat \"{activityName}\" trong {tripName}"),
-                entry(NotificationType.ACTIVITY_DELETED, "Da xoa hoat dong", "{actorName} da xoa \"{activityName}\" khoi {tripName}"),
-                entry(NotificationType.MEMBER_ADDED, "Thanh vien moi", "{actorName} da them {newMemberName} vao {tripName}"),
-                entry(NotificationType.MEMBER_REMOVED, "Da xoa thanh vien", "{actorName} da xoa {removedMemberName} khoi {tripName}"),
-                entry(NotificationType.MEMBER_ACCEPTED, "Thanh vien da tham gia", "{memberName} da tham gia {tripName}"),
-                entry(NotificationType.MEMBER_LEFT, "Thanh vien da roi di", "{actorName} da roi khoi {tripName}"),
-                entry(NotificationType.GUEST_LINKED, "Da lien ket khach", "{guestName} da duoc lien ket voi {linkedUserName} trong {tripName}"),
-                entry(NotificationType.TRIP_UPDATED, "Da cap nhat chuyen di", "{actorName} da cap nhat chuyen di {tripName}"),
-                entry(NotificationType.TRIP_DELETED, "Da xoa chuyen di", "{actorName} da xoa chuyen di {tripName}"),
-                entry(NotificationType.PAYMENT_MARKED, "Da cap nhat thanh toan", "{payerName} da cap nhat thanh toan {amount} {currency} cua {payeeName} cho \"{expenseDescription}\""),
-                entry(NotificationType.PAYMENT_ALL_MARKED, "Da cap nhat thanh toan chi phi", "{actorName} da danh dau thanh toan cho \"{expenseDescription}\" la {paidStatus}"),
-                entry(NotificationType.PAYMENT_TRIP_MARKED, "Da cap nhat thanh toan chuyen di", "{actorName} da danh dau thanh toan trong {tripName} la {paidStatus}"),
-                entry(NotificationType.CHECKIN, "Check-in", "{actorName} da check-in tai \"{activityName}\" trong {tripName}"),
-                entry(NotificationType.NOTE_ADDED, "Da them ghi chu", "{actorName} da them ghi chu vao {activityName} {tripName}"),
-                entry(NotificationType.NOTE_DELETED, "Da xoa ghi chu", "{actorName} da xoa ghi chu khoi {activityName} {tripName}"),
-                entry(NotificationType.COMMENT_ADDED, "Da them binh luan", "{actorName} da binh luan o \"{activityName}\" trong {tripName}"),
-                entry(NotificationType.COMMENT_DELETED, "Da xoa binh luan", "{actorName} da xoa binh luan khoi \"{activityName}\" trong {tripName}"),
-                entry(NotificationType.ADMIN_ANNOUNCEMENT, "Thong bao tu TripMind", "{body}"),
-                entry(NotificationType.ADMIN_MESSAGE, "Tin nhan tu TripMind", "{body}")
+                entry(NotificationType.EXPENSE_ADDED, "Đã thêm chi phí", "{actorName} đã thêm \"{expenseName}\" {amount} {currency} vào {tripName}"),
+                entry(NotificationType.EXPENSE_UPDATED, "Đã cập nhật chi phí", "{actorName} đã cập nhật \"{expenseName}\" trong {tripName}"),
+                entry(NotificationType.EXPENSE_DELETED, "Đã xóa chi phí", "{actorName} đã xóa \"{expenseName}\" khỏi {tripName}"),
+                entry(NotificationType.ACTIVITY_ADDED, "Đã thêm hoạt động", "{actorName} đã thêm \"{activityName}\" vào {tripName}"),
+                entry(NotificationType.ACTIVITY_UPDATED, "Đã cập nhật hoạt động", "{actorName} đã cập nhật \"{activityName}\" trong {tripName}"),
+                entry(NotificationType.ACTIVITY_DELETED, "Đã xóa hoạt động", "{actorName} đã xóa \"{activityName}\" khỏi {tripName}"),
+                entry(NotificationType.MEMBER_ADDED, "Thành viên mới", "{actorName} đã thêm {newMemberName} vào {tripName}"),
+                entry(NotificationType.MEMBER_REMOVED, "Đã xóa thành viên", "{actorName} đã xóa {removedMemberName} khỏi {tripName}"),
+                entry(NotificationType.MEMBER_ACCEPTED, "Thành viên đã tham gia", "{memberName} đã tham gia {tripName}"),
+                entry(NotificationType.MEMBER_LEFT, "Thành viên đã rời đi", "{actorName} đã rời khỏi {tripName}"),
+                entry(NotificationType.GUEST_LINKED, "Đã liên kết khách", "{guestName} đã được liên kết với {linkedUserName} trong {tripName}"),
+                entry(NotificationType.TRIP_UPDATED, "Đã cập nhật chuyến đi", "{actorName} đã cập nhật chuyến đi {tripName}"),
+                entry(NotificationType.TRIP_DELETED, "Đã xóa chuyến đi", "{actorName} đã xóa chuyến đi {tripName}"),
+                entry(NotificationType.PAYMENT_MARKED, "Đã cập nhật thanh toán", "{payerName} đã cập nhật thanh toán {amount} {currency} của {payeeName} cho \"{expenseDescription}\""),
+                entry(NotificationType.PAYMENT_ALL_MARKED, "Đã cập nhật thanh toán chi phí", "{actorName} đã đánh dấu thanh toán cho \"{expenseDescription}\" là {paidStatus}"),
+                entry(NotificationType.PAYMENT_TRIP_MARKED, "Đã cập nhật thanh toán chuyến đi", "{actorName} đã đánh dấu thanh toán trong {tripName} là {paidStatus}"),
+                entry(NotificationType.CHECKIN, "Check-in", "{actorName} đã check-in tại \"{activityName}\" trong {tripName}"),
+                entry(NotificationType.NOTE_ADDED, "Đã thêm ghi chú", "{actorName} đã thêm ghi chú vào {activityName} {tripName}"),
+                entry(NotificationType.NOTE_DELETED, "Đã xóa ghi chú", "{actorName} đã xóa ghi chú khỏi {activityName} {tripName}"),
+                entry(NotificationType.COMMENT_ADDED, "Đã thêm bình luận", "{actorName} đã bình luận ở \"{activityName}\" trong {tripName}"),
+                entry(NotificationType.COMMENT_DELETED, "Đã xóa bình luận", "{actorName} đã xóa bình luận khỏi \"{activityName}\" trong {tripName}"),
+                entry(NotificationType.ADMIN_ANNOUNCEMENT, "Thông báo từ TripMind", "{body}"),
+                entry(NotificationType.ADMIN_MESSAGE, "Tin nhắn từ TripMind", "{body}")
         );
     }
 

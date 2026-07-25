@@ -1,5 +1,6 @@
 package com.ds.goroute.thirdparty.claude;
 
+import com.ds.goroute.thirdparty.ai.AiClient;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
@@ -9,6 +10,7 @@ import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -17,30 +19,32 @@ import java.util.List;
 import java.util.Optional;
 
 @Component
+@ConditionalOnProperty(prefix = "ai", name = "provider", havingValue = "claude")
 @RequiredArgsConstructor
 @Slf4j
-public class ClaudeClient {
+public class ClaudeClient implements AiClient {
 
     private final RestClient.Builder restClientBuilder;
 
-    @Value("${claude.api-key:}")
+    @Value("${AI_API_KEY:}")
     private String apiKey;
 
-    @Value("${claude.model:claude-3-5-haiku-20241022}")
+    @Value("${AI_MODEL:claude-3-5-haiku-20241022}")
     private String model;
 
-    @Value("${claude.api-url:https://api.anthropic.com/v1/messages}")
+    @Value("${AI_API_URL:https://api.anthropic.com/v1/messages}")
     private String apiUrl;
 
     @Value("${claude.anthropic-version:2023-06-01}")
     private String anthropicVersion;
 
-    @Value("${claude.max-tokens:2500}")
+    @Value("${AI_MAX_TOKENS:2500}")
     private int maxTokens;
 
+    @Override
     public Optional<String> completeJson(String systemPrompt, String userPrompt) {
         if (apiKey == null || apiKey.isBlank()) {
-            log.warn("CLAUDE_API_KEY is not configured; using local AI-trip fallback");
+            log.warn("AI_API_KEY is not configured for Claude; using local AI-trip fallback");
             return Optional.empty();
         }
 

@@ -52,6 +52,7 @@ public class UpdatePlaceRequest {
 
     // Details
     private String descriptions;
+    private String aiDescription; // Curated for AI trip planning
     private String status;
     private String visibilityStatus;
     private String priceRange;

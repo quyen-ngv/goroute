@@ -172,6 +172,11 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
 
     @Override
     public List<UUID> searchTitleIds(String query, int maxResults) throws IOException {
+        return searchTitleIds(query, maxResults, null);
+    }
+
+    @Override
+    public List<UUID> searchTitleIds(String query, int maxResults, Float minLuceneScore) throws IOException {
         if (query == null || query.isBlank()) {
             return List.of();
         }
@@ -182,6 +187,9 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
             TopDocs topDocs = searcher.search(textQuery, maxResults);
             List<UUID> ids = new ArrayList<>(topDocs.scoreDocs.length);
             for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
+                if (minLuceneScore != null && scoreDoc.score < minLuceneScore) {
+                    continue;
+                }
                 Document doc = searcher.doc(scoreDoc.doc);
                 ids.add(UUID.fromString(doc.get("id")));
             }

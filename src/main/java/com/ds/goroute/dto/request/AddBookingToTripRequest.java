@@ -20,4 +20,7 @@ public class AddBookingToTripRequest {
     private String startTime;
 
     private String notes;
+
+    /** Short user-written itinerary description for this tour. */
+    private String description;
 }

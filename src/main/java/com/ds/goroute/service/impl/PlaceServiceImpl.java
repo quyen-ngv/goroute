@@ -190,7 +190,7 @@ public class PlaceServiceImpl implements PlaceService {
                                             BigDecimal radius, String category, List<String> placeGroups,
                                             BigDecimal minRating, int page, int size) {
         return searchPlaces(keyword, latitude, longitude, radius, category, placeGroups,
-                minRating, null, null, null, false, page, size);
+                minRating, null, null, null, false, null, page, size);
     }
 
     @Override
@@ -198,6 +198,16 @@ public class PlaceServiceImpl implements PlaceService {
                                             BigDecimal radius, String category, List<String> placeGroups,
                                             BigDecimal minRating, String citySlug, List<UUID> foodIds,
                                             Boolean excludeLinkedFoodPlaces, boolean includeInactive, int page, int size) {
+        return searchPlaces(keyword, latitude, longitude, radius, category, placeGroups,
+                minRating, citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, null, page, size);
+    }
+
+    @Override
+    public List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
+                                            BigDecimal radius, String category, List<String> placeGroups,
+                                            BigDecimal minRating, String citySlug, List<UUID> foodIds,
+                                            Boolean excludeLinkedFoodPlaces, boolean includeInactive,
+                                            Float minLuceneScore, int page, int size) {
         if (keyword != null && !keyword.trim().isEmpty()) {
             List<Place> places = searchPlacesByTitleLucene(
                     keyword.trim(),
@@ -211,6 +221,7 @@ public class PlaceServiceImpl implements PlaceService {
                     foodIds,
                     excludeLinkedFoodPlaces,
                     includeInactive,
+                    minLuceneScore,
                     page,
                     size);
             List<PlaceResponse> responses = places.stream()
@@ -259,10 +270,12 @@ public class PlaceServiceImpl implements PlaceService {
             List<UUID> foodIds,
             Boolean excludeLinkedFoodPlaces,
             boolean includeInactive,
+            Float minLuceneScore,
             int page,
             int size) {
         try {
-            List<UUID> orderedIds = placeSearchIndexService.searchTitleIds(keyword, MAX_PLACE_LUCENE_FETCH);
+            List<UUID> orderedIds = placeSearchIndexService.searchTitleIds(
+                    keyword, MAX_PLACE_LUCENE_FETCH, minLuceneScore);
             if (orderedIds.isEmpty()) {
                 return List.of();
             }
@@ -297,7 +310,7 @@ public class PlaceServiceImpl implements PlaceService {
                     place.setDistance(GeoDistanceUtils.distanceKm(
                             latitude, longitude, place.getLatitude(), place.getLongitude()));
                 }
-                matched.sort(Comparator.comparing(Place::getDistance));
+                // Keep Lucene relevance order for keyword search (do not re-sort by distance).
             }
 
             return matched.stream()
@@ -569,6 +582,7 @@ public class PlaceServiceImpl implements PlaceService {
         place.setThumbnail(request.getThumbnail());
         place.setImages(request.getImages());
         place.setDescriptions(request.getDescriptions());
+        place.setAiDescription(request.getAiDescription());
         place.setStatus(request.getStatus());
         place.setVisibilityStatus(parseVisibilityStatus(request.getVisibilityStatus(), place.getVisibilityStatus()));
         place.setPriceRange(request.getPriceRange());
@@ -1028,6 +1042,7 @@ public class PlaceServiceImpl implements PlaceService {
                 .thumbnail(place.getThumbnail())
                 .images(parseJsonToList(place.getImages(), PlaceImagesDto.class))
                 .descriptions(resolvedDescription)
+                .aiDescription(place.getAiDescription())
                 .visibilityStatus(place.getVisibilityStatus() != null
                         ? place.getVisibilityStatus().name()
                         : PlaceVisibilityStatus.ACTIVE.name())

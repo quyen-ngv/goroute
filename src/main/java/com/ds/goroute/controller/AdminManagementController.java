@@ -29,6 +29,15 @@ public class AdminManagementController {
         return BaseResponse.ofSucceeded(adminMapper.findUsers(search, safeSize, Math.max(page, 0) * safeSize));
     }
 
+    @GetMapping("/dashboard")
+    public BaseResponse<Map<String, Object>> dashboard() {
+        Map<String, Object> result = new LinkedHashMap<>(adminMapper.findDashboardStats());
+        result.put("daily", adminMapper.findDashboardDailyStats());
+        result.put("topPlaces", adminMapper.findTopSelectedPlaces());
+        result.put("topCities", adminMapper.findTopDestinations());
+        return BaseResponse.ofSucceeded(result);
+    }
+
     @GetMapping("/roles")
     public BaseResponse<List<Map<String,Object>>> roles() {
         return BaseResponse.ofSucceeded(adminMapper.findRoles());

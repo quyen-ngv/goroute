@@ -5,6 +5,7 @@ import com.ds.goroute.dto.request.AiTripConfirmRequest;
 import com.ds.goroute.dto.request.AiTripGenerateRequest;
 import com.ds.goroute.dto.response.AiTripConfirmResponse;
 import com.ds.goroute.dto.response.AiTripGenerateResponse;
+import com.ds.goroute.dto.response.AiTripUsage;
 import com.ds.goroute.service.AiTripService;
 import com.ds.goroute.service.BaseService;
 import jakarta.validation.Valid;
@@ -21,6 +22,12 @@ import java.util.UUID;
 public class AiTripController extends BaseService {
 
     private final AiTripService aiTripService;
+
+    @GetMapping("/eligibility")
+    public ResponseEntity<BaseResponse<AiTripUsage>> getEligibility(
+            @RequestAttribute("userId") UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(aiTripService.getEligibility(userId)));
+    }
 
     @PostMapping("/drafts/generate")
     public ResponseEntity<BaseResponse<AiTripGenerateResponse>> generateCandidates(

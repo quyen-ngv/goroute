@@ -13,4 +13,5 @@ public class AiTripUsage {
     private String tier;
     private Integer used;
     private Integer limit;
+    private Boolean eligible;
 }

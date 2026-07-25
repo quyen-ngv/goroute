@@ -44,6 +44,7 @@ public class PlaceResponse {
     private List<PlaceImagesDto> images;
 
     private String descriptions;
+    private String aiDescription; // Curated for AI trip planning
     private String visibilityStatus;
     private String priceRange;
 

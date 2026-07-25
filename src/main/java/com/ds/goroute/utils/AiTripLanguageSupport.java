@@ -3,7 +3,7 @@ package com.ds.goroute.utils;
 import com.ds.goroute.config.filter.AcceptLanguageFilter;
 
 /**
- * Claude prompt language rules and localized static copy for AI trip flows.
+ * Provider-independent prompt language rules and localized static copy for AI trip flows.
  */
 public final class AiTripLanguageSupport {
 
@@ -14,7 +14,7 @@ public final class AiTripLanguageSupport {
         return AcceptLanguageFilter.currentCode();
     }
 
-    public static String claudeLanguageRule() {
+    public static String aiLanguageRule() {
         String code = currentCode();
         return """
                 Language: Respond ONLY in %s (locale code: %s).

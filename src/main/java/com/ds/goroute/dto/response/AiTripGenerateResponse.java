@@ -18,4 +18,11 @@ public class AiTripGenerateResponse {
     private Integer aiTripsUsed;
     private Integer aiTripLimit;
     private List<AiTripCandidateResponse> candidates;
+    
+    // Enhanced context info
+    private String appliedGroupComposition;
+    private String appliedBudgetRange;
+    private List<String> appliedActivityTypes;
+    private List<String> appliedDietaryRestrictions;
+    private Boolean backupActivitiesIncluded;
 }

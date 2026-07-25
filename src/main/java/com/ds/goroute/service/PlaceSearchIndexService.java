@@ -15,4 +15,10 @@ public interface PlaceSearchIndexService {
     void triggerReindex();
 
     List<UUID> searchTitleIds(String query, int maxResults) throws IOException;
+
+    /**
+     * Title search ordered by Lucene relevance. When {@code minLuceneScore} is set,
+     * only hits with score &gt;= that threshold are returned.
+     */
+    List<UUID> searchTitleIds(String query, int maxResults, Float minLuceneScore) throws IOException;
 }

@@ -52,6 +52,7 @@ public class Place {
 
     // Details
     private String descriptions;
+    private String aiDescription; // Curated for AI trip planning
     private String status;
     private PlaceVisibilityStatus visibilityStatus;
     private String priceRange;

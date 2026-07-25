@@ -58,6 +58,7 @@ public class FirebaseService {
                             .build())
                     .setApnsConfig(ApnsConfig.builder()
                             .putHeader("apns-priority", "10")
+                            .putHeader("apns-push-type", "alert")
                             .setAps(Aps.builder()
                                     .setAlert(ApsAlert.builder()
                                             .setTitle(title)

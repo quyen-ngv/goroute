@@ -28,6 +28,7 @@
         <result property="thumbnail" column="thumbnail"/>
         <result property="images" column="images"/>
         <result property="descriptions" column="descriptions"/>
+        <result property="aiDescription" column="ai_description"/>
         <result property="status" column="status"/>
         <result property="visibilityStatus" column="visibility_status" javaType="com.ds.goroute.type.PlaceVisibilityStatus"/>
         <result property="priceRange" column="price_range"/>
@@ -103,6 +104,7 @@
             thumbnail = #{thumbnail},
             images = #{images},
             descriptions = #{descriptions},
+            ai_description = #{aiDescription},
             status = #{status},
             visibility_status = #{visibilityStatus,javaType=com.ds.goroute.type.PlaceVisibilityStatus},
             price_range = #{priceRange},

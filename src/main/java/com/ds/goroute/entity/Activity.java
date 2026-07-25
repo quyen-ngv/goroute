@@ -39,6 +39,10 @@ public class Activity {
     private String costCurrency;
     private String category;
     private TransportMode transportMode;
+    private String distanceToNext;
+    private String durationToNext;
+    private Integer distanceValueToNext;
+    private Integer durationValueToNext;
     private BigDecimal rating;
     private String photoUrl;
     private String notes;
