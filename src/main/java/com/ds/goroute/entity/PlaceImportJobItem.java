@@ -32,6 +32,16 @@ public class PlaceImportJobItem {
     private UUID existingPlaceId;
     private UUID importedPlaceId;
     private String pythonJobId;
+    private String regionCode;
+    private String regionName;
+    private String searchQuery;
+    private Integer reviewCount;
+    private Integer scrapedReviewCount;
+    private Integer selectedReviewCount;
+    private BigDecimal avgAuthenticityScore;
+    private BigDecimal placeOverallScore;
+    private BigDecimal adjustedRating;
+    private String outcomeReason;
     private PlaceImportJobItemStatus status;
     private PlaceImportApprovalStatus approvalStatus;
     private String approvalNote;

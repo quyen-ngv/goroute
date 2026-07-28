@@ -4,5 +4,6 @@ public enum PlaceImportJobStatus {
     QUEUED,
     PROCESSING,
     COMPLETED,
-    FAILED
+    FAILED,
+    CANCELLED
 }

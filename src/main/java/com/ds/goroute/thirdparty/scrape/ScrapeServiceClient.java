@@ -9,6 +9,7 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
+import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
@@ -107,6 +108,27 @@ public class ScrapeServiceClient {
         } catch (Exception e) {
             log.warn("Scrape poll failed for job {}: {}", jobId, e.getMessage());
             return null;
+        }
+    }
+
+    public ScrapeJobTriggerResponse triggerNationwideJob(ScrapeNationwideJobRequest request) {
+        String url = baseUrl + "/api/v1/nationwide/jobs";
+        try {
+            return restTemplate.postForObject(url, request, ScrapeJobTriggerResponse.class);
+        } catch (Exception e) {
+            log.error("Nationwide scrape trigger failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    public boolean cancelJob(String jobId) {
+        String url = baseUrl + "/api/v1/jobs/" + jobId + "/cancel";
+        try {
+            restTemplate.postForEntity(url, Map.of(), Void.class);
+            return true;
+        } catch (Exception e) {
+            log.warn("Scrape job cancel failed for {}: {}", jobId, e.getMessage());
+            return false;
         }
     }
 }

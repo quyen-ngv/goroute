@@ -8,6 +8,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.util.UUID;
 
 @Data
@@ -26,6 +27,18 @@ public class PlaceImportJob {
     private Integer triggeredCount;
     private Integer completedCount;
     private Integer failedCount;
+    private String pythonJobId;
+    private String currentRegionCode;
+    private String currentRegionName;
+    private Integer processedCount;
+    private Integer eligibleCount;
+    private Integer importedCount;
+    private Integer rejectedScoreCount;
+    private Integer insufficientPhotoCount;
+    private Boolean cancelRequested;
+    private Integer selectedReviews;
+    private Integer minReviewCount;
+    private BigDecimal minAdjustedRating;
     private String requestPayload;
     private String errorMessage;
     private LocalDateTime createdAt;

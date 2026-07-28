@@ -19,6 +19,10 @@ public interface PlaceRepository {
 
     Place findByCid(String cid);
 
+    List<String> findExistingPlaceIds(List<String> placeIds);
+
+    List<String> findExistingCids(List<String> cids);
+
     Place findNearCoordinates(BigDecimal latitude, BigDecimal longitude, BigDecimal maxDistanceMeters);
 
     List<Place> findAll();
@@ -37,6 +41,9 @@ public interface PlaceRepository {
                                    String category, List<String> placeGroups, BigDecimal minRating, String citySlugJson,
                                    List<UUID> foodIds, Boolean excludeLinkedFoodPlaces, boolean includeInactive,
                                    int limit, int offset);
+
+    List<Place> findForAiByDestination(String citySlugJson, BigDecimal latitude, BigDecimal longitude,
+                                       String placeGroup, BigDecimal minRating, int limit);
 
     void delete(UUID id);
 }

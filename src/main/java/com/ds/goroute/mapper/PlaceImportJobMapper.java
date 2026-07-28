@@ -2,6 +2,7 @@ package com.ds.goroute.mapper;
 
 import com.ds.goroute.entity.PlaceImportJob;
 import com.ds.goroute.entity.PlaceImportJobItem;
+import com.ds.goroute.entity.PlaceImportJobRegion;
 import com.ds.goroute.dto.response.AdminPlaceImportMappingResponse;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -47,4 +48,13 @@ public interface PlaceImportJobMapper {
     AdminPlaceImportMappingResponse findAdminMappingByItemId(@Param("itemId") UUID itemId);
 
     List<PlaceImportJobItem> findItemsByJobId(@Param("jobId") UUID jobId);
+
+    PlaceImportJob findActiveNationwideJob();
+
+    PlaceImportJobItem findItemByJobAndGooglePlaceId(@Param("jobId") UUID jobId,
+                                                      @Param("googlePlaceId") String googlePlaceId);
+
+    void upsertRegion(PlaceImportJobRegion region);
+
+    List<PlaceImportJobRegion> findRegionsByJobId(@Param("jobId") UUID jobId);
 }

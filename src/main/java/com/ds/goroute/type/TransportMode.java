@@ -4,8 +4,11 @@ public enum TransportMode {
     WALKING("🚶"),
     MOTORBIKE("🏍️"),
     CAR("🚗"),
+    TAXI("🚕"),
     BUS("🚌"),
     TRAIN("🚂"),
+    FERRY("⛴️"),
+    CANOE("🚤"),
     PLANE("✈️");
 
     private final String emoji;

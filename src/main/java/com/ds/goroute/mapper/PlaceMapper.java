@@ -21,6 +21,10 @@ public interface PlaceMapper {
 
     Place findByCid(@Param("cid") String cid);
 
+    List<String> findExistingPlaceIds(@Param("placeIds") List<String> placeIds);
+
+    List<String> findExistingCids(@Param("cids") List<String> cids);
+
     Place findNearCoordinates(@Param("latitude") BigDecimal latitude,
                               @Param("longitude") BigDecimal longitude,
                               @Param("maxDistanceMeters") BigDecimal maxDistanceMeters);
@@ -57,6 +61,13 @@ public interface PlaceMapper {
                                    @Param("includeInactive") boolean includeInactive,
                                    @Param("limit") int limit,
                                    @Param("offset") int offset);
+
+    List<Place> findForAiByDestination(@Param("citySlugJson") String citySlugJson,
+                                       @Param("latitude") BigDecimal latitude,
+                                       @Param("longitude") BigDecimal longitude,
+                                       @Param("placeGroup") String placeGroup,
+                                       @Param("minRating") BigDecimal minRating,
+                                       @Param("limit") int limit);
 
     void delete(@Param("id") UUID id);
 }

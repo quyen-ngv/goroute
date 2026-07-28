@@ -48,6 +48,16 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     }
 
     @Override
+    public List<String> findExistingPlaceIds(List<String> placeIds) {
+        return placeIds == null || placeIds.isEmpty() ? List.of() : placeMapper.findExistingPlaceIds(placeIds);
+    }
+
+    @Override
+    public List<String> findExistingCids(List<String> cids) {
+        return cids == null || cids.isEmpty() ? List.of() : placeMapper.findExistingCids(cids);
+    }
+
+    @Override
     public Place findNearCoordinates(BigDecimal latitude, BigDecimal longitude, BigDecimal maxDistanceMeters) {
         if (latitude == null || longitude == null || maxDistanceMeters == null) {
             return null;
@@ -94,6 +104,13 @@ public class PlaceRepositoryImpl implements PlaceRepository {
         return placeMapper.findNearbyExtended(
                 keyword, latitude, longitude, radius, category, placeGroups, minRating,
                 citySlugJson, foodIds, excludeLinkedFoodPlaces, includeInactive, limit, offset);
+    }
+
+    @Override
+    public List<Place> findForAiByDestination(String citySlugJson, BigDecimal latitude, BigDecimal longitude,
+                                              String placeGroup, BigDecimal minRating, int limit) {
+        return placeMapper.findForAiByDestination(
+                citySlugJson, latitude, longitude, placeGroup, minRating, limit);
     }
 
     @Override

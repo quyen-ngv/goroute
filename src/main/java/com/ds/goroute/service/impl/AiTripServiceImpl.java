@@ -1,9 +1,12 @@
 package com.ds.goroute.service.impl;
 
 import com.ds.goroute.constant.ErrorConstant;
+import com.ds.goroute.dto.AiTripDestinationSnapshot;
 import com.ds.goroute.dto.request.AiTripConfirmRequest;
+import com.ds.goroute.dto.request.AiTripDestinationRequest;
 import com.ds.goroute.dto.request.AiTripGenerateRequest;
 import com.ds.goroute.dto.request.CreateTripRequest;
+import com.ds.goroute.dto.request.TripDestinationRequest;
 import com.ds.goroute.dto.request.UpdateTripRequest;
 import com.ds.goroute.dto.response.AiTripCandidateResponse;
 import com.ds.goroute.dto.response.AiTripConfirmResponse;
@@ -13,12 +16,13 @@ import com.ds.goroute.dto.response.TripResponse;
 import com.ds.goroute.entity.Activity;
 import com.ds.goroute.entity.ActivityBooking;
 import com.ds.goroute.entity.AiTripDraft;
+import com.ds.goroute.entity.LocationImage;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.exception.BusinessException;
-import com.ds.goroute.mapper.ActivityBookingGeoSearchParams;
 import com.ds.goroute.repository.ActivityBookingRepository;
 import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.AiTripRepository;
+import com.ds.goroute.repository.LocationImageRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.AiTripService;
 import com.ds.goroute.service.TripService;
@@ -28,6 +32,7 @@ import com.ds.goroute.type.PlaceGroup;
 import com.ds.goroute.type.TransportMode;
 import com.ds.goroute.utils.AiTripGenerationSummary;
 import com.ds.goroute.utils.AiTripLanguageSupport;
+import com.ds.goroute.utils.CitySlugResolver;
 import com.ds.goroute.utils.DestinationMatchUtils;
 import com.ds.goroute.utils.JsonUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -43,9 +48,11 @@ import java.math.RoundingMode;
 import java.text.Normalizer;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -54,7 +61,7 @@ public class AiTripServiceImpl implements AiTripService {
 
     private static final int FREE_LIMIT = 3;
     private static final int PRO_LIMIT = 10;
-    private static final double SEARCH_RADIUS_KM = 80.0;
+    private static final double INTERCITY_TRANSPORT_MIN_DISTANCE_KM = 50.0;
     private static final String AI_TRIP_SYSTEM_CONTEXT = """
             This is a travel planning app for foreign tourists visiting Vietnam.
             Place names, addresses, and descriptions may be in Vietnamese - treat them as ground truth.
@@ -62,6 +69,7 @@ public class AiTripServiceImpl implements AiTripService {
 
     private final AiTripRepository aiTripRepository;
     private final PlaceRepository placeRepository;
+    private final LocationImageRepository locationImageRepository;
     private final ActivityBookingRepository activityBookingRepository;
     private final ActivityRepository activityRepository;
     private final TripService tripService;
@@ -87,7 +95,8 @@ public class AiTripServiceImpl implements AiTripService {
     @Override
     @Transactional
     public AiTripGenerateResponse generateCandidates(AiTripGenerateRequest request, UUID userId) {
-        validateGenerateRequest(request);
+        List<AiTripDestinationSnapshot> destinations = resolveDestinations(request);
+        validateGenerateRequest(request, destinations);
 
         aiTripRepository.ensureSubscription(userId);
         if (aiTripRepository.consumeAiTripQuota(userId) == 0) {
@@ -99,21 +108,30 @@ public class AiTripServiceImpl implements AiTripService {
         int limit = limitForTier(tier);
 
         List<PlaceGroup> groups = normalizeGroups(request.getPlaceGroups());
-        List<AiTripCandidateResponse> candidates = collectCandidates(request, groups);
-        candidates = rankCandidatesWithAi(request, candidates);
+        List<AiTripCandidateResponse> candidates = new ArrayList<>();
+        for (AiTripDestinationSnapshot destination : destinations) {
+            List<AiTripCandidateResponse> destinationCandidates = collectCandidates(request, groups, destination);
+            candidates.addAll(rankCandidatesWithAi(request, destination, destinationCandidates));
+        }
+
+        AiTripDestinationSnapshot primary = destinations.get(0);
+        LocalDate tripStartDate = destinations.get(0).getStartDate();
+        LocalDate tripEndDate = destinations.get(destinations.size() - 1).getEndDate();
+        int tripDayCount = Math.toIntExact(ChronoUnit.DAYS.between(tripStartDate, tripEndDate) + 1);
 
         UUID draftId = UUID.randomUUID();
         AiTripDraft draft = AiTripDraft.builder()
                 .id(draftId)
                 .userId(userId)
                 .tripName(defaultTripName(request))
-                .cityId(request.getCityId())
-                .cityName(request.getCityName())
-                .cityLat(request.getCityLat())
-                .cityLng(request.getCityLng())
-                .startDate(request.getStartDate())
-                .endDate(request.getEndDate())
-                .dayCount(resolveDayCount(request))
+                .cityId(primary.getLocationImageId().toString())
+                .cityName(primary.getName())
+                .cityLat(primary.getLatitude())
+                .cityLng(primary.getLongitude())
+                .destinations(serializeDestinations(destinations))
+                .startDate(tripStartDate)
+                .endDate(tripEndDate)
+                .dayCount(tripDayCount)
                 .placeGroups(JsonUtils.toJson(groups.stream().map(Enum::name).toList()))
                 .pace(normalizePace(request.getPace()))
                 .preferenceText(request.getPreferenceText())
@@ -183,7 +201,14 @@ public class AiTripServiceImpl implements AiTripService {
                 .filter(Objects::nonNull)
                 .toList();
 
-        List<ScheduledCandidate> schedule = scheduleCandidatesWithAi(draft, selected);
+        List<AiTripDestinationSnapshot> destinations = parseDraftDestinations(draft);
+        List<ScheduledCandidate> schedule = new ArrayList<>();
+        for (AiTripDestinationSnapshot destination : destinations) {
+            List<AiTripCandidateResponse> selectedForDestination = selected.stream()
+                    .filter(candidate -> belongsToDestination(candidate, destination))
+                    .toList();
+            schedule.addAll(scheduleCandidatesWithAi(draft, destination, selectedForDestination));
+        }
         Set<String> scheduledIds = schedule.stream()
                 .map(item -> item.candidate().getId())
                 .collect(Collectors.toSet());
@@ -202,6 +227,19 @@ public class AiTripServiceImpl implements AiTripService {
                 .destinationPlaceId(draft.getCityId())
                 .destinationLat(draft.getCityLat())
                 .destinationLng(draft.getCityLng())
+                .destinations(destinations.stream()
+                        .map(destination -> TripDestinationRequest.builder()
+                                .name(destination.getName())
+                                .address(destination.getName())
+                                .placeId(destination.getLocationImageId().toString())
+                                .lat(destination.getLatitude())
+                                .lng(destination.getLongitude())
+                                .orderIndex(destination.getOrderIndex())
+                                .startDate(destination.getStartDate())
+                                .endDate(destination.getEndDate())
+                                .isPrimary(destination.getOrderIndex() == 0)
+                                .build())
+                        .toList())
                 .startDate(draft.getStartDate())
                 .endDate(draft.getEndDate())
                 .currency("VND")
@@ -213,8 +251,9 @@ public class AiTripServiceImpl implements AiTripService {
                     userId);
         }
 
-        for (ScheduledCandidate item : schedule) {
-            activityRepository.insert(toActivity(trip.getId(), item, userId, visitTips));
+        for (Activity activity : buildActivitiesWithTransport(
+                trip.getId(), userId, destinations, schedule, visitTips)) {
+            activityRepository.insert(activity);
         }
 
         aiTripRepository.completeDraft(draftId, userId, request.getIdempotencyKey(), trip.getId());
@@ -236,30 +275,100 @@ public class AiTripServiceImpl implements AiTripService {
                 .build();
     }
 
-    private void validateGenerateRequest(AiTripGenerateRequest request) {
-        if (request.getCityLat() == null || request.getCityLng() == null) {
-            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "City latitude and longitude are required");
+    private List<AiTripDestinationSnapshot> resolveDestinations(AiTripGenerateRequest request) {
+        List<AiTripDestinationRequest> requested = request.getDestinations();
+        if (requested == null || requested.isEmpty()) {
+            UUID legacyLocationImageId;
+            try {
+                legacyLocationImageId = UUID.fromString(request.getCityId());
+            } catch (Exception ignored) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                        "AI destinations must come from the location image catalog");
+            }
+            requested = List.of(AiTripDestinationRequest.builder()
+                    .locationImageId(legacyLocationImageId)
+                    .startDate(request.getStartDate())
+                    .endDate(request.getEndDate())
+                    .orderIndex(0)
+                    .build());
         }
-        if (request.getStartDate().isAfter(request.getEndDate())) {
-            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Start date must be before end date");
+
+        List<IndexedDestinationRequest> ordered = new ArrayList<>();
+        for (int index = 0; index < requested.size(); index++) {
+            AiTripDestinationRequest item = requested.get(index);
+            ordered.add(new IndexedDestinationRequest(
+                    item,
+                    item.getOrderIndex() != null ? item.getOrderIndex() : index));
         }
-        int dayCount = resolveDayCount(request);
+        ordered.sort(Comparator.comparingInt(IndexedDestinationRequest::orderIndex));
+
+        List<AiTripDestinationSnapshot> resolved = new ArrayList<>();
+        Set<UUID> seenLocationIds = new HashSet<>();
+        for (int index = 0; index < ordered.size(); index++) {
+            AiTripDestinationRequest item = ordered.get(index).request();
+            if (item == null || item.getLocationImageId() == null) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Location image ID is required");
+            }
+            if (!seenLocationIds.add(item.getLocationImageId())) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Duplicate AI destination");
+            }
+            LocationImage location = locationImageRepository.findById(item.getLocationImageId())
+                    .orElseThrow(() -> new BusinessException(
+                            ErrorConstant.INVALID_PARAMETERS, "AI destination is not in the location image catalog"));
+            if (location.getCitySlug() == null || location.getCitySlug().isBlank()
+                    || location.getLatitude() == null || location.getLongitude() == null) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                        "AI destination is missing city slug or city-center coordinates");
+            }
+            resolved.add(AiTripDestinationSnapshot.builder()
+                    .locationImageId(location.getId())
+                    .citySlug(CitySlugResolver.normalizeRequired(location.getCitySlug()))
+                    .name(location.getFullAddress())
+                    .latitude(location.getLatitude())
+                    .longitude(location.getLongitude())
+                    .startDate(item.getStartDate())
+                    .endDate(item.getEndDate())
+                    .orderIndex(index)
+                    .build());
+        }
+        return resolved;
+    }
+
+    private void validateGenerateRequest(AiTripGenerateRequest request,
+                                         List<AiTripDestinationSnapshot> destinations) {
+        if (destinations.isEmpty()) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "At least one destination is required");
+        }
+        AiTripDestinationSnapshot previous = null;
+        for (AiTripDestinationSnapshot destination : destinations) {
+            if (destination.getStartDate() == null || destination.getEndDate() == null) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                        "Every destination must have a date range");
+            }
+            if (destination.getStartDate().isAfter(destination.getEndDate())) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                        "Destination start date must be before end date");
+            }
+            if (previous != null && !destination.getStartDate().equals(previous.getEndDate().plusDays(1))) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                        "Destination date ranges must be consecutive and cannot overlap");
+            }
+            previous = destination;
+        }
+        int dayCount = Math.toIntExact(ChronoUnit.DAYS.between(
+                destinations.get(0).getStartDate(),
+                destinations.get(destinations.size() - 1).getEndDate()) + 1);
         if (dayCount <= 0 || dayCount > 30) {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Day count must be between 1 and 30");
         }
     }
 
-    private int resolveDayCount(AiTripGenerateRequest request) {
-        if (request.getDayCount() != null && request.getDayCount() > 0) {
-            return request.getDayCount();
-        }
-        return (int) (request.getEndDate().toEpochDay() - request.getStartDate().toEpochDay()) + 1;
-    }
-
     private String defaultTripName(AiTripGenerateRequest request) {
         return request.getTripName() != null && !request.getTripName().isBlank()
                 ? request.getTripName().trim()
-                : request.getCityName();
+                : request.getCityName() != null && !request.getCityName().isBlank()
+                        ? request.getCityName()
+                        : "AI trip";
     }
 
     private List<PlaceGroup> normalizeGroups(List<PlaceGroup> groups) {
@@ -292,21 +401,24 @@ public class AiTripServiceImpl implements AiTripService {
         return "PRO".equalsIgnoreCase(tier) ? PRO_LIMIT : FREE_LIMIT;
     }
 
-    private List<AiTripCandidateResponse> collectCandidates(AiTripGenerateRequest request, List<PlaceGroup> groups) {
-        int dayCount = resolveDayCount(request);
+    private List<AiTripCandidateResponse> collectCandidates(AiTripGenerateRequest request,
+                                                            List<PlaceGroup> groups,
+                                                            AiTripDestinationSnapshot destination) {
+        int dayCount = Math.toIntExact(ChronoUnit.DAYS.between(
+                destination.getStartDate(), destination.getEndDate()) + 1);
         List<AiTripCandidateResponse> candidates = new ArrayList<>();
 
         for (PlaceGroup group : groups) {
             int groupLimit = calculateGroupLimit(group, dayCount);
-            List<Place> places = findPlaces(request, group, groupLimit);
+            List<Place> places = findPlaces(destination, group, groupLimit);
             for (Place place : places) {
-                candidates.add(fromPlace(place));
+                candidates.add(fromPlace(place, destination));
             }
         }
 
         int bookingLimit = dayCount;
-        candidates.addAll(findBookings(request, bookingLimit).stream()
-                .map(this::fromBooking)
+        candidates.addAll(findBookings(destination, bookingLimit).stream()
+                .map(booking -> fromBooking(booking, destination))
                 .toList());
 
         Map<String, AiTripCandidateResponse> deduped = new LinkedHashMap<>();
@@ -328,28 +440,32 @@ public class AiTripServiceImpl implements AiTripService {
         };
     }
 
-    private List<Place> findPlaces(AiTripGenerateRequest request, PlaceGroup group, int limit) {
-        return placeRepository.findNearby(null, request.getCityLat(), request.getCityLng(),
-                BigDecimal.valueOf(SEARCH_RADIUS_KM), null, List.of(group.name()), BigDecimal.valueOf(3.5), false, limit, 0);
+    private List<Place> findPlaces(AiTripDestinationSnapshot destination, PlaceGroup group, int limit) {
+        return placeRepository.findForAiByDestination(
+                CitySlugResolver.toJsonbFilter(destination.getCitySlug()),
+                destination.getLatitude(),
+                destination.getLongitude(),
+                group.name(),
+                BigDecimal.valueOf(3.5),
+                limit);
     }
 
-    private List<ActivityBooking> findBookings(AiTripGenerateRequest request, int limit) {
-        double lat = request.getCityLat().doubleValue();
-        double lng = request.getCityLng().doubleValue();
-        double latDelta = SEARCH_RADIUS_KM / 111.0;
-        double lngDelta = SEARCH_RADIUS_KM / (111.0 * Math.max(0.2, Math.cos(Math.toRadians(lat))));
-        return activityBookingRepository.findWithinRadius(ActivityBookingGeoSearchParams.builder()
-                .latitude(request.getCityLat())
-                .longitude(request.getCityLng())
-                .radiusKm(SEARCH_RADIUS_KM)
-                .minLat(lat - latDelta)
-                .maxLat(lat + latDelta)
-                .minLng(lng - lngDelta)
-                .maxLng(lng + lngDelta)
-                .minRating(BigDecimal.valueOf(3.5))
+    private List<ActivityBooking> findBookings(AiTripDestinationSnapshot destination, int limit) {
+        List<String> destinationKeys = Stream.of(destination.getCitySlug(), destination.getName())
+                .map(DestinationMatchUtils::normalizeKey)
+                .filter(key -> !key.isBlank())
+                .distinct()
+                .toList();
+        return activityBookingRepository.findByDestinations(destinationKeys, Math.max(limit * 5, 20), 0)
+                .stream()
+                .filter(booking -> booking.getRating() == null
+                        || booking.getRating().compareTo(BigDecimal.valueOf(3.5)) >= 0)
+                .sorted(Comparator.comparingDouble(booking -> distanceKm(
+                        destination.getLatitude(), destination.getLongitude(),
+                        booking.getSearchLat() != null ? BigDecimal.valueOf(booking.getSearchLat()) : null,
+                        booking.getSearchLng() != null ? BigDecimal.valueOf(booking.getSearchLng()) : null)))
                 .limit(limit)
-                .offset(0)
-                .build());
+                .toList();
     }
 
     private String formatCandidatesForAI(List<AiTripCandidateResponse> candidates) {
@@ -382,7 +498,7 @@ public class AiTripServiceImpl implements AiTripService {
         return JsonUtils.toJson(formatted);
     }
 
-    private AiTripCandidateResponse fromPlace(Place place) {
+    private AiTripCandidateResponse fromPlace(Place place, AiTripDestinationSnapshot destination) {
         String aiDesc = place.getAiDescription() != null && !place.getAiDescription().isBlank()
                 ? place.getAiDescription()
                 : place.getDescriptions();
@@ -390,7 +506,7 @@ public class AiTripServiceImpl implements AiTripService {
                 ? place.getVisitDurationMinutes()
                 : defaultDurationForGroup(place.getPlaceGroup());
         return AiTripCandidateResponse.builder()
-                .id("PLACE:" + place.getId())
+                .id(destinationCandidateId(destination, "PLACE", place.getId().toString()))
                 .sourceType("PLACE")
                 .sourceId(place.getId().toString())
                 .name(place.getTitle())
@@ -405,10 +521,14 @@ public class AiTripServiceImpl implements AiTripService {
                 .category(place.getCategory())
                 .visitDurationMinutes(duration)
                 .durationText(formatDuration(duration))
+                .destinationId(destination.getLocationImageId().toString())
+                .destinationName(destination.getName())
+                .citySlug(destination.getCitySlug())
+                .destinationOrder(destination.getOrderIndex())
                 .build();
     }
 
-    private AiTripCandidateResponse fromBooking(ActivityBooking booking) {
+    private AiTripCandidateResponse fromBooking(ActivityBooking booking, AiTripDestinationSnapshot destination) {
         Integer duration = booking.getVisitDurationMinutes();
         if (duration == null && booking.getDurationHours() != null) {
             duration = booking.getDurationHours().multiply(BigDecimal.valueOf(60)).setScale(0, RoundingMode.HALF_UP).intValue();
@@ -417,7 +537,7 @@ public class AiTripServiceImpl implements AiTripService {
             duration = 180;
         }
         return AiTripCandidateResponse.builder()
-                .id("BOOKING:" + booking.getId())
+                .id(destinationCandidateId(destination, "BOOKING", booking.getId().toString()))
                 .sourceType("BOOKING")
                 .sourceId(booking.getId().toString())
                 .name(booking.getTitle())
@@ -436,7 +556,15 @@ public class AiTripServiceImpl implements AiTripService {
                 .bookingSource(booking.getSource())
                 .priceAmount(booking.getPriceAmount())
                 .priceCurrency(booking.getPriceCurrency())
+                .destinationId(destination.getLocationImageId().toString())
+                .destinationName(destination.getName())
+                .citySlug(destination.getCitySlug())
+                .destinationOrder(destination.getOrderIndex())
                 .build();
+    }
+
+    private String destinationCandidateId(AiTripDestinationSnapshot destination, String sourceType, String sourceId) {
+        return "DEST:" + destination.getLocationImageId() + ":" + sourceType + ":" + sourceId;
     }
 
     private Integer defaultDurationForGroup(PlaceGroup group) {
@@ -458,7 +586,8 @@ public class AiTripServiceImpl implements AiTripService {
     }
 
     private List<AiTripCandidateResponse> rankCandidatesWithAi(AiTripGenerateRequest request,
-                                                                   List<AiTripCandidateResponse> candidates) {
+                                                               AiTripDestinationSnapshot destination,
+                                                               List<AiTripCandidateResponse> candidates) {
         if (candidates.isEmpty()) {
             return candidates;
         }
@@ -575,11 +704,11 @@ public class AiTripServiceImpl implements AiTripService {
                 ## CANDIDATES
                 %s
                 """.formatted(
-                request.getCityName(),
-                request.getCityLat(), request.getCityLng(),
-                request.getStartDate(), request.getEndDate(),
-                resolveDayCount(request),
-                inferSeason(request.getStartDate()),
+                destination.getName(),
+                destination.getLatitude(), destination.getLongitude(),
+                destination.getStartDate(), destination.getEndDate(),
+                Math.toIntExact(ChronoUnit.DAYS.between(destination.getStartDate(), destination.getEndDate()) + 1),
+                inferSeason(destination.getStartDate()),
                 normalizePace(request.getPace()),
                 request.getTravelStyle() != null ? request.getTravelStyle() : "Balanced exploration",
                 groupContext.isEmpty() ? "" : "Group: " + groupContext,
@@ -592,9 +721,9 @@ public class AiTripServiceImpl implements AiTripService {
                 activityContext.isEmpty() ? "Balanced variety" : activityContext,
                 formatCandidatesForAI(candidates));
 
-        return aiClient.completeJson(system, prompt)
-                .map(json -> applyRankResult(json, candidates))
-                .orElse(candidates);
+        String aiResponse = requireAiResponse(
+                aiClient.completeJson(system, prompt), "rank destination candidates");
+        return applyRankResult(aiResponse, candidates);
     }
     
     private String inferSeason(LocalDate startDate) {
@@ -610,7 +739,7 @@ public class AiTripServiceImpl implements AiTripService {
             JsonNode idsNode = root.get("candidateIds");
             JsonNode reasonsNode = root.get("reasons");
             if (idsNode == null || !idsNode.isArray()) {
-                return candidates;
+                throw aiTripUnavailable("candidate ranking did not include candidateIds");
             }
             Map<String, AiTripCandidateResponse> byId = candidates.stream()
                     .collect(Collectors.toMap(AiTripCandidateResponse::getId, Function.identity(), (a, b) -> a));
@@ -624,25 +753,32 @@ public class AiTripServiceImpl implements AiTripService {
                     ordered.add(candidate);
                 }
             }
-            ordered.addAll(byId.values());
+            if (ordered.isEmpty()) {
+                throw aiTripUnavailable("candidate ranking did not select a catalog candidate");
+            }
             return ordered;
         } catch (Exception e) {
+            if (e instanceof BusinessException businessException) {
+                throw businessException;
+            }
             log.warn("Failed to parse AI candidate ranking: {}", e.getMessage());
-            return candidates;
+            throw aiTripUnavailable("candidate ranking response was invalid");
         }
     }
 
     private List<ScheduledCandidate> scheduleCandidatesWithAi(AiTripDraft draft,
-                                                                  List<AiTripCandidateResponse> selected) {
+                                                              AiTripDestinationSnapshot destination,
+                                                              List<AiTripCandidateResponse> selected) {
         if (selected.isEmpty()) {
             return List.of();
         }
-        List<AiTripCandidateResponse> ordered = orderByAiOrDistance(draft, selected);
-        return assignTimes(draft, ordered);
+        List<AiTripCandidateResponse> ordered = orderByAiOrDistance(draft, destination, selected);
+        return assignTimes(draft, destination, ordered);
     }
 
     private List<AiTripCandidateResponse> orderByAiOrDistance(AiTripDraft draft,
-                                                                  List<AiTripCandidateResponse> selected) {
+                                                              AiTripDestinationSnapshot destination,
+                                                              List<AiTripCandidateResponse> selected) {
         String system = AI_TRIP_SYSTEM_CONTEXT + """
                 You are an expert itinerary builder specializing in Vietnam travel logistics.
                 Your role: sequence real places into practical daily schedules.
@@ -853,11 +989,11 @@ public class AiTripServiceImpl implements AiTripService {
                 ## SELECTED CANDIDATES
                 %s
                 """.formatted(
-                draft.getCityName(),
-                draft.getCityLat(), draft.getCityLng(),
-                draft.getStartDate(), draft.getEndDate(),
-                draft.getDayCount(),
-                inferSeasonFromDraft(draft),
+                destination.getName(),
+                destination.getLatitude(), destination.getLongitude(),
+                destination.getStartDate(), destination.getEndDate(),
+                Math.toIntExact(ChronoUnit.DAYS.between(destination.getStartDate(), destination.getEndDate()) + 1),
+                inferSeason(destination.getStartDate()),
                 draft.getPace(),
                 draft.getTravelStyle() != null ? draft.getTravelStyle() : "Balanced",
                 groupContext.isEmpty() ? "" : "Group: " + groupContext,
@@ -868,23 +1004,18 @@ public class AiTripServiceImpl implements AiTripService {
                 dietaryContext.isEmpty() ? "None" : dietaryContext,
                 groupContext.isEmpty() ? "General travelers" : groupContext,
                 formatCandidatesForAI(selected));
-        return aiClient.completeJson(system, prompt)
-                .map(json -> parseCandidateOrder(json, selected))
-                .orElseGet(() -> nearestNeighborOrder(draft, selected));
+        String aiResponse = requireAiResponse(
+                aiClient.completeJson(system, prompt), "sequence itinerary activities");
+        return parseCandidateOrder(aiResponse, destination, selected);
     }
     
-    private String inferSeasonFromDraft(AiTripDraft draft) {
-        int month = draft.getStartDate().getMonthValue();
-        if (month >= 11 || month <= 3) return "cool/dry";
-        if (month >= 4 && month <= 6) return "hot";
-        return "rainy";
-    }
-
-    private List<AiTripCandidateResponse> parseCandidateOrder(String rawJson, List<AiTripCandidateResponse> selected) {
+    private List<AiTripCandidateResponse> parseCandidateOrder(String rawJson,
+                                                              AiTripDestinationSnapshot destination,
+                                                              List<AiTripCandidateResponse> selected) {
         try {
             JsonNode idsNode = objectMapper.readTree(extractJson(rawJson)).get("candidateIds");
             if (idsNode == null || !idsNode.isArray()) {
-                return nearestNeighborOrder(null, selected);
+                throw aiTripUnavailable("activity sequencing did not include candidateIds");
             }
             Map<String, AiTripCandidateResponse> byId = selected.stream()
                     .collect(Collectors.toMap(AiTripCandidateResponse::getId, Function.identity(), (a, b) -> a));
@@ -895,48 +1026,38 @@ public class AiTripServiceImpl implements AiTripService {
                     ordered.add(candidate);
                 }
             }
-            ordered.addAll(byId.values());
+            if (!byId.isEmpty()) {
+                throw aiTripUnavailable("activity sequencing omitted selected candidates");
+            }
             return ordered;
         } catch (Exception e) {
-            return nearestNeighborOrder(null, selected);
+            if (e instanceof BusinessException businessException) {
+                throw businessException;
+            }
+            log.warn("Failed to parse AI activity sequencing: {}", e.getMessage());
+            throw aiTripUnavailable("activity sequencing response was invalid");
         }
     }
 
-    private List<AiTripCandidateResponse> nearestNeighborOrder(AiTripDraft draft, List<AiTripCandidateResponse> input) {
-        List<AiTripCandidateResponse> remaining = new ArrayList<>(input);
-        List<AiTripCandidateResponse> ordered = new ArrayList<>();
-        BigDecimal currentLat = draft != null ? draft.getCityLat() : null;
-        BigDecimal currentLng = draft != null ? draft.getCityLng() : null;
-
-        while (!remaining.isEmpty()) {
-            final BigDecimal lat = currentLat;
-            final BigDecimal lng = currentLng;
-            AiTripCandidateResponse next = remaining.stream()
-                    .min(Comparator.comparingDouble(candidate -> distanceKm(lat, lng, candidate.getLat(), candidate.getLng())))
-                    .orElse(remaining.get(0));
-            ordered.add(next);
-            remaining.remove(next);
-            currentLat = next.getLat();
-            currentLng = next.getLng();
-        }
-        return ordered;
-    }
-
-    private List<ScheduledCandidate> assignTimes(AiTripDraft draft, List<AiTripCandidateResponse> ordered) {
+    private List<ScheduledCandidate> assignTimes(AiTripDraft draft,
+                                                 AiTripDestinationSnapshot destination,
+                                                 List<AiTripCandidateResponse> ordered) {
         int capMinutes = switch (draft.getPace()) {
             case "RELAXED" -> 9 * 60;   // 9 hours of activities (more breaks)
             case "EAGER" -> 13 * 60;    // 13 hours (early start, late end)
             default -> 11 * 60;         // 11 hours balanced
         };
         
-        int day = 1;
+        int day = Math.toIntExact(ChronoUnit.DAYS.between(draft.getStartDate(), destination.getStartDate()) + 1);
+        int lastAllowedDay = Math.toIntExact(ChronoUnit.DAYS.between(
+                draft.getStartDate(), destination.getEndDate()) + 1);
         int used = 0;
         LocalTime cursor = LocalTime.of(7, 0); // Start at 7am for flexibility
         List<ScheduledCandidate> schedule = new ArrayList<>();
         AiTripCandidateResponse previous = null;
 
         for (AiTripCandidateResponse candidate : ordered) {
-            if (day > draft.getDayCount()) {
+            if (day > lastAllowedDay) {
                 break;
             }
             
@@ -967,7 +1088,7 @@ public class AiTripServiceImpl implements AiTripService {
                 mealGap = needsMealBreak(cursor, duration) ? 60 : 0;
                 block = duration + mealGap;
             }
-            if (day > draft.getDayCount()) {
+            if (day > lastAllowedDay) {
                 break;
             }
             if (used > 0) {
@@ -978,7 +1099,7 @@ public class AiTripServiceImpl implements AiTripService {
             }
             LocalTime start = cursor;
             LocalTime end = start.plusMinutes(duration);
-            schedule.add(new ScheduledCandidate(candidate, day, start, end, recommendTransport(previous, candidate)));
+            schedule.add(new ScheduledCandidate(candidate, day, start, end, null));
             used += block;
             cursor = end;
             previous = candidate;
@@ -1061,7 +1182,7 @@ public class AiTripServiceImpl implements AiTripService {
 
     private Activity toActivity(UUID tripId, ScheduledCandidate item, UUID userId, Map<String, String> visitTips) {
         AiTripCandidateResponse candidate = item.candidate();
-        String visitTip = visitTips.getOrDefault(candidate.getId(), fallbackVisitTip(candidate, item));
+        String visitTip = visitTips.get(candidate.getId());
         return Activity.builder()
                 .id(UUID.randomUUID())
                 .tripId(tripId)
@@ -1074,7 +1195,7 @@ public class AiTripServiceImpl implements AiTripService {
                 .startTime(item.startTime())
                 .endTime(item.endTime())
                 .category(activityCategoryFor(candidate))
-                .transportMode(item.transportMode())
+                .transportMode(null)
                 .rating(candidate.getRating())
                 .photoUrl(candidate.getPhotoUrl())
                 .description(trimText(visitTip, 280))
@@ -1085,6 +1206,200 @@ public class AiTripServiceImpl implements AiTripService {
                 .bookingId(candidate.getBookingId())
                 .bookingSource(candidate.getBookingSource())
                 .build();
+    }
+
+    private List<Activity> buildActivitiesWithTransport(
+            UUID tripId,
+            UUID userId,
+            List<AiTripDestinationSnapshot> destinations,
+            List<ScheduledCandidate> schedule,
+            Map<String, String> visitTips) {
+        List<ScheduledCandidate> ordered = schedule.stream()
+                .sorted(Comparator.comparingInt(ScheduledCandidate::dayNumber)
+                        .thenComparing(ScheduledCandidate::startTime))
+                .toList();
+        List<Activity> activities = new ArrayList<>();
+        for (ScheduledCandidate item : ordered) {
+            activities.add(toActivity(tripId, item, userId, visitTips));
+        }
+
+        for (int index = 1; index < destinations.size(); index++) {
+            AiTripDestinationSnapshot from = destinations.get(index - 1);
+            AiTripDestinationSnapshot to = destinations.get(index);
+            double centerDistanceKm = distanceKm(
+                    from.getLatitude(), from.getLongitude(), to.getLatitude(), to.getLongitude());
+            if (!requiresIntercityTransportSuggestion(from, to, centerDistanceKm)) {
+                continue;
+            }
+            ScheduledCandidate previous = lastScheduledForDestination(ordered, from);
+            ScheduledCandidate current = firstScheduledForDestination(ordered, to);
+            TransportMode mode = recommendIntercityTransport(from, to, centerDistanceKm);
+            Activity transport = buildIntercityTransportActivity(
+                    tripId, userId, destinations.get(0).getStartDate(),
+                    from, to, previous, current, mode, centerDistanceKm);
+            activities.add(transport);
+        }
+
+        activities.sort(Comparator.comparing(Activity::getDayNumber)
+                .thenComparing(Activity::getStartTime, Comparator.nullsLast(LocalTime::compareTo)));
+        Map<Integer, Integer> nextSortOrder = new HashMap<>();
+        for (Activity activity : activities) {
+            int sortOrder = nextSortOrder.getOrDefault(activity.getDayNumber(), 0);
+            activity.setSortOrder(sortOrder);
+            nextSortOrder.put(activity.getDayNumber(), sortOrder + 1);
+        }
+        return activities;
+    }
+
+    private Activity buildIntercityTransportActivity(
+            UUID tripId,
+            UUID userId,
+            LocalDate tripStartDate,
+            AiTripDestinationSnapshot fromDestination,
+            AiTripDestinationSnapshot toDestination,
+            ScheduledCandidate previous,
+            ScheduledCandidate current,
+            TransportMode mode,
+            double distanceKm) {
+        AiTripCandidateResponse from = previous != null ? previous.candidate() : null;
+        AiTripCandidateResponse to = current != null ? current.candidate() : null;
+        BigDecimal fromLat = from != null && from.getLat() != null ? from.getLat() : fromDestination.getLatitude();
+        BigDecimal fromLng = from != null && from.getLng() != null ? from.getLng() : fromDestination.getLongitude();
+        BigDecimal toLat = to != null && to.getLat() != null ? to.getLat() : toDestination.getLatitude();
+        BigDecimal toLng = to != null && to.getLng() != null ? to.getLng() : toDestination.getLongitude();
+        String fromAddress = from != null ? firstNonBlank(from.getAddress(), fromDestination.getName()) : fromDestination.getName();
+        String toAddress = to != null ? firstNonBlank(to.getAddress(), toDestination.getName()) : toDestination.getName();
+        int dayNumber = Math.toIntExact(ChronoUnit.DAYS.between(
+                tripStartDate, toDestination.getStartDate()) + 1);
+        if (current != null) {
+            dayNumber = current.dayNumber();
+        }
+        int durationMinutes = estimateTransportMinutes(mode, distanceKm);
+        LocalTime end = current != null ? current.startTime() : LocalTime.of(12, 0);
+        int endMinute = end.getHour() * 60 + end.getMinute();
+        int startMinute = Math.max(0, endMinute - durationMinutes);
+        LocalTime start = LocalTime.of(startMinute / 60, startMinute % 60);
+
+        return Activity.builder()
+                .id(UUID.randomUUID())
+                .tripId(tripId)
+                .dayNumber(dayNumber)
+                .name(transportDisplayName(mode) + ": "
+                        + fromDestination.getName() + " → " + toDestination.getName())
+                .address(fromAddress)
+                .lat(fromLat)
+                .lng(fromLng)
+                .endAddress(toAddress)
+                .endLat(toLat)
+                .endLng(toLng)
+                .startTime(start)
+                .endTime(end)
+                .category("transport")
+                .transportMode(mode)
+                .description("AI suggested long-distance inter-province transfer"
+                        + String.format(Locale.ROOT, " · approximately %.0f km", distanceKm))
+                .status(ActivityStatus.CONFIRMED)
+                .addedBy(userId)
+                .isAccommodation(false)
+                .isStartingPoint(false)
+                .build();
+    }
+
+    private ScheduledCandidate firstScheduledForDestination(List<ScheduledCandidate> schedule,
+                                                            AiTripDestinationSnapshot destination) {
+        return schedule.stream()
+                .filter(item -> belongsToDestination(item.candidate(), destination))
+                .min(Comparator.comparingInt(ScheduledCandidate::dayNumber)
+                        .thenComparing(ScheduledCandidate::startTime))
+                .orElse(null);
+    }
+
+    private ScheduledCandidate lastScheduledForDestination(List<ScheduledCandidate> schedule,
+                                                           AiTripDestinationSnapshot destination) {
+        return schedule.stream()
+                .filter(item -> belongsToDestination(item.candidate(), destination))
+                .max(Comparator.comparingInt(ScheduledCandidate::dayNumber)
+                        .thenComparing(ScheduledCandidate::endTime))
+                .orElse(null);
+    }
+
+    private boolean requiresIntercityTransportSuggestion(AiTripDestinationSnapshot from,
+                                                          AiTripDestinationSnapshot to,
+                                                          double distanceKm) {
+        return distanceKm > INTERCITY_TRANSPORT_MIN_DISTANCE_KM
+                && !Objects.equals(normalizeKey(from.getCitySlug()), normalizeKey(to.getCitySlug()));
+    }
+
+    private TransportMode recommendIntercityTransport(AiTripDestinationSnapshot from,
+                                                      AiTripDestinationSnapshot to,
+                                                      double distanceKm) {
+        String system = """
+                Recommend one realistic transport mode between two Vietnam destinations.
+                Allowed values only: TAXI, TRAIN, PLANE, CANOE, FERRY, BUS, CAR.
+                Use CANOE/FERRY only when a sea or island crossing is geographically plausible.
+                Use PLANE for very long routes, TRAIN only where an overland rail trip is plausible.
+                Return strict JSON only: {"mode":"VALUE"}.
+                """;
+        String prompt = "From: %s (%s,%s, slug=%s)%nTo: %s (%s,%s, slug=%s)%nStraight-line distance: %.1f km"
+                .formatted(
+                        from.getName(), from.getLatitude(), from.getLongitude(), from.getCitySlug(),
+                        to.getName(), to.getLatitude(), to.getLongitude(), to.getCitySlug(),
+                        distanceKm);
+        String aiResponse = requireAiResponse(
+                aiClient.completeJson(system, prompt), "recommend inter-province transport");
+        return parseTransportMode(aiResponse)
+                .map(TransportMode::valueOf)
+                .orElseThrow(() -> aiTripUnavailable("inter-province transport response was invalid"));
+    }
+
+    private Optional<String> parseTransportMode(String rawJson) {
+        try {
+            String mode = objectMapper.readTree(extractJson(rawJson)).path("mode").asText("")
+                    .trim().toUpperCase(Locale.ROOT);
+            Set<String> allowed = Set.of("TAXI", "TRAIN", "PLANE", "CANOE", "FERRY", "BUS", "CAR");
+            return allowed.contains(mode) ? Optional.of(mode) : Optional.empty();
+        } catch (Exception ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private String requireAiResponse(Optional<String> response, String operation) {
+        return response
+                .filter(value -> !value.isBlank())
+                .orElseThrow(() -> aiTripUnavailable(operation));
+    }
+
+    private BusinessException aiTripUnavailable(String detail) {
+        log.warn("AI trip request cannot continue: {}", detail);
+        return new BusinessException(ErrorConstant.AI_TRIP_GENERATION_UNAVAILABLE);
+    }
+
+    private int estimateTransportMinutes(TransportMode mode, double distanceKm) {
+        double minutes = switch (mode) {
+            case WALKING -> distanceKm / 4.5 * 60;
+            case MOTORBIKE -> distanceKm / 32.0 * 60 + 10;
+            case CAR, TAXI -> distanceKm / 48.0 * 60 + 15;
+            case BUS -> distanceKm / 42.0 * 60 + 30;
+            case TRAIN -> distanceKm / 58.0 * 60 + 45;
+            case FERRY -> distanceKm / 32.0 * 60 + 45;
+            case CANOE -> distanceKm / 45.0 * 60 + 30;
+            case PLANE -> distanceKm / 700.0 * 60 + 180;
+        };
+        return clamp((int) Math.round(minutes), 10, 12 * 60);
+    }
+
+    private String transportDisplayName(TransportMode mode) {
+        return switch (mode) {
+            case WALKING -> "Walk";
+            case MOTORBIKE -> "Motorbike";
+            case CAR -> "Car";
+            case TAXI -> "Taxi";
+            case BUS -> "Bus";
+            case TRAIN -> "Train";
+            case FERRY -> "Sea ferry";
+            case CANOE -> "Canoe";
+            case PLANE -> "Flight";
+        };
     }
 
     private String activityCategoryFor(AiTripCandidateResponse candidate) {
@@ -1136,23 +1451,6 @@ public class AiTripServiceImpl implements AiTripService {
             }
         }
         return false;
-    }
-
-    private TransportMode recommendTransport(AiTripCandidateResponse previous, AiTripCandidateResponse current) {
-        if (previous == null || previous.getLat() == null || previous.getLng() == null
-                || current.getLat() == null || current.getLng() == null) {
-            return null;
-        }
-        double km = haversineKm(
-                previous.getLat().doubleValue(),
-                previous.getLng().doubleValue(),
-                current.getLat().doubleValue(),
-                current.getLng().doubleValue()
-        );
-        if (km < 1.2) return TransportMode.WALKING;
-        if (km < 8.0) return TransportMode.MOTORBIKE;
-        if (km < 45.0) return TransportMode.CAR;
-        return TransportMode.TRAIN;
     }
 
     private Map<String, String> generateVisitTips(AiTripDraft draft, List<ScheduledCandidate> schedule) {
@@ -1221,16 +1519,15 @@ public class AiTripServiceImpl implements AiTripService {
                 Optional.ofNullable(draft.getPreferenceText()).orElse("none"),
                 JsonUtils.toJson(payload));
 
-        Map<String, String> tips = aiClient.completeJson(system, prompt)
-                .map(this::parseVisitTips)
-                .orElseGet(Map::of);
-
+        String aiResponse = requireAiResponse(
+                aiClient.completeJson(system, prompt), "write visit tips");
+        Map<String, String> tips = parseVisitTips(aiResponse);
         Map<String, String> resolved = new HashMap<>();
         for (ScheduledCandidate item : schedule) {
             AiTripCandidateResponse candidate = item.candidate();
             String tip = tips.get(candidate.getId());
             if (tip == null || tip.isBlank()) {
-                tip = fallbackVisitTip(candidate, item);
+                throw aiTripUnavailable("visit tips omitted a scheduled activity");
             }
             resolved.put(candidate.getId(), trimText(tip, 280));
         }
@@ -1241,7 +1538,7 @@ public class AiTripServiceImpl implements AiTripService {
         try {
             JsonNode tipsNode = objectMapper.readTree(extractJson(rawJson)).get("tips");
             if (tipsNode == null || !tipsNode.isObject()) {
-                return Map.of();
+                throw aiTripUnavailable("visit tips response did not include tips");
             }
             Map<String, String> tips = new HashMap<>();
             tipsNode.fields().forEachRemaining(entry -> {
@@ -1252,22 +1549,12 @@ public class AiTripServiceImpl implements AiTripService {
             });
             return tips;
         } catch (Exception e) {
+            if (e instanceof BusinessException businessException) {
+                throw businessException;
+            }
             log.warn("Failed to parse AI visit tips: {}", e.getMessage());
-            return Map.of();
+            throw aiTripUnavailable("visit tips response was invalid");
         }
-    }
-
-    private String fallbackVisitTip(AiTripCandidateResponse candidate, ScheduledCandidate item) {
-        if (candidate.getAiReason() != null && !candidate.getAiReason().isBlank()) {
-            return trimText(candidate.getAiReason(), 200);
-        }
-        String group = candidate.getPlaceGroup() != null ? candidate.getPlaceGroup() : PlaceGroup.OTHER.name();
-        String lang = AiTripLanguageSupport.currentCode();
-        String timeHint = AiTripLanguageSupport.timeHint(item.startTime().getHour(), lang);
-        return AiTripLanguageSupport.fallbackVisitTip(
-                group,
-                candidate.getSourceType(),
-                timeHint);
     }
 
     private String buildGenerationSummary(AiTripDraft draft,
@@ -1308,6 +1595,61 @@ public class AiTripServiceImpl implements AiTripService {
                 new TypeReference<List<AiTripCandidateResponse>>() {
                 });
         return candidates != null ? candidates : List.of();
+    }
+
+    private String serializeDestinations(List<AiTripDestinationSnapshot> destinations) {
+        try {
+            return objectMapper.writeValueAsString(destinations);
+        } catch (Exception exception) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "Could not persist AI destination route");
+        }
+    }
+
+    private List<AiTripDestinationSnapshot> parseDraftDestinations(AiTripDraft draft) {
+        if (draft.getDestinations() != null && !draft.getDestinations().isBlank()) {
+            try {
+                List<AiTripDestinationSnapshot> destinations = objectMapper.readValue(
+                        draft.getDestinations(),
+                        new TypeReference<List<AiTripDestinationSnapshot>>() {
+                        });
+                if (destinations != null && !destinations.isEmpty()) {
+                    return destinations.stream()
+                            .sorted(Comparator.comparing(
+                                    AiTripDestinationSnapshot::getOrderIndex,
+                                    Comparator.nullsLast(Integer::compareTo)))
+                            .toList();
+                }
+            } catch (Exception exception) {
+                log.warn("Failed to parse AI draft destinations: {}", exception.getMessage());
+            }
+        }
+        UUID legacyId;
+        try {
+            legacyId = UUID.fromString(draft.getCityId());
+        } catch (Exception ignored) {
+            legacyId = UUID.nameUUIDFromBytes(
+                    Optional.ofNullable(draft.getCityName()).orElse("legacy-city").getBytes());
+        }
+        return List.of(AiTripDestinationSnapshot.builder()
+                .locationImageId(legacyId)
+                .citySlug(CitySlugResolver.normalizeRequired(
+                        Optional.ofNullable(draft.getCityName()).orElse("legacy-city")))
+                .name(draft.getCityName())
+                .latitude(draft.getCityLat())
+                .longitude(draft.getCityLng())
+                .startDate(draft.getStartDate())
+                .endDate(draft.getEndDate())
+                .orderIndex(0)
+                .build());
+    }
+
+    private boolean belongsToDestination(AiTripCandidateResponse candidate,
+                                         AiTripDestinationSnapshot destination) {
+        if (candidate.getDestinationId() == null || candidate.getDestinationId().isBlank()) {
+            return destination.getOrderIndex() == 0;
+        }
+        return candidate.getDestinationId().equals(destination.getLocationImageId().toString());
     }
 
     private String buildCoverageMessage(int selectedCount, int scheduledCount, int filledDays, int totalDays) {
@@ -1371,6 +1713,9 @@ public class AiTripServiceImpl implements AiTripService {
     private record ScheduledCandidate(AiTripCandidateResponse candidate, int dayNumber,
                                       LocalTime startTime, LocalTime endTime,
                                       TransportMode transportMode) {
+    }
+
+    private record IndexedDestinationRequest(AiTripDestinationRequest request, int orderIndex) {
     }
 
     // Context builder helper methods

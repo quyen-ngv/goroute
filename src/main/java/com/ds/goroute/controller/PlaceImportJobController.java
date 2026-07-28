@@ -3,10 +3,12 @@ package com.ds.goroute.controller;
 import com.ds.goroute.dto.request.CreateActivityPlaceImportJobRequest;
 import com.ds.goroute.dto.request.CreateManualPlaceImportJobRequest;
 import com.ds.goroute.dto.request.CreateSocialPlaceImportJobRequest;
+import com.ds.goroute.dto.request.CreateNationwidePlaceImportJobRequest;
 import com.ds.goroute.dto.response.PlaceImportJobResponse;
 import com.ds.goroute.dto.response.AdminPlaceImportRunResponse;
 import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.PlaceImportJobService;
+import com.ds.goroute.service.NationwidePlaceImportJobService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -24,6 +26,31 @@ import java.util.UUID;
 public class PlaceImportJobController extends BaseService {
 
     private final PlaceImportJobService placeImportJobService;
+    private final NationwidePlaceImportJobService nationwidePlaceImportJobService;
+
+    @PostMapping("/nationwide")
+    @Operation(summary = "Start the nationwide legacy-64-region food place import")
+    public ResponseEntity createNationwide(@Valid @RequestBody CreateNationwidePlaceImportJobRequest request) {
+        return ResponseEntity.ok(ofSucceeded(nationwidePlaceImportJobService.trigger(request)));
+    }
+
+    @PostMapping("/{jobId}/cancel")
+    @Operation(summary = "Cancel a nationwide place import job")
+    public ResponseEntity cancelNationwide(@PathVariable UUID jobId) {
+        return ResponseEntity.ok(ofSucceeded(nationwidePlaceImportJobService.cancel(jobId)));
+    }
+
+    @GetMapping("/nationwide/{jobId}")
+    @Operation(summary = "Get nationwide job details including region progress")
+    public ResponseEntity getNationwide(@PathVariable UUID jobId) {
+        return ResponseEntity.ok(ofSucceeded(nationwidePlaceImportJobService.get(jobId)));
+    }
+
+    @PostMapping("/{jobId}/retry")
+    @Operation(summary = "Retry a failed or cancelled nationwide place import job")
+    public ResponseEntity retryNationwide(@PathVariable UUID jobId) {
+        return ResponseEntity.ok(ofSucceeded(nationwidePlaceImportJobService.retry(jobId)));
+    }
 
     @PostMapping("/social-locations")
     @Operation(summary = "Queue social place imports for the requested user")

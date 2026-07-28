@@ -33,4 +33,8 @@ public class AiTripCandidateResponse {
     private BigDecimal priceAmount;
     private String priceCurrency;
     private String aiReason;
+    private String destinationId;
+    private String destinationName;
+    private String citySlug;
+    private Integer destinationOrder;
 }

@@ -5,7 +5,7 @@
 <mapper namespace="com.ds.goroute.mapper.AiTripMapper">
 
     <sql id="AiTripDraftColumns">
-        id, user_id, trip_name, city_id, city_name, city_lat, city_lng,
+        id, user_id, trip_name, city_id, city_name, city_lat, city_lng, destinations,
         start_date, end_date, day_count, place_groups, pace, preference_text,
         group_composition, budget_min, budget_max, budget_currency, travel_style,
         activity_types, dietary_restrictions, mobility_considerations, include_backup_activities,
@@ -20,6 +20,7 @@
         <result property="cityName" column="city_name" jdbcType="VARCHAR"/>
         <result property="cityLat" column="city_lat" jdbcType="DECIMAL"/>
         <result property="cityLng" column="city_lng" jdbcType="DECIMAL"/>
+        <result property="destinations" column="destinations" jdbcType="VARCHAR"/>
         <result property="startDate" column="start_date" jdbcType="DATE"/>
         <result property="endDate" column="end_date" jdbcType="DATE"/>
         <result property="dayCount" column="day_count" jdbcType="INTEGER"/>
@@ -71,7 +72,7 @@
 
     <insert id="insertDraft" parameterType="com.ds.goroute.entity.AiTripDraft">
         INSERT INTO ai_trip_drafts (
-            id, user_id, trip_name, city_id, city_name, city_lat, city_lng,
+            id, user_id, trip_name, city_id, city_name, city_lat, city_lng, destinations,
             start_date, end_date, day_count, place_groups, pace, preference_text,
             group_composition, budget_min, budget_max, budget_currency, travel_style,
             activity_types, dietary_restrictions, mobility_considerations, include_backup_activities,
@@ -85,6 +86,7 @@
             #{cityName,jdbcType=VARCHAR},
             #{cityLat,jdbcType=DECIMAL},
             #{cityLng,jdbcType=DECIMAL},
+            #{destinations,jdbcType=VARCHAR}::jsonb,
             #{startDate,javaType=java.time.LocalDate,jdbcType=DATE},
             #{endDate,javaType=java.time.LocalDate,jdbcType=DATE},
             #{dayCount,jdbcType=INTEGER},

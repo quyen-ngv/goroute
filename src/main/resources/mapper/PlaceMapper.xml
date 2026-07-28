@@ -51,6 +51,8 @@
         <result property="isSpikeDetected" column="is_spike_detected"/>
         <result property="authenticLowStarCount" column="authentic_low_star_count"/>
         <result property="scoreCalculatedAt" column="score_calculated_at"/>
+        <result property="scoreSampleCount" column="score_sample_count"/>
+        <result property="scoreSource" column="score_source"/>
         <result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
         <result property="distance" column="distance"/>
@@ -68,6 +70,7 @@
             avg_authenticity_score, place_overall_score, adjusted_rating,
             trust_level, is_jcurve_detected, is_spike_detected,
             authentic_low_star_count, score_calculated_at,
+            score_sample_count, score_source,
             created_at, updated_at
         ) VALUES (
             #{id}, #{placeId}, #{cid}, #{dataId}, #{inputId},
@@ -80,6 +83,7 @@
             #{avgAuthenticityScore}, #{placeOverallScore}, #{adjustedRating},
             #{trustLevel,typeHandler=org.apache.ibatis.type.EnumTypeHandler}, #{isJcurveDetected}, #{isSpikeDetected},
             #{authenticLowStarCount}, #{scoreCalculatedAt},
+            #{scoreSampleCount}, #{scoreSource},
             #{createdAt}, #{updatedAt}
         )
     </insert>
@@ -127,6 +131,8 @@
             is_spike_detected = #{isSpikeDetected},
             authentic_low_star_count = #{authenticLowStarCount},
             score_calculated_at = #{scoreCalculatedAt},
+            score_sample_count = #{scoreSampleCount},
+            score_source = #{scoreSource},
             updated_at = #{updatedAt}
         WHERE id = #{id}
     </update>
@@ -141,6 +147,22 @@
 
     <select id="findByCid" resultMap="PlaceResultMap">
         SELECT * FROM places WHERE cid = #{cid} LIMIT 1
+    </select>
+
+    <select id="findExistingPlaceIds" resultType="string">
+        SELECT place_id FROM places
+        WHERE place_id IN
+        <foreach collection="placeIds" item="placeId" open="(" separator="," close=")">
+            #{placeId}
+        </foreach>
+    </select>
+
+    <select id="findExistingCids" resultType="string">
+        SELECT cid FROM places
+        WHERE cid IN
+        <foreach collection="cids" item="cid" open="(" separator="," close=")">
+            #{cid}
+        </foreach>
     </select>
 
     <select id="findNearCoordinates" resultMap="PlaceResultMap">
@@ -227,6 +249,30 @@
     <delete id="delete">
         DELETE FROM places WHERE id = #{id}
     </delete>
+
+    <select id="findForAiByDestination" resultMap="PlaceResultMap">
+        SELECT p.*,
+               CASE
+                   WHEN p.latitude IS NULL OR p.longitude IS NULL THEN NULL
+                   ELSE (6371 * acos(LEAST(1, GREATEST(-1,
+                       cos(radians(#{latitude})) * cos(radians(p.latitude)) *
+                       cos(radians(p.longitude) - radians(#{longitude})) +
+                       sin(radians(#{latitude})) * sin(radians(p.latitude))
+                   ))))
+               END AS distance
+        FROM places p
+        WHERE p.visibility_status = 'ACTIVE'
+          AND p.destinations @&gt; #{citySlugJson}::jsonb
+          AND p.place_group = #{placeGroup}
+        <if test="minRating != null">
+            AND p.review_rating &gt;= #{minRating}
+        </if>
+        ORDER BY distance NULLS LAST,
+                 p.place_overall_score DESC NULLS LAST,
+                 p.adjusted_rating DESC NULLS LAST,
+                 p.review_count DESC NULLS LAST
+        LIMIT #{limit}
+    </select>
 
     <select id="findNearbyExtended" resultMap="PlaceResultMap">
         SELECT *

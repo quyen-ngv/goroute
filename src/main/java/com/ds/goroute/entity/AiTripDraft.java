@@ -22,6 +22,7 @@ public class AiTripDraft {
     private String cityName;
     private BigDecimal cityLat;
     private BigDecimal cityLng;
+    private String destinations; // JSON array of resolved location image snapshots
     private LocalDate startDate;
     private LocalDate endDate;
     private Integer dayCount;

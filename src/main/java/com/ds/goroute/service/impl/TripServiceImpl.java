@@ -12,6 +12,7 @@ import com.ds.goroute.entity.*;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.*;
 import com.ds.goroute.service.ExpenseService;
+import com.ds.goroute.service.ExchangeRateService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.service.TripService;
@@ -48,6 +49,7 @@ public class TripServiceImpl implements TripService {
     private final NotificationHelper notificationHelper;
     private final LocationImageService locationImageService;
     private final ExpenseService expenseService;
+    private final ExchangeRateService exchangeRateService;
     private final UserReviewRepository userReviewRepository;
     private final UserReviewProfileRepository userReviewProfileRepository;
     private final ReviewHelpfulVoteRepository reviewHelpfulVoteRepository;
@@ -421,6 +423,10 @@ public class TripServiceImpl implements TripService {
         if (request.getCurrency() != null) {
             String currentCurrency = trip.getCurrency() != null ? trip.getCurrency() : "VND";
             tripCurrencyChanged = !request.getCurrency().equalsIgnoreCase(currentCurrency);
+            if (tripCurrencyChanged && request.getBudget() == null && trip.getBudget() != null) {
+                trip.setBudget(exchangeRateService.convert(
+                        trip.getBudget(), currentCurrency, request.getCurrency()));
+            }
             trip.setCurrency(request.getCurrency());
         }
         if (request.getStatus() != null) trip.setStatus(TripStatus.valueOf(request.getStatus()));

@@ -637,8 +637,20 @@ public class ExpenseServiceImpl implements ExpenseService {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Split not found");
         }
 
-        split.setIsSettled(request.getIsPaid());
-        split.setSettledAt(request.getIsPaid() ? LocalDateTime.now() : null);
+        boolean isExpensePayer = expense.getPaidBy() != null && expense.getPaidBy().equals(userId);
+        boolean isOwnSplit = split.getUserId() != null && split.getUserId().equals(userId);
+        if (!isExpensePayer && !isOwnSplit) {
+            throw new BusinessException(
+                    ErrorConstant.FORBIDDEN_ERROR,
+                    "Only the payer or split owner can update this payment");
+        }
+
+        boolean isPayerSplit = expense.getPaidBy() != null &&
+                (expense.getPaidBy().equals(split.getUserId()) ||
+                 expense.getPaidBy().equals(split.getGuestMemberId()));
+        boolean settled = isPayerSplit || request.getIsPaid();
+        split.setIsSettled(settled);
+        split.setSettledAt(settled ? LocalDateTime.now() : null);
         expenseSplitRepository.update(split);
 
         log.info("Payment marked for split {}: isPaid={}", splitId, request.getIsPaid());
@@ -664,10 +676,19 @@ public class ExpenseServiceImpl implements ExpenseService {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found");
         }
 
+        if (expense.getPaidBy() == null || !expense.getPaidBy().equals(userId)) {
+            throw new BusinessException(
+                    ErrorConstant.FORBIDDEN_ERROR,
+                    "Only the expense payer can update all payments");
+        }
+
         List<ExpenseSplit> splits = expenseSplitRepository.findByExpenseId(expenseId);
         for (ExpenseSplit split : splits) {
-            split.setIsSettled(request.getIsPaid());
-            split.setSettledAt(request.getIsPaid() ? LocalDateTime.now() : null);
+            boolean isPayerSplit = expense.getPaidBy().equals(split.getUserId()) ||
+                    expense.getPaidBy().equals(split.getGuestMemberId());
+            boolean settled = isPayerSplit || request.getIsPaid();
+            split.setIsSettled(settled);
+            split.setSettledAt(settled ? LocalDateTime.now() : null);
             expenseSplitRepository.update(split);
         }
 

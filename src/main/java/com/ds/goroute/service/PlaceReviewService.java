@@ -33,6 +33,7 @@ public class PlaceReviewService {
     private final ImageMigrationService imageMigrationService;
     private final StorageService storageService;
     private final PlaceReviewScoringService scoringService;
+    private final PlaceReviewScoreCalculator scoreCalculator;
 
     /**
      * Batch insert reviews from crawler data
@@ -96,7 +97,7 @@ public class PlaceReviewService {
             }
             
             // Calculate authenticity score using same logic as calculate-scores API
-            double authenticityScore = calculateAuthenticityScoreFromInput(input);
+            double authenticityScore = scoreCalculator.authenticity(input).doubleValue();
             reviewsWithScores.add(new ReviewInputWithScore(input, authenticityScore, placeId));
         }
         

@@ -46,6 +46,11 @@ public class ErrorConstant {
      */
     public static final int AI_TRIP_DRAFT_INACTIVE = 4000105;
 
+    /**
+     * The AI provider did not return a usable response for a required AI-trip decision.
+     */
+    public static final int AI_TRIP_GENERATION_UNAVAILABLE = 4000106;
+
     public static final int REFERRAL_WINDOW_EXPIRED = 4000201;
 
     public static final int REFERRAL_ALREADY_APPLIED = 4000202;

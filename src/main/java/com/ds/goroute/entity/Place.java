@@ -83,6 +83,8 @@ public class Place {
     private Boolean isSpikeDetected;
     private Integer authenticLowStarCount;
     private LocalDateTime scoreCalculatedAt;
+    private Integer scoreSampleCount;
+    private String scoreSource;
 
     // Metadata
     private LocalDateTime createdAt;

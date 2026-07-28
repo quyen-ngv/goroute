@@ -16,6 +16,18 @@
         <result property="triggeredCount" column="triggered_count"/>
         <result property="completedCount" column="completed_count"/>
         <result property="failedCount" column="failed_count"/>
+        <result property="pythonJobId" column="python_job_id"/>
+        <result property="currentRegionCode" column="current_region_code"/>
+        <result property="currentRegionName" column="current_region_name"/>
+        <result property="processedCount" column="processed_count"/>
+        <result property="eligibleCount" column="eligible_count"/>
+        <result property="importedCount" column="imported_count"/>
+        <result property="rejectedScoreCount" column="rejected_score_count"/>
+        <result property="insufficientPhotoCount" column="insufficient_photo_count"/>
+        <result property="cancelRequested" column="cancel_requested"/>
+        <result property="selectedReviews" column="selected_reviews"/>
+        <result property="minReviewCount" column="min_review_count"/>
+        <result property="minAdjustedRating" column="min_adjusted_rating"/>
         <result property="requestPayload" column="request_payload"/>
         <result property="errorMessage" column="error_message"/>
         <result property="createdAt" column="created_at"/>
@@ -41,6 +53,16 @@
         <result property="existingPlaceId" column="existing_place_id"/>
         <result property="importedPlaceId" column="imported_place_id"/>
         <result property="pythonJobId" column="python_job_id"/>
+        <result property="regionCode" column="region_code"/>
+        <result property="regionName" column="region_name"/>
+        <result property="searchQuery" column="search_query"/>
+        <result property="reviewCount" column="review_count"/>
+        <result property="scrapedReviewCount" column="scraped_review_count"/>
+        <result property="selectedReviewCount" column="selected_review_count"/>
+        <result property="avgAuthenticityScore" column="avg_authenticity_score"/>
+        <result property="placeOverallScore" column="place_overall_score"/>
+        <result property="adjustedRating" column="adjusted_rating"/>
+        <result property="outcomeReason" column="outcome_reason"/>
         <result property="status" column="status" javaType="com.ds.goroute.type.PlaceImportJobItemStatus"/>
         <result property="approvalStatus" column="approval_status" javaType="com.ds.goroute.type.PlaceImportApprovalStatus"/>
         <result property="approvalNote" column="approval_note"/>
@@ -54,13 +76,19 @@
         INSERT INTO place_import_jobs (
             id, user_id, source_type, source_ref_id, status, max_reviews,
             total_items, skipped_existing_count, triggered_count, completed_count, failed_count,
-            request_payload, error_message, created_at, started_at, completed_at, updated_at
+            request_payload, error_message, created_at, started_at, completed_at, updated_at,
+            python_job_id, current_region_code, current_region_name, processed_count,
+            eligible_count, imported_count, rejected_score_count, insufficient_photo_count,
+            cancel_requested, selected_reviews, min_review_count, min_adjusted_rating
         ) VALUES (
             #{id}, #{userId}, #{sourceType, javaType=com.ds.goroute.type.PlaceImportSourceType},
             #{sourceRefId}, #{status, javaType=com.ds.goroute.type.PlaceImportJobStatus},
             #{maxReviews}, #{totalItems}, #{skippedExistingCount}, #{triggeredCount},
             #{completedCount}, #{failedCount}, #{requestPayload}, #{errorMessage},
-            #{createdAt}, #{startedAt}, #{completedAt}, #{updatedAt}
+            #{createdAt}, #{startedAt}, #{completedAt}, #{updatedAt},
+            #{pythonJobId}, #{currentRegionCode}, #{currentRegionName}, #{processedCount},
+            #{eligibleCount}, #{importedCount}, #{rejectedScoreCount}, #{insufficientPhotoCount},
+            #{cancelRequested}, #{selectedReviews}, #{minReviewCount}, #{minAdjustedRating}
         )
     </insert>
 
@@ -72,6 +100,18 @@
             triggered_count = #{triggeredCount},
             completed_count = #{completedCount},
             failed_count = #{failedCount},
+            python_job_id = #{pythonJobId},
+            current_region_code = #{currentRegionCode},
+            current_region_name = #{currentRegionName},
+            processed_count = #{processedCount},
+            eligible_count = #{eligibleCount},
+            imported_count = #{importedCount},
+            rejected_score_count = #{rejectedScoreCount},
+            insufficient_photo_count = #{insufficientPhotoCount},
+            cancel_requested = #{cancelRequested},
+            selected_reviews = #{selectedReviews},
+            min_review_count = #{minReviewCount},
+            min_adjusted_rating = #{minAdjustedRating},
             error_message = #{errorMessage},
             started_at = #{startedAt},
             completed_at = #{completedAt},
@@ -109,6 +149,8 @@
             source_candidate_key, candidate_name,
             google_place_id, cid, latitude, longitude, existing_place_id, imported_place_id,
             python_job_id, status, approval_status, approval_note, approved_at, error_message, created_at, updated_at
+            , region_code, region_name, search_query, review_count, scraped_review_count,
+            selected_review_count, avg_authenticity_score, place_overall_score, adjusted_rating, outcome_reason
         ) VALUES (
             #{id}, #{jobId}, #{sourceRefId}, #{activityId}, #{sourceUrl}, #{sourceAddress}, #{sourceOriginalUrl},
             #{sourceCandidateKey}, #{candidateName},
@@ -116,6 +158,8 @@
             #{pythonJobId}, #{status, javaType=com.ds.goroute.type.PlaceImportJobItemStatus},
             #{approvalStatus, javaType=com.ds.goroute.type.PlaceImportApprovalStatus},
             #{approvalNote}, #{approvedAt}, #{errorMessage}, #{createdAt}, #{updatedAt}
+            , #{regionCode}, #{regionName}, #{searchQuery}, #{reviewCount}, #{scrapedReviewCount},
+            #{selectedReviewCount}, #{avgAuthenticityScore}, #{placeOverallScore}, #{adjustedRating}, #{outcomeReason}
         )
     </insert>
 
@@ -133,6 +177,16 @@
             existing_place_id = #{existingPlaceId},
             imported_place_id = #{importedPlaceId},
             python_job_id = #{pythonJobId},
+            region_code = #{regionCode},
+            region_name = #{regionName},
+            search_query = #{searchQuery},
+            review_count = #{reviewCount},
+            scraped_review_count = #{scrapedReviewCount},
+            selected_review_count = #{selectedReviewCount},
+            avg_authenticity_score = #{avgAuthenticityScore},
+            place_overall_score = #{placeOverallScore},
+            adjusted_rating = #{adjustedRating},
+            outcome_reason = #{outcomeReason},
             status = #{status, javaType=com.ds.goroute.type.PlaceImportJobItemStatus},
             approval_status = #{approvalStatus, javaType=com.ds.goroute.type.PlaceImportApprovalStatus},
             approval_note = #{approvalNote},
@@ -150,6 +204,72 @@
 
     <select id="findItemById" resultMap="PlaceImportJobItemResultMap">
         SELECT * FROM place_import_job_items WHERE id = #{id}
+    </select>
+
+    <select id="findActiveNationwideJob" resultMap="PlaceImportJobResultMap">
+        SELECT * FROM place_import_jobs
+        WHERE source_type = 'NATIONWIDE' AND status IN ('QUEUED', 'PROCESSING')
+        ORDER BY created_at DESC LIMIT 1
+    </select>
+
+    <select id="findItemByJobAndGooglePlaceId" resultMap="PlaceImportJobItemResultMap">
+        SELECT * FROM place_import_job_items
+        WHERE job_id = #{jobId} AND google_place_id = #{googlePlaceId}
+        ORDER BY created_at DESC LIMIT 1
+    </select>
+
+    <insert id="upsertRegion" parameterType="com.ds.goroute.entity.PlaceImportJobRegion">
+        INSERT INTO place_import_job_regions (
+            id, job_id, region_code, region_name, priority, sequence_no, status,
+            query_count, discovered_count, processed_count, eligible_count, imported_count,
+            skipped_count, failed_count, error_message, started_at, completed_at, created_at, updated_at
+        ) VALUES (
+            #{id}, #{jobId}, #{regionCode}, #{regionName}, #{priority}, #{sequenceNo}, #{status},
+            #{queryCount}, #{discoveredCount}, #{processedCount}, #{eligibleCount}, #{importedCount},
+            #{skippedCount}, #{failedCount}, #{errorMessage}, #{startedAt}, #{completedAt}, #{createdAt}, #{updatedAt}
+        )
+        ON CONFLICT (job_id, region_code) DO UPDATE SET
+            region_name = EXCLUDED.region_name,
+            priority = EXCLUDED.priority,
+            sequence_no = EXCLUDED.sequence_no,
+            status = EXCLUDED.status,
+            query_count = EXCLUDED.query_count,
+            discovered_count = EXCLUDED.discovered_count,
+            processed_count = EXCLUDED.processed_count,
+            eligible_count = EXCLUDED.eligible_count,
+            imported_count = EXCLUDED.imported_count,
+            skipped_count = EXCLUDED.skipped_count,
+            failed_count = EXCLUDED.failed_count,
+            error_message = EXCLUDED.error_message,
+            started_at = COALESCE(place_import_job_regions.started_at, EXCLUDED.started_at),
+            completed_at = EXCLUDED.completed_at,
+            updated_at = EXCLUDED.updated_at
+    </insert>
+
+    <resultMap id="PlaceImportJobRegionResultMap" type="com.ds.goroute.entity.PlaceImportJobRegion">
+        <id property="id" column="id"/>
+        <result property="jobId" column="job_id"/>
+        <result property="regionCode" column="region_code"/>
+        <result property="regionName" column="region_name"/>
+        <result property="priority" column="priority"/>
+        <result property="sequenceNo" column="sequence_no"/>
+        <result property="status" column="status"/>
+        <result property="queryCount" column="query_count"/>
+        <result property="discoveredCount" column="discovered_count"/>
+        <result property="processedCount" column="processed_count"/>
+        <result property="eligibleCount" column="eligible_count"/>
+        <result property="importedCount" column="imported_count"/>
+        <result property="skippedCount" column="skipped_count"/>
+        <result property="failedCount" column="failed_count"/>
+        <result property="errorMessage" column="error_message"/>
+        <result property="startedAt" column="started_at"/>
+        <result property="completedAt" column="completed_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <select id="findRegionsByJobId" resultMap="PlaceImportJobRegionResultMap">
+        SELECT * FROM place_import_job_regions WHERE job_id = #{jobId} ORDER BY sequence_no
     </select>
 
     <select id="existsActivityItem" resultType="boolean">

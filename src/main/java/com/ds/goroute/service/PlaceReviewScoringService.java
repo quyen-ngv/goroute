@@ -29,6 +29,7 @@ public class PlaceReviewScoringService {
 
     private final PlaceReviewRepository reviewRepository;
     private final PlaceRepository placeRepository;
+    private final PlaceReviewScoreCalculator scoreCalculator;
 
     private final ExecutorService executorService = Executors.newFixedThreadPool(
         Runtime.getRuntime().availableProcessors()
@@ -38,45 +39,14 @@ public class PlaceReviewScoringService {
      * Calculate authenticity score for a single review
      */
     public BigDecimal calculateAuthenticityScore(PlaceReview review) {
-        // has_text â€” weight 0.15
-        double hasText = (review.getDescription() != null && !review.getDescription().isEmpty()) ? 1.0 : 0.0;
-
-        // text_length_score â€” weight 0.25
-        double textLengthScore = 0.0;
-        if (review.getDescription() != null) {
-            textLengthScore = Math.min(review.getDescription().length() / 200.0, 1.0);
-        }
-
-        // has_photos â€” weight 0.25
-        List<String> imageList = JsonUtils.fromJson(review.getImages(), List.class);
-        double hasPhotos = (imageList != null && !imageList.isEmpty()) ? 1.0 : 0.0;
-
-        // reviewer_credibility_score â€” weight 0.35
-        double r1 = Math.min((review.getTotalReviews() != null ? review.getTotalReviews() : 0) / 50.0, 1.0);
-        double r2 = Math.min((review.getTotalPhotos() != null ? review.getTotalPhotos() : 0) / 100.0, 1.0);
-        double r3 = (review.getIsLocalGuide() != null && review.getIsLocalGuide()) ? 1.0 : 0.0;
-        double reviewerCredibility = (r1 + r2 + r3) / 3.0;
-
-        // Final score
-        double score = 0.15 * hasText
-                     + 0.25 * textLengthScore
-                     + 0.25 * hasPhotos
-                     + 0.35 * reviewerCredibility;
-
-        return BigDecimal.valueOf(score).setScale(3, RoundingMode.HALF_UP);
+        return scoreCalculator.authenticity(review);
     }
 
     /**
      * Determine authenticity level from score
      */
     public ReviewAuthenticityLevel getAuthenticityLevel(BigDecimal score) {
-        if (score.compareTo(BigDecimal.valueOf(0.80)) >= 0) {
-            return ReviewAuthenticityLevel.HIGH;
-        } else if (score.compareTo(BigDecimal.valueOf(0.50)) >= 0) {
-            return ReviewAuthenticityLevel.MEDIUM;
-        } else {
-            return ReviewAuthenticityLevel.LOW;
-        }
+        return scoreCalculator.authenticityLevel(score);
     }
 
     /**
@@ -158,6 +128,7 @@ public class PlaceReviewScoringService {
         result.put("isJcurveDetected", isJcurve);
         result.put("isSpikeDetected", isSpike);
         result.put("authenticLowStarCount", (int) badCount);
+        result.put("scoreSampleCount", total);
         result.put("trustLevel", getTrustLevel(placeOverallScore));
 
         return result;
@@ -280,6 +251,8 @@ public class PlaceReviewScoringService {
                             place.setIsJcurveDetected((Boolean) scoreData.get("isJcurveDetected"));
                             place.setIsSpikeDetected((Boolean) scoreData.get("isSpikeDetected"));
                             place.setAuthenticLowStarCount((Integer) scoreData.get("authenticLowStarCount"));
+                            place.setScoreSampleCount((Integer) scoreData.get("scoreSampleCount"));
+                            place.setScoreSource("STORED_REVIEWS");
                             place.setTrustLevel((PlaceTrustLevel) scoreData.get("trustLevel"));
 
                             BigDecimal adjustedRating = calculateAdjustedRating(

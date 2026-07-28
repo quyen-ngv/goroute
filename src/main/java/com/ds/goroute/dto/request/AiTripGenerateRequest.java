@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -30,6 +31,10 @@ public class AiTripGenerateRequest {
 
     private BigDecimal cityLat;
     private BigDecimal cityLng;
+
+    @Valid
+    @Size(max = 10, message = "A trip can contain at most 10 destinations")
+    private List<AiTripDestinationRequest> destinations;
 
     @NotNull(message = "Start date is required")
     private LocalDate startDate;

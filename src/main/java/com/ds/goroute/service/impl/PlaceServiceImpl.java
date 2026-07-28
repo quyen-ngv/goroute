@@ -636,8 +636,51 @@ public class PlaceServiceImpl implements PlaceService {
         Place updated = buildPlaceFromRequest(request);
         updated.setId(existingPlace.getId());
         updated.setCreatedAt(existingPlace.getCreatedAt());
+        updated.setPlaceGroup(existingPlace.getPlaceGroup() != null
+                ? existingPlace.getPlaceGroup()
+                : updated.getPlaceGroup());
         updated.setCategory(existingPlace.getCategory() != null ? existingPlace.getCategory() : request.getCategory());
         updated.setDescriptions(existingPlace.getDescriptions() != null ? existingPlace.getDescriptions() : request.getDescriptions());
+        updated.setAddress(preferNonBlank(updated.getAddress(), existingPlace.getAddress()));
+        updated.setDestinations(preferNonEmptyJson(updated.getDestinations(), existingPlace.getDestinations()));
+        updated.setPlusCode(preferNonBlank(updated.getPlusCode(), existingPlace.getPlusCode()));
+        updated.setTimezone(preferNonBlank(updated.getTimezone(), existingPlace.getTimezone()));
+        updated.setPhone(preferNonBlank(updated.getPhone(), existingPlace.getPhone()));
+        updated.setWebsite(preferNonBlank(updated.getWebsite(), existingPlace.getWebsite()));
+        updated.setGoogleMapsLink(preferNonBlank(updated.getGoogleMapsLink(), existingPlace.getGoogleMapsLink()));
+        updated.setReviewCount(updated.getReviewCount() != null && updated.getReviewCount() > 0
+                ? updated.getReviewCount()
+                : existingPlace.getReviewCount());
+        updated.setReviewRating(updated.getReviewRating() != null && updated.getReviewRating().signum() > 0
+                ? updated.getReviewRating()
+                : existingPlace.getReviewRating());
+        updated.setReviewsPerRating(preferNonEmptyJson(updated.getReviewsPerRating(), existingPlace.getReviewsPerRating()));
+        updated.setThumbnail(preferNonBlank(updated.getThumbnail(), existingPlace.getThumbnail()));
+        updated.setImages(preferNonEmptyJson(updated.getImages(), existingPlace.getImages()));
+        updated.setAiDescription(existingPlace.getAiDescription());
+        updated.setStatus(preferNonBlank(updated.getStatus(), existingPlace.getStatus()));
+        updated.setPriceRange(preferNonBlank(updated.getPriceRange(), existingPlace.getPriceRange()));
+        updated.setOpenHours(preferNonEmptyJson(updated.getOpenHours(), existingPlace.getOpenHours()));
+        updated.setVisitDurationMinutes(existingPlace.getVisitDurationMinutes());
+        updated.setPopularTimes(preferNonEmptyJson(updated.getPopularTimes(), existingPlace.getPopularTimes()));
+        updated.setReservations(preferNonEmptyJson(updated.getReservations(), existingPlace.getReservations()));
+        updated.setOrderOnline(preferNonEmptyJson(updated.getOrderOnline(), existingPlace.getOrderOnline()));
+        updated.setMenu(preferNonEmptyJson(updated.getMenu(), existingPlace.getMenu()));
+        updated.setCompleteAddress(preferNonEmptyJson(updated.getCompleteAddress(), existingPlace.getCompleteAddress()));
+        updated.setAbout(preferNonEmptyJson(updated.getAbout(), existingPlace.getAbout()));
+        updated.setOwner(preferNonEmptyJson(updated.getOwner(), existingPlace.getOwner()));
+        updated.setEmails(preferNonEmptyJson(updated.getEmails(), existingPlace.getEmails()));
+        updated.setRawData(preferNonEmptyJson(updated.getRawData(), existingPlace.getRawData()));
+        updated.setAvgAuthenticityScore(existingPlace.getAvgAuthenticityScore());
+        updated.setPlaceOverallScore(existingPlace.getPlaceOverallScore());
+        updated.setAdjustedRating(existingPlace.getAdjustedRating());
+        updated.setTrustLevel(existingPlace.getTrustLevel());
+        updated.setIsJcurveDetected(existingPlace.getIsJcurveDetected());
+        updated.setIsSpikeDetected(existingPlace.getIsSpikeDetected());
+        updated.setAuthenticLowStarCount(existingPlace.getAuthenticLowStarCount());
+        updated.setScoreCalculatedAt(existingPlace.getScoreCalculatedAt());
+        updated.setScoreSampleCount(existingPlace.getScoreSampleCount());
+        updated.setScoreSource(existingPlace.getScoreSource());
         updated.setVisibilityStatus(parseVisibilityStatus(request.getVisibilityStatus(), existingPlace.getVisibilityStatus()));
         updated.setUpdatedAt(LocalDateTime.now());
 
@@ -651,6 +694,24 @@ public class PlaceServiceImpl implements PlaceService {
         }
 
         return toPlaceResponse(updated);
+    }
+
+    private String preferNonBlank(String incoming, String existing) {
+        return incoming != null && !incoming.trim().isEmpty() ? incoming : existing;
+    }
+
+    private String preferNonEmptyJson(String incoming, String existing) {
+        if (incoming == null) {
+            return existing;
+        }
+        String normalized = incoming.trim();
+        if (normalized.isEmpty()
+                || normalized.equalsIgnoreCase("null")
+                || normalized.equals("{}")
+                || normalized.equals("[]")) {
+            return existing != null ? existing : incoming;
+        }
+        return incoming;
     }
 
     private Place buildPlaceFromRequest(ImportPlaceRequest request) {
@@ -1038,6 +1099,8 @@ public class PlaceServiceImpl implements PlaceService {
                 .reviewRating(place.getReviewRating())
                 .adjustedRating(place.getAdjustedRating())
                 .placeOverallScore(place.getPlaceOverallScore())
+                .scoreSampleCount(place.getScoreSampleCount())
+                .scoreSource(place.getScoreSource())
                 .reviewsPerRating(parseJsonToMap(place.getReviewsPerRating()))
                 .thumbnail(place.getThumbnail())
                 .images(parseJsonToList(place.getImages(), PlaceImagesDto.class))
