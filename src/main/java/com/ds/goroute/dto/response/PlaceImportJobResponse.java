@@ -45,6 +45,12 @@ public class PlaceImportJobResponse {
     private List<String> regionCodes;
     private Boolean includeRegionalSpecialties;
     private Boolean includeTouristAreas;
+    private UUID refreshPlaceId;
+    private Integer maxPlaces;
+    private Boolean headless;
+    private Boolean continueOnError;
+    private String currentPlaceId;
+    private String currentPlaceTitle;
     private String errorMessage;
     private List<PlaceImportJobItemResponse> items;
     private List<PlaceImportJobRegionResponse> regions;

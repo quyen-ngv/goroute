@@ -4,11 +4,13 @@ import com.ds.goroute.dto.request.CreateActivityPlaceImportJobRequest;
 import com.ds.goroute.dto.request.CreateManualPlaceImportJobRequest;
 import com.ds.goroute.dto.request.CreateSocialPlaceImportJobRequest;
 import com.ds.goroute.dto.request.CreateNationwidePlaceImportJobRequest;
+import com.ds.goroute.dto.request.CreatePlaceDetailRefreshJobRequest;
 import com.ds.goroute.dto.response.PlaceImportJobResponse;
 import com.ds.goroute.dto.response.AdminPlaceImportRunResponse;
 import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.PlaceImportJobService;
 import com.ds.goroute.service.NationwidePlaceImportJobService;
+import com.ds.goroute.service.PlaceDetailRefreshJobService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -27,6 +29,32 @@ public class PlaceImportJobController extends BaseService {
 
     private final PlaceImportJobService placeImportJobService;
     private final NationwidePlaceImportJobService nationwidePlaceImportJobService;
+    private final PlaceDetailRefreshJobService placeDetailRefreshJobService;
+
+    @PostMapping("/place-details-refresh")
+    @Operation(summary = "Refresh Google Maps detail fields for existing places")
+    public ResponseEntity createPlaceDetailRefresh(
+            @Valid @RequestBody CreatePlaceDetailRefreshJobRequest request) {
+        return ResponseEntity.ok(ofSucceeded(placeDetailRefreshJobService.trigger(request)));
+    }
+
+    @GetMapping("/place-details-refresh/{jobId}")
+    @Operation(summary = "Get a place detail refresh job")
+    public ResponseEntity getPlaceDetailRefresh(@PathVariable UUID jobId) {
+        return ResponseEntity.ok(ofSucceeded(placeDetailRefreshJobService.get(jobId)));
+    }
+
+    @PostMapping("/place-details-refresh/{jobId}/cancel")
+    @Operation(summary = "Cancel a place detail refresh job")
+    public ResponseEntity cancelPlaceDetailRefresh(@PathVariable UUID jobId) {
+        return ResponseEntity.ok(ofSucceeded(placeDetailRefreshJobService.cancel(jobId)));
+    }
+
+    @PostMapping("/place-details-refresh/{jobId}/retry")
+    @Operation(summary = "Retry a failed or cancelled place detail refresh job")
+    public ResponseEntity retryPlaceDetailRefresh(@PathVariable UUID jobId) {
+        return ResponseEntity.ok(ofSucceeded(placeDetailRefreshJobService.retry(jobId)));
+    }
 
     @PostMapping("/nationwide")
     @Operation(summary = "Start the nationwide legacy-64-region food place import")

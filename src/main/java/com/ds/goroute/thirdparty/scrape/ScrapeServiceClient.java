@@ -18,8 +18,11 @@ public class ScrapeServiceClient {
 
     private final RestTemplate restTemplate;
 
-    @Value("${scrape.service.base-url:http://google-maps-bot:8080}")
-    private String baseUrl;
+@Value("${scrape.service.base-url:http://google-maps-bot:8080}")
+private String baseUrl;
+
+@Value("${scrape.service.api-key:}")
+private String apiKey;
 
     public ScrapeResolveResponse resolveUrl(String googleMapsUrl) {
         // Pass a URI, not an already encoded String, so RestTemplate does not
@@ -117,6 +120,26 @@ public class ScrapeServiceClient {
             return restTemplate.postForObject(url, request, ScrapeJobTriggerResponse.class);
         } catch (Exception e) {
             log.error("Nationwide scrape trigger failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    public ScrapeJobTriggerResponse triggerPlaceDetailRefreshJob(ScrapePlaceDetailRefreshJobRequest request) {
+        String url = baseUrl + "/api/v1/maintenance/places/refresh-details";
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            if (apiKey != null && !apiKey.isBlank()) {
+                headers.set("X-API-Key", apiKey);
+            }
+            ResponseEntity<ScrapeJobTriggerResponse> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.POST,
+                    new HttpEntity<>(request, headers),
+                    ScrapeJobTriggerResponse.class);
+            return response.getBody();
+        } catch (Exception e) {
+            log.error("Place detail refresh trigger failed: {}", e.getMessage());
             return null;
         }
     }

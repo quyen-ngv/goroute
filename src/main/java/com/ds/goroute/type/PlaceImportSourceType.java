@@ -4,5 +4,6 @@ public enum PlaceImportSourceType {
     SOCIAL_LOCATION,
     ACTIVITY,
     MANUAL,
-    NATIONWIDE
+    NATIONWIDE,
+    PLACE_DETAILS_REFRESH
 }

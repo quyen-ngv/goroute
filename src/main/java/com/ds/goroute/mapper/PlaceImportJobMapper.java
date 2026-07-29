@@ -49,7 +49,9 @@ public interface PlaceImportJobMapper {
 
     List<PlaceImportJobItem> findItemsByJobId(@Param("jobId") UUID jobId);
 
-    PlaceImportJob findActiveNationwideJob();
+PlaceImportJob findActiveNationwideJob();
+
+PlaceImportJob findActivePlaceDetailRefreshJob();
 
     PlaceImportJobItem findItemByJobAndGooglePlaceId(@Param("jobId") UUID jobId,
                                                       @Param("googlePlaceId") String googlePlaceId);

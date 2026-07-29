@@ -212,6 +212,12 @@
         ORDER BY created_at DESC LIMIT 1
     </select>
 
+    <select id="findActivePlaceDetailRefreshJob" resultMap="PlaceImportJobResultMap">
+        SELECT * FROM place_import_jobs
+        WHERE source_type = 'PLACE_DETAILS_REFRESH' AND status IN ('QUEUED', 'PROCESSING')
+        ORDER BY created_at DESC LIMIT 1
+    </select>
+
     <select id="findItemByJobAndGooglePlaceId" resultMap="PlaceImportJobItemResultMap">
         SELECT * FROM place_import_job_items
         WHERE job_id = #{jobId} AND google_place_id = #{googlePlaceId}
