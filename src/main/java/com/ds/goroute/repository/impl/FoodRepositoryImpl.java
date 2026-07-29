@@ -112,6 +112,11 @@ public class FoodRepositoryImpl implements FoodRepository {
     }
 
     @Override
+    public List<UUID> findPlaceIdsByFoodId(UUID foodId) {
+        return foodMapper.findPlaceIdsByFoodId(foodId);
+    }
+
+    @Override
     public long countLinkedPlaces(UUID foodId, String citySlugJson) {
         return foodMapper.countLinkedPlaces(foodId, citySlugJson);
     }

@@ -37,31 +37,6 @@ public interface PlaceMapper {
 
     List<Place> findByIds(@Param("ids") List<UUID> ids);
 
-    List<Place> findNearby(@Param("keyword") String keyword,
-                          @Param("latitude") BigDecimal latitude,
-                          @Param("longitude") BigDecimal longitude,
-                          @Param("radius") BigDecimal radius,
-                          @Param("category") String category,
-                          @Param("placeGroups") List<String> placeGroups,
-                          @Param("minRating") BigDecimal minRating,
-                          @Param("includeInactive") boolean includeInactive,
-                          @Param("limit") int limit,
-                          @Param("offset") int offset);
-
-    List<Place> findNearbyExtended(@Param("keyword") String keyword,
-                                   @Param("latitude") BigDecimal latitude,
-                                   @Param("longitude") BigDecimal longitude,
-                                   @Param("radius") BigDecimal radius,
-                                   @Param("category") String category,
-                                   @Param("placeGroups") List<String> placeGroups,
-                                   @Param("minRating") BigDecimal minRating,
-                                   @Param("citySlugJson") String citySlugJson,
-                                   @Param("foodIds") List<UUID> foodIds,
-                                   @Param("excludeLinkedFoodPlaces") Boolean excludeLinkedFoodPlaces,
-                                   @Param("includeInactive") boolean includeInactive,
-                                   @Param("limit") int limit,
-                                   @Param("offset") int offset);
-
     List<Place> findForAiByDestination(@Param("citySlugJson") String citySlugJson,
                                        @Param("latitude") BigDecimal latitude,
                                        @Param("longitude") BigDecimal longitude,

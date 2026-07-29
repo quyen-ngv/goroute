@@ -4,6 +4,7 @@ import com.ds.goroute.dto.request.BatchUpdatePlaceImagesRequest;
 import com.ds.goroute.dto.request.ImportPlaceRequest;
 import com.ds.goroute.dto.request.ReviewInput;
 import com.ds.goroute.dto.request.UpdatePlaceRequest;
+import com.ds.goroute.dto.PlaceSearchCriteria;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.response.PlaceAboutDto;
 import com.ds.goroute.dto.response.PlaceImagesDto;
@@ -26,14 +27,10 @@ import com.ds.goroute.service.PlaceService;
 import com.ds.goroute.service.PlaceTranslationService;
 import com.ds.goroute.service.ImageMigrationService;
 import com.ds.goroute.service.ImageStorageCleanupService;
-import com.ds.goroute.type.PlaceGroup;
 import com.ds.goroute.type.PlaceVisibilityStatus;
-import com.ds.goroute.utils.CitySlugResolver;
-import com.ds.goroute.utils.DestinationMatchUtils;
 import com.ds.goroute.utils.FoodNameResolver;
 import com.ds.goroute.utils.GeoDistanceUtils;
 import com.ds.goroute.utils.JsonUtils;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -66,8 +63,6 @@ public class PlaceServiceImpl implements PlaceService {
     private final ObjectMapper objectMapper;
 
     private static final Integer maxReview = 50;
-    private static final int MAX_PLACE_LUCENE_FETCH = 500;
-
     @Override
     @Transactional
     public PlaceResponse importPlace(ImportPlaceRequest request) {
@@ -208,208 +203,38 @@ public class PlaceServiceImpl implements PlaceService {
                                             BigDecimal minRating, String citySlug, List<UUID> foodIds,
                                             Boolean excludeLinkedFoodPlaces, boolean includeInactive,
                                             Float minLuceneScore, int page, int size) {
-        if (keyword != null && !keyword.trim().isEmpty()) {
-            List<Place> places = searchPlacesByTitleLucene(
-                    keyword.trim(),
-                    latitude,
-                    longitude,
-                    radius,
-                    category,
-                    placeGroups,
-                    minRating,
-                    citySlug,
-                    foodIds,
-                    excludeLinkedFoodPlaces,
-                    includeInactive,
-                    minLuceneScore,
-                    page,
-                    size);
-            List<PlaceResponse> responses = places.stream()
-                    .map(this::toPlaceResponse)
-                    .collect(Collectors.toList());
-            attachFoodTags(responses);
-            return responses;
-        }
-
-        int offset = page * size;
-        boolean extended = (foodIds != null && !foodIds.isEmpty())
-                || (citySlug != null && !citySlug.isBlank())
-                || Boolean.TRUE.equals(excludeLinkedFoodPlaces);
-
-        String citySlugJson = null;
-        if (citySlug != null && !citySlug.isBlank()) {
-            citySlugJson = CitySlugResolver.toJsonbFilter(citySlug);
-        }
-
-        List<Place> places;
-        if (extended) {
-            places = placeRepository.findNearbyExtended(
-                    null, latitude, longitude, radius, category, placeGroups, minRating,
-                    citySlugJson, foodIds, excludeLinkedFoodPlaces, includeInactive, size, offset);
-        } else {
-            places = placeRepository.findNearby(
-                    null, latitude, longitude, radius, category, placeGroups, minRating, includeInactive, size, offset);
-        }
-
-        List<PlaceResponse> responses = places.stream()
-                .map(this::toPlaceResponse)
-                .collect(Collectors.toList());
-        attachFoodTags(responses);
-        return responses;
-    }
-
-    private List<Place> searchPlacesByTitleLucene(
-            String keyword,
-            BigDecimal latitude,
-            BigDecimal longitude,
-            BigDecimal radius,
-            String category,
-            List<String> placeGroups,
-            BigDecimal minRating,
-            String citySlug,
-            List<UUID> foodIds,
-            Boolean excludeLinkedFoodPlaces,
-            boolean includeInactive,
-            Float minLuceneScore,
-            int page,
-            int size) {
         try {
-            List<UUID> orderedIds = placeSearchIndexService.searchTitleIds(
-                    keyword, MAX_PLACE_LUCENE_FETCH, minLuceneScore);
+            PlaceSearchCriteria criteria = new PlaceSearchCriteria(
+                    keyword, latitude, longitude, radius, category, placeGroups, minRating,
+                    citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, minLuceneScore, page, size);
+            List<UUID> orderedIds = placeSearchIndexService.searchPlaceIds(criteria);
             if (orderedIds.isEmpty()) {
                 return List.of();
             }
 
             Map<UUID, Place> placesById = placeRepository.findByIds(orderedIds).stream()
                     .collect(Collectors.toMap(Place::getId, place -> place, (left, right) -> left));
-
-            List<Place> matched = new ArrayList<>();
+            List<Place> places = new ArrayList<>(orderedIds.size());
             for (UUID id : orderedIds) {
                 Place place = placesById.get(id);
-                if (place == null || !matchesPlaceSearchFilters(
-                        place,
-                        latitude,
-                        longitude,
-                        radius,
-                        category,
-                        placeGroups,
-                        minRating,
-                        citySlug,
-                        includeInactive)) {
-                    continue;
-                }
-                matched.add(place);
-            }
-
-            if (Boolean.TRUE.equals(excludeLinkedFoodPlaces) || (foodIds != null && !foodIds.isEmpty())) {
-                matched = applyExtendedFoodFilters(matched, foodIds, excludeLinkedFoodPlaces);
-            }
-
-            if (latitude != null && longitude != null) {
-                for (Place place : matched) {
+                if (place != null) {
                     place.setDistance(GeoDistanceUtils.distanceKm(
                             latitude, longitude, place.getLatitude(), place.getLongitude()));
+                    places.add(place);
                 }
-                // Keep Lucene relevance order for keyword search (do not re-sort by distance).
             }
 
-            return matched.stream()
-                    .skip((long) page * size)
-                    .limit(size)
+            List<PlaceResponse> responses = places.stream()
+                    .map(this::toPlaceResponse)
                     .collect(Collectors.toList());
+            attachFoodTags(responses);
+            return responses;
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Place Lucene search failed", e);
             throw new BusinessException(ErrorConstant.INTERNAL_SERVER_ERROR, "Place search failed");
         }
-    }
-
-    private boolean matchesPlaceSearchFilters(
-            Place place,
-            BigDecimal latitude,
-            BigDecimal longitude,
-            BigDecimal radius,
-            String category,
-            List<String> placeGroups,
-            BigDecimal minRating,
-            String citySlug,
-            boolean includeInactive) {
-        if (!includeInactive && place.getVisibilityStatus() != PlaceVisibilityStatus.ACTIVE) {
-            return false;
-        }
-        if (category != null && !category.isBlank()
-                && (place.getCategory() == null || !category.equalsIgnoreCase(place.getCategory()))) {
-            return false;
-        }
-
-        if (placeGroups != null && !placeGroups.isEmpty()) {
-            PlaceGroup group = place.getPlaceGroup();
-            if (group == null || placeGroups.stream().noneMatch(g -> g.equalsIgnoreCase(group.name()))) {
-                return false;
-            }
-        }
-
-        if (minRating != null
-                && (place.getReviewRating() == null || place.getReviewRating().compareTo(minRating) < 0)) {
-            return false;
-        }
-
-        if (latitude != null && longitude != null && radius != null) {
-            double distanceKm = GeoDistanceUtils.distanceKm(
-                    latitude, longitude, place.getLatitude(), place.getLongitude());
-            if (distanceKm > radius.doubleValue()) {
-                return false;
-            }
-        }
-
-        if (citySlug != null && !citySlug.isBlank() && !matchesCitySlug(place, citySlug)) {
-            return false;
-        }
-
-        return true;
-    }
-
-    private boolean matchesCitySlug(Place place, String citySlug) {
-        String normalizedSlug = DestinationMatchUtils.normalizeKey(CitySlugResolver.normalizeRequired(citySlug));
-        List<String> destinations = JsonUtils.fromJson(place.getDestinations(), new TypeReference<List<String>>() {});
-        if (destinations == null || destinations.isEmpty()) {
-            return false;
-        }
-        return destinations.stream()
-                .map(DestinationMatchUtils::normalizeKey)
-                .anyMatch(normalizedSlug::equals);
-    }
-
-    private List<Place> applyExtendedFoodFilters(
-            List<Place> places,
-            List<UUID> foodIds,
-            Boolean excludeLinkedFoodPlaces) {
-        if (places.isEmpty()) {
-            return places;
-        }
-
-        List<UUID> placeIds = places.stream().map(Place::getId).filter(Objects::nonNull).toList();
-        List<FoodTagRow> tagRows = foodRepository.findFoodTagsByPlaceIds(placeIds);
-        Map<UUID, Set<UUID>> foodIdsByPlace = new HashMap<>();
-        for (FoodTagRow row : tagRows) {
-            foodIdsByPlace.computeIfAbsent(row.getPlaceId(), ignored -> new HashSet<>()).add(row.getFoodId());
-        }
-
-        Set<UUID> requiredFoodIds = foodIds == null
-                ? Set.of()
-                : foodIds.stream().filter(Objects::nonNull).collect(Collectors.toSet());
-
-        return places.stream()
-                .filter(place -> {
-                    Set<UUID> linkedFoodIds = foodIdsByPlace.getOrDefault(place.getId(), Set.of());
-                    if (Boolean.TRUE.equals(excludeLinkedFoodPlaces) && !linkedFoodIds.isEmpty()) {
-                        return false;
-                    }
-                    if (!requiredFoodIds.isEmpty()) {
-                        return linkedFoodIds.stream().anyMatch(requiredFoodIds::contains);
-                    }
-                    return true;
-                })
-                .collect(Collectors.toList());
     }
 
     @Override

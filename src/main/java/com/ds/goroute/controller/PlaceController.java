@@ -1,6 +1,7 @@
 package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.request.BatchUpdatePlaceImagesRequest;
+import com.ds.goroute.dto.PlaceSearchCriteria;
 import com.ds.goroute.dto.request.ImportPlaceRequest;
 import com.ds.goroute.dto.request.UpdatePlaceRequest;
 import com.ds.goroute.dto.response.PlaceResponse;
@@ -13,9 +14,14 @@ import com.ds.goroute.service.PlaceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -27,6 +33,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/places")
 @RequiredArgsConstructor
 @Slf4j
+@Validated
 @Tag(name = "Places", description = "Place management APIs")
 public class PlaceController extends BaseService {
 
@@ -72,9 +79,9 @@ public class PlaceController extends BaseService {
     @Operation(summary = "Search places by location and filters")
     public ResponseEntity searchPlaces(
             @RequestParam(required = false) String keyword,
-            @RequestParam BigDecimal latitude,
-            @RequestParam BigDecimal longitude,
-            @RequestParam(defaultValue = "0.1") BigDecimal radius,
+            @RequestParam @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
+            @RequestParam @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
+            @RequestParam(defaultValue = "0.1") @DecimalMin(value = "0", inclusive = false) BigDecimal radius,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) List<String> placeGroups,
             @RequestParam(required = false) BigDecimal minRating,
@@ -83,8 +90,8 @@ public class PlaceController extends BaseService {
             @RequestParam(required = false) Boolean excludeLinkedFoodPlaces,
             @RequestParam(defaultValue = "false") boolean includeInactive,
             @RequestParam(required = false) Float minLuceneScore,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(PlaceSearchCriteria.MAX_PAGE_SIZE) int size
     ) {
         List<PlaceResponse> responses = placeService.searchPlaces(
                 keyword, latitude, longitude, radius, category, placeGroups, minRating,

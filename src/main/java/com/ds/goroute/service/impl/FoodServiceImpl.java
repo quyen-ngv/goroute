@@ -15,6 +15,7 @@ import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.ExchangeRateService;
 import com.ds.goroute.service.FoodService;
 import com.ds.goroute.service.ImageStorageCleanupService;
+import com.ds.goroute.service.PlaceSearchIndexService;
 import com.ds.goroute.utils.CitySlugResolver;
 import com.ds.goroute.utils.FoodNameResolver;
 import com.ds.goroute.utils.FoodScoreLabelResolver;
@@ -44,6 +45,7 @@ public class FoodServiceImpl implements FoodService {
     private final PlaceRepository placeRepository;
     private final ExchangeRateService exchangeRateService;
     private final ImageStorageCleanupService imageStorageCleanupService;
+    private final PlaceSearchIndexService placeSearchIndexService;
 
     @Override
     @Cacheable(
@@ -160,19 +162,21 @@ public class FoodServiceImpl implements FoodService {
     @Override
     @Transactional
     public void adminLinkFoodToPlace(UUID placeId, UUID foodId) {
-        placeRepository.findById(placeId)
+        var place = placeRepository.findById(placeId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND));
         ensureFoodExists(foodId);
         foodRepository.linkPlace(placeId, foodId);
+        placeSearchIndexService.indexPlace(place);
     }
 
     @Override
     @Transactional
     public void adminUnlinkFoodFromPlace(UUID placeId, UUID foodId) {
-        placeRepository.findById(placeId)
+        var place = placeRepository.findById(placeId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND));
         ensureFoodExists(foodId);
         foodRepository.unlinkPlace(placeId, foodId);
+        placeSearchIndexService.indexPlace(place);
     }
 
     @Override
@@ -266,8 +270,10 @@ public class FoodServiceImpl implements FoodService {
         if (foodRepository.findFoodById(foodId).isEmpty()) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Food not found");
         }
+        List<UUID> linkedPlaceIds = foodRepository.findPlaceIdsByFoodId(foodId);
         imageStorageCleanupService.deleteImagesForEntityRecord("FOOD", foodId);
         foodRepository.deleteFood(foodId);
+        reindexPlaces(linkedPlaceIds);
     }
 
     @Override
@@ -358,9 +364,10 @@ public class FoodServiceImpl implements FoodService {
     @Transactional
     public void adminLinkPlace(UUID foodId, LinkFoodPlaceRequest request) {
         ensureFoodExists(foodId);
-        placeRepository.findById(request.getPlaceId())
+        var place = placeRepository.findById(request.getPlaceId())
                 .orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND));
         foodRepository.linkPlace(request.getPlaceId(), foodId);
+        placeSearchIndexService.indexPlace(place);
     }
 
     @Override
@@ -368,9 +375,10 @@ public class FoodServiceImpl implements FoodService {
     public void adminBatchLinkPlaces(UUID foodId, BatchLinkFoodPlacesRequest request) {
         ensureFoodExists(foodId);
         for (UUID placeId : request.getPlaceIds()) {
-            if (placeRepository.findById(placeId).isPresent()) {
+            placeRepository.findById(placeId).ifPresent(place -> {
                 foodRepository.linkPlace(placeId, foodId);
-            }
+                placeSearchIndexService.indexPlace(place);
+            });
         }
     }
 
@@ -379,6 +387,16 @@ public class FoodServiceImpl implements FoodService {
     public void adminUnlinkPlace(UUID foodId, UUID placeId) {
         ensureFoodExists(foodId);
         foodRepository.unlinkPlace(placeId, foodId);
+        placeRepository.findById(placeId).ifPresent(placeSearchIndexService::indexPlace);
+    }
+
+    private void reindexPlaces(List<UUID> placeIds) {
+        if (placeIds == null) {
+            return;
+        }
+        for (UUID placeId : placeIds) {
+            placeRepository.findById(placeId).ifPresent(placeSearchIndexService::indexPlace);
+        }
     }
 
     private void ensureFoodExists(UUID foodId) {

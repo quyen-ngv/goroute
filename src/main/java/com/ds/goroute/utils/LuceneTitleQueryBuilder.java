@@ -6,11 +6,13 @@ import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.BoostQuery;
 import org.apache.lucene.search.FuzzyQuery;
 import org.apache.lucene.search.PrefixQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.WildcardQuery;
 
+import java.text.Normalizer;
 import java.util.Locale;
 
 /**
@@ -19,6 +21,11 @@ import java.util.Locale;
 public final class LuceneTitleQueryBuilder {
 
     private static final String NAME_FIELD = "name";
+    private static final float PHRASE_BOOST = 10.0f;
+    private static final float TOKEN_QUERY_BOOST = 4.0f;
+    private static final float PREFIX_BOOST = 2.0f;
+    private static final float FUZZY_BOOST = 0.75f;
+    private static final float SUBSTRING_BOOST = 0.25f;
 
     private LuceneTitleQueryBuilder() {
     }
@@ -35,7 +42,12 @@ public final class LuceneTitleQueryBuilder {
         parser.setAllowLeadingWildcard(true);
 
         try {
-            builder.add(parser.parse(QueryParser.escape(query)), BooleanClause.Occur.SHOULD);
+            String escapedQuery = QueryParser.escape(query);
+            builder.add(new BoostQuery(parser.parse(escapedQuery), TOKEN_QUERY_BOOST), BooleanClause.Occur.SHOULD);
+            if (query.chars().anyMatch(Character::isWhitespace)) {
+                builder.add(new BoostQuery(parser.parse("\"" + escapedQuery + "\""), PHRASE_BOOST),
+                        BooleanClause.Occur.SHOULD);
+            }
         } catch (ParseException ignored) {
             // Fall back to prefix / wildcard / fuzzy clauses below.
         }
@@ -47,13 +59,16 @@ public final class LuceneTitleQueryBuilder {
                 continue;
             }
 
-            builder.add(new PrefixQuery(new Term(NAME_FIELD, normalized)), BooleanClause.Occur.SHOULD);
+            builder.add(new BoostQuery(new PrefixQuery(new Term(NAME_FIELD, normalized)), PREFIX_BOOST),
+                    BooleanClause.Occur.SHOULD);
             builder.add(
-                    new WildcardQuery(new Term(NAME_FIELD, "*" + normalized + "*")),
+                    new BoostQuery(new WildcardQuery(new Term(NAME_FIELD, "*" + normalized + "*")),
+                            SUBSTRING_BOOST),
                     BooleanClause.Occur.SHOULD);
 
             if (normalized.length() >= 4) {
-                builder.add(new FuzzyQuery(new Term(NAME_FIELD, normalized), 1), BooleanClause.Occur.SHOULD);
+                builder.add(new BoostQuery(new FuzzyQuery(new Term(NAME_FIELD, normalized), 1), FUZZY_BOOST),
+                        BooleanClause.Occur.SHOULD);
             }
         }
 
@@ -73,9 +88,13 @@ public final class LuceneTitleQueryBuilder {
         if (token == null || token.isBlank()) {
             return "";
         }
-        return token.replace("\\", "")
+        String cleaned = token.replace("\\", "")
                 .replace("*", "")
                 .replace("?", "")
                 .trim();
+        return Normalizer.normalize(cleaned, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .replace('\u0111', 'd')
+                .replace('\u0110', 'd');
     }
 }

@@ -276,6 +276,10 @@
         DELETE FROM place_foods WHERE place_id = #{placeId} AND food_id = #{foodId}
     </delete>
 
+    <select id="findPlaceIdsByFoodId" resultType="java.util.UUID">
+        SELECT place_id FROM place_foods WHERE food_id = #{foodId}
+    </select>
+
     <select id="countLinkedPlaces" resultType="long">
         SELECT COUNT(DISTINCT p.id)
         FROM places p

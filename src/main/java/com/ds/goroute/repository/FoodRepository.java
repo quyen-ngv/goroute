@@ -49,6 +49,8 @@ public interface FoodRepository {
 
     void unlinkPlace(UUID placeId, UUID foodId);
 
+    List<UUID> findPlaceIdsByFoodId(UUID foodId);
+
     long countLinkedPlaces(UUID foodId, String citySlugJson);
 
     List<FoodPlaceRow> findPlacesByFood(UUID foodId, String citySlugJson, BigDecimal lat, BigDecimal lng,

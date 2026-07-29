@@ -33,15 +33,6 @@ public interface PlaceRepository {
 
     List<Place> findByIds(List<UUID> ids);
 
-    List<Place> findNearby(String keyword, BigDecimal latitude, BigDecimal longitude, BigDecimal radius,
-                          String category, List<String> placeGroups, BigDecimal minRating,
-                          boolean includeInactive, int limit, int offset);
-
-    List<Place> findNearbyExtended(String keyword, BigDecimal latitude, BigDecimal longitude, BigDecimal radius,
-                                   String category, List<String> placeGroups, BigDecimal minRating, String citySlugJson,
-                                   List<UUID> foodIds, Boolean excludeLinkedFoodPlaces, boolean includeInactive,
-                                   int limit, int offset);
-
     List<Place> findForAiByDestination(String citySlugJson, BigDecimal latitude, BigDecimal longitude,
                                        String placeGroup, BigDecimal minRating, int limit);
 

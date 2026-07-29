@@ -51,6 +51,8 @@ public interface FoodMapper {
 
     void deletePlaceFood(@Param("placeId") UUID placeId, @Param("foodId") UUID foodId);
 
+    List<UUID> findPlaceIdsByFoodId(@Param("foodId") UUID foodId);
+
     long countLinkedPlaces(@Param("foodId") UUID foodId, @Param("citySlugJson") String citySlugJson);
 
     List<FoodPlaceRow> findPlacesByFood(

@@ -1,10 +1,11 @@
 package com.ds.goroute.service;
 
+import com.ds.goroute.dto.PlaceSearchCriteria;
+import com.ds.goroute.entity.Place;
+
 import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
-
-import com.ds.goroute.entity.Place;
 
 public interface PlaceSearchIndexService {
 
@@ -14,11 +15,9 @@ public interface PlaceSearchIndexService {
 
     void triggerReindex();
 
-    List<UUID> searchTitleIds(String query, int maxResults) throws IOException;
-
     /**
-     * Title search ordered by Lucene relevance. When {@code minLuceneScore} is set,
-     * only hits with score &gt;= that threshold are returned.
+     * Searches and paginates places in Lucene. Text relevance, geo radius, distance
+     * boost, and structured place filters are evaluated in the same index query.
      */
-    List<UUID> searchTitleIds(String query, int maxResults, Float minLuceneScore) throws IOException;
+    List<UUID> searchPlaceIds(PlaceSearchCriteria criteria) throws IOException;
 }
