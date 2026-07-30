@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.AppConfigMapper">
+    <resultMap id="appConfigMap" type="com.ds.goroute.entity.AppConfig">
+        <id property="id" column="id"/>
+        <result property="label" column="label"/>
+        <result property="key" column="key"/>
+        <result property="value" column="value"/>
+        <result property="description" column="description"/>
+        <result property="isActive" column="is_active"/>
+        <result property="dataVersion" column="data_version"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="columns">id, label, key, value, description, is_active, data_version, created_at, updated_at</sql>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.AppConfig">
+        INSERT INTO config (id, label, key, value, description, is_active, data_version, created_at, updated_at)
+        VALUES (#{id}, #{label}, #{key}, #{value}, #{description}, #{isActive}, #{dataVersion}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <update id="update" parameterType="com.ds.goroute.entity.AppConfig">
+        UPDATE config
+        SET label = #{label}, key = #{key}, value = #{value}, description = #{description},
+            is_active = #{isActive}, data_version = data_version + 1, updated_at = #{updatedAt}
+        WHERE id = #{id} AND data_version = #{dataVersion}
+    </update>
+
+    <delete id="delete">
+        DELETE FROM config WHERE id = #{id}
+    </delete>
+
+    <select id="findById" resultMap="appConfigMap">
+        SELECT <include refid="columns"/> FROM config WHERE id = #{id}
+    </select>
+
+    <select id="findActiveByLabelAndKey" resultMap="appConfigMap">
+        SELECT <include refid="columns"/> FROM config
+        WHERE label = #{label} AND key = #{key} AND is_active = TRUE
+    </select>
+
+    <select id="findAdmin" resultMap="appConfigMap">
+        SELECT <include refid="columns"/> FROM config
+        <where>
+            <if test="query != null and query != ''">
+                AND (label ILIKE CONCAT('%', #{query}, '%') OR key ILIKE CONCAT('%', #{query}, '%')
+                     OR value ILIKE CONCAT('%', #{query}, '%') OR description ILIKE CONCAT('%', #{query}, '%'))
+            </if>
+            <if test="label != null and label != ''">AND label = #{label}</if>
+            <if test="active != null">AND is_active = #{active}</if>
+        </where>
+        ORDER BY label, key
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+</mapper>

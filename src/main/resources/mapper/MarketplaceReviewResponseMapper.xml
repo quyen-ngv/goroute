@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.MarketplaceReviewResponseMapper">
+    <resultMap id="ViewMap" type="com.ds.goroute.entity.MarketplaceReviewView">
+        <id property="reviewId" column="review_id"/><result property="reviewerUserId" column="reviewer_user_id"/>
+        <result property="reviewerName" column="reviewer_name"/><result property="placeId" column="place_id"/>
+        <result property="hotelId" column="hotel_id"/><result property="activityBookingId" column="activity_booking_id"/>
+        <result property="subjectName" column="subject_name"/><result property="overallRating" column="overall_rating"/>
+        <result property="reviewText" column="review_text"/><result property="photos" column="photos"/>
+        <result property="reviewCreatedAt" column="review_created_at"/><result property="responseId" column="response_id"/>
+        <result property="organizationId" column="organization_id"/><result property="responderUserId" column="responder_user_id"/>
+        <result property="responderName" column="responder_name"/><result property="responseText" column="response_text"/>
+        <result property="responseStatus" column="response_status"/><result property="responseVersion" column="response_version"/>
+        <result property="responseCreatedAt" column="response_created_at"/><result property="responseUpdatedAt" column="response_updated_at"/>
+    </resultMap>
+    <sql id="ViewSelect">
+        SELECT r.id AS review_id,r.user_id AS reviewer_user_id,ru.full_name AS reviewer_name,
+          r.place_id,h.id AS hotel_id,r.activity_booking_id,COALESCE(p.title,a.title) AS subject_name,
+          r.overall_rating,r.text AS review_text,r.photos,r.created_at AS review_created_at,
+          rr.id AS response_id,COALESCE(rr.organization_id,h.organization_id,a.host_organization_id) AS organization_id,rr.responder_user_id,res.full_name AS responder_name,
+          rr.response_text,rr.status AS response_status,rr.data_version AS response_version,
+          rr.created_at AS response_created_at,rr.updated_at AS response_updated_at
+        FROM user_reviews r JOIN users ru ON ru.id=r.user_id
+          LEFT JOIN hotel_profiles h ON h.place_id=r.place_id LEFT JOIN places p ON p.id=h.place_id
+          LEFT JOIN activity_bookings a ON a.id=r.activity_booking_id
+          LEFT JOIN marketplace_review_responses rr ON rr.review_id=r.id AND rr.organization_id=#{organizationId}
+          LEFT JOIN users res ON res.id=rr.responder_user_id
+    </sql>
+    <select id="findReview" resultMap="ViewMap"><include refid="ViewSelect"/> WHERE r.id=#{reviewId} AND (h.organization_id=#{organizationId} OR a.host_organization_id=#{organizationId})</select>
+    <select id="findByOrganization" resultMap="ViewMap"><include refid="ViewSelect"/> WHERE h.organization_id=#{organizationId} OR a.host_organization_id=#{organizationId} ORDER BY r.created_at DESC LIMIT #{limit} OFFSET #{offset}</select>
+    <select id="findAdmin" resultMap="ViewMap">
+        SELECT r.id AS review_id,r.user_id AS reviewer_user_id,ru.full_name AS reviewer_name,
+          r.place_id,h.id AS hotel_id,r.activity_booking_id,COALESCE(p.title,a.title) AS subject_name,
+          r.overall_rating,r.text AS review_text,r.photos,r.created_at AS review_created_at,
+          rr.id AS response_id,COALESCE(rr.organization_id,h.organization_id,a.host_organization_id) AS organization_id,rr.responder_user_id,res.full_name AS responder_name,
+          rr.response_text,rr.status AS response_status,rr.data_version AS response_version,
+          rr.created_at AS response_created_at,rr.updated_at AS response_updated_at
+        FROM user_reviews r JOIN users ru ON ru.id=r.user_id
+          LEFT JOIN hotel_profiles h ON h.place_id=r.place_id LEFT JOIN places p ON p.id=r.place_id
+          LEFT JOIN activity_bookings a ON a.id=r.activity_booking_id
+          LEFT JOIN marketplace_review_responses rr ON rr.review_id=r.id LEFT JOIN users res ON res.id=rr.responder_user_id
+        <if test="query != null and query != ''">
+          WHERE (p.title ILIKE CONCAT('%',#{query},'%')
+            OR a.title ILIKE CONCAT('%',#{query},'%') OR r.text ILIKE CONCAT('%',#{query},'%'))
+        </if>
+        ORDER BY r.created_at DESC LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <insert id="insertResponse">INSERT INTO marketplace_review_responses(id,review_id,organization_id,responder_user_id,response_text,status,data_version,created_at,updated_at)VALUES(#{id},#{reviewId},#{organizationId},#{actor},#{text},#{status},1,#{now},#{now})</insert>
+    <update id="updateResponse">UPDATE marketplace_review_responses SET responder_user_id=#{actor},response_text=#{text},status=#{status},data_version=data_version+1,updated_at=#{now} WHERE review_id=#{reviewId} AND organization_id=#{organizationId} AND data_version=#{expectedVersion}</update>
+</mapper>

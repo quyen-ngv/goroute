@@ -1,0 +1,269 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.HotelMarketplaceMapper">
+    <resultMap id="HotelMap" type="com.ds.goroute.entity.HotelProfile">
+        <id property="id" column="id"/><result property="organizationId" column="organization_id"/>
+        <result property="placeId" column="place_id"/><result property="placeTitle" column="place_title"/>
+        <result property="placeAddress" column="place_address"/><result property="placeThumbnail" column="place_thumbnail"/>
+        <result property="propertyCode" column="property_code"/><result property="propertyType" column="property_type"/>
+        <result property="starRating" column="star_rating"/><result property="description" column="description"/>
+        <result property="checkInTime" column="check_in_time"/><result property="checkOutTime" column="check_out_time"/>
+        <result property="timezone" column="timezone"/><result property="amenities" column="amenities"/>
+        <result property="policies" column="policies"/><result property="bookingContact" column="booking_contact"/>
+        <result property="status" column="status"/><result property="disabledReason" column="disabled_reason"/>
+        <result property="dataVersion" column="data_version"/><result property="createdBy" column="created_by"/>
+        <result property="updatedBy" column="updated_by"/><result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+    <resultMap id="RoomMap" type="com.ds.goroute.entity.RoomType">
+        <id property="id" column="id"/><result property="hotelId" column="hotel_id"/>
+        <result property="code" column="code"/><result property="name" column="name"/>
+        <result property="description" column="description"/><result property="maxAdults" column="max_adults"/>
+        <result property="maxChildren" column="max_children"/><result property="maxOccupancy" column="max_occupancy"/>
+        <result property="bedConfig" column="bed_config"/><result property="amenities" column="amenities"/>
+        <result property="images" column="images"/><result property="roomSizeSqm" column="room_size_sqm"/>
+        <result property="totalUnits" column="total_units"/><result property="status" column="status"/>
+        <result property="disabledReason" column="disabled_reason"/><result property="dataVersion" column="data_version"/>
+        <result property="createdBy" column="created_by"/><result property="updatedBy" column="updated_by"/>
+        <result property="createdAt" column="created_at"/><result property="updatedAt" column="updated_at"/>
+    </resultMap>
+    <resultMap id="RateMap" type="com.ds.goroute.entity.RatePlan">
+        <id property="id" column="id"/><result property="roomTypeId" column="room_type_id"/>
+        <result property="code" column="code"/><result property="name" column="name"/>
+        <result property="currency" column="currency"/><result property="basePrice" column="base_price"/>
+        <result property="mealPlan" column="meal_plan"/><result property="cancellationPolicy" column="cancellation_policy"/>
+        <result property="occupancyPricing" column="occupancy_pricing"/><result property="minStay" column="min_stay"/>
+        <result property="maxStay" column="max_stay"/><result property="status" column="status"/>
+        <result property="dataVersion" column="data_version"/><result property="createdBy" column="created_by"/>
+        <result property="updatedBy" column="updated_by"/><result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+    <resultMap id="InventoryMap" type="com.ds.goroute.entity.RoomInventoryDaily">
+        <id property="roomTypeId" column="room_type_id"/><id property="inventoryDate" column="inventory_date"/>
+        <result property="totalUnits" column="total_units"/><result property="reservedUnits" column="reserved_units"/>
+        <result property="soldUnits" column="sold_units"/><result property="blockedUnits" column="blocked_units"/>
+        <result property="availableUnits" column="available_units"/><result property="stopSell" column="stop_sell"/>
+        <result property="priceOverride" column="price_override"/><result property="minStay" column="min_stay"/>
+        <result property="closedToArrival" column="closed_to_arrival"/>
+        <result property="closedToDeparture" column="closed_to_departure"/>
+        <result property="dataVersion" column="data_version"/><result property="updatedBy" column="updated_by"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+    <resultMap id="AvailabilityMap" type="com.ds.goroute.entity.HotelAvailabilityDay">
+        <result property="inventoryDate" column="inventory_date"/><result property="availableUnits" column="available_units"/>
+        <result property="stopSell" column="stop_sell"/><result property="closedToArrival" column="closed_to_arrival"/>
+        <result property="closedToDeparture" column="closed_to_departure"/><result property="minStay" column="min_stay"/>
+        <result property="nightlyPrice" column="nightly_price"/><result property="currency" column="currency"/>
+    </resultMap>
+    <resultMap id="BookingMap" type="com.ds.goroute.entity.HotelBooking">
+        <id property="id" column="id"/><result property="bookingCode" column="booking_code"/>
+        <result property="userId" column="user_id"/><result property="organizationId" column="organization_id"/>
+        <result property="hotelId" column="hotel_id"/><result property="hotelName" column="hotel_name"/>
+        <result property="checkInDate" column="check_in_date"/><result property="checkOutDate" column="check_out_date"/>
+        <result property="adults" column="adults"/><result property="children" column="children"/>
+        <result property="guestLead" column="guest_lead"/><result property="currency" column="currency"/>
+        <result property="subtotalAmount" column="subtotal_amount"/><result property="taxAmount" column="tax_amount"/>
+        <result property="feeAmount" column="fee_amount"/><result property="discountAmount" column="discount_amount"/>
+        <result property="totalAmount" column="total_amount"/><result property="bookingStatus" column="booking_status"/>
+        <result property="paymentStatus" column="payment_status"/><result property="source" column="source"/>
+        <result property="cancellationReason" column="cancellation_reason"/><result property="cancelledAt" column="cancelled_at"/>
+        <result property="snapshot" column="snapshot"/><result property="dataVersion" column="data_version"/>
+        <result property="createdBy" column="created_by"/><result property="updatedBy" column="updated_by"/>
+        <result property="createdAt" column="created_at"/><result property="updatedAt" column="updated_at"/>
+    </resultMap>
+    <resultMap id="BookingItemMap" type="com.ds.goroute.entity.HotelBookingItem">
+        <id property="id" column="id"/><result property="bookingId" column="booking_id"/>
+        <result property="roomTypeId" column="room_type_id"/><result property="ratePlanId" column="rate_plan_id"/>
+        <result property="roomTypeName" column="room_type_name"/><result property="ratePlanName" column="rate_plan_name"/>
+        <result property="quantity" column="quantity"/><result property="adults" column="adults"/>
+        <result property="children" column="children"/><result property="unitPrice" column="unit_price"/>
+        <result property="totalPrice" column="total_price"/><result property="snapshot" column="snapshot"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <sql id="HotelSelect">
+        SELECT h.*, p.title AS place_title, p.address AS place_address, p.thumbnail AS place_thumbnail
+        FROM hotel_profiles h JOIN places p ON p.id = h.place_id
+    </sql>
+    <sql id="BookingSelect">
+        SELECT b.*, p.title AS hotel_name FROM hotel_bookings b
+        JOIN hotel_profiles h ON h.id = b.hotel_id JOIN places p ON p.id = h.place_id
+    </sql>
+
+    <insert id="insertHotel">
+        INSERT INTO hotel_profiles (id, organization_id, place_id, property_code, property_type, star_rating,
+          description, check_in_time, check_out_time, timezone, amenities, policies, booking_contact, status,
+          disabled_reason, data_version, created_by, updated_by, created_at, updated_at)
+        VALUES (#{id}, #{organizationId}, #{placeId}, #{propertyCode}, #{propertyType}, #{starRating}, #{description},
+          #{checkInTime}, #{checkOutTime}, #{timezone}, #{amenities}::jsonb, #{policies}::jsonb,
+          #{bookingContact}::jsonb, #{status}, #{disabledReason}, #{dataVersion}, #{createdBy}, #{updatedBy},
+          #{createdAt}, #{updatedAt})
+    </insert>
+    <update id="updateHotel">
+        UPDATE hotel_profiles SET property_code=#{propertyCode}, property_type=#{propertyType}, star_rating=#{starRating},
+          description=#{description}, check_in_time=#{checkInTime}, check_out_time=#{checkOutTime}, timezone=#{timezone},
+          amenities=#{amenities}::jsonb, policies=#{policies}::jsonb, booking_contact=#{bookingContact}::jsonb,
+          status=#{status}, disabled_reason=#{disabledReason}, data_version=data_version+1, updated_by=#{updatedBy},
+          updated_at=#{updatedAt} WHERE id=#{id} AND data_version=#{dataVersion}
+    </update>
+    <select id="findHotelById" resultMap="HotelMap"><include refid="HotelSelect"/> WHERE h.id=#{id}</select>
+    <select id="findHotelsByOrganization" resultMap="HotelMap">
+        <include refid="HotelSelect"/> WHERE h.organization_id=#{organizationId} ORDER BY h.created_at DESC
+    </select>
+    <select id="findHotelsPublic" resultMap="HotelMap">
+        <include refid="HotelSelect"/> JOIN host_organizations o ON o.id=h.organization_id
+        WHERE h.status='ENABLED' AND p.lifecycle_status='ACTIVE' AND o.operational_status='ENABLED'
+        AND o.verification_status&lt;&gt;'SUSPENDED'
+        <if test="query != null and query != ''">
+            AND (p.title ILIKE CONCAT('%',#{query},'%') OR p.address ILIKE CONCAT('%',#{query},'%'))
+        </if>
+        ORDER BY h.created_at DESC LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <select id="findHotelsAdmin" resultMap="HotelMap">
+        <include refid="HotelSelect"/>
+        <where>
+            <if test="status != null and status != ''">AND h.status=#{status}</if>
+            <if test="query != null and query != ''">
+                AND (p.title ILIKE CONCAT('%',#{query},'%') OR h.property_code ILIKE CONCAT('%',#{query},'%'))
+            </if>
+        </where>
+        ORDER BY h.created_at DESC LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <insert id="insertRoomType">
+        INSERT INTO room_types (id,hotel_id,code,name,description,max_adults,max_children,max_occupancy,bed_config,
+          amenities,images,room_size_sqm,total_units,status,disabled_reason,data_version,created_by,updated_by,created_at,updated_at)
+        VALUES (#{id},#{hotelId},#{code},#{name},#{description},#{maxAdults},#{maxChildren},#{maxOccupancy},#{bedConfig}::jsonb,
+          #{amenities}::jsonb,#{images}::jsonb,#{roomSizeSqm},#{totalUnits},#{status},#{disabledReason},#{dataVersion},
+          #{createdBy},#{updatedBy},#{createdAt},#{updatedAt})
+    </insert>
+    <update id="updateRoomType">
+        UPDATE room_types SET code=#{code},name=#{name},description=#{description},max_adults=#{maxAdults},
+          max_children=#{maxChildren},max_occupancy=#{maxOccupancy},bed_config=#{bedConfig}::jsonb,amenities=#{amenities}::jsonb,
+          images=#{images}::jsonb,room_size_sqm=#{roomSizeSqm},total_units=#{totalUnits},status=#{status},
+          disabled_reason=#{disabledReason},data_version=data_version+1,updated_by=#{updatedBy},updated_at=#{updatedAt}
+        WHERE id=#{id} AND data_version=#{dataVersion}
+    </update>
+    <select id="findRoomTypeById" resultMap="RoomMap">SELECT * FROM room_types WHERE id=#{id}</select>
+    <select id="findRoomTypesByHotel" resultMap="RoomMap">
+        SELECT * FROM room_types WHERE hotel_id=#{hotelId}
+        <if test="!includeDisabled">AND status='ENABLED'</if> ORDER BY created_at
+    </select>
+
+    <insert id="insertRatePlan">
+        INSERT INTO rate_plans (id,room_type_id,code,name,currency,base_price,meal_plan,cancellation_policy,
+          occupancy_pricing,min_stay,max_stay,status,data_version,created_by,updated_by,created_at,updated_at)
+        VALUES (#{id},#{roomTypeId},#{code},#{name},#{currency},#{basePrice},#{mealPlan},#{cancellationPolicy}::jsonb,
+          #{occupancyPricing}::jsonb,#{minStay},#{maxStay},#{status},#{dataVersion},#{createdBy},#{updatedBy},#{createdAt},#{updatedAt})
+    </insert>
+    <update id="updateRatePlan">
+        UPDATE rate_plans SET code=#{code},name=#{name},currency=#{currency},base_price=#{basePrice},meal_plan=#{mealPlan},
+          cancellation_policy=#{cancellationPolicy}::jsonb,occupancy_pricing=#{occupancyPricing}::jsonb,min_stay=#{minStay},
+          max_stay=#{maxStay},status=#{status},data_version=data_version+1,updated_by=#{updatedBy},updated_at=#{updatedAt}
+        WHERE id=#{id} AND data_version=#{dataVersion}
+    </update>
+    <select id="findRatePlanById" resultMap="RateMap">SELECT * FROM rate_plans WHERE id=#{id}</select>
+    <select id="findRatePlansByRoomType" resultMap="RateMap">
+        SELECT * FROM rate_plans WHERE room_type_id=#{roomTypeId}
+        <if test="!includeDisabled">AND status='ENABLED'</if> ORDER BY created_at
+    </select>
+
+    <insert id="upsertInventoryRange">
+        WITH dates AS (SELECT generate_series(#{startDate}::date, #{endDate}::date, interval '1 day')::date AS day)
+        INSERT INTO room_inventory_daily (room_type_id,inventory_date,total_units,reserved_units,sold_units,blocked_units,
+          stop_sell,price_override,min_stay,closed_to_arrival,closed_to_departure,data_version,updated_by,updated_at)
+        SELECT r.id,d.day,COALESCE(#{totalUnits},r.total_units),0,0,COALESCE(#{blockedUnits},0),COALESCE(#{stopSell},false),
+          #{priceOverride},#{minStay},COALESCE(#{closedToArrival},false),COALESCE(#{closedToDeparture},false),1,#{updatedBy},#{updatedAt}
+        FROM room_types r CROSS JOIN dates d WHERE r.id=#{roomTypeId}
+        ON CONFLICT (room_type_id,inventory_date) DO UPDATE SET
+          total_units=COALESCE(#{totalUnits},room_inventory_daily.total_units),
+          blocked_units=COALESCE(#{blockedUnits},room_inventory_daily.blocked_units),
+          stop_sell=COALESCE(#{stopSell},room_inventory_daily.stop_sell),
+          price_override=COALESCE(#{priceOverride},room_inventory_daily.price_override),
+          min_stay=COALESCE(#{minStay},room_inventory_daily.min_stay),
+          closed_to_arrival=COALESCE(#{closedToArrival},room_inventory_daily.closed_to_arrival),
+          closed_to_departure=COALESCE(#{closedToDeparture},room_inventory_daily.closed_to_departure),
+          data_version=room_inventory_daily.data_version+1,updated_by=#{updatedBy},updated_at=#{updatedAt}
+        WHERE room_inventory_daily.reserved_units + room_inventory_daily.sold_units
+          + COALESCE(#{blockedUnits},room_inventory_daily.blocked_units)
+          &lt;= COALESCE(#{totalUnits},room_inventory_daily.total_units)
+    </insert>
+    <select id="findInventory" resultMap="InventoryMap">
+        SELECT i.*, (total_units-reserved_units-sold_units-blocked_units) AS available_units
+        FROM room_inventory_daily i WHERE room_type_id=#{roomTypeId}
+          AND inventory_date BETWEEN #{startDate} AND #{endDate} ORDER BY inventory_date
+    </select>
+    <select id="findAvailability" resultMap="AvailabilityMap">
+        SELECT i.inventory_date,(i.total_units-i.reserved_units-i.sold_units-i.blocked_units) AS available_units,
+          i.stop_sell,i.closed_to_arrival,i.closed_to_departure,COALESCE(i.min_stay,rp.min_stay) AS min_stay,
+          COALESCE(i.price_override,rp.base_price) AS nightly_price,rp.currency
+        FROM room_inventory_daily i JOIN room_types r ON r.id=i.room_type_id
+          JOIN rate_plans rp ON rp.id=#{ratePlanId} AND rp.room_type_id=r.id
+          JOIN hotel_profiles h ON h.id=r.hotel_id
+        WHERE h.id=#{hotelId} AND r.id=#{roomTypeId} AND h.status='ENABLED' AND r.status='ENABLED' AND rp.status='ENABLED'
+          AND i.inventory_date &gt;=#{checkIn} AND i.inventory_date &lt;#{checkOut} ORDER BY i.inventory_date
+    </select>
+    <update id="reserveInventory">
+        UPDATE room_inventory_daily SET reserved_units=reserved_units+#{quantity},data_version=data_version+1,
+          updated_by=#{updatedBy},updated_at=#{updatedAt}
+        WHERE room_type_id=#{roomTypeId} AND inventory_date &gt;=#{checkIn} AND inventory_date &lt;#{checkOut}
+          AND stop_sell=false AND reserved_units+sold_units+blocked_units+#{quantity}&lt;=total_units
+    </update>
+    <update id="confirmReservedInventory">
+        UPDATE room_inventory_daily SET reserved_units=reserved_units-#{quantity},sold_units=sold_units+#{quantity},
+          data_version=data_version+1,updated_by=#{updatedBy},updated_at=#{updatedAt}
+        WHERE room_type_id=#{roomTypeId} AND inventory_date &gt;=#{checkIn} AND inventory_date &lt;#{checkOut}
+          AND reserved_units&gt;=#{quantity}
+    </update>
+    <update id="releaseInventory">
+        UPDATE room_inventory_daily SET
+          reserved_units=reserved_units-CASE WHEN #{fromReserved} THEN #{quantity} ELSE 0 END,
+          sold_units=sold_units-CASE WHEN #{fromReserved} THEN 0 ELSE #{quantity} END,
+          data_version=data_version+1,updated_by=#{updatedBy},updated_at=#{updatedAt}
+        WHERE room_type_id=#{roomTypeId} AND inventory_date &gt;=#{checkIn} AND inventory_date &lt;#{checkOut}
+          AND ((#{fromReserved} AND reserved_units&gt;=#{quantity}) OR (NOT #{fromReserved} AND sold_units&gt;=#{quantity}))
+    </update>
+
+    <insert id="insertBooking">
+        INSERT INTO hotel_bookings (id,booking_code,user_id,organization_id,hotel_id,check_in_date,check_out_date,adults,
+          children,guest_lead,currency,subtotal_amount,tax_amount,fee_amount,discount_amount,total_amount,booking_status,
+          payment_status,source,cancellation_reason,cancelled_at,snapshot,data_version,created_by,updated_by,created_at,updated_at)
+        VALUES (#{id},#{bookingCode},#{userId},#{organizationId},#{hotelId},#{checkInDate},#{checkOutDate},#{adults},
+          #{children},#{guestLead}::jsonb,#{currency},#{subtotalAmount},#{taxAmount},#{feeAmount},#{discountAmount},
+          #{totalAmount},#{bookingStatus},#{paymentStatus},#{source},#{cancellationReason},#{cancelledAt},#{snapshot}::jsonb,
+          #{dataVersion},#{createdBy},#{updatedBy},#{createdAt},#{updatedAt})
+    </insert>
+    <insert id="insertBookingItem">
+        INSERT INTO hotel_booking_items (id,booking_id,room_type_id,rate_plan_id,quantity,adults,children,unit_price,total_price,snapshot,created_at)
+        VALUES (#{id},#{bookingId},#{roomTypeId},#{ratePlanId},#{quantity},#{adults},#{children},#{unitPrice},#{totalPrice},#{snapshot}::jsonb,#{createdAt})
+    </insert>
+    <select id="findBookingById" resultMap="BookingMap"><include refid="BookingSelect"/> WHERE b.id=#{id}</select>
+    <select id="findBookingItems" resultMap="BookingItemMap">
+        SELECT i.*,r.name AS room_type_name,rp.name AS rate_plan_name FROM hotel_booking_items i
+        JOIN room_types r ON r.id=i.room_type_id JOIN rate_plans rp ON rp.id=i.rate_plan_id WHERE i.booking_id=#{bookingId}
+    </select>
+    <select id="findBookingsByUser" resultMap="BookingMap">
+        <include refid="BookingSelect"/> WHERE b.user_id=#{userId} ORDER BY b.created_at DESC LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <select id="findBookingsByOrganization" resultMap="BookingMap">
+        <include refid="BookingSelect"/> WHERE b.organization_id=#{organizationId}
+        <if test="status != null and status != ''">AND b.booking_status=#{status}</if>
+        ORDER BY b.created_at DESC LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <select id="findBookingsAdmin" resultMap="BookingMap">
+        <include refid="BookingSelect"/>
+        <where>
+            <if test="status != null and status != ''">AND b.booking_status=#{status}</if>
+            <if test="query != null and query != ''">
+                AND (b.booking_code ILIKE CONCAT('%',#{query},'%') OR p.title ILIKE CONCAT('%',#{query},'%'))
+            </if>
+        </where>
+        ORDER BY b.created_at DESC LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <update id="updateBookingStatus">
+        UPDATE hotel_bookings SET booking_status=#{bookingStatus},payment_status=COALESCE(#{paymentStatus},payment_status),
+          cancellation_reason=#{cancellationReason},cancelled_at=#{cancelledAt},data_version=data_version+1,
+          updated_by=#{updatedBy},updated_at=#{updatedAt} WHERE id=#{id} AND data_version=#{expectedVersion}
+    </update>
+</mapper>

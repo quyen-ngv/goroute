@@ -23,6 +23,9 @@
         <result column="language" property="language" jdbcType="VARCHAR"/>
         <result column="theme" property="theme" jdbcType="VARCHAR"/>
         <result column="onboarding_completed" property="onboardingCompleted" jdbcType="BOOLEAN"/>
+        <result column="must_change_password" property="mustChangePassword" jdbcType="BOOLEAN"/>
+        <result column="password_changed_at" property="passwordChangedAt" jdbcType="TIMESTAMP"/>
+        <result column="account_status" property="accountStatus" jdbcType="VARCHAR"/>
         <result column="last_login_at" property="lastLoginAt" jdbcType="TIMESTAMP"/>
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
         <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
@@ -33,11 +36,13 @@
         INSERT INTO users (id, email, password_hash, full_name, username, avatar_url, bio, social_links, provider, provider_id,
                           default_currency, default_travel_mode, location_tracking, auto_checkin_radius,
                           budget_alert_threshold, budget_alert_daily, default_trip_visibility, language, theme,
-                          onboarding_completed, created_at, updated_at)
+                          onboarding_completed, must_change_password, password_changed_at, account_status,
+                          created_at, updated_at)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{email}, #{passwordHash}, #{fullName}, #{username},
                 #{avatarUrl}, #{bio}, COALESCE(#{socialLinks,jdbcType=VARCHAR}::jsonb, '{}'::jsonb), #{provider}, #{providerId}, #{defaultCurrency}, #{defaultTravelMode},
                 #{locationTracking}, #{autoCheckinRadius}, #{budgetAlertThreshold}, #{budgetAlertDaily},
-                #{defaultTripVisibility}, #{language}, #{theme}, #{onboardingCompleted}, NOW(), NOW())
+                #{defaultTripVisibility}, #{language}, #{theme}, #{onboardingCompleted},
+                COALESCE(#{mustChangePassword}, FALSE), #{passwordChangedAt}, COALESCE(#{accountStatus}, 'ACTIVE'), NOW(), NOW())
     </insert>
 
     <select id="selectByEmail" parameterType="String" resultMap="UserResultMap">
@@ -74,6 +79,9 @@
             language = #{language},
             theme = #{theme},
             onboarding_completed = #{onboardingCompleted},
+            must_change_password = COALESCE(#{mustChangePassword}, must_change_password),
+            password_changed_at = COALESCE(#{passwordChangedAt}, password_changed_at),
+            account_status = COALESCE(#{accountStatus}, account_status),
             deleted_at = #{deletedAt},
             updated_at = NOW()
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
@@ -87,7 +95,7 @@
     </update>
 
     <select id="selectByUsername" parameterType="String" resultMap="UserResultMap">
-        SELECT * FROM users WHERE username = #{username}
+        SELECT * FROM users WHERE username = #{username} AND deleted_at IS NULL
     </select>
 
     <select id="selectAll" resultMap="UserResultMap">
@@ -157,6 +165,13 @@
 
     <update id="softDeleteById" parameterType="java.util.UUID">
         UPDATE users SET deleted_at = NOW(), updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
+    </update>
+
+    <update id="updatePassword">
+        UPDATE users
+        SET password_hash = #{passwordHash}, must_change_password = #{mustChangePassword},
+            password_changed_at = #{changedAt}, updated_at = #{changedAt}
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
     </update>
 

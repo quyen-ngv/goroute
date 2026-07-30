@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.HostOrganizationMapper">
+    <resultMap id="OrganizationMap" type="com.ds.goroute.entity.HostOrganization">
+        <id property="id" column="id"/>
+        <result property="ownerUserId" column="owner_user_id"/>
+        <result property="legalName" column="legal_name"/>
+        <result property="displayName" column="display_name"/>
+        <result property="organizationType" column="organization_type"/>
+        <result property="verificationStatus" column="verification_status"/>
+        <result property="operationalStatus" column="operational_status"/>
+        <result property="defaultCurrency" column="default_currency"/>
+        <result property="timezone" column="timezone"/>
+        <result property="contactEmail" column="contact_email"/>
+        <result property="contactPhone" column="contact_phone"/>
+        <result property="settings" column="settings"/>
+        <result property="dataVersion" column="data_version"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <resultMap id="MemberMap" type="com.ds.goroute.entity.OrganizationMember">
+        <id property="id" column="id"/>
+        <result property="organizationId" column="organization_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="userName" column="user_name"/>
+        <result property="userEmail" column="user_email"/>
+        <result property="roleCode" column="role_code"/>
+        <result property="memberStatus" column="member_status"/>
+        <result property="permissions" column="permissions"/>
+        <result property="validFrom" column="valid_from"/>
+        <result property="validUntil" column="valid_until"/>
+        <result property="invitedBy" column="invited_by"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+    <resultMap id="ScopeMap" type="com.ds.goroute.entity.OrganizationMemberScope">
+        <id property="id" column="id"/><result property="membershipId" column="membership_id"/>
+        <result property="resourceType" column="resource_type"/><result property="resourceId" column="resource_id"/>
+        <result property="roleCode" column="role_code"/><result property="accessEffect" column="access_effect"/>
+        <result property="permissions" column="permissions"/><result property="validFrom" column="valid_from"/>
+        <result property="validUntil" column="valid_until"/><result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insertOrganization">
+        INSERT INTO host_organizations (
+            id, owner_user_id, legal_name, display_name, organization_type,
+            verification_status, operational_status, default_currency, timezone,
+            contact_email, contact_phone, settings, data_version, created_at, updated_at
+        ) VALUES (
+            #{id}, #{ownerUserId}, #{legalName}, #{displayName}, #{organizationType},
+            #{verificationStatus}, #{operationalStatus}, #{defaultCurrency}, #{timezone},
+            #{contactEmail}, #{contactPhone}, #{settings}::jsonb, #{dataVersion}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <update id="updateOrganization">
+        UPDATE host_organizations
+        SET legal_name = #{legalName}, display_name = #{displayName},
+            organization_type = #{organizationType}, verification_status = #{verificationStatus},
+            operational_status = #{operationalStatus},
+            default_currency = #{defaultCurrency}, timezone = #{timezone},
+            contact_email = #{contactEmail}, contact_phone = #{contactPhone},
+            settings = #{settings}::jsonb, data_version = data_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{id} AND data_version = #{dataVersion}
+    </update>
+
+    <select id="findOrganizationById" resultMap="OrganizationMap">
+        SELECT * FROM host_organizations WHERE id = #{id}
+    </select>
+
+    <select id="findOrganizationsForUser" resultMap="OrganizationMap">
+        SELECT DISTINCT o.*
+        FROM host_organizations o
+        LEFT JOIN organization_members m ON m.organization_id = o.id
+        WHERE o.owner_user_id = #{userId}
+           OR (m.user_id = #{userId}
+               AND m.member_status = 'ACTIVE'
+               AND (m.valid_from IS NULL OR m.valid_from &lt;= NOW())
+               AND (m.valid_until IS NULL OR m.valid_until &gt; NOW()))
+        ORDER BY o.created_at DESC
+    </select>
+
+    <select id="findOrganizationsAdmin" resultMap="OrganizationMap">
+        SELECT * FROM host_organizations
+        <where>
+            <if test="query != null and query != ''">
+                AND (legal_name ILIKE CONCAT('%', #{query}, '%')
+                     OR display_name ILIKE CONCAT('%', #{query}, '%'))
+            </if>
+            <if test="status != null and status != ''">AND operational_status = #{status}</if>
+        </where>
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findMember" resultMap="MemberMap">
+        SELECT m.*, u.full_name AS user_name, u.email AS user_email
+        FROM organization_members m
+        JOIN users u ON u.id = m.user_id
+        WHERE m.organization_id = #{organizationId} AND m.user_id = #{userId}
+    </select>
+
+    <select id="findMembers" resultMap="MemberMap">
+        SELECT m.*, u.full_name AS user_name, u.email AS user_email
+        FROM organization_members m
+        JOIN users u ON u.id = m.user_id
+        WHERE m.organization_id = #{organizationId}
+        ORDER BY m.created_at
+    </select>
+
+    <insert id="upsertMember">
+        INSERT INTO organization_members (
+            id, organization_id, user_id, role_code, member_status, permissions,
+            valid_from, valid_until, invited_by, created_at, updated_at
+        ) VALUES (
+            #{id}, #{organizationId}, #{userId}, #{roleCode}, #{memberStatus}, #{permissions}::jsonb,
+            #{validFrom}, #{validUntil}, #{invitedBy}, #{createdAt}, #{updatedAt}
+        )
+        ON CONFLICT (organization_id, user_id) DO UPDATE SET
+            role_code = EXCLUDED.role_code,
+            member_status = EXCLUDED.member_status,
+            permissions = EXCLUDED.permissions,
+            valid_from = EXCLUDED.valid_from,
+            valid_until = EXCLUDED.valid_until,
+            updated_at = EXCLUDED.updated_at
+    </insert>
+
+    <update id="updateMemberStatus">
+        UPDATE organization_members
+        SET member_status = #{status}, updated_at = #{updatedAt}
+        WHERE organization_id = #{organizationId} AND user_id = #{userId}
+    </update>
+    <select id="findMemberScopes" resultMap="ScopeMap">
+        SELECT * FROM organization_member_scopes WHERE membership_id=#{membershipId}
+        <if test="resourceType != null">AND resource_type=#{resourceType}</if>
+        ORDER BY created_at
+    </select>
+    <select id="findMemberScope" resultMap="ScopeMap">SELECT * FROM organization_member_scopes WHERE id=#{id}</select>
+    <insert id="insertMemberScope">INSERT INTO organization_member_scopes(id,membership_id,resource_type,resource_id,role_code,access_effect,permissions,valid_from,valid_until,created_at) VALUES(#{id},#{membershipId},#{resourceType},#{resourceId},#{roleCode},#{accessEffect},#{permissions}::jsonb,#{validFrom},#{validUntil},#{createdAt})</insert>
+    <update id="updateMemberScope">UPDATE organization_member_scopes SET resource_type=#{resourceType},resource_id=#{resourceId},role_code=#{roleCode},access_effect=#{accessEffect},permissions=#{permissions}::jsonb,valid_from=#{validFrom},valid_until=#{validUntil} WHERE id=#{id} AND membership_id=#{membershipId}</update>
+    <delete id="deleteMemberScope">DELETE FROM organization_member_scopes WHERE id=#{id} AND membership_id=#{membershipId}</delete>
+</mapper>

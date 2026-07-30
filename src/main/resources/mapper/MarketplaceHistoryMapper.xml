@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.MarketplaceHistoryMapper">
+    <resultMap id="VersionMap" type="com.ds.goroute.entity.MarketplaceEntityVersion">
+        <id property="id" column="id"/>
+        <result property="entityType" column="entity_type"/>
+        <result property="entityId" column="entity_id"/>
+        <result property="versionNo" column="version_no"/>
+        <result property="action" column="action"/>
+        <result property="snapshot" column="snapshot"/>
+        <result property="changedFields" column="changed_fields"/>
+        <result property="actorUserId" column="actor_user_id"/>
+        <result property="actorType" column="actor_type"/>
+        <result property="reason" column="reason"/>
+        <result property="restoredFromVersionId" column="restored_from_version_id"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <select id="lockEntity" resultType="long">
+        SELECT pg_advisory_xact_lock(hashtextextended(CONCAT(#{entityType}, ':', #{entityId}::text), 0))
+    </select>
+
+    <select id="nextVersion" resultType="long">
+        SELECT COALESCE(MAX(version_no), 0) + 1
+        FROM marketplace_entity_versions
+        WHERE entity_type = #{entityType} AND entity_id = #{entityId}
+    </select>
+
+    <insert id="insertVersion">
+        INSERT INTO marketplace_entity_versions (
+            id, entity_type, entity_id, version_no, action, snapshot, changed_fields,
+            actor_user_id, actor_type, reason, restored_from_version_id, created_at
+        ) VALUES (
+            #{id}, #{entityType}, #{entityId}, #{versionNo}, #{action}, #{snapshot}::jsonb,
+            #{changedFields}::jsonb, #{actorUserId}, #{actorType}, #{reason},
+            #{restoredFromVersionId}, #{createdAt}
+        )
+    </insert>
+
+    <insert id="insertAuditEvent">
+        INSERT INTO marketplace_audit_events (
+            id, organization_id, entity_type, entity_id, action, actor_user_id,
+            actor_type, reason, metadata, request_id, created_at
+        ) VALUES (
+            #{id}, #{organizationId}, #{entityType}, #{entityId}, #{action}, #{actorUserId},
+            #{actorType}, #{reason}, #{metadata}::jsonb, #{requestId}, #{createdAt}
+        )
+    </insert>
+
+    <select id="findVersions" resultMap="VersionMap">
+        SELECT * FROM marketplace_entity_versions
+        WHERE entity_type = #{entityType} AND entity_id = #{entityId}
+        ORDER BY version_no DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+</mapper>

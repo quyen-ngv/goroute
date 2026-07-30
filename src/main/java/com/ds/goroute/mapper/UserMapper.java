@@ -43,4 +43,9 @@ public interface UserMapper {
     int deleteById(@Param("id") UUID id);
     
     int softDeleteById(@Param("id") UUID id);
+
+    int updatePassword(@Param("id") UUID id,
+                       @Param("passwordHash") String passwordHash,
+                       @Param("mustChangePassword") boolean mustChangePassword,
+                       @Param("changedAt") java.time.LocalDateTime changedAt);
 }

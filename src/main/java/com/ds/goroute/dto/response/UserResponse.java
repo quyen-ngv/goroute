@@ -25,4 +25,6 @@ public class UserResponse {
     private String language;
     private String theme;
     private Boolean onboardingCompleted;
+    private Boolean mustChangePassword;
+    private String accountStatus;
 }

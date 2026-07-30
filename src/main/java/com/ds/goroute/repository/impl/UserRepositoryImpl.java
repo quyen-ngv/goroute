@@ -110,4 +110,10 @@ public class UserRepositoryImpl implements UserRepository {
     public void softDeleteById(UUID id) {
         userMapper.softDeleteById(id);
     }
+
+    @Override
+    public int updatePassword(UUID id, String passwordHash, boolean mustChangePassword,
+                              java.time.LocalDateTime changedAt) {
+        return userMapper.updatePassword(id, passwordHash, mustChangePassword, changedAt);
+    }
 }

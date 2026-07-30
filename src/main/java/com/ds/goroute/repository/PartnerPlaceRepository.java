@@ -1,0 +1,2 @@
+package com.ds.goroute.repository;import com.ds.goroute.entity.PartnerPlace;import java.time.LocalDateTime;import java.util.*;
+public interface PartnerPlaceRepository {int insertCanonical(PartnerPlace v);int updateCanonical(PartnerPlace v);int insertSource(UUID id,UUID place,UUID org,LocalDateTime now);int insertSnapshot(UUID id,UUID source,String payload,LocalDateTime now);Optional<UUID> findSource(UUID place,UUID org);Optional<PartnerPlace> find(UUID id,UUID org);List<PartnerPlace> findByOrganization(UUID org);}

@@ -21,6 +21,7 @@ import com.ds.goroute.entity.FoodTagRow;
 import com.ds.goroute.repository.FoodRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.PlaceReviewRepository;
+import com.ds.goroute.repository.PlaceSourceRepository;
 import com.ds.goroute.service.PlaceReviewService;
 import com.ds.goroute.service.PlaceSearchIndexService;
 import com.ds.goroute.service.PlaceService;
@@ -41,6 +42,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -53,6 +56,7 @@ import java.util.stream.Collectors;
 public class PlaceServiceImpl implements PlaceService {
 
     private final PlaceRepository placeRepository;
+    private final PlaceSourceRepository placeSourceRepository;
     private final PlaceReviewRepository placeReviewRepository;
     private final FoodRepository foodRepository;
     private final PlaceReviewService placeReviewService;
@@ -111,12 +115,21 @@ public class PlaceServiceImpl implements PlaceService {
             Place existingPlace = findExistingPlaceForImport(request);
             if (existingPlace != null) {
                 log.info("Place already exists, updating: {}", request.getPlaceId());
+                if ("PARTNER".equals(placeSourceRepository.findPrimarySourceType(existingPlace.getId()))) {
+                    placeSourceRepository.attachGoogleIdentity(existingPlace.getId(), request.getPlaceId(),
+                            request.getCid(), request.getDataId(), request.getGoogleMapsLink(), LocalDateTime.now());
+                    syncGoogleSource(existingPlace.getId(), request);
+                    Place canonical = placeRepository.findById(existingPlace.getId()).orElse(existingPlace);
+                    placeSearchIndexService.indexPlace(canonical);
+                    return toPlaceResponse(canonical);
+                }
                 return updateExistingPlace(existingPlace, request);
             }
 
             // Create new place
             Place place = buildPlaceFromRequest(request);
             placeRepository.insert(place);
+            syncGoogleSource(place.getId(), request);
             placeTranslationService.syncTranslations(place, request.getTranslations());
             placeSearchIndexService.indexPlace(place);
 
@@ -445,14 +458,14 @@ public class PlaceServiceImpl implements PlaceService {
                 return byCid;
             }
         }
-        if ((request.getPlaceId() == null || request.getPlaceId().isBlank())
-                && (request.getCid() == null || request.getCid().isBlank())
-                && request.getLatitude() != null
-                && request.getLongitude() != null) {
-            return placeRepository.findNearCoordinates(
+        if (request.getLatitude() != null && request.getLongitude() != null) {
+            Place nearby = placeRepository.findNearCoordinates(
                     request.getLatitude(),
                     request.getLongitude(),
                     BigDecimal.valueOf(15));
+            if (nearby != null && sameCanonicalIdentity(nearby, request)) {
+                return nearby;
+            }
         }
         return null;
     }
@@ -510,6 +523,7 @@ public class PlaceServiceImpl implements PlaceService {
         updated.setUpdatedAt(LocalDateTime.now());
 
         placeRepository.update(updated);
+        syncGoogleSource(updated.getId(), request);
         placeTranslationService.syncTranslations(updated, request.getTranslations());
         placeSearchIndexService.indexPlace(updated);
 
@@ -519,6 +533,35 @@ public class PlaceServiceImpl implements PlaceService {
         }
 
         return toPlaceResponse(updated);
+    }
+
+    private boolean sameCanonicalIdentity(Place existing, ImportPlaceRequest request) {
+        String existingTitle = normalizeIdentity(existing.getTitle());
+        String incomingTitle = normalizeIdentity(request.getTitle());
+        String existingAddress = normalizeIdentity(existing.getAddress());
+        String incomingAddress = normalizeIdentity(request.getAddress());
+        return !existingTitle.isEmpty() && existingTitle.equals(incomingTitle)
+                || !existingAddress.isEmpty() && existingAddress.equals(incomingAddress);
+    }
+
+    private String normalizeIdentity(String value) {
+        return value == null ? "" : value.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]", "");
+    }
+
+    private void syncGoogleSource(UUID canonicalPlaceId, ImportPlaceRequest request) {
+        if (request.getPlaceId() == null || request.getPlaceId().isBlank()) return;
+        try {
+            String payload = objectMapper.writeValueAsString(request);
+            String checksum = HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(payload.getBytes(StandardCharsets.UTF_8)));
+            LocalDateTime observedAt = LocalDateTime.now();
+            UUID sourceId = placeSourceRepository.upsertGoogleSource(UUID.randomUUID(), canonicalPlaceId,
+                    request.getPlaceId(), request.getGoogleMapsLink(), request.getCid(), request.getDataId(),
+                    checksum, observedAt);
+            placeSourceRepository.insertSnapshot(UUID.randomUUID(), sourceId, payload, checksum, observedAt);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Cannot persist Google place source snapshot", ex);
+        }
     }
 
     private String preferNonBlank(String incoming, String existing) {

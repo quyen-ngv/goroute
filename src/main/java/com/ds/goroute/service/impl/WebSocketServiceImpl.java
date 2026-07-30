@@ -41,4 +41,21 @@ public class WebSocketServiceImpl implements WebSocketService {
         
         log.info("WebSocket event broadcasted: {} to trip: {}", eventType, tripId);
     }
+
+    @Override
+    public void broadcastToConversation(UUID conversationId, String eventType, Map<String, Object> data, UUID actorId) {
+        User actor = actorId == null ? null : userMapper.selectById(actorId);
+        WebSocketEvent event = WebSocketEvent.builder()
+                .type(eventType)
+                .data(data)
+                .actor(WebSocketEvent.Actor.builder()
+                        .id(actorId)
+                        .fullName(actor != null ? actor.getFullName() : "System")
+                        .avatarUrl(actor != null ? actor.getAvatarUrl() : null)
+                        .build())
+                .timestamp(LocalDateTime.now())
+                .build();
+        messagingTemplate.convertAndSend("/topic/marketplace/conversations/" + conversationId, event);
+        log.info("WebSocket event broadcasted: {} to marketplace conversation: {}", eventType, conversationId);
+    }
 }

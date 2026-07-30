@@ -1,0 +1,2 @@
+package com.ds.goroute.dto.response;import lombok.*;import java.time.LocalDateTime;import java.util.*;
+@Data @Builder public class OrganizationMemberScopeResponse {private UUID id;private UUID membershipId;private String resourceType;private UUID resourceId;private String roleCode;private String accessEffect;private List<String> permissions;private LocalDateTime validFrom;private LocalDateTime validUntil;private LocalDateTime createdAt;}

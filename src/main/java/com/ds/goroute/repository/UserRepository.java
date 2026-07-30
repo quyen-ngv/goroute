@@ -43,4 +43,6 @@ public interface UserRepository {
     void deleteById(UUID id);
     
     void softDeleteById(UUID id);
+
+    int updatePassword(UUID id, String passwordHash, boolean mustChangePassword, java.time.LocalDateTime changedAt);
 }

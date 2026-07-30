@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.PlaceSourceMapper">
+    <select id="upsertGoogleSource" resultType="java.util.UUID" affectData="true" flushCache="true">
+        INSERT INTO place_sources (
+          id, place_id, source_type, external_id, external_url, cid, data_id, source_locale,
+          source_status, first_seen_at, last_seen_at, last_successful_sync_at, payload_checksum,
+          schema_version, created_at, updated_at
+        ) VALUES (
+          #{sourceId}, #{placeId}, 'GOOGLE_MAPS', #{externalId}, #{externalUrl}, #{cid}, #{dataId}, 'en',
+          'ACTIVE', #{observedAt}, #{observedAt}, #{observedAt}, #{payloadChecksum}, 1,
+          #{observedAt}, #{observedAt}
+        )
+        ON CONFLICT (source_type, external_id) WHERE external_id IS NOT NULL DO UPDATE SET
+          external_url=COALESCE(EXCLUDED.external_url, place_sources.external_url),
+          cid=COALESCE(EXCLUDED.cid, place_sources.cid),
+          data_id=COALESCE(EXCLUDED.data_id, place_sources.data_id),
+          source_status='ACTIVE', last_seen_at=EXCLUDED.last_seen_at,
+          last_successful_sync_at=EXCLUDED.last_successful_sync_at,
+          payload_checksum=EXCLUDED.payload_checksum, updated_at=EXCLUDED.updated_at
+        RETURNING id
+    </select>
+
+    <insert id="insertSnapshot">
+        INSERT INTO place_source_snapshots (
+          id, source_id, observed_at, payload, payload_checksum, schema_version, status, created_at
+        ) VALUES (
+          #{snapshotId}, #{sourceId}, #{observedAt}, #{payload}::jsonb, #{payloadChecksum}, 1, 'VALID', #{observedAt}
+        )
+    </insert>
+
+    <select id="findPrimarySourceType" resultType="string">
+        SELECT primary_source_type FROM places WHERE id=#{placeId}
+    </select>
+
+    <update id="attachGoogleIdentity">
+        UPDATE places SET
+          place_id=COALESCE(place_id, #{googlePlaceId}),
+          cid=COALESCE(cid, #{cid}),
+          data_id=COALESCE(data_id, #{dataId}),
+          google_maps_link=COALESCE(google_maps_link, #{googleMapsLink}),
+          data_version=data_version+1,
+          updated_at=#{updatedAt}
+        WHERE id=#{placeId}
+    </update>
+</mapper>

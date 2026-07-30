@@ -14,6 +14,36 @@
         )
     </select>
 
+    <select id="hasAnyRole" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM admin_user_roles WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER})
+    </select>
+
+    <select id="isPartnerUser" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM host_organizations o WHERE o.owner_user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+            UNION ALL
+            SELECT 1 FROM organization_members m
+            WHERE m.user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+              AND m.member_status = 'ACTIVE'
+              AND (m.valid_from IS NULL OR m.valid_from &lt;= NOW())
+              AND (m.valid_until IS NULL OR m.valid_until &gt; NOW())
+        )
+    </select>
+
+    <select id="findRoleCodes" resultType="string">
+        SELECT r.code FROM admin_user_roles ur JOIN admin_roles r ON r.id=ur.role_id
+        WHERE ur.user_id=#{userId,javaType=java.util.UUID,jdbcType=OTHER} ORDER BY r.code
+    </select>
+
+    <select id="findPermissionCodes" resultType="string">
+        SELECT DISTINCT p.resource || ':' || p.action
+        FROM admin_user_roles ur
+        JOIN admin_role_permissions rp ON rp.role_id=ur.role_id
+        JOIN admin_permissions p ON p.id=rp.permission_id
+        WHERE ur.user_id=#{userId,javaType=java.util.UUID,jdbcType=OTHER}
+        ORDER BY 1
+    </select>
+
     <select id="ownsResource" resultType="boolean">
         SELECT EXISTS (
             SELECT 1

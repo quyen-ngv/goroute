@@ -1,0 +1,2 @@
+package com.ds.goroute.service;import com.ds.goroute.dto.request.UpsertPartnerPlaceRequest;import com.ds.goroute.dto.response.PartnerPlaceResponse;import java.util.*;
+public interface PartnerPlaceService {List<PartnerPlaceResponse> list(UUID actor,UUID organizationId);PartnerPlaceResponse create(UUID actor,UpsertPartnerPlaceRequest request);PartnerPlaceResponse update(UUID actor,UUID placeId,UpsertPartnerPlaceRequest request);}

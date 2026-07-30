@@ -14,6 +14,14 @@ public interface AdminMapper {
                           @Param("resource") String resource,
                           @Param("action") String action);
 
+    boolean hasAnyRole(@Param("userId") UUID userId);
+
+    boolean isPartnerUser(@Param("userId") UUID userId);
+
+    List<String> findRoleCodes(@Param("userId") UUID userId);
+
+    List<String> findPermissionCodes(@Param("userId") UUID userId);
+
     boolean ownsResource(@Param("ownerId") UUID ownerId,
                          @Param("resource") String resource,
                          @Param("resourceId") UUID resourceId);

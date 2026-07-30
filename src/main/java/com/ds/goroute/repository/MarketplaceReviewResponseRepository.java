@@ -1,0 +1,2 @@
+package com.ds.goroute.repository;import com.ds.goroute.entity.MarketplaceReviewView;import java.time.LocalDateTime;import java.util.*;
+public interface MarketplaceReviewResponseRepository {Optional<MarketplaceReviewView> find(UUID reviewId,UUID org);List<MarketplaceReviewView> findByOrganization(UUID org,int l,int o);List<MarketplaceReviewView> findAdmin(String q,int l,int o);int insert(UUID id,UUID review,UUID org,UUID actor,String text,String status,LocalDateTime now);int update(UUID review,UUID org,long version,UUID actor,String text,String status,LocalDateTime now);}
