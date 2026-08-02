@@ -21,6 +21,7 @@ public class ScrapeNationwideJobRequest {
     private Integer selectedReviews;
     private Integer lowStarQuota;
     private Integer minReviewCount;
+    private BigDecimal minGoogleRating;
     private BigDecimal minAdjustedRating;
     private Integer searchLimitPerQuery;
     private Integer maxQueriesPerRegion;

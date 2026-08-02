@@ -26,8 +26,8 @@ public interface LocationImageMapper {
     LocationImage selectById(UUID id);
 
     @Insert("""
-        INSERT INTO location_images (id, full_address, normalized_address, image_url, avatar_url, city_slug, latitude, longitude, priority, created_at, updated_at)
-        VALUES (#{id}, #{fullAddress}, #{normalizedAddress}, #{imageUrl}, #{avatarUrl}, #{citySlug}, #{latitude}, #{longitude}, #{priority}, #{createdAt}, #{updatedAt})
+        INSERT INTO location_images (id, full_address, normalized_address, slogan, description, image_url, avatar_url, city_slug, latitude, longitude, priority, created_at, updated_at)
+        VALUES (#{id}, #{fullAddress}, #{normalizedAddress}, #{slogan}, #{description}::jsonb, #{imageUrl}, #{avatarUrl}, #{citySlug}, #{latitude}, #{longitude}, #{priority}, #{createdAt}, #{updatedAt})
         """)
     void insert(LocationImage locationImage);
 
@@ -35,6 +35,8 @@ public interface LocationImageMapper {
         UPDATE location_images
         SET full_address = #{fullAddress},
             normalized_address = #{normalizedAddress},
+            slogan = #{slogan},
+            description = #{description}::jsonb,
             image_url = #{imageUrl},
             avatar_url = #{avatarUrl},
             city_slug = #{citySlug},

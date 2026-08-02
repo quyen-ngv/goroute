@@ -1,16 +1,22 @@
 package com.ds.goroute.service.impl;
 
 import com.ds.goroute.constant.ErrorConstant;
+import com.ds.goroute.dto.LocationDescriptionContent;
+import com.ds.goroute.dto.LocationDescriptionSection;
 import com.ds.goroute.dto.request.CreateLocationImageRequest;
 import com.ds.goroute.dto.request.UpdateLocationImageRequest;
 import com.ds.goroute.dto.response.LocationImageResponse;
 import com.ds.goroute.entity.LocationImage;
+import com.ds.goroute.enums.LocationDescriptionType;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.LocationImageRepository;
 import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.utils.CitySlugResolver;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.StorageService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -19,7 +25,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.text.Normalizer;
 import java.time.LocalDateTime;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -31,6 +39,7 @@ public class LocationImageServiceImpl implements LocationImageService {
     private final LocationImageRepository locationImageRepository;
     private final StorageService storageService;
     private final ImageStorageCleanupService imageStorageCleanupService;
+    private final ObjectMapper objectMapper;
 
     private static final String DEFAULT_IMAGE = "https://images.unsplash.com/photo-1488646953014-85cb44e25828";
 
@@ -69,6 +78,8 @@ public class LocationImageServiceImpl implements LocationImageService {
         LocationImage locationImage = LocationImage.builder()
             .id(UUID.randomUUID())
             .fullAddress(request.getFullAddress())
+            .slogan(request.getSlogan())
+            .description(serializeDescription(normalizeDescription(request.getDescription())))
             .imageUrl(request.getImageUrl())
             .avatarUrl(resolveAvatarUrl(request.getAvatarUrl(), request.getImageUrl()))
             .latitude(request.getLatitude())
@@ -95,6 +106,12 @@ public class LocationImageServiceImpl implements LocationImageService {
 
         if (request.getFullAddress() != null) {
             locationImage.setFullAddress(request.getFullAddress());
+        }
+        if (request.getSlogan() != null) {
+            locationImage.setSlogan(request.getSlogan());
+        }
+        if (request.getDescription() != null) {
+            locationImage.setDescription(serializeDescription(normalizeDescription(request.getDescription())));
         }
         if (request.getImageUrl() != null) {
             locationImage.setImageUrl(request.getImageUrl());
@@ -154,6 +171,8 @@ public class LocationImageServiceImpl implements LocationImageService {
             .id(locationImage.getId())
             .fullAddress(locationImage.getFullAddress())
             .citySlug(locationImage.getCitySlug())
+            .slogan(locationImage.getSlogan())
+            .description(deserializeDescription(locationImage.getDescription()))
             .imageUrl(locationImage.getImageUrl())
             .avatarUrl(locationImage.getAvatarUrl() != null
                     && !locationImage.getAvatarUrl().isBlank()
@@ -165,6 +184,59 @@ public class LocationImageServiceImpl implements LocationImageService {
             .createdAt(locationImage.getCreatedAt())
             .updatedAt(locationImage.getUpdatedAt())
             .build();
+    }
+
+    private List<LocationDescriptionSection> normalizeDescription(
+            List<LocationDescriptionSection> sections) {
+        Map<LocationDescriptionType, LocationDescriptionSection> byType = new EnumMap<>(LocationDescriptionType.class);
+        if (sections != null) {
+            sections.stream()
+                .filter(section -> section != null && section.getType() != null)
+                .forEach(section -> byType.put(section.getType(), section));
+        }
+
+        return java.util.Arrays.stream(LocationDescriptionType.values())
+            .map(type -> {
+                LocationDescriptionSection supplied = byType.get(type);
+                String suppliedContent = supplied == null || supplied.getContent() == null
+                    ? null
+                    : supplied.getContent().getContent();
+                return LocationDescriptionSection.builder()
+                    .type(type)
+                    .content(LocationDescriptionContent.builder()
+                        .title(type.getDefaultTitle())
+                        .content(suppliedContent)
+                        .build())
+                    .build();
+            })
+            .toList();
+    }
+
+    private String serializeDescription(List<LocationDescriptionSection> description) {
+        try {
+            return objectMapper.writeValueAsString(description);
+        } catch (JsonProcessingException exception) {
+            throw new BusinessException(
+                ErrorConstant.INTERNAL_SERVER_ERROR,
+                "Failed to serialize location description"
+            );
+        }
+    }
+
+    private List<LocationDescriptionSection> deserializeDescription(String description) {
+        if (description == null || description.isBlank()) {
+            return normalizeDescription(null);
+        }
+        try {
+            List<LocationDescriptionSection> parsed = objectMapper.readValue(
+                description,
+                new TypeReference<List<LocationDescriptionSection>>() { }
+            );
+            return normalizeDescription(parsed);
+        } catch (JsonProcessingException exception) {
+            log.warn("Invalid location description JSON; returning default sections", exception);
+            return normalizeDescription(null);
+        }
     }
 
     private String normalizeVietnamese(String text) {

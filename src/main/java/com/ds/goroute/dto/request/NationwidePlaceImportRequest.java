@@ -26,8 +26,9 @@ public class NationwidePlaceImportRequest {
     @NotBlank
     private String regionName;
     private String searchQuery;
+    private String filterReason;
     @NotNull @Valid
     private ImportPlaceRequest place;
-    @NotNull @Size(min = 1, max = 200) @Valid
+    @NotNull @Size(max = 200) @Valid
     private List<ReviewInput> reviews;
 }

@@ -94,6 +94,38 @@
                         <small class="form-help">Copy địa chỉ từ Goong API hoặc nhập thủ công</small>
                     </div>
 
+                    <div class="form-group">
+                        <label class="form-label">Slogan</label>
+                        <input type="text" id="slogan" class="form-input" maxlength="255"
+                            placeholder="VD: Thành phố đáng sống">
+                        <small class="form-help">Dòng giới thiệu ngắn hiển thị trên UI</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Mô tả chung</label>
+                        <textarea id="description-DESCRIPTION" class="form-input form-textarea" maxlength="5000"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Vibe ở đây thế nào</label>
+                        <textarea id="description-VIBE" class="form-input form-textarea" maxlength="5000"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Ngủ lại ở đâu</label>
+                        <textarea id="description-ACCOMODATION" class="form-input form-textarea" maxlength="5000"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Đặc sản tại đây</label>
+                        <textarea id="description-CUISINE" class="form-input form-textarea" maxlength="5000"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Nên đi mùa nào</label>
+                        <textarea id="description-SEASON" class="form-input form-textarea" maxlength="5000"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Lưu ý thêm</label>
+                        <textarea id="description-NOTES" class="form-input form-textarea" maxlength="5000"></textarea>
+                    </div>
+
                     <div class="form-row">
                         <div class="form-group">
                             <label class="form-label">Latitude</label>
@@ -201,6 +233,14 @@
     <script src="/goroute/goroute-admin-utils.js"></script>
     <script>
         const API_BASE_URL = 'https://onestudy.id.vn/goroute/v1/api';
+        const LOCATION_DESCRIPTION_SECTIONS = [
+            { type: 'DESCRIPTION', title: '' },
+            { type: 'VIBE', title: 'Vibe ở đây thế nào' },
+            { type: 'ACCOMODATION', title: 'Ngủ lại ở đâu' },
+            { type: 'CUISINE', title: 'Đặc sản tại đây' },
+            { type: 'SEASON', title: 'Nên đi mùa nào' },
+            { type: 'NOTES', title: 'Lưu ý thêm' }
+        ];
         let locations = [];
         let isEditMode = false;
 
@@ -271,7 +311,7 @@
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td><img src="${loc.imageUrl}" class="img-preview location-image-thumb" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E'"></td>
-                    <td>${loc.fullAddress}</td>
+                    <td>${loc.fullAddress}${loc.slogan ? `<br><small>${loc.slogan}</small>` : ''}</td>
                     <td>${coordinates}</td>
                     <td><span class="priority-badge ${priorityClass}">${priorityLabel} (${loc.priority})</span></td>
                     <td>
@@ -306,6 +346,8 @@
             document.getElementById('modal-title').textContent = 'Chỉnh sửa địa điểm';
             document.getElementById('location-id').value = location.id;
             document.getElementById('full-address').value = location.fullAddress;
+            document.getElementById('slogan').value = location.slogan || '';
+            setLocationDescriptions(location.description);
             document.getElementById('image-url').value = location.imageUrl;
             document.getElementById('avatar-url').value = location.avatarUrl || '';
             document.getElementById('latitude').value = location.latitude ?? '';
@@ -324,6 +366,8 @@
 
         async function saveLocation() {
             const fullAddress = document.getElementById('full-address').value.trim();
+            const slogan = document.getElementById('slogan').value.trim();
+            const description = getLocationDescriptions();
             const imageUrl = document.getElementById('image-url').value.trim();
             const avatarUrl = document.getElementById('avatar-url').value.trim();
             const latitudeRaw = document.getElementById('latitude').value.trim();
@@ -355,6 +399,8 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         fullAddress,
+                        slogan: slogan || null,
+                        description,
                         imageUrl,
                         avatarUrl: avatarUrl || null,
                         latitude,
@@ -464,6 +510,25 @@
             } catch (error) {
                 statusEl.textContent = 'Không tải được danh sách place: ' + error.message;
             }
+        }
+
+        function setLocationDescriptions(description) {
+            const sections = Array.isArray(description) ? description : [];
+            LOCATION_DESCRIPTION_SECTIONS.forEach(definition => {
+                const section = sections.find(item => item && item.type === definition.type);
+                document.getElementById(`description-${definition.type}`).value =
+                    section && section.content && section.content.content || '';
+            });
+        }
+
+        function getLocationDescriptions() {
+            return LOCATION_DESCRIPTION_SECTIONS.map(definition => {
+                const value = document.getElementById(`description-${definition.type}`).value.trim();
+                return {
+                    type: definition.type,
+                    content: { title: definition.title, content: value || null }
+                };
+            });
         }
 
         function placeLabel(place) {

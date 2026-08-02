@@ -4,7 +4,9 @@ import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.CreateLocationImageRequest;
 import com.ds.goroute.dto.request.UpdateLocationImageRequest;
 import com.ds.goroute.dto.response.LocationImageResponse;
+import com.ds.goroute.dto.response.CityWeatherResponse;
 import com.ds.goroute.service.BaseService;
+import com.ds.goroute.service.CityWeatherService;
 import com.ds.goroute.service.LocationImageService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +26,7 @@ import java.util.UUID;
 public class LocationImageController extends BaseService {
     
     private final LocationImageService locationImageService;
+    private final CityWeatherService cityWeatherService;
     
     @GetMapping
     public ResponseEntity<BaseResponse<List<LocationImageResponse>>> getAllLocationImages() {
@@ -35,6 +38,11 @@ public class LocationImageController extends BaseService {
     public ResponseEntity<BaseResponse<LocationImageResponse>> getLocationImage(@PathVariable UUID id) {
         LocationImageResponse locationImage = locationImageService.getLocationImage(id);
         return ResponseEntity.ok(ofSucceeded(locationImage));
+    }
+
+    @GetMapping("/{id}/weather")
+    public ResponseEntity<BaseResponse<CityWeatherResponse>> getCityWeather(@PathVariable UUID id) {
+        return ResponseEntity.ok(ofSucceeded(cityWeatherService.getCurrentWeather(id)));
     }
     
     @PostMapping

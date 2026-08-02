@@ -39,6 +39,7 @@ public class PlaceImportJobResponse {
     private Boolean cancelRequested;
     private Integer selectedReviews;
     private Integer minReviewCount;
+    private BigDecimal minGoogleRating;
     private BigDecimal minAdjustedRating;
     private String queryMode;
     private List<String> customQueries;

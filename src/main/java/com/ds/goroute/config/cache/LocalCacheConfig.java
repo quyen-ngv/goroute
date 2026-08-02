@@ -55,6 +55,16 @@ public class LocalCacheConfig {
         return cacheManager;
     }
 
+    /** Current weather changes frequently enough to refresh every 15 minutes. */
+    @Bean("weatherCacheManager")
+    public CacheManager weatherCacheManager() {
+        CaffeineCacheManager cacheManager = new CaffeineCacheManager("cityWeather");
+        cacheManager.setCaffeine(
+            Caffeine.newBuilder().expireAfterWrite(15, TimeUnit.MINUTES)
+        );
+        return cacheManager;
+    }
+
     @Bean("customKeyGenerator")
     public KeyGenerator keyGenerator() {
         return new CustomKeyGenerator();

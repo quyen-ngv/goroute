@@ -1,6 +1,7 @@
 package com.ds.goroute.dto.request;
 
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
@@ -35,7 +36,11 @@ public class CreateNationwidePlaceImportJobRequest {
     private Integer minReviewCount = 101;
 
     @Builder.Default
-    @DecimalMin("0.0")
+    @DecimalMin("0.0") @DecimalMax("5.0")
+    private BigDecimal minGoogleRating = BigDecimal.valueOf(4.00);
+
+    @Builder.Default
+    @DecimalMin("0.0") @DecimalMax("5.0")
     private BigDecimal minAdjustedRating = BigDecimal.valueOf(3.00);
 
     @Builder.Default

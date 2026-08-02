@@ -18,6 +18,8 @@ public class LocationImage {
     private UUID id;
     private String fullAddress;
     private String normalizedAddress;
+    private String slogan;
+    private String description;
     private String imageUrl;
     private String avatarUrl;
     private String citySlug;

@@ -102,6 +102,7 @@ public class NationwidePlaceImportJobService {
                         .selectedReviews(request.getSelectedReviews())
                         .lowStarQuota(request.getLowStarQuota())
                         .minReviewCount(request.getMinReviewCount())
+                        .minGoogleRating(request.getMinGoogleRating())
                         .minAdjustedRating(request.getMinAdjustedRating())
                         .searchLimitPerQuery(request.getSearchLimitPerQuery())
                         .maxQueriesPerRegion(request.getMaxQueriesPerRegion())
@@ -200,7 +201,7 @@ public class NationwidePlaceImportJobService {
         if (item.getStatus() == PlaceImportJobItemStatus.COMPLETED && item.getImportedPlaceId() != null) {
             return NationwidePlaceImportResponse.builder()
                     .imported(true)
-                    .outcome("IMPORTED")
+                    .outcome(item.getOutcomeReason())
                     .placeId(item.getImportedPlaceId())
                     .googlePlaceId(googlePlaceId)
                     .avgAuthenticityScore(item.getAvgAuthenticityScore())
@@ -223,8 +224,19 @@ public class NationwidePlaceImportJobService {
         }
         if (request.getPlace().getReviewCount() == null
                 || request.getPlace().getReviewCount() < job.getMinReviewCount()) {
-            completeItem(item, PlaceImportJobItemStatus.SKIPPED_FILTER, "REVIEW_COUNT", null, 0);
-            return result(false, "REVIEW_COUNT", null, googlePlaceId, null, 0, 0);
+            return saveInactive(request, item, googlePlaceId, "REVIEW_COUNT", null);
+        }
+        BigDecimal minGoogleRating = parseMinGoogleRating(job.getRequestPayload());
+        if (request.getPlace().getReviewRating() == null
+                || request.getPlace().getReviewRating().compareTo(minGoogleRating) <= 0) {
+            return saveInactive(request, item, googlePlaceId, "GOOGLE_RATING", null);
+        }
+        if (hasText(request.getFilterReason())) {
+            return saveInactive(request, item, googlePlaceId,
+                    normalizeFilterReason(request.getFilterReason()), null);
+        }
+        if (request.getReviews().isEmpty()) {
+            return saveInactive(request, item, googlePlaceId, "NO_SCORING_REVIEWS", null);
         }
 
         List<ReviewInput> scoringReviews = request.getReviews().stream()
@@ -236,8 +248,7 @@ public class NationwidePlaceImportJobService {
                 scoringReviews);
         if (score == null || score.adjustedRating() == null
                 || score.adjustedRating().compareTo(job.getMinAdjustedRating()) <= 0) {
-            completeItem(item, PlaceImportJobItemStatus.SKIPPED_FILTER, "ADJUSTED_RATING", score, 0);
-            return result(false, "ADJUSTED_RATING", null, googlePlaceId, score, 0, 0);
+            return saveInactive(request, item, googlePlaceId, "ADJUSTED_RATING", score);
         }
 
         int lowStarQuota = parseLowStarQuota(job.getRequestPayload());
@@ -294,11 +305,17 @@ public class NationwidePlaceImportJobService {
                 .filter(this::hasText)
                 .distinct()
                 .toList();
-        Set<String> existingPlaceIds = Set.copyOf(placeRepository.findExistingPlaceIds(placeIds));
-        Set<String> existingCids = Set.copyOf(placeRepository.findExistingCids(cids));
+        Set<String> existingPlaceIds = placeIds.isEmpty()
+                ? Set.of() : Set.copyOf(placeRepository.findExistingPlaceIds(placeIds));
+        Set<String> existingCids = cids.isEmpty()
+                ? Set.of() : Set.copyOf(placeRepository.findExistingCids(cids));
         Set<String> existingKeys = request.getCandidates().stream()
                 .filter(candidate -> existingPlaceIds.contains(candidate.getGooglePlaceId())
-                        || existingCids.contains(candidate.getCid()))
+                        || existingCids.contains(candidate.getCid())
+                        || (!hasText(candidate.getGooglePlaceId()) && !hasText(candidate.getCid())
+                        && candidate.getLatitude() != null && candidate.getLongitude() != null
+                        && placeRepository.findNearCoordinates(candidate.getLatitude(), candidate.getLongitude(),
+                        DUPLICATE_DISTANCE_METERS) != null))
                 .map(NationwideDuplicateCheckRequest.Candidate::getCandidateKey)
                 .collect(Collectors.toSet());
         return NationwideDuplicateCheckResponse.builder().existingCandidateKeys(existingKeys).build();
@@ -443,6 +460,7 @@ public class NationwidePlaceImportJobService {
                 .id(job.getId()).userId(job.getUserId()).sourceType(job.getSourceType())
                 .status(job.getStatus()).maxReviews(job.getMaxReviews()).selectedReviews(job.getSelectedReviews())
                 .minReviewCount(job.getMinReviewCount()).minAdjustedRating(job.getMinAdjustedRating())
+                .minGoogleRating(config == null ? null : config.getMinGoogleRating())
                 .queryMode(config == null ? null : config.getQueryMode())
                 .customQueries(config == null ? null : config.getCustomQueries())
                 .regionCodes(config == null ? null : config.getRegionCodes())
@@ -530,6 +548,68 @@ public class NationwidePlaceImportJobService {
         } catch (Exception ignored) {
             return 4;
         }
+    }
+
+    private BigDecimal parseMinGoogleRating(String payload) {
+        CreateNationwidePlaceImportJobRequest config = parseConfiguration(payload);
+        return config == null || config.getMinGoogleRating() == null
+                ? BigDecimal.valueOf(4.00)
+                : config.getMinGoogleRating();
+    }
+
+    private NationwidePlaceImportResponse saveInactive(NationwidePlaceImportRequest request,
+                                                        PlaceImportJobItem item,
+                                                        String googlePlaceId,
+                                                        String reason,
+                                                        PlaceReviewScoreCalculator.PlaceScoreResult score) {
+        request.getPlace().setUserReviews(null);
+        request.getPlace().setVisibilityStatus("INACTIVE");
+        request.getPlace().setImages(firstImageOnly(request.getPlace().getImages()));
+        PlaceResponse imported = placeService.importPlace(request.getPlace());
+        if (imported == null || imported.getId() == null) {
+            throw new IllegalStateException("Inactive place import failed for " + googlePlaceId);
+        }
+        Place place = placeRepository.findById(imported.getId())
+                .orElseThrow(() -> new IllegalStateException("Imported inactive place was not found"));
+        if (score != null) {
+            place.setAvgAuthenticityScore(score.avgAuthenticityScore());
+            place.setPlaceOverallScore(score.placeOverallScore());
+            place.setAdjustedRating(score.adjustedRating());
+            place.setTrustLevel(score.trustLevel());
+            place.setIsJcurveDetected(score.jCurveDetected());
+            place.setIsSpikeDetected(score.spikeDetected());
+            place.setAuthenticLowStarCount(score.authenticLowStarCount());
+            place.setScoreCalculatedAt(LocalDateTime.now());
+            place.setScoreSampleCount(score.sampleCount());
+            place.setScoreSource(SCORE_SOURCE);
+            place.setUpdatedAt(LocalDateTime.now());
+            placeRepository.update(place);
+        }
+        String outcome = "SAVED_INACTIVE_" + normalizeFilterReason(reason);
+        item.setImportedPlaceId(place.getId());
+        completeItem(item, PlaceImportJobItemStatus.COMPLETED, outcome, score, 0);
+        return result(true, outcome, place.getId(), googlePlaceId, score, 0, 0);
+    }
+
+    private String firstImageOnly(String images) {
+        if (!hasText(images)) {
+            return "[]";
+        }
+        try {
+            var parsed = objectMapper.readTree(images);
+            if (!parsed.isArray() || parsed.isEmpty()) {
+                return "[]";
+            }
+            return objectMapper.createArrayNode().add(parsed.get(0)).toString();
+        } catch (Exception ignored) {
+            return "[]";
+        }
+    }
+
+    private String normalizeFilterReason(String reason) {
+        String normalized = reason == null ? "FILTERED" : reason.trim().toUpperCase(Locale.ROOT);
+        normalized = normalized.replaceAll("[^A-Z0-9_]+", "_");
+        return normalized.isBlank() ? "FILTERED" : normalized;
     }
 
     private String toJson(Object value) {
