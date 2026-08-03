@@ -86,6 +86,15 @@ public class ImageMigrationJob {
                         updated = true;
                     }
                 }
+
+                // Migrate menu photos nested inside the menu JSON object.
+                if (place.getMenu() != null && !place.getMenu().trim().isEmpty()) {
+                    String newMenu = imageMigrationService.migrateMenuJson(place.getMenu(), targetPath);
+                    if (!newMenu.equals(place.getMenu())) {
+                        place.setMenu(newMenu);
+                        updated = true;
+                    }
+                }
                 
                 if (updated) {
                     placeRepository.update(place);

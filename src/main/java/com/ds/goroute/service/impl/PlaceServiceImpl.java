@@ -8,6 +8,7 @@ import com.ds.goroute.dto.PlaceSearchCriteria;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.response.PlaceAboutDto;
 import com.ds.goroute.dto.response.PlaceImagesDto;
+import com.ds.goroute.dto.response.PlaceMenuDto;
 import com.ds.goroute.dto.response.PlaceResponse;
 import com.ds.goroute.dto.response.PlaceReviewResponse;
 import com.ds.goroute.config.filter.AcceptLanguageFilter;
@@ -102,6 +103,15 @@ public class PlaceServiceImpl implements PlaceService {
                         }
                     } catch (Exception e) {
                         log.error("Error migrating place images: {}", e.getMessage());
+                    }
+                }
+
+                // Migrate menu photos stored inside the menu JSON object.
+                if (request.getMenu() != null && !request.getMenu().trim().isEmpty()) {
+                    try {
+                        request.setMenu(imageMigrationService.migrateMenuJson(request.getMenu(), targetPath));
+                    } catch (Exception e) {
+                        log.error("Error migrating menu images: {}", e.getMessage());
                     }
                 }
 
@@ -972,6 +982,7 @@ public class PlaceServiceImpl implements PlaceService {
                 .reviewsPerRating(parseJsonToMap(place.getReviewsPerRating()))
                 .thumbnail(place.getThumbnail())
                 .images(parseJsonToList(place.getImages(), PlaceImagesDto.class))
+                .menu(parseJsonToMenu(place.getMenu()))
                 .descriptions(resolvedDescription)
                 .aiDescription(place.getAiDescription())
                 .visibilityStatus(place.getVisibilityStatus() != null
@@ -985,6 +996,18 @@ public class PlaceServiceImpl implements PlaceService {
                 .createdAt(place.getCreatedAt())
                 .updatedAt(place.getUpdatedAt())
                 .build();
+    }
+
+    private PlaceMenuDto parseJsonToMenu(String jsonString) {
+        if (jsonString == null || jsonString.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(jsonString, PlaceMenuDto.class);
+        } catch (Exception e) {
+            log.warn("Failed to parse menu JSON: {}", e.getMessage());
+            return null;
+        }
     }
 
     private Map<String, Integer> parseJsonToMap(String jsonString) {

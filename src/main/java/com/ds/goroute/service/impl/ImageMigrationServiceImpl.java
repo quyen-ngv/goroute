@@ -182,6 +182,56 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
             return imagesJson;
         }
     }
+
+    @Override
+    public String migrateMenuJson(String menuJson, String targetPath) {
+        if (menuJson == null || menuJson.trim().isEmpty()) {
+            return menuJson;
+        }
+
+        try {
+            JsonNode rootNode = objectMapper.readTree(menuJson);
+            if (!rootNode.isObject() || !rootNode.has("images") || !rootNode.get("images").isArray()) {
+                return menuJson;
+            }
+
+            ObjectNode menuObject = ((ObjectNode) rootNode).deepCopy();
+            ArrayNode imagesArray = (ArrayNode) menuObject.get("images");
+            List<String> imageUrls = new ArrayList<>();
+            for (JsonNode imageNode : imagesArray) {
+                if (imageNode.isObject()
+                        && imageNode.has("image")
+                        && imageNode.get("image").isTextual()
+                        && !imageNode.get("image").asText().isBlank()) {
+                    imageUrls.add(imageNode.get("image").asText());
+                }
+            }
+
+            if (imageUrls.isEmpty()) {
+                return menuJson;
+            }
+
+            Map<String, String> migratedUrls = migrateImages(imageUrls, targetPath);
+            ArrayNode migratedImages = objectMapper.createArrayNode();
+            for (JsonNode imageNode : imagesArray) {
+                if (imageNode.isObject()
+                        && imageNode.has("image")
+                        && imageNode.get("image").isTextual()) {
+                    ObjectNode migratedImage = ((ObjectNode) imageNode).deepCopy();
+                    String oldUrl = imageNode.get("image").asText();
+                    migratedImage.put("image", migratedUrls.getOrDefault(oldUrl, oldUrl));
+                    migratedImages.add(migratedImage);
+                } else {
+                    migratedImages.add(imageNode);
+                }
+            }
+            menuObject.set("images", migratedImages);
+            return objectMapper.writeValueAsString(menuObject);
+        } catch (Exception e) {
+            log.error("Error migrating menu images: {}", e.getMessage());
+            return menuJson;
+        }
+    }
     
     private byte[] downloadImage(String imageUrl) {
         try {

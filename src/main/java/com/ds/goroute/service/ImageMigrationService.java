@@ -27,4 +27,13 @@ public interface ImageMigrationService {
      * @return Updated JSON with new MinIO URLs
      */
     String migrateImagesJson(String imagesJson, String targetPath);
+
+    /**
+     * Migrate menu image URLs nested inside a menu JSON object.
+     *
+     * @param menuJson JSON object containing an optional images array
+     * @param targetPath Target path in MinIO
+     * @return Updated JSON with migrated menu image URLs
+     */
+    String migrateMenuJson(String menuJson, String targetPath);
 }
