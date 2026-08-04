@@ -71,6 +71,7 @@
         <result property="title" column="title"/>
         <result property="address" column="address"/>
         <result property="googleMapsLink" column="google_maps_link"/>
+        <result property="attributes" column="attributes"/>
     </resultMap>
 
     <insert id="insertGroup" parameterType="com.ds.goroute.entity.PlaceContributionGroup">

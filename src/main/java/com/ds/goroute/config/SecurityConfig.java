@@ -1,5 +1,6 @@
 package com.ds.goroute.config;
 
+import com.ds.goroute.config.filter.ApiKeyAuthenticationFilter;
 import com.ds.goroute.config.filter.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -27,6 +28,7 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final ApiKeyAuthenticationFilter apiKeyAuthenticationFilter;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -41,7 +43,12 @@ public class SecurityConfig {
                         .requestMatchers("/v1/api/location-images/**").permitAll()
                         .requestMatchers("/v1/api/city-stories/feed").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/location-images/*/stories").permitAll()
-                        .requestMatchers("/v1/api/places/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/v1/api/places/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/v1/api/places/import", "/v1/api/places/import/batch")
+                        .hasAnyAuthority("ROLE_ADMIN", "ROLE_API_KEY")
+                        .requestMatchers(HttpMethod.PUT, "/v1/api/places/*")
+                        .hasAnyAuthority("ROLE_ADMIN", "ROLE_API_KEY")
+                        .requestMatchers("/v1/api/places/**").hasAuthority("ROLE_ADMIN")
                         .requestMatchers("/v1/api/place-reviews/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/api/activity-bookings/*/add-to-trip").authenticated()
                         .requestMatchers("/v1/api/activity-bookings/**").permitAll()
@@ -52,6 +59,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/v1/api/reviews/activity-bookings/*/score").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/api/admin/auth/login").permitAll()
                         .requestMatchers("/v1/api/admin/auth/session", "/v1/api/account/password").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/v1/api/admin/places/import", "/v1/api/admin/places/import/batch")
+                        .hasAnyAuthority("ROLE_ADMIN", "ROLE_API_KEY")
+                        .requestMatchers(HttpMethod.PUT, "/v1/api/admin/places/*")
+                        .hasAnyAuthority("ROLE_ADMIN", "ROLE_API_KEY")
                         .requestMatchers("/v1/api/admin/**").hasAuthority("ROLE_ADMIN")
                         .requestMatchers("/v1/api/partner/**").hasAnyAuthority("ROLE_PARTNER", "ROLE_ADMIN")
                         .requestMatchers("/v1/api/internal/**").permitAll()
@@ -80,7 +91,8 @@ public class SecurityConfig {
                                 "/js/**"
                         ).permitAll()
                         .anyRequest().authenticated())
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(apiKeyAuthenticationFilter, JwtAuthenticationFilter.class);
 
         return http.build();
     }

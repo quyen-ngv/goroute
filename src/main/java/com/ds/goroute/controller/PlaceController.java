@@ -41,7 +41,8 @@ public class PlaceController extends BaseService {
     private final FoodService foodService;
 
     @PostMapping("/import")
-    @Operation(summary = "Import place from Google Maps data")
+    @Operation(summary = "Import place from Google Maps data",
+            description = "The optional attributes object stores schema v1 place suitability and experience metadata.")
     public ResponseEntity importPlace(@Valid @RequestBody ImportPlaceRequest request) {
         PlaceResponse response = placeService.importPlace(request);
         return ResponseEntity.ok(ofSucceeded(response));
@@ -154,7 +155,8 @@ public class PlaceController extends BaseService {
     }
 
     @PutMapping("/{id}")
-    @Operation(summary = "Update place information")
+    @Operation(summary = "Update place information",
+            description = "The attributes field is replaced as a JSON object; omit it or send null to clear it.")
     public ResponseEntity updatePlace(@PathVariable UUID id, @Valid @RequestBody UpdatePlaceRequest request) {
         PlaceResponse response = placeService.updatePlace(id, request);
         return ResponseEntity.ok(ofSucceeded(response));

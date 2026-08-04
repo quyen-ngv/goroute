@@ -38,3 +38,11 @@ deployment/
 data/
 src/main/resources/application.yaml
 src/main/resources/firebase-credentials.json
+
+# Local place attribute enrichment inputs, credentials, tokens and logs
+.env
+token_cache.json
+places.csv
+failed.log
+results.log
+place_context/

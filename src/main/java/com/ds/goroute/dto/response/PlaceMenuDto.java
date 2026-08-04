@@ -16,8 +16,6 @@ import java.util.List;
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class PlaceMenuDto {
-    private String link;
-    private String source;
-    private List<PlaceImagesDto> images;
-    private List<String> highlights;
+    private List<PlaceMenuItemDto> data;
+    private List<PlaceMenuItemDto> highlights;
 }

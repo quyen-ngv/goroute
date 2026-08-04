@@ -2,6 +2,7 @@ package com.ds.goroute.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -53,12 +54,14 @@ public class UpdatePlaceRequest {
     // Details
     private String descriptions;
     private String aiDescription; // Curated for AI trip planning
+    private JsonNode aiReferences; // JSON array of article/review source metadata read by AI
     private String status;
     private String visibilityStatus;
     private String priceRange;
 
     // Hours & Booking
     private String openHours; // JSON as String
+    private String regular; // Regular opening hours JSON as String
     private String popularTimes; // JSON as String
     private String reservations; // JSON as String
     private String orderOnline; // JSON as String
@@ -69,4 +72,7 @@ public class UpdatePlaceRequest {
     private String about; // JSON as String
     private String owner; // JSON as String
     private String emails; // JSON as String
+
+    // Schema v1 flexible attributes, stored as a JSONB object
+    private JsonNode attributes;
 }

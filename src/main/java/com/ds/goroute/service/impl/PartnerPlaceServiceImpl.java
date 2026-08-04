@@ -14,6 +14,7 @@ import com.ds.goroute.service.PartnerPlaceService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -102,7 +103,8 @@ public class PartnerPlaceServiceImpl implements PartnerPlaceService {
                 .timezone(clean(request.getTimezone())).phone(clean(request.getPhone())).website(clean(request.getWebsite()))
                 .thumbnail(clean(request.getThumbnail())).images(json(request.getImages()==null?List.of():request.getImages()))
                 .destinations(json(request.getDestinations()==null?List.of():request.getDestinations()))
-                .descriptions(clean(request.getDescription())).lifecycleStatus("ACTIVE").primarySourceType("PARTNER")
+                .descriptions(clean(request.getDescription())).attributes(attributeJson(request.getAttributes()))
+                .lifecycleStatus("ACTIVE").primarySourceType("PARTNER")
                 .dataVersion(1L).createdBy(actor).updatedBy(actor).createdAt(createdAt).updatedAt(LocalDateTime.now()).build();
     }
 
@@ -124,6 +126,7 @@ public class PartnerPlaceServiceImpl implements PartnerPlaceService {
                 .address(value.getAddress()).latitude(value.getLatitude()).longitude(value.getLongitude())
                 .timezone(value.getTimezone()).phone(value.getPhone()).website(value.getWebsite()).thumbnail(value.getThumbnail())
                 .images(readList(value.getImages())).destinations(readList(value.getDestinations())).description(value.getDescriptions())
+                .attributes(readNode(value.getAttributes()))
                 .lifecycleStatus(value.getLifecycleStatus()).primarySourceType(value.getPrimarySourceType())
                 .dataVersion(value.getDataVersion()).attachedExisting(attached).createdAt(value.getCreatedAt()).updatedAt(value.getUpdatedAt()).build();
     }
@@ -131,6 +134,28 @@ public class PartnerPlaceServiceImpl implements PartnerPlaceService {
     private String json(Object value) {
         try { return objectMapper.writeValueAsString(value); }
         catch (JsonProcessingException ex) { throw new BusinessException(ErrorConstant.INTERNAL_SERVER_ERROR,"Cannot serialize place source"); }
+    }
+
+    private String attributeJson(JsonNode attributes) {
+        if (attributes == null || attributes.isNull()) {
+            return null;
+        }
+        if (!attributes.isObject()) {
+            throw badRequest("attributes must be a JSON object");
+        }
+        return json(attributes);
+    }
+
+    private JsonNode readNode(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode node = objectMapper.readTree(value);
+            return node == null || node.isNull() ? null : node;
+        } catch (Exception ex) {
+            return null;
+        }
     }
     private List<String> readList(String value) {
         if (value==null) return List.of();

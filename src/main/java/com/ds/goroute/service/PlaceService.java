@@ -4,6 +4,7 @@ import com.ds.goroute.dto.request.BatchUpdatePlaceImagesRequest;
 import com.ds.goroute.dto.request.ImportPlaceRequest;
 import com.ds.goroute.dto.request.UpdatePlaceRequest;
 import com.ds.goroute.dto.response.PlaceResponse;
+import com.ds.goroute.dto.response.AdminPlaceResponse;
 import com.ds.goroute.dto.response.PlaceReviewResponse;
 
 import java.math.BigDecimal;
@@ -37,6 +38,10 @@ public interface PlaceService {
      * Search places by location and filters
      */
     List<PlaceResponse> getAllPlaces();
+
+    List<AdminPlaceResponse> getAdminPlaces();
+
+    AdminPlaceResponse getAdminPlaceById(UUID id);
 
     List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
                                      BigDecimal radius, String category, List<String> placeGroups,

@@ -1,5 +1,6 @@
 package com.ds.goroute.dto.response;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -48,12 +49,15 @@ public class PlaceResponse {
 
     private String descriptions;
     private String aiDescription; // Curated for AI trip planning
+    private JsonNode aiReferences; // Article/review source metadata read by AI
     private String visibilityStatus;
     private String priceRange;
 
     private Map<String, List<String>> openHours; // {"Monday": ["9 AM - 5 PM"], ...}
+    private Map<String, List<String>> regular; // Regular opening hours
     private Map<String, Map<String, Integer>> popularTimes; // {"Monday": {"6": 0, "7": 17, ...}, ...}
     private List<PlaceAboutDto> about;
+    private JsonNode attributes;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

@@ -191,46 +191,111 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
 
         try {
             JsonNode rootNode = objectMapper.readTree(menuJson);
-            if (!rootNode.isObject() || !rootNode.has("images") || !rootNode.get("images").isArray()) {
+            if (!rootNode.isObject()) {
                 return menuJson;
             }
 
             ObjectNode menuObject = ((ObjectNode) rootNode).deepCopy();
-            ArrayNode imagesArray = (ArrayNode) menuObject.get("images");
+            JsonNode legacyImagesNode = menuObject.get("images");
+            JsonNode dataNode = menuObject.get("data");
+            ArrayNode sourceData = dataNode != null && dataNode.isArray()
+                    ? (ArrayNode) dataNode
+                    : legacyImagesNode != null && legacyImagesNode.isArray()
+                            ? (ArrayNode) legacyImagesNode
+                            : objectMapper.createArrayNode();
+            JsonNode highlightsNode = menuObject.get("highlights");
+
             List<String> imageUrls = new ArrayList<>();
-            for (JsonNode imageNode : imagesArray) {
-                if (imageNode.isObject()
-                        && imageNode.has("image")
-                        && imageNode.get("image").isTextual()
-                        && !imageNode.get("image").asText().isBlank()) {
-                    imageUrls.add(imageNode.get("image").asText());
+            collectMenuImageUrls(sourceData, imageUrls);
+            if (highlightsNode != null && highlightsNode.isArray()) {
+                collectMenuImageUrls((ArrayNode) highlightsNode, imageUrls);
+            }
+
+            Map<String, String> migratedUrls = imageUrls.isEmpty()
+                    ? Collections.emptyMap()
+                    : migrateImages(imageUrls, targetPath);
+
+            ArrayNode migratedData = objectMapper.createArrayNode();
+            for (JsonNode item : sourceData) {
+                ObjectNode normalizedItem = normalizeMenuItem(item, migratedUrls);
+                if (normalizedItem != null && !normalizedItem.path("url").asText().isBlank()) {
+                    migratedData.add(normalizedItem);
                 }
             }
 
-            if (imageUrls.isEmpty()) {
-                return menuJson;
-            }
-
-            Map<String, String> migratedUrls = migrateImages(imageUrls, targetPath);
-            ArrayNode migratedImages = objectMapper.createArrayNode();
-            for (JsonNode imageNode : imagesArray) {
-                if (imageNode.isObject()
-                        && imageNode.has("image")
-                        && imageNode.get("image").isTextual()) {
-                    ObjectNode migratedImage = ((ObjectNode) imageNode).deepCopy();
-                    String oldUrl = imageNode.get("image").asText();
-                    migratedImage.put("image", migratedUrls.getOrDefault(oldUrl, oldUrl));
-                    migratedImages.add(migratedImage);
-                } else {
-                    migratedImages.add(imageNode);
+            ArrayNode migratedHighlights = objectMapper.createArrayNode();
+            if (highlightsNode != null && highlightsNode.isArray()) {
+                for (JsonNode item : highlightsNode) {
+                    ObjectNode normalizedItem = normalizeMenuItem(item, migratedUrls);
+                    if (normalizedItem != null) {
+                        migratedHighlights.add(normalizedItem);
+                    }
                 }
             }
-            menuObject.set("images", migratedImages);
+
+            menuObject.set("data", migratedData);
+            menuObject.set("highlights", migratedHighlights);
+            menuObject.remove("images");
+            menuObject.remove("link");
+            menuObject.remove("source");
             return objectMapper.writeValueAsString(menuObject);
         } catch (Exception e) {
             log.error("Error migrating menu images: {}", e.getMessage());
             return menuJson;
         }
+    }
+
+    private void collectMenuImageUrls(ArrayNode items, List<String> imageUrls) {
+        for (JsonNode item : items) {
+            if (!item.isObject()) {
+                continue;
+            }
+            String url = item.path("url").asText();
+            if (url.isBlank()) {
+                url = item.path("image").asText();
+            }
+            if (!url.isBlank()) {
+                imageUrls.add(url);
+            }
+        }
+    }
+
+    private ObjectNode normalizeMenuItem(JsonNode item, Map<String, String> migratedUrls) {
+        if (item == null || item.isNull()) {
+            return null;
+        }
+
+        String url = "";
+        String title = "";
+        if (item.isTextual()) {
+            title = item.asText().trim();
+        } else if (item.isObject()) {
+            url = item.path("url").asText();
+            if (url.isBlank()) {
+                url = item.path("image").asText();
+            }
+            title = item.path("title").asText();
+            if (title.isBlank()) {
+                title = item.path("name").asText();
+            }
+        } else {
+            return null;
+        }
+
+        if (!url.isBlank()) {
+            url = migratedUrls.getOrDefault(url, url);
+        }
+        if (url.isBlank() && title.equalsIgnoreCase("menu")) {
+            return null;
+        }
+        if (url.isBlank() && title.isBlank()) {
+            return null;
+        }
+
+        ObjectNode normalized = objectMapper.createObjectNode();
+        normalized.put("url", url);
+        normalized.put("title", title);
+        return normalized;
     }
     
     private byte[] downloadImage(String imageUrl) {

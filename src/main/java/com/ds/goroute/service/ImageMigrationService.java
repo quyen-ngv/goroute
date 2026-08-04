@@ -31,7 +31,7 @@ public interface ImageMigrationService {
     /**
      * Migrate menu image URLs nested inside a menu JSON object.
      *
-     * @param menuJson JSON object containing an optional images array
+     * @param menuJson JSON object containing data/highlights menu items
      * @param targetPath Target path in MinIO
      * @return Updated JSON with migrated menu image URLs
      */

@@ -53,12 +53,14 @@ public class Place {
     // Details
     private String descriptions;
     private String aiDescription; // Curated for AI trip planning
+    private String aiReferences; // JSON array of article/review source metadata read by AI
     private String status;
     private PlaceVisibilityStatus visibilityStatus;
     private String priceRange;
 
     // Hours & Booking
     private String openHours; // JSON as String
+    private String regular; // Regular opening hours JSON as String
     private Integer visitDurationMinutes;
     private String popularTimes; // JSON as String
     private String reservations; // JSON as String
@@ -70,6 +72,9 @@ public class Place {
     private String about; // JSON as String
     private String owner; // JSON as String
     private String emails; // JSON as String
+
+    // Schema v1 flexible attributes (stored as JSONB)
+    private String attributes; // JSON as String
 
     // Raw data backup
     private String rawData; // JSON as String

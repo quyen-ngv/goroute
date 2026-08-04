@@ -7,6 +7,7 @@ import com.ds.goroute.dto.request.UpdatePlaceRequest;
 import com.ds.goroute.dto.PlaceSearchCriteria;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.response.PlaceAboutDto;
+import com.ds.goroute.dto.response.AdminPlaceResponse;
 import com.ds.goroute.dto.response.PlaceImagesDto;
 import com.ds.goroute.dto.response.PlaceMenuDto;
 import com.ds.goroute.dto.response.PlaceResponse;
@@ -24,6 +25,7 @@ import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.PlaceReviewRepository;
 import com.ds.goroute.repository.PlaceSourceRepository;
 import com.ds.goroute.service.PlaceReviewService;
+import com.ds.goroute.service.PlaceAttributeCatalog;
 import com.ds.goroute.service.PlaceSearchIndexService;
 import com.ds.goroute.service.PlaceService;
 import com.ds.goroute.service.PlaceTranslationService;
@@ -201,6 +203,22 @@ public class PlaceServiceImpl implements PlaceService {
         return placeRepository.findAll().stream()
                 .map(this::toPlaceResponse)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AdminPlaceResponse> getAdminPlaces() {
+        return placeRepository.findAll().stream()
+                .map(this::toAdminPlaceResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AdminPlaceResponse getAdminPlaceById(UUID id) {
+        Place place = placeRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND));
+        return toAdminPlaceResponse(place);
     }
 
     @Override
@@ -431,10 +449,14 @@ public class PlaceServiceImpl implements PlaceService {
         place.setImages(request.getImages());
         place.setDescriptions(request.getDescriptions());
         place.setAiDescription(request.getAiDescription());
+        if (request.getAiReferences() != null) {
+            place.setAiReferences(serializeAiReferences(request.getAiReferences()));
+        }
         place.setStatus(request.getStatus());
         place.setVisibilityStatus(parseVisibilityStatus(request.getVisibilityStatus(), place.getVisibilityStatus()));
         place.setPriceRange(request.getPriceRange());
         place.setOpenHours(request.getOpenHours());
+        place.setRegular(request.getRegular());
         place.setPopularTimes(request.getPopularTimes());
         place.setReservations(request.getReservations());
         place.setOrderOnline(request.getOrderOnline());
@@ -443,6 +465,7 @@ public class PlaceServiceImpl implements PlaceService {
         place.setAbout(request.getAbout());
         place.setOwner(request.getOwner());
         place.setEmails(request.getEmails());
+        place.setAttributes(serializeAttributes(request.getAttributes()));
         place.setUpdatedAt(LocalDateTime.now());
 
         placeRepository.update(place);
@@ -506,9 +529,11 @@ public class PlaceServiceImpl implements PlaceService {
         updated.setThumbnail(preferNonBlank(updated.getThumbnail(), existingPlace.getThumbnail()));
         updated.setImages(preferNonEmptyJson(updated.getImages(), existingPlace.getImages()));
         updated.setAiDescription(existingPlace.getAiDescription());
+        updated.setAiReferences(preferNonEmptyJson(updated.getAiReferences(), existingPlace.getAiReferences()));
         updated.setStatus(preferNonBlank(updated.getStatus(), existingPlace.getStatus()));
         updated.setPriceRange(preferNonBlank(updated.getPriceRange(), existingPlace.getPriceRange()));
         updated.setOpenHours(preferNonEmptyJson(updated.getOpenHours(), existingPlace.getOpenHours()));
+        updated.setRegular(preferNonEmptyJson(updated.getRegular(), existingPlace.getRegular()));
         updated.setVisitDurationMinutes(existingPlace.getVisitDurationMinutes());
         updated.setPopularTimes(preferNonEmptyJson(updated.getPopularTimes(), existingPlace.getPopularTimes()));
         updated.setReservations(preferNonEmptyJson(updated.getReservations(), existingPlace.getReservations()));
@@ -518,6 +543,7 @@ public class PlaceServiceImpl implements PlaceService {
         updated.setAbout(preferNonEmptyJson(updated.getAbout(), existingPlace.getAbout()));
         updated.setOwner(preferNonEmptyJson(updated.getOwner(), existingPlace.getOwner()));
         updated.setEmails(preferNonEmptyJson(updated.getEmails(), existingPlace.getEmails()));
+        updated.setAttributes(preferNonEmptyJson(updated.getAttributes(), existingPlace.getAttributes()));
         updated.setRawData(preferNonEmptyJson(updated.getRawData(), existingPlace.getRawData()));
         updated.setAvgAuthenticityScore(existingPlace.getAvgAuthenticityScore());
         updated.setPlaceOverallScore(existingPlace.getPlaceOverallScore());
@@ -617,10 +643,13 @@ public class PlaceServiceImpl implements PlaceService {
                 .thumbnail(request.getThumbnail())
                 .images(request.getImages())
                 .descriptions(request.getDescriptions())
+                .aiDescription(request.getAiDescription())
+                .aiReferences(serializeAiReferences(request.getAiReferences()))
                 .status(request.getStatus())
                 .visibilityStatus(parseVisibilityStatus(request.getVisibilityStatus(), PlaceVisibilityStatus.ACTIVE))
                 .priceRange(request.getPriceRange())
                 .openHours(request.getOpenHours())
+                .regular(request.getRegular())
                 .popularTimes(request.getPopularTimes())
                 .reservations(request.getReservations())
                 .orderOnline(request.getOrderOnline())
@@ -629,6 +658,7 @@ public class PlaceServiceImpl implements PlaceService {
                 .about(request.getAbout())
                 .owner(request.getOwner())
                 .emails(request.getEmails())
+                .attributes(serializeAttributes(request.getAttributes()))
                 .rawData(request.getRawData())
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
@@ -985,13 +1015,16 @@ public class PlaceServiceImpl implements PlaceService {
                 .menu(parseJsonToMenu(place.getMenu()))
                 .descriptions(resolvedDescription)
                 .aiDescription(place.getAiDescription())
+                .aiReferences(parseJsonNode(place.getAiReferences()))
                 .visibilityStatus(place.getVisibilityStatus() != null
                         ? place.getVisibilityStatus().name()
                         : PlaceVisibilityStatus.ACTIVE.name())
                 .priceRange(place.getPriceRange())
                 .openHours(parseJsonToMapOfList(place.getOpenHours()))
+                .regular(parseJsonToMapOfList(place.getRegular()))
                 .popularTimes(parseJsonToMapOfMap(place.getPopularTimes()))
                 .about(parseJsonToList(place.getAbout(), PlaceAboutDto.class))
+                .attributes(PlaceAttributeCatalog.publicAttributes(parseJsonNode(place.getAttributes())))
                 .distance(place.getDistance())
                 .createdAt(place.getCreatedAt())
                 .updatedAt(place.getUpdatedAt())
@@ -1003,10 +1036,135 @@ public class PlaceServiceImpl implements PlaceService {
             return null;
         }
         try {
-            return objectMapper.readValue(jsonString, PlaceMenuDto.class);
+            JsonNode rootNode = objectMapper.readTree(jsonString);
+            if (!rootNode.isObject()) {
+                return null;
+            }
+
+            ObjectNode normalized = objectMapper.createObjectNode();
+            JsonNode dataNode = rootNode.get("data");
+            if (dataNode == null || !dataNode.isArray()) {
+                dataNode = rootNode.get("images");
+            }
+            normalized.set("data", normalizeMenuItems(dataNode, true));
+            normalized.set("highlights", normalizeMenuItems(rootNode.get("highlights"), false));
+            return objectMapper.treeToValue(normalized, PlaceMenuDto.class);
         } catch (Exception e) {
             log.warn("Failed to parse menu JSON: {}", e.getMessage());
             return null;
+        }
+    }
+
+    private ArrayNode normalizeMenuItems(JsonNode node, boolean requireUrl) {
+        ArrayNode normalized = objectMapper.createArrayNode();
+        if (node == null || !node.isArray()) {
+            return normalized;
+        }
+
+        Set<String> seen = new HashSet<>();
+        for (JsonNode item : node) {
+            String url = "";
+            String title = "";
+            if (item.isTextual()) {
+                title = item.asText().trim();
+            } else if (item.isObject()) {
+                url = item.path("url").asText();
+                if (url.isBlank()) {
+                    url = item.path("image").asText();
+                }
+                title = item.path("title").asText();
+                if (title.isBlank()) {
+                    title = item.path("name").asText();
+                }
+            }
+
+            if (requireUrl && url.isBlank()) {
+                continue;
+            }
+            if (!requireUrl && title.equalsIgnoreCase("menu")) {
+                continue;
+            }
+            if (url.isBlank() && title.isBlank()) {
+                continue;
+            }
+
+            String key = url + "\u0000" + title;
+            if (!seen.add(key)) {
+                continue;
+            }
+            ObjectNode normalizedItem = objectMapper.createObjectNode();
+            normalizedItem.put("url", url);
+            normalizedItem.put("title", title);
+            normalized.add(normalizedItem);
+        }
+        return normalized;
+    }
+
+    private AdminPlaceResponse toAdminPlaceResponse(Place place) {
+        AdminPlaceResponse response = objectMapper.convertValue(toPlaceResponse(place), AdminPlaceResponse.class);
+        response.setCid(place.getCid());
+        response.setDataId(place.getDataId());
+        response.setInputId(place.getInputId());
+        response.setPlusCode(place.getPlusCode());
+        response.setVisitDurationMinutes(place.getVisitDurationMinutes());
+        response.setStatus(place.getStatus());
+        response.setReservations(place.getReservations());
+        response.setOrderOnline(place.getOrderOnline());
+        response.setCompleteAddress(place.getCompleteAddress());
+        response.setOwner(place.getOwner());
+        response.setEmails(place.getEmails());
+        response.setRawData(place.getRawData());
+        response.setTrustLevel(place.getTrustLevel() != null ? place.getTrustLevel().name() : null);
+        response.setJcurveDetected(place.getIsJcurveDetected());
+        response.setSpikeDetected(place.getIsSpikeDetected());
+        response.setAuthenticLowStarCount(place.getAuthenticLowStarCount());
+        response.setAvgAuthenticityScore(place.getAvgAuthenticityScore());
+        response.setScoreCalculatedAt(place.getScoreCalculatedAt());
+        response.setAttributes(PlaceAttributeCatalog.adminAttributes(parseJsonNode(place.getAttributes())));
+        response.setAttributeSchema(PlaceAttributeCatalog.definitions());
+        return response;
+    }
+
+    private JsonNode parseJsonNode(String jsonString) {
+        if (jsonString == null || jsonString.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            JsonNode node = objectMapper.readTree(jsonString);
+            return node == null || node.isNull() ? null : node;
+        } catch (Exception e) {
+            log.warn("Failed to parse place attributes JSON: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private String serializeAttributes(JsonNode attributes) {
+        if (attributes == null || attributes.isNull()) {
+            return null;
+        }
+        try {
+            return PlaceAttributeCatalog.normalizeForStorage(attributes, objectMapper);
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, e.getMessage());
+        } catch (Exception e) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "attributes must be valid JSON");
+        }
+    }
+
+    private String serializeAiReferences(JsonNode references) {
+        if (references == null || references.isNull()) {
+            return null;
+        }
+        if (!references.isArray()) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "aiReferences must be a JSON array");
+        }
+        try {
+            return objectMapper.writeValueAsString(references);
+        } catch (Exception e) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "aiReferences must be valid JSON");
         }
     }
 

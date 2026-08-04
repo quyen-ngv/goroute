@@ -1,5 +1,6 @@
 package com.ds.goroute.dto.request;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.constraints.*;
 import lombok.Data;
 
@@ -24,5 +25,6 @@ public class UpsertPartnerPlaceRequest {
     private List<String> images;
     private List<String> destinations;
     private String description;
+    private JsonNode attributes;
     private Long expectedVersion;
 }
