@@ -32,6 +32,7 @@ JSON_STRING_FIELDS = {
     "reviewsPerRating",
     "images",
     "openHours",
+    "regular",
     "popularTimes",
     "reservations",
     "orderOnline",
@@ -80,6 +81,35 @@ HEADING_ICON_PREFIXES = (
     "🍽️ ",
     "🎟️ ",
     "🧭 ",
+    "🏛️ ",
+    "🏡 ",
+    "🏔️ ",
+    "🎒 ",
+    "🌤️ ",
+    "💧 ",
+    "🥾 ",
+    "🥢 ",
+    "🛏️ ",
+    "🍲 ",
+    "🎭 ",
+    "🚗 ",
+    "🛍️ ",
+    "⚠️ ",
+    "🛡️ ",
+    "🎉 ",
+    "🌅 ",
+    "🪨 ",
+    "🏊 ",
+    "🍤 ",
+    "🚶 ",
+    "🌴 ",
+    "🌿 ",
+    "🛕 ",
+    "🚲 ",
+    "🚤 ",
+    "🌉 ",
+    "🌲 ",
+    "📷 ",
 )
 
 
@@ -106,6 +136,22 @@ def semantic_heading_icon(title: str, *, place_type: str = "attraction") -> str:
         return "♿"
     if "tip" in normalized or "lưu ý" in normalized or "practical" in normalized:
         return "💡"
+    if any(word in normalized for word in ("history", "lịch sử", "origin", "nguồn gốc")):
+        return "🏛️"
+    if any(word in normalized for word in ("architecture", "kiến trúc", "house", "nhà trình")):
+        return "🏡"
+    if any(word in normalized for word in ("stay", "accommodation", "lưu trú", "homestay", "phòng")):
+        return "🛏️"
+    if any(word in normalized for word in ("season", "best time", "mùa", "thời điểm đẹp")):
+        return "🌤️"
+    if any(word in normalized for word in ("transport", "getting there", "di chuyển", "đường đi")):
+        return "🚗"
+    if any(word in normalized for word in ("culture", "văn hóa", "truyền thống", "festival", "lễ hội")):
+        return "🎭"
+    if any(word in normalized for word in ("safety", "an toàn", "lưu ý an toàn")):
+        return "⚠️"
+    if any(word in normalized for word in ("souvenir", "shopping", "quà", "mua sắm")):
+        return "🛍️"
     return "🧭"
 
 
@@ -200,6 +246,16 @@ def parse_env(path: Path) -> dict[str, str]:
                 value = value[1:-1]
             values[key.strip()] = value
     return values
+
+
+def addresses_match(csv_address: Any, api_address: Any) -> bool:
+    """Compare addresses while ignoring a display-only CSV prefix."""
+    def normalize(value: Any) -> str:
+        text = str(value or "").strip()
+        text = re.sub(r"^address\s*:\s*", "", text, flags=re.IGNORECASE)
+        return re.sub(r"\s+", " ", text).casefold()
+
+    return normalize(csv_address) == normalize(api_address)
 
 
 def resolve_placeholders(value: str, env: dict[str, str]) -> str:
@@ -843,6 +899,47 @@ def as_bullets(items: Any) -> list[str]:
     return result
 
 
+def custom_description_sections(items: Any) -> list[tuple[str, str]]:
+    """Return optional editorial sections without forcing a fixed template.
+
+    Evidence may provide a list of sections with ``title``/``heading`` and
+    ``body``/``content`` plus optional ``bullets``.  The runner still applies
+    the shared heading normalizer later, so the evidence author can focus on
+    the editorial order and useful content for that place.
+    """
+    if not isinstance(items, list):
+        return []
+    result: list[tuple[str, str]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or item.get("heading") or "").strip()
+        title = re.sub(r"^#{1,6}\s*", "", title).strip()
+        bold_title = re.fullmatch(r"\*\*(.+?)\*\*", title)
+        if bold_title:
+            title = bold_title.group(1).strip()
+        if not title:
+            continue
+
+        raw_body = item.get("body")
+        if raw_body is None:
+            raw_body = item.get("content")
+        if raw_body is None:
+            raw_body = item.get("description")
+        if isinstance(raw_body, list):
+            body = "\n".join(str(value).strip() for value in raw_body if str(value).strip())
+        else:
+            body = str(raw_body or "").strip()
+        bullets = as_bullets(item.get("bullets") or item.get("items"))
+        if bullets:
+            if body:
+                body += "\n"
+            body += "\n".join(f"- {bullet}" for bullet in bullets)
+        if body:
+            result.append((title, body))
+    return result
+
+
 def render_description(
     row: dict[str, str],
     record: dict[str, Any],
@@ -884,6 +981,12 @@ def render_description(
         place_name=name,
         place_type=place_type,
     )
+    # Evidence may be drafted from the Vietnamese template. Keep the English
+    # copy readable for foreign visitors when a localized heading slips in.
+    description_en = description_en.replace("## 📍 Gần đây", "## 📍 Nearby / combine with")
+    description_en = description_en.replace("## 📖 Overview", "## 🗺️ Overview")
+    if not re.search(r"(?m)^## 🗺️ Overview$", description_en):
+        description_en = f"## 🗺️ Overview\n\n{description_en}"
 
     lines = ["## 📖 Overview" if place_type == "food" else "## 🗺️ Overview", overview]
     dishes = as_bullets(facts.get("dishes"))
@@ -892,6 +995,8 @@ def render_description(
     experience = str(facts.get("experience") or facts.get("ambience") or "").strip()
     if experience:
         lines.extend(["", "## 🏠 Không khí / trải nghiệm", experience])
+    for section_title, section_body in custom_description_sections(facts.get("sections")):
+        lines.extend(["", f"## {section_title}", section_body])
     if review_summary:
         lines.extend(["", REVIEW_SUMMARY_HEADING, review_summary])
     visit_timing = special_hours_note(record.get("openHours"))
@@ -902,7 +1007,7 @@ def render_description(
         lines.extend(["", "## 💰 Giá tham khảo", price])
     nearby = as_bullets(facts.get("nearby"))
     if nearby:
-        lines.extend(["", "## 📍 Gần đây" if place_type == "food" else "## 📍 Nearby / combine with", *[f"- {item}" for item in nearby]])
+        lines.extend(["", "## 📍 Gần đây", *[f"- {item}" for item in nearby]])
     tips = as_bullets(facts.get("tips"))
     if tips:
         lines.extend(["", "## 💡 Tips", *[f"- {item}" for item in tips]])
@@ -1166,7 +1271,7 @@ def main() -> int:
             current = client.get_place(place_id)
             if str(current.get("title") or current.get("name") or "").strip() != str(row.get("name") or "").strip():
                 raise RunnerError("CSV/API title mismatch")
-            if str(current.get("address") or "").strip() != str(row.get("address") or "").strip():
+            if not addresses_match(row.get("address"), current.get("address")):
                 raise RunnerError("CSV/API address mismatch")
             raw_reviews = client.get_place_reviews(place_id, max_pages=args.review_max_pages)
             review_context = build_review_context(raw_reviews)
@@ -1232,7 +1337,7 @@ def main() -> int:
             current = client.get_place(place_id)
             if str(current.get("title") or current.get("name") or "").strip() != name:
                 raise RunnerError("CSV/API title mismatch")
-            if str(current.get("address") or "").strip() != str(row.get("address") or "").strip():
+            if not addresses_match(row.get("address"), current.get("address")):
                 raise RunnerError("CSV/API address mismatch")
             schema = current.get("attributeSchema") or []
             attributes = apply_attribute_updates(current.get("attributes"), schema, item)
