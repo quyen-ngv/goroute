@@ -55,7 +55,15 @@
         SET ai_trips_used = ai_trips_used + 1,
             updated_at = NOW()
         WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
-          AND ai_trips_used &lt; CASE WHEN tier = 'PRO' THEN 10 ELSE 3 END
+          AND ai_trips_used &lt; #{limit}
+    </update>
+
+    <update id="releaseAiTripQuota">
+        UPDATE user_subscriptions
+        SET ai_trips_used = GREATEST(ai_trips_used - 1, 0),
+            updated_at = NOW()
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND ai_trips_used &gt; 0
     </update>
 
     <select id="getSubscriptionTier" resultType="string">

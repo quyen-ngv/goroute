@@ -2,6 +2,7 @@ package com.ds.goroute.service.impl;
 
 import com.ds.goroute.dto.request.AiTripDestinationRequest;
 import com.ds.goroute.dto.request.AiTripGenerateRequest;
+import com.ds.goroute.dto.response.AiTripUsage;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.entity.AiTripDraft;
 import com.ds.goroute.entity.LocationImage;
@@ -12,6 +13,7 @@ import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.AiTripRepository;
 import com.ds.goroute.repository.LocationImageRepository;
 import com.ds.goroute.repository.PlaceRepository;
+import com.ds.goroute.service.AiTripQuotaService;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.thirdparty.ai.AiClient;
 import com.ds.goroute.type.PlaceGroup;
@@ -42,6 +44,7 @@ import static org.mockito.Mockito.when;
 class AiTripServiceImplMultiDestinationTest {
 
     private final AiTripRepository aiTripRepository = mock(AiTripRepository.class);
+    private final AiTripQuotaService aiTripQuotaService = mock(AiTripQuotaService.class);
     private final PlaceRepository placeRepository = mock(PlaceRepository.class);
     private final LocationImageRepository locationImageRepository = mock(LocationImageRepository.class);
     private final ActivityBookingRepository activityBookingRepository = mock(ActivityBookingRepository.class);
@@ -58,6 +61,7 @@ class AiTripServiceImplMultiDestinationTest {
     void setUp() {
         service = new AiTripServiceImpl(
                 aiTripRepository,
+                aiTripQuotaService,
                 placeRepository,
                 locationImageRepository,
                 activityBookingRepository,
@@ -71,9 +75,8 @@ class AiTripServiceImplMultiDestinationTest {
                 hanoiId, "Hà Nội", "hanoi", "21.0285", "105.8542")));
         when(locationImageRepository.findById(danangId)).thenReturn(Optional.of(location(
                 danangId, "Đà Nẵng", "danang", "16.0544", "108.2022")));
-        when(aiTripRepository.consumeAiTripQuota(any())).thenReturn(1);
-        when(aiTripRepository.getSubscriptionTier(any())).thenReturn("FREE");
-        when(aiTripRepository.getAiTripsUsed(any())).thenReturn(1);
+        when(aiTripQuotaService.reserve(any())).thenReturn(AiTripUsage.builder()
+                .tier("FREE").used(1).limit(3).eligible(true).build());
         when(placeRepository.findForAiByDestination(
                 anyString(), any(), any(), anyString(), any(), anyInt())).thenReturn(List.of());
         when(activityBookingRepository.findByDestinations(anyList(), anyInt(), anyInt())).thenReturn(List.of());
@@ -108,7 +111,7 @@ class AiTripServiceImplMultiDestinationTest {
                         destination(hanoiId, "2026-08-01", "2026-08-03", 0),
                         destination(danangId, "2026-08-03", "2026-08-04", 1)), UUID.randomUUID()));
 
-        verify(aiTripRepository, never()).consumeAiTripQuota(any());
+        verify(aiTripQuotaService, never()).reserve(any());
     }
 
     @Test
@@ -149,6 +152,8 @@ class AiTripServiceImplMultiDestinationTest {
     private AiTripDestinationRequest destination(UUID id, String start, String end, int order) {
         return AiTripDestinationRequest.builder()
                 .locationImageId(id)
+                .latitude(new BigDecimal(order == 0 ? "21.0285" : "20.8449"))
+                .longitude(new BigDecimal(order == 0 ? "105.8542" : "106.6881"))
                 .startDate(LocalDate.parse(start))
                 .endDate(LocalDate.parse(end))
                 .orderIndex(order)

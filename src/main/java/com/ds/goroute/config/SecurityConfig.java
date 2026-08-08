@@ -20,6 +20,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
+import jakarta.servlet.DispatcherType;
 
 @Configuration
 @EnableWebSecurity
@@ -38,6 +39,13 @@ public class SecurityConfig {
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // SseEmitter completion/progress callbacks use an
+                        // internal ASYNC servlet dispatch after the original
+                        // JWT-authenticated request has already started the
+                        // response. Re-authenticating that dispatch as a new
+                        // request causes a late 403 after the SSE response is
+                        // committed; the initial endpoint remains protected.
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers("/v1/api/auth/**").permitAll()
                         .requestMatchers("/v1/api/public/**").permitAll()
                         .requestMatchers("/v1/api/location-images/**").permitAll()

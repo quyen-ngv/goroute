@@ -96,6 +96,15 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     }
 
     @Override
+    public List<Place> findActiveForAiWithinRadius(BigDecimal latitude, BigDecimal longitude,
+                                                   BigDecimal radiusKm, List<String> placeGroups, int limit) {
+        if (latitude == null || longitude == null || radiusKm == null || limit <= 0) {
+            return List.of();
+        }
+        return placeMapper.findActiveForAiWithinRadius(latitude, longitude, radiusKm, placeGroups, limit);
+    }
+
+    @Override
     public void delete(UUID id) {
         placeMapper.delete(id);
     }

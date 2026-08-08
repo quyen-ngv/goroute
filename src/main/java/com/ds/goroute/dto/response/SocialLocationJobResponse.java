@@ -21,6 +21,9 @@ public class SocialLocationJobResponse {
     private SocialLocationJobStatus status;
     private String pythonJobId;
     private String language;
+    private String userTier;
+    private Integer videoDurationSeconds;
+    private Integer maxDurationSeconds;
     private JsonNode result;
     private String errorCode;
     private String errorMessage;

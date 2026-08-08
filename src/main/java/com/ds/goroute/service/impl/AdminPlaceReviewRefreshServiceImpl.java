@@ -41,6 +41,7 @@ public class AdminPlaceReviewRefreshServiceImpl implements AdminPlaceReviewRefre
                         .url(place.getGoogleMapsLink())
                         .maxReviews(Math.min(Math.max(maxReviews, 1), 5))
                         .maxScrolls(30)
+                        .includeReviews(true)
                         .headless(true)
                         .visibilityStatus(PlaceVisibilityStatus.ACTIVE.name())
                         .importConfig(ScrapePlaceImportJobRequest.ImportConfig.builder()

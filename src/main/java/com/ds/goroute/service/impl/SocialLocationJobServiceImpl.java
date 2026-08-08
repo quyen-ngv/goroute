@@ -12,6 +12,14 @@ import com.ds.goroute.mapper.SocialLocationJobMapper;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.service.SocialLocationJobService;
 import com.ds.goroute.service.PlaceImportJobService;
+import com.ds.goroute.service.SocialLocationConfigService;
+import com.ds.goroute.repository.AiTripRepository;
+import com.ds.goroute.repository.SocialLocationRestrictionRepository;
+import com.ds.goroute.entity.SocialLocationSubmissionEvent;
+import com.ds.goroute.entity.SocialLocationUserRestriction;
+import com.ds.goroute.type.SocialLocationRestrictionStatus;
+import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.thirdparty.scrape.ScrapeServiceClient;
 import com.ds.goroute.thirdparty.scrape.ScrapeSocialLocationJobRequest;
 import com.ds.goroute.thirdparty.scrape.ScrapeSocialLocationJobResponse;
@@ -27,12 +35,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.UUID;
+import java.time.LocalDate;
+import java.net.URI;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -45,15 +57,23 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     private final ScrapeServiceClient scrapeServiceClient;
     private final ObjectMapper objectMapper;
     private final PlaceImportJobService placeImportJobService;
+    private final SocialLocationConfigService socialConfig;
+    private final AiTripRepository aiTripRepository;
+    private final SocialLocationRestrictionRepository restrictionRepository;
 
     @Value("${goroute.internal.public-base-url:http://goroute-app:8080}")
     private String internalBaseUrl;
 
     @Override
+    @Transactional
     public SocialLocationJobResponse create(UUID userId, CreateSocialLocationJobRequest request) {
         String sourceUrl = request.getUrl().trim();
+        jobMapper.lockUserSubmission(userId);
+        jobMapper.lockSubmissionQueue();
+        enforceRestriction(userId, sourceUrl);
         String platform = platformFromUrl(sourceUrl);
         if ("unknown".equals(platform)) {
+            audit(userId, null, sourceUrl, "REJECTED_URL", "UNSUPPORTED_SOCIAL_URL", null);
             throw new IllegalArgumentException("URL must be a TikTok or Instagram URL");
         }
         String sourceKey = SocialLocationSourceKey.fromUrl(sourceUrl);
@@ -61,6 +81,20 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         if (reusableJob != null) {
             return toResponse(reusableJob);
         }
+
+        if (jobMapper.countCreatedByUserSince(userId, LocalDate.now().atStartOfDay()) >= socialConfig.dailyJobLimit()) {
+            audit(userId, null, sourceUrl, "REJECTED_DAILY_LIMIT", "DAILY_LIMIT_REACHED", null);
+            throw new BusinessException(ErrorConstant.SOCIAL_LOCATION_DAILY_LIMIT_REACHED,
+                    Map.of("dailyLimit", socialConfig.dailyJobLimit()));
+        }
+        if (jobMapper.countQueued() >= socialConfig.maxQueuedJobs()) {
+            audit(userId, null, sourceUrl, "REJECTED_QUEUE_FULL", "QUEUE_FULL", null);
+            throw new BusinessException(ErrorConstant.SOCIAL_LOCATION_QUEUE_FULL,
+                    Map.of("maxQueuedJobs", socialConfig.maxQueuedJobs()));
+        }
+
+        String userTier = aiTripRepository.getSubscriptionTier(userId);
+        int maxDurationSeconds = socialConfig.maxVideoSeconds(userTier);
 
         LocalDateTime now = LocalDateTime.now();
         SocialLocationJob job = SocialLocationJob.builder()
@@ -71,6 +105,8 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 .platform(platform)
                 .status(SocialLocationJobStatus.QUEUED)
                 .language(cleanLanguage(request.getLanguage()))
+                .userTier(userTier)
+                .maxDurationSeconds(maxDurationSeconds)
                 .requestPayload(toJson(request))
                 .createdAt(now)
                 .updatedAt(now)
@@ -84,24 +120,45 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
             }
             throw duplicate;
         }
+        audit(userId, job.getId(), sourceUrl, "SUBMITTED", null,
+                Map.of("tier", userTier, "maxDurationSeconds", maxDurationSeconds));
+        return toResponse(job);
+    }
 
+    @Override
+    @Transactional
+    public void dispatchQueuedJobs() {
+        if (!jobMapper.tryDispatchLock()) return;
+        int available = socialConfig.maxConcurrentJobs() - jobMapper.countActive();
+        if (available <= 0) return;
+        for (SocialLocationJob job : jobMapper.claimQueued(available)) {
+            dispatch(job);
+        }
+    }
+
+    private void dispatch(SocialLocationJob job) {
+        int interval = socialConfig.frameIntervalSeconds();
+        int maxFrames = Math.max(1, (int) Math.ceil(job.getMaxDurationSeconds() / (double) interval));
         ScrapeSocialLocationJobResponse trigger = scrapeServiceClient.triggerSocialLocationJob(
                 ScrapeSocialLocationJobRequest.builder()
-                        .url(sourceUrl)
+                        .url(job.getSourceUrl())
                         .language(job.getLanguage())
                         .callbackUrl(callbackUrl())
                         .gorouteJobId(job.getId())
-                        .maxAudioSeconds(request.getMaxAudioSeconds())
-                        .maxFrames(request.getMaxFrames())
-                        .frameIntervalSeconds(request.getFrameIntervalSeconds())
-                        .imageMaxWidth(request.getImageMaxWidth())
-                        .imageJpegQuality(request.getImageJpegQuality())
-                        .maxCandidates(request.getMaxCandidates())
-                        .includeMapSearch(request.getIncludeMapSearch())
-                        .mapSearchLimit(request.getMapSearchLimit())
-                        .headless(request.getHeadless())
-                        .build()
-        );
+                        .maxDurationSeconds(job.getMaxDurationSeconds())
+                        .maxAudioSeconds(job.getMaxDurationSeconds())
+                        .maxFrames(Math.min(maxFrames, 100))
+                        .frameIntervalSeconds(interval)
+                        .imageMaxWidth(socialConfig.imageMaxWidth())
+                        .imageJpegQuality(socialConfig.imageJpegQuality())
+                        .maxCandidates(1)
+                        .aiProvider(socialConfig.aiProvider())
+                        .aiModel(socialConfig.aiModel())
+                        .aiBaseUrl(socialConfig.aiBaseUrl())
+                        .includeMapSearch(true)
+                        .mapSearchLimit(1)
+                        .headless(true)
+                        .build());
 
         if (trigger == null || trigger.getJobId() == null || trigger.getJobId().isBlank()) {
             job.setStatus(SocialLocationJobStatus.FAILED);
@@ -109,13 +166,14 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
             job.setErrorMessage("Python social-location job trigger failed");
             job.setCompletedAt(LocalDateTime.now());
         } else {
+            SocialLocationJob latest = jobMapper.findById(job.getId());
+            if (latest != null && isTerminal(latest.getStatus())) return;
             job.setStatus(SocialLocationJobStatus.PROCESSING);
             job.setPythonJobId(trigger.getJobId());
             job.setStartedAt(LocalDateTime.now());
         }
         job.setUpdatedAt(LocalDateTime.now());
         jobMapper.update(job);
-        return toResponse(job);
     }
 
     @Override
@@ -138,6 +196,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     }
 
     @Override
+    @Transactional
     public SocialLocationJobResponse handleCallback(SocialLocationJobCallbackRequest request) {
         SocialLocationJob job = request.getGorouteJobId() != null
                 ? jobMapper.findById(request.getGorouteJobId())
@@ -148,8 +207,13 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         if (job == null) {
             throw new IllegalArgumentException("Social location job not found");
         }
+        jobMapper.lockUserSubmission(job.getUserId());
+        job = jobMapper.findById(job.getId());
 
         SocialLocationJobStatus status = parseStatus(request.getStatus());
+        if (isTerminal(job.getStatus())) {
+            return toResponse(job);
+        }
         job.setStatus(status);
         job.setPythonJobId(firstNonBlank(request.getPythonJobId(), job.getPythonJobId()));
         job.setSourceUrl(firstNonBlank(request.getSourceUrl(), job.getSourceUrl()));
@@ -157,19 +221,33 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         job.setResultPayload(request.getResult() != null && !request.getResult().isNull()
                 ? request.getResult().toString()
                 : job.getResultPayload());
+        JsonNode duration = request.getResult() == null ? null : request.getResult().path("metadata").get("duration");
+        if (duration != null && duration.canConvertToInt()) {
+            job.setVideoDurationSeconds(duration.asInt());
+        }
         applyError(job, request.getError());
-        if (status == SocialLocationJobStatus.COMPLETED || status == SocialLocationJobStatus.FAILED) {
+        if (status == SocialLocationJobStatus.COMPLETED
+                || status == SocialLocationJobStatus.FAILED
+                || status == SocialLocationJobStatus.REJECTED_DURATION
+                || status == SocialLocationJobStatus.REJECTED_TOPIC) {
             job.setCompletedAt(LocalDateTime.now());
         }
         job.setUpdatedAt(LocalDateTime.now());
         jobMapper.update(job);
-        if (status == SocialLocationJobStatus.COMPLETED) {
+        if (status == SocialLocationJobStatus.REJECTED_TOPIC) {
+            recordTopicViolation(job, request.getError());
+        } else if (status == SocialLocationJobStatus.REJECTED_DURATION) {
+            audit(job.getUserId(), job.getId(), job.getSourceUrl(), "REJECTED_DURATION",
+                    job.getErrorCode(), Map.of(
+                            "videoDurationSeconds", job.getVideoDurationSeconds() == null ? 0 : job.getVideoDurationSeconds(),
+                            "maxDurationSeconds", job.getMaxDurationSeconds()));
+        } else if (status == SocialLocationJobStatus.COMPLETED) {
             try {
                 placeImportJobService.createFromSocialJobs(
                         job.getUserId(),
                         CreateSocialPlaceImportJobRequest.builder()
                                 .socialJobIds(List.of(job.getId()))
-                                .maxReviews(5)
+                                .maxReviews(1)
                                 .limit(50)
                                 .build());
             } catch (Exception e) {
@@ -187,14 +265,17 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     }
 
     private String platformFromUrl(String url) {
-        String lower = url.toLowerCase();
-        if (lower.contains("tiktok.com")) {
-            return "tiktok";
+        try {
+            String host = URI.create(url.trim()).getHost();
+            if (host == null) return "unknown";
+            host = host.toLowerCase(Locale.ROOT);
+            if (host.equals("tiktok.com") || host.endsWith(".tiktok.com")) return "tiktok";
+            if (host.equals("instagram.com") || host.endsWith(".instagram.com")
+                    || host.equals("instagr.am") || host.endsWith(".instagr.am")) return "instagram";
+            return "unknown";
+        } catch (IllegalArgumentException ignored) {
+            return "unknown";
         }
-        if (lower.contains("instagram.com") || lower.contains("instagr.am")) {
-            return "instagram";
-        }
-        return "unknown";
     }
 
     private String cleanLanguage(String language) {
@@ -203,10 +284,17 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
 
     private SocialLocationJobStatus parseStatus(String status) {
         try {
-            return SocialLocationJobStatus.valueOf(status);
+            return SocialLocationJobStatus.valueOf(status == null ? "" : status.trim().toUpperCase());
         } catch (Exception e) {
             return SocialLocationJobStatus.FAILED;
         }
+    }
+
+    private boolean isTerminal(SocialLocationJobStatus status) {
+        return status == SocialLocationJobStatus.COMPLETED
+                || status == SocialLocationJobStatus.FAILED
+                || status == SocialLocationJobStatus.REJECTED_DURATION
+                || status == SocialLocationJobStatus.REJECTED_TOPIC;
     }
 
     private void applyError(SocialLocationJob job, JsonNode error) {
@@ -253,6 +341,9 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 .status(job.getStatus())
                 .pythonJobId(job.getPythonJobId())
                 .language(job.getLanguage())
+                .userTier(job.getUserTier())
+                .videoDurationSeconds(job.getVideoDurationSeconds())
+                .maxDurationSeconds(job.getMaxDurationSeconds())
                 .result(result)
                 .errorCode(job.getErrorCode())
                 .errorMessage(job.getErrorMessage())
@@ -261,6 +352,83 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 .completedAt(job.getCompletedAt())
                 .updatedAt(job.getUpdatedAt())
                 .build();
+    }
+
+    private void enforceRestriction(UUID userId, String sourceUrl) {
+        SocialLocationUserRestriction restriction = restrictionRepository.findByUserId(userId).orElse(null);
+        if (restriction == null || restriction.getStatus() == SocialLocationRestrictionStatus.ACTIVE) return;
+        if (restriction.getStatus() == SocialLocationRestrictionStatus.PERMANENTLY_BLOCKED) {
+            audit(userId, null, sourceUrl, "BLOCKED_SUBMISSION", "PERMANENTLY_BLOCKED", null);
+            throw new BusinessException(ErrorConstant.SOCIAL_LOCATION_PERMANENTLY_BLOCKED,
+                    Map.of("strikeCount", restriction.getStrikeCount()));
+        }
+        if (restriction.getBlockedUntil() != null && restriction.getBlockedUntil().isAfter(LocalDateTime.now())) {
+            SocialLocationUserRestriction escalated = applyStrike(
+                    restriction, "SUBMITTED_WHILE_BLOCKED", "User submitted another URL while blocked");
+            audit(userId, null, sourceUrl, "BLOCKED_SUBMISSION", "SUBMITTED_WHILE_BLOCKED",
+                    Map.of("strikeCount", escalated.getStrikeCount()));
+            int code = escalated.getStatus() == SocialLocationRestrictionStatus.PERMANENTLY_BLOCKED
+                    ? ErrorConstant.SOCIAL_LOCATION_PERMANENTLY_BLOCKED
+                    : ErrorConstant.SOCIAL_LOCATION_TEMPORARILY_BLOCKED;
+            throw new BusinessException(code, restrictionData(escalated));
+        }
+        restriction.setStatus(SocialLocationRestrictionStatus.ACTIVE);
+        restriction.setBlockedUntil(null);
+        restriction.setUpdatedAt(LocalDateTime.now());
+        restrictionRepository.save(restriction);
+    }
+
+    private void recordTopicViolation(SocialLocationJob job, JsonNode error) {
+        SocialLocationUserRestriction restriction = restrictionRepository.findByUserId(job.getUserId())
+                .orElse(SocialLocationUserRestriction.builder()
+                        .userId(job.getUserId()).strikeCount(0)
+                        .status(SocialLocationRestrictionStatus.ACTIVE)
+                        .createdAt(LocalDateTime.now()).build());
+        String message = error != null && error.path("message").isTextual()
+                ? error.path("message").asText() : "Video is not about travel, food, or a place review";
+        SocialLocationUserRestriction updated = applyStrike(restriction, "IRRELEVANT_TOPIC", message);
+        audit(job.getUserId(), job.getId(), job.getSourceUrl(), "TOPIC_VIOLATION", "IRRELEVANT_TOPIC",
+                Map.of("strikeCount", updated.getStrikeCount(), "restrictionStatus", updated.getStatus().name()));
+    }
+
+    private SocialLocationUserRestriction applyStrike(SocialLocationUserRestriction restriction,
+                                                       String reasonCode,
+                                                       String message) {
+        int strikes = (restriction.getStrikeCount() == null ? 0 : restriction.getStrikeCount()) + 1;
+        restriction.setStrikeCount(strikes);
+        restriction.setReasonCode(reasonCode);
+        restriction.setReasonMessage(message);
+        restriction.setUpdatedAt(LocalDateTime.now());
+        if (restriction.getCreatedAt() == null) restriction.setCreatedAt(LocalDateTime.now());
+        if (strikes >= socialConfig.permanentBlockStrikes()) {
+            restriction.setStatus(SocialLocationRestrictionStatus.PERMANENTLY_BLOCKED);
+            restriction.setBlockedUntil(null);
+        } else if (strikes == 1) {
+            restriction.setStatus(SocialLocationRestrictionStatus.COOLDOWN);
+            restriction.setBlockedUntil(LocalDateTime.now().plusMinutes(socialConfig.firstBlockMinutes()));
+        } else {
+            restriction.setStatus(SocialLocationRestrictionStatus.TEMPORARILY_BLOCKED);
+            restriction.setBlockedUntil(LocalDateTime.now().plusHours(socialConfig.secondBlockHours()));
+        }
+        restrictionRepository.save(restriction);
+        return restriction;
+    }
+
+    private Map<String, Object> restrictionData(SocialLocationUserRestriction restriction) {
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("strikeCount", restriction.getStrikeCount());
+        data.put("status", restriction.getStatus().name());
+        if (restriction.getBlockedUntil() != null) data.put("blockedUntil", restriction.getBlockedUntil());
+        return data;
+    }
+
+    private void audit(UUID userId, UUID jobId, String sourceUrl, String eventType,
+                       String reasonCode, Map<String, ?> details) {
+        restrictionRepository.insertEvent(SocialLocationSubmissionEvent.builder()
+                .id(UUID.randomUUID()).userId(userId).jobId(jobId).sourceUrl(sourceUrl)
+                .eventType(eventType).reasonCode(reasonCode)
+                .details(details == null ? "{}" : toJson(details))
+                .createdAt(LocalDateTime.now()).build());
     }
 
     private JsonNode enrichResultWithPlaceMappings(UUID socialJobId, JsonNode result) {

@@ -85,6 +85,7 @@ public class ActivityServiceImpl implements ActivityService {
                 .endAddress(request.getEndAddress())
                 .startTime(request.getStartTime())
                 .endTime(request.getEndTime())
+                .endDayNumber(request.getEndDayNumber())
                 .estimatedCost(request.getEstimatedCost())
                 .costCurrency(request.getCostCurrency())
                 .category(request.getCategory())
@@ -157,6 +158,7 @@ public class ActivityServiceImpl implements ActivityService {
         if (request.getDayNumber() != null) activity.setDayNumber(request.getDayNumber());
         if (request.getStartTime() != null) activity.setStartTime(request.getStartTime());
         if (request.getEndTime() != null) activity.setEndTime(request.getEndTime());
+        if (request.getEndDayNumber() != null) activity.setEndDayNumber(request.getEndDayNumber());
         if (request.getEstimatedCost() != null) activity.setEstimatedCost(request.getEstimatedCost());
         if (request.getCostCurrency() != null) activity.setCostCurrency(request.getCostCurrency());
         if (request.getCategory() != null) activity.setCategory(request.getCategory());
@@ -266,6 +268,7 @@ public class ActivityServiceImpl implements ActivityService {
                 .endAddress(activity.getEndAddress())
                 .startTime(activity.getStartTime())
                 .endTime(activity.getEndTime())
+                .endDayNumber(activity.getEndDayNumber())
                 .estimatedCost(activity.getEstimatedCost())
                 .costCurrency(activity.getCostCurrency())
                 .category(activity.getCategory())

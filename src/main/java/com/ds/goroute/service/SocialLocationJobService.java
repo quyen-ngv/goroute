@@ -15,4 +15,6 @@ public interface SocialLocationJobService {
     List<SocialLocationJobResponse> listMine(UUID userId, int page, int size);
 
     SocialLocationJobResponse handleCallback(SocialLocationJobCallbackRequest request);
+
+    void dispatchQueuedJobs();
 }

@@ -25,6 +25,9 @@ public class ScrapeSocialLocationJobRequest {
     @JsonProperty("max_audio_seconds")
     private Integer maxAudioSeconds;
 
+    @JsonProperty("max_duration_seconds")
+    private Integer maxDurationSeconds;
+
     @JsonProperty("max_frames")
     private Integer maxFrames;
 
@@ -39,6 +42,15 @@ public class ScrapeSocialLocationJobRequest {
 
     @JsonProperty("max_candidates")
     private Integer maxCandidates;
+
+    @JsonProperty("ai_provider")
+    private String aiProvider;
+
+    @JsonProperty("ai_model")
+    private String aiModel;
+
+    @JsonProperty("ai_base_url")
+    private String aiBaseUrl;
 
     @JsonProperty("include_map_search")
     private Boolean includeMapSearch;

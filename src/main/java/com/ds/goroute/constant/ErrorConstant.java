@@ -65,6 +65,11 @@ public class ErrorConstant {
 
     public static final int TRIP_INVITATION_NOT_PENDING = 4000502;
 
+    public static final int SOCIAL_LOCATION_DAILY_LIMIT_REACHED = 4000601;
+    public static final int SOCIAL_LOCATION_QUEUE_FULL = 4000602;
+    public static final int SOCIAL_LOCATION_TEMPORARILY_BLOCKED = 4000603;
+    public static final int SOCIAL_LOCATION_PERMANENTLY_BLOCKED = 4000604;
+
     public static final int SYSTEM_CONFIGURATION_NOT_FOUND = 4004208;
 
     public static final int HTTP_CONNECTION_ERROR  = 4009000;

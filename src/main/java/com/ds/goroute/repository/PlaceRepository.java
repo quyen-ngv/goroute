@@ -36,5 +36,8 @@ public interface PlaceRepository {
     List<Place> findForAiByDestination(String citySlugJson, BigDecimal latitude, BigDecimal longitude,
                                        String placeGroup, BigDecimal minRating, int limit);
 
+    List<Place> findActiveForAiWithinRadius(BigDecimal latitude, BigDecimal longitude,
+                                            BigDecimal radiusKm, List<String> placeGroups, int limit);
+
     void delete(UUID id);
 }

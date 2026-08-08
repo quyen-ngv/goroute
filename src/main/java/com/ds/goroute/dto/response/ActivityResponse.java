@@ -40,6 +40,8 @@ public class ActivityResponse {
     @JsonFormat(pattern = "HH:mm")
     private LocalTime endTime;
 
+    private Integer endDayNumber;
+
     private BigDecimal estimatedCost;
     private String costCurrency;
     private String category;

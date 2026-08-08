@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.SocialLocationRestrictionMapper">
+    <resultMap id="restrictionMap" type="com.ds.goroute.entity.SocialLocationUserRestriction">
+        <id property="userId" column="user_id"/>
+        <result property="strikeCount" column="strike_count"/>
+        <result property="status" column="status" javaType="com.ds.goroute.type.SocialLocationRestrictionStatus"/>
+        <result property="blockedUntil" column="blocked_until"/>
+        <result property="reasonCode" column="reason_code"/>
+        <result property="reasonMessage" column="reason_message"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+    <resultMap id="eventMap" type="com.ds.goroute.entity.SocialLocationSubmissionEvent">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="jobId" column="job_id"/>
+        <result property="sourceUrl" column="source_url"/>
+        <result property="eventType" column="event_type"/>
+        <result property="reasonCode" column="reason_code"/>
+        <result property="details" column="details"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <select id="findByUserId" resultMap="restrictionMap">
+        SELECT * FROM social_location_user_restrictions WHERE user_id = #{userId}
+    </select>
+    <insert id="upsert">
+        INSERT INTO social_location_user_restrictions
+            (user_id, strike_count, status, blocked_until, reason_code, reason_message, created_at, updated_at)
+        VALUES
+            (#{userId}, #{strikeCount}, #{status}, #{blockedUntil}, #{reasonCode}, #{reasonMessage}, #{createdAt}, #{updatedAt})
+        ON CONFLICT (user_id) DO UPDATE SET
+            strike_count = EXCLUDED.strike_count,
+            status = EXCLUDED.status,
+            blocked_until = EXCLUDED.blocked_until,
+            reason_code = EXCLUDED.reason_code,
+            reason_message = EXCLUDED.reason_message,
+            updated_at = EXCLUDED.updated_at
+    </insert>
+    <insert id="insertEvent">
+        INSERT INTO social_location_submission_events
+            (id, user_id, job_id, source_url, event_type, reason_code, details, created_at)
+        VALUES
+            (#{id}, #{userId}, #{jobId}, #{sourceUrl}, #{eventType}, #{reasonCode},
+             CAST(#{details} AS jsonb), #{createdAt})
+    </insert>
+    <select id="findAdmin" resultMap="restrictionMap">
+        SELECT * FROM social_location_user_restrictions
+        <where><if test="status != null and status != ''">status = #{status}</if></where>
+        ORDER BY updated_at DESC LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <select id="findEventsByUserId" resultMap="eventMap">
+        SELECT * FROM social_location_submission_events
+        WHERE user_id = #{userId} ORDER BY created_at DESC LIMIT #{limit}
+    </select>
+    <delete id="reset">DELETE FROM social_location_user_restrictions WHERE user_id = #{userId}</delete>
+</mapper>

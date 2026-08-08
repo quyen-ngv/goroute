@@ -22,6 +22,9 @@ public class SocialLocationJob {
     private SocialLocationJobStatus status;
     private String pythonJobId;
     private String language;
+    private String userTier;
+    private Integer videoDurationSeconds;
+    private Integer maxDurationSeconds;
     private String requestPayload;
     private String resultPayload;
     private String errorCode;

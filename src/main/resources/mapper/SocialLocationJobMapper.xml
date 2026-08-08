@@ -13,6 +13,9 @@
         <result property="status" column="status" javaType="com.ds.goroute.type.SocialLocationJobStatus"/>
         <result property="pythonJobId" column="python_job_id"/>
         <result property="language" column="language"/>
+        <result property="userTier" column="user_tier"/>
+        <result property="videoDurationSeconds" column="video_duration_seconds"/>
+        <result property="maxDurationSeconds" column="max_duration_seconds"/>
         <result property="requestPayload" column="request_payload"/>
         <result property="resultPayload" column="result_payload"/>
         <result property="errorCode" column="error_code"/>
@@ -26,12 +29,14 @@
     <insert id="insert" parameterType="com.ds.goroute.entity.SocialLocationJob">
         INSERT INTO social_location_jobs (
             id, user_id, source_url, source_key, platform, status, python_job_id, language,
+            user_tier, video_duration_seconds, max_duration_seconds,
             request_payload, result_payload, error_code, error_message,
             created_at, started_at, completed_at, updated_at
         ) VALUES (
             #{id}, #{userId}, #{sourceUrl}, #{sourceKey}, #{platform},
             #{status, javaType=com.ds.goroute.type.SocialLocationJobStatus},
-            #{pythonJobId}, #{language}, #{requestPayload}, #{resultPayload},
+            #{pythonJobId}, #{language}, #{userTier}, #{videoDurationSeconds}, #{maxDurationSeconds},
+            #{requestPayload}, #{resultPayload},
             #{errorCode}, #{errorMessage}, #{createdAt}, #{startedAt},
             #{completedAt}, #{updatedAt}
         )
@@ -45,6 +50,9 @@
             status = #{status, javaType=com.ds.goroute.type.SocialLocationJobStatus},
             python_job_id = #{pythonJobId},
             language = #{language},
+            user_tier = #{userTier},
+            video_duration_seconds = #{videoDurationSeconds},
+            max_duration_seconds = #{maxDurationSeconds},
             request_payload = #{requestPayload},
             result_payload = #{resultPayload},
             error_code = #{errorCode},
@@ -67,7 +75,7 @@
         SELECT * FROM social_location_jobs
         WHERE user_id = #{userId}
           AND source_key = #{sourceKey}
-          AND status IN ('QUEUED', 'PROCESSING', 'COMPLETED')
+          AND status IN ('QUEUED', 'DISPATCHING', 'PROCESSING', 'COMPLETED')
         ORDER BY created_at DESC
         LIMIT 1
     </select>
@@ -92,5 +100,44 @@
         </if>
         ORDER BY created_at DESC
         LIMIT #{limit}
+    </select>
+
+    <select id="countCreatedByUserSince" resultType="int">
+        SELECT COUNT(*) FROM social_location_jobs WHERE user_id = #{userId} AND created_at &gt;= #{since}
+    </select>
+
+    <select id="lockUserSubmission" resultType="boolean">
+        SELECT TRUE FROM pg_advisory_xact_lock(hashtextextended(CAST(#{userId} AS text), 0))
+    </select>
+
+    <select id="lockSubmissionQueue" resultType="boolean">
+        SELECT TRUE FROM pg_advisory_xact_lock(74920199)
+    </select>
+
+    <select id="countQueued" resultType="int">
+        SELECT COUNT(*) FROM social_location_jobs WHERE status = 'QUEUED'
+    </select>
+
+    <select id="countActive" resultType="int">
+        SELECT COUNT(*) FROM social_location_jobs WHERE status IN ('DISPATCHING', 'PROCESSING')
+    </select>
+
+    <select id="tryDispatchLock" resultType="boolean">
+        SELECT pg_try_advisory_xact_lock(74920198)
+    </select>
+
+    <select id="claimQueued" resultMap="SocialLocationJobResultMap" affectData="true" flushCache="true">
+        WITH claimed AS (
+            SELECT id FROM social_location_jobs
+            WHERE status = 'QUEUED'
+            ORDER BY created_at
+            FOR UPDATE SKIP LOCKED
+            LIMIT #{limit}
+        )
+        UPDATE social_location_jobs job
+        SET status = 'DISPATCHING', updated_at = NOW()
+        FROM claimed
+        WHERE job.id = claimed.id
+        RETURNING job.*
     </select>
 </mapper>

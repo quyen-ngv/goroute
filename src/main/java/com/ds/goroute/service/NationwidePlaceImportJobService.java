@@ -112,6 +112,10 @@ public class NationwidePlaceImportJobService {
                         .customQueries(request.getCustomQueries())
                         .includeRegionalSpecialties(request.getIncludeRegionalSpecialties())
                         .includeTouristAreas(request.getIncludeTouristAreas())
+                        .latitude(request.getLatitude())
+                        .longitude(request.getLongitude())
+                        .radiusKm(request.getRadiusKm())
+                        .searchZoom(request.getSearchZoom())
                         .duplicateCheckUrl(internalBase + "/existing-candidates")
                         .build());
         PlaceImportJob persistedJob = jobMapper.findJobById(job.getId());
@@ -466,6 +470,10 @@ public class NationwidePlaceImportJobService {
                 .regionCodes(config == null ? null : config.getRegionCodes())
                 .includeRegionalSpecialties(config == null ? null : config.getIncludeRegionalSpecialties())
                 .includeTouristAreas(config == null ? null : config.getIncludeTouristAreas())
+                .latitude(config == null ? null : config.getLatitude())
+                .longitude(config == null ? null : config.getLongitude())
+                .radiusKm(config == null ? null : config.getRadiusKm())
+                .searchZoom(config == null ? null : config.getSearchZoom())
                 .totalItems(job.getTotalItems()).processedCount(job.getProcessedCount())
                 .eligibleCount(job.getEligibleCount()).importedCount(job.getImportedCount())
                 .completedCount(job.getCompletedCount()).failedCount(job.getFailedCount())
@@ -478,6 +486,9 @@ public class NationwidePlaceImportJobService {
     }
 
     private void validateSearchConfiguration(CreateNationwidePlaceImportJobRequest request) {
+        if ((request.getLatitude() == null) != (request.getLongitude() == null)) {
+            throw new IllegalArgumentException("latitude and longitude must be provided together");
+        }
         if ("REPLACE".equalsIgnoreCase(request.getQueryMode())
                 && (request.getCustomQueries() == null
                 || request.getCustomQueries().stream().noneMatch(this::hasText))) {

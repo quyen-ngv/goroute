@@ -65,6 +65,10 @@ class NationwidePlaceImportJobServiceTest {
 
         service.trigger(CreateNationwidePlaceImportJobRequest.builder()
                 .minGoogleRating(BigDecimal.valueOf(4.2))
+                .latitude(BigDecimal.valueOf(10.123456))
+                .longitude(BigDecimal.valueOf(106.654321))
+                .radiusKm(BigDecimal.valueOf(5))
+                .searchZoom(13)
                 .build());
 
         ArgumentCaptor<ScrapeNationwideJobRequest> requestCaptor =
@@ -72,6 +76,10 @@ class NationwidePlaceImportJobServiceTest {
         verify(scrapeServiceClient).triggerNationwideJob(requestCaptor.capture());
         assertThat(requestCaptor.getValue().getMinGoogleRating())
                 .isEqualByComparingTo("4.2");
+        assertThat(requestCaptor.getValue().getLatitude()).isEqualByComparingTo("10.123456");
+        assertThat(requestCaptor.getValue().getLongitude()).isEqualByComparingTo("106.654321");
+        assertThat(requestCaptor.getValue().getRadiusKm()).isEqualByComparingTo("5");
+        assertThat(requestCaptor.getValue().getSearchZoom()).isEqualTo(13);
     }
 
     @Test

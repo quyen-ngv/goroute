@@ -44,5 +44,11 @@ public interface PlaceMapper {
                                        @Param("minRating") BigDecimal minRating,
                                        @Param("limit") int limit);
 
+    List<Place> findActiveForAiWithinRadius(@Param("latitude") BigDecimal latitude,
+                                            @Param("longitude") BigDecimal longitude,
+                                            @Param("radiusKm") BigDecimal radiusKm,
+                                            @Param("placeGroups") List<String> placeGroups,
+                                            @Param("limit") int limit);
+
     void delete(@Param("id") UUID id);
 }

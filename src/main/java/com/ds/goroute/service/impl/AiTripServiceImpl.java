@@ -25,6 +25,7 @@ import com.ds.goroute.repository.AiTripRepository;
 import com.ds.goroute.repository.LocationImageRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.AiTripService;
+import com.ds.goroute.service.AiTripQuotaService;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.thirdparty.ai.AiClient;
 import com.ds.goroute.type.ActivityStatus;
@@ -59,8 +60,6 @@ import java.util.stream.Stream;
 @Slf4j
 public class AiTripServiceImpl implements AiTripService {
 
-    private static final int FREE_LIMIT = 3;
-    private static final int PRO_LIMIT = 10;
     private static final double INTERCITY_TRANSPORT_MIN_DISTANCE_KM = 50.0;
     private static final String AI_TRIP_SYSTEM_CONTEXT = """
             This is a travel planning app for foreign tourists visiting Vietnam.
@@ -68,6 +67,7 @@ public class AiTripServiceImpl implements AiTripService {
             """;
 
     private final AiTripRepository aiTripRepository;
+    private final AiTripQuotaService aiTripQuotaService;
     private final PlaceRepository placeRepository;
     private final LocationImageRepository locationImageRepository;
     private final ActivityBookingRepository activityBookingRepository;
@@ -79,17 +79,7 @@ public class AiTripServiceImpl implements AiTripService {
     @Override
     @Transactional
     public AiTripUsage getEligibility(UUID userId) {
-        aiTripRepository.ensureSubscription(userId);
-        String tier = aiTripRepository.getSubscriptionTier(userId);
-        int used = aiTripRepository.getAiTripsUsed(userId);
-        int limit = limitForTier(tier);
-
-        return AiTripUsage.builder()
-                .tier(tier)
-                .used(used)
-                .limit(limit)
-                .eligible(used < limit)
-                .build();
+        return aiTripQuotaService.getUsage(userId);
     }
 
     @Override
@@ -98,14 +88,10 @@ public class AiTripServiceImpl implements AiTripService {
         List<AiTripDestinationSnapshot> destinations = resolveDestinations(request);
         validateGenerateRequest(request, destinations);
 
-        aiTripRepository.ensureSubscription(userId);
-        if (aiTripRepository.consumeAiTripQuota(userId) == 0) {
-            throw new BusinessException(ErrorConstant.AI_TRIP_QUOTA_EXHAUSTED);
-        }
-
-        String tier = aiTripRepository.getSubscriptionTier(userId);
-        int used = aiTripRepository.getAiTripsUsed(userId);
-        int limit = limitForTier(tier);
+        AiTripUsage usage = aiTripQuotaService.reserve(userId);
+        String tier = usage.getTier();
+        int used = usage.getUsed();
+        int limit = usage.getLimit();
 
         List<PlaceGroup> groups = normalizeGroups(request.getPlaceGroups());
         List<AiTripCandidateResponse> candidates = new ArrayList<>();
@@ -287,6 +273,8 @@ public class AiTripServiceImpl implements AiTripService {
             }
             requested = List.of(AiTripDestinationRequest.builder()
                     .locationImageId(legacyLocationImageId)
+                    .latitude(request.getCityLat())
+                    .longitude(request.getCityLng())
                     .startDate(request.getStartDate())
                     .endDate(request.getEndDate())
                     .orderIndex(0)
@@ -315,17 +303,22 @@ public class AiTripServiceImpl implements AiTripService {
             LocationImage location = locationImageRepository.findById(item.getLocationImageId())
                     .orElseThrow(() -> new BusinessException(
                             ErrorConstant.INVALID_PARAMETERS, "AI destination is not in the location image catalog"));
-            if (location.getCitySlug() == null || location.getCitySlug().isBlank()
-                    || location.getLatitude() == null || location.getLongitude() == null) {
+            if (item.getLatitude() == null || item.getLongitude() == null
+                    || item.getLatitude().compareTo(BigDecimal.valueOf(-90)) < 0
+                    || item.getLatitude().compareTo(BigDecimal.valueOf(90)) > 0
+                    || item.getLongitude().compareTo(BigDecimal.valueOf(-180)) < 0
+                    || item.getLongitude().compareTo(BigDecimal.valueOf(180)) > 0) {
                 throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
-                        "AI destination is missing city slug or city-center coordinates");
+                        "AI destination coordinates are missing or invalid");
             }
             resolved.add(AiTripDestinationSnapshot.builder()
                     .locationImageId(location.getId())
-                    .citySlug(CitySlugResolver.normalizeRequired(location.getCitySlug()))
+                    .citySlug(location.getCitySlug() == null || location.getCitySlug().isBlank()
+                            ? location.getId().toString()
+                            : CitySlugResolver.normalizeRequired(location.getCitySlug()))
                     .name(location.getFullAddress())
-                    .latitude(location.getLatitude())
-                    .longitude(location.getLongitude())
+                    .latitude(item.getLatitude())
+                    .longitude(item.getLongitude())
                     .startDate(item.getStartDate())
                     .endDate(item.getEndDate())
                     .orderIndex(index)
@@ -395,10 +388,6 @@ public class AiTripServiceImpl implements AiTripService {
             case "RELAXED", "EAGER" -> value;
             default -> "BALANCED";
         };
-    }
-
-    private int limitForTier(String tier) {
-        return "PRO".equalsIgnoreCase(tier) ? PRO_LIMIT : FREE_LIMIT;
     }
 
     private List<AiTripCandidateResponse> collectCandidates(AiTripGenerateRequest request,

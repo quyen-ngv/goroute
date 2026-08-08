@@ -10,7 +10,9 @@ import java.util.UUID;
 public interface AiTripMapper {
     int ensureSubscription(@Param("userId") UUID userId);
 
-    int consumeAiTripQuota(@Param("userId") UUID userId);
+    int consumeAiTripQuota(@Param("userId") UUID userId, @Param("limit") int limit);
+
+    int releaseAiTripQuota(@Param("userId") UUID userId);
 
     String getSubscriptionTier(@Param("userId") UUID userId);
 

@@ -46,6 +46,10 @@ public class PlaceImportJobResponse {
     private List<String> regionCodes;
     private Boolean includeRegionalSpecialties;
     private Boolean includeTouristAreas;
+    private BigDecimal latitude;
+    private BigDecimal longitude;
+    private BigDecimal radiusKm;
+    private Integer searchZoom;
     private UUID refreshPlaceId;
     private Integer maxPlaces;
     private Boolean headless;

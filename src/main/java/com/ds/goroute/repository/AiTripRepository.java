@@ -8,7 +8,9 @@ import java.util.UUID;
 public interface AiTripRepository {
     void ensureSubscription(UUID userId);
 
-    int consumeAiTripQuota(UUID userId);
+    int consumeAiTripQuota(UUID userId, int limit);
+
+    int releaseAiTripQuota(UUID userId);
 
     String getSubscriptionTier(UUID userId);
 

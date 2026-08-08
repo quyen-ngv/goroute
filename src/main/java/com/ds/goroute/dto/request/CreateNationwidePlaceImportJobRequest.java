@@ -68,4 +68,18 @@ public class CreateNationwidePlaceImportJobRequest {
 
     @Builder.Default
     private Boolean includeTouristAreas = true;
+
+    @DecimalMin("-90.0") @DecimalMax("90.0")
+    private BigDecimal latitude;
+
+    @DecimalMin("-180.0") @DecimalMax("180.0")
+    private BigDecimal longitude;
+
+    @Builder.Default
+    @DecimalMin("0.1") @DecimalMax("100.0")
+    private BigDecimal radiusKm = BigDecimal.TEN;
+
+    @Builder.Default
+    @Min(3) @Max(21)
+    private Integer searchZoom = 14;
 }

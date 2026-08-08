@@ -21,6 +21,9 @@ public class ScrapePlaceImportJobRequest {
     @JsonProperty("max_scrolls")
     private Integer maxScrolls;
 
+    @JsonProperty("include_reviews")
+    private Boolean includeReviews;
+
     private Boolean headless;
     private String visibilityStatus;
     private ImportConfig importConfig;

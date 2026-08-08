@@ -37,6 +37,7 @@ public class CreateActivityRequest {
 
     private LocalTime startTime;
     private LocalTime endTime;
+    private Integer endDayNumber;
     private BigDecimal estimatedCost;
     private String costCurrency;
     private String category;

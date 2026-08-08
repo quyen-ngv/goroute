@@ -31,5 +31,9 @@ public class ScrapeNationwideJobRequest {
     private List<String> customQueries;
     private Boolean includeRegionalSpecialties;
     private Boolean includeTouristAreas;
+    private BigDecimal latitude;
+    private BigDecimal longitude;
+    private BigDecimal radiusKm;
+    private Integer searchZoom;
     private String duplicateCheckUrl;
 }

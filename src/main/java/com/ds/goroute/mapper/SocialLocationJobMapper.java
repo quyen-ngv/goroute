@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 import java.util.UUID;
+import java.time.LocalDateTime;
 
 @Mapper
 public interface SocialLocationJobMapper {
@@ -29,4 +30,18 @@ public interface SocialLocationJobMapper {
             @Param("userId") UUID userId,
             @Param("ids") List<UUID> ids,
             @Param("limit") int limit);
+
+    int countCreatedByUserSince(@Param("userId") UUID userId, @Param("since") LocalDateTime since);
+
+    boolean lockUserSubmission(@Param("userId") UUID userId);
+
+    boolean lockSubmissionQueue();
+
+    int countQueued();
+
+    int countActive();
+
+    boolean tryDispatchLock();
+
+    List<SocialLocationJob> claimQueued(@Param("limit") int limit);
 }

@@ -19,6 +19,7 @@
         <result column="end_address" property="endAddress" jdbcType="VARCHAR"/>
         <result column="start_time" property="startTime" javaType="java.time.LocalTime" jdbcType="TIME"/>
         <result column="end_time" property="endTime" javaType="java.time.LocalTime" jdbcType="TIME"/>
+        <result column="end_day_number" property="endDayNumber" jdbcType="INTEGER"/>
         <result column="estimated_cost" property="estimatedCost" jdbcType="DECIMAL"/>
         <result column="cost_currency" property="costCurrency" jdbcType="VARCHAR"/>
         <result column="category" property="category" jdbcType="VARCHAR"/>
@@ -45,7 +46,7 @@
     <insert id="insert" parameterType="com.ds.goroute.entity.Activity">
         INSERT INTO activities (id, trip_id, day_number, sort_order, place_id, custom_place_id, place_ref_id, name, address,
                                lat, lng, end_lat, end_lng, end_address,
-                               start_time, end_time, estimated_cost, cost_currency, category,
+                               start_time, end_time, end_day_number, estimated_cost, cost_currency, category,
                                transport_mode, distance_to_next, duration_to_next,
                                distance_value_to_next, duration_value_to_next,
                                rating, photo_url, notes, description, status, added_by,
@@ -59,6 +60,7 @@
                 #{endLat}, #{endLng}, #{endAddress},
                 #{startTime,javaType=java.time.LocalTime,jdbcType=TIME},
                 #{endTime,javaType=java.time.LocalTime,jdbcType=TIME},
+                #{endDayNumber},
                 #{estimatedCost}, #{costCurrency}, #{category},
                 #{transportMode}, #{distanceToNext}, #{durationToNext},
                 #{distanceValueToNext}, #{durationValueToNext},
@@ -102,6 +104,7 @@
             <if test="sortOrder != null">sort_order = #{sortOrder},</if>
             <if test="startTime != null">start_time = #{startTime,javaType=java.time.LocalTime,jdbcType=TIME},</if>
             <if test="endTime != null">end_time = #{endTime,javaType=java.time.LocalTime,jdbcType=TIME},</if>
+            <if test="endDayNumber != null">end_day_number = #{endDayNumber},</if>
             <if test="estimatedCost != null">estimated_cost = #{estimatedCost},</if>
             <if test="costCurrency != null">cost_currency = #{costCurrency},</if>
             <if test="category != null">category = #{category},</if>

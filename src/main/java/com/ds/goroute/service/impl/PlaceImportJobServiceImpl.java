@@ -358,6 +358,7 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
                                     ? DEFAULT_MAX_REVIEWS
                                     : job.getMaxReviews())
                             .maxScrolls(100)
+                            .includeReviews(job.getSourceType() != PlaceImportSourceType.SOCIAL_LOCATION)
                             .headless(true)
                             .visibilityStatus("INACTIVE")
                             .importConfig(ScrapePlaceImportJobRequest.ImportConfig.builder()

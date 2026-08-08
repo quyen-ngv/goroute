@@ -248,4 +248,33 @@
         LIMIT #{limit}
     </select>
 
+    <!-- AI inventory is geo-scoped deliberately: destination slugs and incomplete ratings are not filters. -->
+    <select id="findActiveForAiWithinRadius" resultMap="PlaceResultMap">
+        SELECT scoped.*
+        FROM (
+            SELECT p.*,
+                   (6371 * acos(LEAST(1, GREATEST(-1,
+                       cos(radians(#{latitude})) * cos(radians(p.latitude)) *
+                       cos(radians(p.longitude) - radians(#{longitude})) +
+                       sin(radians(#{latitude})) * sin(radians(p.latitude))
+                   )))) AS distance
+            FROM places p
+            WHERE p.visibility_status = 'ACTIVE'
+              AND p.latitude IS NOT NULL
+              AND p.longitude IS NOT NULL
+            <if test="placeGroups != null and placeGroups.size() > 0">
+              AND p.place_group IN
+              <foreach item="group" collection="placeGroups" open="(" separator="," close=")">
+                  #{group}
+              </foreach>
+            </if>
+        ) scoped
+        WHERE scoped.distance &lt;= #{radiusKm}
+        ORDER BY scoped.place_overall_score DESC NULLS LAST,
+                 scoped.adjusted_rating DESC NULLS LAST,
+                 scoped.review_count DESC NULLS LAST,
+                 scoped.distance ASC
+        LIMIT #{limit}
+    </select>
+
 </mapper>

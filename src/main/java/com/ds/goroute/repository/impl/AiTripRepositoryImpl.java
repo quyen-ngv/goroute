@@ -21,8 +21,13 @@ public class AiTripRepositoryImpl implements AiTripRepository {
     }
 
     @Override
-    public int consumeAiTripQuota(UUID userId) {
-        return aiTripMapper.consumeAiTripQuota(userId);
+    public int consumeAiTripQuota(UUID userId, int limit) {
+        return aiTripMapper.consumeAiTripQuota(userId, limit);
+    }
+
+    @Override
+    public int releaseAiTripQuota(UUID userId) {
+        return aiTripMapper.releaseAiTripQuota(userId);
     }
 
     @Override

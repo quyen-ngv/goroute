@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.AiTripGenerationMapper">
+    <resultMap id="JobMap" type="com.ds.goroute.entity.AiTripGenerationJob">
+        <id property="id" column="id"/><result property="userId" column="user_id"/>
+        <result property="idempotencyKey" column="idempotency_key"/><result property="requestHash" column="request_hash"/>
+        <result property="requestPayload" column="request_payload"/><result property="locale" column="locale"/>
+        <result property="attemptId" column="attempt_id"/><result property="pythonJobId" column="python_job_id"/>
+        <result property="status" column="status"/><result property="stage" column="stage"/>
+        <result property="progress" column="progress"/><result property="quotaStatus" column="quota_status"/>
+        <result property="createdTripId" column="created_trip_id"/><result property="errorMessage" column="error_message"/>
+        <result property="createdAt" column="created_at"/><result property="updatedAt" column="updated_at"/>
+        <result property="completedAt" column="completed_at"/>
+    </resultMap>
+    <resultMap id="EventMap" type="com.ds.goroute.entity.AiTripGenerationEvent">
+        <id property="id" column="id"/><result property="jobId" column="job_id"/>
+        <result property="attemptId" column="attempt_id"/><result property="stage" column="stage"/>
+        <result property="status" column="status"/><result property="progress" column="progress"/>
+        <result property="messageKey" column="message_key"/><result property="params" column="params"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+    <insert id="insertJob">
+        INSERT INTO ai_trip_generation_jobs(id,user_id,idempotency_key,request_hash,request_payload,locale,
+          attempt_id,status,stage,progress,quota_status)
+        VALUES(#{id},#{userId},#{idempotencyKey},#{requestHash},#{requestPayload}::jsonb,#{locale},
+          #{attemptId},#{status},#{stage},#{progress},#{quotaStatus})
+    </insert>
+    <select id="findById" resultMap="JobMap">SELECT * FROM ai_trip_generation_jobs WHERE id=#{id}</select>
+    <select id="findByIdForUpdate" resultMap="JobMap">SELECT * FROM ai_trip_generation_jobs WHERE id=#{id} FOR UPDATE</select>
+    <select id="findByUserAndKey" resultMap="JobMap">SELECT * FROM ai_trip_generation_jobs WHERE user_id=#{userId} AND idempotency_key=#{key}</select>
+    <select id="findActiveByUser" resultMap="JobMap">SELECT * FROM ai_trip_generation_jobs WHERE user_id=#{userId} AND status IN ('QUEUED','RUNNING') ORDER BY created_at DESC LIMIT 1</select>
+    <update id="claimForDispatch">UPDATE ai_trip_generation_jobs SET status='RUNNING',stage='DISPATCHING',updated_at=NOW() WHERE id=#{id} AND attempt_id=#{attemptId} AND status='QUEUED'</update>
+    <update id="updateProgress">
+        UPDATE ai_trip_generation_jobs SET status=#{status},stage=#{stage},progress=#{progress},error_message=#{error},updated_at=NOW()
+        WHERE id=#{id} AND attempt_id=#{attemptId} AND status IN ('QUEUED','RUNNING')
+    </update>
+    <update id="markCompleted">
+        UPDATE ai_trip_generation_jobs SET status='COMPLETED',stage='COMPLETED',progress=100,created_trip_id=#{tripId},
+          quota_status='CONSUMED',completed_at=NOW(),updated_at=NOW()
+        WHERE id=#{id} AND attempt_id=#{attemptId} AND status IN ('QUEUED','RUNNING')
+    </update>
+    <update id="markTerminalAndRelease">
+        UPDATE ai_trip_generation_jobs SET status=#{status},stage=#{status},error_message=#{error},quota_status='RELEASED',completed_at=NOW(),updated_at=NOW()
+        WHERE id=#{id} AND status IN ('QUEUED','RUNNING') AND quota_status='RESERVED'
+    </update>
+    <insert id="insertEvent" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_trip_generation_events(job_id,attempt_id,stage,status,progress,message_key,params)
+        VALUES(#{jobId},#{attemptId},#{stage},#{status},#{progress},#{messageKey},#{params}::jsonb)
+    </insert>
+    <select id="findEventsAfter" resultMap="EventMap">
+        SELECT * FROM ai_trip_generation_events WHERE job_id=#{jobId} AND id &gt; #{afterId} ORDER BY id ASC LIMIT 500
+    </select>
+</mapper>

@@ -1597,6 +1597,7 @@ public class TripServiceImpl implements TripService {
                     .endAddress(originalActivity.getEndAddress())
                     .startTime(originalActivity.getStartTime())
                     .endTime(originalActivity.getEndTime())
+                    .endDayNumber(originalActivity.getEndDayNumber())
                     .estimatedCost(originalActivity.getEstimatedCost())
                     .costCurrency(originalActivity.getCostCurrency())
                     .category(originalActivity.getCategory())
