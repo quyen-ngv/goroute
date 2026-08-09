@@ -39,7 +39,9 @@ public class AdminMarketplaceReviewController {
     @DeleteMapping("/{reviewId}/response")
     @PreAuthorize("@adminAuthorization.can(authentication,'marketplace-reviews','delete')")
     public ResponseEntity<BaseResponse<MarketplaceReviewViewResponse>> hide(Authentication authentication,
-            @PathVariable UUID reviewId,@RequestParam UUID organizationId,@RequestParam(required=false)String reason){
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminHide(UUID.fromString(authentication.getName()),organizationId,reviewId,reason)));
+            @PathVariable UUID reviewId,@RequestParam UUID organizationId,@RequestParam(required=false)String reason,
+            @RequestParam Long expectedVersion){
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminHide(
+                UUID.fromString(authentication.getName()),organizationId,reviewId,reason,expectedVersion)));
     }
 }

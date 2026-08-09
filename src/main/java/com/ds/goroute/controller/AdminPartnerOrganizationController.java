@@ -13,6 +13,7 @@ import com.ds.goroute.dto.response.OrganizationMemberScopeResponse;
 import com.ds.goroute.dto.response.PartnerProvisionResponse;
 import com.ds.goroute.dto.response.PartnerMemberProvisionResponse;
 import com.ds.goroute.service.HostOrganizationService;
+import com.ds.goroute.type.OrganizationMemberStatus;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -63,8 +64,10 @@ public class AdminPartnerOrganizationController {
     @DeleteMapping("/{organizationId}")
     @PreAuthorize("@adminAuthorization.can(authentication,'partner-organizations','delete')")
     public ResponseEntity<BaseResponse<HostOrganizationResponse>> disable(Authentication authentication,
-            @PathVariable UUID organizationId, @RequestParam(required=false) String reason) {
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminDisable(actor(authentication), organizationId, reason)));
+            @PathVariable UUID organizationId, @RequestParam(required=false) String reason,
+            @RequestParam Long expectedVersion) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminDisable(
+                actor(authentication), organizationId, reason, expectedVersion)));
     }
 
     @GetMapping("/{organizationId}/members")
@@ -91,7 +94,7 @@ public class AdminPartnerOrganizationController {
     @PatchMapping("/{organizationId}/members/{memberUserId}/status")
     @PreAuthorize("@adminAuthorization.can(authentication,'partner-organizations','update')")
     public ResponseEntity<BaseResponse<Void>> memberStatus(Authentication authentication, @PathVariable UUID organizationId,
-            @PathVariable UUID memberUserId, @RequestParam String status) {
+            @PathVariable UUID memberUserId, @RequestParam OrganizationMemberStatus status) {
         service.adminUpdateMemberStatus(actor(authentication), organizationId, memberUserId, status);
         return ResponseEntity.ok(BaseResponse.ofSucceeded());
     }
@@ -131,10 +134,12 @@ public class AdminPartnerOrganizationController {
 
     @PatchMapping("/{organizationId}/status")
     @PreAuthorize("@adminAuthorization.can(authentication,'partner-organizations','update')")
-    public ResponseEntity<BaseResponse<HostOrganizationResponse>> updateStatus(@PathVariable UUID organizationId,
+    public ResponseEntity<BaseResponse<HostOrganizationResponse>> updateStatus(Authentication authentication,
+            @PathVariable UUID organizationId,
             @Valid @RequestBody UpdateOrganizationStatusRequest request) {
         return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminUpdateStatus(
-                organizationId, request.getOperationalStatus(), request.getVerificationStatus())));
+                actor(authentication), organizationId, request.getOperationalStatus(), request.getVerificationStatus(),
+                request.getExpectedVersion())));
     }
 
     private UUID actor(Authentication authentication) { return UUID.fromString(authentication.getName()); }

@@ -7,6 +7,7 @@ import org.apache.ibatis.session.Configuration;
 import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
@@ -36,5 +37,13 @@ class MarketplaceMapperXmlTest {
         assertTrue(configuration.hasStatement("com.ds.goroute.mapper.ActivityCommerceMapper.reserveSlot"));
         assertTrue(configuration.hasStatement("com.ds.goroute.mapper.MarketplaceChatMapper.insertMessage"));
         assertTrue(configuration.hasStatement("com.ds.goroute.mapper.AppConfigMapper.findAdmin"));
+    }
+
+    @Test
+    void inventoryInsertRejectsBlockedUnitsAboveTheRoomTotal() throws Exception {
+        try (InputStream input = Resources.getResourceAsStream("mapper/HotelMarketplaceMapper.xml")) {
+            String xml = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+            assertTrue(xml.contains("AND COALESCE(#{blockedUnits},0) &lt;= COALESCE(#{totalUnits},r.total_units)"));
+        }
     }
 }

@@ -31,6 +31,8 @@ public interface SocialLocationJobMapper {
             @Param("ids") List<UUID> ids,
             @Param("limit") int limit);
 
+    List<SocialLocationJob> findAllCompletedByUserId(@Param("userId") UUID userId);
+
     int countCreatedByUserSince(@Param("userId") UUID userId, @Param("since") LocalDateTime since);
 
     boolean lockUserSubmission(@Param("userId") UUID userId);

@@ -18,6 +18,7 @@ public class HotelMarketplaceRepositoryImpl implements HotelMarketplaceRepositor
     private final HotelMarketplaceMapper mapper;
     @Override public int insertHotel(HotelProfile v){return mapper.insertHotel(v);} @Override public int updateHotel(HotelProfile v){return mapper.updateHotel(v);}
     @Override public Optional<HotelProfile> findHotel(UUID id){return Optional.ofNullable(mapper.findHotelById(id));}
+    @Override public Optional<HotelProfile> findPublicHotel(UUID id){return Optional.ofNullable(mapper.findPublicHotelById(id));}
     @Override public List<HotelProfile> findHotelsByOrganization(UUID id){return mapper.findHotelsByOrganization(id);}
     @Override public List<HotelProfile> findHotelsPublic(String q,int l,int o){return mapper.findHotelsPublic(q,l,o);}
     @Override public List<HotelProfile> findHotelsAdmin(String q,String s,int l,int o){return mapper.findHotelsAdmin(q,s,l,o);}

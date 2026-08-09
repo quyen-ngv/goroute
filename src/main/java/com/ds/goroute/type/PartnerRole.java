@@ -1,0 +1,16 @@
+package com.ds.goroute.type;
+
+public enum PartnerRole {
+    PARTNER_ADMIN,
+    PROPERTY_MANAGER,
+    REVENUE_MANAGER,
+    RESERVATION_AGENT,
+    FRONT_DESK,
+    HOUSEKEEPING,
+    FINANCE,
+    CONTENT_MANAGER,
+    TOUR_OPERATOR,
+    GUIDE,
+    TICKET_SCANNER,
+    VIEWER
+}

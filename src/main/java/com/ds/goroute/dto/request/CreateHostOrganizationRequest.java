@@ -1,5 +1,7 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.type.OrganizationType;
+
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -14,8 +16,7 @@ public class CreateHostOrganizationRequest {
     private String legalName;
     @NotBlank @Size(max = 500)
     private String displayName;
-    @Pattern(regexp = "INDIVIDUAL|BUSINESS")
-    private String organizationType = "BUSINESS";
+    private OrganizationType organizationType = OrganizationType.BUSINESS;
     @Pattern(regexp = "[A-Z]{3}")
     private String defaultCurrency = "VND";
     @NotBlank @Size(max = 100)

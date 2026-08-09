@@ -14,6 +14,7 @@ public interface HotelMarketplaceMapper {
     int insertHotel(HotelProfile hotel);
     int updateHotel(HotelProfile hotel);
     HotelProfile findHotelById(@Param("id") UUID id);
+    HotelProfile findPublicHotelById(@Param("id") UUID id);
     List<HotelProfile> findHotelsByOrganization(@Param("organizationId") UUID organizationId);
     List<HotelProfile> findHotelsPublic(@Param("query") String query, @Param("limit") int limit, @Param("offset") int offset);
     List<HotelProfile> findHotelsAdmin(@Param("query") String query, @Param("status") String status,

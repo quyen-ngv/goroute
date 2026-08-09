@@ -25,6 +25,7 @@ import org.apache.lucene.analysis.miscellaneous.ASCIIFoldingFilter;
 import org.apache.lucene.analysis.core.LowerCaseFilter;
 import org.apache.lucene.analysis.standard.StandardTokenizer;
 import org.apache.lucene.document.Document;
+import org.apache.lucene.document.DoubleDocValuesField;
 import org.apache.lucene.document.DoublePoint;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.LatLonDocValuesField;
@@ -43,6 +44,8 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.SearcherFactory;
 import org.apache.lucene.search.SearcherManager;
+import org.apache.lucene.search.Sort;
+import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.TermInSetQuery;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
@@ -74,7 +77,7 @@ import java.util.stream.Collectors;
 public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
 
     private static final int REINDEX_BATCH_SIZE = 200;
-    private static final String INDEX_SCHEMA_VERSION = "3";
+    private static final String INDEX_SCHEMA_VERSION = "6";
     private static final String ID_FIELD = "id";
     private static final String NAME_FIELD = "name";
     private static final String LOCATION_FIELD = "location";
@@ -82,12 +85,15 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     private static final String CATEGORY_FIELD = "category";
     private static final String PLACE_GROUP_FIELD = "place_group";
     private static final String RATING_FIELD = "review_rating";
+    private static final String EFFECTIVE_RATING_SORT_FIELD = "effective_rating_sort";
     private static final String CITY_SLUG_FIELD = "city_slug";
     private static final String FOOD_ID_FIELD = "food_id";
     private static final String HAS_LINKED_FOOD_FIELD = "has_linked_food";
     private static final float DISTANCE_SCORE_WEIGHT = 1.5f;
     private static final double MIN_DISTANCE_PIVOT_METERS = 100.0;
     private static final double MAX_DISTANCE_PIVOT_METERS = 5_000.0;
+    private static final Sort EFFECTIVE_RATING_DESCENDING_SORT = new Sort(
+            new SortField(EFFECTIVE_RATING_SORT_FIELD, SortField.Type.DOUBLE, true));
 
     private final PlaceRepository placeRepository;
     private final PlaceTranslationMapper placeTranslationMapper;
@@ -237,7 +243,13 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
 
         IndexSearcher searcher = searcherManager.acquire();
         try {
-            TopDocs topDocs = searcher.search(query, requestedHits);
+            TopDocs topDocs = criteria.sortByRating()
+                    ? searcher.search(
+                            query,
+                            requestedHits,
+                            EFFECTIVE_RATING_DESCENDING_SORT,
+                            criteria.minLuceneScore() != null)
+                    : searcher.search(query, requestedHits);
             List<UUID> ids = new ArrayList<>(criteria.size());
             int qualifyingHitIndex = 0;
             for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
@@ -373,7 +385,12 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
             addKeywordField(doc, PLACE_GROUP_FIELD, place.getPlaceGroup().name());
         }
         if (place.getReviewRating() != null) {
-            doc.add(new DoublePoint(RATING_FIELD, place.getReviewRating().doubleValue()));
+            double reviewRating = place.getReviewRating().doubleValue();
+            doc.add(new DoublePoint(RATING_FIELD, reviewRating));
+        }
+        if (place.getAdjustedRating() != null) {
+            doc.add(new DoubleDocValuesField(
+                    EFFECTIVE_RATING_SORT_FIELD, place.getAdjustedRating().doubleValue()));
         }
         List<String> destinations = JsonUtils.fromJson(
                 place.getDestinations(), new TypeReference<List<String>>() {});

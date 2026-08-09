@@ -17,26 +17,25 @@
         <result property="createdAt" column="created_at"/>
     </resultMap>
 
-    <select id="lockEntity" resultType="long">
-        SELECT pg_advisory_xact_lock(hashtextextended(CONCAT(#{entityType}, ':', #{entityId}::text), 0))
-    </select>
-
-    <select id="nextVersion" resultType="long">
-        SELECT COALESCE(MAX(version_no), 0) + 1
-        FROM marketplace_entity_versions
-        WHERE entity_type = #{entityType} AND entity_id = #{entityId}
-    </select>
-
-    <insert id="insertVersion">
-        INSERT INTO marketplace_entity_versions (
-            id, entity_type, entity_id, version_no, action, snapshot, changed_fields,
-            actor_user_id, actor_type, reason, restored_from_version_id, created_at
-        ) VALUES (
-            #{id}, #{entityType}, #{entityId}, #{versionNo}, #{action}, #{snapshot}::jsonb,
-            #{changedFields}::jsonb, #{actorUserId}, #{actorType}, #{reason},
-            #{restoredFromVersionId}, #{createdAt}
+    <select id="tryInsertNextVersion" resultType="boolean">
+        WITH next_version AS (
+            SELECT COALESCE(MAX(version_no), 0) + 1 AS version_no
+            FROM marketplace_entity_versions
+            WHERE entity_type = #{entityType} AND entity_id = #{entityId}
+        ), inserted AS (
+            INSERT INTO marketplace_entity_versions (
+                id, entity_type, entity_id, version_no, action, snapshot, changed_fields,
+                actor_user_id, actor_type, reason, restored_from_version_id, created_at
+            ) SELECT
+                #{id}, #{entityType}, #{entityId}, next_version.version_no, #{action}, #{snapshot}::jsonb,
+                #{changedFields}::jsonb, #{actorUserId}, #{actorType}, #{reason},
+                #{restoredFromVersionId}, #{createdAt}
+            FROM next_version
+            ON CONFLICT (entity_type, entity_id, version_no) DO NOTHING
+            RETURNING 1
         )
-    </insert>
+        SELECT EXISTS(SELECT 1 FROM inserted)
+    </select>
 
     <insert id="insertAuditEvent">
         INSERT INTO marketplace_audit_events (

@@ -11,6 +11,7 @@ import com.ds.goroute.dto.response.OrganizationMemberResponse;
 import com.ds.goroute.dto.response.OrganizationMemberScopeResponse;
 import com.ds.goroute.dto.response.PartnerMemberProvisionResponse;
 import com.ds.goroute.service.HostOrganizationService;
+import com.ds.goroute.type.OrganizationMemberStatus;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -64,7 +65,7 @@ public class PartnerOrganizationController {
 
     @PatchMapping("/{organizationId}/members/{memberUserId}/status")
     public ResponseEntity<BaseResponse<Void>> memberStatus(Authentication auth, @PathVariable UUID organizationId,
-            @PathVariable UUID memberUserId, @RequestParam String status) {
+            @PathVariable UUID memberUserId, @RequestParam OrganizationMemberStatus status) {
         service.updateMemberStatus(userId(auth), organizationId, memberUserId, status);
         return ResponseEntity.ok(BaseResponse.ofSucceeded());
     }

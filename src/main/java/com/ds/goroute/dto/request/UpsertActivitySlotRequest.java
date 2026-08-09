@@ -1,5 +1,7 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.type.MarketplaceSlotStatus;
+
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -15,10 +17,10 @@ public class UpsertActivitySlotRequest {
     @NotNull private LocalDateTime startsAt;
     private LocalDateTime endsAt;
     @NotBlank private String timezone;
-    @Min(0) private Integer capacity;
-    @Min(0) private Integer blockedQuantity=0;
-    @Min(0) private Integer bookingCutoffMinutes=0;
+    @NotNull @Min(0) private Integer capacity;
+    @NotNull @Min(0) private Integer blockedQuantity=0;
+    @NotNull @Min(0) private Integer bookingCutoffMinutes=0;
     @DecimalMin("0") private BigDecimal priceOverride;
-    @Pattern(regexp="ENABLED|DISABLED|CANCELLED|COMPLETED") private String status="ENABLED";
+    private MarketplaceSlotStatus status=MarketplaceSlotStatus.ENABLED;
     private Long expectedVersion;
 }

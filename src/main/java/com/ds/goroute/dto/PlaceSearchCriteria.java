@@ -19,6 +19,7 @@ public record PlaceSearchCriteria(
         List<UUID> foodIds,
         Boolean excludeLinkedFoodPlaces,
         boolean includeInactive,
+        boolean sortByRating,
         Float minLuceneScore,
         int page,
         int size) {

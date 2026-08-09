@@ -2,6 +2,7 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.SavePlaceRequest;
+import com.ds.goroute.dto.response.RecentSavedPlaceResponse;
 import com.ds.goroute.dto.response.SavedPlaceResponse;
 import com.ds.goroute.dto.response.SavedItemsOverviewResponse;
 import com.ds.goroute.service.SavedPlaceService;
@@ -47,6 +48,18 @@ public class SavedPlaceController {
         UUID userId = currentUserId(authentication);
         return ResponseEntity.ok(BaseResponse.ofSucceeded(
                 savedPlaceService.getSavedItemsOverview(userId)));
+    }
+
+    /**
+     * Returns de-duplicated, place-like saved items for Home and place detail.
+     * Categories from manual saves and mapped social-location jobs are retained.
+     */
+    @GetMapping("/recent")
+    public ResponseEntity<BaseResponse<List<RecentSavedPlaceResponse>>> getRecentSavedPlaces(
+            Authentication authentication) {
+        UUID userId = currentUserId(authentication);
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(
+                savedPlaceService.getRecentSavedPlaces(userId)));
     }
 
     @PostMapping

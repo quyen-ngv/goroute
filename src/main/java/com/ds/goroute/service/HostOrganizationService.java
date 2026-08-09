@@ -11,6 +11,9 @@ import com.ds.goroute.dto.request.ProvisionPartnerMemberRequest;
 import com.ds.goroute.dto.response.OrganizationMemberScopeResponse;
 import com.ds.goroute.dto.response.PartnerProvisionResponse;
 import com.ds.goroute.dto.response.PartnerMemberProvisionResponse;
+import com.ds.goroute.type.OrganizationMemberStatus;
+import com.ds.goroute.type.OrganizationOperationalStatus;
+import com.ds.goroute.type.OrganizationVerificationStatus;
 
 import java.util.List;
 import java.util.UUID;
@@ -22,7 +25,7 @@ public interface HostOrganizationService {
     HostOrganizationResponse update(UUID actorUserId, UUID organizationId, UpdateHostOrganizationRequest request);
     List<OrganizationMemberResponse> listMembers(UUID actorUserId, UUID organizationId);
     OrganizationMemberResponse upsertMember(UUID actorUserId, UUID organizationId, UpsertOrganizationMemberRequest request);
-    void updateMemberStatus(UUID actorUserId, UUID organizationId, UUID memberUserId, String status);
+    void updateMemberStatus(UUID actorUserId, UUID organizationId, UUID memberUserId, OrganizationMemberStatus status);
     List<OrganizationMemberScopeResponse> listMemberScopes(UUID actorUserId,UUID organizationId,UUID memberUserId);
     OrganizationMemberScopeResponse upsertMemberScope(UUID actorUserId,UUID organizationId,UUID memberUserId,
                                                       UUID scopeId,UpsertOrganizationMemberScopeRequest request);
@@ -31,14 +34,17 @@ public interface HostOrganizationService {
     HostOrganizationResponse adminGet(UUID organizationId);
     List<OrganizationMemberResponse> adminListMembers(UUID organizationId);
     List<OrganizationMemberScopeResponse> adminListMemberScopes(UUID organizationId,UUID memberUserId);
-    HostOrganizationResponse adminUpdateStatus(UUID organizationId, String operationalStatus, String verificationStatus);
+    HostOrganizationResponse adminUpdateStatus(UUID actorUserId, UUID organizationId,
+                                               OrganizationOperationalStatus operationalStatus,
+                                               OrganizationVerificationStatus verificationStatus, Long expectedVersion);
     PartnerProvisionResponse adminProvision(UUID actorUserId, AdminProvisionPartnerRequest request);
     HostOrganizationResponse adminUpdate(UUID actorUserId, UUID organizationId, UpdateHostOrganizationRequest request);
-    HostOrganizationResponse adminDisable(UUID actorUserId, UUID organizationId, String reason);
+    HostOrganizationResponse adminDisable(UUID actorUserId, UUID organizationId, String reason, Long expectedVersion);
     OrganizationMemberResponse adminUpsertMember(UUID actorUserId, UUID organizationId, UpsertOrganizationMemberRequest request);
     PartnerMemberProvisionResponse provisionMember(UUID actorUserId, UUID organizationId, ProvisionPartnerMemberRequest request);
     PartnerMemberProvisionResponse adminProvisionMember(UUID actorUserId, UUID organizationId, ProvisionPartnerMemberRequest request);
-    void adminUpdateMemberStatus(UUID actorUserId, UUID organizationId, UUID memberUserId, String status);
+    void adminUpdateMemberStatus(UUID actorUserId, UUID organizationId, UUID memberUserId,
+                                 OrganizationMemberStatus status);
     OrganizationMemberScopeResponse adminUpsertMemberScope(UUID actorUserId, UUID organizationId, UUID memberUserId,
                                                             UUID scopeId, UpsertOrganizationMemberScopeRequest request);
     void adminDeleteMemberScope(UUID actorUserId, UUID organizationId, UUID memberUserId, UUID scopeId);

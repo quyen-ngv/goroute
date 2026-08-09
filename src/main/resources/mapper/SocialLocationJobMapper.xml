@@ -102,6 +102,14 @@
         LIMIT #{limit}
     </select>
 
+    <select id="findAllCompletedByUserId" resultMap="SocialLocationJobResultMap">
+        SELECT * FROM social_location_jobs
+        WHERE user_id = #{userId}
+          AND status = 'COMPLETED'
+          AND result_payload IS NOT NULL
+        ORDER BY COALESCE(completed_at, created_at) DESC, id DESC
+    </select>
+
     <select id="countCreatedByUserSince" resultType="int">
         SELECT COUNT(*) FROM social_location_jobs WHERE user_id = #{userId} AND created_at &gt;= #{since}
     </select>

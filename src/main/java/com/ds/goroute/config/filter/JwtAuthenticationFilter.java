@@ -78,6 +78,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             path = path.substring(contextPath.length());
                         }
                         boolean protectedPortalPath = path.startsWith("/v1/api/partner/")
+                                || path.startsWith("/v1/api/marketplace-chat/")
                                 || (path.startsWith("/v1/api/admin/") && !path.equals("/v1/api/admin/auth/session"));
                         if (mustChangePassword && protectedPortalPath) {
                             response.setStatus(HttpServletResponse.SC_FORBIDDEN);

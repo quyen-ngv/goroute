@@ -9,6 +9,8 @@ import com.ds.goroute.repository.MarketplaceReviewResponseRepository;
 import com.ds.goroute.service.MarketplaceHistoryService;
 import com.ds.goroute.service.MarketplaceReviewResponseService;
 import com.ds.goroute.service.PartnerAuthorizationService;
+import com.ds.goroute.type.MarketplaceReviewResponseStatus;
+import com.ds.goroute.type.OrganizationResourceType;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -49,12 +51,11 @@ public class MarketplaceReviewResponseServiceImpl implements MarketplaceReviewRe
         LocalDateTime now = LocalDateTime.now();
         if (review.getResponseId() == null) {
             repository.insert(UUID.randomUUID(), reviewId, organizationId, actorUserId,
-                    request.getResponseText().trim(), request.getStatus(), now);
+                    request.getResponseText().trim(), request.getStatus().name(), now);
         } else {
-            long expectedVersion = request.getExpectedVersion() == null
-                    ? review.getResponseVersion() : request.getExpectedVersion();
+            long expectedVersion = requiredVersion(request.getExpectedVersion());
             if (repository.update(reviewId, organizationId, expectedVersion, actorUserId,
-                    request.getResponseText().trim(), request.getStatus(), now) != 1) {
+                    request.getResponseText().trim(), request.getStatus().name(), now) != 1) {
                 throw new BusinessException(ErrorConstant.ALREADY_PROCESSED,
                         "Review response was changed; reload and retry");
             }
@@ -83,11 +84,11 @@ public class MarketplaceReviewResponseServiceImpl implements MarketplaceReviewRe
                 .orElseThrow(() -> new BusinessException(ErrorConstant.REVIEW_NOT_FOUND));
         LocalDateTime now = LocalDateTime.now();
         if (review.getResponseId() == null) repository.insert(UUID.randomUUID(), reviewId, organizationId, actorUserId,
-                request.getResponseText().trim(), request.getStatus(), now);
+                request.getResponseText().trim(), request.getStatus().name(), now);
         else {
-            long expected = request.getExpectedVersion() == null ? review.getResponseVersion() : request.getExpectedVersion();
+            long expected = requiredVersion(request.getExpectedVersion());
             if (repository.update(reviewId, organizationId, expected, actorUserId, request.getResponseText().trim(),
-                    request.getStatus(), now) != 1) throw new BusinessException(ErrorConstant.ALREADY_PROCESSED,
+                    request.getStatus().name(), now) != 1) throw new BusinessException(ErrorConstant.ALREADY_PROCESSED,
                     "Review response was changed; reload and retry");
         }
         MarketplaceReviewView saved = repository.find(reviewId, organizationId).orElseThrow();
@@ -97,11 +98,12 @@ public class MarketplaceReviewResponseServiceImpl implements MarketplaceReviewRe
 
     @Override
     @Transactional
-    public MarketplaceReviewViewResponse adminHide(UUID actorUserId, UUID organizationId, UUID reviewId, String reason) {
+    public MarketplaceReviewViewResponse adminHide(UUID actorUserId, UUID organizationId, UUID reviewId, String reason,
+                                                    Long expectedVersion) {
         MarketplaceReviewView review = repository.find(reviewId, organizationId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.REVIEW_NOT_FOUND));
         if (review.getResponseId() == null) throw new BusinessException(ErrorConstant.NOT_FOUND,"Partner response not found");
-        if (repository.update(reviewId,organizationId,review.getResponseVersion(),actorUserId,review.getResponseText(),"HIDDEN",LocalDateTime.now())!=1)
+        if (repository.update(reviewId,organizationId,requiredVersion(expectedVersion),actorUserId,review.getResponseText(),MarketplaceReviewResponseStatus.HIDDEN.name(),LocalDateTime.now())!=1)
             throw new BusinessException(ErrorConstant.ALREADY_PROCESSED,"Review response was changed; reload and retry");
         MarketplaceReviewView saved=repository.find(reviewId,organizationId).orElseThrow();historyService.record(organizationId,
                 "REVIEW_RESPONSE",saved.getResponseId(),"ADMIN_HIDDEN",saved,List.of("status"),actorUserId,"ADMIN",clean(reason));return response(saved);
@@ -109,7 +111,7 @@ public class MarketplaceReviewResponseServiceImpl implements MarketplaceReviewRe
 
     private boolean canRespond(UUID organizationId, UUID actorUserId, MarketplaceReviewView review) {
         UUID resourceId = review.getHotelId() != null ? review.getHotelId() : review.getActivityBookingId();
-        String resourceType = review.getHotelId() != null ? "HOTEL" : "ACTIVITY";
+        String resourceType = (review.getHotelId() != null ? OrganizationResourceType.HOTEL : OrganizationResourceType.ACTIVITY).name();
         return resourceId != null && authorizationService.hasResourcePermission(
                 organizationId, actorUserId, resourceType, resourceId, "REVIEW_RESPOND");
     }
@@ -117,12 +119,12 @@ public class MarketplaceReviewResponseServiceImpl implements MarketplaceReviewRe
     private void requireReviewScope(UUID organizationId, UUID actorUserId, MarketplaceReviewView review) {
         if (review.getHotelId() != null) {
             authorizationService.requireResourcePermission(
-                    organizationId, actorUserId, "HOTEL", review.getHotelId(), "REVIEW_RESPOND");
+                    organizationId, actorUserId, OrganizationResourceType.HOTEL.name(), review.getHotelId(), "REVIEW_RESPOND");
             return;
         }
         if (review.getActivityBookingId() != null) {
             authorizationService.requireResourcePermission(
-                    organizationId, actorUserId, "ACTIVITY", review.getActivityBookingId(), "REVIEW_RESPOND");
+                    organizationId, actorUserId, OrganizationResourceType.ACTIVITY.name(), review.getActivityBookingId(), "REVIEW_RESPOND");
             return;
         }
         throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR,
@@ -170,6 +172,13 @@ public class MarketplaceReviewResponseServiceImpl implements MarketplaceReviewRe
 
     private String clean(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private long requiredVersion(Long value) {
+        if (value == null || value < 1) {
+            throw new BusinessException(ErrorConstant.BAD_REQUEST, "expectedVersion is required for an update");
+        }
+        return value;
     }
 
     private record Page(int limit, int offset) {}

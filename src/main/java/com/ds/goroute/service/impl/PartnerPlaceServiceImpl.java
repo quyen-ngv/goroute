@@ -77,7 +77,10 @@ public class PartnerPlaceServiceImpl implements PartnerPlaceService {
         if (!"PARTNER".equals(current.getPrimarySourceType())) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR,"Google/Admin canonical fields cannot be edited by partner");
         }
-        long expected=request.getExpectedVersion()==null ? current.getDataVersion() : request.getExpectedVersion();
+        if (request.getExpectedVersion() == null || request.getExpectedVersion() < 1) {
+            throw new BusinessException(ErrorConstant.BAD_REQUEST, "expectedVersion is required for an update");
+        }
+        long expected=request.getExpectedVersion();
         PartnerPlace next=fromRequest(placeId,actor,request,current.getCreatedAt());
         next.setDataVersion(expected);
         next.setUpdatedAt(LocalDateTime.now());

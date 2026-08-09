@@ -1,5 +1,8 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.type.HotelPropertyType;
+import com.ds.goroute.type.MarketplacePublicationStatus;
+
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
@@ -17,8 +20,7 @@ public class UpsertHotelRequest {
     @NotNull private UUID organizationId;
     @NotNull private UUID placeId;
     @Size(max = 100) private String propertyCode;
-    @Pattern(regexp = "HOTEL|RESORT|HOSTEL|APARTMENT|VILLA|HOMESTAY|GUEST_HOUSE")
-    private String propertyType = "HOTEL";
+    private HotelPropertyType propertyType = HotelPropertyType.HOTEL;
     @Min(1) @Max(5) private Integer starRating;
     private String description;
     private LocalTime checkInTime;
@@ -27,7 +29,7 @@ public class UpsertHotelRequest {
     private List<String> amenities;
     private Map<String, Object> policies;
     private Map<String, Object> bookingContact;
-    @Pattern(regexp = "DRAFT|ENABLED|DISABLED|ARCHIVED") private String status;
+    private MarketplacePublicationStatus status;
     private String disabledReason;
     private Long expectedVersion;
 }

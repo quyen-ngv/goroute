@@ -33,9 +33,9 @@ public class AdminMarketplaceChatController {
 
     @GetMapping("/{id}/messages")
     @PreAuthorize("@adminAuthorization.can(authentication,'marketplace-conversations','get')")
-    public ResponseEntity<BaseResponse<List<MarketplaceMessageResponse>>> messages(@PathVariable UUID id,
-            @RequestParam(required=false) Long afterSequence,@RequestParam(defaultValue="100") int limit){
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminMessages(id,afterSequence,limit)));
+    public ResponseEntity<BaseResponse<List<MarketplaceMessageResponse>>> messages(Authentication authentication,@PathVariable UUID id,
+            @RequestParam String reason,@RequestParam(required=false) Long afterSequence,@RequestParam(defaultValue="100") int limit){
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminMessages(UUID.fromString(authentication.getName()),id,afterSequence,limit,reason)));
     }
 
     @PatchMapping("/{id}")

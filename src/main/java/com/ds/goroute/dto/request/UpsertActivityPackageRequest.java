@@ -1,5 +1,7 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.type.MarketplaceAvailabilityStatus;
+
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -18,10 +20,10 @@ public class UpsertActivityPackageRequest {
     private String description;
     @Pattern(regexp="[A-Z]{3}") private String currency="VND";
     @NotNull @DecimalMin("0") private BigDecimal basePrice;
-    @Min(1) private Integer minQuantity=1;
+    @NotNull @Min(1) private Integer minQuantity=1;
     @Min(1) private Integer maxQuantity;
     private Map<String,Object> attributes;
     private Map<String,Object> cancellationPolicy;
-    @Pattern(regexp="ENABLED|DISABLED|ARCHIVED") private String status="ENABLED";
+    private MarketplaceAvailabilityStatus status=MarketplaceAvailabilityStatus.ENABLED;
     private Long expectedVersion;
 }

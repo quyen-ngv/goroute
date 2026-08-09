@@ -10,9 +10,7 @@ import java.util.UUID;
 
 @Mapper
 public interface MarketplaceHistoryMapper {
-    void lockEntity(@Param("entityType") String entityType, @Param("entityId") UUID entityId);
-    long nextVersion(@Param("entityType") String entityType, @Param("entityId") UUID entityId);
-    int insertVersion(MarketplaceEntityVersion version);
+    boolean tryInsertNextVersion(MarketplaceEntityVersion version);
     int insertAuditEvent(MarketplaceAuditEvent event);
     List<MarketplaceEntityVersion> findVersions(@Param("entityType") String entityType,
                                                 @Param("entityId") UUID entityId,

@@ -12,6 +12,7 @@ import java.util.UUID;
 public interface ActivityCommerceMapper {
     int insertProduct(MarketplaceActivityProduct product); int updateProduct(MarketplaceActivityProduct product);
     MarketplaceActivityProduct findProduct(@Param("id") UUID id);
+    MarketplaceActivityProduct findPublicProduct(@Param("id") UUID id);
     List<MarketplaceActivityProduct> findProductsByOrganization(@Param("organizationId") UUID organizationId);
     List<MarketplaceActivityProduct> findProductsPublic(@Param("query") String query,@Param("limit")int limit,@Param("offset")int offset);
     List<MarketplaceActivityProduct> findProductsAdmin(@Param("query")String query,@Param("status")String status,@Param("limit")int limit,@Param("offset")int offset);

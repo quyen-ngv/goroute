@@ -10,7 +10,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface HotelMarketplaceRepository {
-    int insertHotel(HotelProfile hotel); int updateHotel(HotelProfile hotel); Optional<HotelProfile> findHotel(UUID id);
+    int insertHotel(HotelProfile hotel); int updateHotel(HotelProfile hotel); Optional<HotelProfile> findHotel(UUID id); Optional<HotelProfile> findPublicHotel(UUID id);
     List<HotelProfile> findHotelsByOrganization(UUID organizationId); List<HotelProfile> findHotelsPublic(String query,int limit,int offset);
     List<HotelProfile> findHotelsAdmin(String query,String status,int limit,int offset);
     int insertRoomType(RoomType room); int updateRoomType(RoomType room); Optional<RoomType> findRoomType(UUID id);

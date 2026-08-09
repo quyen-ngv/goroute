@@ -8,6 +8,11 @@ import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.HostOrganizationRepository;
 import com.ds.goroute.mapper.AdminMapper;
 import com.ds.goroute.service.PartnerAuthorizationService;
+import com.ds.goroute.type.OrganizationMemberStatus;
+import com.ds.goroute.type.OrganizationOperationalStatus;
+import com.ds.goroute.type.OrganizationVerificationStatus;
+import com.ds.goroute.type.PartnerRole;
+import com.ds.goroute.type.ScopeAccessEffect;
 import com.ds.goroute.utils.JsonUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
@@ -23,19 +28,19 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PartnerAuthorizationServiceImpl implements PartnerAuthorizationService {
     private static final Set<String> ALL = Set.of("*");
-    private static final Map<String, Set<String>> ROLE_PERMISSIONS = Map.ofEntries(
-            Map.entry("PARTNER_ADMIN", ALL),
-            Map.entry("PROPERTY_MANAGER", Set.of("ORGANIZATION_READ", "HOTEL_READ", "HOTEL_WRITE", "ROOM_WRITE", "INVENTORY_WRITE", "BOOKING_READ", "BOOKING_WRITE", "CHAT_WRITE", "REVIEW_RESPOND")),
-            Map.entry("REVENUE_MANAGER", Set.of("ORGANIZATION_READ", "HOTEL_READ", "RATE_WRITE", "INVENTORY_WRITE", "BOOKING_READ", "REPORT_READ")),
-            Map.entry("RESERVATION_AGENT", Set.of("ORGANIZATION_READ", "HOTEL_READ", "BOOKING_READ", "BOOKING_WRITE", "CHAT_WRITE")),
-            Map.entry("FRONT_DESK", Set.of("ORGANIZATION_READ", "HOTEL_READ", "BOOKING_READ", "BOOKING_WRITE", "CHAT_WRITE")),
-            Map.entry("HOUSEKEEPING", Set.of("ORGANIZATION_READ", "HOTEL_READ", "BOOKING_READ")),
-            Map.entry("FINANCE", Set.of("ORGANIZATION_READ", "BOOKING_READ", "ORDER_READ", "REPORT_READ")),
-            Map.entry("CONTENT_MANAGER", Set.of("ORGANIZATION_READ", "HOTEL_READ", "HOTEL_WRITE", "ROOM_WRITE", "ACTIVITY_READ", "ACTIVITY_WRITE", "REVIEW_RESPOND")),
-            Map.entry("TOUR_OPERATOR", Set.of("ORGANIZATION_READ", "ACTIVITY_READ", "ACTIVITY_WRITE", "SLOT_WRITE", "ORDER_READ", "ORDER_WRITE", "CHAT_WRITE", "REVIEW_RESPOND")),
-            Map.entry("GUIDE", Set.of("ORGANIZATION_READ", "ACTIVITY_READ", "ORDER_READ", "CHAT_WRITE")),
-            Map.entry("TICKET_SCANNER", Set.of("ORGANIZATION_READ", "ACTIVITY_READ", "ORDER_READ", "ORDER_WRITE")),
-            Map.entry("VIEWER", Set.of("ORGANIZATION_READ", "HOTEL_READ", "ACTIVITY_READ", "BOOKING_READ", "ORDER_READ", "REPORT_READ"))
+    private static final Map<PartnerRole, Set<String>> ROLE_PERMISSIONS = Map.ofEntries(
+            Map.entry(PartnerRole.PARTNER_ADMIN, ALL),
+            Map.entry(PartnerRole.PROPERTY_MANAGER, Set.of("ORGANIZATION_READ", "HOTEL_READ", "HOTEL_WRITE", "ROOM_WRITE", "INVENTORY_WRITE", "BOOKING_READ", "BOOKING_WRITE", "CHAT_WRITE", "REVIEW_RESPOND")),
+            Map.entry(PartnerRole.REVENUE_MANAGER, Set.of("ORGANIZATION_READ", "HOTEL_READ", "RATE_WRITE", "INVENTORY_WRITE", "BOOKING_READ", "REPORT_READ")),
+            Map.entry(PartnerRole.RESERVATION_AGENT, Set.of("ORGANIZATION_READ", "HOTEL_READ", "BOOKING_READ", "BOOKING_WRITE", "CHAT_WRITE")),
+            Map.entry(PartnerRole.FRONT_DESK, Set.of("ORGANIZATION_READ", "HOTEL_READ", "BOOKING_READ", "BOOKING_WRITE", "CHAT_WRITE")),
+            Map.entry(PartnerRole.HOUSEKEEPING, Set.of("ORGANIZATION_READ", "HOTEL_READ", "BOOKING_READ")),
+            Map.entry(PartnerRole.FINANCE, Set.of("ORGANIZATION_READ", "BOOKING_READ", "ORDER_READ", "REPORT_READ")),
+            Map.entry(PartnerRole.CONTENT_MANAGER, Set.of("ORGANIZATION_READ", "HOTEL_READ", "HOTEL_WRITE", "ROOM_WRITE", "ACTIVITY_READ", "ACTIVITY_WRITE", "REVIEW_RESPOND")),
+            Map.entry(PartnerRole.TOUR_OPERATOR, Set.of("ORGANIZATION_READ", "ACTIVITY_READ", "ACTIVITY_WRITE", "SLOT_WRITE", "ORDER_READ", "ORDER_WRITE", "CHAT_WRITE", "REVIEW_RESPOND")),
+            Map.entry(PartnerRole.GUIDE, Set.of("ORGANIZATION_READ", "ACTIVITY_READ", "ORDER_READ", "CHAT_WRITE")),
+            Map.entry(PartnerRole.TICKET_SCANNER, Set.of("ORGANIZATION_READ", "ACTIVITY_READ", "ORDER_READ", "ORDER_WRITE")),
+            Map.entry(PartnerRole.VIEWER, Set.of("ORGANIZATION_READ", "HOTEL_READ", "ACTIVITY_READ", "BOOKING_READ", "ORDER_READ", "REPORT_READ"))
     );
 
     private final HostOrganizationRepository repository;
@@ -91,12 +96,12 @@ public class PartnerAuthorizationServiceImpl implements PartnerAuthorizationServ
         List<OrganizationMemberScope> activeScopes=scopes.stream().filter(scope->isActive(scope,now)).toList();
         List<OrganizationMemberScope> matching=activeScopes.stream()
                 .filter(scope->scope.getResourceId()==null||scope.getResourceId().equals(resourceId)).toList();
-        boolean denied=matching.stream().filter(scope->"DENY".equals(scope.getAccessEffect()))
+        boolean denied=matching.stream().filter(scope->ScopeAccessEffect.DENY.name().equals(scope.getAccessEffect()))
                 .anyMatch(scope->scopeDenies(scope,permission));
         if(denied)throw forbidden();
-        boolean hasAllowScopes=activeScopes.stream().anyMatch(scope->!"DENY".equals(scope.getAccessEffect()));
+        boolean hasAllowScopes=activeScopes.stream().anyMatch(scope->!ScopeAccessEffect.DENY.name().equals(scope.getAccessEffect()));
         boolean allowed=hasAllowScopes
-                ? matching.stream().filter(scope->!"DENY".equals(scope.getAccessEffect()))
+                ? matching.stream().filter(scope->!ScopeAccessEffect.DENY.name().equals(scope.getAccessEffect()))
                     .anyMatch(scope->scopeAllows(scope,member,permission))
                 : hasPermission(member,permission);
         if (!allowed) throw forbidden();
@@ -111,7 +116,7 @@ public class PartnerAuthorizationServiceImpl implements PartnerAuthorizationServ
 
     private OrganizationMember activeMember(UUID organizationId, UUID userId) {
         OrganizationMember member = repository.findMember(organizationId, userId).orElse(null);
-        if (member == null || !"ACTIVE".equals(member.getMemberStatus())) return null;
+        if (member == null || !OrganizationMemberStatus.ACTIVE.name().equals(member.getMemberStatus())) return null;
         LocalDateTime now = LocalDateTime.now();
         if (member.getValidFrom() != null && member.getValidFrom().isAfter(now)) return null;
         if (member.getValidUntil() != null && !member.getValidUntil().isAfter(now)) return null;
@@ -121,14 +126,14 @@ public class PartnerAuthorizationServiceImpl implements PartnerAuthorizationServ
     private boolean hasPermission(OrganizationMember member, String permission) {
         List<String> explicit = member.getPermissions() == null ? null
                 : JsonUtils.fromJson(member.getPermissions(), new TypeReference<List<String>>() {});
-        Set<String> rolePermissions=ROLE_PERMISSIONS.getOrDefault(member.getRoleCode(),Set.of());
+        Set<String> rolePermissions=permissionsForRole(member.getRoleCode());
         return rolePermissions.contains("*")||rolePermissions.contains(permission)
                 ||explicit!=null&&(explicit.contains("*")||explicit.contains(permission));
     }
 
     private boolean scopeAllows(OrganizationMemberScope scope,OrganizationMember member,String permission) {
         List<String> permissions=scope.getPermissions()==null?List.of():JsonUtils.fromJson(scope.getPermissions(),new TypeReference<List<String>>(){});
-        Set<String> rolePermissions=scope.getRoleCode()==null?Set.of():ROLE_PERMISSIONS.getOrDefault(scope.getRoleCode(),Set.of());
+        Set<String> rolePermissions=permissionsForRole(scope.getRoleCode());
         boolean explicit=permissions!=null&&!permissions.isEmpty();
         if(rolePermissions.contains("*")||rolePermissions.contains(permission)
                 ||explicit&&(permissions.contains("*")||permissions.contains(permission)))return true;
@@ -137,7 +142,7 @@ public class PartnerAuthorizationServiceImpl implements PartnerAuthorizationServ
 
     private boolean scopeDenies(OrganizationMemberScope scope,String permission){
         List<String> permissions=scope.getPermissions()==null?List.of():JsonUtils.fromJson(scope.getPermissions(),new TypeReference<List<String>>(){});
-        Set<String> rolePermissions=scope.getRoleCode()==null?Set.of():ROLE_PERMISSIONS.getOrDefault(scope.getRoleCode(),Set.of());
+        Set<String> rolePermissions=permissionsForRole(scope.getRoleCode());
         if(scope.getRoleCode()==null&&(permissions==null||permissions.isEmpty()))return true;
         return rolePermissions.contains("*")||rolePermissions.contains(permission)
                 ||permissions!=null&&(permissions.contains("*")||permissions.contains(permission));
@@ -150,13 +155,13 @@ public class PartnerAuthorizationServiceImpl implements PartnerAuthorizationServ
 
     private void requireOperationalAccess(HostOrganization organization, String permission) {
         boolean readOnly = permission != null && permission.endsWith("_READ");
-        boolean suspended = "SUSPENDED".equals(organization.getOperationalStatus())
-                || "SUSPENDED".equals(organization.getVerificationStatus());
+        boolean suspended = OrganizationOperationalStatus.SUSPENDED.name().equals(organization.getOperationalStatus())
+                || OrganizationVerificationStatus.SUSPENDED.name().equals(organization.getVerificationStatus());
         if (suspended && !readOnly) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR,
                     "This partner organization is suspended");
         }
-        if ("DISABLED".equals(organization.getOperationalStatus())
+        if (OrganizationOperationalStatus.DISABLED.name().equals(organization.getOperationalStatus())
                 && !readOnly && !"ORGANIZATION_WRITE".equals(permission)) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR,
                     "This partner organization is disabled");
@@ -165,6 +170,12 @@ public class PartnerAuthorizationServiceImpl implements PartnerAuthorizationServ
 
     private BusinessException forbidden() {
         return new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You do not have permission for this partner organization");
+    }
+
+    private Set<String> permissionsForRole(String roleCode) {
+        if (roleCode == null) return Set.of();
+        try { return ROLE_PERMISSIONS.getOrDefault(PartnerRole.valueOf(roleCode), Set.of()); }
+        catch (IllegalArgumentException ignored) { return Set.of(); }
     }
 
     private boolean adminCan(UUID userId, String permission) {

@@ -2,6 +2,7 @@ package com.ds.goroute.service;
 
 import com.ds.goroute.dto.request.*;
 import com.ds.goroute.dto.response.*;
+import com.ds.goroute.type.MarketplacePublicationStatus;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -40,10 +41,10 @@ public interface HotelMarketplaceService {
     List<RoomTypeResponse> adminListRooms(UUID hotelId);
     List<RatePlanResponse> adminListRates(UUID roomId);
     List<RoomInventoryResponse> adminGetInventory(UUID roomId, LocalDate start, LocalDate end);
-    HotelProfileResponse adminUpdateHotelStatus(UUID hotelId, String status, String reason);
+    HotelProfileResponse adminUpdateHotelStatus(UUID actor, UUID hotelId, MarketplacePublicationStatus status, String reason, Long expectedVersion);
     List<HotelBookingResponse> adminListBookings(String query, String status, int page, int size);
     HotelBookingResponse adminGetBooking(UUID bookingId);
-    HotelBookingResponse adminUpdateBookingStatus(UUID bookingId, UpdateHotelBookingStatusRequest request);
+    HotelBookingResponse adminUpdateBookingStatus(UUID actor, UUID bookingId, UpdateHotelBookingStatusRequest request);
     HotelProfileResponse adminCreateHotel(UUID actor, UpsertHotelRequest request);
     HotelProfileResponse adminUpdateHotel(UUID actor, UUID hotelId, UpsertHotelRequest request);
     RoomTypeResponse adminCreateRoom(UUID actor, UUID hotelId, UpsertRoomTypeRequest request);

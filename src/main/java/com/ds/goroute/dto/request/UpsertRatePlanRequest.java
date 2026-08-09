@@ -1,5 +1,8 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.type.MarketplaceAvailabilityStatus;
+import com.ds.goroute.type.MealPlan;
+
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -17,12 +20,11 @@ public class UpsertRatePlanRequest {
     @NotBlank @Size(max = 500) private String name;
     @Pattern(regexp = "[A-Z]{3}") private String currency = "VND";
     @NotNull @DecimalMin("0") private BigDecimal basePrice;
-    @Pattern(regexp = "ROOM_ONLY|BREAKFAST|HALF_BOARD|FULL_BOARD|ALL_INCLUSIVE")
-    private String mealPlan = "ROOM_ONLY";
+    private MealPlan mealPlan = MealPlan.ROOM_ONLY;
     private Map<String, Object> cancellationPolicy;
     private Map<String, Object> occupancyPricing;
-    @Min(1) private Integer minStay = 1;
+    @NotNull @Min(1) private Integer minStay = 1;
     @Min(1) private Integer maxStay;
-    @Pattern(regexp = "ENABLED|DISABLED|ARCHIVED") private String status = "ENABLED";
+    private MarketplaceAvailabilityStatus status = MarketplaceAvailabilityStatus.ENABLED;
     private Long expectedVersion;
 }

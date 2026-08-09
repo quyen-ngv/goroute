@@ -14,9 +14,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class MarketplaceHistoryRepositoryImpl implements MarketplaceHistoryRepository {
     private final MarketplaceHistoryMapper mapper;
-    @Override public void lockEntity(String entityType, UUID entityId) { mapper.lockEntity(entityType, entityId); }
-    @Override public long nextVersion(String entityType, UUID entityId) { return mapper.nextVersion(entityType, entityId); }
-    @Override public int insertVersion(MarketplaceEntityVersion version) { return mapper.insertVersion(version); }
+    @Override public boolean tryInsertNextVersion(MarketplaceEntityVersion version) { return mapper.tryInsertNextVersion(version); }
     @Override public int insertAuditEvent(MarketplaceAuditEvent event) { return mapper.insertAuditEvent(event); }
     @Override public List<MarketplaceEntityVersion> findVersions(String entityType, UUID entityId, int limit, int offset) {
         return mapper.findVersions(entityType, entityId, limit, offset);

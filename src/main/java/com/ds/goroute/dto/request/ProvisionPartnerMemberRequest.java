@@ -1,7 +1,10 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.type.PartnerRole;
+
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
@@ -13,6 +16,6 @@ public class ProvisionPartnerMemberRequest {
     @NotBlank @Email @Size(max = 320) private String email;
     @NotBlank @Size(max = 200) private String fullName;
     @Size(min = 10, max = 100) private String temporaryPassword;
-    @NotBlank @Size(max = 50) private String roleCode;
+    @NotNull private PartnerRole roleCode;
     private List<String> permissions;
 }

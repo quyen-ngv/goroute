@@ -54,7 +54,7 @@ public interface PlaceService {
 
     List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
                                      BigDecimal radius, String category, List<String> placeGroups,
-                                     BigDecimal minRating, String citySlug, List<UUID> foodIds,
+                                     BigDecimal minRating, boolean sortByRating, String citySlug, List<UUID> foodIds,
                                      Boolean excludeLinkedFoodPlaces, boolean includeInactive,
                                      Float minLuceneScore, int page, int size);
 

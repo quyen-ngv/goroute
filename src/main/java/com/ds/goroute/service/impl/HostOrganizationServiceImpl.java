@@ -24,6 +24,11 @@ import com.ds.goroute.service.HostOrganizationService;
 import com.ds.goroute.service.MarketplaceHistoryService;
 import com.ds.goroute.service.PartnerAuthorizationService;
 import com.ds.goroute.service.UserAccountService;
+import com.ds.goroute.type.AccountStatus;
+import com.ds.goroute.type.OrganizationMemberStatus;
+import com.ds.goroute.type.OrganizationOperationalStatus;
+import com.ds.goroute.type.OrganizationType;
+import com.ds.goroute.type.OrganizationVerificationStatus;
 import com.ds.goroute.utils.JsonUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
@@ -60,8 +65,9 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
         HostOrganization organization = HostOrganization.builder()
                 .id(UUID.randomUUID()).ownerUserId(actorUserId)
                 .legalName(request.getLegalName().trim()).displayName(request.getDisplayName().trim())
-                .organizationType(valueOrDefault(request.getOrganizationType(), "BUSINESS"))
-                .verificationStatus("UNVERIFIED").operationalStatus("ENABLED")
+                .organizationType(enumNameOrDefault(request.getOrganizationType(), OrganizationType.BUSINESS))
+                .verificationStatus(OrganizationVerificationStatus.UNVERIFIED.name())
+                .operationalStatus(OrganizationOperationalStatus.ENABLED.name())
                 .defaultCurrency(valueOrDefault(request.getDefaultCurrency(), "VND").toUpperCase())
                 .timezone(request.getTimezone()).contactEmail(blankToNull(request.getContactEmail()))
                 .contactPhone(blankToNull(request.getContactPhone())).settings(toJsonMap(request.getSettings()))
@@ -75,6 +81,10 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
     @Override
     @Transactional
     public PartnerProvisionResponse adminProvision(UUID actorUserId, AdminProvisionPartnerRequest request) {
+        if ((request.getOwnerUserId() == null) == (request.getOwnerAccount() == null)) {
+            throw new BusinessException(ErrorConstant.BAD_REQUEST,
+                    "Provide exactly one of ownerUserId or ownerAccount");
+        }
         UUID ownerUserId = request.getOwnerUserId();
         String temporaryPassword = null;
         String ownerUsername;
@@ -87,6 +97,13 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
             temporaryPassword = account.temporaryPassword();
         } else {
             var owner = userRepository.findById(ownerUserId).orElseThrow(() -> new BusinessException(ErrorConstant.USER_NOT_FOUND));
+            if (!AccountStatus.ACTIVE.name().equals(owner.getAccountStatus())) {
+                throw new BusinessException(ErrorConstant.BAD_REQUEST, "Existing owner account must be active");
+            }
+            if (owner.getPasswordHash() == null) {
+                throw new BusinessException(ErrorConstant.BAD_REQUEST,
+                        "Existing owner cannot access the portal with a password; provision a new account instead");
+            }
             ownerUsername = owner.getUsername();
         }
         HostOrganization organization = buildOrganization(ownerUserId, request.getOrganization());
@@ -102,7 +119,7 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
     @Transactional
     public HostOrganizationResponse adminUpdate(UUID actorUserId, UUID organizationId, UpdateHostOrganizationRequest request) {
         HostOrganization organization = findRequired(organizationId);
-        applyOrganizationUpdate(organization, request);
+        applyOrganizationUpdate(organization, request, true);
         if (repository.update(organization) != 1) throw new BusinessException(ErrorConstant.ALREADY_PROCESSED,
                 "Organization was changed by another user; reload and retry");
         organization.setDataVersion(organization.getDataVersion() + 1);
@@ -113,9 +130,9 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
 
     @Override
     @Transactional
-    public HostOrganizationResponse adminDisable(UUID actorUserId, UUID organizationId, String reason) {
+    public HostOrganizationResponse adminDisable(UUID actorUserId, UUID organizationId, String reason, Long expectedVersion) {
         HostOrganization organization = findRequired(organizationId);
-        organization.setOperationalStatus("DISABLED"); organization.setUpdatedAt(LocalDateTime.now());
+        organization.setOperationalStatus(OrganizationOperationalStatus.DISABLED.name()); organization.setDataVersion(requiredVersion(expectedVersion)); organization.setUpdatedAt(LocalDateTime.now());
         if (repository.update(organization) != 1) throw new BusinessException(ErrorConstant.ALREADY_PROCESSED,
                 "Organization was changed by another user; reload and retry");
         organization.setDataVersion(organization.getDataVersion() + 1);
@@ -136,7 +153,7 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
     @Transactional
     public HostOrganizationResponse update(UUID actorUserId, UUID organizationId, UpdateHostOrganizationRequest request) {
         HostOrganization organization = authorizationService.requirePermission(organizationId, actorUserId, "ORGANIZATION_WRITE");
-        applyOrganizationUpdate(organization, request);
+        applyOrganizationUpdate(organization, request, false);
         long expected = organization.getDataVersion();
         if (repository.update(organization) != 1) {
             throw new BusinessException(ErrorConstant.ALREADY_PROCESSED, "Organization was changed by another user; reload and retry");
@@ -170,7 +187,7 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
         OrganizationMember member = OrganizationMember.builder()
                 .id(existing == null ? UUID.randomUUID() : existing.getId())
                 .organizationId(organizationId).userId(request.getUserId())
-                .roleCode(request.getRoleCode()).memberStatus(valueOrDefault(request.getMemberStatus(), "ACTIVE"))
+                .roleCode(request.getRoleCode().name()).memberStatus(enumNameOrDefault(request.getMemberStatus(), OrganizationMemberStatus.ACTIVE))
                 .permissions(toJsonList(request.getPermissions())).validFrom(request.getValidFrom())
                 .validUntil(request.getValidUntil()).invitedBy(actorUserId)
                 .createdAt(existing == null ? now : existing.getCreatedAt()).updatedAt(now).build();
@@ -183,15 +200,15 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
 
     @Override
     @Transactional
-    public void updateMemberStatus(UUID actorUserId, UUID organizationId, UUID memberUserId, String status) {
+    public void updateMemberStatus(UUID actorUserId, UUID organizationId, UUID memberUserId, OrganizationMemberStatus status) {
         HostOrganization organization = authorizationService.requirePermission(organizationId, actorUserId, "MEMBER_MANAGE");
         if (organization.getOwnerUserId().equals(memberUserId)) {
             throw new BusinessException(ErrorConstant.BAD_REQUEST, "Organization owner cannot be suspended");
         }
-        if (!List.of("ACTIVE", "SUSPENDED", "ACCESS_EXPIRED", "DEACTIVATED").contains(status)) {
+        if (!canManuallySetMemberStatus(status)) {
             throw new BusinessException(ErrorConstant.BAD_REQUEST, "Invalid member status");
         }
-        if (repository.updateMemberStatus(organizationId, memberUserId, status, LocalDateTime.now()) != 1) {
+        if (repository.updateMemberStatus(organizationId, memberUserId, status.name(), LocalDateTime.now()) != 1) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Organization member not found");
         }
         OrganizationMember saved = repository.findMember(organizationId, memberUserId).orElseThrow();
@@ -214,13 +231,14 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
         OrganizationMember member=memberRequired(organizationId,memberUserId);
         if(request.getValidFrom()!=null&&request.getValidUntil()!=null&&!request.getValidUntil().isAfter(request.getValidFrom()))
             throw new BusinessException(ErrorConstant.BAD_REQUEST,"validUntil must be after validFrom");
-        validateScopedResource(organizationId,request.getResourceType(),request.getResourceId());
+        validateScopedResource(organizationId,request.getResourceType().name(),request.getResourceId());
         OrganizationMemberScope existing=scopeId==null?null:repository.findMemberScope(scopeId)
                 .filter(scope->scope.getMembershipId().equals(member.getId()))
                 .orElseThrow(()->new BusinessException(ErrorConstant.NOT_FOUND,"Member scope not found"));
         OrganizationMemberScope scope=OrganizationMemberScope.builder().id(existing==null?UUID.randomUUID():existing.getId())
-                .membershipId(member.getId()).resourceType(request.getResourceType()).resourceId(request.getResourceId())
-                .roleCode(request.getRoleCode()).accessEffect(valueOrDefault(request.getAccessEffect(),"ALLOW"))
+                .membershipId(member.getId()).resourceType(request.getResourceType().name()).resourceId(request.getResourceId())
+                .roleCode(request.getRoleCode() == null ? null : request.getRoleCode().name())
+                .accessEffect(enumNameOrDefault(request.getAccessEffect(), com.ds.goroute.type.ScopeAccessEffect.ALLOW))
                 .permissions(toJsonList(request.getPermissions())).validFrom(request.getValidFrom()).validUntil(request.getValidUntil())
                 .createdAt(existing==null?LocalDateTime.now():existing.getCreatedAt()).build();
         try { if(existing==null)repository.insertMemberScope(scope);else repository.updateMemberScope(scope); }
@@ -267,17 +285,19 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
 
     @Override
     @Transactional
-    public HostOrganizationResponse adminUpdateStatus(UUID organizationId, String operationalStatus, String verificationStatus) {
+    public HostOrganizationResponse adminUpdateStatus(UUID actorUserId, UUID organizationId,
+            OrganizationOperationalStatus operationalStatus, OrganizationVerificationStatus verificationStatus, Long expectedVersion) {
         HostOrganization organization = findRequired(organizationId);
-        if (operationalStatus != null) organization.setOperationalStatus(operationalStatus);
-        if (verificationStatus != null) organization.setVerificationStatus(verificationStatus);
+        if (operationalStatus != null) organization.setOperationalStatus(operationalStatus.name());
+        if (verificationStatus != null) organization.setVerificationStatus(verificationStatus.name());
+        organization.setDataVersion(requiredVersion(expectedVersion));
         organization.setUpdatedAt(LocalDateTime.now());
         if (repository.update(organization) != 1) {
             throw new BusinessException(ErrorConstant.ALREADY_PROCESSED, "Organization was changed; reload and retry");
         }
         organization.setDataVersion(organization.getDataVersion() + 1);
         historyService.record(organizationId, "HOST_ORGANIZATION", organizationId, "ADMIN_STATUS_CHANGED",
-                organization, List.of("operationalStatus", "verificationStatus"), null, "ADMIN", null);
+                organization, List.of("operationalStatus", "verificationStatus"), actorUserId, "ADMIN", null);
         return toResponse(organization);
     }
 
@@ -301,7 +321,7 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
         return provisionAndAttachMember(actorUserId, organizationId, request, true);
     }
 
-    @Override public void adminUpdateMemberStatus(UUID actorUserId, UUID organizationId, UUID memberUserId, String status) {
+    @Override public void adminUpdateMemberStatus(UUID actorUserId, UUID organizationId, UUID memberUserId, OrganizationMemberStatus status) {
         updateMemberStatusCore(actorUserId, organizationId, memberUserId, status, true);
     }
 
@@ -319,20 +339,29 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
         LocalDateTime now = LocalDateTime.now();
         return HostOrganization.builder().id(UUID.randomUUID()).ownerUserId(ownerUserId)
                 .legalName(request.getLegalName().trim()).displayName(request.getDisplayName().trim())
-                .organizationType(valueOrDefault(request.getOrganizationType(), "BUSINESS"))
-                .verificationStatus("UNVERIFIED").operationalStatus("ENABLED")
+                .organizationType(enumNameOrDefault(request.getOrganizationType(), OrganizationType.BUSINESS))
+                .verificationStatus(OrganizationVerificationStatus.UNVERIFIED.name())
+                .operationalStatus(OrganizationOperationalStatus.ENABLED.name())
                 .defaultCurrency(valueOrDefault(request.getDefaultCurrency(), "VND").toUpperCase())
                 .timezone(request.getTimezone()).contactEmail(blankToNull(request.getContactEmail()))
                 .contactPhone(blankToNull(request.getContactPhone())).settings(toJsonMap(request.getSettings()))
                 .dataVersion(1L).createdAt(now).updatedAt(now).build();
     }
 
-    private void applyOrganizationUpdate(HostOrganization organization, UpdateHostOrganizationRequest request) {
+    private void applyOrganizationUpdate(HostOrganization organization, UpdateHostOrganizationRequest request,
+            boolean adminCanChangeOperationalStatus) {
         validateTimezoneAndCurrency(request.getTimezone(), request.getDefaultCurrency());
-        long expected = request.getExpectedVersion() == null ? organization.getDataVersion() : request.getExpectedVersion();
+        if (!adminCanChangeOperationalStatus && request.getOperationalStatus() != null
+                && !request.getOperationalStatus().name().equals(organization.getOperationalStatus())) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR,
+                    "Only an admin can change organization operational status");
+        }
+        long expected = requiredVersion(request.getExpectedVersion());
         organization.setLegalName(request.getLegalName().trim()); organization.setDisplayName(request.getDisplayName().trim());
-        organization.setOrganizationType(valueOrDefault(request.getOrganizationType(), organization.getOrganizationType()));
-        organization.setOperationalStatus(valueOrDefault(request.getOperationalStatus(), organization.getOperationalStatus()));
+        organization.setOrganizationType(enumNameOrDefault(request.getOrganizationType(), organization.getOrganizationType()));
+        if (adminCanChangeOperationalStatus) {
+            organization.setOperationalStatus(enumNameOrDefault(request.getOperationalStatus(), organization.getOperationalStatus()));
+        }
         organization.setDefaultCurrency(valueOrDefault(request.getDefaultCurrency(), organization.getDefaultCurrency()).toUpperCase());
         organization.setTimezone(request.getTimezone()); organization.setContactEmail(blankToNull(request.getContactEmail()));
         organization.setContactPhone(blankToNull(request.getContactPhone())); organization.setSettings(toJsonMap(request.getSettings()));
@@ -350,8 +379,8 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
             throw new BusinessException(ErrorConstant.BAD_REQUEST, "validUntil must be after validFrom");
         LocalDateTime now = LocalDateTime.now(); OrganizationMember existing = repository.findMember(organizationId, request.getUserId()).orElse(null);
         OrganizationMember member = OrganizationMember.builder().id(existing == null ? UUID.randomUUID() : existing.getId())
-                .organizationId(organizationId).userId(request.getUserId()).roleCode(request.getRoleCode())
-                .memberStatus(valueOrDefault(request.getMemberStatus(), "ACTIVE")).permissions(toJsonList(request.getPermissions()))
+                .organizationId(organizationId).userId(request.getUserId()).roleCode(request.getRoleCode().name())
+                .memberStatus(enumNameOrDefault(request.getMemberStatus(), OrganizationMemberStatus.ACTIVE)).permissions(toJsonList(request.getPermissions()))
                 .validFrom(request.getValidFrom()).validUntil(request.getValidUntil()).invitedBy(actorUserId)
                 .createdAt(existing == null ? now : existing.getCreatedAt()).updatedAt(now).build();
         repository.upsertMember(member); OrganizationMember saved = repository.findMember(organizationId, request.getUserId()).orElse(member);
@@ -365,19 +394,19 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
         UserAccountService.ProvisionedAccount account = userAccountService.provision(request.getUsername(), request.getEmail(),
                 request.getFullName(), request.getTemporaryPassword());
         UpsertOrganizationMemberRequest member = new UpsertOrganizationMemberRequest(); member.setUserId(account.user().getId());
-        member.setRoleCode(request.getRoleCode()); member.setMemberStatus("ACTIVE"); member.setPermissions(request.getPermissions());
+        member.setRoleCode(request.getRoleCode()); member.setMemberStatus(OrganizationMemberStatus.ACTIVE); member.setPermissions(request.getPermissions());
         OrganizationMemberResponse saved = saveMember(actorUserId, organizationId, member, admin);
         return PartnerMemberProvisionResponse.builder().member(saved).username(account.user().getUsername())
                 .temporaryPassword(account.temporaryPassword()).mustChangePassword(true).build();
     }
 
-    private void updateMemberStatusCore(UUID actorUserId, UUID organizationId, UUID memberUserId, String status, boolean admin) {
+    private void updateMemberStatusCore(UUID actorUserId, UUID organizationId, UUID memberUserId, OrganizationMemberStatus status, boolean admin) {
         HostOrganization organization = admin ? findRequired(organizationId)
                 : authorizationService.requirePermission(organizationId, actorUserId, "MEMBER_MANAGE");
         if (organization.getOwnerUserId().equals(memberUserId)) throw new BusinessException(ErrorConstant.BAD_REQUEST, "Organization owner cannot be suspended");
-        if (!List.of("ACTIVE", "SUSPENDED", "ACCESS_EXPIRED", "DEACTIVATED").contains(status))
+        if (!canManuallySetMemberStatus(status))
             throw new BusinessException(ErrorConstant.BAD_REQUEST, "Invalid member status");
-        if (repository.updateMemberStatus(organizationId, memberUserId, status, LocalDateTime.now()) != 1)
+        if (repository.updateMemberStatus(organizationId, memberUserId, status.name(), LocalDateTime.now()) != 1)
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Organization member not found");
         OrganizationMember saved = repository.findMember(organizationId, memberUserId).orElseThrow();
         historyService.record(organizationId, "ORGANIZATION_MEMBER", saved.getId(), "STATUS_CHANGED", saved,
@@ -390,13 +419,14 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
         OrganizationMember member = memberRequired(organizationId, memberUserId);
         if(request.getValidFrom()!=null&&request.getValidUntil()!=null&&!request.getValidUntil().isAfter(request.getValidFrom()))
             throw new BusinessException(ErrorConstant.BAD_REQUEST,"validUntil must be after validFrom");
-        validateScopedResource(organizationId,request.getResourceType(),request.getResourceId());
+        validateScopedResource(organizationId,request.getResourceType().name(),request.getResourceId());
         OrganizationMemberScope existing=scopeId==null?null:repository.findMemberScope(scopeId)
                 .filter(scope->scope.getMembershipId().equals(member.getId()))
                 .orElseThrow(()->new BusinessException(ErrorConstant.NOT_FOUND,"Member scope not found"));
         OrganizationMemberScope scope=OrganizationMemberScope.builder().id(existing==null?UUID.randomUUID():existing.getId())
-                .membershipId(member.getId()).resourceType(request.getResourceType()).resourceId(request.getResourceId())
-                .roleCode(request.getRoleCode()).accessEffect(valueOrDefault(request.getAccessEffect(),"ALLOW"))
+                .membershipId(member.getId()).resourceType(request.getResourceType().name()).resourceId(request.getResourceId())
+                .roleCode(request.getRoleCode() == null ? null : request.getRoleCode().name())
+                .accessEffect(enumNameOrDefault(request.getAccessEffect(), com.ds.goroute.type.ScopeAccessEffect.ALLOW))
                 .permissions(toJsonList(request.getPermissions())).validFrom(request.getValidFrom()).validUntil(request.getValidUntil())
                 .createdAt(existing==null?LocalDateTime.now():existing.getCreatedAt()).build();
         try { if(existing==null)repository.insertMemberScope(scope);else repository.updateMemberScope(scope); }
@@ -416,6 +446,13 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
 
     private HostOrganization findRequired(UUID id) {
         return repository.findById(id).orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Partner organization not found"));
+    }
+
+    private long requiredVersion(Long value) {
+        if (value == null || value < 1) {
+            throw new BusinessException(ErrorConstant.BAD_REQUEST, "expectedVersion is required for an update");
+        }
+        return value;
     }
 
     private void validateTimezoneAndCurrency(String timezone, String currency) {
@@ -477,5 +514,11 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
     private String toJsonMap(Object value) { return value == null ? "{}" : JsonUtils.toJson(value); }
     private String toJsonList(Object value) { return value == null ? "[]" : JsonUtils.toJson(value); }
     private String blankToNull(String value) { return value == null || value.isBlank() ? null : value.trim(); }
+    private String enumNameOrDefault(Enum<?> value, Enum<?> fallback) { return value == null ? fallback.name() : value.name(); }
+    private String enumNameOrDefault(Enum<?> value, String fallback) { return value == null ? fallback : value.name(); }
+    private boolean canManuallySetMemberStatus(OrganizationMemberStatus status) {
+        return status == OrganizationMemberStatus.ACTIVE || status == OrganizationMemberStatus.SUSPENDED
+                || status == OrganizationMemberStatus.ACCESS_EXPIRED || status == OrganizationMemberStatus.DEACTIVATED;
+    }
     private String valueOrDefault(String value, String fallback) { return value == null || value.isBlank() ? fallback : value; }
 }

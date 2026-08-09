@@ -226,7 +226,7 @@ public class PlaceServiceImpl implements PlaceService {
                                             BigDecimal radius, String category, List<String> placeGroups,
                                             BigDecimal minRating, int page, int size) {
         return searchPlaces(keyword, latitude, longitude, radius, category, placeGroups,
-                minRating, null, null, null, false, null, page, size);
+                minRating, false, null, null, null, false, null, page, size);
     }
 
     @Override
@@ -235,19 +235,20 @@ public class PlaceServiceImpl implements PlaceService {
                                             BigDecimal minRating, String citySlug, List<UUID> foodIds,
                                             Boolean excludeLinkedFoodPlaces, boolean includeInactive, int page, int size) {
         return searchPlaces(keyword, latitude, longitude, radius, category, placeGroups,
-                minRating, citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, null, page, size);
+                minRating, false, citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, null, page, size);
     }
 
     @Override
     public List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
                                             BigDecimal radius, String category, List<String> placeGroups,
-                                            BigDecimal minRating, String citySlug, List<UUID> foodIds,
+                                            BigDecimal minRating, boolean sortByRating, String citySlug, List<UUID> foodIds,
                                             Boolean excludeLinkedFoodPlaces, boolean includeInactive,
                                             Float minLuceneScore, int page, int size) {
         try {
             PlaceSearchCriteria criteria = new PlaceSearchCriteria(
                     keyword, latitude, longitude, radius, category, placeGroups, minRating,
-                    citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, minLuceneScore, page, size);
+                    citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, sortByRating,
+                    minLuceneScore, page, size);
             List<UUID> orderedIds = placeSearchIndexService.searchPlaceIds(criteria);
             if (orderedIds.isEmpty()) {
                 return List.of();

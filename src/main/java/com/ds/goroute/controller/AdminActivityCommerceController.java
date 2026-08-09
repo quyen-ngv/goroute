@@ -4,6 +4,7 @@ import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.*;
 import com.ds.goroute.dto.response.*;
 import com.ds.goroute.service.ActivityCommerceService;
+import com.ds.goroute.type.MarketplacePublicationStatus;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -96,9 +97,11 @@ public class AdminActivityCommerceController {
 
     @PatchMapping("/{id}/status")
     @PreAuthorize("@adminAuthorization.can(authentication,'marketplace-activities','update')")
-    public ResponseEntity<BaseResponse<MarketplaceActivityResponse>> status(@PathVariable UUID id,
-            @RequestParam String status, @RequestParam(required=false) String reason) {
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminProductStatus(id,status,reason)));
+    public ResponseEntity<BaseResponse<MarketplaceActivityResponse>> status(Authentication authentication,@PathVariable UUID id,
+            @RequestParam MarketplacePublicationStatus status, @RequestParam(required=false) String reason,
+            @RequestParam Long expectedVersion) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminProductStatus(
+                actor(authentication),id,status,reason,expectedVersion)));
     }
 
     @GetMapping("/orders")
@@ -118,9 +121,9 @@ public class AdminActivityCommerceController {
 
     @PatchMapping("/orders/{id}/status")
     @PreAuthorize("@adminAuthorization.can(authentication,'marketplace-activities','update')")
-    public ResponseEntity<BaseResponse<ActivityOrderResponse>> orderStatus(@PathVariable UUID id,
+    public ResponseEntity<BaseResponse<ActivityOrderResponse>> orderStatus(Authentication authentication,@PathVariable UUID id,
             @Valid @RequestBody UpdateActivityOrderStatusRequest request) {
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminOrderStatus(id,request)));
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminOrderStatus(actor(authentication),id,request)));
     }
 
     private UUID actor(Authentication authentication){return UUID.fromString(authentication.getName());}

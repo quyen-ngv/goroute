@@ -1,5 +1,8 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.type.OrganizationOperationalStatus;
+import com.ds.goroute.type.OrganizationType;
+
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -14,10 +17,8 @@ public class UpdateHostOrganizationRequest {
     private String legalName;
     @NotBlank @Size(max = 500)
     private String displayName;
-    @Pattern(regexp = "INDIVIDUAL|BUSINESS")
-    private String organizationType;
-    @Pattern(regexp = "ENABLED|DISABLED")
-    private String operationalStatus;
+    private OrganizationType organizationType;
+    private OrganizationOperationalStatus operationalStatus;
     @Pattern(regexp = "[A-Z]{3}")
     private String defaultCurrency;
     @NotBlank @Size(max = 100)

@@ -94,6 +94,23 @@ class PlaceSearchIndexServiceImplTest {
                 .containsExactly(fartherExact.getId(), closerPartial.getId());
     }
 
+    @Test
+    void sortsOnlyByCalculatedRatingBeforePaginating() throws Exception {
+        Place lowRated = place("Low rated", "cafe", 10.0001, 106.0, 4.9, 3.5);
+        Place topRated = place("Top rated", "cafe", 10.0002, 106.0, 3.5, 4.9);
+        Place middleRated = place("Middle rated", "cafe", 10.0003, 106.0, 4.4, 4.4);
+        Place noCalculatedRating = place("No calculated", "cafe", 10.0004, 106.0, 4.8);
+        searchService.indexPlace(lowRated);
+        searchService.indexPlace(topRated);
+        searchService.indexPlace(middleRated);
+        searchService.indexPlace(noCalculatedRating);
+
+        assertThat(searchService.searchPlaceIds(ratingCriteria(0, 2)))
+                .containsExactly(topRated.getId(), middleRated.getId());
+        assertThat(searchService.searchPlaceIds(ratingCriteria(1, 2)))
+                .containsExactly(lowRated.getId(), noCalculatedRating.getId());
+    }
+
     private PlaceSearchCriteria criteria(String keyword, String category, double radiusKm) {
         return new PlaceSearchCriteria(
                 keyword,
@@ -107,12 +124,51 @@ class PlaceSearchIndexServiceImplTest {
                 null,
                 null,
                 false,
+                false,
                 null,
                 0,
                 20);
     }
 
+    private PlaceSearchCriteria ratingCriteria(int page, int size) {
+        return new PlaceSearchCriteria(
+                null,
+                BigDecimal.valueOf(10.0),
+                BigDecimal.valueOf(106.0),
+                BigDecimal.valueOf(5.0),
+                "cafe",
+                null,
+                null,
+                null,
+                null,
+                null,
+                false,
+                true,
+                null,
+                page,
+                size);
+    }
+
     private Place place(String title, String category, double latitude, double longitude) {
+        return place(title, category, latitude, longitude, 4.5);
+    }
+
+    private Place place(
+            String title,
+            String category,
+            double latitude,
+            double longitude,
+            double reviewRating) {
+        return place(title, category, latitude, longitude, reviewRating, null);
+    }
+
+    private Place place(
+            String title,
+            String category,
+            double latitude,
+            double longitude,
+            double reviewRating,
+            Double adjustedRating) {
         return Place.builder()
                 .id(UUID.randomUUID())
                 .title(title)
@@ -121,7 +177,9 @@ class PlaceSearchIndexServiceImplTest {
                 .latitude(BigDecimal.valueOf(latitude))
                 .longitude(BigDecimal.valueOf(longitude))
                 .destinations("[\"hanoi\"]")
-                .reviewRating(BigDecimal.valueOf(4.5))
+                .reviewRating(BigDecimal.valueOf(reviewRating))
+                .adjustedRating(
+                        adjustedRating == null ? null : BigDecimal.valueOf(adjustedRating))
                 .visibilityStatus(PlaceVisibilityStatus.ACTIVE)
                 .build();
     }

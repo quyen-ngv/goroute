@@ -90,7 +90,11 @@
 
     <select id="findByUserIdAndPlaceId" resultMap="SavedPlaceResultMap">
         SELECT * FROM saved_places 
-        WHERE user_id = #{userId} AND place_id = #{placeId} AND item_type = #{itemType}
+        WHERE user_id = #{userId}
+          AND place_id = #{placeId}
+          AND item_type = #{itemType}
+          AND COALESCE(NULLIF(BTRIM(category), ''), '') =
+              COALESCE(NULLIF(BTRIM(#{category}), ''), '')
     </select>
 
     <update id="updateTags">

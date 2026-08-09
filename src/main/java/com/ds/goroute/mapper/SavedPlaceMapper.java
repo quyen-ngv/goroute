@@ -26,7 +26,8 @@ public interface SavedPlaceMapper {
     
     SavedPlace findByUserIdAndPlaceId(@Param("userId") UUID userId,
                                       @Param("placeId") String placeId,
-                                      @Param("itemType") String itemType);
+                                      @Param("itemType") String itemType,
+                                      @Param("category") String category);
     
     void updateTags(@Param("id") UUID id, @Param("tags") String[] tags);
 

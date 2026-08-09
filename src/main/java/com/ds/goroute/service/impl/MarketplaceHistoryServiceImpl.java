@@ -23,6 +23,8 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class MarketplaceHistoryServiceImpl implements MarketplaceHistoryService {
+    private static final int HISTORY_VERSION_INSERT_ATTEMPTS = 4;
+
     private final MarketplaceHistoryRepository repository;
     private final ObjectMapper objectMapper;
     private final AdminMapper adminMapper;
@@ -34,18 +36,24 @@ public class MarketplaceHistoryServiceImpl implements MarketplaceHistoryService 
         LocalDateTime now = LocalDateTime.now();
         String effectiveActorType = actorUserId != null && adminMapper.hasAnyRole(actorUserId)
                 ? "ADMIN" : (actorType == null ? "USER" : actorType);
-        repository.lockEntity(entityType, entityId);
-        long next = repository.nextVersion(entityType, entityId);
-        repository.insertVersion(MarketplaceEntityVersion.builder()
-                .id(UUID.randomUUID()).entityType(entityType).entityId(entityId).versionNo(next)
-                .action(action).snapshot(writeJson(snapshot))
-                .changedFields(writeJson(changedFields == null ? List.of() : changedFields))
-                .actorUserId(actorUserId).actorType(effectiveActorType)
-                .reason(reason).createdAt(now).build());
+        appendVersion(entityType, entityId, action, snapshot, changedFields, actorUserId, effectiveActorType, reason, now);
         repository.insertAuditEvent(MarketplaceAuditEvent.builder()
                 .id(UUID.randomUUID()).organizationId(organizationId).entityType(entityType).entityId(entityId)
                 .action(action).actorUserId(actorUserId).actorType(effectiveActorType)
                 .reason(reason).metadata("{}").createdAt(now).build());
+    }
+
+    @Override
+    @Transactional
+    public void audit(UUID organizationId, String entityType, UUID entityId, String action,
+                      UUID actorUserId, String actorType, String reason, Map<String, Object> metadata) {
+        LocalDateTime now = LocalDateTime.now();
+        String effectiveActorType = actorUserId != null && adminMapper.hasAnyRole(actorUserId)
+                ? "ADMIN" : (actorType == null ? "USER" : actorType);
+        repository.insertAuditEvent(MarketplaceAuditEvent.builder()
+                .id(UUID.randomUUID()).organizationId(organizationId).entityType(entityType).entityId(entityId)
+                .action(action).actorUserId(actorUserId).actorType(effectiveActorType)
+                .reason(reason).metadata(writeJson(metadata == null ? Map.of() : metadata)).createdAt(now).build());
     }
 
     @Override
@@ -64,6 +72,23 @@ public class MarketplaceHistoryServiceImpl implements MarketplaceHistoryService 
                 .changedFields(fields == null ? List.of() : fields).actorUserId(value.getActorUserId())
                 .actorType(value.getActorType()).reason(value.getReason())
                 .restoredFromVersionId(value.getRestoredFromVersionId()).createdAt(value.getCreatedAt()).build();
+    }
+
+    private void appendVersion(String entityType, UUID entityId, String action, Object snapshot,
+                               List<String> changedFields, UUID actorUserId, String actorType,
+                               String reason, LocalDateTime now) {
+        String snapshotJson = writeJson(snapshot);
+        String changedFieldsJson = writeJson(changedFields == null ? List.of() : changedFields);
+        for (int attempt = 0; attempt < HISTORY_VERSION_INSERT_ATTEMPTS; attempt++) {
+            MarketplaceEntityVersion version = MarketplaceEntityVersion.builder()
+                    .id(UUID.randomUUID()).entityType(entityType).entityId(entityId)
+                    .action(action).snapshot(snapshotJson).changedFields(changedFieldsJson)
+                    .actorUserId(actorUserId).actorType(actorType).reason(reason).createdAt(now).build();
+            if (repository.tryInsertNextVersion(version)) {
+                return;
+            }
+        }
+        throw new IllegalStateException("Could not append marketplace history version after concurrent updates");
     }
 
     private String writeJson(Object value) {
