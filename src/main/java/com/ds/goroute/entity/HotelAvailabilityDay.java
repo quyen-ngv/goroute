@@ -16,6 +16,9 @@ public class HotelAvailabilityDay {
     private Boolean closedToArrival;
     private Boolean closedToDeparture;
     private Integer minStay;
+    private Integer maxStay;
+    private Integer minAdvanceDays;
+    private Integer maxAdvanceDays;
     private BigDecimal nightlyPrice;
     private String currency;
 }

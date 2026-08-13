@@ -2,6 +2,7 @@ package com.ds.goroute.repository;
 
 import com.ds.goroute.entity.Trip;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -49,4 +50,6 @@ public interface TripRepository {
     int sumCopyCountByOwnerId(UUID ownerId);
 
     int sumHelpfulVotesByOwnerId(UUID ownerId);
+
+    List<Trip> findNotificationCandidates(LocalDate fromDate, LocalDate toDate);
 }

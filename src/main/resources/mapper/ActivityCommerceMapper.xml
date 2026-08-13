@@ -5,11 +5,18 @@
     <id property="id" column="id"/><result property="organizationId" column="host_organization_id"/>
     <result property="placeId" column="place_ref_id"/><result property="placeTitle" column="place_title"/><result property="externalId" column="external_id"/>
     <result property="source" column="source"/><result property="url" column="url"/><result property="redirectUrl" column="redirect_url"/>
+    <result property="activityType" column="activity_type"/>
     <result property="title" column="title"/><result property="description" column="description"/>
     <result property="activityAddress" column="activity_address"/><result property="departingFrom" column="departing_from"/>
     <result property="destinations" column="destinations"/><result property="destinationCoordinates" column="destination_coordinates"/>
     <result property="searchLat" column="search_lat"/><result property="searchLng" column="search_lng"/><result property="destinationsNorm" column="destinations_norm"/>
     <result property="navigationList" column="navigation_list"/><result property="itineraryStops" column="itinerary_stops"/><result property="pickupAddresses" column="pickup_addresses"/>
+    <result property="languages" column="languages"/><result property="meetingPoint" column="meeting_point"/>
+    <result property="includedItems" column="included_items"/><result property="excludedItems" column="excluded_items"/>
+    <result property="eligibility" column="eligibility"/><result property="accessibilityFeatures" column="accessibility_features"/>
+    <result property="confirmationType" column="confirmation_type"/><result property="voucherType" column="voucher_type"/>
+    <result property="redemptionInstructions" column="redemption_instructions"/><result property="cancellationPolicy" column="cancellation_policy"/>
+    <result property="requiredInformation" column="required_information"/>
     <result property="priceAmount" column="price_amount"/>
     <result property="priceCurrency" column="price_currency"/><result property="durationRaw" column="duration_raw"/>
     <result property="durationHours" column="duration_hours"/><result property="visitDurationMinutes" column="visit_duration_minutes"/><result property="rating" column="rating"/><result property="reviewCount" column="review_count"/><result property="bookedCount" column="booked_count"/>
@@ -24,6 +31,10 @@
     <result property="code" column="code"/><result property="name" column="name"/><result property="description" column="description"/>
     <result property="currency" column="currency"/><result property="basePrice" column="base_price"/>
     <result property="minQuantity" column="min_quantity"/><result property="maxQuantity" column="max_quantity"/>
+    <result property="inventoryType" column="inventory_type"/><result property="units" column="units"/>
+    <result property="includedItems" column="included_items"/><result property="excludedItems" column="excluded_items"/>
+    <result property="requiredInformation" column="required_information"/><result property="confirmationType" column="confirmation_type"/>
+    <result property="voucherType" column="voucher_type"/><result property="validityDays" column="validity_days"/>
     <result property="attributes" column="attributes"/><result property="cancellationPolicy" column="cancellation_policy"/>
     <result property="status" column="status"/><result property="dataVersion" column="data_version"/>
     <result property="createdBy" column="created_by"/><result property="updatedBy" column="updated_by"/>
@@ -35,6 +46,8 @@
     <result property="reservedQuantity" column="reserved_quantity"/><result property="soldQuantity" column="sold_quantity"/>
     <result property="blockedQuantity" column="blocked_quantity"/><result property="availableQuantity" column="available_quantity"/>
     <result property="bookingCutoffMinutes" column="booking_cutoff_minutes"/><result property="priceOverride" column="price_override"/>
+    <result property="unitPrices" column="unit_prices"/><result property="allDay" column="all_day"/>
+    <result property="meetingPointOverride" column="meeting_point_override"/>
     <result property="status" column="status"/><result property="dataVersion" column="data_version"/>
     <result property="updatedBy" column="updated_by"/><result property="createdAt" column="created_at"/><result property="updatedAt" column="updated_at"/>
   </resultMap>
@@ -43,6 +56,9 @@
     <result property="organizationId" column="organization_id"/><result property="activityBookingId" column="activity_booking_id"/>
     <result property="activityTitle" column="activity_title"/><result property="slotId" column="slot_id"/>
     <result property="participantInfo" column="participant_info"/><result property="currency" column="currency"/>
+    <result property="contactInfo" column="contact_info"/><result property="specialRequests" column="special_requests"/>
+    <result property="redemptionStatus" column="redemption_status"/><result property="redeemedAt" column="redeemed_at"/>
+    <result property="idempotencyKey" column="idempotency_key"/><result property="holdExpiresAt" column="hold_expires_at"/>
     <result property="subtotalAmount" column="subtotal_amount"/><result property="taxAmount" column="tax_amount"/>
     <result property="feeAmount" column="fee_amount"/><result property="discountAmount" column="discount_amount"/>
     <result property="totalAmount" column="total_amount"/><result property="orderStatus" column="order_status"/>
@@ -55,27 +71,34 @@
     <id property="id" column="id"/><result property="orderId" column="order_id"/><result property="packageId" column="package_id"/>
     <result property="packageName" column="package_name"/><result property="quantity" column="quantity"/>
     <result property="unitPrice" column="unit_price"/><result property="totalPrice" column="total_price"/>
+    <result property="unitSelections" column="unit_selections"/>
     <result property="snapshot" column="snapshot"/><result property="createdAt" column="created_at"/>
   </resultMap>
   <sql id="ProductSelect">SELECT a.*,p.title AS place_title FROM activity_bookings a LEFT JOIN places p ON p.id=a.place_ref_id</sql>
   <sql id="OrderSelect">SELECT o.*,a.title AS activity_title FROM activity_orders o JOIN activity_bookings a ON a.id=o.activity_booking_id</sql>
 
   <insert id="insertProduct">
-    INSERT INTO activity_bookings (id,source,url,redirect_url,title,description,activity_address,departing_from,destinations,destination_coordinates,
+    INSERT INTO activity_bookings (id,source,url,redirect_url,activity_type,title,description,activity_address,departing_from,destinations,destination_coordinates,
       search_lat,search_lng,destinations_norm,navigation_list,itinerary_stops,pickup_addresses,price_amount,price_currency,duration_raw,duration_hours,
-      visit_duration_minutes,thumbnail,images,highlights,what_to_expect,itinerary,host_organization_id,place_ref_id,product_status,inventory_mode,data_version,
+      visit_duration_minutes,languages,meeting_point,included_items,excluded_items,eligibility,accessibility_features,confirmation_type,voucher_type,
+      redemption_instructions,cancellation_policy,required_information,thumbnail,images,highlights,what_to_expect,itinerary,host_organization_id,place_ref_id,product_status,inventory_mode,data_version,
       created_by,updated_by,created_at,updated_at)
-    VALUES (#{id},#{source},#{url},#{redirectUrl},#{title},#{description},#{activityAddress},#{departingFrom},#{destinations}::jsonb,#{destinationCoordinates}::jsonb,
+    VALUES (#{id},#{source},#{url},#{redirectUrl},#{activityType},#{title},#{description},#{activityAddress},#{departingFrom},#{destinations}::jsonb,#{destinationCoordinates}::jsonb,
       #{searchLat},#{searchLng},#{destinationsNorm},#{navigationList}::jsonb,#{itineraryStops}::jsonb,#{pickupAddresses}::jsonb,#{priceAmount},#{priceCurrency},#{durationRaw},#{durationHours},
-      #{visitDurationMinutes},#{thumbnail},#{images}::jsonb,#{highlights}::jsonb,#{whatToExpect}::jsonb,#{itinerary}::jsonb,#{organizationId},#{placeId},#{productStatus},#{inventoryMode},
+      #{visitDurationMinutes},#{languages}::jsonb,#{meetingPoint},#{includedItems}::jsonb,#{excludedItems}::jsonb,#{eligibility}::jsonb,#{accessibilityFeatures}::jsonb,
+      #{confirmationType},#{voucherType},#{redemptionInstructions},#{cancellationPolicy}::jsonb,#{requiredInformation}::jsonb,
+      #{thumbnail},#{images}::jsonb,#{highlights}::jsonb,#{whatToExpect}::jsonb,#{itinerary}::jsonb,#{organizationId},#{placeId},#{productStatus},#{inventoryMode},
       #{dataVersion},#{createdBy},#{updatedBy},#{createdAt},#{updatedAt})
   </insert>
   <update id="updateProduct">
-    UPDATE activity_bookings SET url=#{url},redirect_url=#{redirectUrl},title=#{title},description=#{description},activity_address=#{activityAddress},
+    UPDATE activity_bookings SET url=#{url},redirect_url=#{redirectUrl},activity_type=#{activityType},title=#{title},description=#{description},activity_address=#{activityAddress},
       departing_from=#{departingFrom},destinations=#{destinations}::jsonb,destination_coordinates=#{destinationCoordinates}::jsonb,
       search_lat=#{searchLat},search_lng=#{searchLng},destinations_norm=#{destinationsNorm},navigation_list=#{navigationList}::jsonb,
       itinerary_stops=#{itineraryStops}::jsonb,pickup_addresses=#{pickupAddresses}::jsonb,price_amount=#{priceAmount},price_currency=#{priceCurrency},
-      duration_raw=#{durationRaw},duration_hours=#{durationHours},visit_duration_minutes=#{visitDurationMinutes},thumbnail=#{thumbnail},
+      duration_raw=#{durationRaw},duration_hours=#{durationHours},visit_duration_minutes=#{visitDurationMinutes},languages=#{languages}::jsonb,
+      meeting_point=#{meetingPoint},included_items=#{includedItems}::jsonb,excluded_items=#{excludedItems}::jsonb,eligibility=#{eligibility}::jsonb,
+      accessibility_features=#{accessibilityFeatures}::jsonb,confirmation_type=#{confirmationType},voucher_type=#{voucherType},
+      redemption_instructions=#{redemptionInstructions},cancellation_policy=#{cancellationPolicy}::jsonb,required_information=#{requiredInformation}::jsonb,thumbnail=#{thumbnail},
       images=#{images}::jsonb,highlights=#{highlights}::jsonb,what_to_expect=#{whatToExpect}::jsonb,itinerary=#{itinerary}::jsonb,product_status=#{productStatus},
       data_version=data_version+1,updated_by=#{updatedBy},updated_at=#{updatedAt}
     WHERE id=#{id} AND host_organization_id=#{organizationId} AND data_version=#{dataVersion}
@@ -85,14 +108,14 @@
     <include refid="ProductSelect"/> JOIN host_organizations o ON o.id=a.host_organization_id
     WHERE a.id=#{id} AND a.host_organization_id IS NOT NULL AND a.product_status='ENABLED'
       AND a.inventory_mode='INTERNAL' AND o.operational_status='ENABLED'
-      AND o.verification_status&lt;&gt;'SUSPENDED'
+      AND o.verification_status='VERIFIED'
       AND (a.place_ref_id IS NULL OR p.lifecycle_status='ACTIVE')
   </select>
   <select id="findProductsByOrganization" resultMap="ProductMap"><include refid="ProductSelect"/> WHERE a.host_organization_id=#{organizationId} ORDER BY a.created_at DESC</select>
   <select id="findProductsPublic" resultMap="ProductMap">
     <include refid="ProductSelect"/> JOIN host_organizations o ON o.id=a.host_organization_id
     WHERE a.host_organization_id IS NOT NULL AND a.product_status='ENABLED' AND a.inventory_mode='INTERNAL'
-      AND o.operational_status='ENABLED' AND o.verification_status&lt;&gt;'SUSPENDED'
+      AND o.operational_status='ENABLED' AND o.verification_status='VERIFIED'
       AND (a.place_ref_id IS NULL OR p.lifecycle_status='ACTIVE')
     <if test="query != null and query != ''">
       AND (a.title ILIKE CONCAT('%',#{query},'%') OR a.activity_address ILIKE CONCAT('%',#{query},'%'))
@@ -106,22 +129,24 @@
     ORDER BY a.created_at DESC LIMIT #{limit} OFFSET #{offset}
   </select>
 
-  <insert id="insertPackage">INSERT INTO activity_packages (id,activity_booking_id,code,name,description,currency,base_price,min_quantity,max_quantity,attributes,cancellation_policy,status,data_version,created_by,updated_by,created_at,updated_at) VALUES (#{id},#{activityBookingId},#{code},#{name},#{description},#{currency},#{basePrice},#{minQuantity},#{maxQuantity},#{attributes}::jsonb,#{cancellationPolicy}::jsonb,#{status},#{dataVersion},#{createdBy},#{updatedBy},#{createdAt},#{updatedAt})</insert>
-  <update id="updatePackage">UPDATE activity_packages SET code=#{code},name=#{name},description=#{description},currency=#{currency},base_price=#{basePrice},min_quantity=#{minQuantity},max_quantity=#{maxQuantity},attributes=#{attributes}::jsonb,cancellation_policy=#{cancellationPolicy}::jsonb,status=#{status},data_version=data_version+1,updated_by=#{updatedBy},updated_at=#{updatedAt} WHERE id=#{id} AND data_version=#{dataVersion}</update>
+  <insert id="insertPackage">INSERT INTO activity_packages (id,activity_booking_id,code,name,description,currency,base_price,min_quantity,max_quantity,inventory_type,units,included_items,excluded_items,required_information,confirmation_type,voucher_type,validity_days,attributes,cancellation_policy,status,data_version,created_by,updated_by,created_at,updated_at) VALUES (#{id},#{activityBookingId},#{code},#{name},#{description},#{currency},#{basePrice},#{minQuantity},#{maxQuantity},#{inventoryType},#{units}::jsonb,#{includedItems}::jsonb,#{excludedItems}::jsonb,#{requiredInformation}::jsonb,#{confirmationType},#{voucherType},#{validityDays},#{attributes}::jsonb,#{cancellationPolicy}::jsonb,#{status},#{dataVersion},#{createdBy},#{updatedBy},#{createdAt},#{updatedAt})</insert>
+  <update id="updatePackage">UPDATE activity_packages SET code=#{code},name=#{name},description=#{description},currency=#{currency},base_price=#{basePrice},min_quantity=#{minQuantity},max_quantity=#{maxQuantity},inventory_type=#{inventoryType},units=#{units}::jsonb,included_items=#{includedItems}::jsonb,excluded_items=#{excludedItems}::jsonb,required_information=#{requiredInformation}::jsonb,confirmation_type=#{confirmationType},voucher_type=#{voucherType},validity_days=#{validityDays},attributes=#{attributes}::jsonb,cancellation_policy=#{cancellationPolicy}::jsonb,status=#{status},data_version=data_version+1,updated_by=#{updatedBy},updated_at=#{updatedAt} WHERE id=#{id} AND data_version=#{dataVersion}</update>
   <select id="findPackage" resultMap="PackageMap">SELECT * FROM activity_packages WHERE id=#{id}</select>
   <select id="findPackages" resultMap="PackageMap">SELECT * FROM activity_packages WHERE activity_booking_id=#{activityId}<if test="!includeDisabled"> AND status='ENABLED'</if> ORDER BY created_at</select>
 
-  <insert id="insertSlot">INSERT INTO activity_slots (id,package_id,starts_at,ends_at,timezone,capacity,reserved_quantity,sold_quantity,blocked_quantity,booking_cutoff_minutes,price_override,status,data_version,updated_by,created_at,updated_at) VALUES (#{id},#{packageId},#{startsAt},#{endsAt},#{timezone},#{capacity},#{reservedQuantity},#{soldQuantity},#{blockedQuantity},#{bookingCutoffMinutes},#{priceOverride},#{status},#{dataVersion},#{updatedBy},#{createdAt},#{updatedAt})</insert>
-  <update id="updateSlot">UPDATE activity_slots SET starts_at=#{startsAt},ends_at=#{endsAt},timezone=#{timezone},capacity=#{capacity},blocked_quantity=#{blockedQuantity},booking_cutoff_minutes=#{bookingCutoffMinutes},price_override=#{priceOverride},status=#{status},data_version=data_version+1,updated_by=#{updatedBy},updated_at=#{updatedAt} WHERE id=#{id} AND data_version=#{dataVersion} AND reserved_quantity+sold_quantity+#{blockedQuantity}&lt;=#{capacity}</update>
+  <insert id="insertSlot">INSERT INTO activity_slots (id,package_id,starts_at,ends_at,timezone,capacity,reserved_quantity,sold_quantity,blocked_quantity,booking_cutoff_minutes,price_override,unit_prices,all_day,meeting_point_override,status,data_version,updated_by,created_at,updated_at) VALUES (#{id},#{packageId},#{startsAt},#{endsAt},#{timezone},#{capacity},#{reservedQuantity},#{soldQuantity},#{blockedQuantity},#{bookingCutoffMinutes},#{priceOverride},#{unitPrices}::jsonb,#{allDay},#{meetingPointOverride},#{status},#{dataVersion},#{updatedBy},#{createdAt},#{updatedAt})</insert>
+  <update id="updateSlot">UPDATE activity_slots SET starts_at=#{startsAt},ends_at=#{endsAt},timezone=#{timezone},capacity=#{capacity},blocked_quantity=#{blockedQuantity},booking_cutoff_minutes=#{bookingCutoffMinutes},price_override=#{priceOverride},unit_prices=#{unitPrices}::jsonb,all_day=#{allDay},meeting_point_override=#{meetingPointOverride},status=#{status},data_version=data_version+1,updated_by=#{updatedBy},updated_at=#{updatedAt} WHERE id=#{id} AND data_version=#{dataVersion} AND reserved_quantity+sold_quantity+#{blockedQuantity}&lt;=#{capacity}</update>
   <select id="findSlot" resultMap="SlotMap">SELECT s.*,(capacity-reserved_quantity-sold_quantity-blocked_quantity) AS available_quantity FROM activity_slots s WHERE id=#{id}</select>
   <select id="findSlots" resultMap="SlotMap">SELECT s.*,(capacity-reserved_quantity-sold_quantity-blocked_quantity) AS available_quantity FROM activity_slots s WHERE package_id=#{packageId} AND starts_at&gt;=#{from}<if test="!includeDisabled"> AND status='ENABLED'</if> ORDER BY starts_at</select>
   <update id="reserveSlot">UPDATE activity_slots SET reserved_quantity=reserved_quantity+#{quantity},data_version=data_version+1,updated_by=#{actor},updated_at=#{now} WHERE id=#{id} AND status='ENABLED' AND starts_at&gt;(#{now}+booking_cutoff_minutes*interval '1 minute') AND reserved_quantity+sold_quantity+blocked_quantity+#{quantity}&lt;=capacity</update>
   <update id="confirmSlot">UPDATE activity_slots SET reserved_quantity=reserved_quantity-#{quantity},sold_quantity=sold_quantity+#{quantity},data_version=data_version+1,updated_by=#{actor},updated_at=#{now} WHERE id=#{id} AND reserved_quantity&gt;=#{quantity}</update>
   <update id="releaseSlot">UPDATE activity_slots SET reserved_quantity=reserved_quantity-CASE WHEN #{fromReserved} THEN #{quantity} ELSE 0 END,sold_quantity=sold_quantity-CASE WHEN #{fromReserved} THEN 0 ELSE #{quantity} END,data_version=data_version+1,updated_by=#{actor},updated_at=#{now} WHERE id=#{id} AND ((#{fromReserved} AND reserved_quantity&gt;=#{quantity}) OR (NOT #{fromReserved} AND sold_quantity&gt;=#{quantity}))</update>
 
-  <insert id="insertOrder">INSERT INTO activity_orders (id,order_code,user_id,organization_id,activity_booking_id,slot_id,participant_info,currency,subtotal_amount,tax_amount,fee_amount,discount_amount,total_amount,order_status,payment_status,voucher_code,snapshot,data_version,created_by,updated_by,created_at,updated_at) VALUES (#{id},#{orderCode},#{userId},#{organizationId},#{activityBookingId},#{slotId},#{participantInfo}::jsonb,#{currency},#{subtotalAmount},#{taxAmount},#{feeAmount},#{discountAmount},#{totalAmount},#{orderStatus},#{paymentStatus},#{voucherCode},#{snapshot}::jsonb,#{dataVersion},#{createdBy},#{updatedBy},#{createdAt},#{updatedAt})</insert>
-  <insert id="insertOrderItem">INSERT INTO activity_order_items (id,order_id,package_id,quantity,unit_price,total_price,snapshot,created_at) VALUES (#{id},#{orderId},#{packageId},#{quantity},#{unitPrice},#{totalPrice},#{snapshot}::jsonb,#{createdAt})</insert>
+  <insert id="insertOrder">INSERT INTO activity_orders (id,order_code,user_id,organization_id,activity_booking_id,slot_id,participant_info,contact_info,special_requests,redemption_status,redeemed_at,idempotency_key,hold_expires_at,currency,subtotal_amount,tax_amount,fee_amount,discount_amount,total_amount,order_status,payment_status,voucher_code,snapshot,data_version,created_by,updated_by,created_at,updated_at) VALUES (#{id},#{orderCode},#{userId},#{organizationId},#{activityBookingId},#{slotId},#{participantInfo}::jsonb,#{contactInfo}::jsonb,#{specialRequests},#{redemptionStatus},#{redeemedAt},#{idempotencyKey},#{holdExpiresAt},#{currency},#{subtotalAmount},#{taxAmount},#{feeAmount},#{discountAmount},#{totalAmount},#{orderStatus},#{paymentStatus},#{voucherCode},#{snapshot}::jsonb,#{dataVersion},#{createdBy},#{updatedBy},#{createdAt},#{updatedAt})</insert>
+  <insert id="insertOrderItem">INSERT INTO activity_order_items (id,order_id,package_id,quantity,unit_price,total_price,unit_selections,snapshot,created_at) VALUES (#{id},#{orderId},#{packageId},#{quantity},#{unitPrice},#{totalPrice},#{unitSelections}::jsonb,#{snapshot}::jsonb,#{createdAt})</insert>
   <select id="findOrder" resultMap="OrderMap"><include refid="OrderSelect"/> WHERE o.id=#{id}</select>
+  <select id="findOrderByUserAndIdempotencyKey" resultMap="OrderMap"><include refid="OrderSelect"/> WHERE o.user_id=#{userId} AND o.idempotency_key=#{idempotencyKey}</select>
+  <select id="findExpiredPendingOrders" resultMap="OrderMap"><include refid="OrderSelect"/> WHERE o.order_status='PENDING_PARTNER_CONFIRMATION' AND o.hold_expires_at&lt;=#{now} ORDER BY o.hold_expires_at LIMIT #{limit}</select>
   <select id="findOrderItem" resultMap="OrderItemMap">SELECT i.*,p.name AS package_name FROM activity_order_items i JOIN activity_packages p ON p.id=i.package_id WHERE i.order_id=#{orderId}</select>
   <select id="findOrdersByUser" resultMap="OrderMap"><include refid="OrderSelect"/> WHERE o.user_id=#{userId} ORDER BY o.created_at DESC LIMIT #{limit} OFFSET #{offset}</select>
   <select id="findOrdersByOrganization" resultMap="OrderMap">
@@ -140,4 +165,5 @@
     ORDER BY o.created_at DESC LIMIT #{limit} OFFSET #{offset}
   </select>
   <update id="updateOrderStatus">UPDATE activity_orders SET order_status=#{status},data_version=data_version+1,updated_by=#{actor},updated_at=#{now} WHERE id=#{id} AND data_version=#{expectedVersion}</update>
+  <update id="expireOrderHold">UPDATE activity_orders SET order_status='EXPIRED',data_version=data_version+1,updated_by=#{actor},updated_at=#{now} WHERE id=#{id} AND order_status='PENDING_PARTNER_CONFIRMATION' AND data_version=#{expectedVersion} AND hold_expires_at&lt;=#{now}</update>
 </mapper>

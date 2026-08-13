@@ -60,6 +60,15 @@ public class NotificationServiceImpl implements NotificationService {
 
     private boolean createNotificationInternal(UUID userId, UUID tripId, NotificationType type,
                                                String title, String body, Map<String, Object> data, UUID actorId) {
+        Map<String, Object> payload = new java.util.HashMap<>();
+        if (data != null) {
+            payload.putAll(data);
+        }
+        payload.putIfAbsent("type", type.name());
+        if (tripId != null) {
+            payload.putIfAbsent("tripId", tripId.toString());
+        }
+
         Notification notification = Notification.builder()
                 .id(UUID.randomUUID())
                 .userId(userId)
@@ -67,7 +76,7 @@ public class NotificationServiceImpl implements NotificationService {
                 .type(type)
                 .title(title)
                 .body(body)
-                .data(data != null ? gson.toJson(data) : null)
+                .data(gson.toJson(payload))
                 .actorId(actorId)
                 .isRead(false)
                 .createdAt(LocalDateTime.now())
@@ -78,7 +87,7 @@ public class NotificationServiceImpl implements NotificationService {
 
         // Send push notification and report whether at least one device accepted it.
         try {
-            return sendPushNotification(userId, type, data);
+            return sendPushNotification(userId, type, payload);
         } catch (Exception e) {
             log.error("Failed to send push notification: {}", e.getMessage(), e);
             return false;

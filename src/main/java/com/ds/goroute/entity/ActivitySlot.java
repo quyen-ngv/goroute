@@ -14,5 +14,6 @@ public class ActivitySlot {
     private UUID id; private UUID packageId; private LocalDateTime startsAt; private LocalDateTime endsAt; private String timezone;
     private Integer capacity; private Integer reservedQuantity; private Integer soldQuantity; private Integer blockedQuantity;
     private Integer availableQuantity; private Integer bookingCutoffMinutes; private BigDecimal priceOverride; private String status;
+    private String unitPrices; private Boolean allDay; private String meetingPointOverride;
     private Long dataVersion; private UUID updatedBy; private LocalDateTime createdAt; private LocalDateTime updatedAt;
 }

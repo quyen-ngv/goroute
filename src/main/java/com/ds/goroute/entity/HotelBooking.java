@@ -23,6 +23,11 @@ public class HotelBooking {
     private Integer adults;
     private Integer children;
     private String guestLead;
+    private String guestDetails;
+    private String specialRequests;
+    private java.time.LocalTime estimatedArrivalTime;
+    private String idempotencyKey;
+    private LocalDateTime holdExpiresAt;
     private String currency;
     private BigDecimal subtotalAmount;
     private BigDecimal taxAmount;

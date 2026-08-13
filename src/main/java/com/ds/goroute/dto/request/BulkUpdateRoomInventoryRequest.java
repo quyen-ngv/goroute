@@ -7,11 +7,13 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Map;
 
 @Data
 public class BulkUpdateRoomInventoryRequest {
     @NotNull private LocalDate startDate;
     @NotNull private LocalDate endDate;
+    @NotNull private Map<LocalDate, @Min(0) Long> expectedVersions;
     @Min(0) private Integer totalUnits;
     @Min(0) private Integer blockedUnits;
     private Boolean stopSell;

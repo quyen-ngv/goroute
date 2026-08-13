@@ -56,6 +56,7 @@
         <result property="scoreCalculatedAt" column="score_calculated_at"/>
         <result property="scoreSampleCount" column="score_sample_count"/>
         <result property="scoreSource" column="score_source"/>
+        <result property="lastScrapedAt" column="last_scraped_at"/>
         <result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
         <result property="distance" column="distance"/>
@@ -73,7 +74,7 @@
             avg_authenticity_score, place_overall_score, adjusted_rating,
             trust_level, is_jcurve_detected, is_spike_detected,
             authentic_low_star_count, score_calculated_at,
-            score_sample_count, score_source,
+            score_sample_count, score_source, last_scraped_at,
             created_at, updated_at
         ) VALUES (
             #{id}, #{placeId}, #{cid}, #{dataId}, #{inputId},
@@ -86,7 +87,7 @@
             #{avgAuthenticityScore}, #{placeOverallScore}, #{adjustedRating},
             #{trustLevel,typeHandler=org.apache.ibatis.type.EnumTypeHandler}, #{isJcurveDetected}, #{isSpikeDetected},
             #{authenticLowStarCount}, #{scoreCalculatedAt},
-            #{scoreSampleCount}, #{scoreSource},
+            #{scoreSampleCount}, #{scoreSource}, #{lastScrapedAt},
             #{createdAt}, #{updatedAt}
         )
     </insert>
@@ -139,6 +140,24 @@
             score_calculated_at = #{scoreCalculatedAt},
             score_sample_count = #{scoreSampleCount},
             score_source = #{scoreSource},
+            last_scraped_at = #{lastScrapedAt},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateReviewRefreshMetadata" parameterType="com.ds.goroute.entity.Place">
+        UPDATE places SET
+            avg_authenticity_score = #{avgAuthenticityScore},
+            place_overall_score = #{placeOverallScore},
+            adjusted_rating = #{adjustedRating},
+            trust_level = #{trustLevel,typeHandler=org.apache.ibatis.type.EnumTypeHandler},
+            is_jcurve_detected = #{isJcurveDetected},
+            is_spike_detected = #{isSpikeDetected},
+            authentic_low_star_count = #{authenticLowStarCount},
+            score_calculated_at = #{scoreCalculatedAt},
+            score_sample_count = #{scoreSampleCount},
+            score_source = #{scoreSource},
+            last_scraped_at = #{lastScrapedAt},
             updated_at = #{updatedAt}
         WHERE id = #{id}
     </update>
@@ -203,6 +222,31 @@
         SELECT * FROM places
         ORDER BY created_at DESC
         LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <sql id="AdminPlaceSearchWhere">
+        <where>
+            <if test="search != null and search != ''">
+                AND (
+                    title ILIKE CONCAT('%', #{search}, '%')
+                    OR address ILIKE CONCAT('%', #{search}, '%')
+                    OR place_id ILIKE CONCAT('%', #{search}, '%')
+                    OR CAST(id AS TEXT) ILIKE CONCAT('%', #{search}, '%')
+                )
+            </if>
+        </where>
+    </sql>
+
+    <select id="findAdminPage" resultMap="PlaceResultMap">
+        SELECT * FROM places
+        <include refid="AdminPlaceSearchWhere"/>
+        ORDER BY created_at DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAdmin" resultType="long">
+        SELECT COUNT(*) FROM places
+        <include refid="AdminPlaceSearchWhere"/>
     </select>
 
     <select id="findByIds" resultMap="PlaceResultMap">

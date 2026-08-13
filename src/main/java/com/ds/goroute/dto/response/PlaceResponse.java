@@ -41,6 +41,7 @@ public class PlaceResponse {
     private BigDecimal placeOverallScore;
     private Integer scoreSampleCount;
     private String scoreSource;
+    private LocalDateTime lastScrapedAt;
     private Map<String, Integer> reviewsPerRating; // {"1": 53, "2": 12, ...}
 
     private String thumbnail;

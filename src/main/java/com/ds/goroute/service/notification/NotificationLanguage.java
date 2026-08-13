@@ -6,7 +6,9 @@ import java.util.Set;
 public final class NotificationLanguage {
     public static final String DEFAULT = "en";
 
-    private static final Set<String> SUPPORTED = Set.of("en", "vi", "ja", "ko");
+    private static final Set<String> SUPPORTED = Set.of(
+            "en", "vi", "hi", "ja", "ko", "ru", "th", "zh-TW"
+    );
 
     private NotificationLanguage() {
     }
@@ -24,6 +26,18 @@ public final class NotificationLanguage {
         }
         if (normalized.startsWith("ko")) {
             return "ko";
+        }
+        if (normalized.startsWith("hi")) {
+            return "hi";
+        }
+        if (normalized.startsWith("ru")) {
+            return "ru";
+        }
+        if (normalized.startsWith("th")) {
+            return "th";
+        }
+        if (normalized.startsWith("zh")) {
+            return "zh-TW";
         }
         return SUPPORTED.contains(normalized) ? normalized : DEFAULT;
     }

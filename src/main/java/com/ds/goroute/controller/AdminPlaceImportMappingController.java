@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,6 +29,7 @@ public class AdminPlaceImportMappingController extends BaseService {
     private final PlaceImportJobService placeImportJobService;
 
     @GetMapping
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','get')")
     @Operation(summary = "List place import mapping history")
     public ResponseEntity list(
             @RequestParam(defaultValue = "ALL") String status,
@@ -39,6 +41,7 @@ public class AdminPlaceImportMappingController extends BaseService {
     }
 
     @PostMapping("/{itemId}/approve")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
     @Operation(summary = "Approve a mapping and apply it to the activity or social saved item")
     public ResponseEntity approve(
             @PathVariable UUID itemId,
@@ -49,6 +52,7 @@ public class AdminPlaceImportMappingController extends BaseService {
     }
 
     @PostMapping("/{itemId}/reject")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
     @Operation(summary = "Reject a mapping without changing user activity or saved social item")
     public ResponseEntity reject(
             @PathVariable UUID itemId,

@@ -17,10 +17,18 @@ public class RoomType {
     private String name;
     private String description;
     private Integer maxAdults;
+    private Integer standardAdults;
     private Integer maxChildren;
+    private Integer maxInfants;
     private Integer maxOccupancy;
+    private Integer bedroomCount;
+    private BigDecimal bathroomCount;
+    private String viewType;
+    private String bathroomType;
+    private Boolean smokingAllowed;
     private String bedConfig;
     private String amenities;
+    private String accessibilityFeatures;
     private String images;
     private BigDecimal roomSizeSqm;
     private Integer totalUnits;

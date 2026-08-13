@@ -2,6 +2,7 @@ package com.ds.goroute.dto.request;
 
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.util.List;
@@ -14,5 +15,9 @@ public class CreateActivityOrderRequest {
     @NotNull private UUID packageId;
     @NotNull private UUID slotId;
     @Min(1) private Integer quantity=1;
+    private Map<String, @Min(0) Integer> unitQuantities;
     private List<Map<String,Object>> participants;
+    private Map<String,Object> contactInfo;
+    private String specialRequests;
+    @Size(max = 120) private String idempotencyKey;
 }

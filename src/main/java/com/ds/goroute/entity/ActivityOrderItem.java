@@ -12,5 +12,5 @@ import java.util.UUID;
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class ActivityOrderItem {
     private UUID id; private UUID orderId; private UUID packageId; private String packageName; private Integer quantity;
-    private BigDecimal unitPrice; private BigDecimal totalPrice; private String snapshot; private LocalDateTime createdAt;
+    private BigDecimal unitPrice; private BigDecimal totalPrice; private String unitSelections; private String snapshot; private LocalDateTime createdAt;
 }

@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -121,5 +122,10 @@ public class TripRepositoryImpl implements TripRepository {
     @Override
     public int sumHelpfulVotesByOwnerId(UUID ownerId) {
         return tripMapper.sumHelpfulVotesByOwnerId(ownerId);
+    }
+
+    @Override
+    public List<Trip> findNotificationCandidates(LocalDate fromDate, LocalDate toDate) {
+        return tripMapper.selectNotificationCandidates(fromDate, toDate);
     }
 }

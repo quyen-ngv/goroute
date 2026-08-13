@@ -11,6 +11,7 @@ import com.ds.goroute.dto.request.ProvisionPartnerMemberRequest;
 import com.ds.goroute.dto.response.OrganizationMemberScopeResponse;
 import com.ds.goroute.dto.response.PartnerProvisionResponse;
 import com.ds.goroute.dto.response.PartnerMemberProvisionResponse;
+import com.ds.goroute.dto.response.PartnerAccessResponse;
 import com.ds.goroute.type.OrganizationMemberStatus;
 import com.ds.goroute.type.OrganizationOperationalStatus;
 import com.ds.goroute.type.OrganizationVerificationStatus;
@@ -22,6 +23,7 @@ public interface HostOrganizationService {
     HostOrganizationResponse create(UUID actorUserId, CreateHostOrganizationRequest request);
     List<HostOrganizationResponse> listMine(UUID actorUserId);
     HostOrganizationResponse getMine(UUID actorUserId, UUID organizationId);
+    PartnerAccessResponse getMyAccess(UUID actorUserId, UUID organizationId);
     HostOrganizationResponse update(UUID actorUserId, UUID organizationId, UpdateHostOrganizationRequest request);
     List<OrganizationMemberResponse> listMembers(UUID actorUserId, UUID organizationId);
     OrganizationMemberResponse upsertMember(UUID actorUserId, UUID organizationId, UpsertOrganizationMemberRequest request);

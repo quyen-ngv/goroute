@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -32,6 +33,7 @@ public class ActivityBookingController extends BaseService {
     private final ActivityBookingService activityBookingService;
 
     @PostMapping("/import")
+    @PreAuthorize("@adminAuthorization.can(authentication,'activity-bookings','create')")
     @Operation(summary = "Import activity from Klook JSON")
     public ResponseEntity<BaseResponse<ActivityBookingResponse>> importFromKlook(
             @Valid @RequestBody ImportActivityBookingRequest request) {
@@ -83,6 +85,7 @@ public class ActivityBookingController extends BaseService {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("@adminAuthorization.can(authentication,'activity-bookings','update')")
     @Operation(summary = "Update activity booking")
     public ResponseEntity<BaseResponse<ActivityBookingResponse>> updateById(
             @PathVariable UUID id,
@@ -92,6 +95,7 @@ public class ActivityBookingController extends BaseService {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("@adminAuthorization.can(authentication,'activity-bookings','delete')")
     @Operation(summary = "Delete activity booking")
     public ResponseEntity<BaseResponse<String>> deleteById(@PathVariable UUID id) {
         activityBookingService.deleteById(id);
@@ -112,6 +116,7 @@ public class ActivityBookingController extends BaseService {
     }
 
     @PostMapping("/indexing/trigger")
+    @PreAuthorize("@adminAuthorization.can(authentication,'activity-bookings','update')")
     @Operation(summary = "Trigger Lucene reindexing")
     public ResponseEntity<BaseResponse<String>> triggerReindex() {
         activityBookingService.triggerReindex();

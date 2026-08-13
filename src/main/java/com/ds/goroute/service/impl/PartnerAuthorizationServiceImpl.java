@@ -48,17 +48,7 @@ public class PartnerAuthorizationServiceImpl implements PartnerAuthorizationServ
 
     @Override
     public HostOrganization requireOrganization(UUID organizationId, UUID actorUserId) {
-        HostOrganization organization = repository.findById(organizationId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Partner organization not found"));
-        if (adminCan(actorUserId, "ORGANIZATION_READ")) return organization;
-        if (organization.getOwnerUserId().equals(actorUserId)) {
-            return organization;
-        }
-        OrganizationMember member = activeMember(organizationId, actorUserId);
-        if (member == null) {
-            throw forbidden();
-        }
-        return organization;
+        return requirePermission(organizationId, actorUserId, "ORGANIZATION_READ");
     }
 
     @Override
@@ -109,6 +99,12 @@ public class PartnerAuthorizationServiceImpl implements PartnerAuthorizationServ
     }
 
     @Override
+    public boolean hasPermission(UUID organizationId, UUID actorUserId, String permission) {
+        try { requirePermission(organizationId, actorUserId, permission); return true; }
+        catch (BusinessException ex) { return false; }
+    }
+
+    @Override
     public boolean hasResourcePermission(UUID organizationId,UUID actorUserId,String resourceType,UUID resourceId,String permission) {
         try { requireResourcePermission(organizationId,actorUserId,resourceType,resourceId,permission); return true; }
         catch (BusinessException ex) { return false; }
@@ -128,7 +124,7 @@ public class PartnerAuthorizationServiceImpl implements PartnerAuthorizationServ
                 : JsonUtils.fromJson(member.getPermissions(), new TypeReference<List<String>>() {});
         Set<String> rolePermissions=permissionsForRole(member.getRoleCode());
         return rolePermissions.contains("*")||rolePermissions.contains(permission)
-                ||explicit!=null&&(explicit.contains("*")||explicit.contains(permission));
+                ||explicit!=null&&explicit.contains(permission);
     }
 
     private boolean scopeAllows(OrganizationMemberScope scope,OrganizationMember member,String permission) {
@@ -136,7 +132,7 @@ public class PartnerAuthorizationServiceImpl implements PartnerAuthorizationServ
         Set<String> rolePermissions=permissionsForRole(scope.getRoleCode());
         boolean explicit=permissions!=null&&!permissions.isEmpty();
         if(rolePermissions.contains("*")||rolePermissions.contains(permission)
-                ||explicit&&(permissions.contains("*")||permissions.contains(permission)))return true;
+                ||explicit&&permissions.contains(permission))return true;
         return scope.getRoleCode()==null&&!explicit&&hasPermission(member,permission);
     }
 
@@ -145,7 +141,7 @@ public class PartnerAuthorizationServiceImpl implements PartnerAuthorizationServ
         Set<String> rolePermissions=permissionsForRole(scope.getRoleCode());
         if(scope.getRoleCode()==null&&(permissions==null||permissions.isEmpty()))return true;
         return rolePermissions.contains("*")||rolePermissions.contains(permission)
-                ||permissions!=null&&(permissions.contains("*")||permissions.contains(permission));
+                ||permissions!=null&&permissions.contains(permission);
     }
 
     private boolean isActive(OrganizationMemberScope scope,LocalDateTime now){

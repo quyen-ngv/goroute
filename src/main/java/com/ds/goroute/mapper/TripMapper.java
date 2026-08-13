@@ -5,6 +5,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -54,4 +55,7 @@ public interface TripMapper {
     int sumHelpfulVotesByOwnerId(@Param("ownerId") UUID ownerId);
 
     int updateVoteCounts(Trip trip);
+
+    List<Trip> selectNotificationCandidates(@Param("fromDate") LocalDate fromDate,
+                                            @Param("toDate") LocalDate toDate);
 }

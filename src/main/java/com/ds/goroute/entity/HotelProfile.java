@@ -25,6 +25,11 @@ public class HotelProfile {
     private LocalTime checkOutTime;
     private String timezone;
     private String amenities;
+    private String languages;
+    private String receptionHours;
+    private String houseRules;
+    private String accessibilityFeatures;
+    private String parkingDetails;
     private String policies;
     private String bookingContact;
     private String status;

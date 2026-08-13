@@ -14,6 +14,8 @@ public interface SocialLocationJobService {
 
     List<SocialLocationJobResponse> listMine(UUID userId, int page, int size);
 
+    void delete(UUID userId, UUID jobId);
+
     SocialLocationJobResponse handleCallback(SocialLocationJobCallbackRequest request);
 
     void dispatchQueuedJobs();

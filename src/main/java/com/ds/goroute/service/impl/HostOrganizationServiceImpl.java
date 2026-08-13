@@ -12,6 +12,7 @@ import com.ds.goroute.dto.response.OrganizationMemberResponse;
 import com.ds.goroute.dto.response.OrganizationMemberScopeResponse;
 import com.ds.goroute.dto.response.PartnerProvisionResponse;
 import com.ds.goroute.dto.response.PartnerMemberProvisionResponse;
+import com.ds.goroute.dto.response.PartnerAccessResponse;
 import com.ds.goroute.entity.HostOrganization;
 import com.ds.goroute.entity.OrganizationMember;
 import com.ds.goroute.entity.OrganizationMemberScope;
@@ -40,6 +41,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Collections;
 import java.util.Currency;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -47,6 +49,14 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class HostOrganizationServiceImpl implements HostOrganizationService {
+    private static final Set<String> PARTNER_PORTAL_PERMISSIONS = Set.of(
+            "ORGANIZATION_READ", "ORGANIZATION_WRITE", "HOTEL_READ", "HOTEL_WRITE", "ROOM_WRITE", "RATE_WRITE", "INVENTORY_WRITE",
+            "BOOKING_READ", "BOOKING_WRITE", "ACTIVITY_READ", "ACTIVITY_WRITE", "SLOT_WRITE", "ORDER_READ", "ORDER_WRITE",
+            "CHAT_WRITE", "REVIEW_RESPOND", "REPORT_READ", "MEMBER_MANAGE");
+    private static final Set<String> ASSIGNABLE_PERMISSIONS = Set.of(
+            "ORGANIZATION_READ", "HOTEL_READ", "HOTEL_WRITE", "ROOM_WRITE", "RATE_WRITE", "INVENTORY_WRITE",
+            "BOOKING_READ", "BOOKING_WRITE", "ACTIVITY_READ", "ACTIVITY_WRITE", "SLOT_WRITE", "ORDER_READ",
+            "ORDER_WRITE", "CHAT_WRITE", "REVIEW_RESPOND", "REPORT_READ", "MEMBER_MANAGE");
     private final HostOrganizationRepository repository;
     private final UserRepository userRepository;
     private final PartnerAuthorizationService authorizationService;
@@ -142,11 +152,36 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
     }
 
     @Override public List<HostOrganizationResponse> listMine(UUID actorUserId) {
-        return repository.findForUser(actorUserId).stream().map(this::toResponse).toList();
+        // Membership alone is not permission to discover an organisation.  This
+        // also honours an expired/explicitly restricted membership consistently
+        // with every subsequent partner endpoint.
+        return repository.findForUser(actorUserId).stream()
+                .filter(organization -> canReadOrganization(organization.getId(), actorUserId))
+                .map(this::toResponse)
+                .toList();
+    }
+
+    private boolean canReadOrganization(UUID organizationId, UUID actorUserId) {
+        try {
+            authorizationService.requireOrganization(organizationId, actorUserId);
+            return true;
+        } catch (BusinessException ignored) {
+            return false;
+        }
     }
 
     @Override public HostOrganizationResponse getMine(UUID actorUserId, UUID organizationId) {
         return toResponse(authorizationService.requireOrganization(organizationId, actorUserId));
+    }
+
+    @Override
+    public PartnerAccessResponse getMyAccess(UUID actorUserId, UUID organizationId) {
+        HostOrganization organization = authorizationService.requireOrganization(organizationId, actorUserId);
+        boolean owner = organization.getOwnerUserId().equals(actorUserId);
+        List<String> permissions = PARTNER_PORTAL_PERMISSIONS.stream().sorted()
+                .filter(permission -> authorizationService.hasPermission(organizationId, actorUserId, permission)).toList();
+        return PartnerAccessResponse.builder().organizationId(organizationId).organizationOwner(owner)
+                .permissions(permissions).build();
     }
 
     @Override
@@ -172,48 +207,13 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
     @Override
     @Transactional
     public OrganizationMemberResponse upsertMember(UUID actorUserId, UUID organizationId, UpsertOrganizationMemberRequest request) {
-        HostOrganization organization = authorizationService.requirePermission(organizationId, actorUserId, "MEMBER_MANAGE");
-        if (organization.getOwnerUserId().equals(request.getUserId())) {
-            throw new BusinessException(ErrorConstant.BAD_REQUEST, "Organization owner cannot be managed as an employee");
-        }
-        userRepository.findById(request.getUserId())
-                .orElseThrow(() -> new BusinessException(ErrorConstant.USER_NOT_FOUND));
-        if (request.getValidFrom() != null && request.getValidUntil() != null
-                && !request.getValidUntil().isAfter(request.getValidFrom())) {
-            throw new BusinessException(ErrorConstant.BAD_REQUEST, "validUntil must be after validFrom");
-        }
-        LocalDateTime now = LocalDateTime.now();
-        OrganizationMember existing = repository.findMember(organizationId, request.getUserId()).orElse(null);
-        OrganizationMember member = OrganizationMember.builder()
-                .id(existing == null ? UUID.randomUUID() : existing.getId())
-                .organizationId(organizationId).userId(request.getUserId())
-                .roleCode(request.getRoleCode().name()).memberStatus(enumNameOrDefault(request.getMemberStatus(), OrganizationMemberStatus.ACTIVE))
-                .permissions(toJsonList(request.getPermissions())).validFrom(request.getValidFrom())
-                .validUntil(request.getValidUntil()).invitedBy(actorUserId)
-                .createdAt(existing == null ? now : existing.getCreatedAt()).updatedAt(now).build();
-        repository.upsertMember(member);
-        OrganizationMember saved = repository.findMember(organizationId, request.getUserId()).orElse(member);
-        historyService.record(organizationId, "ORGANIZATION_MEMBER", saved.getId(),
-                existing == null ? "CREATED" : "UPDATED", saved, List.of("ACCESS"), actorUserId, "USER", null);
-        return toMemberResponse(saved);
+        return saveMember(actorUserId, organizationId, request, false);
     }
 
     @Override
     @Transactional
     public void updateMemberStatus(UUID actorUserId, UUID organizationId, UUID memberUserId, OrganizationMemberStatus status) {
-        HostOrganization organization = authorizationService.requirePermission(organizationId, actorUserId, "MEMBER_MANAGE");
-        if (organization.getOwnerUserId().equals(memberUserId)) {
-            throw new BusinessException(ErrorConstant.BAD_REQUEST, "Organization owner cannot be suspended");
-        }
-        if (!canManuallySetMemberStatus(status)) {
-            throw new BusinessException(ErrorConstant.BAD_REQUEST, "Invalid member status");
-        }
-        if (repository.updateMemberStatus(organizationId, memberUserId, status.name(), LocalDateTime.now()) != 1) {
-            throw new BusinessException(ErrorConstant.NOT_FOUND, "Organization member not found");
-        }
-        OrganizationMember saved = repository.findMember(organizationId, memberUserId).orElseThrow();
-        historyService.record(organizationId, "ORGANIZATION_MEMBER", saved.getId(), "STATUS_CHANGED",
-                saved, List.of("memberStatus"), actorUserId, "USER", null);
+        updateMemberStatusCore(actorUserId, organizationId, memberUserId, status, false);
     }
 
     @Override
@@ -227,38 +227,13 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
     @Transactional
     public OrganizationMemberScopeResponse upsertMemberScope(UUID actorUserId,UUID organizationId,UUID memberUserId,
                                                               UUID scopeId,UpsertOrganizationMemberScopeRequest request) {
-        authorizationService.requirePermission(organizationId,actorUserId,"MEMBER_MANAGE");
-        OrganizationMember member=memberRequired(organizationId,memberUserId);
-        if(request.getValidFrom()!=null&&request.getValidUntil()!=null&&!request.getValidUntil().isAfter(request.getValidFrom()))
-            throw new BusinessException(ErrorConstant.BAD_REQUEST,"validUntil must be after validFrom");
-        validateScopedResource(organizationId,request.getResourceType().name(),request.getResourceId());
-        OrganizationMemberScope existing=scopeId==null?null:repository.findMemberScope(scopeId)
-                .filter(scope->scope.getMembershipId().equals(member.getId()))
-                .orElseThrow(()->new BusinessException(ErrorConstant.NOT_FOUND,"Member scope not found"));
-        OrganizationMemberScope scope=OrganizationMemberScope.builder().id(existing==null?UUID.randomUUID():existing.getId())
-                .membershipId(member.getId()).resourceType(request.getResourceType().name()).resourceId(request.getResourceId())
-                .roleCode(request.getRoleCode() == null ? null : request.getRoleCode().name())
-                .accessEffect(enumNameOrDefault(request.getAccessEffect(), com.ds.goroute.type.ScopeAccessEffect.ALLOW))
-                .permissions(toJsonList(request.getPermissions())).validFrom(request.getValidFrom()).validUntil(request.getValidUntil())
-                .createdAt(existing==null?LocalDateTime.now():existing.getCreatedAt()).build();
-        try { if(existing==null)repository.insertMemberScope(scope);else repository.updateMemberScope(scope); }
-        catch(DataIntegrityViolationException ex){throw new BusinessException(ErrorConstant.ALREADY_PROCESSED,"A scope already exists for this resource");}
-        historyService.record(organizationId,"ORGANIZATION_MEMBER_SCOPE",scope.getId(),existing==null?"CREATED":"UPDATED",scope,
-                List.of("RESOURCE_ACCESS"),actorUserId,"USER",null);
-        return toScopeResponse(scope);
+        return saveMemberScope(actorUserId, organizationId, memberUserId, scopeId, request, false);
     }
 
     @Override
     @Transactional
     public void deleteMemberScope(UUID actorUserId,UUID organizationId,UUID memberUserId,UUID scopeId) {
-        authorizationService.requirePermission(organizationId,actorUserId,"MEMBER_MANAGE");
-        OrganizationMember member=memberRequired(organizationId,memberUserId);
-        OrganizationMemberScope scope=repository.findMemberScope(scopeId)
-                .filter(value->value.getMembershipId().equals(member.getId()))
-                .orElseThrow(()->new BusinessException(ErrorConstant.NOT_FOUND,"Member scope not found"));
-        repository.deleteMemberScope(scopeId,member.getId());
-        historyService.record(organizationId,"ORGANIZATION_MEMBER_SCOPE",scopeId,"DELETED",scope,
-                List.of("RESOURCE_ACCESS"),actorUserId,"USER",null);
+        deleteMemberScopeCore(actorUserId, organizationId, memberUserId, scopeId, false);
     }
 
     @Override public List<HostOrganizationResponse> adminList(String query, String status, int page, int size) {
@@ -378,6 +353,7 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
         if (request.getValidFrom() != null && request.getValidUntil() != null && !request.getValidUntil().isAfter(request.getValidFrom()))
             throw new BusinessException(ErrorConstant.BAD_REQUEST, "validUntil must be after validFrom");
         LocalDateTime now = LocalDateTime.now(); OrganizationMember existing = repository.findMember(organizationId, request.getUserId()).orElse(null);
+        validateMemberGrant(actorUserId, organization, existing, request, admin);
         OrganizationMember member = OrganizationMember.builder().id(existing == null ? UUID.randomUUID() : existing.getId())
                 .organizationId(organizationId).userId(request.getUserId()).roleCode(request.getRoleCode().name())
                 .memberStatus(enumNameOrDefault(request.getMemberStatus(), OrganizationMemberStatus.ACTIVE)).permissions(toJsonList(request.getPermissions()))
@@ -404,6 +380,12 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
         HostOrganization organization = admin ? findRequired(organizationId)
                 : authorizationService.requirePermission(organizationId, actorUserId, "MEMBER_MANAGE");
         if (organization.getOwnerUserId().equals(memberUserId)) throw new BusinessException(ErrorConstant.BAD_REQUEST, "Organization owner cannot be suspended");
+        OrganizationMember current = memberRequired(organizationId, memberUserId);
+        if (!admin && com.ds.goroute.type.PartnerRole.PARTNER_ADMIN.name().equals(current.getRoleCode())
+                && !organization.getOwnerUserId().equals(actorUserId)) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR,
+                    "Only the organization owner can change a full-access partner admin");
+        }
         if (!canManuallySetMemberStatus(status))
             throw new BusinessException(ErrorConstant.BAD_REQUEST, "Invalid member status");
         if (repository.updateMemberStatus(organizationId, memberUserId, status.name(), LocalDateTime.now()) != 1)
@@ -417,6 +399,7 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
             UUID scopeId, UpsertOrganizationMemberScopeRequest request, boolean admin) {
         if (admin) findRequired(organizationId); else authorizationService.requirePermission(organizationId, actorUserId, "MEMBER_MANAGE");
         OrganizationMember member = memberRequired(organizationId, memberUserId);
+        validateScopeGrant(actorUserId, organizationId, member, request, admin);
         if(request.getValidFrom()!=null&&request.getValidUntil()!=null&&!request.getValidUntil().isAfter(request.getValidFrom()))
             throw new BusinessException(ErrorConstant.BAD_REQUEST,"validUntil must be after validFrom");
         validateScopedResource(organizationId,request.getResourceType().name(),request.getResourceId());
@@ -440,6 +423,12 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
         OrganizationMember member=memberRequired(organizationId,memberUserId); OrganizationMemberScope scope=repository.findMemberScope(scopeId)
                 .filter(value->value.getMembershipId().equals(member.getId()))
                 .orElseThrow(()->new BusinessException(ErrorConstant.NOT_FOUND,"Member scope not found"));
+        HostOrganization organization = findRequired(organizationId);
+        if (!admin && com.ds.goroute.type.PartnerRole.PARTNER_ADMIN.name().equals(member.getRoleCode())
+                && !organization.getOwnerUserId().equals(actorUserId)) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR,
+                    "Only the organization owner can remove a full-access partner scope");
+        }
         repository.deleteMemberScope(scopeId,member.getId()); historyService.record(organizationId,"ORGANIZATION_MEMBER_SCOPE",scopeId,
                 "DELETED",scope,List.of("RESOURCE_ACCESS"),actorUserId,admin?"ADMIN":"USER",null);
     }
@@ -508,6 +497,46 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
         }else if("ACTIVITY".equals(type)){
             var activity=activityRepository.findProduct(resourceId).orElseThrow(()->new BusinessException(ErrorConstant.NOT_FOUND,"Activity not found"));
             if(!activity.getOrganizationId().equals(organizationId))throw new BusinessException(ErrorConstant.BAD_REQUEST,"Activity is outside organization");
+        }
+    }
+
+    private void validateMemberGrant(UUID actorUserId, HostOrganization organization, OrganizationMember existing,
+            UpsertOrganizationMemberRequest request, boolean admin) {
+        validatePermissionNames(request.getPermissions());
+        if (admin || organization.getOwnerUserId().equals(actorUserId)) return;
+        if (request.getRoleCode() == com.ds.goroute.type.PartnerRole.PARTNER_ADMIN
+                || existing != null && com.ds.goroute.type.PartnerRole.PARTNER_ADMIN.name().equals(existing.getRoleCode())) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR,
+                    "Only the organization owner can grant or change a full-access partner admin");
+        }
+        if (request.getPermissions() != null && request.getPermissions().contains("MEMBER_MANAGE")) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR,
+                    "Only the organization owner can delegate member management");
+        }
+    }
+
+    private void validateScopeGrant(UUID actorUserId, UUID organizationId, OrganizationMember member,
+            UpsertOrganizationMemberScopeRequest request, boolean admin) {
+        validatePermissionNames(request.getPermissions());
+        HostOrganization organization = findRequired(organizationId);
+        if (admin || organization.getOwnerUserId().equals(actorUserId)) return;
+        if (request.getRoleCode() == com.ds.goroute.type.PartnerRole.PARTNER_ADMIN
+                || com.ds.goroute.type.PartnerRole.PARTNER_ADMIN.name().equals(member.getRoleCode())) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR,
+                    "Only the organization owner can manage full-access partner scopes");
+        }
+        if (request.getPermissions() != null && request.getPermissions().contains("MEMBER_MANAGE")) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR,
+                    "Only the organization owner can delegate member management");
+        }
+    }
+
+    private void validatePermissionNames(List<String> permissions) {
+        if (permissions == null) return;
+        for (String permission : permissions) {
+            if (permission == null || !ASSIGNABLE_PERMISSIONS.contains(permission)) {
+                throw new BusinessException(ErrorConstant.BAD_REQUEST, "Unsupported partner permission");
+            }
         }
     }
 

@@ -27,6 +27,11 @@ public class UpsertHotelRequest {
     private LocalTime checkOutTime;
     @Size(max = 100) private String timezone;
     private List<String> amenities;
+    private List<String> languages;
+    private Map<String, Object> receptionHours;
+    private List<String> houseRules;
+    private List<String> accessibilityFeatures;
+    private Map<String, Object> parkingDetails;
     private Map<String, Object> policies;
     private Map<String, Object> bookingContact;
     private MarketplacePublicationStatus status;

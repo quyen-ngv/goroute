@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MarketplaceBookingStatusTest {
     @Test
     void sharedTransitionRulesRejectSkippingCheckIn() {
-        assertTrue(MarketplaceBookingStatus.PENDING_PAYMENT
+        assertTrue(MarketplaceBookingStatus.PENDING_PARTNER_CONFIRMATION
                 .canTransitionTo(MarketplaceBookingStatus.CONFIRMED));
         assertTrue(MarketplaceBookingStatus.CONFIRMED
                 .canTransitionTo(MarketplaceBookingStatus.CHECKED_IN));

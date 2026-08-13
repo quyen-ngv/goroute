@@ -4,6 +4,7 @@ import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.mapper.AdminMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.*;
 
@@ -14,6 +15,7 @@ public class AdminPlanController {
     private final AdminMapper adminMapper;
 
     @GetMapping
+    @PreAuthorize("@adminAuthorization.can(authentication,'plans','get')")
     public BaseResponse<List<Map<String,Object>>> list(@RequestParam(defaultValue="") String search,
                                                        @RequestParam(defaultValue="0") int page,
                                                        @RequestParam(defaultValue="20") int size) {
@@ -22,6 +24,7 @@ public class AdminPlanController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("@adminAuthorization.can(authentication,'plans','get')")
     public BaseResponse<Map<String,Object>> detail(@PathVariable UUID id) {
         Map<String,Object> result = adminMapper.findPlanDetail(id);
         result.put("activities", adminMapper.findPlanActivities(id));

@@ -57,6 +57,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT, "/v1/api/places/*")
                         .hasAnyAuthority("ROLE_ADMIN", "ROLE_API_KEY")
                         .requestMatchers("/v1/api/places/**").hasAuthority("ROLE_ADMIN")
+                        .requestMatchers(HttpMethod.POST,
+                                "/v1/api/place-reviews/*/prepare-refresh",
+                                "/v1/api/place-reviews/complete-refresh")
+                        .hasAnyAuthority("ROLE_ADMIN", "ROLE_API_KEY")
                         .requestMatchers("/v1/api/place-reviews/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/api/activity-bookings/*/add-to-trip").authenticated()
                         .requestMatchers("/v1/api/activity-bookings/**").permitAll()

@@ -29,6 +29,25 @@ public interface HotelMarketplaceMapper {
     int updateRatePlan(RatePlan ratePlan);
     RatePlan findRatePlanById(@Param("id") UUID id);
     List<RatePlan> findRatePlansByRoomType(@Param("roomTypeId") UUID roomTypeId, @Param("includeDisabled") boolean includeDisabled);
+    int upsertRatePlanDailyRange(@Param("ratePlanId") UUID ratePlanId,
+                                 @Param("startDate") LocalDate startDate,
+                                 @Param("endDate") LocalDate endDate,
+                                 @Param("daysOfWeek") List<Integer> daysOfWeek,
+                                 @Param("price") java.math.BigDecimal price,
+                                 @Param("stopSell") Boolean stopSell,
+                                 @Param("minStay") Integer minStay,
+                                 @Param("maxStay") Integer maxStay,
+                                 @Param("closedToArrival") Boolean closedToArrival,
+                                 @Param("closedToDeparture") Boolean closedToDeparture,
+                                 @Param("minAdvanceDays") Integer minAdvanceDays,
+                                 @Param("maxAdvanceDays") Integer maxAdvanceDays,
+                                 @Param("expectedVersionsJson") String expectedVersionsJson,
+                                 @Param("clearFieldsJson") String clearFieldsJson,
+                                 @Param("updatedBy") UUID updatedBy,
+                                 @Param("updatedAt") LocalDateTime updatedAt);
+    List<RatePlanDailyRate> findRatePlanDailyRates(@Param("ratePlanId") UUID ratePlanId,
+                                                   @Param("startDate") LocalDate startDate,
+                                                   @Param("endDate") LocalDate endDate);
 
     int upsertInventoryRange(@Param("roomTypeId") UUID roomTypeId, @Param("startDate") LocalDate startDate,
                              @Param("endDate") LocalDate endDate, @Param("totalUnits") Integer totalUnits,
@@ -36,13 +55,14 @@ public interface HotelMarketplaceMapper {
                              @Param("priceOverride") java.math.BigDecimal priceOverride, @Param("minStay") Integer minStay,
                              @Param("closedToArrival") Boolean closedToArrival,
                              @Param("closedToDeparture") Boolean closedToDeparture,
+                             @Param("expectedVersionsJson") String expectedVersionsJson,
                              @Param("updatedBy") UUID updatedBy, @Param("updatedAt") LocalDateTime updatedAt);
     List<RoomInventoryDaily> findInventory(@Param("roomTypeId") UUID roomTypeId,
                                            @Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
     List<HotelAvailabilityDay> findAvailability(@Param("hotelId") UUID hotelId, @Param("roomTypeId") UUID roomTypeId,
                                                 @Param("ratePlanId") UUID ratePlanId,
                                                 @Param("checkIn") LocalDate checkIn, @Param("checkOut") LocalDate checkOut);
-    int reserveInventory(@Param("roomTypeId") UUID roomTypeId, @Param("checkIn") LocalDate checkIn,
+    int reserveInventory(@Param("roomTypeId") UUID roomTypeId, @Param("ratePlanId") UUID ratePlanId, @Param("checkIn") LocalDate checkIn,
                          @Param("checkOut") LocalDate checkOut, @Param("quantity") int quantity,
                          @Param("updatedBy") UUID updatedBy, @Param("updatedAt") LocalDateTime updatedAt);
     int confirmReservedInventory(@Param("roomTypeId") UUID roomTypeId, @Param("checkIn") LocalDate checkIn,
@@ -56,6 +76,9 @@ public interface HotelMarketplaceMapper {
     int insertBooking(HotelBooking booking);
     int insertBookingItem(HotelBookingItem item);
     HotelBooking findBookingById(@Param("id") UUID id);
+    HotelBooking findBookingByUserAndIdempotencyKey(@Param("userId") UUID userId, @Param("idempotencyKey") String idempotencyKey);
+    List<HotelBooking> findExpiredPendingBookings(@Param("now") LocalDateTime now, @Param("limit") int limit);
+    int expireBookingHold(@Param("id") UUID id, @Param("expectedVersion") long expectedVersion, @Param("actor") UUID actor, @Param("now") LocalDateTime now);
     List<HotelBookingItem> findBookingItems(@Param("bookingId") UUID bookingId);
     List<HotelBooking> findBookingsByUser(@Param("userId") UUID userId, @Param("limit") int limit, @Param("offset") int offset);
     List<HotelBooking> findBookingsByOrganization(@Param("organizationId") UUID organizationId,

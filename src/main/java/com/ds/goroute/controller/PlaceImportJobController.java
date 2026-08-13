@@ -16,6 +16,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -32,6 +33,7 @@ public class PlaceImportJobController extends BaseService {
     private final PlaceDetailRefreshJobService placeDetailRefreshJobService;
 
     @PostMapping("/place-details-refresh")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','create')")
     @Operation(summary = "Refresh Google Maps detail fields for existing places")
     public ResponseEntity createPlaceDetailRefresh(
             @Valid @RequestBody CreatePlaceDetailRefreshJobRequest request) {
@@ -39,48 +41,56 @@ public class PlaceImportJobController extends BaseService {
     }
 
     @GetMapping("/place-details-refresh/{jobId}")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','get')")
     @Operation(summary = "Get a place detail refresh job")
     public ResponseEntity getPlaceDetailRefresh(@PathVariable UUID jobId) {
         return ResponseEntity.ok(ofSucceeded(placeDetailRefreshJobService.get(jobId)));
     }
 
     @PostMapping("/place-details-refresh/{jobId}/cancel")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
     @Operation(summary = "Cancel a place detail refresh job")
     public ResponseEntity cancelPlaceDetailRefresh(@PathVariable UUID jobId) {
         return ResponseEntity.ok(ofSucceeded(placeDetailRefreshJobService.cancel(jobId)));
     }
 
     @PostMapping("/place-details-refresh/{jobId}/retry")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
     @Operation(summary = "Retry a failed or cancelled place detail refresh job")
     public ResponseEntity retryPlaceDetailRefresh(@PathVariable UUID jobId) {
         return ResponseEntity.ok(ofSucceeded(placeDetailRefreshJobService.retry(jobId)));
     }
 
     @PostMapping("/nationwide")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','create')")
     @Operation(summary = "Start the nationwide legacy-64-region food place import")
     public ResponseEntity createNationwide(@Valid @RequestBody CreateNationwidePlaceImportJobRequest request) {
         return ResponseEntity.ok(ofSucceeded(nationwidePlaceImportJobService.trigger(request)));
     }
 
     @PostMapping("/{jobId}/cancel")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
     @Operation(summary = "Cancel a nationwide place import job")
     public ResponseEntity cancelNationwide(@PathVariable UUID jobId) {
         return ResponseEntity.ok(ofSucceeded(nationwidePlaceImportJobService.cancel(jobId)));
     }
 
     @GetMapping("/nationwide/{jobId}")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','get')")
     @Operation(summary = "Get nationwide job details including region progress")
     public ResponseEntity getNationwide(@PathVariable UUID jobId) {
         return ResponseEntity.ok(ofSucceeded(nationwidePlaceImportJobService.get(jobId)));
     }
 
     @PostMapping("/{jobId}/retry")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
     @Operation(summary = "Retry a failed or cancelled nationwide place import job")
     public ResponseEntity retryNationwide(@PathVariable UUID jobId) {
         return ResponseEntity.ok(ofSucceeded(nationwidePlaceImportJobService.retry(jobId)));
     }
 
     @PostMapping("/social-locations")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','create')")
     @Operation(summary = "Queue social place imports for the requested user")
     public ResponseEntity createFromSocialLocations(
             @Valid @RequestBody CreateSocialPlaceImportJobRequest request) {
@@ -89,6 +99,7 @@ public class PlaceImportJobController extends BaseService {
     }
 
     @PostMapping("/activities")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','create')")
     @Operation(summary = "Queue activity place imports for the requested user")
     public ResponseEntity createFromActivities(
             @Valid @RequestBody CreateActivityPlaceImportJobRequest request) {
@@ -97,6 +108,7 @@ public class PlaceImportJobController extends BaseService {
     }
 
     @PostMapping("/manual-link")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','create')")
     @Operation(summary = "Queue an import for an admin-provided Google Maps place link")
     public ResponseEntity createFromManualLink(
             @Valid @RequestBody CreateManualPlaceImportJobRequest request) {
@@ -104,6 +116,7 @@ public class PlaceImportJobController extends BaseService {
     }
 
     @GetMapping
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','get')")
     @Operation(summary = "List admin place import jobs with status and error information")
     public ResponseEntity listJobs(
             @RequestParam(required = false) UUID userId,
@@ -115,6 +128,7 @@ public class PlaceImportJobController extends BaseService {
     }
 
     @GetMapping("/{jobId}")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','get')")
     @Operation(summary = "Get admin place import job details and item errors")
     public ResponseEntity getJob(@PathVariable UUID jobId) {
         return ResponseEntity.ok(ofSucceeded(placeImportJobService.adminGetJob(jobId)));

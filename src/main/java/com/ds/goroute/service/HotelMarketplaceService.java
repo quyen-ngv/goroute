@@ -14,7 +14,8 @@ public interface HotelMarketplaceService {
     List<RoomTypeResponse> listPublicRooms(UUID hotelId);
     List<RatePlanResponse> listPublicRates(UUID roomTypeId);
     List<RoomInventoryResponse> getAvailability(UUID hotelId, UUID roomTypeId, UUID ratePlanId,
-                                                LocalDate checkIn, LocalDate checkOut);
+                                                LocalDate checkIn, LocalDate checkOut, Integer quantity,
+                                                Integer adults, Integer children);
 
     List<HotelProfileResponse> partnerListHotels(UUID actor, UUID organizationId);
     HotelProfileResponse partnerCreateHotel(UUID actor, UpsertHotelRequest request);
@@ -27,6 +28,8 @@ public interface HotelMarketplaceService {
     RatePlanResponse partnerUpdateRate(UUID actor, UUID rateId, UpsertRatePlanRequest request);
     List<RoomInventoryResponse> partnerGetInventory(UUID actor, UUID roomId, LocalDate start, LocalDate end);
     List<RoomInventoryResponse> partnerUpdateInventory(UUID actor, UUID roomId, BulkUpdateRoomInventoryRequest request);
+    List<RatePlanDailyRateResponse> partnerGetRateCalendar(UUID actor, UUID ratePlanId, LocalDate start, LocalDate end);
+    List<RatePlanDailyRateResponse> partnerUpdateRateCalendar(UUID actor, UUID ratePlanId, BulkUpdateRatePlanCalendarRequest request);
     List<HotelBookingResponse> partnerListBookings(UUID actor, UUID organizationId, String status, int page, int size);
     HotelBookingResponse partnerGetBooking(UUID actor, UUID bookingId);
     HotelBookingResponse partnerUpdateBookingStatus(UUID actor, UUID bookingId, UpdateHotelBookingStatusRequest request);
@@ -41,6 +44,7 @@ public interface HotelMarketplaceService {
     List<RoomTypeResponse> adminListRooms(UUID hotelId);
     List<RatePlanResponse> adminListRates(UUID roomId);
     List<RoomInventoryResponse> adminGetInventory(UUID roomId, LocalDate start, LocalDate end);
+    List<RatePlanDailyRateResponse> adminGetRateCalendar(UUID ratePlanId, LocalDate start, LocalDate end);
     HotelProfileResponse adminUpdateHotelStatus(UUID actor, UUID hotelId, MarketplacePublicationStatus status, String reason, Long expectedVersion);
     List<HotelBookingResponse> adminListBookings(String query, String status, int page, int size);
     HotelBookingResponse adminGetBooking(UUID bookingId);
@@ -52,4 +56,5 @@ public interface HotelMarketplaceService {
     RatePlanResponse adminCreateRate(UUID actor, UUID roomId, UpsertRatePlanRequest request);
     RatePlanResponse adminUpdateRate(UUID actor, UUID rateId, UpsertRatePlanRequest request);
     List<RoomInventoryResponse> adminUpdateInventory(UUID actor, UUID roomId, BulkUpdateRoomInventoryRequest request);
+    List<RatePlanDailyRateResponse> adminUpdateRateCalendar(UUID actor, UUID ratePlanId, BulkUpdateRatePlanCalendarRequest request);
 }

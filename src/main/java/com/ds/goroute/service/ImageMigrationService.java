@@ -11,6 +11,13 @@ public interface ImageMigrationService {
      * @return New MinIO URL or null if failed
      */
     String migrateImage(String imageUrl, String targetPath);
+
+    /**
+     * Download, compress and upload an image. Unlike the legacy migration
+     * method, this returns null instead of persisting the original URL when
+     * compression or upload fails.
+     */
+    String migrateCompressedImage(String imageUrl, String targetPath);
     
     /**
      * Migrate multiple images in parallel for performance
@@ -19,6 +26,8 @@ public interface ImageMigrationService {
      * @return Map of original URL to new MinIO URL (failed images excluded)
      */
     Map<String, String> migrateImages(List<String> imageUrls, String targetPath);
+
+    Map<String, String> migrateCompressedImages(List<String> imageUrls, String targetPath);
     
     /**
      * Migrate images from JSON array string

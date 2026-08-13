@@ -197,6 +197,21 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
 
     @Override
     @Transactional
+    public void delete(UUID userId, UUID jobId) {
+        jobMapper.lockUserSubmission(userId);
+        SocialLocationJob job = jobMapper.findById(jobId);
+        if (job == null || !job.getUserId().equals(userId)
+                || job.getStatus() == SocialLocationJobStatus.DELETED) {
+            throw new IllegalArgumentException("Social location job not found");
+        }
+        if (jobMapper.markDeletedByIdAndUserId(jobId, userId) == 0) {
+            throw new IllegalArgumentException("Social location job not found");
+        }
+        audit(userId, jobId, job.getSourceUrl(), "DELETED", null, null);
+    }
+
+    @Override
+    @Transactional
     public SocialLocationJobResponse handleCallback(SocialLocationJobCallbackRequest request) {
         SocialLocationJob job = request.getGorouteJobId() != null
                 ? jobMapper.findById(request.getGorouteJobId())
@@ -294,7 +309,8 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         return status == SocialLocationJobStatus.COMPLETED
                 || status == SocialLocationJobStatus.FAILED
                 || status == SocialLocationJobStatus.REJECTED_DURATION
-                || status == SocialLocationJobStatus.REJECTED_TOPIC;
+                || status == SocialLocationJobStatus.REJECTED_TOPIC
+                || status == SocialLocationJobStatus.DELETED;
     }
 
     private void applyError(SocialLocationJob job, JsonNode error) {

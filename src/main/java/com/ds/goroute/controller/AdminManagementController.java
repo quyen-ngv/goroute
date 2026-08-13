@@ -36,6 +36,7 @@ public class AdminManagementController {
     }
 
     @GetMapping("/dashboard")
+    @PreAuthorize("@adminAuthorization.can(authentication,'dashboard','get')")
     public BaseResponse<Map<String, Object>> dashboard() {
         Map<String, Object> result = new LinkedHashMap<>(adminMapper.findDashboardStats());
         result.put("daily", adminMapper.findDashboardDailyStats());
@@ -61,7 +62,7 @@ public class AdminManagementController {
     }
 
     @PostMapping("/users")
-    @PreAuthorize("@adminAuthorization.can(authentication,'users','create')")
+    @PreAuthorize("@adminAuthorization.can(authentication,'users','create') and @adminAuthorization.can(authentication,'roles','update')")
     public BaseResponse<Map<String,Object>> createUser(@Valid @RequestBody AdminUserRequest request) {
         UUID id = UUID.randomUUID();
         User user = User.builder().id(id).username(request.getUsername()).email(request.getEmail()).fullName(request.getFullName())
@@ -73,7 +74,7 @@ public class AdminManagementController {
     }
 
     @PutMapping("/users/{id}/roles")
-    @PreAuthorize("@adminAuthorization.can(authentication,'users','update')")
+    @PreAuthorize("@adminAuthorization.can(authentication,'users','update') and @adminAuthorization.can(authentication,'roles','update')")
     public BaseResponse<Void> assignRoles(@PathVariable UUID id, @RequestBody Set<String> roles) {
         adminMapper.deleteUserRoles(id);
         assignRoleCodes(id, roles);

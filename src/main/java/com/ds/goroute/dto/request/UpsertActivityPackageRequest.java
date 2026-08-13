@@ -1,6 +1,11 @@
 package com.ds.goroute.dto.request;
 
 import com.ds.goroute.type.MarketplaceAvailabilityStatus;
+import com.ds.goroute.type.ActivityInventoryType;
+import com.ds.goroute.type.MarketplaceConfirmationType;
+import com.ds.goroute.type.MarketplaceVoucherType;
+import com.ds.goroute.dto.ActivityPackageUnit;
+import jakarta.validation.Valid;
 
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
@@ -12,6 +17,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.util.Map;
+import java.util.List;
 
 @Data
 public class UpsertActivityPackageRequest {
@@ -22,6 +28,14 @@ public class UpsertActivityPackageRequest {
     @NotNull @DecimalMin("0") private BigDecimal basePrice;
     @NotNull @Min(1) private Integer minQuantity=1;
     @Min(1) private Integer maxQuantity;
+    private ActivityInventoryType inventoryType = ActivityInventoryType.SLOT;
+    @Valid @Size(max=30) private List<ActivityPackageUnit> units;
+    @Size(max=100) private List<@Size(max=1000) String> includedItems;
+    @Size(max=100) private List<@Size(max=1000) String> excludedItems;
+    @Size(max=100) private List<@Size(max=500) String> requiredInformation;
+    private MarketplaceConfirmationType confirmationType = MarketplaceConfirmationType.INSTANT;
+    private MarketplaceVoucherType voucherType = MarketplaceVoucherType.QR_CODE;
+    @Min(1) private Integer validityDays;
     private Map<String,Object> attributes;
     private Map<String,Object> cancellationPolicy;
     private MarketplaceAvailabilityStatus status=MarketplaceAvailabilityStatus.ENABLED;

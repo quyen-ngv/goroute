@@ -4,6 +4,9 @@ import com.ds.goroute.dto.ActivityItineraryItem;
 import com.ds.goroute.dto.ActivityWhatToExpectItem;
 import com.ds.goroute.dto.GeoCoordinateDto;
 import com.ds.goroute.type.MarketplacePublicationStatus;
+import com.ds.goroute.type.ActivityProductType;
+import com.ds.goroute.type.MarketplaceConfirmationType;
+import com.ds.goroute.type.MarketplaceVoucherType;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
@@ -21,6 +24,7 @@ import java.util.UUID;
 public class UpsertMarketplaceActivityRequest {
     @NotNull private UUID organizationId;
     private UUID placeId;
+    private ActivityProductType activityType = ActivityProductType.TOUR;
     @NotBlank @Size(max=500) private String title;
     @Size(max=10000) private String description;
     @Size(max=500) private String activityAddress;
@@ -32,6 +36,17 @@ public class UpsertMarketplaceActivityRequest {
     @Size(max=100) private List<@Size(max=500) String> navigationList;
     @Size(max=100) private List<@Size(max=1000) String> itineraryStops;
     @Size(max=100) private List<@Size(max=1000) String> pickupAddresses;
+    @Size(max=20) private List<@Size(max=100) String> languages;
+    @Size(max=2000) private String meetingPoint;
+    @Size(max=100) private List<@Size(max=1000) String> includedItems;
+    @Size(max=100) private List<@Size(max=1000) String> excludedItems;
+    private java.util.Map<String, Object> eligibility;
+    @Size(max=100) private List<@Size(max=500) String> accessibilityFeatures;
+    private MarketplaceConfirmationType confirmationType = MarketplaceConfirmationType.INSTANT;
+    private MarketplaceVoucherType voucherType = MarketplaceVoucherType.QR_CODE;
+    @Size(max=10000) private String redemptionInstructions;
+    private java.util.Map<String, Object> cancellationPolicy;
+    @Size(max=100) private List<@Size(max=500) String> requiredInformation;
     @DecimalMin("0") private BigDecimal priceAmount;
     @Pattern(regexp="[A-Z]{3}") private String priceCurrency="VND";
     @Size(max=100) private String durationRaw;

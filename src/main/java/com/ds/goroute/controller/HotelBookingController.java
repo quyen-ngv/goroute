@@ -18,7 +18,7 @@ import java.util.UUID;
 @RestController @RequestMapping("/v1/api/hotel-bookings") @RequiredArgsConstructor
 public class HotelBookingController {
     private final HotelMarketplaceService service;
-    @PostMapping public ResponseEntity<BaseResponse<HotelBookingResponse>> create(Authentication a,@Valid @RequestBody CreateHotelBookingRequest r){return ResponseEntity.status(HttpStatus.CREATED).body(BaseResponse.ofSucceeded(service.createBooking(user(a),r)));}
+    @PostMapping public ResponseEntity<BaseResponse<HotelBookingResponse>> create(Authentication a,@RequestHeader(value="Idempotency-Key",required=false)String idempotencyKey,@Valid @RequestBody CreateHotelBookingRequest r){if((r.getIdempotencyKey()==null||r.getIdempotencyKey().isBlank())&&idempotencyKey!=null)r.setIdempotencyKey(idempotencyKey);return ResponseEntity.status(HttpStatus.CREATED).body(BaseResponse.ofSucceeded(service.createBooking(user(a),r)));}
     @GetMapping public ResponseEntity<BaseResponse<List<HotelBookingResponse>>> list(Authentication a,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size){return ResponseEntity.ok(BaseResponse.ofSucceeded(service.listMyBookings(user(a),page,size)));}
     @GetMapping("/{id}") public ResponseEntity<BaseResponse<HotelBookingResponse>> get(Authentication a,@PathVariable UUID id){return ResponseEntity.ok(BaseResponse.ofSucceeded(service.getMyBooking(user(a),id)));}
     @PostMapping("/{id}/cancel") public ResponseEntity<BaseResponse<HotelBookingResponse>> cancel(Authentication a,@PathVariable UUID id,@RequestParam(required=false)String reason,@RequestParam(required=false)Long expectedVersion){return ResponseEntity.ok(BaseResponse.ofSucceeded(service.cancelMyBooking(user(a),id,reason,expectedVersion)));}

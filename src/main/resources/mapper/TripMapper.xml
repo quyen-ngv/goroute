@@ -265,4 +265,15 @@
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </update>
 
+    <select id="selectNotificationCandidates" resultMap="TripResultMap">
+        SELECT *
+        FROM trips
+        WHERE is_deleted = FALSE
+          AND start_date IS NOT NULL
+          AND end_date IS NOT NULL
+          AND start_date &lt;= #{toDate}
+          AND end_date &gt;= #{fromDate}
+        ORDER BY start_date, id
+    </select>
+
 </mapper>

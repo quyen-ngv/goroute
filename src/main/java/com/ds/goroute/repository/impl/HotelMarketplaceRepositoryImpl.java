@@ -28,14 +28,19 @@ public class HotelMarketplaceRepositoryImpl implements HotelMarketplaceRepositor
     @Override public int insertRatePlan(RatePlan v){return mapper.insertRatePlan(v);} @Override public int updateRatePlan(RatePlan v){return mapper.updateRatePlan(v);}
     @Override public Optional<RatePlan> findRatePlan(UUID id){return Optional.ofNullable(mapper.findRatePlanById(id));}
     @Override public List<RatePlan> findRatePlans(UUID id,boolean x){return mapper.findRatePlansByRoomType(id,x);}
-    @Override public int upsertInventoryRange(UUID r,LocalDate s,LocalDate e,Integer t,Integer b,Boolean stop,BigDecimal p,Integer m,Boolean ca,Boolean cd,UUID a,LocalDateTime n){return mapper.upsertInventoryRange(r,s,e,t,b,stop,p,m,ca,cd,a,n);}
+    @Override public int upsertRatePlanDailyRange(UUID r,LocalDate s,LocalDate e,List<Integer> d,BigDecimal p,Boolean stop,Integer min,Integer max,Boolean ca,Boolean cd,Integer minAdvance,Integer maxAdvance,String versions,String clearFields,UUID a,LocalDateTime n){return mapper.upsertRatePlanDailyRange(r,s,e,d,p,stop,min,max,ca,cd,minAdvance,maxAdvance,versions,clearFields,a,n);}
+    @Override public List<RatePlanDailyRate> findRatePlanDailyRates(UUID r,LocalDate s,LocalDate e){return mapper.findRatePlanDailyRates(r,s,e);}
+    @Override public int upsertInventoryRange(UUID r,LocalDate s,LocalDate e,Integer t,Integer b,Boolean stop,BigDecimal p,Integer m,Boolean ca,Boolean cd,String versions,UUID a,LocalDateTime n){return mapper.upsertInventoryRange(r,s,e,t,b,stop,p,m,ca,cd,versions,a,n);}
     @Override public List<RoomInventoryDaily> findInventory(UUID r,LocalDate s,LocalDate e){return mapper.findInventory(r,s,e);}
     @Override public List<HotelAvailabilityDay> findAvailability(UUID h,UUID r,UUID p,LocalDate i,LocalDate o){return mapper.findAvailability(h,r,p,i,o);}
-    @Override public int reserveInventory(UUID r,LocalDate i,LocalDate o,int q,UUID a,LocalDateTime n){return mapper.reserveInventory(r,i,o,q,a,n);}
+    @Override public int reserveInventory(UUID r,UUID p,LocalDate i,LocalDate o,int q,UUID a,LocalDateTime n){return mapper.reserveInventory(r,p,i,o,q,a,n);}
     @Override public int confirmReservedInventory(UUID r,LocalDate i,LocalDate o,int q,UUID a,LocalDateTime n){return mapper.confirmReservedInventory(r,i,o,q,a,n);}
     @Override public int releaseInventory(UUID r,LocalDate i,LocalDate o,int q,boolean f,UUID a,LocalDateTime n){return mapper.releaseInventory(r,i,o,q,f,a,n);}
     @Override public int insertBooking(HotelBooking v){return mapper.insertBooking(v);} @Override public int insertBookingItem(HotelBookingItem v){return mapper.insertBookingItem(v);}
     @Override public Optional<HotelBooking> findBooking(UUID id){return Optional.ofNullable(mapper.findBookingById(id));}
+    @Override public Optional<HotelBooking> findBookingByUserAndIdempotencyKey(UUID userId,String key){return Optional.ofNullable(mapper.findBookingByUserAndIdempotencyKey(userId,key));}
+    @Override public List<HotelBooking> findExpiredPendingBookings(LocalDateTime now,int limit){return mapper.findExpiredPendingBookings(now,limit);}
+    @Override public int expireBookingHold(UUID id,long version,UUID actor,LocalDateTime now){return mapper.expireBookingHold(id,version,actor,now);}
     @Override public List<HotelBookingItem> findBookingItems(UUID id){return mapper.findBookingItems(id);}
     @Override public List<HotelBooking> findBookingsByUser(UUID u,int l,int o){return mapper.findBookingsByUser(u,l,o);}
     @Override public List<HotelBooking> findBookingsByOrganization(UUID g,String s,int l,int o){return mapper.findBookingsByOrganization(g,s,l,o);}

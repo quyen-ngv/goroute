@@ -3,7 +3,11 @@ package com.ds.goroute.repository.impl;
 import com.ds.goroute.entity.UserReview;
 import com.ds.goroute.mapper.UserReviewMapper;
 import com.ds.goroute.repository.UserReviewRepository;
+import com.ds.goroute.service.StorageService;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -13,17 +17,22 @@ import java.util.UUID;
 
 @Repository
 @RequiredArgsConstructor
+@Slf4j
 public class UserReviewRepositoryImpl implements UserReviewRepository {
 
     private final UserReviewMapper mapper;
+    private final StorageService storageService;
+    private final ObjectMapper objectMapper;
 
     @Override
     public void save(UserReview review) {
+        enforceManagedPhotos(review);
         mapper.insert(review);
     }
 
     @Override
     public void update(UserReview review) {
+        enforceManagedPhotos(review);
         mapper.update(review);
     }
 
@@ -103,5 +112,31 @@ public class UserReviewRepositoryImpl implements UserReviewRepository {
             return;
         }
         mapper.deleteByIds(ids);
+    }
+
+    private void enforceManagedPhotos(UserReview review) {
+        if (review == null || review.getPhotos() == null || review.getPhotos().isBlank()) {
+            return;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(review.getPhotos());
+            if (!root.isArray()) {
+                review.setPhotos("[]");
+                return;
+            }
+            List<String> managed = new java.util.ArrayList<>();
+            root.forEach(node -> {
+                if (node.isTextual()
+                        && storageService.extractObjectKey(node.asText()) != null
+                        && !managed.contains(node.asText())) {
+                    managed.add(node.asText());
+                }
+            });
+            review.setPhotos(objectMapper.writeValueAsString(managed));
+        } catch (Exception e) {
+            log.warn("Discarding malformed or unmanaged photos for user review {}: {}",
+                    review.getId(), e.getMessage());
+            review.setPhotos("[]");
+        }
     }
 }

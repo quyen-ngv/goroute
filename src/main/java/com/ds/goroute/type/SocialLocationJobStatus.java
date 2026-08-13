@@ -7,5 +7,6 @@ public enum SocialLocationJobStatus {
     COMPLETED,
     REJECTED_DURATION,
     REJECTED_TOPIC,
-    FAILED
+    FAILED,
+    DELETED
 }

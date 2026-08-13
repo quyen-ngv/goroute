@@ -10,6 +10,9 @@
         <result property="starRating" column="star_rating"/><result property="description" column="description"/>
         <result property="checkInTime" column="check_in_time"/><result property="checkOutTime" column="check_out_time"/>
         <result property="timezone" column="timezone"/><result property="amenities" column="amenities"/>
+        <result property="languages" column="languages"/><result property="receptionHours" column="reception_hours"/>
+        <result property="houseRules" column="house_rules"/><result property="accessibilityFeatures" column="accessibility_features"/>
+        <result property="parkingDetails" column="parking_details"/>
         <result property="policies" column="policies"/><result property="bookingContact" column="booking_contact"/>
         <result property="status" column="status"/><result property="disabledReason" column="disabled_reason"/>
         <result property="dataVersion" column="data_version"/><result property="createdBy" column="created_by"/>
@@ -20,8 +23,13 @@
         <id property="id" column="id"/><result property="hotelId" column="hotel_id"/>
         <result property="code" column="code"/><result property="name" column="name"/>
         <result property="description" column="description"/><result property="maxAdults" column="max_adults"/>
-        <result property="maxChildren" column="max_children"/><result property="maxOccupancy" column="max_occupancy"/>
+        <result property="standardAdults" column="standard_adults"/><result property="maxChildren" column="max_children"/>
+        <result property="maxInfants" column="max_infants"/><result property="maxOccupancy" column="max_occupancy"/>
+        <result property="bedroomCount" column="bedroom_count"/><result property="bathroomCount" column="bathroom_count"/>
+        <result property="viewType" column="view_type"/><result property="bathroomType" column="bathroom_type"/>
+        <result property="smokingAllowed" column="smoking_allowed"/>
         <result property="bedConfig" column="bed_config"/><result property="amenities" column="amenities"/>
+        <result property="accessibilityFeatures" column="accessibility_features"/>
         <result property="images" column="images"/><result property="roomSizeSqm" column="room_size_sqm"/>
         <result property="totalUnits" column="total_units"/><result property="status" column="status"/>
         <result property="disabledReason" column="disabled_reason"/><result property="dataVersion" column="data_version"/>
@@ -30,13 +38,28 @@
     </resultMap>
     <resultMap id="RateMap" type="com.ds.goroute.entity.RatePlan">
         <id property="id" column="id"/><result property="roomTypeId" column="room_type_id"/>
-        <result property="code" column="code"/><result property="name" column="name"/>
+        <result property="code" column="code"/><result property="name" column="name"/><result property="description" column="description"/>
         <result property="currency" column="currency"/><result property="basePrice" column="base_price"/>
+        <result property="pricingModel" column="pricing_model"/><result property="baseOccupancy" column="base_occupancy"/>
+        <result property="extraAdultFee" column="extra_adult_fee"/><result property="extraChildFee" column="extra_child_fee"/>
         <result property="mealPlan" column="meal_plan"/><result property="cancellationPolicy" column="cancellation_policy"/>
+        <result property="includedBenefits" column="included_benefits"/><result property="prepaymentPolicy" column="prepayment_policy"/>
+        <result property="noShowPolicy" column="no_show_policy"/>
         <result property="occupancyPricing" column="occupancy_pricing"/><result property="minStay" column="min_stay"/>
-        <result property="maxStay" column="max_stay"/><result property="status" column="status"/>
+        <result property="maxStay" column="max_stay"/><result property="minAdvanceDays" column="min_advance_days"/>
+        <result property="maxAdvanceDays" column="max_advance_days"/><result property="refundable" column="refundable"/>
+        <result property="status" column="status"/>
         <result property="dataVersion" column="data_version"/><result property="createdBy" column="created_by"/>
         <result property="updatedBy" column="updated_by"/><result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+    <resultMap id="RateDailyMap" type="com.ds.goroute.entity.RatePlanDailyRate">
+        <id property="ratePlanId" column="rate_plan_id"/><id property="rateDate" column="rate_date"/>
+        <result property="price" column="price"/><result property="stopSell" column="stop_sell"/>
+        <result property="minStay" column="min_stay"/><result property="maxStay" column="max_stay"/>
+        <result property="closedToArrival" column="closed_to_arrival"/><result property="closedToDeparture" column="closed_to_departure"/>
+        <result property="minAdvanceDays" column="min_advance_days"/><result property="maxAdvanceDays" column="max_advance_days"/>
+        <result property="dataVersion" column="data_version"/><result property="updatedBy" column="updated_by"/>
         <result property="updatedAt" column="updated_at"/>
     </resultMap>
     <resultMap id="InventoryMap" type="com.ds.goroute.entity.RoomInventoryDaily">
@@ -54,6 +77,8 @@
         <result property="inventoryDate" column="inventory_date"/><result property="availableUnits" column="available_units"/>
         <result property="stopSell" column="stop_sell"/><result property="closedToArrival" column="closed_to_arrival"/>
         <result property="closedToDeparture" column="closed_to_departure"/><result property="minStay" column="min_stay"/>
+        <result property="maxStay" column="max_stay"/><result property="minAdvanceDays" column="min_advance_days"/>
+        <result property="maxAdvanceDays" column="max_advance_days"/>
         <result property="nightlyPrice" column="nightly_price"/><result property="currency" column="currency"/>
     </resultMap>
     <resultMap id="BookingMap" type="com.ds.goroute.entity.HotelBooking">
@@ -63,6 +88,9 @@
         <result property="checkInDate" column="check_in_date"/><result property="checkOutDate" column="check_out_date"/>
         <result property="adults" column="adults"/><result property="children" column="children"/>
         <result property="guestLead" column="guest_lead"/><result property="currency" column="currency"/>
+        <result property="guestDetails" column="guest_details"/><result property="specialRequests" column="special_requests"/>
+        <result property="estimatedArrivalTime" column="estimated_arrival_time"/>
+        <result property="idempotencyKey" column="idempotency_key"/><result property="holdExpiresAt" column="hold_expires_at"/>
         <result property="subtotalAmount" column="subtotal_amount"/><result property="taxAmount" column="tax_amount"/>
         <result property="feeAmount" column="fee_amount"/><result property="discountAmount" column="discount_amount"/>
         <result property="totalAmount" column="total_amount"/><result property="bookingStatus" column="booking_status"/>
@@ -93,17 +121,21 @@
 
     <insert id="insertHotel">
         INSERT INTO hotel_profiles (id, organization_id, place_id, property_code, property_type, star_rating,
-          description, check_in_time, check_out_time, timezone, amenities, policies, booking_contact, status,
+          description, check_in_time, check_out_time, timezone, amenities, languages, reception_hours, house_rules,
+          accessibility_features, parking_details, policies, booking_contact, status,
           disabled_reason, data_version, created_by, updated_by, created_at, updated_at)
         VALUES (#{id}, #{organizationId}, #{placeId}, #{propertyCode}, #{propertyType}, #{starRating}, #{description},
-          #{checkInTime}, #{checkOutTime}, #{timezone}, #{amenities}::jsonb, #{policies}::jsonb,
+          #{checkInTime}, #{checkOutTime}, #{timezone}, #{amenities}::jsonb, #{languages}::jsonb, #{receptionHours}::jsonb,
+          #{houseRules}::jsonb, #{accessibilityFeatures}::jsonb, #{parkingDetails}::jsonb, #{policies}::jsonb,
           #{bookingContact}::jsonb, #{status}, #{disabledReason}, #{dataVersion}, #{createdBy}, #{updatedBy},
           #{createdAt}, #{updatedAt})
     </insert>
     <update id="updateHotel">
         UPDATE hotel_profiles SET property_code=#{propertyCode}, property_type=#{propertyType}, star_rating=#{starRating},
           description=#{description}, check_in_time=#{checkInTime}, check_out_time=#{checkOutTime}, timezone=#{timezone},
-          amenities=#{amenities}::jsonb, policies=#{policies}::jsonb, booking_contact=#{bookingContact}::jsonb,
+          amenities=#{amenities}::jsonb, languages=#{languages}::jsonb, reception_hours=#{receptionHours}::jsonb,
+          house_rules=#{houseRules}::jsonb, accessibility_features=#{accessibilityFeatures}::jsonb,
+          parking_details=#{parkingDetails}::jsonb, policies=#{policies}::jsonb, booking_contact=#{bookingContact}::jsonb,
           status=#{status}, disabled_reason=#{disabledReason}, data_version=data_version+1, updated_by=#{updatedBy},
           updated_at=#{updatedAt} WHERE id=#{id} AND data_version=#{dataVersion}
     </update>
@@ -111,7 +143,7 @@
     <select id="findPublicHotelById" resultMap="HotelMap">
         <include refid="HotelSelect"/> JOIN host_organizations o ON o.id=h.organization_id
         WHERE h.id=#{id} AND h.status='ENABLED' AND p.lifecycle_status='ACTIVE'
-          AND o.operational_status='ENABLED' AND o.verification_status&lt;&gt;'SUSPENDED'
+          AND o.operational_status='ENABLED' AND o.verification_status='VERIFIED'
     </select>
     <select id="findHotelsByOrganization" resultMap="HotelMap">
         <include refid="HotelSelect"/> WHERE h.organization_id=#{organizationId} ORDER BY h.created_at DESC
@@ -119,7 +151,7 @@
     <select id="findHotelsPublic" resultMap="HotelMap">
         <include refid="HotelSelect"/> JOIN host_organizations o ON o.id=h.organization_id
         WHERE h.status='ENABLED' AND p.lifecycle_status='ACTIVE' AND o.operational_status='ENABLED'
-        AND o.verification_status&lt;&gt;'SUSPENDED'
+        AND o.verification_status='VERIFIED'
         <if test="query != null and query != ''">
             AND (p.title ILIKE CONCAT('%',#{query},'%') OR p.address ILIKE CONCAT('%',#{query},'%'))
         </if>
@@ -137,15 +169,19 @@
     </select>
 
     <insert id="insertRoomType">
-        INSERT INTO room_types (id,hotel_id,code,name,description,max_adults,max_children,max_occupancy,bed_config,
-          amenities,images,room_size_sqm,total_units,status,disabled_reason,data_version,created_by,updated_by,created_at,updated_at)
-        VALUES (#{id},#{hotelId},#{code},#{name},#{description},#{maxAdults},#{maxChildren},#{maxOccupancy},#{bedConfig}::jsonb,
-          #{amenities}::jsonb,#{images}::jsonb,#{roomSizeSqm},#{totalUnits},#{status},#{disabledReason},#{dataVersion},
+        INSERT INTO room_types (id,hotel_id,code,name,description,max_adults,standard_adults,max_children,max_infants,max_occupancy,
+          bedroom_count,bathroom_count,view_type,bathroom_type,smoking_allowed,bed_config,amenities,accessibility_features,
+          images,room_size_sqm,total_units,status,disabled_reason,data_version,created_by,updated_by,created_at,updated_at)
+        VALUES (#{id},#{hotelId},#{code},#{name},#{description},#{maxAdults},#{standardAdults},#{maxChildren},#{maxInfants},#{maxOccupancy},
+          #{bedroomCount},#{bathroomCount},#{viewType},#{bathroomType},#{smokingAllowed},#{bedConfig}::jsonb,
+          #{amenities}::jsonb,#{accessibilityFeatures}::jsonb,#{images}::jsonb,#{roomSizeSqm},#{totalUnits},#{status},#{disabledReason},#{dataVersion},
           #{createdBy},#{updatedBy},#{createdAt},#{updatedAt})
     </insert>
     <update id="updateRoomType">
-        UPDATE room_types SET code=#{code},name=#{name},description=#{description},max_adults=#{maxAdults},
-          max_children=#{maxChildren},max_occupancy=#{maxOccupancy},bed_config=#{bedConfig}::jsonb,amenities=#{amenities}::jsonb,
+        UPDATE room_types SET code=#{code},name=#{name},description=#{description},max_adults=#{maxAdults},standard_adults=#{standardAdults},
+          max_children=#{maxChildren},max_infants=#{maxInfants},max_occupancy=#{maxOccupancy},bedroom_count=#{bedroomCount},
+          bathroom_count=#{bathroomCount},view_type=#{viewType},bathroom_type=#{bathroomType},smoking_allowed=#{smokingAllowed},
+          bed_config=#{bedConfig}::jsonb,amenities=#{amenities}::jsonb,accessibility_features=#{accessibilityFeatures}::jsonb,
           images=#{images}::jsonb,room_size_sqm=#{roomSizeSqm},total_units=#{totalUnits},status=#{status},
           disabled_reason=#{disabledReason},data_version=data_version+1,updated_by=#{updatedBy},updated_at=#{updatedAt}
         WHERE id=#{id} AND data_version=#{dataVersion}
@@ -157,15 +193,22 @@
     </select>
 
     <insert id="insertRatePlan">
-        INSERT INTO rate_plans (id,room_type_id,code,name,currency,base_price,meal_plan,cancellation_policy,
-          occupancy_pricing,min_stay,max_stay,status,data_version,created_by,updated_by,created_at,updated_at)
-        VALUES (#{id},#{roomTypeId},#{code},#{name},#{currency},#{basePrice},#{mealPlan},#{cancellationPolicy}::jsonb,
-          #{occupancyPricing}::jsonb,#{minStay},#{maxStay},#{status},#{dataVersion},#{createdBy},#{updatedBy},#{createdAt},#{updatedAt})
+        INSERT INTO rate_plans (id,room_type_id,code,name,description,currency,base_price,pricing_model,base_occupancy,
+          extra_adult_fee,extra_child_fee,meal_plan,included_benefits,cancellation_policy,prepayment_policy,no_show_policy,
+          occupancy_pricing,min_stay,max_stay,min_advance_days,max_advance_days,refundable,status,data_version,created_by,updated_by,created_at,updated_at)
+        VALUES (#{id},#{roomTypeId},#{code},#{name},#{description},#{currency},#{basePrice},#{pricingModel},#{baseOccupancy},
+          #{extraAdultFee},#{extraChildFee},#{mealPlan},#{includedBenefits}::jsonb,#{cancellationPolicy}::jsonb,
+          #{prepaymentPolicy}::jsonb,#{noShowPolicy}::jsonb,#{occupancyPricing}::jsonb,#{minStay},#{maxStay},
+          #{minAdvanceDays},#{maxAdvanceDays},#{refundable},#{status},#{dataVersion},#{createdBy},#{updatedBy},#{createdAt},#{updatedAt})
     </insert>
     <update id="updateRatePlan">
-        UPDATE rate_plans SET code=#{code},name=#{name},currency=#{currency},base_price=#{basePrice},meal_plan=#{mealPlan},
-          cancellation_policy=#{cancellationPolicy}::jsonb,occupancy_pricing=#{occupancyPricing}::jsonb,min_stay=#{minStay},
-          max_stay=#{maxStay},status=#{status},data_version=data_version+1,updated_by=#{updatedBy},updated_at=#{updatedAt}
+        UPDATE rate_plans SET code=#{code},name=#{name},description=#{description},currency=#{currency},base_price=#{basePrice},
+          pricing_model=#{pricingModel},base_occupancy=#{baseOccupancy},extra_adult_fee=#{extraAdultFee},extra_child_fee=#{extraChildFee},
+          meal_plan=#{mealPlan},included_benefits=#{includedBenefits}::jsonb,cancellation_policy=#{cancellationPolicy}::jsonb,
+          prepayment_policy=#{prepaymentPolicy}::jsonb,no_show_policy=#{noShowPolicy}::jsonb,
+          occupancy_pricing=#{occupancyPricing}::jsonb,min_stay=#{minStay},max_stay=#{maxStay},
+          min_advance_days=#{minAdvanceDays},max_advance_days=#{maxAdvanceDays},refundable=#{refundable},
+          status=#{status},data_version=data_version+1,updated_by=#{updatedBy},updated_at=#{updatedAt}
         WHERE id=#{id} AND data_version=#{dataVersion}
     </update>
     <select id="findRatePlanById" resultMap="RateMap">SELECT * FROM rate_plans WHERE id=#{id}</select>
@@ -174,12 +217,50 @@
         <if test="!includeDisabled">AND status='ENABLED'</if> ORDER BY created_at
     </select>
 
+    <insert id="upsertRatePlanDailyRange">
+        WITH dates AS (
+          SELECT day::date AS day FROM generate_series(#{startDate}::date, #{endDate}::date, interval '1 day') day
+          <if test="daysOfWeek != null and !daysOfWeek.isEmpty()">
+            WHERE EXTRACT(ISODOW FROM day)::int IN
+            <foreach collection="daysOfWeek" item="dayOfWeek" open="(" separator="," close=")">#{dayOfWeek}</foreach>
+          </if>
+        )
+        INSERT INTO rate_plan_daily_rates (rate_plan_id,rate_date,price,stop_sell,min_stay,max_stay,
+          closed_to_arrival,closed_to_departure,min_advance_days,max_advance_days,data_version,updated_by,updated_at)
+        SELECT #{ratePlanId},d.day,
+          CASE WHEN CAST(#{clearFieldsJson} AS jsonb) ? 'PRICE' THEN NULL ELSE #{price} END,
+          CASE WHEN CAST(#{clearFieldsJson} AS jsonb) ? 'STOP_SELL' THEN false ELSE COALESCE(#{stopSell},false) END,
+          CASE WHEN CAST(#{clearFieldsJson} AS jsonb) ? 'MIN_STAY' THEN NULL ELSE #{minStay} END,
+          CASE WHEN CAST(#{clearFieldsJson} AS jsonb) ? 'MAX_STAY' THEN NULL ELSE #{maxStay} END,
+          CASE WHEN CAST(#{clearFieldsJson} AS jsonb) ? 'CLOSED_TO_ARRIVAL' THEN false ELSE COALESCE(#{closedToArrival},false) END,
+          CASE WHEN CAST(#{clearFieldsJson} AS jsonb) ? 'CLOSED_TO_DEPARTURE' THEN false ELSE COALESCE(#{closedToDeparture},false) END,
+          CASE WHEN CAST(#{clearFieldsJson} AS jsonb) ? 'MIN_ADVANCE_DAYS' THEN NULL ELSE #{minAdvanceDays} END,
+          CASE WHEN CAST(#{clearFieldsJson} AS jsonb) ? 'MAX_ADVANCE_DAYS' THEN NULL ELSE #{maxAdvanceDays} END,
+          1,#{updatedBy},#{updatedAt}
+        FROM dates d
+        ON CONFLICT (rate_plan_id,rate_date) DO UPDATE SET
+          price=CASE WHEN CAST(#{clearFieldsJson} AS jsonb) ? 'PRICE' THEN NULL ELSE COALESCE(#{price},rate_plan_daily_rates.price) END,
+          stop_sell=CASE WHEN CAST(#{clearFieldsJson} AS jsonb) ? 'STOP_SELL' THEN false ELSE COALESCE(#{stopSell},rate_plan_daily_rates.stop_sell) END,
+          min_stay=CASE WHEN CAST(#{clearFieldsJson} AS jsonb) ? 'MIN_STAY' THEN NULL ELSE COALESCE(#{minStay},rate_plan_daily_rates.min_stay) END,
+          max_stay=CASE WHEN CAST(#{clearFieldsJson} AS jsonb) ? 'MAX_STAY' THEN NULL ELSE COALESCE(#{maxStay},rate_plan_daily_rates.max_stay) END,
+          closed_to_arrival=CASE WHEN CAST(#{clearFieldsJson} AS jsonb) ? 'CLOSED_TO_ARRIVAL' THEN false ELSE COALESCE(#{closedToArrival},rate_plan_daily_rates.closed_to_arrival) END,
+          closed_to_departure=CASE WHEN CAST(#{clearFieldsJson} AS jsonb) ? 'CLOSED_TO_DEPARTURE' THEN false ELSE COALESCE(#{closedToDeparture},rate_plan_daily_rates.closed_to_departure) END,
+          min_advance_days=CASE WHEN CAST(#{clearFieldsJson} AS jsonb) ? 'MIN_ADVANCE_DAYS' THEN NULL ELSE COALESCE(#{minAdvanceDays},rate_plan_daily_rates.min_advance_days) END,
+          max_advance_days=CASE WHEN CAST(#{clearFieldsJson} AS jsonb) ? 'MAX_ADVANCE_DAYS' THEN NULL ELSE COALESCE(#{maxAdvanceDays},rate_plan_daily_rates.max_advance_days) END,
+          data_version=rate_plan_daily_rates.data_version+1,updated_by=#{updatedBy},updated_at=#{updatedAt}
+        WHERE rate_plan_daily_rates.data_version=COALESCE((CAST(#{expectedVersionsJson} AS jsonb)-&gt;&gt;rate_plan_daily_rates.rate_date::text)::bigint,-1)
+    </insert>
+    <select id="findRatePlanDailyRates" resultMap="RateDailyMap">
+        SELECT * FROM rate_plan_daily_rates WHERE rate_plan_id=#{ratePlanId}
+          AND rate_date BETWEEN #{startDate} AND #{endDate} ORDER BY rate_date
+    </select>
+
     <insert id="upsertInventoryRange">
         WITH dates AS (SELECT generate_series(#{startDate}::date, #{endDate}::date, interval '1 day')::date AS day)
         INSERT INTO room_inventory_daily (room_type_id,inventory_date,total_units,reserved_units,sold_units,blocked_units,
           stop_sell,price_override,min_stay,closed_to_arrival,closed_to_departure,data_version,updated_by,updated_at)
         SELECT r.id,d.day,COALESCE(#{totalUnits},r.total_units),0,0,COALESCE(#{blockedUnits},0),COALESCE(#{stopSell},false),
-          #{priceOverride},#{minStay},COALESCE(#{closedToArrival},false),COALESCE(#{closedToDeparture},false),1,#{updatedBy},#{updatedAt}
+          NULL,NULL,false,false,1,#{updatedBy},#{updatedAt}
         FROM room_types r CROSS JOIN dates d
         WHERE r.id=#{roomTypeId}
           AND COALESCE(#{blockedUnits},0) &lt;= COALESCE(#{totalUnits},r.total_units)
@@ -187,14 +268,11 @@
           total_units=COALESCE(#{totalUnits},room_inventory_daily.total_units),
           blocked_units=COALESCE(#{blockedUnits},room_inventory_daily.blocked_units),
           stop_sell=COALESCE(#{stopSell},room_inventory_daily.stop_sell),
-          price_override=COALESCE(#{priceOverride},room_inventory_daily.price_override),
-          min_stay=COALESCE(#{minStay},room_inventory_daily.min_stay),
-          closed_to_arrival=COALESCE(#{closedToArrival},room_inventory_daily.closed_to_arrival),
-          closed_to_departure=COALESCE(#{closedToDeparture},room_inventory_daily.closed_to_departure),
           data_version=room_inventory_daily.data_version+1,updated_by=#{updatedBy},updated_at=#{updatedAt}
         WHERE room_inventory_daily.reserved_units + room_inventory_daily.sold_units
           + COALESCE(#{blockedUnits},room_inventory_daily.blocked_units)
           &lt;= COALESCE(#{totalUnits},room_inventory_daily.total_units)
+          AND room_inventory_daily.data_version=COALESCE((CAST(#{expectedVersionsJson} AS jsonb)-&gt;&gt;room_inventory_daily.inventory_date::text)::bigint,-1)
     </insert>
     <select id="findInventory" resultMap="InventoryMap">
         SELECT i.*, (total_units-reserved_units-sold_units-blocked_units) AS available_units
@@ -203,22 +281,33 @@
     </select>
     <select id="findAvailability" resultMap="AvailabilityMap">
         SELECT i.inventory_date,(i.total_units-i.reserved_units-i.sold_units-i.blocked_units) AS available_units,
-          i.stop_sell,i.closed_to_arrival,i.closed_to_departure,COALESCE(i.min_stay,rp.min_stay) AS min_stay,
-          COALESCE(i.price_override,rp.base_price) AS nightly_price,rp.currency
+          (i.stop_sell OR COALESCE(rd.stop_sell,false)) AS stop_sell,
+          COALESCE(rd.closed_to_arrival,false) AS closed_to_arrival,
+          COALESCE(departure_rate.closed_to_departure,false) AS closed_to_departure,
+          COALESCE(rd.min_stay,rp.min_stay) AS min_stay,COALESCE(rd.max_stay,rp.max_stay) AS max_stay,
+          COALESCE(rd.min_advance_days,rp.min_advance_days) AS min_advance_days,COALESCE(rd.max_advance_days,rp.max_advance_days) AS max_advance_days,
+          COALESCE(rd.price,rp.base_price) AS nightly_price,rp.currency
         FROM room_inventory_daily i JOIN room_types r ON r.id=i.room_type_id
           JOIN rate_plans rp ON rp.id=#{ratePlanId} AND rp.room_type_id=r.id
           JOIN hotel_profiles h ON h.id=r.hotel_id
           JOIN host_organizations o ON o.id=h.organization_id
           JOIN places p ON p.id=h.place_id
+          LEFT JOIN rate_plan_daily_rates rd ON rd.rate_plan_id=rp.id AND rd.rate_date=i.inventory_date
+          LEFT JOIN rate_plan_daily_rates departure_rate ON departure_rate.rate_plan_id=rp.id AND departure_rate.rate_date=i.inventory_date+1
         WHERE h.id=#{hotelId} AND r.id=#{roomTypeId} AND h.status='ENABLED' AND r.status='ENABLED' AND rp.status='ENABLED'
-          AND o.operational_status='ENABLED' AND o.verification_status&lt;&gt;'SUSPENDED' AND p.lifecycle_status='ACTIVE'
-          AND i.inventory_date &gt;=#{checkIn} AND i.inventory_date &lt;#{checkOut} ORDER BY i.inventory_date
+          AND o.operational_status='ENABLED' AND o.verification_status='VERIFIED' AND p.lifecycle_status='ACTIVE'
+          AND i.inventory_date &gt;=#{checkIn} AND i.inventory_date &lt;#{checkOut}
+          AND (COALESCE(rd.min_advance_days,rp.min_advance_days) IS NULL OR #{checkIn}::date-CURRENT_DATE &gt;= COALESCE(rd.min_advance_days,rp.min_advance_days))
+          AND (COALESCE(rd.max_advance_days,rp.max_advance_days) IS NULL OR #{checkIn}::date-CURRENT_DATE &lt;= COALESCE(rd.max_advance_days,rp.max_advance_days))
+        ORDER BY i.inventory_date
     </select>
     <update id="reserveInventory">
         UPDATE room_inventory_daily SET reserved_units=reserved_units+#{quantity},data_version=data_version+1,
           updated_by=#{updatedBy},updated_at=#{updatedAt}
         WHERE room_type_id=#{roomTypeId} AND inventory_date &gt;=#{checkIn} AND inventory_date &lt;#{checkOut}
           AND stop_sell=false AND reserved_units+sold_units+blocked_units+#{quantity}&lt;=total_units
+          AND EXISTS (SELECT 1 FROM rate_plans rp WHERE rp.id=#{ratePlanId} AND rp.room_type_id=#{roomTypeId} AND rp.status='ENABLED')
+          AND NOT EXISTS (SELECT 1 FROM rate_plan_daily_rates rd WHERE rd.rate_plan_id=#{ratePlanId} AND rd.rate_date=inventory_date AND rd.stop_sell=true)
     </update>
     <update id="confirmReservedInventory">
         UPDATE room_inventory_daily SET reserved_units=reserved_units-#{quantity},sold_units=sold_units+#{quantity},
@@ -237,10 +326,10 @@
 
     <insert id="insertBooking">
         INSERT INTO hotel_bookings (id,booking_code,user_id,organization_id,hotel_id,check_in_date,check_out_date,adults,
-          children,guest_lead,currency,subtotal_amount,tax_amount,fee_amount,discount_amount,total_amount,booking_status,
+          children,guest_lead,guest_details,special_requests,estimated_arrival_time,idempotency_key,hold_expires_at,currency,subtotal_amount,tax_amount,fee_amount,discount_amount,total_amount,booking_status,
           payment_status,source,cancellation_reason,cancelled_at,snapshot,data_version,created_by,updated_by,created_at,updated_at)
         VALUES (#{id},#{bookingCode},#{userId},#{organizationId},#{hotelId},#{checkInDate},#{checkOutDate},#{adults},
-          #{children},#{guestLead}::jsonb,#{currency},#{subtotalAmount},#{taxAmount},#{feeAmount},#{discountAmount},
+          #{children},#{guestLead}::jsonb,#{guestDetails}::jsonb,#{specialRequests},#{estimatedArrivalTime},#{idempotencyKey},#{holdExpiresAt},#{currency},#{subtotalAmount},#{taxAmount},#{feeAmount},#{discountAmount},
           #{totalAmount},#{bookingStatus},#{paymentStatus},#{source},#{cancellationReason},#{cancelledAt},#{snapshot}::jsonb,
           #{dataVersion},#{createdBy},#{updatedBy},#{createdAt},#{updatedAt})
     </insert>
@@ -249,6 +338,8 @@
         VALUES (#{id},#{bookingId},#{roomTypeId},#{ratePlanId},#{quantity},#{adults},#{children},#{unitPrice},#{totalPrice},#{snapshot}::jsonb,#{createdAt})
     </insert>
     <select id="findBookingById" resultMap="BookingMap"><include refid="BookingSelect"/> WHERE b.id=#{id}</select>
+    <select id="findBookingByUserAndIdempotencyKey" resultMap="BookingMap"><include refid="BookingSelect"/> WHERE b.user_id=#{userId} AND b.idempotency_key=#{idempotencyKey}</select>
+    <select id="findExpiredPendingBookings" resultMap="BookingMap"><include refid="BookingSelect"/> WHERE b.booking_status='PENDING_PARTNER_CONFIRMATION' AND b.hold_expires_at&lt;=#{now} ORDER BY b.hold_expires_at LIMIT #{limit}</select>
     <select id="findBookingItems" resultMap="BookingItemMap">
         SELECT i.*,r.name AS room_type_name,rp.name AS rate_plan_name FROM hotel_booking_items i
         JOIN room_types r ON r.id=i.room_type_id JOIN rate_plans rp ON rp.id=i.rate_plan_id WHERE i.booking_id=#{bookingId}
@@ -276,4 +367,5 @@
           cancellation_reason=#{cancellationReason},cancelled_at=#{cancelledAt},data_version=data_version+1,
           updated_by=#{updatedBy},updated_at=#{updatedAt} WHERE id=#{id} AND data_version=#{expectedVersion}
     </update>
+    <update id="expireBookingHold">UPDATE hotel_bookings SET booking_status='EXPIRED',cancellation_reason='Partner confirmation deadline expired',cancelled_at=#{now},data_version=data_version+1,updated_by=#{actor},updated_at=#{now} WHERE id=#{id} AND booking_status='PENDING_PARTNER_CONFIRMATION' AND data_version=#{expectedVersion} AND hold_expires_at&lt;=#{now}</update>
 </mapper>

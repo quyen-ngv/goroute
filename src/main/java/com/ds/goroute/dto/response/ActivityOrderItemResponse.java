@@ -10,5 +10,5 @@ import java.util.UUID;
 @Data @Builder
 public class ActivityOrderItemResponse {
     private UUID id; private UUID packageId; private String packageName; private Integer quantity;
-    private BigDecimal unitPrice; private BigDecimal totalPrice; private Map<String,Object> snapshot;
+    private BigDecimal unitPrice; private BigDecimal totalPrice; private Map<String,Object> unitSelections; private Map<String,Object> snapshot;
 }

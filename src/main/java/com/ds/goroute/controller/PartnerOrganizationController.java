@@ -10,6 +10,7 @@ import com.ds.goroute.dto.response.HostOrganizationResponse;
 import com.ds.goroute.dto.response.OrganizationMemberResponse;
 import com.ds.goroute.dto.response.OrganizationMemberScopeResponse;
 import com.ds.goroute.dto.response.PartnerMemberProvisionResponse;
+import com.ds.goroute.dto.response.PartnerAccessResponse;
 import com.ds.goroute.service.HostOrganizationService;
 import com.ds.goroute.type.OrganizationMemberStatus;
 import jakarta.validation.Valid;
@@ -37,6 +38,11 @@ public class PartnerOrganizationController {
     @GetMapping("/{organizationId}")
     public ResponseEntity<BaseResponse<HostOrganizationResponse>> get(Authentication auth, @PathVariable UUID organizationId) {
         return ResponseEntity.ok(BaseResponse.ofSucceeded(service.getMine(userId(auth), organizationId)));
+    }
+
+    @GetMapping("/{organizationId}/access")
+    public ResponseEntity<BaseResponse<PartnerAccessResponse>> access(Authentication auth, @PathVariable UUID organizationId) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.getMyAccess(userId(auth), organizationId)));
     }
 
     @PutMapping("/{organizationId}")

@@ -8,6 +8,7 @@ import com.ds.goroute.dto.PlaceSearchCriteria;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.response.PlaceAboutDto;
 import com.ds.goroute.dto.response.AdminPlaceResponse;
+import com.ds.goroute.dto.response.AdminPlacePageResponse;
 import com.ds.goroute.dto.response.PlaceImagesDto;
 import com.ds.goroute.dto.response.PlaceMenuDto;
 import com.ds.goroute.dto.response.PlaceResponse;
@@ -16,6 +17,7 @@ import com.ds.goroute.config.filter.AcceptLanguageFilter;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.PlaceReview;
 import com.ds.goroute.entity.PlaceTranslation;
+import com.ds.goroute.event.PlaceActivatedEvent;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.dto.response.FoodTagResponse;
 import com.ds.goroute.entity.Food;
@@ -41,6 +43,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -68,6 +71,7 @@ public class PlaceServiceImpl implements PlaceService {
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final PlaceTranslationService placeTranslationService;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     private static final Integer maxReview = 50;
     @Override
@@ -207,10 +211,20 @@ public class PlaceServiceImpl implements PlaceService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<AdminPlaceResponse> getAdminPlaces() {
-        return placeRepository.findAll().stream()
+    public AdminPlacePageResponse getAdminPlaces(String search, int page, int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        String normalizedSearch = search == null || search.isBlank() ? null : search.trim();
+        List<AdminPlaceResponse> items = placeRepository
+                .findAdminPage(normalizedSearch, safeSize, safePage * safeSize).stream()
                 .map(this::toAdminPlaceResponse)
                 .collect(Collectors.toList());
+        return AdminPlacePageResponse.builder()
+                .items(items)
+                .total(placeRepository.countAdmin(normalizedSearch))
+                .page(safePage)
+                .size(safeSize)
+                .build();
     }
 
     @Override
@@ -428,6 +442,7 @@ public class PlaceServiceImpl implements PlaceService {
     @Transactional
     public PlaceResponse updatePlace(UUID id, UpdatePlaceRequest request) {
         Place place = placeRepository.findById(id).orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND));
+        PlaceVisibilityStatus previousVisibility = place.getVisibilityStatus();
 
         // Update all fields
         place.setTitle(request.getTitle());
@@ -472,6 +487,10 @@ public class PlaceServiceImpl implements PlaceService {
         placeRepository.update(place);
         placeTranslationService.syncTranslations(place, request.getTranslations());
         placeSearchIndexService.indexPlace(place);
+        if (previousVisibility != PlaceVisibilityStatus.ACTIVE
+                && place.getVisibilityStatus() == PlaceVisibilityStatus.ACTIVE) {
+            eventPublisher.publishEvent(new PlaceActivatedEvent(place.getId()));
+        }
         log.info("Updated place: {}", id);
 
         return toPlaceResponse(place);
@@ -556,6 +575,7 @@ public class PlaceServiceImpl implements PlaceService {
         updated.setScoreCalculatedAt(existingPlace.getScoreCalculatedAt());
         updated.setScoreSampleCount(existingPlace.getScoreSampleCount());
         updated.setScoreSource(existingPlace.getScoreSource());
+        updated.setLastScrapedAt(existingPlace.getLastScrapedAt());
         updated.setVisibilityStatus(parseVisibilityStatus(request.getVisibilityStatus(), existingPlace.getVisibilityStatus()));
         updated.setUpdatedAt(LocalDateTime.now());
 
@@ -664,72 +684,6 @@ public class PlaceServiceImpl implements PlaceService {
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
-    }
-
-    /**
-     * Migrate review images within reviews JSON
-     * DEPRECATED: No longer used. Review migration is handled by PlaceReviewService.batchInsertReviews()
-     */
-    @Deprecated
-    private String migrateReviewImages(String reviewsJson, String targetPath) {
-        try {
-            JsonNode reviewsNode = objectMapper.readTree(reviewsJson);
-            if (!reviewsNode.isArray()) {
-                return reviewsJson;
-            }
-
-            ArrayNode resultArray = objectMapper.createArrayNode();
-
-            for (JsonNode reviewNode : reviewsNode) {
-                ObjectNode mutableReview = ((ObjectNode) reviewNode).deepCopy();
-
-                // Migrate profilePicture if exists
-                if (reviewNode.has("profilePicture") && reviewNode.get("profilePicture").isTextual()) {
-                    String profilePic = reviewNode.get("profilePicture").asText();
-                    if (profilePic != null && !profilePic.isEmpty()) {
-                        String newProfilePic = imageMigrationService.migrateImage(profilePic, targetPath);
-                        if (newProfilePic != null) {
-                            mutableReview.put("profilePicture", newProfilePic);
-                        }
-                    }
-                }
-
-                // Migrate images field if exists
-                if (reviewNode.has("images") && reviewNode.get("images").isArray()) {
-                    ArrayNode imagesArray = (ArrayNode) reviewNode.get("images");
-                    List<String> imageUrls = new ArrayList<>();
-
-                    for (JsonNode imgNode : imagesArray) {
-                        if (imgNode.isTextual()) {
-                            imageUrls.add(imgNode.asText());
-                        }
-                    }
-
-                    if (!imageUrls.isEmpty()) {
-                        Map<String, String> migratedUrls = imageMigrationService.migrateImages(imageUrls, targetPath);
-
-                        // Build new images array with migrated URLs
-                        ArrayNode newImagesArray = objectMapper.createArrayNode();
-                        for (String oldUrl : imageUrls) {
-                            String newUrl = migratedUrls.get(oldUrl);
-                            if (newUrl != null) {
-                                newImagesArray.add(newUrl);
-                            }
-                        }
-
-                        mutableReview.set("images", newImagesArray);
-                    }
-                }
-
-                resultArray.add(mutableReview);
-            }
-
-            return objectMapper.writeValueAsString(resultArray);
-
-        } catch (Exception e) {
-            log.error("Error migrating review images: {}", e.getMessage());
-            return reviewsJson; // Return original on error
-        }
     }
 
     /**
@@ -901,53 +855,6 @@ public class PlaceServiceImpl implements PlaceService {
         return String.valueOf(content.hashCode());
     }
 
-    @Deprecated
-    private void importReviews(UUID placeId, String reviewsJson) {
-        try {
-            JsonNode reviewsNode = objectMapper.readTree(reviewsJson);
-            if (!reviewsNode.isArray()) {
-                return;
-            }
-
-            List<PlaceReview> reviews = new ArrayList<>();
-
-            for (JsonNode reviewNode : reviewsNode) {
-                try {
-                    Integer rating = null;
-                    if (reviewNode.has("rating") && !reviewNode.get("rating").isNull()) {
-                        int ratingValue = reviewNode.get("rating").asInt();
-                        if (ratingValue >= 1 && ratingValue <= 5) {
-                            rating = ratingValue;
-                        }
-                    }
-
-                    PlaceReview review = PlaceReview.builder()
-                            .id(UUID.randomUUID())
-                            .placeId(placeId)
-                            .reviewerName(getTextValue(reviewNode, "name"))
-                            .profilePicture(getTextValue(reviewNode, "profilePicture"))
-                            .rating(rating)
-                            .description(getTextValue(reviewNode, "description"))
-                            .reviewDate(parseReviewDate(getTextValue(reviewNode, "when")))
-                            .images(reviewNode.has("images") ? reviewNode.get("images").toString() : null)
-                            .createdAt(LocalDateTime.now())
-                            .build();
-
-                    reviews.add(review);
-                } catch (Exception e) {
-                    log.error("Error parsing review: {}", e.getMessage());
-                }
-            }
-
-            if (!reviews.isEmpty()) {
-                placeReviewRepository.insertBatch(reviews);
-                log.info("Imported {} reviews for place {}", reviews.size(), placeId);
-            }
-        } catch (Exception e) {
-            log.error("Error parsing reviews JSON: {}", e.getMessage());
-        }
-    }
-
     private String getTextValue(JsonNode node, String fieldName) {
         return node.has(fieldName) && !node.get(fieldName).isNull()
                 ? node.get(fieldName).asText()
@@ -1010,6 +917,7 @@ public class PlaceServiceImpl implements PlaceService {
                 .placeOverallScore(place.getPlaceOverallScore())
                 .scoreSampleCount(place.getScoreSampleCount())
                 .scoreSource(place.getScoreSource())
+                .lastScrapedAt(place.getLastScrapedAt())
                 .reviewsPerRating(parseJsonToMap(place.getReviewsPerRating()))
                 .thumbnail(place.getThumbnail())
                 .images(parseJsonToList(place.getImages(), PlaceImagesDto.class))

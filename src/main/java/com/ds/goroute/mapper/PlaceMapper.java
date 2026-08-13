@@ -15,6 +15,8 @@ public interface PlaceMapper {
 
     void update(Place place);
 
+    void updateReviewRefreshMetadata(Place place);
+
     Place findById(@Param("id") UUID id);
 
     Place findByPlaceId(@Param("placeId") String placeId);
@@ -34,6 +36,12 @@ public interface PlaceMapper {
     long countAll();
 
     List<Place> findPage(@Param("limit") int limit, @Param("offset") int offset);
+
+    List<Place> findAdminPage(@Param("search") String search,
+                              @Param("limit") int limit,
+                              @Param("offset") int offset);
+
+    long countAdmin(@Param("search") String search);
 
     List<Place> findByIds(@Param("ids") List<UUID> ids);
 

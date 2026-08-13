@@ -13,6 +13,8 @@ import java.util.UUID;
 public class ActivityPackage {
     private UUID id; private UUID activityBookingId; private String code; private String name; private String description;
     private String currency; private BigDecimal basePrice; private Integer minQuantity; private Integer maxQuantity;
+    private String inventoryType; private String units; private String includedItems; private String excludedItems;
+    private String requiredInformation; private String confirmationType; private String voucherType; private Integer validityDays;
     private String attributes; private String cancellationPolicy; private String status; private Long dataVersion;
     private UUID createdBy; private UUID updatedBy; private LocalDateTime createdAt; private LocalDateTime updatedAt;
 }

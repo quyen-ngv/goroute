@@ -23,7 +23,8 @@ public interface ActivityCommerceMapper {
     int reserveSlot(@Param("id")UUID id,@Param("quantity")int quantity,@Param("actor")UUID actor,@Param("now")LocalDateTime now);
     int confirmSlot(@Param("id")UUID id,@Param("quantity")int quantity,@Param("actor")UUID actor,@Param("now")LocalDateTime now);
     int releaseSlot(@Param("id")UUID id,@Param("quantity")int quantity,@Param("fromReserved")boolean fromReserved,@Param("actor")UUID actor,@Param("now")LocalDateTime now);
-    int insertOrder(ActivityOrder value); int insertOrderItem(ActivityOrderItem value); ActivityOrder findOrder(@Param("id")UUID id);
+    int insertOrder(ActivityOrder value); int insertOrderItem(ActivityOrderItem value); ActivityOrder findOrder(@Param("id")UUID id); ActivityOrder findOrderByUserAndIdempotencyKey(@Param("userId")UUID userId,@Param("idempotencyKey")String idempotencyKey);
+    List<ActivityOrder> findExpiredPendingOrders(@Param("now")LocalDateTime now,@Param("limit")int limit); int expireOrderHold(@Param("id")UUID id,@Param("expectedVersion")long expectedVersion,@Param("actor")UUID actor,@Param("now")LocalDateTime now);
     ActivityOrderItem findOrderItem(@Param("orderId")UUID orderId);
     List<ActivityOrder> findOrdersByUser(@Param("userId")UUID userId,@Param("limit")int limit,@Param("offset")int offset);
     List<ActivityOrder> findOrdersByOrganization(@Param("organizationId")UUID organizationId,@Param("status")String status,@Param("limit")int limit,@Param("offset")int offset);

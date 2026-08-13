@@ -30,6 +30,11 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     }
 
     @Override
+    public void updateReviewRefreshMetadata(Place place) {
+        placeMapper.updateReviewRefreshMetadata(place);
+    }
+
+    @Override
     public Optional<Place> findById(UUID id) {
         return Optional.ofNullable(placeMapper.findById(id));
     }
@@ -78,6 +83,16 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     @Override
     public List<Place> findPage(int limit, int offset) {
         return placeMapper.findPage(limit, offset);
+    }
+
+    @Override
+    public List<Place> findAdminPage(String search, int limit, int offset) {
+        return placeMapper.findAdminPage(search, limit, offset);
+    }
+
+    @Override
+    public long countAdmin(String search) {
+        return placeMapper.countAdmin(search);
     }
 
     @Override

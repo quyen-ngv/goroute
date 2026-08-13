@@ -6,6 +6,7 @@ import com.ds.goroute.entity.SocialLocationUserRestriction;
 import com.ds.goroute.service.SocialLocationAdminService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,6 +24,7 @@ public class AdminSocialLocationController {
     private final SocialLocationAdminService service;
 
     @GetMapping("/restrictions")
+    @PreAuthorize("@adminAuthorization.can(authentication,'users','get')")
     public ResponseEntity<BaseResponse<List<SocialLocationUserRestriction>>> restrictions(
             @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "0") int page,
@@ -31,6 +33,7 @@ public class AdminSocialLocationController {
     }
 
     @GetMapping("/restrictions/{userId}/events")
+    @PreAuthorize("@adminAuthorization.can(authentication,'users','get')")
     public ResponseEntity<BaseResponse<List<SocialLocationSubmissionEvent>>> events(
             @PathVariable UUID userId,
             @RequestParam(defaultValue = "200") int limit) {
@@ -38,6 +41,7 @@ public class AdminSocialLocationController {
     }
 
     @DeleteMapping("/restrictions/{userId}")
+    @PreAuthorize("@adminAuthorization.can(authentication,'users','update')")
     public ResponseEntity<BaseResponse<Void>> reset(@PathVariable UUID userId) {
         service.resetRestriction(userId);
         return ResponseEntity.ok(BaseResponse.ofSucceeded(null));

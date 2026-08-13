@@ -11,6 +11,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Data
 public class UpsertActivitySlotRequest {
@@ -21,6 +22,9 @@ public class UpsertActivitySlotRequest {
     @NotNull @Min(0) private Integer blockedQuantity=0;
     @NotNull @Min(0) private Integer bookingCutoffMinutes=0;
     @DecimalMin("0") private BigDecimal priceOverride;
+    private Map<String, @DecimalMin("0") BigDecimal> unitPrices;
+    private Boolean allDay = false;
+    private String meetingPointOverride;
     private MarketplaceSlotStatus status=MarketplaceSlotStatus.ENABLED;
     private Long expectedVersion;
 }

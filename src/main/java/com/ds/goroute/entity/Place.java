@@ -90,6 +90,7 @@ public class Place {
     private LocalDateTime scoreCalculatedAt;
     private Integer scoreSampleCount;
     private String scoreSource;
+    private LocalDateTime lastScrapedAt;
 
     // Metadata
     private LocalDateTime createdAt;

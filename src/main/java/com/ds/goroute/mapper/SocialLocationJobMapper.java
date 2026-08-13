@@ -26,6 +26,8 @@ public interface SocialLocationJobMapper {
             @Param("limit") int limit,
             @Param("offset") int offset);
 
+    int markDeletedByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
+
     List<SocialLocationJob> findCompletedByUserId(
             @Param("userId") UUID userId,
             @Param("ids") List<UUID> ids,

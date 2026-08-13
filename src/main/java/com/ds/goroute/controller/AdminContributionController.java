@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -22,6 +23,7 @@ public class AdminContributionController extends BaseService {
     private final PlaceContributionService contributionService;
 
     @GetMapping
+    @PreAuthorize("@adminAuthorization.can(authentication,'contributions','get')")
     @Operation(summary = "List contribution groups by status")
     public ResponseEntity listGroups(
             @RequestParam(defaultValue = "PENDING") String status,
@@ -32,6 +34,7 @@ public class AdminContributionController extends BaseService {
     }
 
     @GetMapping("/{groupId}")
+    @PreAuthorize("@adminAuthorization.can(authentication,'contributions','get')")
     @Operation(summary = "Get contribution group detail")
     public ResponseEntity getGroup(@PathVariable UUID groupId) {
         AdminContributionGroupResponse response = contributionService.adminGetGroup(groupId);
@@ -39,6 +42,7 @@ public class AdminContributionController extends BaseService {
     }
 
     @PostMapping("/{groupId}/approve")
+    @PreAuthorize("@adminAuthorization.can(authentication,'contributions','update')")
     @Operation(summary = "Approve contribution group and trigger scrape/import")
     public ResponseEntity approve(@PathVariable UUID groupId) {
         contributionService.adminApprove(groupId);
@@ -47,6 +51,7 @@ public class AdminContributionController extends BaseService {
     }
 
     @PostMapping("/{groupId}/reject")
+    @PreAuthorize("@adminAuthorization.can(authentication,'contributions','update')")
     @Operation(summary = "Reject contribution group")
     public ResponseEntity reject(
             @PathVariable UUID groupId,
@@ -57,6 +62,7 @@ public class AdminContributionController extends BaseService {
     }
 
     @PostMapping("/{groupId}/sync")
+    @PreAuthorize("@adminAuthorization.can(authentication,'contributions','update')")
     @Operation(summary = "Poll scrape job status and sync group state")
     public ResponseEntity sync(@PathVariable UUID groupId) {
         contributionService.syncScrapingGroup(groupId);

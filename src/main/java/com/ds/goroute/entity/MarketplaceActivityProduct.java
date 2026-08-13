@@ -17,6 +17,7 @@ public class MarketplaceActivityProduct {
     private String placeTitle;
     private String externalId;
     private String source;
+    private String activityType;
     private String url;
     private String redirectUrl;
     private String title;
@@ -31,6 +32,17 @@ public class MarketplaceActivityProduct {
     private String navigationList;
     private String itineraryStops;
     private String pickupAddresses;
+    private String languages;
+    private String meetingPoint;
+    private String includedItems;
+    private String excludedItems;
+    private String eligibility;
+    private String accessibilityFeatures;
+    private String confirmationType;
+    private String voucherType;
+    private String redemptionInstructions;
+    private String cancellationPolicy;
+    private String requiredInformation;
     private BigDecimal priceAmount;
     private String priceCurrency;
     private String durationRaw;

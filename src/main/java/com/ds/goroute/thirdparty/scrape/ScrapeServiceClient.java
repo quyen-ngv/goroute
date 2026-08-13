@@ -114,6 +114,17 @@ private String apiKey;
         }
     }
 
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> pollJobData(String jobId) {
+        String url = baseUrl + "/api/v1/jobs/" + jobId;
+        try {
+            return restTemplate.getForObject(url, Map.class);
+        } catch (Exception e) {
+            log.warn("Scrape job data poll failed for job {}: {}", jobId, e.getMessage());
+            return null;
+        }
+    }
+
     public ScrapeJobTriggerResponse triggerNationwideJob(ScrapeNationwideJobRequest request) {
         String url = baseUrl + "/api/v1/nationwide/jobs";
         try {
@@ -140,6 +151,46 @@ private String apiKey;
             return response.getBody();
         } catch (Exception e) {
             log.error("Place detail refresh trigger failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    public ScrapeJobTriggerResponse triggerPlaceReviewRefreshJob(ScrapePlaceReviewRefreshJobRequest request) {
+        String url = baseUrl + "/api/v1/maintenance/places/refresh-reviews";
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            if (apiKey != null && !apiKey.isBlank()) {
+                headers.set("X-API-Key", apiKey);
+            }
+            ResponseEntity<ScrapeJobTriggerResponse> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.POST,
+                    new HttpEntity<>(request, headers),
+                    ScrapeJobTriggerResponse.class);
+            return response.getBody();
+        } catch (Exception e) {
+            log.error("Place review refresh trigger failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    public ScrapeJobTriggerResponse rerunPlaceReviewRefreshJob(String jobId, String mode) {
+        String url = baseUrl + "/api/v1/maintenance/places/refresh-reviews/" + jobId + "/rerun";
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            if (apiKey != null && !apiKey.isBlank()) {
+                headers.set("X-API-Key", apiKey);
+            }
+            ResponseEntity<ScrapeJobTriggerResponse> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.POST,
+                    new HttpEntity<>(Map.of("mode", mode), headers),
+                    ScrapeJobTriggerResponse.class);
+            return response.getBody();
+        } catch (Exception e) {
+            log.error("Place review refresh rerun failed for job {}: {}", jobId, e.getMessage());
             return null;
         }
     }

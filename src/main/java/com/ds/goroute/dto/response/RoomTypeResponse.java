@@ -17,10 +17,18 @@ public class RoomTypeResponse {
     private String name;
     private String description;
     private Integer maxAdults;
+    private Integer standardAdults;
     private Integer maxChildren;
+    private Integer maxInfants;
     private Integer maxOccupancy;
+    private Integer bedroomCount;
+    private BigDecimal bathroomCount;
+    private String viewType;
+    private String bathroomType;
+    private Boolean smokingAllowed;
     private List<Map<String, Object>> bedConfig;
     private List<String> amenities;
+    private List<String> accessibilityFeatures;
     private List<String> images;
     private BigDecimal roomSizeSqm;
     private Integer totalUnits;

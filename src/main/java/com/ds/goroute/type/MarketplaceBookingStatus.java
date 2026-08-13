@@ -4,7 +4,7 @@ import java.util.EnumSet;
 import java.util.Set;
 
 public enum MarketplaceBookingStatus {
-    PENDING_PAYMENT,
+    PENDING_PARTNER_CONFIRMATION,
     CONFIRMED,
     CHECKED_IN,
     COMPLETED,
@@ -20,7 +20,7 @@ public enum MarketplaceBookingStatus {
 
     public boolean canTransitionTo(MarketplaceBookingStatus target) {
         return switch (this) {
-            case PENDING_PAYMENT -> EnumSet.of(CONFIRMED, EXPIRED, FAILED, CANCELLED_BY_GUEST,
+            case PENDING_PARTNER_CONFIRMATION -> EnumSet.of(CONFIRMED, EXPIRED, FAILED, CANCELLED_BY_GUEST,
                     CANCELLED_BY_HOST, CANCELLED_BY_PLATFORM).contains(target);
             case CONFIRMED -> EnumSet.of(CHECKED_IN, NO_SHOW, CANCELLED_BY_GUEST,
                     CANCELLED_BY_HOST, CANCELLED_BY_PLATFORM).contains(target);

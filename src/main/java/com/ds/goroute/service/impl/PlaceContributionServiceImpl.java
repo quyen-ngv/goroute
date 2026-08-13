@@ -15,6 +15,7 @@ import com.ds.goroute.service.PlaceContributionService;
 import com.ds.goroute.service.PlaceService;
 import com.ds.goroute.service.ReviewScoringService;
 import com.ds.goroute.service.StarService;
+import com.ds.goroute.service.StorageService;
 import com.ds.goroute.thirdparty.scrape.*;
 import com.ds.goroute.type.ContributionGroupStatus;
 import com.ds.goroute.type.ContributionStatus;
@@ -52,6 +53,7 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
     private final UserReviewProfileRepository profileRepository;
     private final ReviewScoringService scoringService;
     private final StarService starService;
+    private final StorageService storageService;
     private final ScrapeServiceClient scrapeServiceClient;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -149,7 +151,7 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
                 .ambianceRating(request.getAmbianceRating())
                 .serviceRating(request.getServiceRating())
                 .text(request.getText())
-                .photos(request.getPhotos() != null ? JsonUtils.toJson(request.getPhotos()) : null)
+                .photos(request.getPhotos() != null ? JsonUtils.toJson(managedPhotos(request.getPhotos())) : null)
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
@@ -812,5 +814,16 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
         }
         List<String> photos = JsonUtils.fromJson(photosJson, new TypeReference<List<String>>() {});
         return photos != null ? photos : List.of();
+    }
+
+    private List<String> managedPhotos(List<String> photos) {
+        if (photos == null || photos.isEmpty()) {
+            return List.of();
+        }
+        return photos.stream()
+                .filter(Objects::nonNull)
+                .filter(photo -> storageService.extractObjectKey(photo) != null)
+                .distinct()
+                .toList();
     }
 }

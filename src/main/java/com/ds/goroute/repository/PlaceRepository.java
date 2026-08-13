@@ -13,6 +13,8 @@ public interface PlaceRepository {
 
     void update(Place place);
 
+    void updateReviewRefreshMetadata(Place place);
+
     Optional<Place> findById(UUID id);
 
     Place findByPlaceId(String placeId);
@@ -30,6 +32,10 @@ public interface PlaceRepository {
     long countAll();
 
     List<Place> findPage(int limit, int offset);
+
+    List<Place> findAdminPage(String search, int limit, int offset);
+
+    long countAdmin(String search);
 
     List<Place> findByIds(List<UUID> ids);
 

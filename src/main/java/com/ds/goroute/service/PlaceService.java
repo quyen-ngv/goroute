@@ -5,6 +5,7 @@ import com.ds.goroute.dto.request.ImportPlaceRequest;
 import com.ds.goroute.dto.request.UpdatePlaceRequest;
 import com.ds.goroute.dto.response.PlaceResponse;
 import com.ds.goroute.dto.response.AdminPlaceResponse;
+import com.ds.goroute.dto.response.AdminPlacePageResponse;
 import com.ds.goroute.dto.response.PlaceReviewResponse;
 
 import java.math.BigDecimal;
@@ -39,7 +40,7 @@ public interface PlaceService {
      */
     List<PlaceResponse> getAllPlaces();
 
-    List<AdminPlaceResponse> getAdminPlaces();
+    AdminPlacePageResponse getAdminPlaces(String search, int page, int size);
 
     AdminPlaceResponse getAdminPlaceById(UUID id);
 

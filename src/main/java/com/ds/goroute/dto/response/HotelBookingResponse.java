@@ -6,6 +6,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -23,6 +24,10 @@ public class HotelBookingResponse {
     private Integer adults;
     private Integer children;
     private Map<String, Object> guestLead;
+    private List<Map<String, Object>> guestDetails;
+    private String specialRequests;
+    private LocalTime estimatedArrivalTime;
+    private LocalDateTime holdExpiresAt;
     private String currency;
     private BigDecimal subtotalAmount;
     private BigDecimal taxAmount;
@@ -34,6 +39,7 @@ public class HotelBookingResponse {
     private String source;
     private String cancellationReason;
     private LocalDateTime cancelledAt;
+    private Map<String, Object> snapshot;
     private Long dataVersion;
     private List<HotelBookingItemResponse> items;
     private LocalDateTime createdAt;

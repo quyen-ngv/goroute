@@ -2,6 +2,7 @@ package com.ds.goroute.service;
 
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.ReviewInput;
+import com.ds.goroute.dto.request.RefreshPlaceReviewsRequest;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.PlaceReview;
 import com.ds.goroute.exception.BusinessError;
@@ -20,13 +21,16 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class PlaceReviewService {
+
+    private static final int REFRESH_SAMPLE_LIMIT = 200;
+    private static final int REFRESH_STORAGE_LIMIT = 30;
 
     private final PlaceReviewRepository reviewRepository;
     private final PlaceRepository placeRepository;
@@ -36,8 +40,8 @@ public class PlaceReviewService {
     private final PlaceReviewScoreCalculator scoreCalculator;
 
     /**
-     * Batch insert reviews from crawler data
-     * Auto-cleanup logic: If any review has external image URL, delete all existing reviews and re-import
+     * Batch insert reviews from crawler data. Every persisted review image must be a
+     * managed MinIO object; external URLs are compressed/migrated or discarded.
      */
     @Transactional
     public Map<String, Object> batchInsertReviews(List<ReviewInput> reviewInputs) {
@@ -139,24 +143,20 @@ public class PlaceReviewService {
                 // Check if review already exists by reviewId
                 PlaceReview existingReview = reviewRepository.findByReviewId(input.getReviewId()).orElse(null);
 
-                // Use original URLs (no migration)
-                String originalProfile = input.getProfilePicture();
-                List<String> originalUserImages = input.getUserImages();
+                String targetPath = "places/" + input.getGooglePlaceId() + "/reviews/"
+                        + storageSafeSegment(input.getReviewId()) + "/";
 
                 if (existingReview != null) {
                     // Update existing review (always update)
-                    
-                    // Keep existing images if already migrated to onestudy.id.vn
-                    boolean keepProfile = shouldKeepExistingImage(existingReview.getProfilePicture());
-                    boolean keepImages = shouldKeepExistingImages(existingReview.getImages());
-                    
-                    String profileToUse = keepProfile 
-                        ? existingReview.getProfilePicture() 
-                        : originalProfile;
-                    
+                    boolean keepProfile = isManagedImage(existingReview.getProfilePicture());
+                    List<String> existingManagedImages = managedImages(parseExistingImages(existingReview.getImages()));
+                    boolean keepImages = !existingManagedImages.isEmpty();
+                    String profileToUse = keepProfile
+                            ? existingReview.getProfilePicture()
+                            : migrateManagedImage(input.getProfilePicture(), targetPath + "profile/");
                     List<String> imagesToUse = keepImages
-                        ? parseExistingImages(existingReview.getImages())
-                        : originalUserImages;
+                            ? existingManagedImages
+                            : migrateManagedImages(input.getUserImages(), targetPath);
                     
                     // Delete old images selectively
                     deleteOldReviewImagesSelectively(existingReview, keepProfile, keepImages);
@@ -172,7 +172,10 @@ public class PlaceReviewService {
                     updated++;
                 } else {
                     // Create new review
-                    PlaceReview review = mapInputToReview(input, placeId, originalProfile, originalUserImages);
+                    String profilePicture = migrateManagedImage(
+                            input.getProfilePicture(), targetPath + "profile/");
+                    List<String> userImages = migrateManagedImages(input.getUserImages(), targetPath);
+                    PlaceReview review = mapInputToReview(input, placeId, profilePicture, userImages);
                     
                     // Set authenticity score
                     review.setAuthenticityScore(BigDecimal.valueOf(reviewWithScore.authenticityScore));
@@ -214,41 +217,180 @@ public class PlaceReviewService {
     }
 
     /**
-     * Calculate authenticity score from ReviewInput (before saving to DB)
-     * Same logic as calculateAuthenticityScore but works with ReviewInput
+     * Remove the currently stored crawler reviews before a fresh Google Maps scrape starts.
+     * The refresh worker calls this for one ACTIVE place at a time.
      */
-    private double calculateAuthenticityScoreFromInput(ReviewInput input) {
-        // has_text — weight 0.15
-        String description = null;
-        if (input.getReviewText() != null && !input.getReviewText().isEmpty()) {
-            description = input.getReviewText().values().iterator().next();
-        }
-        double hasText = (description != null && !description.isEmpty()) ? 1.0 : 0.0;
+    @Transactional
+    public Map<String, Object> prepareRefresh(UUID placeId) {
+        Place place = requireActivePlace(placeId, null);
+        List<PlaceReview> existingReviews = reviewRepository.findByPlaceId(placeId);
 
-        // text_length_score — weight 0.25
-        double textLengthScore = 0.0;
-        if (description != null) {
-            textLengthScore = Math.min(description.length() / 200.0, 1.0);
-        }
+        reviewRepository.deleteByPlaceId(placeId);
+        deleteManagedImages(existingReviews);
 
-        // has_photos — weight 0.25
-        double hasPhotos = (input.getUserImages() != null && !input.getUserImages().isEmpty()) ? 1.0 : 0.0;
+        clearPlaceReviewScore(place);
+        place.setUpdatedAt(LocalDateTime.now());
+        placeRepository.updateReviewRefreshMetadata(place);
 
-        // reviewer_credibility_score — weight 0.35
-        double r1 = Math.min((input.getTotalReviews() != null ? input.getTotalReviews() : 0) / 50.0, 1.0);
-        double r2 = Math.min((input.getTotalPhotos() != null ? input.getTotalPhotos() : 0) / 100.0, 1.0);
-        double r3 = (input.getIsLocalGuide() != null && input.getIsLocalGuide()) ? 1.0 : 0.0;
-        double reviewerCredibility = (r1 + r2 + r3) / 3.0;
-
-        // Final score
-        double score = 0.15 * hasText
-                     + 0.25 * textLengthScore
-                     + 0.25 * hasPhotos
-                     + 0.35 * reviewerCredibility;
-
-        return score;
+        return Map.of(
+                "placeId", placeId,
+                "deleted", existingReviews.size(),
+                "ready", true);
     }
-    
+
+    /**
+     * Score at most 200 newest reviews that contain photos, persist at most 30 with the
+     * highest authenticity score, and update last_scraped_at only after persistence succeeds.
+     */
+    @Transactional
+    public Map<String, Object> completeRefresh(RefreshPlaceReviewsRequest request) {
+        Place place = requireActivePlace(request.getPlaceId(), request.getGooglePlaceId());
+
+        LinkedHashMap<String, ReviewInput> uniqueByReviewId = new LinkedHashMap<>();
+        for (ReviewInput review : request.getReviews()) {
+            if (uniqueByReviewId.size() >= REFRESH_SAMPLE_LIMIT) {
+                break;
+            }
+            if (Boolean.TRUE.equals(review.getIsDeleted())
+                    || review.getUserImages() == null
+                    || review.getUserImages().isEmpty()
+                    || !request.getGooglePlaceId().equals(review.getGooglePlaceId())) {
+                continue;
+            }
+            uniqueByReviewId.putIfAbsent(review.getReviewId(), review);
+        }
+        List<ReviewInput> sample = new ArrayList<>(uniqueByReviewId.values());
+
+        Comparator<ReviewInput> ranking = Comparator
+                .comparing((ReviewInput review) -> scoreCalculator.authenticity(review), Comparator.reverseOrder())
+                .thenComparing(review -> Objects.requireNonNullElse(review.getLikes(), 0), Comparator.reverseOrder())
+                .thenComparing(review -> scoreCalculator.parseDate(review.getReviewDate()),
+                        Comparator.nullsLast(Comparator.reverseOrder()));
+        List<ReviewInput> ranked = sample.stream().sorted(ranking).toList();
+
+        List<PlaceReview> reviewsToInsert = new ArrayList<>();
+        int imageMigrationFailures = 0;
+        for (ReviewInput input : ranked) {
+            if (reviewsToInsert.size() >= REFRESH_STORAGE_LIMIT) {
+                break;
+            }
+            String targetPath = "places/" + place.getPlaceId() + "/reviews/"
+                    + storageSafeSegment(input.getReviewId()) + "/";
+            Map<String, String> migratedImages = imageMigrationService.migrateCompressedImages(
+                    input.getUserImages(), targetPath);
+            List<String> storedImages = input.getUserImages().stream()
+                    .map(migratedImages::get)
+                    .filter(Objects::nonNull)
+                    .filter(url -> storageService.extractObjectKey(url) != null)
+                    .distinct()
+                    .toList();
+            if (storedImages.isEmpty()) {
+                imageMigrationFailures++;
+                continue;
+            }
+
+            String profilePicture = imageMigrationService.migrateCompressedImage(
+                    input.getProfilePicture(), targetPath + "profile/");
+            if (profilePicture != null && storageService.extractObjectKey(profilePicture) == null) {
+                profilePicture = null;
+            }
+
+            BigDecimal authenticityScore = scoreCalculator.authenticity(input);
+            PlaceReview review = mapInputToReview(
+                    input, place.getId(), profilePicture, storedImages);
+            review.setAuthenticityScore(authenticityScore);
+            review.setAuthenticityLevel(scoreCalculator.authenticityLevel(authenticityScore));
+            review.setScoreCalculatedAt(LocalDateTime.now());
+            reviewsToInsert.add(review);
+        }
+
+        // Defensive idempotency: the worker normally emptied this table before scraping.
+        reviewRepository.deleteByPlaceId(place.getId());
+        if (!reviewsToInsert.isEmpty()) {
+            reviewRepository.insertBatch(reviewsToInsert);
+        }
+
+        applyPlaceScore(place, sample);
+        place.setLastScrapedAt(LocalDateTime.now());
+        place.setUpdatedAt(LocalDateTime.now());
+        placeRepository.updateReviewRefreshMetadata(place);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("placeId", place.getId());
+        result.put("googlePlaceId", place.getPlaceId());
+        result.put("sampled", sample.size());
+        result.put("inserted", reviewsToInsert.size());
+        result.put("imageMigrationFailures", imageMigrationFailures);
+        result.put("lastScrapedAt", place.getLastScrapedAt());
+        return result;
+    }
+
+    private Place requireActivePlace(UUID placeId, String googlePlaceId) {
+        Place place = placeRepository.findById(placeId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND));
+        if (place.getVisibilityStatus() != com.ds.goroute.type.PlaceVisibilityStatus.ACTIVE) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Only ACTIVE places can be scraped");
+        }
+        if (googlePlaceId != null && !googlePlaceId.equals(place.getPlaceId())) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "googlePlaceId does not match placeId");
+        }
+        return place;
+    }
+
+    private void clearPlaceReviewScore(Place place) {
+        place.setAvgAuthenticityScore(null);
+        place.setPlaceOverallScore(null);
+        place.setAdjustedRating(null);
+        place.setTrustLevel(null);
+        place.setIsJcurveDetected(null);
+        place.setIsSpikeDetected(null);
+        place.setAuthenticLowStarCount(null);
+        place.setScoreCalculatedAt(null);
+        place.setScoreSampleCount(0);
+        place.setScoreSource(null);
+    }
+
+    private void applyPlaceScore(Place place, List<ReviewInput> sample) {
+        PlaceReviewScoreCalculator.PlaceScoreResult score = scoreCalculator.scoreInputs(
+                place.getReviewRating(), Objects.requireNonNullElse(place.getReviewCount(), 0), sample);
+        if (score == null) {
+            clearPlaceReviewScore(place);
+            return;
+        }
+        place.setAvgAuthenticityScore(score.avgAuthenticityScore());
+        place.setPlaceOverallScore(score.placeOverallScore());
+        place.setAdjustedRating(score.adjustedRating());
+        place.setTrustLevel(score.trustLevel());
+        place.setIsJcurveDetected(score.jCurveDetected());
+        place.setIsSpikeDetected(score.spikeDetected());
+        place.setAuthenticLowStarCount(score.authenticLowStarCount());
+        place.setScoreCalculatedAt(LocalDateTime.now());
+        place.setScoreSampleCount(score.sampleCount());
+        place.setScoreSource("SCRAPED_REVIEWS");
+    }
+
+    private void deleteManagedImages(List<PlaceReview> reviews) {
+        List<String> urls = new ArrayList<>();
+        for (PlaceReview review : reviews) {
+            if (storageService.extractObjectKey(review.getProfilePicture()) != null) {
+                urls.add(review.getProfilePicture());
+            }
+            for (String image : parseExistingImages(review.getImages())) {
+                if (storageService.extractObjectKey(image) != null) {
+                    urls.add(image);
+                }
+            }
+        }
+        if (!urls.isEmpty()) {
+            storageService.deleteFiles(urls.stream().distinct().toList());
+        }
+    }
+
+    private String storageSafeSegment(String value) {
+        String safe = value == null ? "review" : value.replaceAll("[^a-zA-Z0-9._-]", "_");
+        return safe.isBlank() ? "review" : safe;
+    }
+
     /**
      * Helper class to hold ReviewInput with its calculated authenticity score
      */
@@ -264,41 +406,52 @@ public class PlaceReviewService {
         }
     }
 
-    /**
-     * Check if existing image should be kept (already migrated to onestudy.id.vn)
-     */
-    private boolean shouldKeepExistingImage(String imageUrl) {
-        if (imageUrl == null || imageUrl.isEmpty()) {
-            return false;
-        }
-        // Keep if already hosted on our server
-        return imageUrl.contains("onestudy.id.vn");
+    private boolean isManagedImage(String imageUrl) {
+        return storageService.extractObjectKey(imageUrl) != null;
     }
-    
-    /**
-     * Check if existing images JSON should be kept (at least one image from onestudy.id.vn)
-     */
-    private boolean shouldKeepExistingImages(String imagesJson) {
-        if (imagesJson == null || imagesJson.isEmpty() || imagesJson.equals("[]")) {
-            return false;
+
+    private String migrateManagedImage(String imageUrl, String targetPath) {
+        if (imageUrl == null || imageUrl.isBlank()) {
+            return null;
         }
-        
-        try {
-            List<String> imageUrls = JsonUtils.fromJson(imagesJson, List.class);
-            if (imageUrls != null && !imageUrls.isEmpty()) {
-                // Keep if at least one image is from our server
-                for (Object urlObj : imageUrls) {
-                    String url = urlObj.toString();
-                    if (url.contains("onestudy.id.vn")) {
-                        return true;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Failed to parse images JSON: {}", e.getMessage());
+        if (isManagedImage(imageUrl)) {
+            return imageUrl;
         }
-        
-        return false;
+        String migrated = imageMigrationService.migrateCompressedImage(imageUrl, targetPath);
+        return isManagedImage(migrated) ? migrated : null;
+    }
+
+    private List<String> migrateManagedImages(List<String> imageUrls, String targetPath) {
+        if (imageUrls == null || imageUrls.isEmpty()) {
+            return List.of();
+        }
+        List<String> existingManaged = managedImages(imageUrls);
+        List<String> external = imageUrls.stream()
+                .filter(Objects::nonNull)
+                .filter(url -> !url.isBlank())
+                .filter(url -> !isManagedImage(url))
+                .distinct()
+                .toList();
+        if (external.isEmpty()) {
+            return existingManaged;
+        }
+        Map<String, String> migrated = imageMigrationService.migrateCompressedImages(external, targetPath);
+        return Stream.concat(
+                        existingManaged.stream(),
+                        external.stream().map(migrated::get).filter(this::isManagedImage))
+                .distinct()
+                .toList();
+    }
+
+    private List<String> managedImages(List<String> imageUrls) {
+        if (imageUrls == null || imageUrls.isEmpty()) {
+            return List.of();
+        }
+        return imageUrls.stream()
+                .filter(Objects::nonNull)
+                .filter(this::isManagedImage)
+                .distinct()
+                .toList();
     }
     
     /**
@@ -319,68 +472,13 @@ public class PlaceReviewService {
     }
     
     /**
-     * Check if ReviewInput has external image URL (migration failed)
-     */
-    private boolean hasExternalImageUrlInInput(ReviewInput input) {
-        // Check profile picture
-        if (input.getProfilePicture() != null && 
-            input.getProfilePicture().startsWith("http") && 
-            !input.getProfilePicture().contains("onestudy.id.vn")) {
-            return true;
-        }
-        
-        // Check user images
-        if (input.getUserImages() != null && !input.getUserImages().isEmpty()) {
-            for (String url : input.getUserImages()) {
-                if (url.startsWith("http") && !url.contains("onestudy.id.vn")) {
-                    return true;
-                }
-            }
-        }
-        
-        return false;
-    }
-    
-    /**
-     * Check if review has external image URL (not from our MinIO)
-     */
-    private boolean hasExternalImageUrl(PlaceReview review) {
-        // Check profile picture
-        if (review.getProfilePicture() != null && 
-            review.getProfilePicture().startsWith("http") && 
-            !review.getProfilePicture().contains("onestudy.id.vn")) {
-            return true;
-        }
-        
-        // Check images JSON array
-        if (review.getImages() != null && !review.getImages().equals("[]")) {
-            try {
-                List<String> imageUrls = JsonUtils.fromJson(review.getImages(), List.class);
-                if (imageUrls != null) {
-                    for (Object urlObj : imageUrls) {
-                        String url = urlObj.toString();
-                        if (url.startsWith("http") && !url.contains("onestudy.id.vn")) {
-                            return true;
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("Failed to parse images JSON for review {}: {}", review.getReviewId(), e.getMessage());
-            }
-        }
-        
-        return false;
-    }
-
-    /**
      * Delete old images from S3 before updating review (selectively)
      */
     private void deleteOldReviewImagesSelectively(PlaceReview review, boolean keepProfile, boolean keepImages) {
         List<String> urlsToDelete = new ArrayList<>();
         
         // Delete old profile picture only if not keeping it
-        if (!keepProfile && review.getProfilePicture() != null && 
-            review.getProfilePicture().contains("onestudy.id.vn")) {
+        if (!keepProfile && isManagedImage(review.getProfilePicture())) {
             urlsToDelete.add(review.getProfilePicture());
         }
         
@@ -391,47 +489,7 @@ public class PlaceReviewService {
                 if (imageUrls != null) {
                     for (Object urlObj : imageUrls) {
                         String url = urlObj.toString();
-                        if (url.contains("onestudy.id.vn")) {
-                            urlsToDelete.add(url);
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("Failed to parse images JSON for deletion: {}", e.getMessage());
-            }
-        }
-        
-        // Batch delete from S3
-        if (!urlsToDelete.isEmpty()) {
-            try {
-                storageService.deleteFiles(urlsToDelete);
-                log.debug("Deleted {} old images from S3", urlsToDelete.size());
-            } catch (Exception e) {
-                log.error("Failed to delete old images from S3: {}", e.getMessage());
-            }
-        }
-    }
-    
-    /**
-     * Delete old images from S3 before updating review
-     */
-    private void deleteOldReviewImages(PlaceReview review) {
-        List<String> urlsToDelete = new ArrayList<>();
-        
-        // Add old profile picture
-        if (review.getProfilePicture() != null && 
-            review.getProfilePicture().contains("onestudy.id.vn")) {
-            urlsToDelete.add(review.getProfilePicture());
-        }
-        
-        // Add old user images
-        if (review.getImages() != null && !review.getImages().equals("[]")) {
-            try {
-                List<String> imageUrls = JsonUtils.fromJson(review.getImages(), List.class);
-                if (imageUrls != null) {
-                    for (Object urlObj : imageUrls) {
-                        String url = urlObj.toString();
-                        if (url.contains("onestudy.id.vn")) {
+                        if (isManagedImage(url)) {
                             urlsToDelete.add(url);
                         }
                     }

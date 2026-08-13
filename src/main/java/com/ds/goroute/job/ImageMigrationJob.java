@@ -3,6 +3,7 @@ package com.ds.goroute.job;
 import com.ds.goroute.entity.*;
 import com.ds.goroute.repository.*;
 import com.ds.goroute.service.ImageMigrationService;
+import com.ds.goroute.service.StorageService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -21,6 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ImageMigrationJob {
 
     private final ImageMigrationService imageMigrationService;
+    private final StorageService storageService;
     private final PlaceRepository placeRepository;
     private final PlaceReviewRepository placeReviewRepository;
     private final ActivityRepository activityRepository;
@@ -128,12 +130,11 @@ public class ImageMigrationJob {
                 String targetPath = "reviews/" + review.getId() + "/";
                 
                 // Migrate profilePicture
-                if (isExternalUrl(review.getProfilePicture())) {
-                    String newUrl = imageMigrationService.migrateImage(review.getProfilePicture(), targetPath);
-                    if (newUrl != null) {
-                        review.setProfilePicture(newUrl);
-                        updated = true;
-                    }
+                if (review.getProfilePicture() != null && !isManagedImage(review.getProfilePicture())) {
+                    String newUrl = imageMigrationService.migrateCompressedImage(
+                            review.getProfilePicture(), targetPath + "profile/");
+                    review.setProfilePicture(isManagedImage(newUrl) ? newUrl : null);
+                    updated = true;
                 }
                 
                 // Migrate images JSON array
@@ -349,6 +350,10 @@ public class ImageMigrationJob {
         return url.startsWith("http") && !url.contains("onestudy.id.vn");
     }
 
+    private boolean isManagedImage(String url) {
+        return storageService.extractObjectKey(url) != null;
+    }
+
     /**
      * Migrate review images array: ["url1", "url2"]
      */
@@ -360,28 +365,23 @@ public class ImageMigrationJob {
             }
             
             ArrayNode arrayNode = (ArrayNode) rootNode;
-            List<String> imageUrls = new ArrayList<>();
-            
+            List<String> externalUrls = new ArrayList<>();
             for (JsonNode node : arrayNode) {
-                if (node.isTextual() && isExternalUrl(node.asText())) {
-                    imageUrls.add(node.asText());
+                if (node.isTextual() && !isManagedImage(node.asText())) {
+                    externalUrls.add(node.asText());
                 }
             }
-            
-            if (imageUrls.isEmpty()) {
-                return imagesJson;
-            }
-            
-            Map<String, String> migratedUrls = imageMigrationService.migrateImages(imageUrls, targetPath);
-            
+            Map<String, String> migratedUrls = externalUrls.isEmpty()
+                    ? Map.of()
+                    : imageMigrationService.migrateCompressedImages(externalUrls, targetPath);
             ArrayNode newArray = objectMapper.createArrayNode();
             for (JsonNode node : arrayNode) {
                 if (node.isTextual()) {
                     String oldUrl = node.asText();
-                    String newUrl = migratedUrls.getOrDefault(oldUrl, oldUrl);
-                    newArray.add(newUrl);
-                } else {
-                    newArray.add(node);
+                    String newUrl = isManagedImage(oldUrl) ? oldUrl : migratedUrls.get(oldUrl);
+                    if (isManagedImage(newUrl)) {
+                        newArray.add(newUrl);
+                    }
                 }
             }
             
@@ -389,7 +389,7 @@ public class ImageMigrationJob {
             
         } catch (Exception e) {
             log.error("Error migrating review images array: {}", e.getMessage());
-            return imagesJson;
+            return "[]";
         }
     }
 

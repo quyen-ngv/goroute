@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -46,6 +47,7 @@ public class LocationImageController extends BaseService {
     }
     
     @PostMapping
+    @PreAuthorize("@adminAuthorization.can(authentication,'location-images','create')")
     public ResponseEntity<BaseResponse<LocationImageResponse>> createLocationImage(
             @Valid @RequestBody CreateLocationImageRequest request) {
         LocationImageResponse locationImage = locationImageService.createLocationImage(request);
@@ -53,6 +55,7 @@ public class LocationImageController extends BaseService {
     }
     
     @PutMapping("/{id}")
+    @PreAuthorize("@adminAuthorization.can(authentication,'location-images','update')")
     public ResponseEntity<BaseResponse<LocationImageResponse>> updateLocationImage(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateLocationImageRequest request) {
@@ -61,12 +64,14 @@ public class LocationImageController extends BaseService {
     }
     
     @DeleteMapping("/{id}")
+    @PreAuthorize("@adminAuthorization.can(authentication,'location-images','delete')")
     public ResponseEntity<BaseResponse<Void>> deleteLocationImage(@PathVariable UUID id) {
         locationImageService.deleteLocationImage(id);
         return ResponseEntity.ok(ofSucceeded(null));
     }
     
     @PostMapping("/upload")
+    @PreAuthorize("@adminAuthorization.can(authentication,'location-images','create')")
     public ResponseEntity<BaseResponse<String>> uploadLocationImage(
             @RequestParam("file") MultipartFile file) {
         String imageUrl = locationImageService.uploadLocationImage(file);

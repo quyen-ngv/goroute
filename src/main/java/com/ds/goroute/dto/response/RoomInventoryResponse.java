@@ -19,6 +19,8 @@ public class RoomInventoryResponse {
     private Integer availableUnits;
     private Boolean stopSell;
     private BigDecimal priceOverride;
+    private BigDecimal quotedNightlyPrice;
+    private BigDecimal quotedTotal;
     private Integer minStay;
     private Boolean closedToArrival;
     private Boolean closedToDeparture;

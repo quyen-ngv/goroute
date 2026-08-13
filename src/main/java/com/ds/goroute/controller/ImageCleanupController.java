@@ -5,6 +5,7 @@ import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,11 +19,13 @@ public class ImageCleanupController extends BaseService {
     private final ImageStorageCleanupService cleanupService;
 
     @GetMapping("/entities")
+    @PreAuthorize("@adminAuthorization.can(authentication,'system-maintenance','get')")
     public ResponseEntity<BaseResponse<List<String>>> supportedEntities() {
         return ResponseEntity.ok(ofSucceeded(cleanupService.supportedEntities()));
     }
 
     @PostMapping("/orphaned")
+    @PreAuthorize("@adminAuthorization.can(authentication,'system-maintenance','update')")
     public ResponseEntity<BaseResponse<ImageStorageCleanupService.OrphanImageCleanupResult>> cleanupOrphaned(
             @RequestBody OrphanCleanupRequest request
     ) {
@@ -43,6 +46,7 @@ public class ImageCleanupController extends BaseService {
     }
 
     @DeleteMapping("/{entity}/{id}/images")
+    @PreAuthorize("@adminAuthorization.can(authentication,'system-maintenance','update')")
     public ResponseEntity<BaseResponse<ImageStorageCleanupService.DeleteRecordImagesResult>> deleteRecordImages(
             @PathVariable String entity,
             @PathVariable UUID id

@@ -1,6 +1,7 @@
 package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.request.CreateSocialLocationJobRequest;
+import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.response.SocialLocationJobResponse;
 import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.SocialLocationJobService;
@@ -48,5 +49,14 @@ public class SocialLocationJobController extends BaseService {
             @RequestParam(defaultValue = "20") int size) {
         List<SocialLocationJobResponse> response = socialLocationJobService.listMine(userId, page, size);
         return ResponseEntity.ok(ofSucceeded(response));
+    }
+
+    @DeleteMapping("/{jobId}")
+    @Operation(summary = "Remove a current user's social-location extraction job")
+    public ResponseEntity delete(
+            @PathVariable UUID jobId,
+            @RequestAttribute("userId") UUID userId) {
+        socialLocationJobService.delete(userId, jobId);
+        return ResponseEntity.ok(BaseResponse.ofSucceeded());
     }
 }

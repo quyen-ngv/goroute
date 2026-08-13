@@ -41,6 +41,15 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
 
     @Override
     public String migrateImage(String imageUrl, String targetPath) {
+        return migrateImage(imageUrl, targetPath, false);
+    }
+
+    @Override
+    public String migrateCompressedImage(String imageUrl, String targetPath) {
+        return migrateImage(imageUrl, targetPath, true);
+    }
+
+    private String migrateImage(String imageUrl, String targetPath, boolean requireCompression) {
         if (imageUrl == null || imageUrl.isEmpty()) {
             return imageUrl;
         }
@@ -52,7 +61,7 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
             byte[] imageBytes = downloadImage(imageUrl);
             if (imageBytes == null || imageBytes.length == 0) {
                 log.warn("Failed to download image: {}", imageUrl);
-                return imageUrl;
+                return requireCompression ? null : imageUrl;
             }
             
             // 2. Compress via imgpress
@@ -61,6 +70,10 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
                 compressedBytes = compressImage(imageBytes, extractFilename(imageUrl));
                 log.debug("Image compressed: {} -> {} bytes", imageBytes.length, compressedBytes.length);
             } catch (Exception e) {
+                if (requireCompression) {
+                    log.warn("Compression failed; strict migration rejected image: {}", e.getMessage());
+                    return null;
+                }
                 log.warn("Compression failed, using original if size acceptable: {}", e.getMessage());
                 if (imageBytes.length > MAX_IMAGE_SIZE_BYTES) {
                     log.error("Image too large to upload without compression: {} bytes", imageBytes.length);
@@ -78,7 +91,7 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
             
         } catch (Exception e) {
             log.error("Failed to migrate image {}: {}", imageUrl, e.getMessage());
-            return imageUrl;
+            return requireCompression ? null : imageUrl;
         }
     }
     
@@ -97,6 +110,15 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
 
     @Override
     public Map<String, String> migrateImages(List<String> imageUrls, String targetPath) {
+        return migrateImages(imageUrls, targetPath, false);
+    }
+
+    @Override
+    public Map<String, String> migrateCompressedImages(List<String> imageUrls, String targetPath) {
+        return migrateImages(imageUrls, targetPath, true);
+    }
+
+    private Map<String, String> migrateImages(List<String> imageUrls, String targetPath, boolean requireCompression) {
         if (imageUrls == null || imageUrls.isEmpty()) {
             return Collections.emptyMap();
         }
@@ -107,7 +129,9 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
         try {
             List<CompletableFuture<Void>> futures = imageUrls.stream()
                     .map(imageUrl -> CompletableFuture.runAsync(() -> {
-                        String newUrl = migrateImage(imageUrl, targetPath);
+                        String newUrl = requireCompression
+                                ? migrateCompressedImage(imageUrl, targetPath)
+                                : migrateImage(imageUrl, targetPath);
                         if (newUrl != null) {
                             resultMap.put(imageUrl, newUrl);
                         }

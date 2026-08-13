@@ -7,6 +7,7 @@ import com.ds.goroute.service.BaseService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -26,6 +27,7 @@ public class ImageMigrationController extends BaseService {
      * GET /v1/api/admin/images/migrate/all
      */
     @PostMapping("/migrate/all")
+    @PreAuthorize("@adminAuthorization.can(authentication,'system-maintenance','update')")
     public ResponseEntity<BaseResponse<String>> migrateAllImages() {
         log.info("Triggering full image migration");
         
@@ -43,6 +45,7 @@ public class ImageMigrationController extends BaseService {
      * Migrate places only
      */
     @PostMapping("/migrate/places")
+    @PreAuthorize("@adminAuthorization.can(authentication,'system-maintenance','update')")
     public ResponseEntity<BaseResponse<String>> migratePlaces() {
         log.info("Triggering place image migration");
         
@@ -59,6 +62,7 @@ public class ImageMigrationController extends BaseService {
      * Migrate reviews only
      */
     @PostMapping("/migrate/reviews")
+    @PreAuthorize("@adminAuthorization.can(authentication,'system-maintenance','update')")
     public ResponseEntity<BaseResponse<String>> migrateReviews() {
         log.info("Triggering review image migration");
         
@@ -75,6 +79,7 @@ public class ImageMigrationController extends BaseService {
      * Migrate activities only
      */
     @PostMapping("/migrate/activities")
+    @PreAuthorize("@adminAuthorization.can(authentication,'system-maintenance','update')")
     public ResponseEntity<BaseResponse<String>> migrateActivities() {
         log.info("Triggering activity image migration");
         
@@ -91,6 +96,7 @@ public class ImageMigrationController extends BaseService {
      * Migrate bookings only
      */
     @PostMapping("/migrate/bookings")
+    @PreAuthorize("@adminAuthorization.can(authentication,'system-maintenance','update')")
     public ResponseEntity<BaseResponse<String>> migrateBookings() {
         log.info("Triggering booking image migration");
         
@@ -107,6 +113,7 @@ public class ImageMigrationController extends BaseService {
      * Migrate foods only
      */
     @PostMapping("/migrate/foods")
+    @PreAuthorize("@adminAuthorization.can(authentication,'system-maintenance','update')")
     public ResponseEntity<BaseResponse<String>> migrateFoods() {
         log.info("Triggering food image migration");
         
@@ -123,6 +130,7 @@ public class ImageMigrationController extends BaseService {
      * Migrate expenses only
      */
     @PostMapping("/migrate/expenses")
+    @PreAuthorize("@adminAuthorization.can(authentication,'system-maintenance','update')")
     public ResponseEntity<BaseResponse<String>> migrateExpenses() {
         log.info("Triggering expense image migration");
         
@@ -141,6 +149,7 @@ public class ImageMigrationController extends BaseService {
      * Cleanup low-quality reviews - keep only top 200 reviews per place
      */
     @PostMapping("/reviews/cleanup")
+    @PreAuthorize("@adminAuthorization.can(authentication,'system-maintenance','update')")
     public ResponseEntity<BaseResponse<String>> cleanupReviews() {
         log.info("Triggering review cleanup job");
         
@@ -158,6 +167,7 @@ public class ImageMigrationController extends BaseService {
      * Cleanup reviews for a specific place
      */
     @PostMapping("/reviews/cleanup/{placeId}")
+    @PreAuthorize("@adminAuthorization.can(authentication,'system-maintenance','update')")
     public ResponseEntity<BaseResponse<?>> cleanupPlaceReviews(@PathVariable UUID placeId) {
         log.info("Triggering review cleanup for place: {}", placeId);
         
