@@ -20,8 +20,8 @@ public class SocialLocationConfigService {
                 : positive("MAX_VIDEO_SECONDS_DEFAULT", 180);
     }
     public int frameIntervalSeconds() { return positive("FRAME_INTERVAL_SECONDS", 3); }
-    public int imageMaxWidth() { return positive("IMAGE_MAX_WIDTH", 320); }
-    public int imageJpegQuality() { return bounded("IMAGE_JPEG_QUALITY", 18, 2, 31); }
+    public int imageMaxWidth() { return positive("IMAGE_MAX_WIDTH", 448); }
+    public int imageJpegQuality() { return bounded("IMAGE_JPEG_QUALITY", 12, 2, 31); }
     public int firstBlockMinutes() { return positive("FIRST_BLOCK_MINUTES", 10); }
     public int secondBlockHours() { return positive("SECOND_BLOCK_HOURS", 24); }
     public int permanentBlockStrikes() { return positive("PERMANENT_BLOCK_STRIKES", 3); }

@@ -1,10 +1,12 @@
 package com.ds.goroute.mapper;
 
 import com.ds.goroute.entity.PlaceReview;
+import com.ds.goroute.dto.response.PlaceReviewRefreshCandidateResponse;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -22,6 +24,11 @@ public interface PlaceReviewMapper {
     List<PlaceReview> findByPlaceId(@Param("placeId") UUID placeId);
 
     List<PlaceReview> findAll();
+
+    List<PlaceReviewRefreshCandidateResponse> findRefreshCandidates(
+            @Param("placeId") UUID placeId,
+            @Param("cutoff") LocalDateTime cutoff,
+            @Param("includeRecent") boolean includeRecent);
 
     PlaceReview findByReviewId(@Param("reviewId") String reviewId);
 

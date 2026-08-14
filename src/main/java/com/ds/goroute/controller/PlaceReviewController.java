@@ -8,6 +8,8 @@ import com.ds.goroute.service.PlaceReviewService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -34,9 +36,19 @@ public class PlaceReviewController extends BaseService {
     }
 
     @PostMapping("/{placeId}/prepare-refresh")
-    @Operation(summary = "Delete stored crawler reviews before scraping one ACTIVE place")
+    @Operation(summary = "Validate an ACTIVE place before a legacy review refresh")
     public ResponseEntity prepareRefresh(@PathVariable UUID placeId) {
         return ResponseEntity.ok(ofSucceeded(placeReviewService.prepareRefresh(placeId)));
+    }
+
+    @GetMapping("/refresh-candidates")
+    @Operation(summary = "List review refresh candidates ordered by score/image migration need")
+    public ResponseEntity refreshCandidates(
+            @RequestParam(required = false) UUID placeId,
+            @RequestParam(defaultValue = "24") @Min(1) @Max(8760) int maxAgeHours,
+            @RequestParam(defaultValue = "false") boolean includeRecent) {
+        return ResponseEntity.ok(ofSucceeded(
+                placeReviewService.getRefreshCandidates(placeId, maxAgeHours, includeRecent)));
     }
 
     @PostMapping("/complete-refresh")

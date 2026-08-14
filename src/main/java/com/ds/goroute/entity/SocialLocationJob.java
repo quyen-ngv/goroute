@@ -29,6 +29,13 @@ public class SocialLocationJob {
     private String resultPayload;
     private String errorCode;
     private String errorMessage;
+    private Integer attemptCount;
+    private LocalDateTime nextAttemptAt;
+    private LocalDateTime deadlineAt;
+    private LocalDateTime lastHeartbeatAt;
+    private LocalDateTime lastReconciledAt;
+    private String failureStage;
+    private String errorDetails;
     private LocalDateTime createdAt;
     private LocalDateTime startedAt;
     private LocalDateTime completedAt;

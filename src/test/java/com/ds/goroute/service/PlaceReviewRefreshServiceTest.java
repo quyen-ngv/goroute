@@ -21,11 +21,13 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -62,7 +64,7 @@ class PlaceReviewRefreshServiceTest {
     }
 
     @Test
-    void prepareDeletesOldReviewsAndManagedImagesBeforeScraping() {
+    void prepareOnlyValidatesAndPreservesOldReviewsAndImages() {
         PlaceReview old = PlaceReview.builder()
                 .profilePicture("https://onestudy.id.vn/resource/goroute/reviews/profile.webp")
                 .images("[\"https://onestudy.id.vn/resource/goroute/reviews/photo.webp\"]")
@@ -72,15 +74,18 @@ class PlaceReviewRefreshServiceTest {
 
         service.prepareRefresh(place.getId());
 
-        InOrder order = inOrder(reviewRepository, storageService, placeRepository);
-        order.verify(reviewRepository).deleteByPlaceId(place.getId());
-        order.verify(storageService).deleteFiles(anyList());
-        order.verify(placeRepository).updateReviewRefreshMetadata(place);
-        assertThat(place.getScoreSampleCount()).isZero();
+        verify(reviewRepository, never()).deleteByPlaceId(place.getId());
+        verify(storageService, never()).deleteFiles(anyList());
+        verify(placeRepository, never()).updateReviewRefreshMetadata(place);
     }
 
     @Test
     void scoresTwoHundredImageReviewsAndStoresOnlyThirtyCompressedReviews() {
+        PlaceReview old = PlaceReview.builder()
+                .profilePicture("https://onestudy.id.vn/resource/goroute/reviews/old-profile.webp")
+                .images("[\"https://onestudy.id.vn/resource/goroute/reviews/old-photo.webp\"]")
+                .build();
+        when(reviewRepository.findByPlaceId(place.getId())).thenReturn(List.of(old));
         List<ReviewInput> reviews = new ArrayList<>();
         for (int index = 0; index < 200; index++) {
             reviews.add(review(index));
@@ -111,6 +116,27 @@ class PlaceReviewRefreshServiceTest {
         assertThat(place.getScoreSource()).isEqualTo("SCRAPED_REVIEWS");
         assertThat(place.getLastScrapedAt()).isNotNull();
         verify(placeRepository).updateReviewRefreshMetadata(place);
+        InOrder replacementOrder = inOrder(reviewRepository, placeRepository, storageService);
+        replacementOrder.verify(reviewRepository).deleteByPlaceId(place.getId());
+        replacementOrder.verify(reviewRepository).insertBatch(anyList());
+        replacementOrder.verify(placeRepository).updateReviewRefreshMetadata(place);
+        replacementOrder.verify(storageService).deleteFiles(anyList());
+    }
+
+    @Test
+    void emptyScrapePreservesExistingReviews() {
+        when(reviewRepository.findByPlaceId(place.getId())).thenReturn(List.of(PlaceReview.builder().build()));
+
+        assertThatThrownBy(() -> service.completeRefresh(RefreshPlaceReviewsRequest.builder()
+                .placeId(place.getId())
+                .googlePlaceId(place.getPlaceId())
+                .scrapedAt(OffsetDateTime.now())
+                .reviews(List.of())
+                .build()))
+                .isInstanceOf(com.ds.goroute.exception.BusinessException.class);
+
+        verify(reviewRepository, never()).deleteByPlaceId(place.getId());
+        verify(storageService, never()).deleteFiles(anyList());
     }
 
     @Test

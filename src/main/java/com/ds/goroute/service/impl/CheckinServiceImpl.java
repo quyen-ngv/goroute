@@ -7,6 +7,7 @@ import com.ds.goroute.entity.Activity;
 import com.ds.goroute.entity.Checkin;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.entity.User;
+import com.ds.goroute.entity.TripMember;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.CheckinRepository;
@@ -15,12 +16,15 @@ import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.CheckinService;
 import com.ds.goroute.service.notification.NotificationHelper;
+import com.ds.goroute.type.MemberStatus;
+import com.ds.goroute.type.NotificationType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -55,7 +59,9 @@ public class CheckinServiceImpl implements CheckinService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
         
-        if (!trip.getOwnerId().equals(userId) && tripMemberRepository.findByTripIdAndUserId(tripId, userId).isEmpty()) {
+        TripMember member = tripMemberRepository.findByTripIdAndUserId(tripId, userId).orElse(null);
+        if (!trip.getOwnerId().equals(userId)
+                && (member == null || member.getStatus() != MemberStatus.ACCEPTED)) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
         }
 
@@ -67,6 +73,14 @@ public class CheckinServiceImpl implements CheckinService {
             checkin.setNotes(request.getNotes());
             checkinRepository.updateById(checkin);
             log.info("Checkin updated: {} - {}", activityId, userId);
+            notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.CHECKIN_UPDATED,
+                    Map.of(
+                            "actorName", notificationHelper.actorName(userId),
+                            "activityName", activity.getName(),
+                            "activityId", activityId,
+                            "tripName", trip.getName(),
+                            "deepLink", "/trip/" + tripId + "/activities/" + activityId
+                    ), null);
             return mapToCheckinResponse(checkin);
         }
 

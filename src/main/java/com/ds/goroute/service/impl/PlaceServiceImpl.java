@@ -30,6 +30,7 @@ import com.ds.goroute.service.PlaceReviewService;
 import com.ds.goroute.service.PlaceAttributeCatalog;
 import com.ds.goroute.service.PlaceSearchIndexService;
 import com.ds.goroute.service.PlaceService;
+import com.ds.goroute.service.PlaceSocialVideoService;
 import com.ds.goroute.service.PlaceTranslationService;
 import com.ds.goroute.service.ImageMigrationService;
 import com.ds.goroute.service.ImageStorageCleanupService;
@@ -70,6 +71,7 @@ public class PlaceServiceImpl implements PlaceService {
     private final PlaceSearchIndexService placeSearchIndexService;
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final PlaceTranslationService placeTranslationService;
+    private final PlaceSocialVideoService placeSocialVideoService;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -189,7 +191,9 @@ public class PlaceServiceImpl implements PlaceService {
     @Override
     public PlaceResponse getPlaceById(UUID id) {
         Place place = placeRepository.findById(id).orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND));
-        return toPlaceResponse(place);
+        PlaceResponse response = toPlaceResponse(place);
+        response.setSocialVideos(placeSocialVideoService.findByPlaceId(place.getId()));
+        return response;
     }
 
     @Override
@@ -198,7 +202,9 @@ public class PlaceServiceImpl implements PlaceService {
         if (place == null) {
             throw new BusinessException(ErrorConstant.PLACE_NOT_FOUND);
         }
-        return toPlaceResponse(place);
+        PlaceResponse response = toPlaceResponse(place);
+        response.setSocialVideos(placeSocialVideoService.findByPlaceId(place.getId()));
+        return response;
     }
 
     @Override

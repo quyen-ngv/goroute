@@ -27,6 +27,7 @@ import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.ExpenseCategory;
 import com.ds.goroute.type.MemberStatus;
+import com.ds.goroute.type.NotificationType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -38,6 +39,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -144,7 +146,9 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         log.info("Expense created: {} in trip: {}", expense.getId(), tripId);
 
-        notificationHelper.emitExpenseCreated(expense, userId);
+        notificationHelper.emitGeneric(tripId, userId, NotificationType.EXPENSE_ADDED,
+                expenseNotificationData(expense, trip, userId, "/trip/" + tripId + "/expenses/" + expense.getId()),
+                expenseRecipients(expense), null);
 
         return mapToExpenseResponse(expense);
     }
@@ -243,12 +247,17 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         validateTripAccess(tripId, userId);
 
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+        Set<UUID> recipients = expenseRecipients(expense);
         imageStorageCleanupService.deleteImagesForEntityRecord("EXPENSE", expenseId);
         expenseSplitRepository.deleteByExpenseId(expenseId);
         expenseRepository.deleteById(expenseId);
         log.info("Expense deleted: {}", expenseId);
 
-        notificationHelper.emitExpenseDeleted(expense, userId);
+        notificationHelper.emitGeneric(tripId, userId, NotificationType.EXPENSE_DELETED,
+                expenseNotificationData(expense, trip, userId, "/trip/" + tripId + "/expenses"),
+                recipients, null);
     }
 
     @Override
@@ -269,6 +278,7 @@ public class ExpenseServiceImpl implements ExpenseService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
         validateTripAccess(tripId, userId);
+        Set<UUID> affectedRecipients = expenseRecipients(expense);
 
         // Track if amount or currency changed
         boolean amountChanged = request.getAmount() != null && request.getAmount().compareTo(expense.getAmount()) != 0;
@@ -439,7 +449,10 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         log.info("ðŸŸ¢ Expense updated successfully: expenseId={}", expenseId);
 
-        notificationHelper.emitExpenseUpdated(expense, userId);
+        affectedRecipients.addAll(expenseRecipients(expense));
+        notificationHelper.emitGeneric(tripId, userId, NotificationType.EXPENSE_UPDATED,
+                expenseNotificationData(expense, trip, userId, "/trip/" + tripId + "/expenses/" + expenseId),
+                affectedRecipients, null);
 
         return mapToExpenseResponse(expense);
     }
@@ -448,6 +461,29 @@ public class ExpenseServiceImpl implements ExpenseService {
         return trip.getCurrency() != null && !trip.getCurrency().isBlank()
                 ? trip.getCurrency()
                 : "VND";
+    }
+
+    private Set<UUID> expenseRecipients(Expense expense) {
+        Set<UUID> recipients = expenseSplitRepository.findByExpenseId(expense.getId()).stream()
+                .map(ExpenseSplit::getUserId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+        if (expense.getPaidBy() != null && userRepository.findById(expense.getPaidBy()).isPresent()) {
+            recipients.add(expense.getPaidBy());
+        }
+        return recipients;
+    }
+
+    private Map<String, Object> expenseNotificationData(Expense expense, Trip trip, UUID actorId, String deepLink) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("actorName", notificationHelper.actorName(actorId));
+        data.put("expenseName", expense.getDescription());
+        data.put("amount", expense.getAmount());
+        data.put("currency", expense.getCurrency());
+        data.put("tripName", trip.getName());
+        data.put("expenseId", expense.getId());
+        data.put("deepLink", deepLink);
+        return data;
     }
 
     private void applyTripCurrencyConversion(Expense expense, Trip trip) {

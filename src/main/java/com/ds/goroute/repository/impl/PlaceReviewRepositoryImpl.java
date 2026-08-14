@@ -1,6 +1,7 @@
 package com.ds.goroute.repository.impl;
 
 import com.ds.goroute.entity.PlaceReview;
+import com.ds.goroute.dto.response.PlaceReviewRefreshCandidateResponse;
 import com.ds.goroute.mapper.PlaceReviewMapper;
 import com.ds.goroute.repository.PlaceReviewRepository;
 import com.ds.goroute.service.StorageService;
@@ -11,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -60,6 +62,12 @@ public class PlaceReviewRepositoryImpl implements PlaceReviewRepository {
     @Override
     public List<PlaceReview> findAll() {
         return placeReviewMapper.findAll();
+    }
+
+    @Override
+    public List<PlaceReviewRefreshCandidateResponse> findRefreshCandidates(
+            UUID placeId, LocalDateTime cutoff, boolean includeRecent) {
+        return placeReviewMapper.findRefreshCandidates(placeId, cutoff, includeRecent);
     }
 
     @Override

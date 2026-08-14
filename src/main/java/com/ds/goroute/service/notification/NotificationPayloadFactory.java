@@ -19,27 +19,66 @@ public class NotificationPayloadFactory {
         data.put("tripId", event.getTripId().toString());
 
         switch (event.getType()) {
-            case EXPENSE_ADDED -> putExpenseAdded(data, (ExpenseCreatedEvent) event);
-            case EXPENSE_UPDATED -> putExpenseUpdated(data, (ExpenseUpdatedEvent) event);
-            case EXPENSE_DELETED -> putExpenseDeleted(data, (ExpenseDeletedEvent) event);
-            case ACTIVITY_ADDED -> putActivity(data, (ActivityCreatedEvent) event);
-            case ACTIVITY_UPDATED -> putActivity(data, (ActivityUpdatedEvent) event);
-            case ACTIVITY_DELETED -> putActivity(data, (ActivityDeletedEvent) event);
-            case MEMBER_ADDED -> putMemberAdded(data, (MemberAddedEvent) event);
-            case MEMBER_ACCEPTED -> putMemberAccepted(data, (MemberAcceptedEvent) event);
-            case MEMBER_REMOVED -> putMemberRemoved(data, (MemberRemovedEvent) event);
-            case MEMBER_LEFT -> putMemberLeft(data, (MemberRemovedEvent) event);
-            case GUEST_LINKED -> putGuestLinked(data, (GuestLinkedEvent) event);
-            case TRIP_UPDATED -> putTrip(data, (TripUpdatedEvent) event);
-            case TRIP_DELETED -> putTrip(data, (TripDeletedEvent) event);
-            case PAYMENT_MARKED -> putPaymentMarked(data, (PaymentMarkedEvent) event);
-            case PAYMENT_ALL_MARKED -> putPaymentAllMarked(data, (PaymentAllMarkedEvent) event);
-            case PAYMENT_TRIP_MARKED -> putPaymentTripMarked(data, (PaymentTripMarkedEvent) event);
-            case CHECKIN -> putCheckin(data, (CheckinEvent) event);
-            case NOTE_ADDED -> putNote(data, (NoteCreatedEvent) event);
-            case NOTE_DELETED -> putNote(data, (NoteDeletedEvent) event);
-            case COMMENT_ADDED -> putComment(data, (CommentCreatedEvent) event);
-            case COMMENT_DELETED -> putComment(data, (CommentDeletedEvent) event);
+            case EXPENSE_ADDED -> {
+                if (event instanceof ExpenseCreatedEvent typed) putExpenseAdded(data, typed);
+            }
+            case EXPENSE_UPDATED -> {
+                if (event instanceof ExpenseUpdatedEvent typed) putExpenseUpdated(data, typed);
+            }
+            case EXPENSE_DELETED -> {
+                if (event instanceof ExpenseDeletedEvent typed) putExpenseDeleted(data, typed);
+            }
+            case ACTIVITY_ADDED -> {
+                if (event instanceof ActivityCreatedEvent typed) putActivity(data, typed);
+            }
+            case ACTIVITY_UPDATED -> {
+                if (event instanceof ActivityUpdatedEvent typed) putActivity(data, typed);
+            }
+            case ACTIVITY_DELETED -> {
+                if (event instanceof ActivityDeletedEvent typed) putActivity(data, typed);
+            }
+            case MEMBER_ADDED -> {
+                if (event instanceof MemberAddedEvent typed) putMemberAdded(data, typed);
+            }
+            case MEMBER_ACCEPTED -> {
+                if (event instanceof MemberAcceptedEvent typed) putMemberAccepted(data, typed);
+            }
+            case MEMBER_REMOVED, MEMBER_LEFT -> {
+                if (event instanceof MemberRemovedEvent typed) putMemberRemoved(data, typed);
+            }
+            case GUEST_LINKED -> {
+                if (event instanceof GuestLinkedEvent typed) putGuestLinked(data, typed);
+            }
+            case TRIP_UPDATED -> {
+                if (event instanceof TripUpdatedEvent typed) putTrip(data, typed);
+            }
+            case TRIP_DELETED -> {
+                if (event instanceof TripDeletedEvent typed) putTrip(data, typed);
+            }
+            case PAYMENT_MARKED -> {
+                if (event instanceof PaymentMarkedEvent typed) putPaymentMarked(data, typed);
+            }
+            case PAYMENT_ALL_MARKED -> {
+                if (event instanceof PaymentAllMarkedEvent typed) putPaymentAllMarked(data, typed);
+            }
+            case PAYMENT_TRIP_MARKED -> {
+                if (event instanceof PaymentTripMarkedEvent typed) putPaymentTripMarked(data, typed);
+            }
+            case CHECKIN -> {
+                if (event instanceof CheckinEvent typed) putCheckin(data, typed);
+            }
+            case NOTE_ADDED -> {
+                if (event instanceof NoteCreatedEvent typed) putNote(data, typed);
+            }
+            case NOTE_DELETED -> {
+                if (event instanceof NoteDeletedEvent typed) putNote(data, typed);
+            }
+            case COMMENT_ADDED -> {
+                if (event instanceof CommentCreatedEvent typed) putComment(data, typed);
+            }
+            case COMMENT_DELETED -> {
+                if (event instanceof CommentDeletedEvent typed) putComment(data, typed);
+            }
             default -> {
             }
         }

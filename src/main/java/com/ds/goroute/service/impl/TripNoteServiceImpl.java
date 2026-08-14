@@ -19,6 +19,7 @@ import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.TripNoteService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.MemberStatus;
+import com.ds.goroute.type.NotificationType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,6 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -108,7 +111,10 @@ public class TripNoteServiceImpl implements TripNoteService {
         tripNoteRepository.insert(note);
         log.info("Trip note created: {} for trip: {}", note.getId(), tripId);
 
-        notificationHelper.emitNoteCreated(tripId, activityId, userId);
+        if (Boolean.TRUE.equals(note.getIsShared())) {
+            notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.NOTE_ADDED,
+                    noteNotificationData(tripId, activityId, userId), null);
+        }
 
         return toTripNoteResponse(note);
     }
@@ -130,7 +136,10 @@ public class TripNoteServiceImpl implements TripNoteService {
         tripNoteRepository.softDelete(noteId);
         log.info("Trip note deleted: {}", noteId);
 
-        notificationHelper.emitNoteDeleted(tripId, note.getActivityId(), userId);
+        if (Boolean.TRUE.equals(note.getIsShared())) {
+            notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.NOTE_DELETED,
+                    noteNotificationData(tripId, note.getActivityId(), userId), null);
+        }
     }
 
     private void verifyTripMember(UUID tripId, UUID userId) {
@@ -186,6 +195,7 @@ public class TripNoteServiceImpl implements TripNoteService {
             throw new BusinessException(ErrorConstant.FORBIDDEN, "You can only update your own notes");
         }
 
+        boolean wasShared = Boolean.TRUE.equals(note.getIsShared());
         note.setContent(request.getContent());
         if (request.getIsShared() != null) {
             note.setIsShared(request.getIsShared());
@@ -195,6 +205,32 @@ public class TripNoteServiceImpl implements TripNoteService {
         tripNoteRepository.updateById(note);
         log.info("Trip note updated: {}", noteId);
 
+        boolean isShared = Boolean.TRUE.equals(note.getIsShared());
+        if (wasShared || isShared) {
+            NotificationType type = !wasShared ? NotificationType.NOTE_ADDED
+                    : !isShared ? NotificationType.NOTE_DELETED
+                    : NotificationType.NOTE_UPDATED;
+            notificationHelper.emitGenericToMembers(tripId, userId, type,
+                    noteNotificationData(tripId, note.getActivityId(), userId), null);
+        }
+
         return toTripNoteResponse(note);
+    }
+
+    private Map<String, Object> noteNotificationData(UUID tripId, UUID activityId, UUID actorId) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("actorName", notificationHelper.actorName(actorId));
+        data.put("tripName", notificationHelper.tripName(tripId));
+        if (activityId != null) {
+            activityRepository.findById(activityId).ifPresent(activity -> {
+                data.put("activityName", activity.getName());
+                data.put("activityId", activityId);
+            });
+            data.put("deepLink", "/trip/" + tripId + "/activities/" + activityId + "/notes");
+        } else {
+            data.put("activityName", notificationHelper.tripName(tripId));
+            data.put("deepLink", "/trip/" + tripId + "/notes");
+        }
+        return data;
     }
 }

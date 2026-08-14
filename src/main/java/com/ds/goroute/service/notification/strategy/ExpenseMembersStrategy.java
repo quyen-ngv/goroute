@@ -21,9 +21,13 @@ import java.util.stream.Collectors;
 public class ExpenseMembersStrategy implements NotificationStrategy {
     
     private final ExpenseSplitRepository expenseSplitRepository;
+    private final DirectRecipientsStrategy directRecipientsStrategy;
     
     @Override
     public List<UUID> getRecipients(TripEvent event) {
+        if (event.getMetadata() != null && event.getMetadata().containsKey("recipientIds")) {
+            return directRecipientsStrategy.getRecipients(event);
+        }
         UUID expenseId = (UUID) event.getMetadata().get("expenseId");
         if (expenseId == null) {
             log.warn("ExpenseId not found in event metadata");

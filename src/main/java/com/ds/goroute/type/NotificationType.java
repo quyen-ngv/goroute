@@ -12,11 +12,19 @@ public enum NotificationType {
     
     // Member events
     TRIP_INVITE,
+    TRIP_INVITE_DECLINED,
+    TRIP_INVITE_CANCELLED,
     MEMBER_ADDED,
+    MEMBER_INVITED,
+    MEMBER_JOIN_REQUESTED,
+    MEMBER_ACCESS_GRANTED,
+    MEMBER_JOIN_REJECTED,
     MEMBER_JOINED,
     MEMBER_ACCEPTED,
     MEMBER_REMOVED,
     MEMBER_LEFT,
+    MEMBER_ROLE_UPDATED,
+    GUEST_UPDATED,
     GUEST_LINKED,
     
     // Expense events
@@ -31,10 +39,19 @@ public enum NotificationType {
     
     // Check-in events
     CHECKIN,
+    CHECKIN_UPDATED,
     
     // Note events
     NOTE_ADDED,
+    NOTE_UPDATED,
     NOTE_DELETED,
+
+    // Trip memory events
+    MEMORY_ADDED,
+    MEMORY_DELETED,
+
+    // Travel book events
+    TRIP_BOOK_UPDATED,
     
     // Comment events
     COMMENT_ADDED,
@@ -43,6 +60,7 @@ public enum NotificationType {
     // Other
     ROUTE_OPTIMIZED,
     TRIP_REMINDER,
+    TRIP_CLONED,
 
     // Scheduled itinerary notifications
     TRIP_STARTS_IN_ONE_WEEK,
@@ -56,6 +74,9 @@ public enum NotificationType {
     ITINERARY_ITEM_COMPLETED,
     TRIP_ENDED,
     TRIP_SUMMARY,
+
+    // Social place extraction
+    SOCIAL_PLACES_EXTRACTED,
     
     // Admin notifications
     ADMIN_ANNOUNCEMENT,

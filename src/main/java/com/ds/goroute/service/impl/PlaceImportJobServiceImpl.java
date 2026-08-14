@@ -20,6 +20,7 @@ import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.PlaceImportJobService;
+import com.ds.goroute.service.PlaceSocialVideoService;
 import com.ds.goroute.thirdparty.scrape.ScrapeJobStatusResponse;
 import com.ds.goroute.thirdparty.scrape.ScrapeJobTriggerResponse;
 import com.ds.goroute.thirdparty.scrape.ScrapePlaceImportJobRequest;
@@ -66,6 +67,7 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
     private final UserRepository userRepository;
     private final ScrapeServiceClient scrapeServiceClient;
     private final ObjectMapper objectMapper;
+    private final PlaceSocialVideoService placeSocialVideoService;
 
     @Resource(name = "placeImportJobExecutor")
     private Executor placeImportJobExecutor;
@@ -343,6 +345,7 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
                 item.setUpdatedAt(LocalDateTime.now());
                 jobMapper.updateItem(item);
                 applyManualActivityMapping(job, item, existingPlace);
+                syncSocialVideoLink(job, candidate);
                 return;
             }
 
@@ -358,7 +361,7 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
                                     ? DEFAULT_MAX_REVIEWS
                                     : job.getMaxReviews())
                             .maxScrolls(100)
-                            .includeReviews(job.getSourceType() != PlaceImportSourceType.SOCIAL_LOCATION)
+                            .includeReviews(true)
                             .headless(true)
                             .visibilityStatus("INACTIVE")
                             .importConfig(ScrapePlaceImportJobRequest.ImportConfig.builder()
@@ -401,6 +404,7 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
             Place importedPlace = placeRepository.findById(importedPlaceId)
                     .orElseThrow(() -> new IllegalArgumentException("Imported place not found"));
             applyManualActivityMapping(job, item, importedPlace);
+            syncSocialVideoLink(job, candidate);
         } catch (Exception e) {
             log.warn("Place import item failed: job={} item={} error={}", job.getId(), item.getId(), e.getMessage());
             failItem(item, e.getMessage());
@@ -408,11 +412,13 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
     }
 
     private List<Candidate> collectSocialCandidates(UUID userId, CreateSocialPlaceImportJobRequest request) {
-        int limit = safeLimit(request.getLimit(), 50, 100);
-        List<SocialLocationJob> socialJobs = socialLocationJobMapper.findCompletedByUserId(
-                userId,
-                request.getSocialJobIds(),
-                Math.max(limit, 20));
+        Integer limit = request.getLimit() == null ? null : Math.max(request.getLimit(), 1);
+        List<SocialLocationJob> socialJobs = request.getSocialJobIds() == null || request.getSocialJobIds().isEmpty()
+                ? socialLocationJobMapper.findAllCompletedByUserId(userId)
+                : socialLocationJobMapper.findCompletedByUserId(
+                        userId,
+                        request.getSocialJobIds(),
+                        Math.max(request.getSocialJobIds().size(), 1));
         List<Candidate> candidates = new ArrayList<>();
         for (SocialLocationJob socialJob : socialJobs) {
             JsonNode root = readJson(socialJob.getResultPayload());
@@ -433,7 +439,7 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
                         continue;
                     }
                     candidates.add(candidate);
-                    if (candidates.size() >= limit) {
+                    if (limit != null && candidates.size() >= limit) {
                         return candidates;
                     }
                 }
@@ -728,6 +734,22 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
         item.setApprovedAt(LocalDateTime.now());
         item.setUpdatedAt(LocalDateTime.now());
         jobMapper.updateItem(item);
+    }
+
+    private void syncSocialVideoLink(PlaceImportJob job, Candidate candidate) {
+        if (job.getSourceType() != PlaceImportSourceType.SOCIAL_LOCATION || candidate.sourceRefId == null) {
+            return;
+        }
+        SocialLocationJob socialJob = socialLocationJobMapper.findById(candidate.sourceRefId);
+        if (socialJob == null) {
+            return;
+        }
+        try {
+            placeSocialVideoService.syncSocialJob(socialJob);
+        } catch (Exception e) {
+            log.warn("Could not link social video {} after place import: {}",
+                    candidate.sourceRefId, e.getMessage());
+        }
     }
 
     private void failBeforeProcessing(UUID jobId, Exception e) {

@@ -30,6 +30,24 @@
         <result property="updatedAt" column="updated_at"/>
     </resultMap>
 
+    <resultMap id="PlaceReviewRefreshCandidateResultMap"
+               type="com.ds.goroute.dto.response.PlaceReviewRefreshCandidateResponse">
+        <id property="id" column="id"/>
+        <result property="placeId" column="place_id"/>
+        <result property="title" column="title"/>
+        <result property="googleMapsLink" column="google_maps_link"/>
+        <result property="visibilityStatus" column="visibility_status"/>
+        <result property="scoreSampleCount" column="score_sample_count"/>
+        <result property="scoreCalculatedAt" column="score_calculated_at"/>
+        <result property="lastScrapedAt" column="last_scraped_at"/>
+        <result property="storedReviewCount" column="stored_review_count"/>
+        <result property="imageReviewCount" column="image_review_count"/>
+        <result property="managedImageReviewCount" column="managed_image_review_count"/>
+        <result property="externalImageReviewCount" column="external_image_review_count"/>
+        <result property="googleImageReviewCount" column="google_image_review_count"/>
+        <result property="recalculationNeededCount" column="recalculation_needed_count"/>
+    </resultMap>
+
     <insert id="insert" parameterType="com.ds.goroute.entity.PlaceReview">
         INSERT INTO place_reviews (
             id, place_id, review_id, google_place_id,
@@ -215,6 +233,85 @@
     <select id="findAll" resultMap="PlaceReviewResultMap">
         SELECT * FROM place_reviews
         ORDER BY created_at DESC
+    </select>
+
+    <select id="findRefreshCandidates" resultMap="PlaceReviewRefreshCandidateResultMap">
+        WITH review_stats AS (
+            SELECT
+                place_id,
+                COUNT(*) FILTER (
+                    WHERE is_deleted IS NULL OR is_deleted = false
+                ) AS stored_review_count,
+                COUNT(*) FILTER (
+                    WHERE (is_deleted IS NULL OR is_deleted = false)
+                      AND COALESCE(images, '') ~* 'https?://'
+                ) AS image_review_count,
+                COUNT(*) FILTER (
+                    WHERE (is_deleted IS NULL OR is_deleted = false)
+                      AND COALESCE(images, '') ~* 'onestudy\.id\.vn'
+                ) AS managed_image_review_count,
+                COUNT(*) FILTER (
+                    WHERE (is_deleted IS NULL OR is_deleted = false)
+                      AND REGEXP_REPLACE(
+                          COALESCE(images, ''),
+                          'https?://[^" ]*onestudy\.id\.vn[^" ]*',
+                          '',
+                          'gi'
+                      ) ~* 'https?://'
+                ) AS external_image_review_count,
+                COUNT(*) FILTER (
+                    WHERE (is_deleted IS NULL OR is_deleted = false)
+                      AND COALESCE(images, '') ~* '(googleusercontent\.com|ggpht\.com)'
+                ) AS google_image_review_count,
+                COUNT(*) FILTER (
+                    WHERE (is_deleted IS NULL OR is_deleted = false)
+                      AND (authenticity_score IS NULL OR score_calculated_at IS NULL)
+                ) AS recalculation_needed_count
+            FROM place_reviews
+            GROUP BY place_id
+        )
+        SELECT
+            p.id,
+            p.place_id,
+            p.title,
+            p.google_maps_link,
+            p.visibility_status,
+            p.score_sample_count,
+            p.score_calculated_at,
+            p.last_scraped_at,
+            COALESCE(rs.stored_review_count, 0) AS stored_review_count,
+            COALESCE(rs.image_review_count, 0) AS image_review_count,
+            COALESCE(rs.managed_image_review_count, 0) AS managed_image_review_count,
+            COALESCE(rs.external_image_review_count, 0) AS external_image_review_count,
+            COALESCE(rs.google_image_review_count, 0) AS google_image_review_count,
+            COALESCE(rs.recalculation_needed_count, 0) AS recalculation_needed_count
+        FROM places p
+        LEFT JOIN review_stats rs ON rs.place_id = p.id
+        WHERE p.visibility_status = 'ACTIVE'
+          AND p.google_maps_link IS NOT NULL
+          AND BTRIM(p.google_maps_link) != ''
+          <if test="placeId != null">
+              AND p.id = #{placeId}
+          </if>
+          AND (
+              COALESCE(rs.stored_review_count, 0) = 0
+              OR COALESCE(rs.image_review_count, 0) = 0
+              OR COALESCE(rs.external_image_review_count, 0) &gt; 0
+          )
+          <if test="placeId == null and !includeRecent">
+              AND (
+                  COALESCE(rs.external_image_review_count, 0) &gt; 0
+                  OR p.last_scraped_at IS NULL
+                  OR p.last_scraped_at &lt;= #{cutoff}
+              )
+          </if>
+        ORDER BY
+            COALESCE(rs.google_image_review_count, 0) DESC,
+            COALESCE(rs.recalculation_needed_count, 0) DESC,
+            COALESCE(rs.external_image_review_count, 0) DESC,
+            COALESCE(p.score_sample_count, 0) ASC,
+            p.last_scraped_at ASC NULLS FIRST,
+            p.created_at ASC
     </select>
 
     <select id="findByReviewId" resultMap="PlaceReviewResultMap">

@@ -11,6 +11,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.Map;
 import java.util.UUID;
 
@@ -33,6 +34,17 @@ public class NotificationHelper {
         return metadata;
     }
 
+    public String actorName(UUID userId) {
+        return userRepository.findById(userId)
+                .map(user -> user.getFullName() != null && !user.getFullName().isBlank()
+                        ? user.getFullName() : user.getUsername())
+                .orElse("Someone");
+    }
+
+    public String tripName(UUID tripId) {
+        return tripRepository.findById(tripId).map(Trip::getName).orElse("Trip");
+    }
+
     private void dispatchAfterCommit(TripEvent event) {
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -45,6 +57,37 @@ public class NotificationHelper {
         }
 
         notificationDispatcher.dispatch(event);
+    }
+
+    public void emitGeneric(UUID tripId, UUID actorId, NotificationType type,
+                            Map<String, Object> data, Collection<UUID> recipientIds,
+                            Collection<UUID> excludedRecipientIds) {
+        try {
+            Map<String, Object> metadata = new java.util.HashMap<>();
+            if (data != null) {
+                metadata.putAll(data);
+            }
+            metadata.put("tripId", tripId.toString());
+            if (recipientIds != null) {
+                metadata.put("recipientIds", recipientIds.stream().filter(java.util.Objects::nonNull).distinct().toList());
+            }
+            if (excludedRecipientIds != null) {
+                metadata.put("excludedRecipientIds", excludedRecipientIds.stream().filter(java.util.Objects::nonNull).distinct().toList());
+            }
+            dispatchAfterCommit(GenericTripEvent.builder()
+                    .tripId(tripId)
+                    .actorId(actorId)
+                    .type(type)
+                    .metadata(metadata)
+                    .build());
+        } catch (Exception e) {
+            log.error("Failed to emit {}: {}", type, e.getMessage(), e);
+        }
+    }
+
+    public void emitGenericToMembers(UUID tripId, UUID actorId, NotificationType type,
+                                     Map<String, Object> data, Collection<UUID> excludedRecipientIds) {
+        emitGeneric(tripId, actorId, type, data, null, excludedRecipientIds);
     }
 
     public void emitTripUpdated(Trip trip, UUID actorId) {

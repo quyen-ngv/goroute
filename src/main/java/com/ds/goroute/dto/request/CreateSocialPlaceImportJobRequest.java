@@ -28,7 +28,5 @@ public class CreateSocialPlaceImportJobRequest {
     private Integer maxReviews = 5;
 
     @Min(1)
-    @Max(100)
-    @Builder.Default
-    private Integer limit = 50;
+    private Integer limit;
 }

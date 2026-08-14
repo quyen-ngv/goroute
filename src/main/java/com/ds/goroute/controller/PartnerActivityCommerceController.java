@@ -108,6 +108,12 @@ public class PartnerActivityCommerceController {
         return ResponseEntity.status(HttpStatus.CREATED).body(BaseResponse.ofSucceeded(service.partnerCreateSlot(user(authentication), id, request)));
     }
 
+    @PostMapping("/packages/{id}/slots/bulk")
+    public ResponseEntity<BaseResponse<List<ActivitySlotResponse>>> createSlots(Authentication authentication, @PathVariable UUID id,
+                                                                                 @Valid @RequestBody BulkCreateActivitySlotsRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(BaseResponse.ofSucceeded(service.partnerCreateSlots(user(authentication), id, request)));
+    }
+
     @PutMapping("/slots/{id}")
     public ResponseEntity<BaseResponse<ActivitySlotResponse>> updateSlot(Authentication authentication, @PathVariable UUID id,
                                                                           @Valid @RequestBody UpsertActivitySlotRequest request) {

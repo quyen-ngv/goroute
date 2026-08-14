@@ -5,6 +5,7 @@ public enum SocialLocationJobStatus {
     DISPATCHING,
     PROCESSING,
     COMPLETED,
+    TIMED_OUT,
     REJECTED_DURATION,
     REJECTED_TOPIC,
     FAILED,

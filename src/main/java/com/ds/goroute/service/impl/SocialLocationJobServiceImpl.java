@@ -5,14 +5,18 @@ import com.ds.goroute.dto.request.SocialLocationJobCallbackRequest;
 import com.ds.goroute.dto.request.CreateSocialPlaceImportJobRequest;
 import com.ds.goroute.dto.response.SocialLocationJobResponse;
 import com.ds.goroute.entity.SocialLocationJob;
+import com.ds.goroute.entity.AiApiCall;
 import com.ds.goroute.entity.PlaceImportJobItem;
+import com.ds.goroute.mapper.AiApiCallMapper;
 import com.ds.goroute.mapper.PlaceImportJobMapper;
 import com.ds.goroute.mapper.PlaceMapper;
 import com.ds.goroute.mapper.SocialLocationJobMapper;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.service.SocialLocationJobService;
 import com.ds.goroute.service.PlaceImportJobService;
+import com.ds.goroute.service.PlaceSocialVideoService;
 import com.ds.goroute.service.SocialLocationConfigService;
+import com.ds.goroute.service.NotificationService;
 import com.ds.goroute.repository.AiTripRepository;
 import com.ds.goroute.repository.SocialLocationRestrictionRepository;
 import com.ds.goroute.entity.SocialLocationSubmissionEvent;
@@ -25,8 +29,10 @@ import com.ds.goroute.thirdparty.scrape.ScrapeSocialLocationJobRequest;
 import com.ds.goroute.thirdparty.scrape.ScrapeSocialLocationJobResponse;
 import com.ds.goroute.type.SocialLocationJobStatus;
 import com.ds.goroute.type.PlaceImportJobItemStatus;
+import com.ds.goroute.type.NotificationType;
 import com.ds.goroute.util.SocialLocationSourceKey;
 import com.ds.goroute.util.PlaceImportCandidateKey;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -38,6 +44,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -51,18 +58,38 @@ import java.util.Locale;
 @Slf4j
 public class SocialLocationJobServiceImpl implements SocialLocationJobService {
 
+    private static final String CURRENT_CANDIDATE_POLICY = "AI_EVIDENCE_JUDGE_V2";
+
     private final SocialLocationJobMapper jobMapper;
+    private final AiApiCallMapper aiApiCallMapper;
     private final PlaceImportJobMapper placeImportJobMapper;
     private final PlaceMapper placeMapper;
     private final ScrapeServiceClient scrapeServiceClient;
     private final ObjectMapper objectMapper;
     private final PlaceImportJobService placeImportJobService;
+    private final PlaceSocialVideoService placeSocialVideoService;
     private final SocialLocationConfigService socialConfig;
     private final AiTripRepository aiTripRepository;
     private final SocialLocationRestrictionRepository restrictionRepository;
+    private final NotificationService notificationService;
 
     @Value("${goroute.internal.public-base-url:http://goroute-app:8080}")
     private String internalBaseUrl;
+
+    @Value("${scrape.service.callback-token:}")
+    private String callbackToken;
+
+    @Value("${social-location.dispatch-timeout-seconds:90}")
+    private long dispatchTimeoutSeconds;
+
+    @Value("${social-location.job-timeout-minutes:15}")
+    private long jobTimeoutMinutes;
+
+    @Value("${social-location.reconcile-interval-seconds:20}")
+    private long reconcileIntervalSeconds;
+
+    @Value("${social-location.max-attempts:2}")
+    private int maxAttempts;
 
     @Override
     @Transactional
@@ -78,11 +105,20 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         }
         String sourceKey = SocialLocationSourceKey.fromUrl(sourceUrl);
         SocialLocationJob reusableJob = jobMapper.findReusableByUserIdAndSourceKey(userId, sourceKey);
+        SocialLocationJob stalePolicyJob = null;
+        if (reusableJob != null
+                && reusableJob.getStatus() == SocialLocationJobStatus.COMPLETED
+                && !usesCurrentCandidatePolicy(reusableJob)) {
+            stalePolicyJob = reusableJob;
+            reusableJob = null;
+        }
         if (reusableJob != null) {
             return toResponse(reusableJob);
         }
 
-        if (jobMapper.countCreatedByUserSince(userId, LocalDate.now().atStartOfDay()) >= socialConfig.dailyJobLimit()) {
+        if (stalePolicyJob == null
+                && jobMapper.countCreatedByUserSince(userId, LocalDate.now().atStartOfDay())
+                >= socialConfig.dailyJobLimit()) {
             audit(userId, null, sourceUrl, "REJECTED_DAILY_LIMIT", "DAILY_LIMIT_REACHED", null);
             throw new BusinessException(ErrorConstant.SOCIAL_LOCATION_DAILY_LIMIT_REACHED,
                     Map.of("dailyLimit", socialConfig.dailyJobLimit()));
@@ -107,10 +143,18 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 .language(cleanLanguage(request.getLanguage()))
                 .userTier(userTier)
                 .maxDurationSeconds(maxDurationSeconds)
+                .attemptCount(0)
                 .requestPayload(toJson(request))
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
+        if (stalePolicyJob != null) {
+            if (jobMapper.markDeletedByIdAndUserId(stalePolicyJob.getId(), userId) == 0) {
+                throw new IllegalStateException("Could not invalidate stale social-location result");
+            }
+            audit(userId, stalePolicyJob.getId(), sourceUrl, "STALE_RESULT_INVALIDATED",
+                    "CANDIDATE_POLICY_CHANGED", Map.of("requiredPolicy", CURRENT_CANDIDATE_POLICY));
+        }
         try {
             jobMapper.insert(job);
         } catch (DataIntegrityViolationException duplicate) {
@@ -121,7 +165,8 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
             throw duplicate;
         }
         audit(userId, job.getId(), sourceUrl, "SUBMITTED", null,
-                Map.of("tier", userTier, "maxDurationSeconds", maxDurationSeconds));
+                Map.of("tier", userTier,
+                        "maxDurationSeconds", maxDurationSeconds));
         return toResponse(job);
     }
 
@@ -129,6 +174,8 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     @Transactional
     public void dispatchQueuedJobs() {
         if (!jobMapper.tryDispatchLock()) return;
+        recoverStaleDispatches();
+        reconcileProcessingJobs();
         int available = socialConfig.maxConcurrentJobs() - jobMapper.countActive();
         if (available <= 0) return;
         for (SocialLocationJob job : jobMapper.claimQueued(available)) {
@@ -144,6 +191,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                         .url(job.getSourceUrl())
                         .language(job.getLanguage())
                         .callbackUrl(callbackUrl())
+                        .callbackToken(callbackToken)
                         .gorouteJobId(job.getId())
                         .maxDurationSeconds(job.getMaxDurationSeconds())
                         .maxAudioSeconds(job.getMaxDurationSeconds())
@@ -151,7 +199,6 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                         .frameIntervalSeconds(interval)
                         .imageMaxWidth(socialConfig.imageMaxWidth())
                         .imageJpegQuality(socialConfig.imageJpegQuality())
-                        .maxCandidates(1)
                         .aiProvider(socialConfig.aiProvider())
                         .aiModel(socialConfig.aiModel())
                         .aiBaseUrl(socialConfig.aiBaseUrl())
@@ -161,19 +208,157 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                         .build());
 
         if (trigger == null || trigger.getJobId() == null || trigger.getJobId().isBlank()) {
-            job.setStatus(SocialLocationJobStatus.FAILED);
-            job.setErrorCode("PYTHON_TRIGGER_FAILED");
-            job.setErrorMessage("Python social-location job trigger failed");
-            job.setCompletedAt(LocalDateTime.now());
+            retryOrFinish(job, "DISPATCH", "PYTHON_TRIGGER_FAILED",
+                    "Could not submit the job to the social-location worker");
         } else {
             SocialLocationJob latest = jobMapper.findById(job.getId());
             if (latest != null && isTerminal(latest.getStatus())) return;
             job.setStatus(SocialLocationJobStatus.PROCESSING);
             job.setPythonJobId(trigger.getJobId());
-            job.setStartedAt(LocalDateTime.now());
+            LocalDateTime now = LocalDateTime.now();
+            job.setStartedAt(now);
+            job.setDeadlineAt(now.plusMinutes(Math.max(1, jobTimeoutMinutes)));
+            job.setLastHeartbeatAt(now);
+            job.setLastReconciledAt(now);
+            job.setErrorCode(null);
+            job.setErrorMessage(null);
+            job.setErrorDetails(null);
+            job.setFailureStage(null);
         }
         job.setUpdatedAt(LocalDateTime.now());
         jobMapper.update(job);
+        if (job.getStatus() == SocialLocationJobStatus.QUEUED || isTerminal(job.getStatus())) {
+            auditLifecycleRecovery(job);
+        }
+    }
+
+    private void recoverStaleDispatches() {
+        LocalDateTime cutoff = LocalDateTime.now().minusSeconds(Math.max(15, dispatchTimeoutSeconds));
+        for (SocialLocationJob job : jobMapper.findStaleDispatching(cutoff, 25)) {
+            retryOrFinish(job, "DISPATCH", "DISPATCH_TIMEOUT",
+                    "The social-location worker did not acknowledge the job in time");
+            if (jobMapper.updateIfStatus(job, "DISPATCHING") == 0) continue;
+            auditLifecycleRecovery(job);
+            log.warn("Recovered stale social-location dispatch: job_id={} attempt={} status={}",
+                    job.getId(), job.getAttemptCount(), job.getStatus());
+        }
+    }
+
+    private void reconcileProcessingJobs() {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime reconcileBefore = now.minusSeconds(Math.max(5, reconcileIntervalSeconds));
+        for (SocialLocationJob candidate : jobMapper.findProcessingForReconciliation(reconcileBefore, 25)) {
+            Map<String, Object> workerJob = candidate.getPythonJobId() == null
+                    ? null
+                    : scrapeServiceClient.pollJobData(candidate.getPythonJobId());
+            if (applyWorkerTerminalResult(candidate, workerJob)) {
+                continue;
+            }
+
+            SocialLocationJob latest = jobMapper.findById(candidate.getId());
+            if (latest == null || latest.getStatus() != SocialLocationJobStatus.PROCESSING) {
+                continue;
+            }
+            latest.setLastReconciledAt(now);
+            if (workerJob != null) {
+                latest.setLastHeartbeatAt(now);
+            }
+            if (latest.getDeadlineAt() != null && !latest.getDeadlineAt().isAfter(now)) {
+                retryOrFinish(latest, "PROCESSING", "WORKER_TIMEOUT",
+                        workerJob == null
+                                ? "The social-location worker no longer reports this job"
+                                : "The social-location job exceeded its processing deadline");
+            } else {
+                latest.setUpdatedAt(now);
+            }
+            if (jobMapper.updateIfStatus(latest, "PROCESSING") > 0
+                    && (latest.getStatus() == SocialLocationJobStatus.QUEUED
+                    || isTerminal(latest.getStatus()))) {
+                auditLifecycleRecovery(latest);
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean applyWorkerTerminalResult(SocialLocationJob job, Map<String, Object> workerJob) {
+        if (workerJob == null) return false;
+        String workerStatus = String.valueOf(workerJob.getOrDefault("status", "")).trim().toLowerCase(Locale.ROOT);
+        if (!List.of("completed", "failed", "cancelled").contains(workerStatus)) return false;
+
+        Map<String, Object> wrapper = workerJob.get("result") instanceof Map<?, ?> value
+                ? (Map<String, Object>) value : Map.of();
+        Object extractionValue = wrapper.get("extraction");
+        JsonNode extraction = extractionValue == null ? null : objectMapper.valueToTree(extractionValue);
+        if (extraction == null && wrapper.containsKey("success")) {
+            extraction = objectMapper.valueToTree(wrapper);
+        }
+
+        String status = "FAILED";
+        JsonNode error = workerJob.get("error") == null ? null : objectMapper.valueToTree(workerJob.get("error"));
+        if (extraction != null && extraction.isObject()) {
+            String rejectedStatus = extraction.path("rejectedStatus").asText("");
+            if (!rejectedStatus.isBlank()) {
+                status = rejectedStatus;
+            } else if (extraction.path("success").asBoolean(false)) {
+                status = "COMPLETED";
+            }
+            if (error == null && extraction.hasNonNull("error")) {
+                error = normalizeError(extraction.get("error"), "EXTRACTION_FAILED");
+            }
+        }
+        if ("cancelled".equals(workerStatus)) {
+            error = errorNode("WORKER_CANCELLED", "The social-location worker cancelled the job");
+        } else if (error == null && "FAILED".equals(status)) {
+            error = errorNode("WORKER_FAILED", "The social-location worker failed without an error payload");
+        }
+
+        handleCallback(SocialLocationJobCallbackRequest.builder()
+                .gorouteJobId(job.getId())
+                .pythonJobId(job.getPythonJobId())
+                .status(status)
+                .result(extraction)
+                .error(error)
+                .build());
+        log.info("Reconciled social-location job from worker poll: job_id={} worker_status={} status={}",
+                job.getId(), workerStatus, status);
+        return true;
+    }
+
+    private void retryOrFinish(SocialLocationJob job, String stage, String code, String message) {
+        LocalDateTime now = LocalDateTime.now();
+        int attempt = job.getAttemptCount() == null ? 0 : job.getAttemptCount();
+        job.setFailureStage(stage);
+        job.setErrorCode(code);
+        job.setErrorMessage(message);
+        job.setErrorDetails(toJson(Map.of("stage", stage, "attempt", attempt, "maxAttempts", maxAttempts)));
+        job.setPythonJobId(null);
+        job.setDeadlineAt(null);
+        job.setLastHeartbeatAt(null);
+        job.setLastReconciledAt(now);
+        if (attempt < Math.max(1, maxAttempts)) {
+            job.setStatus(SocialLocationJobStatus.QUEUED);
+            job.setNextAttemptAt(now.plusSeconds(Math.max(5, 15L * Math.max(1, attempt))));
+            job.setStartedAt(null);
+            job.setCompletedAt(null);
+        } else if ("PROCESSING".equals(stage)) {
+            job.setStatus(SocialLocationJobStatus.TIMED_OUT);
+            job.setNextAttemptAt(null);
+            job.setCompletedAt(now);
+        } else {
+            job.setStatus(SocialLocationJobStatus.FAILED);
+            job.setNextAttemptAt(null);
+            job.setCompletedAt(now);
+        }
+        job.setUpdatedAt(now);
+    }
+
+    private void auditLifecycleRecovery(SocialLocationJob job) {
+        audit(job.getUserId(), job.getId(), job.getSourceUrl(),
+                job.getStatus() == SocialLocationJobStatus.QUEUED ? "JOB_RETRY_SCHEDULED" : "JOB_TERMINATED",
+                job.getErrorCode(), Map.of(
+                        "stage", job.getFailureStage() == null ? "UNKNOWN" : job.getFailureStage(),
+                        "attempt", job.getAttemptCount() == null ? 0 : job.getAttemptCount(),
+                        "status", job.getStatus().name()));
     }
 
     @Override
@@ -233,22 +418,38 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         job.setPythonJobId(firstNonBlank(request.getPythonJobId(), job.getPythonJobId()));
         job.setSourceUrl(firstNonBlank(request.getSourceUrl(), job.getSourceUrl()));
         job.setPlatform(firstNonBlank(request.getPlatform(), job.getPlatform()));
-        job.setResultPayload(request.getResult() != null && !request.getResult().isNull()
-                ? request.getResult().toString()
+        JsonNode callbackResult = retainOnlyCertainCandidates(
+                attachExistingDatabasePlaces(request.getResult()));
+        request.setResult(callbackResult);
+        job.setResultPayload(callbackResult != null && !callbackResult.isNull()
+                ? callbackResult.toString()
                 : job.getResultPayload());
-        JsonNode duration = request.getResult() == null ? null : request.getResult().path("metadata").get("duration");
+        JsonNode duration = callbackResult == null ? null : callbackResult.path("metadata").get("duration");
         if (duration != null && duration.canConvertToInt()) {
             job.setVideoDurationSeconds(duration.asInt());
         }
         applyError(job, request.getError());
+        job.setLastHeartbeatAt(LocalDateTime.now());
+        job.setLastReconciledAt(LocalDateTime.now());
+        job.setFailureStage(status == SocialLocationJobStatus.FAILED ? "PROCESSING" : null);
+        job.setErrorDetails(request.getError() == null || request.getError().isNull()
+                ? null : request.getError().toString());
         if (status == SocialLocationJobStatus.COMPLETED
                 || status == SocialLocationJobStatus.FAILED
+                || status == SocialLocationJobStatus.TIMED_OUT
                 || status == SocialLocationJobStatus.REJECTED_DURATION
                 || status == SocialLocationJobStatus.REJECTED_TOPIC) {
             job.setCompletedAt(LocalDateTime.now());
         }
         job.setUpdatedAt(LocalDateTime.now());
         jobMapper.update(job);
+        try {
+            placeSocialVideoService.syncSocialJob(job);
+        } catch (Exception e) {
+            log.warn("Could not link resolved places to social video for job {}: {}",
+                    job.getId(), e.getMessage());
+        }
+        recordAiApiCall(job, request, status);
         if (status == SocialLocationJobStatus.REJECTED_TOPIC) {
             recordTopicViolation(job, request.getError());
         } else if (status == SocialLocationJobStatus.REJECTED_DURATION) {
@@ -262,17 +463,61 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                         job.getUserId(),
                         CreateSocialPlaceImportJobRequest.builder()
                                 .socialJobIds(List.of(job.getId()))
-                                .maxReviews(1)
-                                .limit(50)
+                                .maxReviews(5)
                                 .build());
             } catch (Exception e) {
                 log.warn("Could not queue automatic place import for social job {}: {}",
                         job.getId(), e.getMessage());
             }
+            try {
+                notifyExtractionCompleted(job, request.getResult());
+            } catch (Exception e) {
+                log.warn("Could not notify completion for social job {}: {}", job.getId(), e.getMessage());
+            }
         }
         log.info("Social location callback processed: job_id={} python_job_id={} status={}",
                 job.getId(), job.getPythonJobId(), job.getStatus());
         return toResponse(job);
+    }
+
+    private void notifyExtractionCompleted(SocialLocationJob job, JsonNode result) {
+        int placeCount = extractedPlaceCount(result);
+        String platformName = platformDisplayName(job.getPlatform());
+        Map<String, Object> data = new java.util.HashMap<>();
+        data.put("socialJobId", job.getId().toString());
+        data.put("placeCount", Integer.toString(placeCount));
+        data.put("platform", job.getPlatform());
+        data.put("platformName", platformName);
+        data.put("sourceUrl", job.getSourceUrl());
+        data.put("deepLink", "/profile/saved");
+        notificationService.createNotification(
+                job.getUserId(),
+                null,
+                NotificationType.SOCIAL_PLACES_EXTRACTED,
+                null,
+                null,
+                data,
+                null
+        );
+    }
+
+    private int extractedPlaceCount(JsonNode result) {
+        if (result == null || result.isNull()) {
+            return 0;
+        }
+        JsonNode candidates = result.path("extraction").path("candidates");
+        return candidates.isArray() ? candidates.size() : 0;
+    }
+
+    private String platformDisplayName(String platform) {
+        if (platform == null) {
+            return "Social";
+        }
+        return switch (platform.trim().toLowerCase(Locale.ROOT)) {
+            case "tiktok" -> "TikTok";
+            case "instagram" -> "Instagram";
+            default -> "Social";
+        };
     }
 
     private String callbackUrl() {
@@ -308,6 +553,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     private boolean isTerminal(SocialLocationJobStatus status) {
         return status == SocialLocationJobStatus.COMPLETED
                 || status == SocialLocationJobStatus.FAILED
+                || status == SocialLocationJobStatus.TIMED_OUT
                 || status == SocialLocationJobStatus.REJECTED_DURATION
                 || status == SocialLocationJobStatus.REJECTED_TOPIC
                 || status == SocialLocationJobStatus.DELETED;
@@ -323,6 +569,19 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         JsonNode message = error.get("message");
         job.setErrorCode(code != null && !code.isNull() ? code.asText() : "EXTRACTION_FAILED");
         job.setErrorMessage(message != null && !message.isNull() ? message.asText() : error.toString());
+    }
+
+    private JsonNode normalizeError(JsonNode error, String fallbackCode) {
+        if (error == null || error.isNull()) return null;
+        if (error.isObject()) return error;
+        return errorNode(fallbackCode, error.asText("Extraction failed"));
+    }
+
+    private ObjectNode errorNode(String code, String message) {
+        ObjectNode error = objectMapper.createObjectNode();
+        error.put("code", code);
+        error.put("message", message);
+        return error;
     }
 
     private String firstNonBlank(String candidate, String fallback) {
@@ -349,7 +608,8 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     }
 
     private SocialLocationJobResponse toResponse(SocialLocationJob job) {
-        JsonNode result = enrichResultWithPlaceMappings(job.getId(), parseJson(job.getResultPayload()));
+        JsonNode result = enrichResultWithPlaceMappings(
+                job.getId(), retainOnlyCertainCandidates(parseJson(job.getResultPayload())));
         return SocialLocationJobResponse.builder()
                 .id(job.getId())
                 .sourceUrl(job.getSourceUrl())
@@ -363,11 +623,177 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 .result(result)
                 .errorCode(job.getErrorCode())
                 .errorMessage(job.getErrorMessage())
+                .attemptCount(job.getAttemptCount())
+                .deadlineAt(job.getDeadlineAt())
+                .lastHeartbeatAt(job.getLastHeartbeatAt())
+                .failureStage(job.getFailureStage())
                 .createdAt(job.getCreatedAt())
                 .startedAt(job.getStartedAt())
                 .completedAt(job.getCompletedAt())
                 .updatedAt(job.getUpdatedAt())
                 .build();
+    }
+
+    private void recordAiApiCall(SocialLocationJob job,
+                                 SocialLocationJobCallbackRequest callback,
+                                 SocialLocationJobStatus jobStatus) {
+        JsonNode pipelineResult = callback.getResult();
+        JsonNode extraction = pipelineResult == null ? null : pipelineResult.path("extraction");
+        boolean hasAiResponse = extraction != null && extraction.isObject() && !extraction.isEmpty();
+        JsonNode response = hasAiResponse ? extraction : pipelineResult;
+
+        ObjectNode effectiveRequest = objectMapper.createObjectNode();
+        effectiveRequest.put("sourceUrl", job.getSourceUrl());
+        effectiveRequest.put("platform", job.getPlatform());
+        effectiveRequest.put("language", job.getLanguage());
+        effectiveRequest.put("userTier", job.getUserTier());
+        effectiveRequest.put("maxDurationSeconds", job.getMaxDurationSeconds());
+        effectiveRequest.put("candidatePolicy", CURRENT_CANDIDATE_POLICY);
+        effectiveRequest.put("attempt", job.getAttemptCount() == null ? 0 : job.getAttemptCount());
+        JsonNode originalRequest = parseJson(job.getRequestPayload());
+        if (originalRequest != null) {
+            effectiveRequest.set("originalRequest", originalRequest);
+        }
+
+        LocalDateTime measuredAt = job.getCompletedAt() == null ? LocalDateTime.now() : job.getCompletedAt();
+        LocalDateTime completedAt = isTerminal(jobStatus) ? measuredAt : null;
+        Long latencyMs = job.getStartedAt() == null
+                ? null
+                : Math.max(0L, Duration.between(job.getStartedAt(), measuredAt).toMillis());
+        int candidateCount = hasAiResponse && extraction.path("candidates").isArray()
+                ? extraction.path("candidates").size()
+                : 0;
+        JsonNode usage = hasAiResponse ? extraction.path("usage") : null;
+
+        aiApiCallMapper.upsert(AiApiCall.builder()
+                .id(UUID.randomUUID())
+                .userId(job.getUserId())
+                .feature("SOCIAL_LOCATION")
+                .operation("EXTRACT_PLACES")
+                .correlationId(job.getId().toString())
+                .provider(hasAiResponse ? text(extraction, "provider") : socialConfig.aiProvider())
+                .model(hasAiResponse ? text(extraction, "model") : socialConfig.aiModel())
+                .status(jobStatus == SocialLocationJobStatus.PROCESSING
+                        ? "PROCESSING"
+                        : hasAiResponse ? "SUCCEEDED" : jobStatus.name())
+                .requestPayload(effectiveRequest.toString())
+                .responsePayload(response == null || response.isMissingNode() || response.isNull()
+                        ? null : response.toString())
+                .errorPayload(callback.getError() == null || callback.getError().isNull()
+                        ? null : callback.getError().toString())
+                .candidateCount(candidateCount)
+                .inputTokens(integer(usage, "inputTokens", "prompt_tokens"))
+                .outputTokens(integer(usage, "outputTokens", "completion_tokens"))
+                .totalTokens(integer(usage, "totalTokens", "total_tokens"))
+                .latencyMs(latencyMs)
+                .startedAt(job.getStartedAt())
+                .completedAt(completedAt)
+                .createdAt(LocalDateTime.now())
+                .build());
+    }
+
+    private JsonNode attachExistingDatabasePlaces(JsonNode result) {
+        if (result == null || !result.isObject()) {
+            return result;
+        }
+        JsonNode copy = result.deepCopy();
+        JsonNode extractionCandidates = copy.path("extraction").path("candidates");
+        if (!extractionCandidates.isArray()) {
+            return copy;
+        }
+        for (JsonNode candidate : extractionCandidates) {
+            JsonNode mapCandidates = candidate.path("mapSearch").path("candidates");
+            if (!mapCandidates.isArray()) {
+                continue;
+            }
+            for (JsonNode mapCandidate : mapCandidates) {
+                if (!(mapCandidate instanceof ObjectNode objectNode)) {
+                    continue;
+                }
+                Place existing = findExistingPlace(mapCandidate);
+                if (existing == null) {
+                    continue;
+                }
+                ObjectNode mapping = objectNode.putObject("placeMapping");
+                mapping.put("placeId", existing.getId().toString());
+                mapping.put("approvalStatus", "PENDING");
+                mapping.put("itemStatus", "SKIPPED_EXISTING");
+                mapping.put("source", "EXISTING_DATABASE");
+                String imageUrl = placeImageUrl(existing);
+                if (imageUrl != null) {
+                    mapping.put("thumbnail", imageUrl);
+                }
+                if (existing.getTitle() != null && !existing.getTitle().isBlank()) {
+                    mapping.put("title", existing.getTitle());
+                }
+            }
+        }
+        return copy;
+    }
+
+    private boolean usesCurrentCandidatePolicy(SocialLocationJob job) {
+        JsonNode result = parseJson(job.getResultPayload());
+        return result != null
+                && CURRENT_CANDIDATE_POLICY.equals(result.path("extraction")
+                        .path("candidateValidation")
+                        .path("policy")
+                        .asText());
+    }
+
+    private JsonNode retainOnlyCertainCandidates(JsonNode result) {
+        if (result == null || !result.isObject()) {
+            return result;
+        }
+        JsonNode copy = result.deepCopy();
+        if (!(copy.path("extraction") instanceof ObjectNode extraction)) {
+            return copy;
+        }
+        boolean currentPolicy = CURRENT_CANDIDATE_POLICY.equals(extraction
+                .path("candidateValidation")
+                .path("policy")
+                .asText());
+        ArrayNode certainCandidates = objectMapper.createArrayNode();
+        JsonNode candidates = extraction.path("candidates");
+        if (currentPolicy && candidates.isArray()) {
+            for (JsonNode candidate : candidates) {
+                JsonNode verification = candidate.path("verification");
+                String status = verification.path("status").asText();
+                if (CURRENT_CANDIDATE_POLICY.equals(verification.path("policy").asText())
+                        && ("VERIFIED".equals(status) || "EVIDENCE_VERIFIED".equals(status))) {
+                    certainCandidates.add(candidate);
+                }
+            }
+        }
+        extraction.set("candidates", certainCandidates);
+        extraction.put("found", !certainCandidates.isEmpty());
+        extraction.put("needs_confirmation", false);
+        return copy;
+    }
+
+    private Place findExistingPlace(JsonNode candidate) {
+        String googlePlaceId = text(candidate, "placeId", "googlePlaceId");
+        if (googlePlaceId != null) {
+            Place place = placeMapper.findByPlaceId(googlePlaceId);
+            if (place != null) {
+                return place;
+            }
+        }
+        String cid = text(candidate, "cid");
+        if (cid != null) {
+            Place place = placeMapper.findByCid(cid);
+            if (place != null) {
+                return place;
+            }
+        }
+        java.math.BigDecimal latitude = decimal(candidate, "latitude");
+        java.math.BigDecimal longitude = decimal(candidate, "longitude");
+        if (latitude != null && longitude != null) {
+            return placeMapper.findNearCoordinates(
+                    latitude,
+                    longitude,
+                    java.math.BigDecimal.valueOf(25));
+        }
+        return null;
     }
 
     private void enforceRestriction(UUID userId, String sourceUrl) {
@@ -453,8 +879,6 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         }
         Map<String, PlaceImportJobItem> mappings = placeImportJobMapper.findSocialItemsBySocialJobId(socialJobId)
                 .stream()
-                .filter(item -> item.getStatus() == PlaceImportJobItemStatus.COMPLETED
-                        || item.getStatus() == PlaceImportJobItemStatus.SKIPPED_EXISTING)
                 .collect(java.util.stream.Collectors.toMap(
                         PlaceImportJobItem::getSourceCandidateKey,
                         Function.identity(),
@@ -488,6 +912,11 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                     continue;
                 }
                 ObjectNode mapping = objectNode.putObject("placeMapping");
+                mapping.put("approvalStatus", item.getApprovalStatus().name());
+                mapping.put("itemStatus", item.getStatus().name());
+                if (item.getErrorMessage() != null && !item.getErrorMessage().isBlank()) {
+                    mapping.put("errorMessage", item.getErrorMessage());
+                }
                 UUID placeId = item.getImportedPlaceId() != null
                         ? item.getImportedPlaceId()
                         : item.getExistingPlaceId();
@@ -495,15 +924,36 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                     continue;
                 }
                 mapping.put("placeId", placeId.toString());
-                mapping.put("approvalStatus", item.getApprovalStatus().name());
-                mapping.put("itemStatus", item.getStatus().name());
                 Place place = placeMapper.findById(placeId);
-                if (place != null && place.getThumbnail() != null && !place.getThumbnail().isBlank()) {
-                    mapping.put("thumbnail", place.getThumbnail());
+                String imageUrl = placeImageUrl(place);
+                if (imageUrl != null) {
+                    mapping.put("thumbnail", imageUrl);
                 }
             }
         }
         return result;
+    }
+
+    private String placeImageUrl(Place place) {
+        if (place == null) {
+            return null;
+        }
+        if (place.getThumbnail() != null && !place.getThumbnail().isBlank()) {
+            return place.getThumbnail();
+        }
+        JsonNode images = parseJson(place.getImages());
+        if (images == null || !images.isArray()) {
+            return null;
+        }
+        for (JsonNode image : images) {
+            String url = image.isTextual()
+                    ? image.asText()
+                    : text(image, "image", "url", "imageUrl");
+            if (url != null && !url.isBlank()) {
+                return url;
+            }
+        }
+        return null;
     }
 
     private String text(JsonNode node, String... fields) {
@@ -526,5 +976,18 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         } catch (NumberFormatException ignored) {
             return null;
         }
+    }
+
+    private Integer integer(JsonNode node, String... fields) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return null;
+        }
+        for (String field : fields) {
+            JsonNode value = node.get(field);
+            if (value != null && value.canConvertToInt()) {
+                return value.asInt();
+            }
+        }
+        return null;
     }
 }

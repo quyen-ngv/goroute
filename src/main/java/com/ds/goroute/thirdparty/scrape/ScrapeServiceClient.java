@@ -1,7 +1,7 @@
 package com.ds.goroute.thirdparty.scrape;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
@@ -12,11 +12,14 @@ import java.net.URI;
 import java.util.Map;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class ScrapeServiceClient {
 
     private final RestTemplate restTemplate;
+
+    public ScrapeServiceClient(@Qualifier("scrapeRestTemplate") RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
+    }
 
 @Value("${scrape.service.base-url:http://google-maps-bot:8080}")
 private String baseUrl;

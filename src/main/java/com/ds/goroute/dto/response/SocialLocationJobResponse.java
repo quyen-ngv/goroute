@@ -27,6 +27,10 @@ public class SocialLocationJobResponse {
     private JsonNode result;
     private String errorCode;
     private String errorMessage;
+    private Integer attemptCount;
+    private LocalDateTime deadlineAt;
+    private LocalDateTime lastHeartbeatAt;
+    private String failureStage;
     private LocalDateTime createdAt;
     private LocalDateTime startedAt;
     private LocalDateTime completedAt;

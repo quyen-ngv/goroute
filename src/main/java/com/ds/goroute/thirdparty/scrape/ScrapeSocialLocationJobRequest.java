@@ -19,6 +19,9 @@ public class ScrapeSocialLocationJobRequest {
     @JsonProperty("callback_url")
     private String callbackUrl;
 
+    @JsonProperty("callback_token")
+    private String callbackToken;
+
     @JsonProperty("goroute_job_id")
     private UUID gorouteJobId;
 
@@ -39,9 +42,6 @@ public class ScrapeSocialLocationJobRequest {
 
     @JsonProperty("image_jpeg_quality")
     private Integer imageJpegQuality;
-
-    @JsonProperty("max_candidates")
-    private Integer maxCandidates;
 
     @JsonProperty("ai_provider")
     private String aiProvider;

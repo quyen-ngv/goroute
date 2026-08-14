@@ -70,4 +70,5 @@ public class PlaceResponse {
     private List<PlaceReviewResponse> reviews;
 
     private List<FoodTagResponse> foodTags;
+    private List<PlaceSocialVideoResponse> socialVideos;
 }

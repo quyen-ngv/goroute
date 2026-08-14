@@ -1,7 +1,9 @@
 package com.ds.goroute.thirdparty.ai;
 
+import com.ds.goroute.config.AiClientFallbackConfig;
 import com.ds.goroute.thirdparty.claude.ClaudeClient;
 import com.ds.goroute.thirdparty.deepseek.DeepSeekClient;
+import com.ds.goroute.thirdparty.openai.OpenAiClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -13,7 +15,11 @@ class AiClientSelectionTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withBean(RestClient.Builder.class, RestClient::builder)
-            .withUserConfiguration(ClaudeClient.class, DeepSeekClient.class);
+            .withUserConfiguration(
+                    ClaudeClient.class,
+                    DeepSeekClient.class,
+                    OpenAiClient.class,
+                    AiClientFallbackConfig.class);
 
     @Test
     void selectsDeepSeekByDefault() {
@@ -37,6 +43,28 @@ class AiClientSelectionTest {
                             .isEqualTo("claude-3-5-haiku-20241022");
                     assertThat(ReflectionTestUtils.getField(context.getBean(AiClient.class), "apiUrl"))
                             .isEqualTo("https://api.anthropic.com/v1/messages");
+                });
+    }
+
+    @Test
+    void selectsOpenAiFromProperty() {
+        contextRunner.withPropertyValues("ai.provider=OPENAI")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(AiClient.class);
+                    assertThat(context.getBean(AiClient.class)).isInstanceOf(OpenAiClient.class);
+                    assertThat(ReflectionTestUtils.getField(context.getBean(AiClient.class), "model"))
+                            .isEqualTo("gpt-5-mini");
+                    assertThat(ReflectionTestUtils.getField(context.getBean(AiClient.class), "apiUrl"))
+                            .isEqualTo("https://api.openai.com/v1/chat/completions");
+                });
+    }
+
+    @Test
+    void unknownProviderUsesNonFatalFallbackClient() {
+        contextRunner.withPropertyValues("ai.provider=unsupported")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(AiClient.class);
+                    assertThat(context.getBean(AiClient.class).completeJson("system", "user")).isEmpty();
                 });
     }
 

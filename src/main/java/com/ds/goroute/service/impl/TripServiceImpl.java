@@ -548,7 +548,19 @@ public class TripServiceImpl implements TripService {
 
         tripMemberRepository.insert(member);
 
-        notificationHelper.emitMemberAdded(member, trip, userId);
+        if (member.getUserId() != null && member.getStatus() == MemberStatus.PENDING) {
+            Map<String, Object> inviteData = new HashMap<>();
+            inviteData.put("actorName", notificationHelper.actorName(userId));
+            inviteData.put("newMemberName", notificationHelper.actorName(member.getUserId()));
+            inviteData.put("tripName", trip.getName());
+            inviteData.put("deepLink", "/notifications?tab=invites");
+            notificationHelper.emitGeneric(tripId, userId, NotificationType.TRIP_INVITE,
+                    inviteData, List.of(member.getUserId()), null);
+            notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.MEMBER_INVITED,
+                    inviteData, List.of(member.getUserId()));
+        } else {
+            notificationHelper.emitMemberAdded(member, trip, userId);
+        }
 
         return mapToTripMemberResponse(member);
     }
@@ -580,6 +592,8 @@ public class TripServiceImpl implements TripService {
     @Override
     @Transactional
     public void declineInvite(UUID tripId, UUID userId) {
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
         TripMember member = tripMemberRepository.findByTripIdAndUserId(tripId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Invitation not found"));
 
@@ -590,6 +604,14 @@ public class TripServiceImpl implements TripService {
         member.setStatus(MemberStatus.DECLINED);
         tripMemberRepository.updateById(member);
         log.info("Member declined invite: {} - {}", tripId, userId);
+        if (member.getInvitedBy() != null) {
+            notificationHelper.emitGeneric(tripId, userId, NotificationType.TRIP_INVITE_DECLINED,
+                    Map.of(
+                            "memberName", notificationHelper.actorName(userId),
+                            "tripName", trip.getName(),
+                            "deepLink", "/trip/" + tripId + "/members"
+                    ), List.of(member.getInvitedBy()), null);
+        }
     }
 
     @Override
@@ -636,13 +658,48 @@ public class TripServiceImpl implements TripService {
             member.setStatus(MemberStatus.DECLINED);
             tripMemberRepository.updateById(member);
             log.info("Member declined invite via remove: {} - {}", tripId, userId);
+            if (member.getInvitedBy() != null) {
+                notificationHelper.emitGeneric(tripId, userId, NotificationType.TRIP_INVITE_DECLINED,
+                        Map.of("memberName", notificationHelper.actorName(userId), "tripName", trip.getName(),
+                                "deepLink", "/trip/" + tripId + "/members"),
+                        List.of(member.getInvitedBy()), null);
+            }
+            return;
+        }
+
+        if (member.getStatus() == MemberStatus.PENDING) {
+            tripMemberRepository.deleteById(memberId);
+            NotificationType type = member.getInvitedBy() == null
+                    ? NotificationType.MEMBER_JOIN_REJECTED
+                    : NotificationType.TRIP_INVITE_CANCELLED;
+            if (member.getUserId() != null) {
+                notificationHelper.emitGeneric(tripId, userId, type,
+                        Map.of("actorName", notificationHelper.actorName(userId), "tripName", trip.getName()),
+                        List.of(member.getUserId()), null);
+            }
             return;
         }
 
         tripMemberRepository.deleteById(memberId);
         log.info("Member removed from trip: {} - {}", tripId, memberId);
 
-        notificationHelper.emitMemberRemoved(member, trip, userId);
+        if (member.getUserId() != null) {
+            notificationHelper.emitGeneric(tripId, userId, NotificationType.MEMBER_REMOVED,
+                    Map.of(
+                            "actorName", notificationHelper.actorName(userId),
+                            "removedMemberName", notificationHelper.actorName(member.getUserId()),
+                            "tripName", trip.getName(),
+                            "recipientContext", "target"
+                    ), List.of(member.getUserId()), null);
+        }
+        notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.MEMBER_REMOVED,
+                Map.of(
+                        "actorName", notificationHelper.actorName(userId),
+                        "removedMemberName", member.getUserId() != null
+                                ? notificationHelper.actorName(member.getUserId()) : member.getGuestName(),
+                        "tripName", trip.getName(),
+                        "deepLink", "/trip/" + tripId + "/members"
+                ), member.getUserId() == null ? List.of() : List.of(member.getUserId()));
     }
 
     @Override
@@ -675,6 +732,20 @@ public class TripServiceImpl implements TripService {
         member.setRole(newRole);
         tripMemberRepository.updateById(member);
         log.info("Member role updated: {} - {} - {}", tripId, memberId, newRole);
+        Map<String, Object> roleData = Map.of(
+                "actorName", notificationHelper.actorName(userId),
+                "memberName", member.getUserId() != null
+                        ? notificationHelper.actorName(member.getUserId()) : member.getGuestName(),
+                "role", newRole.name(),
+                "tripName", trip.getName(),
+                "deepLink", "/trip/" + tripId + "/members"
+        );
+        if (member.getUserId() != null) {
+            notificationHelper.emitGeneric(tripId, userId, NotificationType.MEMBER_ROLE_UPDATED,
+                    roleData, List.of(member.getUserId()), null);
+        }
+        notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.MEMBER_ROLE_UPDATED,
+                roleData, member.getUserId() == null ? List.of() : List.of(member.getUserId()));
     }
 
     @Override
@@ -698,9 +769,18 @@ public class TripServiceImpl implements TripService {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Member is not a guest");
         }
 
+        String previousGuestName = guestMember.getGuestName();
         guestMember.setGuestName(guestName);
         tripMemberRepository.updateById(guestMember);
         log.info("Guest name updated: {} - {} - {}", tripId, guestMemberId, guestName);
+        notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.GUEST_UPDATED,
+                Map.of(
+                        "actorName", notificationHelper.actorName(userId),
+                        "previousGuestName", previousGuestName,
+                        "guestName", guestName,
+                        "tripName", trip.getName(),
+                        "deepLink", "/trip/" + tripId + "/members"
+                ), null);
     }
 
     @Override
@@ -1148,7 +1228,18 @@ public class TripServiceImpl implements TripService {
         log.info("Guest member linked: trip={}, guest={} -> user={}, updated {} expense splits",
                 tripId, guestMemberId, targetUserId, guestSplits.size());
 
-        notificationHelper.emitGuestLinked(guestMember, targetUserId, tripId, currentUserId);
+        Map<String, Object> linkedData = Map.of(
+                "guestName", guestMember.getGuestName(),
+                "linkedUserName", notificationHelper.actorName(targetUserId),
+                "tripName", notificationHelper.tripName(tripId),
+                "deepLink", "/trip/" + tripId + "/members"
+        );
+        Map<String, Object> targetData = new HashMap<>(linkedData);
+        targetData.put("recipientContext", "target");
+        notificationHelper.emitGeneric(tripId, currentUserId, NotificationType.GUEST_LINKED,
+                targetData, List.of(targetUserId), null);
+        notificationHelper.emitGenericToMembers(tripId, currentUserId, NotificationType.GUEST_LINKED,
+                linkedData, List.of(targetUserId));
     }
 
     @Override
@@ -1425,7 +1516,12 @@ public class TripServiceImpl implements TripService {
         tripMemberRepository.insert(member);
         log.info("User joined trip by code: tripId={}, userId={}, code={}", trip.getId(), userId, code);
 
-        notificationHelper.emitMemberAdded(member, trip, userId);
+        notificationHelper.emitGeneric(trip.getId(), userId, NotificationType.MEMBER_JOIN_REQUESTED,
+                Map.of(
+                        "memberName", notificationHelper.actorName(userId),
+                        "tripName", trip.getName(),
+                        "deepLink", "/trip/" + trip.getId() + "/members"
+                ), List.of(trip.getOwnerId()), null);
 
         return mapToTripResponse(trip, userId);
     }
@@ -1466,7 +1562,18 @@ public class TripServiceImpl implements TripService {
         tripMemberRepository.updateById(member);
         log.info("Member accepted: tripId={}, memberId={}, acceptedBy={}", tripId, memberId, userId);
 
-        notificationHelper.emitMemberAccepted(member, trip, userId);
+        notificationHelper.emitGeneric(tripId, userId, NotificationType.MEMBER_ACCESS_GRANTED,
+                Map.of(
+                        "actorName", notificationHelper.actorName(userId),
+                        "tripName", trip.getName(),
+                        "deepLink", "/trip/" + tripId
+                ), List.of(member.getUserId()), null);
+        notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.MEMBER_ACCEPTED,
+                Map.of(
+                        "memberName", notificationHelper.actorName(member.getUserId()),
+                        "tripName", trip.getName(),
+                        "deepLink", "/trip/" + tripId + "/members"
+                ), List.of(member.getUserId()));
     }
 
     @Override
@@ -1617,6 +1724,15 @@ public class TripServiceImpl implements TripService {
         }
 
         log.info("Cloned {} activities for trip: {}", originalActivities.size(), newTrip.getId());
+
+        if (!originalTrip.getOwnerId().equals(userId)) {
+            notificationHelper.emitGeneric(tripId, userId, NotificationType.TRIP_CLONED,
+                    Map.of(
+                            "actorName", notificationHelper.actorName(userId),
+                            "tripName", originalTrip.getName(),
+                            "deepLink", "/tour/trip/" + tripId
+                    ), List.of(originalTrip.getOwnerId()), null);
+        }
 
         // 8. Return response
         return mapToTripResponse(newTrip, userId);

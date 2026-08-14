@@ -20,6 +20,13 @@
         <result property="resultPayload" column="result_payload"/>
         <result property="errorCode" column="error_code"/>
         <result property="errorMessage" column="error_message"/>
+        <result property="attemptCount" column="attempt_count"/>
+        <result property="nextAttemptAt" column="next_attempt_at"/>
+        <result property="deadlineAt" column="deadline_at"/>
+        <result property="lastHeartbeatAt" column="last_heartbeat_at"/>
+        <result property="lastReconciledAt" column="last_reconciled_at"/>
+        <result property="failureStage" column="failure_stage"/>
+        <result property="errorDetails" column="error_details"/>
         <result property="createdAt" column="created_at"/>
         <result property="startedAt" column="started_at"/>
         <result property="completedAt" column="completed_at"/>
@@ -31,13 +38,17 @@
             id, user_id, source_url, source_key, platform, status, python_job_id, language,
             user_tier, video_duration_seconds, max_duration_seconds,
             request_payload, result_payload, error_code, error_message,
+            attempt_count, next_attempt_at, deadline_at, last_heartbeat_at,
+            last_reconciled_at, failure_stage, error_details,
             created_at, started_at, completed_at, updated_at
         ) VALUES (
             #{id}, #{userId}, #{sourceUrl}, #{sourceKey}, #{platform},
             #{status, javaType=com.ds.goroute.type.SocialLocationJobStatus},
             #{pythonJobId}, #{language}, #{userTier}, #{videoDurationSeconds}, #{maxDurationSeconds},
             #{requestPayload}, #{resultPayload},
-            #{errorCode}, #{errorMessage}, #{createdAt}, #{startedAt},
+            #{errorCode}, #{errorMessage}, #{attemptCount}, #{nextAttemptAt},
+            #{deadlineAt}, #{lastHeartbeatAt}, #{lastReconciledAt},
+            #{failureStage}, CAST(#{errorDetails,jdbcType=VARCHAR} AS jsonb), #{createdAt}, #{startedAt},
             #{completedAt}, #{updatedAt}
         )
     </insert>
@@ -57,10 +68,36 @@
             result_payload = #{resultPayload},
             error_code = #{errorCode},
             error_message = #{errorMessage},
+            attempt_count = #{attemptCount},
+            next_attempt_at = #{nextAttemptAt},
+            deadline_at = #{deadlineAt},
+            last_heartbeat_at = #{lastHeartbeatAt},
+            last_reconciled_at = #{lastReconciledAt},
+            failure_stage = #{failureStage},
+            error_details = CAST(#{errorDetails,jdbcType=VARCHAR} AS jsonb),
             started_at = #{startedAt},
             completed_at = #{completedAt},
             updated_at = #{updatedAt}
         WHERE id = #{id}
+    </update>
+
+    <update id="updateIfStatus">
+        UPDATE social_location_jobs SET
+            status = #{job.status, javaType=com.ds.goroute.type.SocialLocationJobStatus},
+            python_job_id = #{job.pythonJobId},
+            error_code = #{job.errorCode},
+            error_message = #{job.errorMessage},
+            error_details = CAST(#{job.errorDetails,jdbcType=VARCHAR} AS jsonb),
+            failure_stage = #{job.failureStage},
+            next_attempt_at = #{job.nextAttemptAt},
+            deadline_at = #{job.deadlineAt},
+            last_heartbeat_at = #{job.lastHeartbeatAt},
+            last_reconciled_at = #{job.lastReconciledAt},
+            started_at = #{job.startedAt},
+            completed_at = #{job.completedAt},
+            updated_at = #{job.updatedAt}
+        WHERE id = #{job.id}
+          AND status = #{expectedStatus}
     </update>
 
     <select id="findById" resultMap="SocialLocationJobResultMap">
@@ -118,6 +155,14 @@
         ORDER BY COALESCE(completed_at, created_at) DESC, id DESC
     </select>
 
+    <select id="findCompletedForVideoLinkBackfill" resultMap="SocialLocationJobResultMap">
+        SELECT * FROM social_location_jobs
+        WHERE status = 'COMPLETED'
+          AND result_payload IS NOT NULL
+        ORDER BY created_at, id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
     <select id="countCreatedByUserSince" resultType="int">
         SELECT COUNT(*) FROM social_location_jobs WHERE user_id = #{userId} AND created_at &gt;= #{since}
     </select>
@@ -135,7 +180,25 @@
     </select>
 
     <select id="countActive" resultType="int">
-        SELECT COUNT(*) FROM social_location_jobs WHERE status IN ('DISPATCHING', 'PROCESSING')
+        SELECT COUNT(*) FROM social_location_jobs
+        WHERE status IN ('DISPATCHING', 'PROCESSING')
+          AND (deadline_at IS NULL OR deadline_at &gt; NOW())
+    </select>
+
+    <select id="findStaleDispatching" resultMap="SocialLocationJobResultMap">
+        SELECT * FROM social_location_jobs
+        WHERE status = 'DISPATCHING'
+          AND updated_at &lt;= #{cutoff}
+        ORDER BY updated_at
+        LIMIT #{limit}
+    </select>
+
+    <select id="findProcessingForReconciliation" resultMap="SocialLocationJobResultMap">
+        SELECT * FROM social_location_jobs
+        WHERE status = 'PROCESSING'
+          AND (last_reconciled_at IS NULL OR last_reconciled_at &lt;= #{reconcileBefore})
+        ORDER BY COALESCE(last_reconciled_at, started_at, updated_at)
+        LIMIT #{limit}
     </select>
 
     <select id="tryDispatchLock" resultType="boolean">
@@ -146,12 +209,17 @@
         WITH claimed AS (
             SELECT id FROM social_location_jobs
             WHERE status = 'QUEUED'
+              AND (next_attempt_at IS NULL OR next_attempt_at &lt;= NOW())
             ORDER BY created_at
             FOR UPDATE SKIP LOCKED
             LIMIT #{limit}
         )
         UPDATE social_location_jobs job
-        SET status = 'DISPATCHING', updated_at = NOW()
+        SET status = 'DISPATCHING',
+            attempt_count = COALESCE(job.attempt_count, 0) + 1,
+            next_attempt_at = NULL,
+            failure_stage = NULL,
+            updated_at = NOW()
         FROM claimed
         WHERE job.id = claimed.id
         RETURNING job.*

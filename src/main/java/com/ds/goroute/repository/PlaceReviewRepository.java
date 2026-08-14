@@ -1,8 +1,10 @@
 package com.ds.goroute.repository;
 
 import com.ds.goroute.entity.PlaceReview;
+import com.ds.goroute.dto.response.PlaceReviewRefreshCandidateResponse;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -20,6 +22,9 @@ public interface PlaceReviewRepository {
     List<PlaceReview> findByPlaceId(UUID placeId);
 
     List<PlaceReview> findAll();
+
+    List<PlaceReviewRefreshCandidateResponse> findRefreshCandidates(
+            UUID placeId, LocalDateTime cutoff, boolean includeRecent);
 
     Optional<PlaceReview> findByReviewId(String reviewId);
 

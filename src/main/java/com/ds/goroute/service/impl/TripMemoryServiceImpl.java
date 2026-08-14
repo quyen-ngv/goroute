@@ -17,12 +17,16 @@ import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.TripMemoryService;
+import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.MemberStatus;
+import com.ds.goroute.type.NotificationType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -37,6 +41,7 @@ public class TripMemoryServiceImpl implements TripMemoryService {
     private final UserRepository userRepository;
     private final AiTripRepository aiTripRepository;
     private final ImageStorageCleanupService imageStorageCleanupService;
+    private final NotificationHelper notificationHelper;
 
     @Override
     @Transactional(readOnly = true)
@@ -74,6 +79,8 @@ public class TripMemoryServiceImpl implements TripMemoryService {
                 .build();
 
         mediaAssetRepository.insert(mediaAsset);
+        notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.MEMORY_ADDED,
+                memoryNotificationData(trip, mediaAsset, userId), null);
         return toResponse(mediaAsset, userRepository.findById(userId).orElse(null));
     }
 
@@ -90,6 +97,9 @@ public class TripMemoryServiceImpl implements TripMemoryService {
 
         imageStorageCleanupService.deleteImagesForEntityRecord("MEDIA_ASSET", memoryId);
         mediaAssetRepository.softDelete(memoryId);
+        notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.MEMORY_DELETED,
+                memoryNotificationData(
+                        tripRepository.findById(tripId).orElseThrow(), asset, userId), null);
     }
 
     private Trip getTripAndEnsureMember(UUID tripId, UUID userId) {
@@ -120,6 +130,23 @@ public class TripMemoryServiceImpl implements TripMemoryService {
     private boolean isProTripOwner(UUID ownerId) {
         aiTripRepository.ensureSubscription(ownerId);
         return "PRO".equalsIgnoreCase(aiTripRepository.getSubscriptionTier(ownerId));
+    }
+
+    private Map<String, Object> memoryNotificationData(Trip trip, MediaAsset asset, UUID actorId) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("actorName", notificationHelper.actorName(actorId));
+        data.put("tripName", trip.getName());
+        data.put("memoryId", asset.getId());
+        if (asset.getCaption() != null && !asset.getCaption().isBlank()) {
+            data.put("memoryName", asset.getCaption());
+        }
+        if (asset.getActivityId() != null) {
+            data.put("activityId", asset.getActivityId());
+            data.put("deepLink", "/trip/" + trip.getId() + "/activities/" + asset.getActivityId());
+        } else {
+            data.put("deepLink", "/trip/" + trip.getId());
+        }
+        return data;
     }
 
     private TripMemoryResponse toResponse(MediaAsset asset, User user) {

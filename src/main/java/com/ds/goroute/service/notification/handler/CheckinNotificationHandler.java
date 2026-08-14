@@ -39,6 +39,7 @@ public class CheckinNotificationHandler implements NotificationEventHandler {
 
     @Override
     public boolean supports(TripEvent event) {
-        return event.getType() == NotificationType.CHECKIN;
+        return event.getType() == NotificationType.CHECKIN
+                || event.getType() == NotificationType.CHECKIN_UPDATED;
     }
 }

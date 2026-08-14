@@ -41,6 +41,7 @@ public class NoteNotificationHandler implements NotificationEventHandler {
     @Override
     public boolean supports(TripEvent event) {
         return event.getType() == NotificationType.NOTE_ADDED
+            || event.getType() == NotificationType.NOTE_UPDATED
             || event.getType() == NotificationType.NOTE_DELETED;
     }
 }

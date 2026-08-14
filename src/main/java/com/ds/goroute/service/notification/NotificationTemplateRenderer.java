@@ -32,6 +32,10 @@ public class NotificationTemplateRenderer {
                 return withLocalizedPunctuation(adminMessage, lang);
             }
         }
+        if (type == NotificationType.SOCIAL_PLACES_EXTRACTED) {
+            return withLocalizedPunctuation(
+                    renderSocialPlacesExtracted(normalizedData, lang), lang);
+        }
 
         NotificationMessage template = templates
                 .getOrDefault(lang, templates.get(NotificationLanguage.DEFAULT))
@@ -86,6 +90,47 @@ public class NotificationTemplateRenderer {
         );
     }
 
+    private NotificationMessage renderSocialPlacesExtracted(Map<String, Object> data, String language) {
+        String placeCount = stringValue(data.get("placeCount"));
+        String platformName = stringValue(data.get("platformName"));
+        placeCount = placeCount == null ? "0" : placeCount;
+        platformName = platformName == null ? "Social" : platformName;
+        return switch (language) {
+            case "vi" -> new NotificationMessage(
+                    "Đã trích xuất địa điểm",
+                    "Đã tìm thấy " + placeCount + " địa điểm từ " + platformName
+                            + ". Mở Địa điểm đã lưu để xem kết quả");
+            case "hi" -> new NotificationMessage(
+                    "स्थान निकाले गए",
+                    platformName + " से " + placeCount
+                            + " स्थान मिले। परिणाम देखने के लिए सहेजे गए स्थान खोलें");
+            case "ja" -> new NotificationMessage(
+                    "スポットを抽出しました",
+                    platformName + " から " + placeCount
+                            + " 件のスポットが見つかりました。保存済みスポットで確認できます");
+            case "ko" -> new NotificationMessage(
+                    "장소 추출 완료",
+                    platformName + "에서 " + placeCount
+                            + "개의 장소를 찾았습니다. 저장된 장소에서 결과를 확인하세요");
+            case "ru" -> new NotificationMessage(
+                    "Места извлечены",
+                    "Найдено мест из " + platformName + ": " + placeCount
+                            + ". Откройте сохранённые места, чтобы посмотреть результат");
+            case "th" -> new NotificationMessage(
+                    "ดึงข้อมูลสถานที่แล้ว",
+                    "พบ " + placeCount + " สถานที่จาก " + platformName
+                            + " เปิดสถานที่ที่บันทึกไว้เพื่อดูผลลัพธ์");
+            case "zh-TW" -> new NotificationMessage(
+                    "地點擷取完成",
+                    "已從 " + platformName + " 找到 " + placeCount
+                            + " 個地點。開啟已儲存地點查看結果");
+            default -> new NotificationMessage(
+                    "Places extracted",
+                    "Places extracted from " + platformName + ": " + placeCount
+                            + ". Open Saved Places to review the result");
+        };
+    }
+
     private String stringValue(Object value) {
         if (value == null) {
             return null;
@@ -98,6 +143,18 @@ public class NotificationTemplateRenderer {
         Map<String, Object> normalized = new HashMap<>();
         if (data != null) {
             normalized.putAll(data);
+        }
+        if ("target".equals(normalized.get("recipientContext"))) {
+            String pronoun = targetPronoun(language);
+            if (normalized.containsKey("removedMemberName")) {
+                normalized.put("removedMemberName", pronoun);
+            }
+            if (normalized.containsKey("linkedUserName")) {
+                normalized.put("linkedUserName", pronoun);
+            }
+            if (normalized.containsKey("memberName")) {
+                normalized.put("memberName", pronoun);
+            }
         }
         Object isPaid = normalized.get("isPaid");
         if (isPaid instanceof Boolean paid) {
@@ -130,6 +187,19 @@ public class NotificationTemplateRenderer {
                 preparationChecklist(stringValue(normalized.get("itemKind")), language)
         );
         return normalized;
+    }
+
+    private String targetPronoun(String language) {
+        return switch (language) {
+            case "vi" -> "bạn";
+            case "hi" -> "आप";
+            case "ja" -> "あなた";
+            case "ko" -> "회원님";
+            case "ru" -> "вас";
+            case "th" -> "คุณ";
+            case "zh-TW" -> "你";
+            default -> "you";
+        };
     }
 
     private String preparationLeadLabel(Object value, String language) {
@@ -347,6 +417,20 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.COMMENT_ADDED, "New comment", "{actorName} commented on “{activityName}” in “{tripName}”"),
                 entry(NotificationType.COMMENT_DELETED, "Comment removed", "{actorName} removed a comment from “{activityName}” in “{tripName}”"),
                 entry(NotificationType.TRIP_INVITE, "You're invited", "You have been invited to join “{tripName}”"),
+                entry(NotificationType.TRIP_INVITE_DECLINED, "Invitation declined", "{memberName} declined the invitation to “{tripName}”"),
+                entry(NotificationType.TRIP_INVITE_CANCELLED, "Invitation cancelled", "Your invitation to “{tripName}” was cancelled"),
+                entry(NotificationType.MEMBER_INVITED, "Member invited", "{actorName} invited {newMemberName} to “{tripName}”"),
+                entry(NotificationType.MEMBER_JOIN_REQUESTED, "Join request", "{memberName} asked to join “{tripName}”"),
+                entry(NotificationType.MEMBER_ACCESS_GRANTED, "Request accepted", "Your request to join “{tripName}” was accepted"),
+                entry(NotificationType.MEMBER_JOIN_REJECTED, "Request declined", "Your request to join “{tripName}” was declined"),
+                entry(NotificationType.MEMBER_ROLE_UPDATED, "Member role updated", "{actorName} changed {memberName}'s role in “{tripName}” to {role}"),
+                entry(NotificationType.GUEST_UPDATED, "Guest updated", "{actorName} renamed {previousGuestName} to {guestName} in “{tripName}”"),
+                entry(NotificationType.CHECKIN_UPDATED, "Check-in updated", "{actorName} updated a check-in at “{activityName}” in “{tripName}”"),
+                entry(NotificationType.NOTE_UPDATED, "Note updated", "{actorName} updated a note for “{activityName}” in “{tripName}”"),
+                entry(NotificationType.MEMORY_ADDED, "New trip memory", "{actorName} added a memory to “{tripName}”"),
+                entry(NotificationType.MEMORY_DELETED, "Trip memory removed", "{actorName} removed a memory from “{tripName}”"),
+                entry(NotificationType.TRIP_BOOK_UPDATED, "Travel Book updated", "{actorName} updated the Travel Book for “{tripName}”"),
+                entry(NotificationType.TRIP_CLONED, "Trip copied", "{actorName} copied your trip “{tripName}”"),
                 entry(NotificationType.ROUTE_OPTIMIZED, "Route ready", "The route for “{tripName}” has been optimized"),
                 entry(NotificationType.TRIP_REMINDER, "Trip coming up", "“{tripName}” is coming up. Take a moment to review your itinerary"),
                 entry(NotificationType.TRIP_STARTS_IN_ONE_WEEK, "One week to go", "“{tripName}” starts in one week. Review your itinerary and reservations when you have a moment"),
@@ -393,6 +477,20 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.COMMENT_ADDED, "Có bình luận mới", "{actorName} đã bình luận về “{activityName}” trong “{tripName}”"),
                 entry(NotificationType.COMMENT_DELETED, "Đã gỡ bình luận", "{actorName} đã gỡ một bình luận khỏi “{activityName}” trong “{tripName}”"),
                 entry(NotificationType.TRIP_INVITE, "Bạn có lời mời mới", "Bạn được mời tham gia “{tripName}”"),
+                entry(NotificationType.TRIP_INVITE_DECLINED, "Lời mời đã bị từ chối", "{memberName} đã từ chối lời mời tham gia “{tripName}”"),
+                entry(NotificationType.TRIP_INVITE_CANCELLED, "Lời mời đã bị hủy", "Lời mời tham gia “{tripName}” của bạn đã bị hủy"),
+                entry(NotificationType.MEMBER_INVITED, "Đã mời thành viên", "{actorName} đã mời {newMemberName} tham gia “{tripName}”"),
+                entry(NotificationType.MEMBER_JOIN_REQUESTED, "Có yêu cầu tham gia", "{memberName} muốn tham gia “{tripName}”"),
+                entry(NotificationType.MEMBER_ACCESS_GRANTED, "Yêu cầu đã được chấp nhận", "Yêu cầu tham gia “{tripName}” của bạn đã được chấp nhận"),
+                entry(NotificationType.MEMBER_JOIN_REJECTED, "Yêu cầu chưa được chấp nhận", "Yêu cầu tham gia “{tripName}” của bạn đã bị từ chối"),
+                entry(NotificationType.MEMBER_ROLE_UPDATED, "Vai trò thành viên đã thay đổi", "{actorName} đã đổi vai trò của {memberName} trong “{tripName}” thành {role}"),
+                entry(NotificationType.GUEST_UPDATED, "Thông tin khách đã thay đổi", "{actorName} đã đổi tên {previousGuestName} thành {guestName} trong “{tripName}”"),
+                entry(NotificationType.CHECKIN_UPDATED, "Check-in đã thay đổi", "{actorName} đã cập nhật check-in tại “{activityName}” trong “{tripName}”"),
+                entry(NotificationType.NOTE_UPDATED, "Ghi chú đã thay đổi", "{actorName} đã cập nhật ghi chú tại “{activityName}” trong “{tripName}”"),
+                entry(NotificationType.MEMORY_ADDED, "Có kỷ niệm mới", "{actorName} đã thêm một kỷ niệm vào “{tripName}”"),
+                entry(NotificationType.MEMORY_DELETED, "Đã gỡ kỷ niệm", "{actorName} đã gỡ một kỷ niệm khỏi “{tripName}”"),
+                entry(NotificationType.TRIP_BOOK_UPDATED, "Sổ tay chuyến đi đã thay đổi", "{actorName} đã cập nhật sổ tay của “{tripName}”"),
+                entry(NotificationType.TRIP_CLONED, "Chuyến đi đã được sao chép", "{actorName} đã sao chép chuyến đi “{tripName}” của bạn"),
                 entry(NotificationType.ROUTE_OPTIMIZED, "Lộ trình đã sẵn sàng", "Lộ trình của “{tripName}” đã được tối ưu"),
                 entry(NotificationType.TRIP_REMINDER, "Chuyến đi sắp bắt đầu", "“{tripName}” sắp diễn ra. Hãy dành ít phút xem lại lịch trình nhé"),
                 entry(NotificationType.TRIP_STARTS_IN_ONE_WEEK, "Còn 1 tuần để chuẩn bị", "“{tripName}” sẽ bắt đầu sau 1 tuần. Hãy xem lại lịch trình và các đặt chỗ nhé"),
@@ -439,6 +537,20 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.COMMENT_ADDED, "コメントを追加", "{actorName}さんが「{tripName}」の「{activityName}」にコメントしました"),
                 entry(NotificationType.COMMENT_DELETED, "コメントを削除", "{actorName}さんが「{tripName}」の「{activityName}」からコメントを削除しました"),
                 entry(NotificationType.TRIP_INVITE, "旅行への招待", "「{tripName}」に招待されました"),
+                entry(NotificationType.TRIP_INVITE_DECLINED, "招待が辞退されました", "{memberName}さんが「{tripName}」への招待を辞退しました"),
+                entry(NotificationType.TRIP_INVITE_CANCELLED, "招待が取り消されました", "「{tripName}」への招待が取り消されました"),
+                entry(NotificationType.MEMBER_INVITED, "メンバーを招待", "{actorName}さんが{newMemberName}さんを「{tripName}」に招待しました"),
+                entry(NotificationType.MEMBER_JOIN_REQUESTED, "参加リクエスト", "{memberName}さんが「{tripName}」への参加を申請しました"),
+                entry(NotificationType.MEMBER_ACCESS_GRANTED, "参加が承認されました", "「{tripName}」への参加リクエストが承認されました"),
+                entry(NotificationType.MEMBER_JOIN_REJECTED, "参加が承認されませんでした", "「{tripName}」への参加リクエストが却下されました"),
+                entry(NotificationType.MEMBER_ROLE_UPDATED, "役割を更新", "{actorName}さんが「{tripName}」で{memberName}さんの役割を{role}に変更しました"),
+                entry(NotificationType.GUEST_UPDATED, "ゲストを更新", "{actorName}さんが「{tripName}」で{previousGuestName}を{guestName}に変更しました"),
+                entry(NotificationType.CHECKIN_UPDATED, "チェックインを更新", "{actorName}さんが「{tripName}」の「{activityName}」でチェックインを更新しました"),
+                entry(NotificationType.NOTE_UPDATED, "ノートを更新", "{actorName}さんが「{tripName}」の「{activityName}」でノートを更新しました"),
+                entry(NotificationType.MEMORY_ADDED, "思い出を追加", "{actorName}さんが「{tripName}」に思い出を追加しました"),
+                entry(NotificationType.MEMORY_DELETED, "思い出を削除", "{actorName}さんが「{tripName}」から思い出を削除しました"),
+                entry(NotificationType.TRIP_BOOK_UPDATED, "トラベルブックを更新", "{actorName}さんが「{tripName}」のトラベルブックを更新しました"),
+                entry(NotificationType.TRIP_CLONED, "旅行がコピーされました", "{actorName}さんがあなたの旅行「{tripName}」をコピーしました"),
                 entry(NotificationType.ROUTE_OPTIMIZED, "ルートを最適化", "「{tripName}」のルートが最適化されました"),
                 entry(NotificationType.TRIP_REMINDER, "旅行が近づいています", "「{tripName}」の予定を少し確認しておきましょう"),
                 entry(NotificationType.TRIP_STARTS_IN_ONE_WEEK, "出発まであと1週間", "「{tripName}」は1週間後に始まります。旅程や予約を確認しておきましょう"),
@@ -485,6 +597,20 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.COMMENT_ADDED, "댓글이 추가되었습니다", "{actorName}님이 “{tripName}”의 “{activityName}”에 댓글을 남겼습니다"),
                 entry(NotificationType.COMMENT_DELETED, "댓글이 삭제되었습니다", "{actorName}님이 “{tripName}”의 “{activityName}”에서 댓글을 삭제했습니다"),
                 entry(NotificationType.TRIP_INVITE, "여행 초대", "“{tripName}”에 초대되었습니다"),
+                entry(NotificationType.TRIP_INVITE_DECLINED, "초대가 거절되었습니다", "{memberName}님이 “{tripName}” 초대를 거절했습니다"),
+                entry(NotificationType.TRIP_INVITE_CANCELLED, "초대가 취소되었습니다", "“{tripName}” 초대가 취소되었습니다"),
+                entry(NotificationType.MEMBER_INVITED, "멤버를 초대했습니다", "{actorName}님이 {newMemberName}님을 “{tripName}”에 초대했습니다"),
+                entry(NotificationType.MEMBER_JOIN_REQUESTED, "참여 요청", "{memberName}님이 “{tripName}” 참여를 요청했습니다"),
+                entry(NotificationType.MEMBER_ACCESS_GRANTED, "참여 요청이 승인되었습니다", "“{tripName}” 참여 요청이 승인되었습니다"),
+                entry(NotificationType.MEMBER_JOIN_REJECTED, "참여 요청이 거절되었습니다", "“{tripName}” 참여 요청이 거절되었습니다"),
+                entry(NotificationType.MEMBER_ROLE_UPDATED, "멤버 역할이 변경되었습니다", "{actorName}님이 “{tripName}”에서 {memberName}님의 역할을 {role}(으)로 변경했습니다"),
+                entry(NotificationType.GUEST_UPDATED, "게스트 정보가 변경되었습니다", "{actorName}님이 “{tripName}”에서 {previousGuestName}을 {guestName}(으)로 변경했습니다"),
+                entry(NotificationType.CHECKIN_UPDATED, "체크인이 수정되었습니다", "{actorName}님이 “{tripName}”의 “{activityName}” 체크인을 수정했습니다"),
+                entry(NotificationType.NOTE_UPDATED, "노트가 수정되었습니다", "{actorName}님이 “{tripName}”의 “{activityName}” 노트를 수정했습니다"),
+                entry(NotificationType.MEMORY_ADDED, "새 추억", "{actorName}님이 “{tripName}”에 추억을 추가했습니다"),
+                entry(NotificationType.MEMORY_DELETED, "추억이 삭제되었습니다", "{actorName}님이 “{tripName}”에서 추억을 삭제했습니다"),
+                entry(NotificationType.TRIP_BOOK_UPDATED, "트래블 북이 수정되었습니다", "{actorName}님이 “{tripName}”의 트래블 북을 수정했습니다"),
+                entry(NotificationType.TRIP_CLONED, "여행이 복사되었습니다", "{actorName}님이 회원님의 여행 “{tripName}”을 복사했습니다"),
                 entry(NotificationType.ROUTE_OPTIMIZED, "경로 최적화 완료", "“{tripName}”의 경로가 최적화되었습니다"),
                 entry(NotificationType.TRIP_REMINDER, "여행이 다가오고 있어요", "“{tripName}” 일정을 잠시 확인해 주세요"),
                 entry(NotificationType.TRIP_STARTS_IN_ONE_WEEK, "출발까지 1주일", "“{tripName}” 여행이 1주일 후 시작됩니다. 일정과 예약을 미리 확인해 주세요"),
@@ -531,6 +657,20 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.COMMENT_ADDED, "टिप्पणी जोड़ी गई", "{actorName} ने {tripName} में “{activityName}” पर टिप्पणी की"),
                 entry(NotificationType.COMMENT_DELETED, "टिप्पणी हटाई गई", "{actorName} ने {tripName} में “{activityName}” से टिप्पणी हटा दी"),
                 entry(NotificationType.TRIP_INVITE, "यात्रा का निमंत्रण", "आपको {tripName} में शामिल होने के लिए आमंत्रित किया गया है"),
+                entry(NotificationType.TRIP_INVITE_DECLINED, "निमंत्रण अस्वीकार हुआ", "{memberName} ने {tripName} का निमंत्रण अस्वीकार किया"),
+                entry(NotificationType.TRIP_INVITE_CANCELLED, "निमंत्रण रद्द हुआ", "{tripName} का आपका निमंत्रण रद्द कर दिया गया"),
+                entry(NotificationType.MEMBER_INVITED, "सदस्य आमंत्रित", "{actorName} ने {newMemberName} को {tripName} में आमंत्रित किया"),
+                entry(NotificationType.MEMBER_JOIN_REQUESTED, "शामिल होने का अनुरोध", "{memberName} ने {tripName} में शामिल होने का अनुरोध किया"),
+                entry(NotificationType.MEMBER_ACCESS_GRANTED, "अनुरोध स्वीकार हुआ", "{tripName} में शामिल होने का आपका अनुरोध स्वीकार हुआ"),
+                entry(NotificationType.MEMBER_JOIN_REJECTED, "अनुरोध अस्वीकार हुआ", "{tripName} में शामिल होने का आपका अनुरोध अस्वीकार हुआ"),
+                entry(NotificationType.MEMBER_ROLE_UPDATED, "सदस्य की भूमिका बदली", "{actorName} ने {tripName} में {memberName} की भूमिका {role} की"),
+                entry(NotificationType.GUEST_UPDATED, "अतिथि अपडेट हुआ", "{actorName} ने {tripName} में {previousGuestName} का नाम {guestName} किया"),
+                entry(NotificationType.CHECKIN_UPDATED, "चेक-इन अपडेट हुआ", "{actorName} ने {tripName} में “{activityName}” का चेक-इन अपडेट किया"),
+                entry(NotificationType.NOTE_UPDATED, "नोट अपडेट हुआ", "{actorName} ने {tripName} में “{activityName}” का नोट अपडेट किया"),
+                entry(NotificationType.MEMORY_ADDED, "नई यात्रा स्मृति", "{actorName} ने {tripName} में एक स्मृति जोड़ी"),
+                entry(NotificationType.MEMORY_DELETED, "यात्रा स्मृति हटाई गई", "{actorName} ने {tripName} से एक स्मृति हटाई"),
+                entry(NotificationType.TRIP_BOOK_UPDATED, "यात्रा पुस्तक अपडेट हुई", "{actorName} ने {tripName} की यात्रा पुस्तक अपडेट की"),
+                entry(NotificationType.TRIP_CLONED, "यात्रा कॉपी हुई", "{actorName} ने आपकी यात्रा {tripName} कॉपी की"),
                 entry(NotificationType.ROUTE_OPTIMIZED, "मार्ग अनुकूलित हुआ", "{tripName} का मार्ग अनुकूलित कर दिया गया है"),
                 entry(NotificationType.TRIP_REMINDER, "यात्रा करीब है", "“{tripName}” जल्द शुरू होगी। अपनी यात्रा योजना एक बार देख लें"),
                 entry(NotificationType.TRIP_STARTS_IN_ONE_WEEK, "यात्रा में एक सप्ताह बाकी", "“{tripName}” एक सप्ताह में शुरू होगी। अपनी योजना और आरक्षण जाँच लें"),
@@ -577,6 +717,20 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.COMMENT_ADDED, "Добавлен комментарий", "{actorName} комментирует «{activityName}» в «{tripName}»"),
                 entry(NotificationType.COMMENT_DELETED, "Комментарий удалён", "{actorName} удаляет комментарий из «{activityName}» в «{tripName}»"),
                 entry(NotificationType.TRIP_INVITE, "Приглашение в поездку", "Вас пригласили присоединиться к {tripName}"),
+                entry(NotificationType.TRIP_INVITE_DECLINED, "Приглашение отклонено", "{memberName} отклоняет приглашение в «{tripName}»"),
+                entry(NotificationType.TRIP_INVITE_CANCELLED, "Приглашение отменено", "Ваше приглашение в «{tripName}» отменено"),
+                entry(NotificationType.MEMBER_INVITED, "Участник приглашён", "{actorName} приглашает {newMemberName} в «{tripName}»"),
+                entry(NotificationType.MEMBER_JOIN_REQUESTED, "Запрос на участие", "{memberName} просит присоединиться к «{tripName}»"),
+                entry(NotificationType.MEMBER_ACCESS_GRANTED, "Запрос принят", "Ваш запрос на участие в «{tripName}» принят"),
+                entry(NotificationType.MEMBER_JOIN_REJECTED, "Запрос отклонён", "Ваш запрос на участие в «{tripName}» отклонён"),
+                entry(NotificationType.MEMBER_ROLE_UPDATED, "Роль участника изменена", "{actorName} меняет роль {memberName} в «{tripName}» на {role}"),
+                entry(NotificationType.GUEST_UPDATED, "Данные гостя изменены", "{actorName} переименовывает {previousGuestName} в {guestName} в «{tripName}»"),
+                entry(NotificationType.CHECKIN_UPDATED, "Отметка обновлена", "{actorName} обновляет отметку в «{activityName}» во время «{tripName}»"),
+                entry(NotificationType.NOTE_UPDATED, "Заметка обновлена", "{actorName} обновляет заметку к «{activityName}» в «{tripName}»"),
+                entry(NotificationType.MEMORY_ADDED, "Новое воспоминание", "{actorName} добавляет воспоминание в «{tripName}»"),
+                entry(NotificationType.MEMORY_DELETED, "Воспоминание удалено", "{actorName} удаляет воспоминание из «{tripName}»"),
+                entry(NotificationType.TRIP_BOOK_UPDATED, "Книга путешествия обновлена", "{actorName} обновляет книгу путешествия «{tripName}»"),
+                entry(NotificationType.TRIP_CLONED, "Поездка скопирована", "{actorName} копирует вашу поездку «{tripName}»"),
                 entry(NotificationType.ROUTE_OPTIMIZED, "Маршрут оптимизирован", "Маршрут для {tripName} оптимизирован"),
                 entry(NotificationType.TRIP_REMINDER, "Поездка уже близко", "«{tripName}» скоро начнётся. Загляните в план поездки"),
                 entry(NotificationType.TRIP_STARTS_IN_ONE_WEEK, "До поездки одна неделя", "«{tripName}» начнётся через неделю. Проверьте маршрут и бронирования"),
@@ -623,6 +777,20 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.COMMENT_ADDED, "เพิ่มความคิดเห็นแล้ว", "{actorName} แสดงความคิดเห็นที่ “{activityName}” ใน {tripName}"),
                 entry(NotificationType.COMMENT_DELETED, "ลบความคิดเห็นแล้ว", "{actorName} ลบความคิดเห็นจาก “{activityName}” ใน {tripName}"),
                 entry(NotificationType.TRIP_INVITE, "คำเชิญเข้าร่วมทริป", "คุณได้รับเชิญให้เข้าร่วม {tripName}"),
+                entry(NotificationType.TRIP_INVITE_DECLINED, "ปฏิเสธคำเชิญแล้ว", "{memberName} ปฏิเสธคำเชิญเข้าร่วม {tripName}"),
+                entry(NotificationType.TRIP_INVITE_CANCELLED, "ยกเลิกคำเชิญแล้ว", "คำเชิญของคุณสำหรับ {tripName} ถูกยกเลิกแล้ว"),
+                entry(NotificationType.MEMBER_INVITED, "เชิญสมาชิกแล้ว", "{actorName} เชิญ {newMemberName} เข้าร่วม {tripName}"),
+                entry(NotificationType.MEMBER_JOIN_REQUESTED, "คำขอเข้าร่วม", "{memberName} ขอเข้าร่วม {tripName}"),
+                entry(NotificationType.MEMBER_ACCESS_GRANTED, "อนุมัติคำขอแล้ว", "คำขอเข้าร่วม {tripName} ของคุณได้รับการอนุมัติแล้ว"),
+                entry(NotificationType.MEMBER_JOIN_REJECTED, "ไม่อนุมัติคำขอ", "คำขอเข้าร่วม {tripName} ของคุณถูกปฏิเสธ"),
+                entry(NotificationType.MEMBER_ROLE_UPDATED, "อัปเดตบทบาทสมาชิกแล้ว", "{actorName} เปลี่ยนบทบาทของ {memberName} ใน {tripName} เป็น {role}"),
+                entry(NotificationType.GUEST_UPDATED, "อัปเดตผู้เข้าร่วมแล้ว", "{actorName} เปลี่ยนชื่อ {previousGuestName} เป็น {guestName} ใน {tripName}"),
+                entry(NotificationType.CHECKIN_UPDATED, "อัปเดตเช็กอินแล้ว", "{actorName} อัปเดตเช็กอินที่ “{activityName}” ใน {tripName}"),
+                entry(NotificationType.NOTE_UPDATED, "อัปเดตโน้ตแล้ว", "{actorName} อัปเดตโน้ตของ “{activityName}” ใน {tripName}"),
+                entry(NotificationType.MEMORY_ADDED, "เพิ่มความทรงจำแล้ว", "{actorName} เพิ่มความทรงจำใน {tripName}"),
+                entry(NotificationType.MEMORY_DELETED, "ลบความทรงจำแล้ว", "{actorName} ลบความทรงจำออกจาก {tripName}"),
+                entry(NotificationType.TRIP_BOOK_UPDATED, "อัปเดตสมุดทริปแล้ว", "{actorName} อัปเดตสมุดทริปของ {tripName}"),
+                entry(NotificationType.TRIP_CLONED, "ทริปถูกคัดลอก", "{actorName} คัดลอกทริป {tripName} ของคุณ"),
                 entry(NotificationType.ROUTE_OPTIMIZED, "ปรับเส้นทางแล้ว", "ปรับเส้นทางสำหรับ {tripName} เรียบร้อยแล้ว"),
                 entry(NotificationType.TRIP_REMINDER, "ทริปใกล้เข้ามาแล้ว", "“{tripName}” กำลังจะเริ่ม ลองทบทวนแผนการเดินทางสักครู่นะ"),
                 entry(NotificationType.TRIP_STARTS_IN_ONE_WEEK, "เหลืออีกหนึ่งสัปดาห์", "“{tripName}” จะเริ่มในอีกหนึ่งสัปดาห์ อย่าลืมตรวจสอบแผนและการจอง"),
@@ -669,6 +837,20 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.COMMENT_ADDED, "新增留言", "{actorName} 在「{tripName}」的「{activityName}」留言"),
                 entry(NotificationType.COMMENT_DELETED, "刪除留言", "{actorName} 從「{tripName}」的「{activityName}」刪除了留言"),
                 entry(NotificationType.TRIP_INVITE, "旅程邀請", "你已受邀加入「{tripName}」"),
+                entry(NotificationType.TRIP_INVITE_DECLINED, "邀請已被婉拒", "{memberName} 婉拒了「{tripName}」的邀請"),
+                entry(NotificationType.TRIP_INVITE_CANCELLED, "邀請已取消", "你加入「{tripName}」的邀請已取消"),
+                entry(NotificationType.MEMBER_INVITED, "已邀請成員", "{actorName} 邀請 {newMemberName} 加入「{tripName}」"),
+                entry(NotificationType.MEMBER_JOIN_REQUESTED, "加入申請", "{memberName} 申請加入「{tripName}」"),
+                entry(NotificationType.MEMBER_ACCESS_GRANTED, "申請已核准", "你加入「{tripName}」的申請已核准"),
+                entry(NotificationType.MEMBER_JOIN_REJECTED, "申請未核准", "你加入「{tripName}」的申請已被拒絕"),
+                entry(NotificationType.MEMBER_ROLE_UPDATED, "成員角色已更新", "{actorName} 將「{tripName}」中 {memberName} 的角色改為 {role}"),
+                entry(NotificationType.GUEST_UPDATED, "訪客資料已更新", "{actorName} 在「{tripName}」將 {previousGuestName} 改名為 {guestName}"),
+                entry(NotificationType.CHECKIN_UPDATED, "打卡已更新", "{actorName} 更新了「{tripName}」中「{activityName}」的打卡"),
+                entry(NotificationType.NOTE_UPDATED, "筆記已更新", "{actorName} 更新了「{tripName}」中「{activityName}」的筆記"),
+                entry(NotificationType.MEMORY_ADDED, "新增旅程回憶", "{actorName} 在「{tripName}」新增了一段回憶"),
+                entry(NotificationType.MEMORY_DELETED, "旅程回憶已刪除", "{actorName} 從「{tripName}」刪除了一段回憶"),
+                entry(NotificationType.TRIP_BOOK_UPDATED, "旅遊手冊已更新", "{actorName} 更新了「{tripName}」的旅遊手冊"),
+                entry(NotificationType.TRIP_CLONED, "旅程已被複製", "{actorName} 複製了你的旅程「{tripName}」"),
                 entry(NotificationType.ROUTE_OPTIMIZED, "路線已最佳化", "「{tripName}」的路線已完成最佳化"),
                 entry(NotificationType.TRIP_REMINDER, "旅程快到了", "「{tripName}」即將開始，花點時間再確認一次行程吧"),
                 entry(NotificationType.TRIP_STARTS_IN_ONE_WEEK, "出發倒數一週", "「{tripName}」將在一週後開始，記得確認行程與預訂"),

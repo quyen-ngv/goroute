@@ -14,6 +14,9 @@ public interface SocialLocationJobMapper {
 
     void update(SocialLocationJob job);
 
+    int updateIfStatus(@Param("job") SocialLocationJob job,
+                       @Param("expectedStatus") String expectedStatus);
+
     SocialLocationJob findById(@Param("id") UUID id);
 
     SocialLocationJob findByPythonJobId(@Param("pythonJobId") String pythonJobId);
@@ -35,6 +38,10 @@ public interface SocialLocationJobMapper {
 
     List<SocialLocationJob> findAllCompletedByUserId(@Param("userId") UUID userId);
 
+    List<SocialLocationJob> findCompletedForVideoLinkBackfill(
+            @Param("limit") int limit,
+            @Param("offset") int offset);
+
     int countCreatedByUserSince(@Param("userId") UUID userId, @Param("since") LocalDateTime since);
 
     boolean lockUserSubmission(@Param("userId") UUID userId);
@@ -44,6 +51,13 @@ public interface SocialLocationJobMapper {
     int countQueued();
 
     int countActive();
+
+    List<SocialLocationJob> findStaleDispatching(@Param("cutoff") LocalDateTime cutoff,
+                                                  @Param("limit") int limit);
+
+    List<SocialLocationJob> findProcessingForReconciliation(
+            @Param("reconcileBefore") LocalDateTime reconcileBefore,
+            @Param("limit") int limit);
 
     boolean tryDispatchLock();
 

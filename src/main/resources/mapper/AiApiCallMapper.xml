@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ds.goroute.mapper.AiApiCallMapper">
+    <insert id="upsert" parameterType="com.ds.goroute.entity.AiApiCall">
+        INSERT INTO ai_api_calls (
+            id, user_id, feature, operation, correlation_id, provider, model, status,
+            request_payload, response_payload, error_payload, candidate_count,
+            input_tokens, output_tokens, total_tokens, latency_ms,
+            started_at, completed_at, created_at
+        ) VALUES (
+            #{id}, #{userId}, #{feature}, #{operation}, #{correlationId}, #{provider}, #{model}, #{status},
+            CAST(#{requestPayload,jdbcType=VARCHAR} AS jsonb),
+            CAST(#{responsePayload,jdbcType=VARCHAR} AS jsonb),
+            CAST(#{errorPayload,jdbcType=VARCHAR} AS jsonb),
+            #{candidateCount}, #{inputTokens}, #{outputTokens}, #{totalTokens}, #{latencyMs},
+            #{startedAt}, #{completedAt}, #{createdAt}
+        )
+        ON CONFLICT (feature, operation, correlation_id) WHERE correlation_id IS NOT NULL
+        DO UPDATE SET
+            user_id = EXCLUDED.user_id,
+            provider = EXCLUDED.provider,
+            model = EXCLUDED.model,
+            status = EXCLUDED.status,
+            request_payload = EXCLUDED.request_payload,
+            response_payload = EXCLUDED.response_payload,
+            error_payload = EXCLUDED.error_payload,
+            candidate_count = EXCLUDED.candidate_count,
+            input_tokens = EXCLUDED.input_tokens,
+            output_tokens = EXCLUDED.output_tokens,
+            total_tokens = EXCLUDED.total_tokens,
+            latency_ms = EXCLUDED.latency_ms,
+            started_at = EXCLUDED.started_at,
+            completed_at = EXCLUDED.completed_at
+    </insert>
+</mapper>

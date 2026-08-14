@@ -21,7 +21,7 @@ public class PayeeOnlyStrategy implements NotificationStrategy {
     public List<UUID> getRecipients(TripEvent event) {
         UUID payeeId = (UUID) event.getMetadata().get("payeeId");
         
-        if (payeeId == null) {
+        if (payeeId == null || payeeId.equals(event.getActorId())) {
             log.warn("PayeeId not found in event metadata");
             return List.of();
         }

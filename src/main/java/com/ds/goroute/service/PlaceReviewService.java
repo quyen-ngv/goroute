@@ -3,6 +3,7 @@ package com.ds.goroute.service;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.ReviewInput;
 import com.ds.goroute.dto.request.RefreshPlaceReviewsRequest;
+import com.ds.goroute.dto.response.PlaceReviewRefreshCandidateResponse;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.PlaceReview;
 import com.ds.goroute.exception.BusinessError;
@@ -15,6 +16,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -217,25 +220,33 @@ public class PlaceReviewService {
     }
 
     /**
-     * Remove the currently stored crawler reviews before a fresh Google Maps scrape starts.
-     * The refresh worker calls this for one ACTIVE place at a time.
+     * Legacy preflight endpoint. It only validates the place now: deleting before the
+     * browser scrape made a Chrome crash permanently erase the previous review sample.
      */
     @Transactional
     public Map<String, Object> prepareRefresh(UUID placeId) {
-        Place place = requireActivePlace(placeId, null);
+        requireActivePlace(placeId, null);
         List<PlaceReview> existingReviews = reviewRepository.findByPlaceId(placeId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("placeId", placeId);
+        result.put("existingReviews", existingReviews.size());
+        result.put("deleted", 0);
+        result.put("deferredDeletion", true);
+        result.put("ready", true);
+        return result;
+    }
 
-        reviewRepository.deleteByPlaceId(placeId);
-        deleteManagedImages(existingReviews);
-
-        clearPlaceReviewScore(place);
-        place.setUpdatedAt(LocalDateTime.now());
-        placeRepository.updateReviewRefreshMetadata(place);
-
-        return Map.of(
-                "placeId", placeId,
-                "deleted", existingReviews.size(),
-                "ready", true);
+    @Transactional(readOnly = true)
+    public Map<String, Object> getRefreshCandidates(
+            UUID placeId, int maxAgeHours, boolean includeRecent) {
+        LocalDateTime cutoff = LocalDateTime.now().minusHours(Math.max(1, maxAgeHours));
+        List<PlaceReviewRefreshCandidateResponse> items = reviewRepository.findRefreshCandidates(
+                placeId, cutoff, includeRecent);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("databaseCount", placeRepository.countAll());
+        result.put("eligibleCount", items.size());
+        result.put("items", items);
+        return result;
     }
 
     /**
@@ -260,6 +271,13 @@ public class PlaceReviewService {
             uniqueByReviewId.putIfAbsent(review.getReviewId(), review);
         }
         List<ReviewInput> sample = new ArrayList<>(uniqueByReviewId.values());
+        if (sample.isEmpty()) {
+            throw new BusinessException(
+                    ErrorConstant.INVALID_PARAMETERS,
+                    "Scrape returned no usable image reviews; existing reviews were preserved");
+        }
+
+        List<PlaceReview> existingReviews = reviewRepository.findByPlaceId(place.getId());
 
         Comparator<ReviewInput> ranking = Comparator
                 .comparing((ReviewInput review) -> scoreCalculator.authenticity(review), Comparator.reverseOrder())
@@ -270,50 +288,63 @@ public class PlaceReviewService {
 
         List<PlaceReview> reviewsToInsert = new ArrayList<>();
         int imageMigrationFailures = 0;
-        for (ReviewInput input : ranked) {
-            if (reviewsToInsert.size() >= REFRESH_STORAGE_LIMIT) {
-                break;
-            }
-            String targetPath = "places/" + place.getPlaceId() + "/reviews/"
-                    + storageSafeSegment(input.getReviewId()) + "/";
-            Map<String, String> migratedImages = imageMigrationService.migrateCompressedImages(
-                    input.getUserImages(), targetPath);
-            List<String> storedImages = input.getUserImages().stream()
-                    .map(migratedImages::get)
-                    .filter(Objects::nonNull)
-                    .filter(url -> storageService.extractObjectKey(url) != null)
-                    .distinct()
-                    .toList();
-            if (storedImages.isEmpty()) {
-                imageMigrationFailures++;
-                continue;
-            }
+        try {
+            for (ReviewInput input : ranked) {
+                if (reviewsToInsert.size() >= REFRESH_STORAGE_LIMIT) {
+                    break;
+                }
+                String targetPath = "places/" + place.getPlaceId() + "/reviews/"
+                        + storageSafeSegment(input.getReviewId()) + "/";
+                Map<String, String> migratedImages = imageMigrationService.migrateCompressedImages(
+                        input.getUserImages(), targetPath);
+                List<String> storedImages = input.getUserImages().stream()
+                        .map(migratedImages::get)
+                        .filter(Objects::nonNull)
+                        .filter(url -> storageService.extractObjectKey(url) != null)
+                        .distinct()
+                        .toList();
+                if (storedImages.isEmpty()) {
+                    imageMigrationFailures++;
+                    continue;
+                }
 
-            String profilePicture = imageMigrationService.migrateCompressedImage(
-                    input.getProfilePicture(), targetPath + "profile/");
-            if (profilePicture != null && storageService.extractObjectKey(profilePicture) == null) {
-                profilePicture = null;
-            }
+                String profilePicture = imageMigrationService.migrateCompressedImage(
+                        input.getProfilePicture(), targetPath + "profile/");
+                if (profilePicture != null && storageService.extractObjectKey(profilePicture) == null) {
+                    profilePicture = null;
+                }
 
-            BigDecimal authenticityScore = scoreCalculator.authenticity(input);
-            PlaceReview review = mapInputToReview(
-                    input, place.getId(), profilePicture, storedImages);
-            review.setAuthenticityScore(authenticityScore);
-            review.setAuthenticityLevel(scoreCalculator.authenticityLevel(authenticityScore));
-            review.setScoreCalculatedAt(LocalDateTime.now());
-            reviewsToInsert.add(review);
+                BigDecimal authenticityScore = scoreCalculator.authenticity(input);
+                PlaceReview review = mapInputToReview(
+                        input, place.getId(), profilePicture, storedImages);
+                review.setAuthenticityScore(authenticityScore);
+                review.setAuthenticityLevel(scoreCalculator.authenticityLevel(authenticityScore));
+                review.setScoreCalculatedAt(LocalDateTime.now());
+                reviewsToInsert.add(review);
+            }
+        } catch (RuntimeException exception) {
+            deleteManagedImagesQuietly(reviewsToInsert, "failed review refresh migration");
+            throw exception;
+        }
+        if (reviewsToInsert.isEmpty()) {
+            throw new BusinessException(
+                    ErrorConstant.INVALID_PARAMETERS,
+                    "No review images could be stored; existing reviews were preserved");
         }
 
-        // Defensive idempotency: the worker normally emptied this table before scraping.
+        // Replace only after scraping and image migration succeeded. DB deletion/insertion
+        // remains atomic; old MinIO objects are removed only after the DB transaction commits.
+        boolean imageCleanupDeferred = registerReplacementImageCleanup(existingReviews, reviewsToInsert);
         reviewRepository.deleteByPlaceId(place.getId());
-        if (!reviewsToInsert.isEmpty()) {
-            reviewRepository.insertBatch(reviewsToInsert);
-        }
+        reviewRepository.insertBatch(reviewsToInsert);
 
         applyPlaceScore(place, sample);
         place.setLastScrapedAt(LocalDateTime.now());
         place.setUpdatedAt(LocalDateTime.now());
         placeRepository.updateReviewRefreshMetadata(place);
+        if (!imageCleanupDeferred) {
+            deleteManagedImagesQuietly(existingReviews, "completed review refresh");
+        }
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("placeId", place.getId());
@@ -372,7 +403,8 @@ public class PlaceReviewService {
     private void deleteManagedImages(List<PlaceReview> reviews) {
         List<String> urls = new ArrayList<>();
         for (PlaceReview review : reviews) {
-            if (storageService.extractObjectKey(review.getProfilePicture()) != null) {
+            if (review.getProfilePicture() != null
+                    && storageService.extractObjectKey(review.getProfilePicture()) != null) {
                 urls.add(review.getProfilePicture());
             }
             for (String image : parseExistingImages(review.getImages())) {
@@ -383,6 +415,32 @@ public class PlaceReviewService {
         }
         if (!urls.isEmpty()) {
             storageService.deleteFiles(urls.stream().distinct().toList());
+        }
+    }
+
+    private boolean registerReplacementImageCleanup(
+            List<PlaceReview> oldReviews, List<PlaceReview> newReviews) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return false;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == TransactionSynchronization.STATUS_COMMITTED) {
+                    deleteManagedImagesQuietly(oldReviews, "completed review refresh");
+                } else {
+                    deleteManagedImagesQuietly(newReviews, "rolled-back review refresh");
+                }
+            }
+        });
+        return true;
+    }
+
+    private void deleteManagedImagesQuietly(List<PlaceReview> reviews, String reason) {
+        try {
+            deleteManagedImages(reviews);
+        } catch (RuntimeException exception) {
+            log.error("Could not clean managed images after {}", reason, exception);
         }
     }
 

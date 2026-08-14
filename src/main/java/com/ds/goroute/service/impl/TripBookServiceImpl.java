@@ -29,7 +29,9 @@ import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripNoteRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.service.TripBookService;
+import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.MemberStatus;
+import com.ds.goroute.type.NotificationType;
 import com.ds.goroute.utils.CitySlugResolver;
 import com.ds.goroute.utils.JsonUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -68,6 +70,7 @@ public class TripBookServiceImpl implements TripBookService {
     private final TripNoteRepository tripNoteRepository;
     private final MediaAssetRepository mediaAssetRepository;
     private final TripBookRepository tripBookRepository;
+    private final NotificationHelper notificationHelper;
 
     @Override
     @Transactional
@@ -118,6 +121,7 @@ public class TripBookServiceImpl implements TripBookService {
         }
 
         insertPage(book.getId(), null, "summary", pageOrder, "summary_page", null, buildSummarySlots(trip, activities, memories));
+        emitBookUpdated(tripId, userId, "generated");
         return toResponse(book);
     }
 
@@ -154,6 +158,7 @@ public class TripBookServiceImpl implements TripBookService {
         upsertPageSlots(pageId, merged);
         updateLegacySlots(pageId);
         page.setSlots(JsonUtils.toJson(merged));
+        emitBookUpdated(book.getTripId(), userId, "page_updated");
         return toPageResponse(page);
     }
 
@@ -215,6 +220,7 @@ public class TripBookServiceImpl implements TripBookService {
         tripBookRepository.updatePageSlot(slot);
         tripBookRepository.markPageLayoutEdited(pageId);
         updateLegacySlots(pageId);
+        emitBookUpdated(book.getTripId(), userId, "slot_updated");
         return toSlotResponse(slot);
     }
 
@@ -234,7 +240,18 @@ public class TripBookServiceImpl implements TripBookService {
         tripBookRepository.resetPageLayoutMode(pageId);
         updateLegacySlots(pageId);
         page.setLayoutMode("skeleton");
+        emitBookUpdated(book.getTripId(), userId, "layout_reset");
         return toPageResponse(page);
+    }
+
+    private void emitBookUpdated(UUID tripId, UUID actorId, String action) {
+        notificationHelper.emitGenericToMembers(tripId, actorId, NotificationType.TRIP_BOOK_UPDATED,
+                Map.of(
+                        "actorName", notificationHelper.actorName(actorId),
+                        "tripName", notificationHelper.tripName(tripId),
+                        "bookAction", action,
+                        "deepLink", "/trip/" + tripId + "/book"
+                ), null);
     }
 
     private TripBook createBook(UUID tripId) {

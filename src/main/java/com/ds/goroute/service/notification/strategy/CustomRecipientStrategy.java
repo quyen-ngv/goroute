@@ -1,6 +1,5 @@
 package com.ds.goroute.service.notification.strategy;
 
-import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.service.notification.event.TripEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -8,7 +7,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
+import java.util.LinkedHashSet;
 
 /**
  * Strategy: Custom logic cho các case đặc biệt
@@ -19,24 +18,31 @@ import java.util.stream.Collectors;
 @Slf4j
 public class CustomRecipientStrategy implements NotificationStrategy {
     
-    private final TripMemberRepository tripMemberRepository;
+    private final AllMembersStrategy allMembersStrategy;
     
     @Override
     public List<UUID> getRecipients(TripEvent event) {
-        UUID removedMemberId = (UUID) event.getMetadata().get("removedMemberId");
+        Object value = event.getMetadata() == null ? null : event.getMetadata().get("removedMemberId");
+        UUID removedMemberId = value instanceof UUID uuid ? uuid : parseUuid(value);
         
         // Lấy tất cả members hiện tại
-        List<UUID> allMembers = tripMemberRepository.findByTripId(event.getTripId())
-                .stream()
-                .map(member -> member.getUserId())
-                .filter(userId -> userId != null && !userId.equals(event.getActorId()))
-                .collect(Collectors.toList());
+        LinkedHashSet<UUID> allMembers = new LinkedHashSet<>(allMembersStrategy.getRecipients(event));
         
         // Thêm người bị xóa (nếu chưa có trong list)
-        if (removedMemberId != null && !allMembers.contains(removedMemberId)) {
+        if (removedMemberId != null
+                && !removedMemberId.equals(event.getActorId())
+                && !allMembers.contains(removedMemberId)) {
             allMembers.add(removedMemberId);
         }
         
-        return allMembers;
+        return List.copyOf(allMembers);
+    }
+
+    private UUID parseUuid(Object value) {
+        try {
+            return value == null ? null : UUID.fromString(String.valueOf(value));
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 }
