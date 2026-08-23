@@ -39,6 +39,8 @@ public interface PlaceRepository {
 
     List<Place> findByIds(List<UUID> ids);
 
+    List<Place> findByPlaceIds(List<String> placeIds);
+
     List<Place> findForAiByDestination(String citySlugJson, BigDecimal latitude, BigDecimal longitude,
                                        String placeGroup, BigDecimal minRating, int limit);
 

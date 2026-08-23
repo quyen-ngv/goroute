@@ -264,6 +264,14 @@
         </choose>
     </select>
 
+    <select id="findByPlaceIds" resultMap="PlaceResultMap">
+        SELECT * FROM places
+        WHERE place_id IN
+        <foreach item="placeId" collection="placeIds" open="(" separator="," close=")">
+            #{placeId}
+        </foreach>
+    </select>
+
     <delete id="delete">
         DELETE FROM places WHERE id = #{id}
     </delete>

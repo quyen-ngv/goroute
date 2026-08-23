@@ -24,6 +24,7 @@ public class ActivityResponse {
     private String placeId;
     private UUID customPlaceId;
     private UUID placeRefId;
+    private ActivityPlaceSummaryResponse place;
     private String name;
     private String address;
     private BigDecimal lat;

@@ -45,6 +45,8 @@ public interface PlaceMapper {
 
     List<Place> findByIds(@Param("ids") List<UUID> ids);
 
+    List<Place> findByPlaceIds(@Param("placeIds") List<String> placeIds);
+
     List<Place> findForAiByDestination(@Param("citySlugJson") String citySlugJson,
                                        @Param("latitude") BigDecimal latitude,
                                        @Param("longitude") BigDecimal longitude,

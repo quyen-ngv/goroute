@@ -104,6 +104,14 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     }
 
     @Override
+    public List<Place> findByPlaceIds(List<String> placeIds) {
+        if (placeIds == null || placeIds.isEmpty()) {
+            return List.of();
+        }
+        return placeMapper.findByPlaceIds(placeIds);
+    }
+
+    @Override
     public List<Place> findForAiByDestination(String citySlugJson, BigDecimal latitude, BigDecimal longitude,
                                               String placeGroup, BigDecimal minRating, int limit) {
         return placeMapper.findForAiByDestination(

@@ -4,13 +4,16 @@ import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.CreateActivityRequest;
 import com.ds.goroute.dto.request.ReorderActivitiesRequest;
 import com.ds.goroute.dto.request.UpdateActivityRequest;
+import com.ds.goroute.dto.response.ActivityPlaceSummaryResponse;
 import com.ds.goroute.dto.response.ActivityResponse;
 import com.ds.goroute.entity.Activity;
+import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.CheckinRepository;
 import com.ds.goroute.repository.ExpenseRepository;
+import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.UserRepository;
@@ -38,6 +41,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.Arrays;
 import java.util.stream.Collectors;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -52,6 +56,7 @@ public class ActivityServiceImpl implements ActivityService {
     private final ExpenseRepository expenseRepository;
     private final UserRepository userRepository;
     private final ExpenseSplitRepository expenseSplitRepository;
+    private final PlaceRepository placeRepository;
     private final NotificationHelper notificationHelper;
     private final ImageStorageCleanupService imageStorageCleanupService;
 
@@ -106,7 +111,7 @@ public class ActivityServiceImpl implements ActivityService {
 
         notificationHelper.emitActivityCreated(activity, userId);
 
-        return mapToActivityResponse(activity);
+        return mapToActivityResponse(activity, findLinkedPlace(activity));
     }
 
     @Override
@@ -119,8 +124,30 @@ public class ActivityServiceImpl implements ActivityService {
             activities = activityRepository.findByTripId(tripId);
         }
 
+        Map<UUID, Place> placesById = placeRepository.findByIds(
+                        activities.stream()
+                                .map(this::linkedInternalPlaceId)
+                                .filter(java.util.Objects::nonNull)
+                                .distinct()
+                                .toList())
+                .stream()
+                .collect(Collectors.toMap(Place::getId, place -> place, (left, right) -> left));
+
+        Map<String, Place> placesByExternalId = placeRepository.findByPlaceIds(
+                        activities.stream()
+                                .map(Activity::getPlaceId)
+                                .filter(this::isNonBlank)
+                                .filter(placeId -> parseUuid(placeId) == null)
+                                .distinct()
+                                .toList())
+                .stream()
+                .filter(place -> isNonBlank(place.getPlaceId()))
+                .collect(Collectors.toMap(Place::getPlaceId, place -> place, (left, right) -> left));
+
         return activities.stream()
-                .map(this::mapToActivityResponse)
+                .map(activity -> mapToActivityResponse(
+                        activity,
+                        resolveLinkedPlace(activity, placesById, placesByExternalId)))
                 .collect(Collectors.toList());
     }
 
@@ -182,7 +209,7 @@ public class ActivityServiceImpl implements ActivityService {
 
         notificationHelper.emitActivityUpdated(activity, userId);
 
-        return mapToActivityResponse(activity);
+        return mapToActivityResponse(activity, findLinkedPlace(activity));
     }
 
     @Override
@@ -238,7 +265,7 @@ public class ActivityServiceImpl implements ActivityService {
         log.info("Activities reorder requested in trip: {} (deprecated - order by time)", tripId);
     }
 
-    private ActivityResponse mapToActivityResponse(Activity activity) {
+    private ActivityResponse mapToActivityResponse(Activity activity, Place place) {
         int checkedInCount = checkinRepository.findByActivityId(activity.getId()).size();
 
         // Calculate actual spent from expenses
@@ -252,6 +279,16 @@ public class ActivityServiceImpl implements ActivityService {
                 .map(this::mapToExpenseResponse)
                 .collect(Collectors.toList());
 
+        String address = firstNonBlank(place != null ? place.getAddress() : null, activity.getAddress());
+        BigDecimal latitude = place != null && place.getLatitude() != null
+                ? place.getLatitude()
+                : activity.getLat();
+        BigDecimal longitude = place != null && place.getLongitude() != null
+                ? place.getLongitude()
+                : activity.getLng();
+        BigDecimal rating = placeRating(place, activity.getRating());
+        String photoUrl = firstNonBlank(place != null ? place.getThumbnail() : null, activity.getPhotoUrl());
+
         return ActivityResponse.builder()
                 .id(activity.getId())
                 .tripId(activity.getTripId())
@@ -259,10 +296,11 @@ public class ActivityServiceImpl implements ActivityService {
                 .placeId(activity.getPlaceId())
                 .customPlaceId(activity.getCustomPlaceId())
                 .placeRefId(activity.getPlaceRefId())
+                .place(mapPlaceSummary(place))
                 .name(activity.getName())
-                .address(activity.getAddress())
-                .lat(activity.getLat())
-                .lng(activity.getLng())
+                .address(address)
+                .lat(latitude)
+                .lng(longitude)
                 .endLat(activity.getEndLat())
                 .endLng(activity.getEndLng())
                 .endAddress(activity.getEndAddress())
@@ -277,8 +315,8 @@ public class ActivityServiceImpl implements ActivityService {
                 .durationToNext(activity.getDurationToNext())
                 .distanceValueToNext(activity.getDistanceValueToNext())
                 .durationValueToNext(activity.getDurationValueToNext())
-                .rating(activity.getRating())
-                .photoUrl(activity.getPhotoUrl())
+                .rating(rating)
+                .photoUrl(photoUrl)
                 .notes(activity.getNotes())
                 .description(activity.getDescription())
                 .status(activity.getStatus().toString())
@@ -293,6 +331,87 @@ public class ActivityServiceImpl implements ActivityService {
                 .bookingId(activity.getBookingId())
                 .bookingSource(activity.getBookingSource())
                 .build();
+    }
+
+    private Place findLinkedPlace(Activity activity) {
+        UUID internalId = linkedInternalPlaceId(activity);
+        if (internalId != null) {
+            Place place = placeRepository.findById(internalId).orElse(null);
+            if (place != null) {
+                return place;
+            }
+        }
+        return isNonBlank(activity.getPlaceId()) && parseUuid(activity.getPlaceId()) == null
+                ? placeRepository.findByPlaceId(activity.getPlaceId())
+                : null;
+    }
+
+    private Place resolveLinkedPlace(
+            Activity activity,
+            Map<UUID, Place> placesById,
+            Map<String, Place> placesByExternalId) {
+        UUID internalId = linkedInternalPlaceId(activity);
+        Place place = internalId != null ? placesById.get(internalId) : null;
+        if (place != null) {
+            return place;
+        }
+        return isNonBlank(activity.getPlaceId())
+                ? placesByExternalId.get(activity.getPlaceId())
+                : null;
+    }
+
+    private UUID linkedInternalPlaceId(Activity activity) {
+        return activity.getPlaceRefId() != null
+                ? activity.getPlaceRefId()
+                : parseUuid(activity.getPlaceId());
+    }
+
+    private UUID parseUuid(String value) {
+        if (!isNonBlank(value)) {
+            return null;
+        }
+        try {
+            return UUID.fromString(value.trim());
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private ActivityPlaceSummaryResponse mapPlaceSummary(Place place) {
+        if (place == null) {
+            return null;
+        }
+        return ActivityPlaceSummaryResponse.builder()
+                .id(place.getId())
+                .placeId(place.getPlaceId())
+                .name(place.getTitle())
+                .address(place.getAddress())
+                .lat(place.getLatitude())
+                .lng(place.getLongitude())
+                .category(place.getCategory())
+                .placeGroup(place.getPlaceGroup() != null ? place.getPlaceGroup().name() : null)
+                .rating(placeRating(place, null))
+                .reviewCount(place.getReviewCount())
+                .thumbnail(place.getThumbnail())
+                .build();
+    }
+
+    private BigDecimal placeRating(Place place, BigDecimal fallback) {
+        if (place == null) {
+            return fallback;
+        }
+        if (place.getAdjustedRating() != null) {
+            return place.getAdjustedRating();
+        }
+        return place.getReviewRating() != null ? place.getReviewRating() : fallback;
+    }
+
+    private String firstNonBlank(String preferred, String fallback) {
+        return isNonBlank(preferred) ? preferred.trim() : fallback;
+    }
+
+    private boolean isNonBlank(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 
     private ExpenseResponse mapToExpenseResponse(Expense expense) {
