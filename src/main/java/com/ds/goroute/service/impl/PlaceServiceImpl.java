@@ -209,8 +209,10 @@ public class PlaceServiceImpl implements PlaceService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<PlaceResponse> getAllPlaces() {
-        return placeRepository.findAll().stream()
+    public List<PlaceResponse> getAllPlaces(int page, int size) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.max(1, Math.min(size, 500));
+        return placeRepository.findPage(safeSize, safePage * safeSize).stream()
                 .map(this::toPlaceResponse)
                 .collect(Collectors.toList());
     }

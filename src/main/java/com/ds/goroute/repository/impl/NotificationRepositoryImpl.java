@@ -51,19 +51,35 @@ public class NotificationRepositoryImpl implements NotificationRepository {
         }
         return notificationMapper.selectUnreadByUserIdAndTripId(userId, tripId);
     }
+
+    @Override
+    public List<Notification> findPageByUserId(
+            UUID userId, UUID tripId, boolean unreadOnly, int limit, int offset) {
+        return notificationMapper.findByUserId(userId, tripId, unreadOnly, limit, offset);
+    }
+
+    @Override
+    public int countUnread(UUID userId) {
+        return notificationMapper.countUnread(userId);
+    }
     
     @Override
     public void updateById(Notification notification) {
         notificationMapper.updateById(notification);
     }
-    
+
     @Override
-    public void deleteById(UUID id) {
-        notificationMapper.deleteById(id);
+    public int deleteByIdAndUserId(UUID id, UUID userId) {
+        return notificationMapper.deleteByIdAndUserId(id, userId);
     }
-    
+
     @Override
-    public void markAsRead(UUID id) {
-        notificationMapper.markAsRead(id);
+    public int markAsRead(UUID id, UUID userId) {
+        return notificationMapper.markAsRead(id, userId);
+    }
+
+    @Override
+    public int markAllAsRead(UUID userId) {
+        return notificationMapper.markAllAsRead(userId);
     }
 }

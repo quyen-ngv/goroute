@@ -16,6 +16,7 @@ public class TripMemoryResponse {
     private UUID id;
     private UUID tripId;
     private UUID activityId;
+    private String mediaType;
     private String url;
     private String caption;
     private UUID uploadedBy;

@@ -17,10 +17,16 @@ public interface NotificationRepository {
     List<Notification> findUnreadByUserId(UUID userId);
     
     List<Notification> findUnreadByUserId(UUID userId, UUID tripId);
-    
+
+    List<Notification> findPageByUserId(UUID userId, UUID tripId, boolean unreadOnly, int limit, int offset);
+
+    int countUnread(UUID userId);
+
     void updateById(Notification notification);
-    
-    void deleteById(UUID id);
-    
-    void markAsRead(UUID id);
+
+    int deleteByIdAndUserId(UUID id, UUID userId);
+
+    int markAsRead(UUID id, UUID userId);
+
+    int markAllAsRead(UUID userId);
 }

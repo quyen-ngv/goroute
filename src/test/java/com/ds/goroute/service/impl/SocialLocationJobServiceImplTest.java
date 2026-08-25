@@ -1,5 +1,6 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.config.InternalApiProperties;
 import com.ds.goroute.dto.request.SocialLocationJobCallbackRequest;
 import com.ds.goroute.dto.request.CreateSocialLocationJobRequest;
 import com.ds.goroute.dto.request.CreateSocialPlaceImportJobRequest;
@@ -86,7 +87,8 @@ class SocialLocationJobServiceImplTest {
                 socialConfigService,
                 aiTripRepository,
                 restrictionRepository,
-                notificationService
+                notificationService,
+                new InternalApiProperties("ai-token", "internal-token")
         );
         ReflectionTestUtils.setField(service, "dispatchTimeoutSeconds", 90L);
         ReflectionTestUtils.setField(service, "jobTimeoutMinutes", 15L);

@@ -1,6 +1,7 @@
 package com.ds.goroute.thirdparty.aws;
 
 import com.ds.goroute.config.AwsProperties;
+import com.ds.goroute.config.RemoteFileDownloadProperties;
 import com.ds.goroute.service.StorageService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -17,12 +18,17 @@ import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetUrlRequest;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URI;
-import java.net.URL;
+import java.net.URLConnection;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import javax.net.ssl.HttpsURLConnection;
 
 @Slf4j
 @Service
@@ -30,6 +36,7 @@ import java.util.Objects;
 public class AwsService implements StorageService {
 
     private final AwsProperties awsProperties;
+    private final RemoteFileDownloadProperties remoteFileDownloadProperties;
     private S3Client s3Client;
     private PollyClient pollyClient;
 
@@ -106,48 +113,138 @@ public class AwsService implements StorageService {
     // but for now I'll cast inside AiServiceImpl or modify interface. 
     // Ideally, modify Interface first.
     public String uploadFileFromUrl(String fileUrl, String fileName, String bearerToken) {
+        Path temporaryFile = null;
         try {
-            java.net.URLConnection connection = new URL(fileUrl).openConnection();
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0");
+            DownloadedRemoteFile downloadedFile = downloadRemoteFile(fileUrl, bearerToken);
+            temporaryFile = downloadedFile.path();
 
-            if (bearerToken != null && !bearerToken.isBlank()) {
-                connection.setRequestProperty("Authorization", "Bearer " + bearerToken);
-            }
+            PutObjectRequest putOb = PutObjectRequest.builder()
+                    .bucket(awsProperties.getS3BucketName())
+                    .key(fileName)
+                    .contentType(downloadedFile.contentType())
+                    .build();
 
-            try (InputStream in = connection.getInputStream()) {
-                byte[] bytes = in.readAllBytes();
-
-                String contentType = connection.getContentType();
-                // If content type is null or looks like generic binary, try to infer from filename/extension
-                if (contentType == null || contentType.equalsIgnoreCase("application/octet-stream")) {
-                    String lowerName = fileName.toLowerCase();
-                    if (lowerName.endsWith(".mp3")) {
-                        contentType = "audio/mpeg";
-                    } else if (lowerName.endsWith(".wav")) {
-                        contentType = "audio/wav";
-                    } else if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) {
-                        contentType = "image/jpeg";
-                    } else if (lowerName.endsWith(".png")) {
-                        contentType = "image/png";
-                    } else {
-                        contentType = "application/octet-stream";
-                    }
-                }
-
-                PutObjectRequest putOb = PutObjectRequest.builder()
-                        .bucket(awsProperties.getS3BucketName())
-                        .key(fileName)
-                        .contentType(contentType)
-                        .build();
-
-                s3Client.putObject(putOb, RequestBody.fromBytes(bytes));
-
-                return getCloudfrontUrl(fileName);
-            }
-        } catch (Exception e) {
-            log.error("Failed to upload file from URL to S3: {}", fileUrl, e);
-            throw new RuntimeException("S3 Upload from URL Failed", e);
+            s3Client.putObject(putOb, RequestBody.fromFile(temporaryFile));
+            return getCloudfrontUrl(fileName);
+        } catch (IllegalArgumentException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            log.error("Failed to upload remote file to S3: {}", exception.getClass().getSimpleName());
+            throw new RuntimeException("S3 Upload from URL Failed", exception);
+        } finally {
+            deleteTemporaryFile(temporaryFile);
         }
+    }
+
+    private DownloadedRemoteFile downloadRemoteFile(String fileUrl, String bearerToken) throws IOException {
+        URI originalUri = RemoteFileUrlPolicy.requirePublicHttps(fileUrl);
+        URI currentUri = originalUri;
+        long maxBytes = remoteFileDownloadProperties.getMaxBytes().toBytes();
+
+        for (int redirectCount = 0; redirectCount <= remoteFileDownloadProperties.getMaxRedirects(); redirectCount++) {
+            HttpsURLConnection connection = openConnection(currentUri, originalUri, bearerToken);
+            try {
+                int status = connection.getResponseCode();
+                if (status >= 300 && status < 400) {
+                    if (redirectCount == remoteFileDownloadProperties.getMaxRedirects()) {
+                        throw new IllegalArgumentException("Remote file URL redirects too many times");
+                    }
+                    String location = connection.getHeaderField("Location");
+                    if (location == null || location.isBlank()) {
+                        throw new IllegalArgumentException("Remote file URL redirect is invalid");
+                    }
+                    try {
+                        currentUri = RemoteFileUrlPolicy.requirePublicHttps(currentUri.resolve(location));
+                    } catch (IllegalArgumentException exception) {
+                        throw new IllegalArgumentException("Remote file URL redirect is invalid");
+                    }
+                    continue;
+                }
+                if (status < 200 || status >= 300) {
+                    throw new IllegalArgumentException("Remote file URL returned an unsuccessful response");
+                }
+                if (connection.getContentLengthLong() > maxBytes) {
+                    throw new IllegalArgumentException("Remote file exceeds the configured size limit");
+                }
+                return copyToTemporaryFile(connection, currentUri, maxBytes);
+            } finally {
+                connection.disconnect();
+            }
+        }
+
+        throw new IllegalArgumentException("Remote file URL redirects too many times");
+    }
+
+    private HttpsURLConnection openConnection(URI currentUri, URI originalUri, String bearerToken) throws IOException {
+        URLConnection rawConnection = currentUri.toURL().openConnection();
+        if (!(rawConnection instanceof HttpsURLConnection connection)) {
+            throw new IllegalArgumentException("Remote file URL must use HTTPS");
+        }
+
+        connection.setInstanceFollowRedirects(false);
+        connection.setConnectTimeout(Math.toIntExact(remoteFileDownloadProperties.getConnectTimeout().toMillis()));
+        connection.setReadTimeout(Math.toIntExact(remoteFileDownloadProperties.getReadTimeout().toMillis()));
+        connection.setRequestProperty("User-Agent", "GoRoute remote media importer");
+        if (bearerToken != null
+                && !bearerToken.isBlank()
+                && RemoteFileUrlPolicy.isSameOrigin(originalUri, currentUri)) {
+            connection.setRequestProperty("Authorization", "Bearer " + bearerToken);
+        }
+        return connection;
+    }
+
+    private DownloadedRemoteFile copyToTemporaryFile(
+            HttpsURLConnection connection,
+            URI sourceUri,
+            long maxBytes) throws IOException {
+        Path temporaryFile = Files.createTempFile("goroute-remote-upload-", ".download");
+        try (InputStream inputStream = connection.getInputStream();
+             OutputStream outputStream = Files.newOutputStream(temporaryFile)) {
+            copyWithLimit(inputStream, outputStream, maxBytes);
+            return new DownloadedRemoteFile(
+                    temporaryFile,
+                    resolveContentType(connection.getContentType(), sourceUri));
+        } catch (IOException | RuntimeException exception) {
+            Files.deleteIfExists(temporaryFile);
+            throw exception;
+        }
+    }
+
+    private void copyWithLimit(InputStream inputStream, OutputStream outputStream, long maxBytes) throws IOException {
+        byte[] buffer = new byte[8_192];
+        long bytesRead = 0;
+        int read;
+        while ((read = inputStream.read(buffer)) != -1) {
+            if (read > maxBytes - bytesRead) {
+                throw new IllegalArgumentException("Remote file exceeds the configured size limit");
+            }
+            outputStream.write(buffer, 0, read);
+            bytesRead += read;
+        }
+    }
+
+    private String resolveContentType(String reportedContentType, URI sourceUri) {
+        if (reportedContentType != null && !reportedContentType.isBlank()
+                && !reportedContentType.equalsIgnoreCase("application/octet-stream")) {
+            return reportedContentType.split(";", 2)[0].trim();
+        }
+
+        String inferredContentType = URLConnection.guessContentTypeFromName(sourceUri.getPath());
+        return inferredContentType == null ? "application/octet-stream" : inferredContentType;
+    }
+
+    private void deleteTemporaryFile(Path temporaryFile) {
+        if (temporaryFile == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(temporaryFile);
+        } catch (IOException exception) {
+            log.warn("Could not remove temporary remote upload file");
+        }
+    }
+
+    private record DownloadedRemoteFile(Path path, String contentType) {
     }
 
     private String getCloudfrontUrl(String fileName) {

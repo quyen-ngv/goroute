@@ -107,17 +107,13 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     public List<NotificationResponse> getNotifications(UUID userId, Integer page, Integer size, Boolean unreadOnly, UUID tripId) {
         log.info("Service getNotifications - userId: {}, tripId: {}, unreadOnly: {}", userId, tripId, unreadOnly);
-        List<Notification> notifications;
-        if (unreadOnly != null && unreadOnly) {
-            notifications = notificationRepository.findUnreadByUserId(userId, tripId);
-        } else {
-            notifications = notificationRepository.findByUserId(userId, tripId);
-        }
+        int safePage = Math.max(0, page == null ? 0 : page);
+        int safeSize = Math.max(1, Math.min(size == null ? 20 : size, 100));
+        List<Notification> notifications = notificationRepository.findPageByUserId(
+                userId, tripId, Boolean.TRUE.equals(unreadOnly), safeSize, safePage * safeSize);
         log.info("Service getNotifications - found {} notifications from DB", notifications.size());
 
         return notifications.stream()
-                .skip((long) page * size)
-                .limit(size)
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }
@@ -125,8 +121,10 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     @Transactional
     // @CacheEvict(value = "notifications", key = "#notificationId")
-    public void markAsRead(UUID notificationId) {
-        notificationRepository.markAsRead(notificationId);
+    public void markAsRead(UUID userId, UUID notificationId) {
+        if (notificationRepository.markAsRead(notificationId, userId) != 1) {
+            throw new BusinessException(ErrorConstant.NOT_FOUND, "Notification not found");
+        }
 
         // Invalidate unread count cache
         // Notification notification = notificationRepository.findById(notificationId);
@@ -140,23 +138,22 @@ public class NotificationServiceImpl implements NotificationService {
     @Transactional
     // @CacheEvict(value = "notifications", key = "#userId + '_unread'")
     public void markAllAsRead(UUID userId) {
-        notificationRepository.findByUserId(userId).forEach(n -> {
-            n.setIsRead(true);
-            notificationRepository.updateById(n);
-        });
+        notificationRepository.markAllAsRead(userId);
     }
 
     @Override
     @Transactional
     // @CacheEvict(value = "notifications", allEntries = true)
-    public void deleteNotification(UUID notificationId) {
-        notificationRepository.deleteById(notificationId);
+    public void deleteNotification(UUID userId, UUID notificationId) {
+        if (notificationRepository.deleteByIdAndUserId(notificationId, userId) != 1) {
+            throw new BusinessException(ErrorConstant.NOT_FOUND, "Notification not found");
+        }
     }
 
     @Override
     // @Cacheable(value = "notifications", key = "#userId + '_unread'")
     public Integer getUnreadCount(UUID userId) {
-        return (int) notificationRepository.findUnreadByUserId(userId).size();
+        return notificationRepository.countUnread(userId);
     }
 
     @Override

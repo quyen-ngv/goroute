@@ -30,7 +30,7 @@ public class ActivityController extends BaseService {
             @PathVariable UUID tripId,
             @RequestParam(required = false) Integer day,
             @RequestAttribute("userId") UUID userId) {
-        List<ActivityResponse> activities = activityService.getActivities(tripId, day);
+        List<ActivityResponse> activities = activityService.getActivities(tripId, day, userId);
         return ResponseEntity.ok(ofSucceeded(activities));
     }
 

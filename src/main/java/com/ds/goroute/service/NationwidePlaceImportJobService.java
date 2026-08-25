@@ -1,5 +1,6 @@
 package com.ds.goroute.service;
 
+import com.ds.goroute.config.InternalApiProperties;
 import com.ds.goroute.dto.request.CreateNationwidePlaceImportJobRequest;
 import com.ds.goroute.dto.request.NationwideDuplicateCheckRequest;
 import com.ds.goroute.dto.request.NationwideJobEventRequest;
@@ -55,8 +56,7 @@ public class NationwidePlaceImportJobService {
     @Value("${goroute.internal.public-base-url:http://goroute-app:8080}")
     private String publicBaseUrl;
 
-    @Value("${scrape.service.callback-token:}")
-    private String callbackToken;
+    private final InternalApiProperties internalApiProperties;
 
     public PlaceImportJobResponse trigger(CreateNationwidePlaceImportJobRequest request) {
         validateSearchConfiguration(request);
@@ -97,7 +97,7 @@ public class NationwidePlaceImportJobService {
                         .gorouteJobId(job.getId().toString())
                         .callbackUrl(internalBase + "/events")
                         .importUrl(internalBase + "/imports")
-                        .callbackToken(callbackToken)
+                        .callbackToken(internalApiProperties.scrapeCallbackToken())
                         .maxReviews(request.getMaxReviews())
                         .selectedReviews(request.getSelectedReviews())
                         .lowStarQuota(request.getLowStarQuota())

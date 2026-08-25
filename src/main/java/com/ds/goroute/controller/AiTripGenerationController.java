@@ -7,15 +7,20 @@ import com.ds.goroute.entity.AiTripGenerationJob;
 import com.ds.goroute.service.*;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
 @RequestMapping("/v1/api/ai-trip-generations")
 @RequiredArgsConstructor
+@Slf4j
 public class AiTripGenerationController extends BaseService {
+    private static final String STREAM_ERROR_MESSAGE = "Unable to start AI trip generation";
+
     private final AiTripGenerationService service;
     private final AiTripWorkerDispatcher dispatcher;
 
@@ -30,16 +35,17 @@ public class AiTripGenerationController extends BaseService {
             SseEmitter actualEmitter=service.subscribe(job.getId(),userId,0);
             if ("QUEUED".equals(job.getStatus())) dispatcher.dispatch(job);
             return actualEmitter;
-        } catch (Exception e) {
+        } catch (Exception exception) {
             // Send error as SSE event instead of throwing (which would try to return BaseResponse)
+            log.error("Could not create AI trip generation stream for user {}", userId, exception);
             try {
-                String errorMessage = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
                 emitter.send(SseEmitter.event()
                     .name("error")
-                    .data("{\"message\":\"" + errorMessage.replace("\"", "\\\"") + "\"}"));
+                    .data(Map.of("message", STREAM_ERROR_MESSAGE), MediaType.APPLICATION_JSON));
+            } catch (Exception sendException) {
+                log.error("Could not send AI trip generation stream error event", sendException);
+            } finally {
                 emitter.complete();
-            } catch (Exception sendEx) {
-                emitter.completeWithError(sendEx);
             }
             return emitter;
         }

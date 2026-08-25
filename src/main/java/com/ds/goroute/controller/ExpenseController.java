@@ -9,6 +9,7 @@ import com.ds.goroute.dto.response.ExpenseSplitResponse;
 import com.ds.goroute.service.ExpenseService;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.service.BaseService;
+import com.ds.goroute.type.ExpenseCategory;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,9 +31,9 @@ public class ExpenseController extends BaseService {
     @GetMapping
     public ResponseEntity<BaseResponse<List<ExpenseResponse>>> getExpenses(
             @PathVariable UUID tripId,
-            @RequestParam(required = false) String category,
+            @RequestParam(required = false) ExpenseCategory category,
             @RequestAttribute("userId") UUID userId) {
-        List<ExpenseResponse> expenses = expenseService.getExpenses(tripId, category);
+        List<ExpenseResponse> expenses = expenseService.getExpenses(tripId, category, userId);
         return ResponseEntity.ok(ofSucceeded(expenses));
     }
 

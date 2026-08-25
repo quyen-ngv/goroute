@@ -116,7 +116,8 @@ public class ActivityServiceImpl implements ActivityService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<ActivityResponse> getActivities(UUID tripId, Integer dayNumber) {
+    public List<ActivityResponse> getActivities(UUID tripId, Integer dayNumber, UUID userId) {
+        requireTripAccess(tripId, userId);
         List<Activity> activities;
         if (dayNumber != null) {
             activities = activityRepository.findByTripIdAndDayNumber(tripId, dayNumber);
@@ -149,6 +150,18 @@ public class ActivityServiceImpl implements ActivityService {
                         activity,
                         resolveLinkedPlace(activity, placesById, placesByExternalId)))
                 .collect(Collectors.toList());
+    }
+
+    private Trip requireTripAccess(UUID tripId, UUID userId) {
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+        var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
+        boolean hasAccess = trip.getOwnerId().equals(userId)
+                || (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
+        if (!hasAccess) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
+        }
+        return trip;
     }
 
     @Override

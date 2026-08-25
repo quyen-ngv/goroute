@@ -14,6 +14,5 @@ import lombok.NoArgsConstructor;
 public class TriggerPlaceReviewRefreshRequest {
     @Min(1)
     @Max(200)
-    @Builder.Default
-    private Integer maxReviews = 200;
+    private Integer maxReviews;
 }

@@ -43,6 +43,7 @@ public class CheckinServiceImpl implements CheckinService {
     @Override
     @Transactional
     public CheckinResponse checkin(UUID tripId, UUID activityId, CheckinRequest request, UUID userId) {
+        Trip trip = requireTripAccess(tripId, userId);
         Activity activity = activityRepository.findById(activityId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity not found"));
         
@@ -54,15 +55,6 @@ public class CheckinServiceImpl implements CheckinService {
                 || distanceMeters(request.getLat().doubleValue(), request.getLng().doubleValue(),
                 activity.getLat().doubleValue(), activity.getLng().doubleValue()) > 200) {
             throw new BusinessException(ErrorConstant.CHECKIN_DISTANCE_LIMIT_EXCEEDED);
-        }
-
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-        
-        TripMember member = tripMemberRepository.findByTripIdAndUserId(tripId, userId).orElse(null);
-        if (!trip.getOwnerId().equals(userId)
-                && (member == null || member.getStatus() != MemberStatus.ACCEPTED)) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
         }
 
         // Check if already checked in
@@ -114,12 +106,18 @@ public class CheckinServiceImpl implements CheckinService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<CheckinResponse> getCheckins(UUID tripId, UUID activityId) {
+    public List<CheckinResponse> getCheckins(UUID tripId, UUID activityId, UUID userId) {
+        requireTripAccess(tripId, userId);
         List<Checkin> checkins;
         if (activityId != null) {
+            Activity activity = activityRepository.findById(activityId)
+                    .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity not found"));
+            if (!activity.getTripId().equals(tripId)) {
+                throw new BusinessException(ErrorConstant.NOT_FOUND, "Activity not found");
+            }
             checkins = checkinRepository.findByActivityId(activityId);
         } else {
-            checkins = checkinRepository.findByUserId(tripId); // TODO: Fix this - should be by trip
+            checkins = checkinRepository.findByTripId(tripId);
         }
 
         return checkins.stream()
@@ -127,12 +125,20 @@ public class CheckinServiceImpl implements CheckinService {
                 .collect(Collectors.toList());
     }
 
+    private Trip requireTripAccess(UUID tripId, UUID userId) {
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+        TripMember member = tripMemberRepository.findByTripIdAndUserId(tripId, userId).orElse(null);
+        if (!trip.getOwnerId().equals(userId)
+                && (member == null || member.getStatus() != MemberStatus.ACCEPTED)) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
+        }
+        return trip;
+    }
+
     private CheckinResponse mapToCheckinResponse(Checkin checkin) {
         User user = userRepository.findById(checkin.getUserId())
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
-        Activity activity = activityRepository.findById(checkin.getActivityId())
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity not found"));
-        
         return CheckinResponse.builder()
                 .id(checkin.getId())
                 .activityId(checkin.getActivityId())

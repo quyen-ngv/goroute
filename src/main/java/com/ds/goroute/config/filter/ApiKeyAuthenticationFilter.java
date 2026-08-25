@@ -27,8 +27,7 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
             new AntPathRequestMatcher("/v1/api/places/import", HttpMethod.POST.name()),
             new AntPathRequestMatcher("/v1/api/places/import/batch", HttpMethod.POST.name()),
             new AntPathRequestMatcher("/v1/api/places/*", HttpMethod.PUT.name()),
-            new AntPathRequestMatcher("/v1/api/place-reviews/*/prepare-refresh", HttpMethod.POST.name()),
-            new AntPathRequestMatcher("/v1/api/place-reviews/complete-refresh", HttpMethod.POST.name()),
+            new AntPathRequestMatcher("/v1/api/place-reviews/**"),
             new AntPathRequestMatcher("/v1/api/admin/places/import", HttpMethod.POST.name()),
             new AntPathRequestMatcher("/v1/api/admin/places/import/batch", HttpMethod.POST.name()),
             new AntPathRequestMatcher("/v1/api/admin/places/*", HttpMethod.PUT.name())

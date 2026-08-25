@@ -10,6 +10,7 @@ import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.FoodService;
 import com.ds.goroute.service.PlaceAttributeCatalog;
 import com.ds.goroute.service.PlaceService;
+import com.ds.goroute.type.PlaceReviewRefreshRerunMode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -128,11 +129,11 @@ public class AdminPlaceController extends BaseService {
 
     @PostMapping("/{placeId}/refresh-reviews")
     @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
-    @Operation(summary = "Queue a one-place refresh using up to 200 image reviews")
+    @Operation(summary = "Queue a one-place review refresh")
     public ResponseEntity refreshReviews(
             @PathVariable UUID placeId,
             @Valid @RequestBody(required = false) TriggerPlaceReviewRefreshRequest request) {
-        int maxReviews = request == null || request.getMaxReviews() == null ? 200 : request.getMaxReviews();
+        Integer maxReviews = request == null ? null : request.getMaxReviews();
         PlaceReviewRefreshResponse response = adminPlaceReviewRefreshService.trigger(placeId, maxReviews);
         return ResponseEntity.ok(ofSucceeded(response));
     }
@@ -161,7 +162,9 @@ public class AdminPlaceController extends BaseService {
     @PostMapping("/refresh-reviews/{jobId}/rerun/{mode}")
     @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
     @Operation(summary = "Rerun all, failed, unexecuted, or failed and unexecuted places")
-    public ResponseEntity rerunReviewRefresh(@PathVariable UUID jobId, @PathVariable String mode) {
+    public ResponseEntity rerunReviewRefresh(
+            @PathVariable UUID jobId,
+            @PathVariable PlaceReviewRefreshRerunMode mode) {
         return ResponseEntity.ok(ofSucceeded(adminPlaceReviewRefreshService.rerun(jobId, mode)));
     }
 }

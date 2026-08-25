@@ -5,17 +5,18 @@ import com.ds.goroute.dto.request.AdminPushNotificationRequest;
 import com.ds.goroute.dto.request.AdminSinglePushNotificationRequest;
 import com.ds.goroute.dto.request.RegisterDeviceRequest;
 import com.ds.goroute.dto.request.UpdateDeviceRequest;
+import com.ds.goroute.dto.response.AdminPushNotificationResponse;
 import com.ds.goroute.dto.response.NotificationResponse;
-import com.ds.goroute.entity.UserDevice;
-import com.ds.goroute.mapper.UserDeviceMapper;
 import com.ds.goroute.service.NotificationService;
-import com.ds.goroute.service.notification.NotificationLanguage;
+import com.ds.goroute.dto.response.UserDeviceResponse;
+import com.ds.goroute.service.UserDeviceService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -26,7 +27,7 @@ import java.util.UUID;
 public class NotificationController {
 
     private final NotificationService notificationService;
-    private final UserDeviceMapper userDeviceMapper;
+    private final UserDeviceService userDeviceService;
 
     @GetMapping
     public ResponseEntity<BaseResponse<List<NotificationResponse>>> getNotifications(
@@ -51,8 +52,9 @@ public class NotificationController {
 
     @PutMapping("/{notificationId}/read")
     public ResponseEntity<BaseResponse<Void>> markAsRead(
+            @RequestAttribute("userId") UUID userId,
             @PathVariable UUID notificationId) {
-        notificationService.markAsRead(notificationId);
+        notificationService.markAsRead(userId, notificationId);
         return ResponseEntity.ok(BaseResponse.ofSucceeded());
     }
 
@@ -65,24 +67,21 @@ public class NotificationController {
 
     @DeleteMapping("/{notificationId}")
     public ResponseEntity<BaseResponse<Void>> deleteNotification(
+            @RequestAttribute("userId") UUID userId,
             @PathVariable UUID notificationId) {
-        notificationService.deleteNotification(notificationId);
+        notificationService.deleteNotification(userId, notificationId);
         return ResponseEntity.ok(BaseResponse.ofSucceeded());
     }
 
     @PostMapping("/admin/push")
-    public ResponseEntity<BaseResponse<com.ds.goroute.dto.response.AdminPushNotificationResponse>> sendAdminPush(
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BaseResponse<AdminPushNotificationResponse>> sendAdminPush(
             @RequestAttribute("userId") UUID adminUserId,
-            @RequestBody @jakarta.validation.Valid AdminPushNotificationRequest request) {
+            @Valid @RequestBody AdminPushNotificationRequest request) {
         
         log.info("Admin push notification request from userId: {}, recipients: {}", 
                 adminUserId, request.getEmails().size());
         
-        // TODO: Add admin permission check here if needed
-        // if (!userService.isAdmin(adminUserId)) {
-        //     throw new UnauthorizedException("Only admins can send push notifications");
-        // }
-
         var response = notificationService.sendAdminPushNotification(
                 request.getEmails(),
                 request.getTitle(),
@@ -103,17 +102,12 @@ public class NotificationController {
     }
 
     @PostMapping("/admin/push/user")
-    public ResponseEntity<BaseResponse<com.ds.goroute.dto.response.AdminPushNotificationResponse>> sendAdminPushToUser(
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BaseResponse<AdminPushNotificationResponse>> sendAdminPushToUser(
             @RequestAttribute("userId") UUID adminUserId,
-            @RequestBody @jakarta.validation.Valid AdminSinglePushNotificationRequest request) {
+            @Valid @RequestBody AdminSinglePushNotificationRequest request) {
 
-        log.info("Single admin push notification request from userId: {}, targetEmail: {}",
-                adminUserId, request.getEmail());
-
-        // TODO: Add admin permission check here if needed
-        // if (!userService.isAdmin(adminUserId)) {
-        //     throw new UnauthorizedException("Only admins can send push notifications");
-        // }
+        log.info("Single admin push notification request from userId: {}", adminUserId);
 
         var response = notificationService.sendAdminPushNotificationToUser(
                 request.getUserId(),
@@ -136,53 +130,18 @@ public class NotificationController {
     }
 
     @PostMapping("/devices")
-    public ResponseEntity<BaseResponse<UserDevice>> registerDevice(
+    public ResponseEntity<BaseResponse<UserDeviceResponse>> registerDevice(
             @RequestAttribute("userId") UUID userId,
-            @RequestBody RegisterDeviceRequest request) {
-
-        // Check if device already exists
-        String language = NotificationLanguage.normalize(request.getLanguage());
-        UserDevice existing = userDeviceMapper.findByUserIdAndToken(userId, request.getFcmToken());
-        if (existing != null) {
-            // Update existing device
-            userDeviceMapper.updateDevice(existing.getId(), userId, request.getFcmToken(), language, true);
-            existing.setFcmToken(request.getFcmToken());
-            existing.setLanguage(language);
-            existing.setIsActive(true);
-            return ResponseEntity.ok(BaseResponse.ofSucceeded(existing));
-        } else {
-            // Create new device
-            UserDevice device = UserDevice.builder()
-                    .id(UUID.randomUUID())
-                    .userId(userId)
-                    .fcmToken(request.getFcmToken())
-                    .deviceType(request.getDeviceType())
-                    .deviceName(request.getDeviceName())
-                    .language(language)
-                    .isActive(true)
-                    .createdAt(LocalDateTime.now())
-                    .updatedAt(LocalDateTime.now())
-                    .build();
-            userDeviceMapper.insert(device);
-            return ResponseEntity.ok(BaseResponse.ofSucceeded(device));
-        }
+            @Valid @RequestBody RegisterDeviceRequest request) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(userDeviceService.register(userId, request)));
     }
 
     @PatchMapping("/devices/{deviceId}")
     public ResponseEntity<BaseResponse<Void>> updateDevice(
             @RequestAttribute("userId") UUID userId,
             @PathVariable UUID deviceId,
-            @RequestBody UpdateDeviceRequest request) {
-        String language = request.getLanguage() != null
-                ? NotificationLanguage.normalize(request.getLanguage())
-                : null;
-        userDeviceMapper.updateDevice(
-                deviceId,
-                userId,
-                request.getFcmToken(),
-                language,
-                request.getIsActive()
-        );
+            @Valid @RequestBody UpdateDeviceRequest request) {
+        userDeviceService.update(userId, deviceId, request);
         return ResponseEntity.ok(BaseResponse.ofSucceeded());
     }
 }

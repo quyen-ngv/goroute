@@ -18,6 +18,7 @@ public class MediaAsset {
     private UUID activityId;
     private String entityType;
     private UUID entityId;
+    private String mediaType;
     private String url;
     private String caption;
     private UUID uploadedBy;

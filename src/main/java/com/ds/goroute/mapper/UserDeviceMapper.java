@@ -19,7 +19,7 @@ public interface UserDeviceMapper {
 
     void updateToken(@Param("id") UUID id, @Param("fcmToken") String fcmToken);
 
-    void updateDevice(@Param("id") UUID id,
+    int updateDevice(@Param("id") UUID id,
                       @Param("userId") UUID userId,
                       @Param("fcmToken") String fcmToken,
                       @Param("language") String language,
@@ -29,5 +29,5 @@ public interface UserDeviceMapper {
 
     void deleteByToken(@Param("fcmToken") String fcmToken);
 
-    void deleteByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
+    int deleteByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
 }

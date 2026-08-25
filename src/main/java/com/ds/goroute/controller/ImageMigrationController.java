@@ -1,5 +1,6 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.job.ImageMigrationJob;
 import com.ds.goroute.job.ReviewCleanupJob;
@@ -19,6 +20,8 @@ import java.util.UUID;
 @Slf4j
 public class ImageMigrationController extends BaseService {
 
+    private static final String INTERNAL_ERROR_OPERATION = "image maintenance";
+
     private final ImageMigrationJob imageMigrationJob;
     private final ReviewCleanupJob reviewCleanupJob;
 
@@ -35,9 +38,7 @@ public class ImageMigrationController extends BaseService {
             imageMigrationJob.runFullMigration();
             return ResponseEntity.ok(ofSucceeded("Migration started. Check logs for progress."));
         } catch (Exception e) {
-            log.error("Failed to start migration: {}", e.getMessage());
-            return ResponseEntity.internalServerError()
-                    .body(ofFailed(500, "Failed to start migration: " + e.getMessage()));
+            return maintenanceFailure("start full image migration", e);
         }
     }
 
@@ -53,8 +54,7 @@ public class ImageMigrationController extends BaseService {
             imageMigrationJob.migratePlaces();
             return ResponseEntity.ok(ofSucceeded("Place migration completed"));
         } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body(ofFailed(500, e.getMessage()));
+            return maintenanceFailure("migrate place images", e);
         }
     }
 
@@ -70,8 +70,7 @@ public class ImageMigrationController extends BaseService {
             imageMigrationJob.migratePlaceReviews();
             return ResponseEntity.ok(ofSucceeded("Review migration completed"));
         } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body(ofFailed(500, e.getMessage()));
+            return maintenanceFailure("migrate review images", e);
         }
     }
 
@@ -87,8 +86,7 @@ public class ImageMigrationController extends BaseService {
             imageMigrationJob.migrateActivities();
             return ResponseEntity.ok(ofSucceeded("Activity migration completed"));
         } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body(ofFailed(500, e.getMessage()));
+            return maintenanceFailure("migrate activity images", e);
         }
     }
 
@@ -104,8 +102,7 @@ public class ImageMigrationController extends BaseService {
             imageMigrationJob.migrateActivityBookings();
             return ResponseEntity.ok(ofSucceeded("Booking migration completed"));
         } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body(ofFailed(500, e.getMessage()));
+            return maintenanceFailure("migrate booking images", e);
         }
     }
 
@@ -121,8 +118,7 @@ public class ImageMigrationController extends BaseService {
             imageMigrationJob.migrateFoods();
             return ResponseEntity.ok(ofSucceeded("Food migration completed"));
         } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body(ofFailed(500, e.getMessage()));
+            return maintenanceFailure("migrate food images", e);
         }
     }
 
@@ -138,8 +134,7 @@ public class ImageMigrationController extends BaseService {
             imageMigrationJob.migrateExpenses();
             return ResponseEntity.ok(ofSucceeded("Expense migration completed"));
         } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body(ofFailed(500, e.getMessage()));
+            return maintenanceFailure("migrate expense images", e);
         }
     }
 
@@ -157,9 +152,7 @@ public class ImageMigrationController extends BaseService {
             reviewCleanupJob.cleanupAllPlaces();
             return ResponseEntity.ok(ofSucceeded("Review cleanup started. Check logs for progress."));
         } catch (Exception e) {
-            log.error("Failed to start review cleanup: {}", e.getMessage());
-            return ResponseEntity.internalServerError()
-                    .body(ofFailed(500, "Failed to start review cleanup: " + e.getMessage()));
+            return maintenanceFailure("start review cleanup", e);
         }
     }
 
@@ -168,16 +161,23 @@ public class ImageMigrationController extends BaseService {
      */
     @PostMapping("/reviews/cleanup/{placeId}")
     @PreAuthorize("@adminAuthorization.can(authentication,'system-maintenance','update')")
-    public ResponseEntity<BaseResponse<?>> cleanupPlaceReviews(@PathVariable UUID placeId) {
+    public ResponseEntity<BaseResponse<Map<String, Integer>>> cleanupPlaceReviews(@PathVariable UUID placeId) {
         log.info("Triggering review cleanup for place: {}", placeId);
         
         try {
             Map<String, Integer> result = reviewCleanupJob.cleanupPlaceReviews(placeId);
             return ResponseEntity.ok(ofSucceeded(result));
         } catch (Exception e) {
-            log.error("Failed to cleanup reviews for place {}: {}", placeId, e.getMessage());
-            return ResponseEntity.internalServerError()
-                    .body(ofFailed(500, "Failed to cleanup reviews: " + e.getMessage()));
+            return maintenanceFailure("clean up reviews for a place", e);
         }
+    }
+
+    private <T> ResponseEntity<BaseResponse<T>> maintenanceFailure(String operation, Exception exception) {
+        log.error("Failed to perform {} {}", INTERNAL_ERROR_OPERATION, operation, exception);
+        return ResponseEntity.internalServerError().body(
+                BaseResponse.<T>ofFailed(
+                        getRequestId(),
+                        getBusinessError(ErrorConstant.INTERNAL_SERVER_ERROR),
+                        null));
     }
 }

@@ -1,11 +1,13 @@
 package com.ds.goroute.utils;
 
+import com.ds.goroute.config.JwtProperties;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
-import org.springframework.beans.factory.annotation.Value;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.security.Key;
@@ -13,16 +15,26 @@ import java.util.Date;
 import java.util.Map;
 
 @Component
+@RequiredArgsConstructor
 public class JwtUtils {
 
-    @Value("${application.security.jwt.secret-key:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}")
-    private String secretKey;
+    private final JwtProperties properties;
 
-    @Value("${application.security.jwt.expiration:86400000}") // 1 day default
-    private long jwtExpiration;
+    @PostConstruct
+    void validateSecret() {
+        byte[] decoded;
+        try {
+            decoded = Decoders.BASE64.decode(properties.getSecretKey());
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException("JWT secret must be valid Base64", exception);
+        }
+        if (decoded.length < 32) {
+            throw new IllegalStateException("JWT secret must contain at least 256 bits");
+        }
+    }
 
     public String generateToken(Map<String, Object> extraClaims, String subject) {
-        return buildToken(extraClaims, subject, jwtExpiration);
+        return buildToken(extraClaims, subject, properties.getExpiration());
     }
 
     public String generateToken(Map<String, Object> extraClaims, String subject, Long expiration) {
@@ -60,7 +72,7 @@ public class JwtUtils {
     }
 
     private Key getSignInKey() {
-        byte[] keyBytes = Decoders.BASE64.decode(secretKey);
+        byte[] keyBytes = Decoders.BASE64.decode(properties.getSecretKey());
         return Keys.hmacShaKeyFor(keyBytes);
     }
 }

@@ -1,5 +1,6 @@
 package com.ds.goroute.thirdparty.scrape;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -13,6 +14,10 @@ import java.util.UUID;
 @AllArgsConstructor
 public class ScrapePlaceReviewRefreshJobRequest {
     private UUID placeId;
+
+    @JsonProperty("max_reviews")
+    private Integer maxReviews;
+
     private Integer maxPlaces;
     private String placesUrl;
     private String reviewRefreshUrl;

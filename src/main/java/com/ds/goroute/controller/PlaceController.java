@@ -4,6 +4,7 @@ import com.ds.goroute.dto.request.BatchUpdatePlaceImagesRequest;
 import com.ds.goroute.dto.PlaceSearchCriteria;
 import com.ds.goroute.dto.request.ImportPlaceRequest;
 import com.ds.goroute.dto.request.UpdatePlaceRequest;
+import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.response.PlaceResponse;
 import com.ds.goroute.dto.response.PlaceReviewResponse;
 import com.ds.goroute.dto.response.FoodSummaryResponse;
@@ -21,7 +22,6 @@ import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -33,7 +33,6 @@ import java.util.UUID;
 @RequestMapping("/v1/api/places")
 @RequiredArgsConstructor
 @Slf4j
-@Validated
 @Tag(name = "Places", description = "Place management APIs")
 public class PlaceController extends BaseService {
 
@@ -57,8 +56,10 @@ public class PlaceController extends BaseService {
 
     @GetMapping
     @Operation(summary = "List all places")
-    public ResponseEntity getAllPlaces() {
-        List<PlaceResponse> responses = placeService.getAllPlaces();
+    public ResponseEntity<BaseResponse<List<PlaceResponse>>> getAllPlaces(
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(500) int size) {
+        List<PlaceResponse> responses = placeService.getAllPlaces(page, size);
         return ResponseEntity.ok(ofSucceeded(responses));
     }
 

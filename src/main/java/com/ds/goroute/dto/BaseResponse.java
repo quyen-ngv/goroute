@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import lombok.Data;
+import lombok.Builder;
 import lombok.NoArgsConstructor;
 import lombok.experimental.Accessors;
 import lombok.experimental.SuperBuilder;
@@ -26,6 +27,7 @@ import java.util.Objects;
 @SuperBuilder
 public class BaseResponse<T> {
 
+    @Builder.Default
     private Meta meta = new Meta();
 
     private T data;

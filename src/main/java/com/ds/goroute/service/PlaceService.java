@@ -38,7 +38,7 @@ public interface PlaceService {
     /**
      * Search places by location and filters
      */
-    List<PlaceResponse> getAllPlaces();
+    List<PlaceResponse> getAllPlaces(int page, int size);
 
     AdminPlacePageResponse getAdminPlaces(String search, int page, int size);
 

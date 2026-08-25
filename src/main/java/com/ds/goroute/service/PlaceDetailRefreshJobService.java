@@ -1,5 +1,6 @@
 package com.ds.goroute.service;
 
+import com.ds.goroute.config.InternalApiProperties;
 import com.ds.goroute.dto.request.CreatePlaceDetailRefreshJobRequest;
 import com.ds.goroute.dto.request.PlaceDetailRefreshJobEventRequest;
 import com.ds.goroute.dto.response.PlaceImportJobResponse;
@@ -31,8 +32,7 @@ public class PlaceDetailRefreshJobService {
     @Value("${goroute.internal.public-base-url:http://goroute-app:8080}")
     private String publicBaseUrl;
 
-    @Value("${scrape.service.callback-token:}")
-    private String callbackToken;
+    private final InternalApiProperties internalApiProperties;
 
     public PlaceImportJobResponse trigger(CreatePlaceDetailRefreshJobRequest request) {
         PlaceImportJob active = jobMapper.findActivePlaceDetailRefreshJob();
@@ -72,7 +72,7 @@ public class PlaceDetailRefreshJobService {
                 ScrapePlaceDetailRefreshJobRequest.builder()
                         .gorouteJobId(job.getId().toString())
                         .callbackUrl(callbackUrl)
-                        .callbackToken(callbackToken)
+                        .callbackToken(internalApiProperties.scrapeCallbackToken())
                         .placeId(request.getPlaceId())
                         .maxPlaces(request.getMaxPlaces())
                         .headless(!Boolean.FALSE.equals(request.getHeadless()))

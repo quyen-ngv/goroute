@@ -11,7 +11,7 @@ import java.util.UUID;
 public interface ActivityService {
     ActivityResponse createActivity(UUID tripId, CreateActivityRequest request, UUID userId);
     
-    List<ActivityResponse> getActivities(UUID tripId, Integer dayNumber);
+    List<ActivityResponse> getActivities(UUID tripId, Integer dayNumber, UUID userId);
     
     ActivityResponse updateActivity(UUID tripId, UUID activityId, UpdateActivityRequest request, UUID userId);
     

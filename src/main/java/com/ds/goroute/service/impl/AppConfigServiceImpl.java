@@ -8,6 +8,7 @@ import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.AppConfigRepository;
 import com.ds.goroute.service.AppConfigService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,6 +62,7 @@ public class AppConfigServiceImpl implements AppConfigService {
 
     @Override
     @Transactional
+    @CacheEvict(cacheNames = "businessConfig", allEntries = true)
     public AppConfigResponse adminCreate(UpsertAppConfigRequest request) {
         LocalDateTime now = LocalDateTime.now();
         AppConfig config = AppConfig.builder()
@@ -84,6 +86,7 @@ public class AppConfigServiceImpl implements AppConfigService {
 
     @Override
     @Transactional
+    @CacheEvict(cacheNames = "businessConfig", allEntries = true)
     public AppConfigResponse adminUpdate(UUID id, UpsertAppConfigRequest request) {
         AppConfig config = required(id);
         long expectedVersion = request.getExpectedVersion() == null
@@ -109,6 +112,7 @@ public class AppConfigServiceImpl implements AppConfigService {
 
     @Override
     @Transactional
+    @CacheEvict(cacheNames = "businessConfig", allEntries = true)
     public void adminDelete(UUID id) {
         required(id);
         repository.delete(id);

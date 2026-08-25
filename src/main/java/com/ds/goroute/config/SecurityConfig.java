@@ -1,10 +1,12 @@
 package com.ds.goroute.config;
 
 import com.ds.goroute.config.filter.ApiKeyAuthenticationFilter;
+import com.ds.goroute.config.filter.InternalApiAuthenticationFilter;
 import com.ds.goroute.config.filter.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -19,17 +21,21 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import java.util.List;
 import jakarta.servlet.DispatcherType;
 
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
+@EnableConfigurationProperties({InternalApiProperties.class, CorsProperties.class, JwtProperties.class})
 @RequiredArgsConstructor
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final ApiKeyAuthenticationFilter apiKeyAuthenticationFilter;
+    private final InternalApiAuthenticationFilter internalApiAuthenticationFilter;
+    private final CorsProperties corsProperties;
+    private final ApiAuthenticationEntryPoint apiAuthenticationEntryPoint;
+    private final ApiAccessDeniedHandler apiAccessDeniedHandler;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -38,6 +44,9 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(exceptionHandling -> exceptionHandling
+                        .authenticationEntryPoint(apiAuthenticationEntryPoint)
+                        .accessDeniedHandler(apiAccessDeniedHandler))
                 .authorizeHttpRequests(auth -> auth
                         // SseEmitter completion/progress callbacks use an
                         // internal ASYNC servlet dispatch after the original
@@ -48,7 +57,7 @@ public class SecurityConfig {
                         .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers("/v1/api/auth/**").permitAll()
                         .requestMatchers("/v1/api/public/**").permitAll()
-                        .requestMatchers("/v1/api/location-images/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/v1/api/location-images/**").permitAll()
                         .requestMatchers("/v1/api/city-stories/feed").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/location-images/*/stories").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/places/**").permitAll()
@@ -57,11 +66,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT, "/v1/api/places/*")
                         .hasAnyAuthority("ROLE_ADMIN", "ROLE_API_KEY")
                         .requestMatchers("/v1/api/places/**").hasAuthority("ROLE_ADMIN")
-                        .requestMatchers(HttpMethod.POST,
-                                "/v1/api/place-reviews/*/prepare-refresh",
-                                "/v1/api/place-reviews/complete-refresh")
+                        .requestMatchers("/v1/api/place-reviews/**")
                         .hasAnyAuthority("ROLE_ADMIN", "ROLE_API_KEY")
-                        .requestMatchers("/v1/api/place-reviews/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/api/activity-bookings/*/add-to-trip").authenticated()
                         .requestMatchers("/v1/api/activity-bookings/**").permitAll()
                         .requestMatchers("/v1/api/foods/**").permitAll()
@@ -77,12 +83,14 @@ public class SecurityConfig {
                         .hasAnyAuthority("ROLE_ADMIN", "ROLE_API_KEY")
                         .requestMatchers("/v1/api/admin/**").hasAuthority("ROLE_ADMIN")
                         .requestMatchers("/v1/api/partner/**").hasAnyAuthority("ROLE_PARTNER", "ROLE_ADMIN")
-                        .requestMatchers("/v1/api/internal/**").permitAll()
+                        .requestMatchers("/v1/api/internal/**").hasAuthority("ROLE_INTERNAL")
+                        .requestMatchers("/v1/api/notifications/admin/**").hasAuthority("ROLE_ADMIN")
                         .requestMatchers(HttpMethod.POST, "/v1/api/contributions/check").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/contributions/places/*/contributors").permitAll()
                         .requestMatchers("/share/**").permitAll()
                         .requestMatchers("/goroute/share/**").permitAll()
-                        .requestMatchers("/actuator/**").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                        .requestMatchers("/actuator/**").hasAuthority("ROLE_ADMIN")
                         .requestMatchers("/api/health").permitAll()
                         .requestMatchers("/swagger-ui/**", "/api-docs/**", "/swagger-ui.html").permitAll()
                         // Static admin/share assets (PathPattern: ** must be last â€” no /**/*.css)
@@ -104,7 +112,8 @@ public class SecurityConfig {
                         ).permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(apiKeyAuthenticationFilter, JwtAuthenticationFilter.class);
+                .addFilterBefore(apiKeyAuthenticationFilter, JwtAuthenticationFilter.class)
+                .addFilterBefore(internalApiAuthenticationFilter, ApiKeyAuthenticationFilter.class);
 
         return http.build();
     }
@@ -112,14 +121,10 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(List.of(
-                "http://localhost:*",
-                "http://127.0.0.1:*",
-                "https://onestudy.id.vn"
-        ));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("*"));
-        configuration.setMaxAge(3600L);
+        configuration.setAllowedOriginPatterns(corsProperties.getAllowedOriginPatterns());
+        configuration.setAllowedMethods(corsProperties.getAllowedMethods());
+        configuration.setAllowedHeaders(corsProperties.getAllowedHeaders());
+        configuration.setMaxAge(corsProperties.getMaxAge());
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);

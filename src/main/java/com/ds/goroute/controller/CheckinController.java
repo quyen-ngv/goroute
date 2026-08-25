@@ -39,7 +39,7 @@ public class CheckinController extends BaseService {
             @PathVariable UUID tripId,
             @RequestParam(required = false) UUID activityId,
             @RequestAttribute("userId") UUID userId) {
-        List<CheckinResponse> checkins = checkinService.getCheckins(tripId, activityId);
+        List<CheckinResponse> checkins = checkinService.getCheckins(tripId, activityId, userId);
         return ResponseEntity.ok(ofSucceeded(checkins));
     }
 }

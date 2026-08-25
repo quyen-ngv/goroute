@@ -6,6 +6,7 @@ import com.ds.goroute.dto.request.MarkPaymentRequest;
 import com.ds.goroute.dto.response.BudgetOverviewResponse;
 import com.ds.goroute.dto.response.ExpenseResponse;
 import com.ds.goroute.dto.response.ExpenseSplitResponse;
+import com.ds.goroute.type.ExpenseCategory;
 
 import java.util.List;
 import java.util.UUID;
@@ -13,7 +14,7 @@ import java.util.UUID;
 public interface ExpenseService {
     ExpenseResponse createExpense(UUID tripId, CreateExpenseRequest request, UUID userId);
 
-    List<ExpenseResponse> getExpenses(UUID tripId, String category);
+    List<ExpenseResponse> getExpenses(UUID tripId, ExpenseCategory category, UUID userId);
 
     BudgetOverviewResponse getBudgetOverview(UUID tripId, UUID userId);
 

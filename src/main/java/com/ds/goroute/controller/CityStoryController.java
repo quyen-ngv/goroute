@@ -12,6 +12,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -38,6 +39,7 @@ public class CityStoryController extends BaseService {
     }
 
     @PostMapping("/v1/api/location-images/{locationId}/stories")
+    @PreAuthorize("@adminAuthorization.can(authentication,'location-images','create')")
     public ResponseEntity<BaseResponse<CityStoryItemResponse>> createStory(
             @PathVariable UUID locationId,
             @Valid @RequestBody CreateCityStoryRequest request) {
@@ -46,6 +48,7 @@ public class CityStoryController extends BaseService {
     }
 
     @DeleteMapping("/v1/api/city-stories/{storyId}")
+    @PreAuthorize("@adminAuthorization.can(authentication,'location-images','delete')")
     public ResponseEntity<BaseResponse<Void>> deleteStory(@PathVariable UUID storyId) {
         cityStoryService.deleteStory(storyId);
         return ResponseEntity.ok(ofSucceeded(null));

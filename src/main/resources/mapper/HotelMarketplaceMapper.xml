@@ -260,7 +260,7 @@
         INSERT INTO room_inventory_daily (room_type_id,inventory_date,total_units,reserved_units,sold_units,blocked_units,
           stop_sell,price_override,min_stay,closed_to_arrival,closed_to_departure,data_version,updated_by,updated_at)
         SELECT r.id,d.day,COALESCE(#{totalUnits},r.total_units),0,0,COALESCE(#{blockedUnits},0),COALESCE(#{stopSell},false),
-          NULL,NULL,false,false,1,#{updatedBy},#{updatedAt}
+          #{priceOverride},#{minStay},COALESCE(#{closedToArrival},false),COALESCE(#{closedToDeparture},false),1,#{updatedBy},#{updatedAt}
         FROM room_types r CROSS JOIN dates d
         WHERE r.id=#{roomTypeId}
           AND COALESCE(#{blockedUnits},0) &lt;= COALESCE(#{totalUnits},r.total_units)
@@ -268,6 +268,10 @@
           total_units=COALESCE(#{totalUnits},room_inventory_daily.total_units),
           blocked_units=COALESCE(#{blockedUnits},room_inventory_daily.blocked_units),
           stop_sell=COALESCE(#{stopSell},room_inventory_daily.stop_sell),
+          price_override=COALESCE(#{priceOverride},room_inventory_daily.price_override),
+          min_stay=COALESCE(#{minStay},room_inventory_daily.min_stay),
+          closed_to_arrival=COALESCE(#{closedToArrival},room_inventory_daily.closed_to_arrival),
+          closed_to_departure=COALESCE(#{closedToDeparture},room_inventory_daily.closed_to_departure),
           data_version=room_inventory_daily.data_version+1,updated_by=#{updatedBy},updated_at=#{updatedAt}
         WHERE room_inventory_daily.reserved_units + room_inventory_daily.sold_units
           + COALESCE(#{blockedUnits},room_inventory_daily.blocked_units)

@@ -3,6 +3,7 @@ package com.ds.goroute.service.impl;
 import com.ds.goroute.dto.response.ActivityResponse;
 import com.ds.goroute.entity.Activity;
 import com.ds.goroute.entity.Place;
+import com.ds.goroute.entity.Trip;
 import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.CheckinRepository;
 import com.ds.goroute.repository.ExpenseRepository;
@@ -53,6 +54,7 @@ class ActivityServiceImplTest {
         UUID tripId = UUID.randomUUID();
         UUID activityId = UUID.randomUUID();
         UUID placeId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
         Activity activity = Activity.builder()
                 .id(activityId)
                 .tripId(tripId)
@@ -76,13 +78,17 @@ class ActivityServiceImplTest {
                 .thumbnail("https://example.com/place.jpg")
                 .build();
 
+        when(tripRepository.findById(tripId)).thenReturn(java.util.Optional.of(
+                Trip.builder().id(tripId).ownerId(userId).build()));
+        when(tripMemberRepository.findByTripIdAndUserId(tripId, userId))
+                .thenReturn(java.util.Optional.empty());
         when(activityRepository.findByTripId(tripId)).thenReturn(List.of(activity));
         when(placeRepository.findByIds(List.of(placeId))).thenReturn(List.of(place));
         when(placeRepository.findByPlaceIds(List.of())).thenReturn(List.of());
         when(checkinRepository.findByActivityId(activityId)).thenReturn(List.of());
         when(expenseRepository.findByActivityId(activityId)).thenReturn(List.of());
 
-        List<ActivityResponse> result = service.getActivities(tripId, null);
+        List<ActivityResponse> result = service.getActivities(tripId, null, userId);
 
         assertThat(result).hasSize(1);
         ActivityResponse response = result.getFirst();

@@ -18,11 +18,11 @@ public interface NotificationService {
 
     List<NotificationResponse> getNotifications(UUID userId, Integer page, Integer size, Boolean unreadOnly, UUID tripId);
 
-    void markAsRead(UUID notificationId);
+    void markAsRead(UUID userId, UUID notificationId);
 
     void markAllAsRead(UUID userId);
 
-    void deleteNotification(UUID notificationId);
+    void deleteNotification(UUID userId, UUID notificationId);
 
     Integer getUnreadCount(UUID userId);
 

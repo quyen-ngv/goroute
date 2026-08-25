@@ -37,6 +37,11 @@ public class ErrorConstant {
     public static final int FREE_TRIP_MEMORY_LIMIT_REACHED = 4000103;
 
     /**
+     * Only PRO users can upload trip-memory videos.
+     */
+    public static final int PRO_VIDEO_UPLOAD_REQUIRED = 4000107;
+
+    /**
      * The user's subscription has no remaining AI trip generations.
      */
     public static final int AI_TRIP_QUOTA_EXHAUSTED = 4000104;

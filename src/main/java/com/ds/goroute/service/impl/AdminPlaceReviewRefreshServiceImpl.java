@@ -4,17 +4,19 @@ import com.ds.goroute.dto.response.PlaceReviewRefreshResponse;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.AdminPlaceReviewRefreshService;
+import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.thirdparty.scrape.ScrapeJobTriggerResponse;
 import com.ds.goroute.thirdparty.scrape.ScrapePlaceReviewRefreshJobRequest;
 import com.ds.goroute.thirdparty.scrape.ScrapeServiceClient;
 import com.ds.goroute.type.PlaceVisibilityStatus;
+import com.ds.goroute.type.BusinessConfigKey;
+import com.ds.goroute.type.PlaceReviewRefreshRerunMode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
 import java.util.Map;
-import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -22,12 +24,13 @@ public class AdminPlaceReviewRefreshServiceImpl implements AdminPlaceReviewRefre
 
     private final PlaceRepository placeRepository;
     private final ScrapeServiceClient scrapeServiceClient;
+    private final BusinessConfigService businessConfigService;
 
     @Value("${goroute.internal.public-base-url:http://goroute-app:8080}")
     private String internalBaseUrl;
 
     @Override
-    public PlaceReviewRefreshResponse trigger(UUID placeId, int maxReviews) {
+    public PlaceReviewRefreshResponse trigger(UUID placeId, Integer maxReviews) {
         Place place = placeRepository.findById(placeId)
                 .orElseThrow(() -> new IllegalArgumentException("Place not found"));
         if (place.getVisibilityStatus() != PlaceVisibilityStatus.ACTIVE) {
@@ -37,8 +40,16 @@ public class AdminPlaceReviewRefreshServiceImpl implements AdminPlaceReviewRefre
             throw new IllegalArgumentException("Place has no Google Maps link");
         }
 
+        int resolvedMaxReviews = maxReviews == null
+                ? businessConfigService.getInt(BusinessConfigKey.PLACE_REVIEW_REFRESH_MAX_REVIEWS)
+                : maxReviews;
+        if (!BusinessConfigKey.PLACE_REVIEW_REFRESH_MAX_REVIEWS.accepts(resolvedMaxReviews)) {
+            throw new IllegalArgumentException("maxReviews must be between 1 and 200");
+        }
+
         return triggerJob(ScrapePlaceReviewRefreshJobRequest.builder()
                 .placeId(placeId)
+                .maxReviews(resolvedMaxReviews)
                 .headless(true)
                 .continueOnError(false)
                 .build());
@@ -70,13 +81,9 @@ public class AdminPlaceReviewRefreshServiceImpl implements AdminPlaceReviewRefre
     }
 
     @Override
-    public PlaceReviewRefreshResponse rerun(UUID jobId, String mode) {
-        String normalizedMode = mode == null ? "" : mode.trim().toUpperCase();
-        if (!Set.of("ALL", "FAILED", "NOT_EXECUTED", "FAILED_AND_NOT_EXECUTED").contains(normalizedMode)) {
-            throw new IllegalArgumentException("Unsupported review refresh rerun mode");
-        }
+    public PlaceReviewRefreshResponse rerun(UUID jobId, PlaceReviewRefreshRerunMode mode) {
         ScrapeJobTriggerResponse trigger = scrapeServiceClient.rerunPlaceReviewRefreshJob(
-                jobId.toString(), normalizedMode);
+                jobId.toString(), mode.name());
         if (trigger == null || trigger.getJobId() == null || trigger.getJobId().isBlank()) {
             throw new IllegalArgumentException("Could not rerun review refresh job");
         }

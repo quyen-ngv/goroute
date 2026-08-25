@@ -8,8 +8,10 @@ import com.ds.goroute.service.TripMemoryService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
@@ -37,6 +39,16 @@ public class TripMemoryController extends BaseService {
             @RequestAttribute("userId") UUID userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ofSucceeded(tripMemoryService.addTripMemory(tripId, request, userId)));
+    }
+
+    @PostMapping(value = "/video", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<BaseResponse<TripMemoryResponse>> addVideoMemory(
+            @PathVariable UUID tripId,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(required = false) UUID activityId,
+            @RequestAttribute("userId") UUID userId) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ofSucceeded(tripMemoryService.addTripVideoMemory(tripId, activityId, file, userId)));
     }
 
     @DeleteMapping("/{memoryId}")

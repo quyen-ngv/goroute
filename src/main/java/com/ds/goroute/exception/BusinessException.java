@@ -32,6 +32,7 @@ public class BusinessException extends RuntimeException implements Serializable 
     }
 
     public BusinessException(int code, String message) {
+        super(message);
         this.error = new BusinessError(code, message);
     }
 

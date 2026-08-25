@@ -2,8 +2,8 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.UpdateDeviceRequest;
-import com.ds.goroute.mapper.UserDeviceMapper;
-import com.ds.goroute.service.notification.NotificationLanguage;
+import com.ds.goroute.service.UserDeviceService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -15,20 +15,14 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class DeviceController {
 
-    private final UserDeviceMapper userDeviceMapper;
+    private final UserDeviceService userDeviceService;
 
     @PatchMapping("/{deviceId}")
     public ResponseEntity<BaseResponse<Void>> updateDevice(
             @RequestAttribute("userId") UUID userId,
             @PathVariable UUID deviceId,
-            @RequestBody UpdateDeviceRequest request) {
-        userDeviceMapper.updateDevice(
-                deviceId,
-                userId,
-                request.getFcmToken(),
-                request.getLanguage() != null ? NotificationLanguage.normalize(request.getLanguage()) : null,
-                request.getIsActive()
-        );
+            @Valid @RequestBody UpdateDeviceRequest request) {
+        userDeviceService.update(userId, deviceId, request);
         return ResponseEntity.ok(BaseResponse.ofSucceeded());
     }
 
@@ -36,7 +30,7 @@ public class DeviceController {
     public ResponseEntity<BaseResponse<Void>> deleteDevice(
             @RequestAttribute("userId") UUID userId,
             @PathVariable UUID deviceId) {
-        userDeviceMapper.deleteByIdAndUserId(deviceId, userId);
+        userDeviceService.delete(userId, deviceId);
         return ResponseEntity.ok(BaseResponse.ofSucceeded());
     }
 }

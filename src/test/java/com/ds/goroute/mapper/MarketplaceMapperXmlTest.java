@@ -46,4 +46,20 @@ class MarketplaceMapperXmlTest {
             assertTrue(xml.contains("AND COALESCE(#{blockedUnits},0) &lt;= COALESCE(#{totalUnits},r.total_units)"));
         }
     }
+
+    @Test
+    void inventoryUpsertPersistsTheInventoryOverridesAcceptedByTheApi() throws Exception {
+        try (InputStream input = Resources.getResourceAsStream("mapper/HotelMarketplaceMapper.xml")) {
+            String xml = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+            int statementStart = xml.indexOf("<insert id=\"upsertInventoryRange\">");
+            int statementEnd = xml.indexOf("</insert>", statementStart);
+            String statement = xml.substring(statementStart, statementEnd);
+
+            assertTrue(statement.contains("#{priceOverride},#{minStay},COALESCE(#{closedToArrival},false),COALESCE(#{closedToDeparture},false)"));
+            assertTrue(statement.contains("price_override=COALESCE(#{priceOverride},room_inventory_daily.price_override)"));
+            assertTrue(statement.contains("min_stay=COALESCE(#{minStay},room_inventory_daily.min_stay)"));
+            assertTrue(statement.contains("closed_to_arrival=COALESCE(#{closedToArrival},room_inventory_daily.closed_to_arrival)"));
+            assertTrue(statement.contains("closed_to_departure=COALESCE(#{closedToDeparture},room_inventory_daily.closed_to_departure)"));
+        }
+    }
 }

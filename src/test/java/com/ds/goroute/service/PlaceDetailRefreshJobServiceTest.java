@@ -1,5 +1,6 @@
 package com.ds.goroute.service;
 
+import com.ds.goroute.config.InternalApiProperties;
 import com.ds.goroute.dto.request.CreatePlaceDetailRefreshJobRequest;
 import com.ds.goroute.dto.request.PlaceDetailRefreshJobEventRequest;
 import com.ds.goroute.entity.PlaceImportJob;
@@ -32,9 +33,12 @@ class PlaceDetailRefreshJobServiceTest {
     void setUp() {
         jobMapper = mock(PlaceImportJobMapper.class);
         scrapeServiceClient = mock(ScrapeServiceClient.class);
-        service = new PlaceDetailRefreshJobService(jobMapper, scrapeServiceClient, new ObjectMapper());
+        service = new PlaceDetailRefreshJobService(
+                jobMapper,
+                scrapeServiceClient,
+                new ObjectMapper(),
+                new InternalApiProperties("ai-token", "internal-token"));
         ReflectionTestUtils.setField(service, "publicBaseUrl", "http://goroute-app:8080");
-        ReflectionTestUtils.setField(service, "callbackToken", "internal-token");
     }
 
     @Test

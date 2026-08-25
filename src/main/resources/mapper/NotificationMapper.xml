@@ -15,6 +15,10 @@
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
     </resultMap>
 
+    <sql id="notificationColumns">
+        id, user_id, trip_id, type, title, body, data, actor_id, is_read, created_at
+    </sql>
+
     <insert id="insert" parameterType="com.ds.goroute.entity.Notification">
         INSERT INTO notifications (id, user_id, trip_id, type, title, body, data, actor_id, is_read, created_at)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{userId,javaType=java.util.UUID,jdbcType=OTHER},
@@ -25,12 +29,17 @@
     </insert>
 
     <select id="findById" resultMap="NotificationResultMap">
-        SELECT * FROM notifications WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+        SELECT <include refid="notificationColumns"/>
+        FROM notifications WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </select>
 
     <select id="findByUserId" resultMap="NotificationResultMap">
-        SELECT * FROM notifications 
+        SELECT <include refid="notificationColumns"/>
+        FROM notifications
         WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+        <if test="tripId != null">
+            AND trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+        </if>
         <if test="unreadOnly != null and unreadOnly">
             AND is_read = FALSE
         </if>
@@ -46,6 +55,7 @@
     <update id="markAsRead">
         UPDATE notifications SET is_read = TRUE
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+          AND user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
     </update>
 
     <update id="markAllAsRead">
@@ -53,36 +63,43 @@
         WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
     </update>
 
-    <delete id="deleteById">
-        DELETE FROM notifications WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    <delete id="deleteByIdAndUserId">
+        DELETE FROM notifications
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+          AND user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
     </delete>
 
     <select id="selectById" parameterType="java.util.UUID" resultMap="NotificationResultMap">
-        SELECT * FROM notifications WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+        SELECT <include refid="notificationColumns"/>
+        FROM notifications WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </select>
 
     <select id="selectByUserId" parameterType="java.util.UUID" resultMap="NotificationResultMap">
-        SELECT * FROM notifications 
+        SELECT <include refid="notificationColumns"/>
+        FROM notifications
         WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
         ORDER BY created_at DESC
     </select>
     
     <select id="selectByUserIdAndTripId" resultMap="NotificationResultMap">
-        SELECT * FROM notifications 
+        SELECT <include refid="notificationColumns"/>
+        FROM notifications
         WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
         AND trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
         ORDER BY created_at DESC
     </select>
 
     <select id="selectUnreadByUserId" parameterType="java.util.UUID" resultMap="NotificationResultMap">
-        SELECT * FROM notifications 
+        SELECT <include refid="notificationColumns"/>
+        FROM notifications
         WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
         AND is_read = FALSE
         ORDER BY created_at DESC
     </select>
     
     <select id="selectUnreadByUserIdAndTripId" resultMap="NotificationResultMap">
-        SELECT * FROM notifications 
+        SELECT <include refid="notificationColumns"/>
+        FROM notifications
         WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
         AND trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
         AND is_read = FALSE

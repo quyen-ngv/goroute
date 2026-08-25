@@ -8,6 +8,7 @@
         <result column="activity_id" property="activityId" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="entity_type" property="entityType" jdbcType="VARCHAR"/>
         <result column="entity_id" property="entityId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="media_type" property="mediaType" jdbcType="VARCHAR"/>
         <result column="url" property="url" jdbcType="VARCHAR"/>
         <result column="caption" property="caption" jdbcType="VARCHAR"/>
         <result column="uploaded_by" property="uploadedBy" javaType="java.util.UUID" jdbcType="OTHER"/>
@@ -17,12 +18,13 @@
     </resultMap>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.MediaAsset">
-        INSERT INTO media_assets (id, trip_id, activity_id, entity_type, entity_id, url, caption, uploaded_by, created_at, updated_at)
+        INSERT INTO media_assets (id, trip_id, activity_id, entity_type, entity_id, media_type, url, caption, uploaded_by, created_at, updated_at)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER},
                 #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
                 #{activityId,javaType=java.util.UUID,jdbcType=OTHER},
                 #{entityType},
                 #{entityId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{mediaType},
                 #{url},
                 #{caption},
                 #{uploadedBy,javaType=java.util.UUID,jdbcType=OTHER},

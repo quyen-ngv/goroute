@@ -1,5 +1,6 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.config.InternalApiProperties;
 import com.ds.goroute.dto.request.CreateSocialLocationJobRequest;
 import com.ds.goroute.dto.request.SocialLocationJobCallbackRequest;
 import com.ds.goroute.dto.request.CreateSocialPlaceImportJobRequest;
@@ -76,8 +77,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     @Value("${goroute.internal.public-base-url:http://goroute-app:8080}")
     private String internalBaseUrl;
 
-    @Value("${scrape.service.callback-token:}")
-    private String callbackToken;
+    private final InternalApiProperties internalApiProperties;
 
     @Value("${social-location.dispatch-timeout-seconds:90}")
     private long dispatchTimeoutSeconds;
@@ -191,7 +191,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                         .url(job.getSourceUrl())
                         .language(job.getLanguage())
                         .callbackUrl(callbackUrl())
-                        .callbackToken(callbackToken)
+                        .callbackToken(internalApiProperties.scrapeCallbackToken())
                         .gorouteJobId(job.getId())
                         .maxDurationSeconds(job.getMaxDurationSeconds())
                         .maxAudioSeconds(job.getMaxDurationSeconds())

@@ -23,7 +23,8 @@ public interface NotificationMapper {
     
     List<Notification> selectUnreadByUserIdAndTripId(@Param("userId") UUID userId, @Param("tripId") UUID tripId);
     
-    List<Notification> findByUserId(@Param("userId") UUID userId, 
+    List<Notification> findByUserId(@Param("userId") UUID userId,
+                                     @Param("tripId") UUID tripId,
                                      @Param("unreadOnly") Boolean unreadOnly,
                                      @Param("limit") Integer limit, 
                                      @Param("offset") Integer offset);
@@ -32,9 +33,9 @@ public interface NotificationMapper {
     
     int updateById(Notification notification);
     
-    int markAsRead(@Param("id") UUID id);
+    int markAsRead(@Param("id") UUID id, @Param("userId") UUID userId);
     
     int markAllAsRead(@Param("userId") UUID userId);
     
-    int deleteById(@Param("id") UUID id);
+    int deleteByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
 }

@@ -135,6 +135,7 @@ class MarketplacePublicAccessServiceImplTest {
         when(activities.findPackage(packageId)).thenReturn(Optional.of(pack));
         when(activities.findSlot(slotId)).thenReturn(Optional.of(slot));
         when(activities.reserveSlot(org.mockito.ArgumentMatchers.eq(slotId), org.mockito.ArgumentMatchers.eq(3), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(1);
+        when(activities.confirmSlot(org.mockito.ArgumentMatchers.eq(slotId), org.mockito.ArgumentMatchers.eq(3), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(1);
         when(activities.findOrderItem(org.mockito.ArgumentMatchers.any())).thenReturn(Optional.empty());
         ActivityCommerceServiceImpl service = new ActivityCommerceServiceImpl(
                 activities, mock(PlaceRepository.class), mock(HostOrganizationRepository.class),

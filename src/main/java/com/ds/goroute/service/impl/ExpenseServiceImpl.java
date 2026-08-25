@@ -155,13 +155,13 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<ExpenseResponse> getExpenses(UUID tripId, String category) {
+    public List<ExpenseResponse> getExpenses(UUID tripId, ExpenseCategory category, UUID userId) {
+        validateTripAccess(tripId, userId);
         List<Expense> expenses = expenseRepository.findByTripId(tripId);
 
-        if (category != null && !category.isEmpty()) {
-            final ExpenseCategory categoryEnum = ExpenseCategory.valueOf(category.toUpperCase());
+        if (category != null) {
             expenses = expenses.stream()
-                    .filter(e -> e.getCategory() == categoryEnum)
+                    .filter(e -> e.getCategory() == category)
                     .collect(Collectors.toList());
         }
 

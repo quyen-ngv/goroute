@@ -1819,6 +1819,7 @@ public class TripServiceImpl implements TripService {
 
     private List<String> getTripMemoryImageUrls(UUID tripId) {
         return mediaAssetRepository.findByTripId(tripId).stream()
+                .filter(asset -> asset.getMediaType() == null || !"VIDEO".equalsIgnoreCase(asset.getMediaType()))
                 .map(MediaAsset::getUrl)
                 .filter(url -> url != null && !url.isBlank())
                 .distinct()
@@ -1827,6 +1828,7 @@ public class TripServiceImpl implements TripService {
 
     private List<String> getActivityMemoryImageUrls(UUID activityId) {
         return mediaAssetRepository.findByActivityId(activityId).stream()
+                .filter(asset -> asset.getMediaType() == null || !"VIDEO".equalsIgnoreCase(asset.getMediaType()))
                 .map(MediaAsset::getUrl)
                 .filter(url -> url != null && !url.isBlank())
                 .distinct()

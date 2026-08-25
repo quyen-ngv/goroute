@@ -71,7 +71,8 @@ public class BaseService {
     }
 
     public String getRequestId() {
-        return getRequestValue(RequestKeyConstant.REQUEST_ID).toString();
+        Object requestId = getRequestValue(RequestKeyConstant.REQUEST_ID);
+        return requestId == null ? null : requestId.toString();
     }
 
     public Object getRequestBody() {

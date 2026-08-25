@@ -1,128 +1,183 @@
 package com.ds.goroute.exception;
 
-import com.ds.goroute.annotations.LogsActivityAnnotation;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.ErrorViolation;
 import com.ds.goroute.service.BaseService;
-import com.google.common.base.CaseFormat;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.stereotype.Controller;
-import org.springframework.util.ObjectUtils;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
-import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.server.ResponseStatusException;
 
-import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
-@Controller
-@ControllerAdvice
+@RestControllerAdvice
 @Slf4j
 public class CommonExceptionHandler extends BaseService {
 
     @ExceptionHandler(BusinessException.class)
-    @LogsActivityAnnotation
     public ResponseEntity<BaseResponse<?>> handleBusinessException(BusinessException exception) {
-        exception.getError().setMessage(getMessage(exception.getError()));
-        Object dataException = exception.getError().getData();
-        BaseResponse<?> data = ofFailed(exception);
-        if(!ObjectUtils.isEmpty(dataException) && dataException instanceof String) {
-            data.getMeta().setErrors(Collections.singletonList(
-                ErrorViolation.builder().description((String) dataException).build()));
-        }
-        return new ResponseEntity<>(data, exception.getError().getHttpStatus() == null
-                ? HttpStatus.OK : exception.getError().getHttpStatus());
+        BusinessError error = exception.getError();
+        String message = getMessage(error);
+        error.setMessage(message);
+        HttpStatus status = error.getHttpStatus() == null
+                ? statusFromBusinessCode(error.getCode())
+                : error.getHttpStatus();
+        List<ErrorViolation> violations = error.getData() instanceof String description
+                ? List.of(ErrorViolation.builder().description(description).build())
+                : null;
+        return response(error, message, violations, status);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    @LogsActivityAnnotation
-    public ResponseEntity<BaseResponse<?>> handleMethodArgumentNotValidException(MethodArgumentNotValidException exception) {
+    public ResponseEntity<BaseResponse<?>> handleBodyValidation(MethodArgumentNotValidException exception) {
         List<ErrorViolation> errors = exception.getBindingResult().getFieldErrors().stream()
-            .map(e -> ErrorViolation.builder()
-                .field(CaseFormat.UPPER_CAMEL.to(CaseFormat.LOWER_UNDERSCORE, e.getField()))
-                .code(Integer.toString(getErrorCode(e.getDefaultMessage(), ErrorConstant.INVALID_PARAMETERS)))
-                .description(getMessage(e.getDefaultMessage()))
-                .build())
-            .collect(Collectors.toList());
+                .map(error -> violation(error.getField(), error.getDefaultMessage()))
+                .toList();
+        return invalidParameters(errors);
+    }
 
-        BusinessError error = getBusinessError(ErrorConstant.INVALID_PARAMETERS);
-        BaseResponse<?> data = ofFailed(error, getMessage(error), errors);
-        return new ResponseEntity<>(data, HttpStatus.OK);
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ResponseEntity<BaseResponse<?>> handleMethodValidation(HandlerMethodValidationException exception) {
+        List<ErrorViolation> errors = exception.getParameterValidationResults().stream()
+                .flatMap(result -> result.getResolvableErrors().stream()
+                        .map(error -> violation(
+                                result.getMethodParameter().getParameterName(),
+                                error.getDefaultMessage())))
+                .toList();
+        return invalidParameters(errors);
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<BaseResponse<?>> handleConstraintViolation(ConstraintViolationException exception) {
+        List<ErrorViolation> errors = exception.getConstraintViolations().stream()
+                .map(violation -> violation(
+                        violation.getPropertyPath().toString(), violation.getMessage()))
+                .toList();
+        return invalidParameters(errors);
     }
 
     @ExceptionHandler(MissingServletRequestParameterException.class)
-    @LogsActivityAnnotation
-    public ResponseEntity<BaseResponse<?>> handleMethodArgumentNotValidException(MissingServletRequestParameterException exception) {
-        BusinessError error = getBusinessError(ErrorConstant.INVALID_PARAMETERS);
-        BaseResponse<?> data = ofFailed(error,"Param " + exception.getParameterName() + " is required");
-        return new ResponseEntity<>(data, HttpStatus.OK);
+    public ResponseEntity<BaseResponse<?>> handleMissingParameter(MissingServletRequestParameterException exception) {
+        return invalidParameters(List.of(violation(
+                exception.getParameterName(), "Parameter is required")));
     }
 
-    @ExceptionHandler(Exception.class)
-    @LogsActivityAnnotation
-    public ResponseEntity<BaseResponse<?>> handleException(Exception exception) {
-        BusinessError error = getBusinessError(ErrorConstant.INTERNAL_SERVER_ERROR);
-        BaseResponse<?> data = ofFailed(error, getMessage(error), null);
-        return new ResponseEntity<>(data, HttpStatus.OK);
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<BaseResponse<?>> handleTypeMismatch(MethodArgumentTypeMismatchException exception) {
+        return invalidParameters(List.of(violation(
+                exception.getName(), "Parameter has an invalid value")));
     }
+
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    @LogsActivityAnnotation
-    public ResponseEntity<BaseResponse<?>> handleException(HttpMessageNotReadableException exception) {
-        BusinessError error = getBusinessError(ErrorConstant.INVALID_PARAMETERS);
-        BaseResponse<?> data = ofFailed(error,"invalid parameter");
-        return new ResponseEntity<>(data, HttpStatus.OK);
+    public ResponseEntity<BaseResponse<?>> handleUnreadableBody(HttpMessageNotReadableException exception) {
+        return invalidParameters(List.of(violation(null, "Request body is invalid")));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
-    @LogsActivityAnnotation
-    public ResponseEntity<BaseResponse<?>> handleIllegalArgumentException(IllegalArgumentException exception) {
-        BusinessError error = getBusinessError(ErrorConstant.INVALID_PARAMETERS);
-        BaseResponse<?> data = ofFailed(error, getMessage(error), exception.getMessage());
-        return new ResponseEntity<>(data, HttpStatus.OK);
+    public ResponseEntity<BaseResponse<?>> handleIllegalArgument(IllegalArgumentException exception) {
+        String message = exception.getMessage() == null || exception.getMessage().isBlank()
+                ? "Invalid parameter"
+                : exception.getMessage();
+        return invalidParameters(List.of(violation(null, message)));
+    }
+
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<BaseResponse<?>> handleAuthentication(AuthenticationException exception) {
+        return response(ErrorConstant.UNAUTHORIZED, "Authentication is required", null, HttpStatus.UNAUTHORIZED);
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<BaseResponse<?>> handleAccessDenied(AccessDeniedException exception) {
+        return response(ErrorConstant.FORBIDDEN_ERROR, "Access denied", null, HttpStatus.FORBIDDEN);
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<BaseResponse<?>> handleResponseStatus(ResponseStatusException exception) {
+        HttpStatusCode status = exception.getStatusCode();
+        String message = status.is5xxServerError() ? "Internal server error" : exception.getReason();
+        return response(errorCode(status), message, null, status);
     }
 
     @ExceptionHandler(HttpStatusCodeException.class)
-    @LogsActivityAnnotation
-    public ResponseEntity<BaseResponse<?>> handleHttpStatusCodeException(HttpStatusCodeException exception) {
-        HttpStatus statusCode = (HttpStatus) exception.getStatusCode();
+    public ResponseEntity<BaseResponse<?>> handleDownstreamStatus(HttpStatusCodeException exception) {
+        HttpStatusCode status = exception.getStatusCode();
+        String message = status.is5xxServerError() ? "Downstream service failed" : "Downstream request was rejected";
+        return response(errorCode(status), message, null, status);
+    }
 
-        if (statusCode.value() == HttpStatus.BAD_REQUEST.value()) {
-            BusinessError error = getBusinessError(ErrorConstant.INVALID_PARAMETERS);
-            BaseResponse<?> data = ofFailed(error, getMessage(error), exception.getMessage());
-            return new ResponseEntity<>(data, HttpStatus.OK);
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<BaseResponse<?>> handleUnexpectedException(Exception exception) {
+        log.error("Unhandled API exception for {} {}",
+                httpServletRequest.getMethod(), httpServletRequest.getRequestURI(), exception);
+        return response(ErrorConstant.INTERNAL_SERVER_ERROR, "Internal server error", null,
+                HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    private ResponseEntity<BaseResponse<?>> invalidParameters(List<ErrorViolation> errors) {
+        return response(ErrorConstant.INVALID_PARAMETERS, "Invalid parameters", errors, HttpStatus.BAD_REQUEST);
+    }
+
+    private ResponseEntity<BaseResponse<?>> response(
+            int code, String message, List<ErrorViolation> errors, HttpStatusCode status) {
+        return response(new BusinessError(code, message), message, errors, status);
+    }
+
+    private ResponseEntity<BaseResponse<?>> response(
+            BusinessError error, String message, List<ErrorViolation> errors, HttpStatusCode status) {
+        BaseResponse<?> body = ofFailed(error, message, errors);
+        return ResponseEntity.status(status).body(body);
+    }
+
+    private ErrorViolation violation(String field, String description) {
+        return ErrorViolation.builder()
+                .field(toSnakeCase(field))
+                .code(Integer.toString(ErrorConstant.INVALID_PARAMETERS))
+                .description(description == null ? "Invalid value" : description)
+                .build();
+    }
+
+    private String toSnakeCase(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
         }
+        String leaf = value.contains(".") ? value.substring(value.lastIndexOf('.') + 1) : value;
+        return leaf.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase(java.util.Locale.ROOT);
+    }
 
-        if (statusCode.value() == HttpStatus.UNAUTHORIZED.value()) {
-            BusinessError error = getBusinessError(ErrorConstant.UNAUTHORIZED);
-            BaseResponse<?> data = ofFailed(error, getMessage(error), exception.getMessage());
-            return new ResponseEntity<>(data, HttpStatus.OK);
+    private HttpStatus statusFromBusinessCode(int code) {
+        String digits = Integer.toString(Math.abs(code));
+        if (digits.length() >= 3) {
+            HttpStatus resolved = HttpStatus.resolve(Integer.parseInt(digits.substring(0, 3)));
+            if (resolved != null && resolved.isError()) {
+                return resolved;
+            }
         }
+        return HttpStatus.INTERNAL_SERVER_ERROR;
+    }
 
-        if (statusCode.value() == HttpStatus.FORBIDDEN.value()) {
-            BusinessError error = getBusinessError(ErrorConstant.FORBIDDEN_ERROR);
-            BaseResponse<?> data = ofFailed(error, getMessage(error), exception.getMessage());
-            return new ResponseEntity<>(data, HttpStatus.OK);
-        }
-
-        if (statusCode.value() == HttpStatus.NOT_FOUND.value()) {
-            BusinessError error = getBusinessError(ErrorConstant.NOT_FOUND);
-            BaseResponse<?> data = ofFailed(error, getMessage(error), exception.getMessage());
-            return new ResponseEntity<>(data, HttpStatus.OK);
-        }
-
-        if (statusCode.value() == HttpStatus.INTERNAL_SERVER_ERROR.value()) {
-            BusinessError error = getBusinessError(ErrorConstant.INTERNAL_SERVER_ERROR);
-            BaseResponse<?> data = ofFailed(error, getMessage(error), exception.getMessage());
-            return new ResponseEntity<>(data, HttpStatus.OK);
-        }
-
-        throw exception;
+    private int errorCode(HttpStatusCode status) {
+        return switch (status.value()) {
+            case 400 -> ErrorConstant.INVALID_PARAMETERS;
+            case 401 -> ErrorConstant.UNAUTHORIZED;
+            case 403 -> ErrorConstant.FORBIDDEN_ERROR;
+            case 404 -> ErrorConstant.NOT_FOUND;
+            case 409 -> ErrorConstant.ALREADY_PROCESSED;
+            default -> status.is5xxServerError()
+                    ? ErrorConstant.INTERNAL_SERVER_ERROR
+                    : ErrorConstant.BAD_REQUEST;
+        };
     }
 }
