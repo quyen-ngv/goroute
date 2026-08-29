@@ -1,0 +1,392 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.UserCheckinMapper">
+
+    <resultMap id="checkinMap" type="com.ds.goroute.entity.UserCheckin">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="tripId" column="trip_id"/>
+        <result property="activityId" column="activity_id"/>
+        <result property="placeId" column="place_id"/>
+        <result property="reviewId" column="review_id"/>
+        <result property="locationName" column="location_name"/>
+        <result property="customName" column="custom_name"/>
+        <result property="latitude" column="latitude"/>
+        <result property="longitude" column="longitude"/>
+        <result property="accuracyMeters" column="accuracy_meters"/>
+        <result property="ward" column="ward"/>
+        <result property="district" column="district"/>
+        <result property="province" column="province"/>
+        <result property="provinceCode" column="province_code"/>
+        <result property="locationSource" column="location_source"/>
+        <result property="locationKey" column="location_key"/>
+        <result property="caption" column="caption"/>
+        <result property="overallRating" column="overall_rating"/>
+        <result property="foodRating" column="food_rating"/>
+        <result property="priceRating" column="price_rating"/>
+        <result property="ambianceRating" column="ambiance_rating"/>
+        <result property="serviceRating" column="service_rating"/>
+        <result property="photoSource" column="photo_source"/>
+        <result property="visibility" column="visibility"/>
+        <result property="verificationStatus" column="verification_status"/>
+        <result property="distanceMeters" column="distance_meters"/>
+        <result property="idempotencyKey" column="idempotency_key"/>
+        <result property="rewardPoints" column="reward_points"/>
+        <result property="rewardReason" column="reward_reason"/>
+        <result property="isRemoved" column="is_removed"/>
+        <result property="editedAt" column="edited_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <resultMap id="photoMap" type="com.ds.goroute.entity.UserCheckinPhoto">
+        <id property="id" column="id"/>
+        <result property="checkinId" column="checkin_id"/>
+        <result property="url" column="url"/>
+        <result property="source" column="source"/>
+        <result property="position" column="position"/>
+        <result property="capturedAt" column="captured_at"/>
+        <result property="latitude" column="latitude"/>
+        <result property="longitude" column="longitude"/>
+        <result property="accuracyMeters" column="accuracy_meters"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <resultMap id="clusterMap" type="com.ds.goroute.entity.CheckinCluster">
+        <id property="locationKey" column="location_key"/>
+        <result property="commonName" column="common_name"/>
+        <result property="alternateNames" column="alternate_names"/>
+        <result property="centroidLatitude" column="centroid_latitude"/>
+        <result property="centroidLongitude" column="centroid_longitude"/>
+        <result property="ward" column="ward"/>
+        <result property="district" column="district"/>
+        <result property="province" column="province"/>
+        <result property="provinceCode" column="province_code"/>
+        <result property="checkinCount" column="checkin_count"/>
+        <result property="distinctUserCount" column="distinct_user_count"/>
+        <result property="ratedCheckinCount" column="rated_checkin_count"/>
+        <result property="firstSeenAt" column="first_seen_at"/>
+        <result property="lastSeenAt" column="last_seen_at"/>
+        <result property="samplePhotos" column="sample_photos"/>
+    </resultMap>
+
+    <resultMap id="clusterDecisionMap" type="com.ds.goroute.entity.CheckinClusterDecision">
+        <id property="locationKey" column="location_key"/>
+        <result property="status" column="status"/>
+        <result property="placeId" column="place_id"/>
+        <result property="decidedBy" column="decided_by"/>
+        <result property="decidedAt" column="decided_at"/>
+        <result property="note" column="note"/>
+        <result property="checkinCountAtDecision" column="checkin_count_at_decision"/>
+    </resultMap>
+
+    <sql id="columns">
+        id, user_id, trip_id, activity_id, place_id, review_id, location_name, custom_name,
+        latitude, longitude, accuracy_meters, ward, district, province, province_code,
+        location_source, location_key, caption, overall_rating, food_rating, price_rating,
+        ambiance_rating, service_rating, photo_source, visibility, verification_status,
+        distance_meters, idempotency_key, reward_points, reward_reason, is_removed,
+        edited_at, created_at, updated_at
+    </sql>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.UserCheckin">
+        INSERT INTO user_checkins
+            (id, user_id, trip_id, activity_id, place_id, review_id, location_name, custom_name,
+             latitude, longitude, accuracy_meters, ward, district, province, province_code,
+             location_source, location_key, caption, overall_rating, food_rating, price_rating,
+             ambiance_rating, service_rating, photo_source, visibility, verification_status,
+             distance_meters, idempotency_key, is_removed, created_at, updated_at)
+        VALUES
+            (#{id}, #{userId}, #{tripId}, #{activityId}, #{placeId}, #{reviewId}, #{locationName},
+             #{customName}, #{latitude}, #{longitude}, #{accuracyMeters}, #{ward}, #{district},
+             #{province}, #{provinceCode}, #{locationSource}, #{locationKey}, #{caption},
+             #{overallRating}, #{foodRating}, #{priceRating}, #{ambianceRating}, #{serviceRating},
+             #{photoSource}, #{visibility}, #{verificationStatus}, #{distanceMeters},
+             #{idempotencyKey}, FALSE, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <!-- The place is deliberately absent: changing where a check-in happened would mean
+         recomputing two place averages and rewriting a passport event, so the flow is
+         delete and create again (CHK-11). -->
+    <update id="update" parameterType="com.ds.goroute.entity.UserCheckin">
+        UPDATE user_checkins
+        SET caption = #{caption},
+            custom_name = #{customName},
+            overall_rating = #{overallRating},
+            food_rating = #{foodRating},
+            price_rating = #{priceRating},
+            ambiance_rating = #{ambianceRating},
+            service_rating = #{serviceRating},
+            visibility = #{visibility},
+            review_id = #{reviewId},
+            edited_at = #{editedAt},
+            updated_at = #{updatedAt}
+        WHERE id = #{id} AND user_id = #{userId} AND is_removed = FALSE
+    </update>
+
+    <select id="findById" resultMap="checkinMap">
+        SELECT <include refid="columns"/> FROM user_checkins WHERE id = #{id}
+    </select>
+
+    <select id="findByIdempotencyKey" resultMap="checkinMap">
+        SELECT <include refid="columns"/> FROM user_checkins
+        WHERE user_id = #{userId} AND idempotency_key = #{idempotencyKey}
+    </select>
+
+    <!-- Keyset pagination: with new check-ins arriving constantly, offset paging shows
+         some posts twice and skips others. -->
+    <select id="findFeed" resultMap="checkinMap">
+        SELECT <include refid="columns"/> FROM user_checkins
+        WHERE visibility = 'PUBLIC'
+          AND is_removed = FALSE
+          <if test="before != null">AND created_at &lt; #{before}</if>
+          <if test="excludeUserId != null">AND user_id &lt;&gt; #{excludeUserId}</if>
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns t
+              WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
+                AND t.restored_at IS NULL)
+        ORDER BY created_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="findByUser" resultMap="checkinMap">
+        SELECT <include refid="columns"/> FROM user_checkins
+        WHERE user_id = #{userId} AND is_removed = FALSE
+        <if test="!includePrivate">AND visibility = 'PUBLIC'</if>
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countByUser" resultType="long">
+        SELECT COUNT(*) FROM user_checkins
+        WHERE user_id = #{userId} AND is_removed = FALSE
+        <if test="!includePrivate">AND visibility = 'PUBLIC'</if>
+    </select>
+
+    <select id="findByPlace" resultMap="checkinMap">
+        SELECT <include refid="columns"/> FROM user_checkins
+        WHERE place_id = #{placeId} AND visibility = 'PUBLIC' AND is_removed = FALSE
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findLatestRatedPerUserForPlace" resultMap="checkinMap">
+        SELECT DISTINCT ON (user_id) <include refid="columns"/>
+        FROM user_checkins
+        WHERE place_id = #{placeId}
+          AND overall_rating IS NOT NULL
+          AND review_id IS NOT NULL
+          AND visibility = 'PUBLIC'
+          AND is_removed = FALSE
+        ORDER BY user_id, created_at DESC
+    </select>
+
+    <select id="findByLocationKey" resultMap="checkinMap">
+        SELECT <include refid="columns"/> FROM user_checkins
+        WHERE location_key = #{locationKey} AND visibility = 'PUBLIC' AND is_removed = FALSE
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findLatestRatedPerUserForLocationKey" resultMap="checkinMap">
+        SELECT DISTINCT ON (user_id) <include refid="columns"/>
+        FROM user_checkins
+        WHERE location_key = #{locationKey}
+          AND overall_rating IS NOT NULL
+          AND is_removed = FALSE
+        ORDER BY user_id, created_at DESC
+    </select>
+
+    <update id="markRemoved">
+        UPDATE user_checkins
+        SET is_removed = TRUE, updated_at = NOW()
+        WHERE id = #{id} AND user_id = #{userId} AND is_removed = FALSE
+    </update>
+
+    <update id="attachPlaceToCluster">
+        UPDATE user_checkins
+        SET place_id = #{placeId}, updated_at = NOW()
+        WHERE location_key = #{locationKey} AND place_id IS NULL
+    </update>
+
+    <update id="attachReview">
+        UPDATE user_checkins SET review_id = #{reviewId}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="recordReward">
+        UPDATE user_checkins
+        SET reward_points = #{rewardPoints}, reward_reason = #{rewardReason}, updated_at = NOW()
+        WHERE id = #{id} AND reward_points IS NULL
+    </update>
+
+    <select id="sumRewardPointsSince" resultType="java.lang.Integer">
+        SELECT COALESCE(SUM(reward_points), 0) FROM user_checkins
+        WHERE user_id = #{userId} AND created_at &gt;= #{since} AND reward_points IS NOT NULL
+    </select>
+
+    <insert id="insertPhoto" parameterType="com.ds.goroute.entity.UserCheckinPhoto">
+        INSERT INTO user_checkin_photos
+            (id, checkin_id, url, source, position, captured_at, latitude, longitude,
+             accuracy_meters, created_at)
+        VALUES
+            (#{id}, #{checkinId}, #{url}, #{source}, #{position}, #{capturedAt}, #{latitude},
+             #{longitude}, #{accuracyMeters}, #{createdAt})
+    </insert>
+
+    <select id="findPhotos" resultMap="photoMap">
+        SELECT id, checkin_id, url, source, position, captured_at, latitude, longitude,
+               accuracy_meters, created_at
+        FROM user_checkin_photos WHERE checkin_id = #{checkinId} ORDER BY position
+    </select>
+
+    <!-- Batch-loaded for a feed page so rendering N posts costs one query, not N. -->
+    <select id="findPhotosForCheckins" resultMap="photoMap">
+        SELECT id, checkin_id, url, source, position, captured_at, latitude, longitude,
+               accuracy_meters, created_at
+        FROM user_checkin_photos
+        WHERE checkin_id IN
+        <foreach item="checkinId" collection="checkinIds" open="(" separator="," close=")">
+            #{checkinId}
+        </foreach>
+        ORDER BY checkin_id, position
+    </select>
+
+    <delete id="deletePhotos">
+        DELETE FROM user_checkin_photos WHERE checkin_id = #{checkinId}
+    </delete>
+
+    <select id="hasLike" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM user_checkin_likes
+                      WHERE checkin_id = #{checkinId} AND user_id = #{userId})
+    </select>
+
+    <insert id="insertLike">
+        INSERT INTO user_checkin_likes (checkin_id, user_id) VALUES (#{checkinId}, #{userId})
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <delete id="deleteLike">
+        DELETE FROM user_checkin_likes WHERE checkin_id = #{checkinId} AND user_id = #{userId}
+    </delete>
+
+    <select id="countLikes" resultType="int">
+        SELECT COUNT(*) FROM user_checkin_likes WHERE checkin_id = #{checkinId}
+    </select>
+
+    <select id="findLikeCounts" resultType="com.ds.goroute.entity.CheckinLikeCount">
+        SELECT checkin_id AS "checkinId", COUNT(*) AS "likeCount"
+        FROM user_checkin_likes WHERE checkin_id IN
+        <foreach collection="checkinIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        GROUP BY checkin_id
+    </select>
+
+    <select id="findLikedCheckinIds" resultType="java.util.UUID">
+        SELECT checkin_id FROM user_checkin_likes
+        WHERE user_id = #{userId} AND checkin_id IN
+        <foreach collection="checkinIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <!-- Clusters that are not in the catalogue and have no decision yet, or whose decision
+         was "ignore" but which have grown by half again since. -->
+    <sql id="clusterSource">
+        FROM user_checkins c
+        LEFT JOIN checkin_cluster_decisions d ON d.location_key = c.location_key
+        WHERE c.place_id IS NULL
+          AND c.is_removed = FALSE
+          AND (d.location_key IS NULL
+               OR (d.status = 'IGNORED'
+                   AND (SELECT COUNT(*) FROM user_checkins x WHERE x.location_key = c.location_key)
+                       &gt;= d.checkin_count_at_decision * 1.5))
+        GROUP BY c.location_key
+        HAVING COUNT(DISTINCT c.user_id) &gt;= #{minUsers} AND COUNT(*) &gt;= #{minCheckins}
+    </sql>
+
+    <select id="findClusters" resultMap="clusterMap">
+        SELECT c.location_key,
+               (array_agg(c.location_name ORDER BY c.created_at))[1] AS common_name,
+               string_agg(DISTINCT c.location_name, ' | ') AS alternate_names,
+               AVG(c.latitude) AS centroid_latitude,
+               AVG(c.longitude) AS centroid_longitude,
+               (array_agg(c.ward) FILTER (WHERE c.ward IS NOT NULL))[1] AS ward,
+               (array_agg(c.district) FILTER (WHERE c.district IS NOT NULL))[1] AS district,
+               (array_agg(c.province) FILTER (WHERE c.province IS NOT NULL))[1] AS province,
+               (array_agg(c.province_code) FILTER (WHERE c.province_code IS NOT NULL))[1] AS province_code,
+               COUNT(*) AS checkin_count,
+               COUNT(DISTINCT c.user_id) AS distinct_user_count,
+               COUNT(*) FILTER (WHERE c.overall_rating IS NOT NULL) AS rated_checkin_count,
+               MIN(c.created_at) AS first_seen_at,
+               MAX(c.created_at) AS last_seen_at,
+               (SELECT string_agg(p.url, ',')
+                  FROM (SELECT url FROM user_checkin_photos ph
+                         JOIN user_checkins uc ON uc.id = ph.checkin_id
+                        WHERE uc.location_key = c.location_key
+                        ORDER BY ph.created_at DESC LIMIT 4) p) AS sample_photos
+        <include refid="clusterSource"/>
+        ORDER BY COUNT(DISTINCT c.user_id) DESC, COUNT(*) DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countClusters" resultType="long">
+        SELECT COUNT(*) FROM (SELECT c.location_key <include refid="clusterSource"/>) AS clusters
+    </select>
+
+    <select id="findCluster" resultMap="clusterMap">
+        SELECT c.location_key,
+               (array_agg(c.location_name ORDER BY c.created_at))[1] AS common_name,
+               string_agg(DISTINCT c.location_name, ' | ') AS alternate_names,
+               AVG(c.latitude) AS centroid_latitude,
+               AVG(c.longitude) AS centroid_longitude,
+               (array_agg(c.ward) FILTER (WHERE c.ward IS NOT NULL))[1] AS ward,
+               (array_agg(c.district) FILTER (WHERE c.district IS NOT NULL))[1] AS district,
+               (array_agg(c.province) FILTER (WHERE c.province IS NOT NULL))[1] AS province,
+               (array_agg(c.province_code) FILTER (WHERE c.province_code IS NOT NULL))[1] AS province_code,
+               COUNT(*) AS checkin_count,
+               COUNT(DISTINCT c.user_id) AS distinct_user_count,
+               COUNT(*) FILTER (WHERE c.overall_rating IS NOT NULL) AS rated_checkin_count,
+               MIN(c.created_at) AS first_seen_at,
+               MAX(c.created_at) AS last_seen_at,
+               NULL AS sample_photos
+        FROM user_checkins c
+        WHERE c.location_key = #{locationKey} AND c.is_removed = FALSE
+        GROUP BY c.location_key
+    </select>
+
+    <insert id="upsertClusterDecision" parameterType="com.ds.goroute.entity.CheckinClusterDecision">
+        INSERT INTO checkin_cluster_decisions
+            (location_key, status, place_id, decided_by, decided_at, note, checkin_count_at_decision)
+        VALUES
+            (#{locationKey}, #{status}, #{placeId}, #{decidedBy}, #{decidedAt}, #{note},
+             #{checkinCountAtDecision})
+        ON CONFLICT (location_key) DO UPDATE
+        SET status = EXCLUDED.status,
+            place_id = EXCLUDED.place_id,
+            decided_by = EXCLUDED.decided_by,
+            decided_at = EXCLUDED.decided_at,
+            note = EXCLUDED.note,
+            checkin_count_at_decision = EXCLUDED.checkin_count_at_decision
+    </insert>
+
+    <select id="findClusterDecision" resultMap="clusterDecisionMap">
+        SELECT * FROM checkin_cluster_decisions WHERE location_key = #{locationKey}
+    </select>
+
+    <!-- Undoing a promotion within the safety window (CHK-12). -->
+    <delete id="deleteClusterDecision">
+        DELETE FROM checkin_cluster_decisions WHERE location_key = #{locationKey}
+    </delete>
+
+    <select id="findWithoutPassportEvent" resultMap="checkinMap">
+        SELECT <include refid="columns"/> FROM user_checkins c
+        WHERE c.is_removed = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM passport_events e
+              WHERE e.source = 'USER_CHECKIN' AND e.source_id = c.id)
+        ORDER BY c.created_at
+        LIMIT #{limit}
+    </select>
+
+    <select id="findVisitedProvinceCodes" resultType="java.lang.String">
+        SELECT DISTINCT province_code FROM user_checkins
+        WHERE user_id = #{userId} AND province_code IS NOT NULL AND is_removed = FALSE
+    </select>
+</mapper>

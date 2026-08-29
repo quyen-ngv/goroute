@@ -128,11 +128,49 @@ Do not put secrets or per-request data in the `config` table. Do not query the
 table repeatedly inside a loop. Each DB-config key must document its unit,
 allowed range, default/failure behavior, owner, and public/private visibility.
 
-Current typed business keys:
+Current typed business keys (all registered in `BusinessConfigKey`, read through
+`BusinessConfigService`, cached under `businessConfig` and evicted on admin edit):
 
 | Label | Key | Unit/range | Failure behavior | Visibility |
 |---|---|---|---|---|
 | `PLACE_REVIEW` | `DEFAULT_REFRESH_MAX_REVIEWS` | count, 1..200 | safe fallback 200 | private/admin |
+| `TRIP_MEMORY` | `FREE_TRIP_MEMORY_LIMIT` | count, 1..1000 | safe fallback 50 | private/admin |
+| `MODERATION` | `TEXT_FILTER_ENABLED` | boolean | safe fallback true | private/admin |
+| `MODERATION` | `AI_TEXT_ENABLED` | boolean | safe fallback false | private/admin |
+| `MODERATION` | `AI_TEXT_MAX_LENGTH` | characters, 200..20000 | safe fallback 4000 | private/admin |
+| `MODERATION` | `IMAGE_MODERATION_ENABLED` | boolean | safe fallback false | private/admin |
+| `MODERATION` | `IMAGE_THRESHOLD_*` | confidence, 0..1 | safe fallback per group | private/admin |
+| `MODERATION` | `STRICTNESS_PUBLIC/GROUP/DIRECT/PRIVATE` | enum `ModerationStrictness` | safe fallback per tier | private/admin |
+| `MODERATION` | `POLICY_VERSION` | text | safe fallback `1.0.0` | private/admin |
+| `CHECKIN` | `CHECKIN_ENABLED` | boolean | safe fallback true | public |
+| `CHECKIN` | `VERIFY_RADIUS_METERS` | metres, 20..5000 | safe fallback 200 | public |
+| `CHECKIN` | `MAX_ACCURACY_METERS` | metres, 5..2000 | safe fallback 100 | public |
+| `CHECKIN` | `MAX_PHOTOS` | count, 1..20 | safe fallback 6 | public |
+| `CHECKIN` | `MAX_CAPTION_LENGTH` | characters, 100..5000 | safe fallback 2000 | public |
+| `CHECKIN` | `LOCATION_KEY_PRECISION` | decimal places, 2..6 | safe fallback 4 | private/admin |
+| `CHECKIN` | `GALLERY_ALLOWED_FOR_FREE` | boolean | safe fallback true | public |
+| `CHECKIN` | `GUIDE_SCREEN_ENABLED` / `GUIDE_SCREEN_MAX_VIEWS` | boolean / count 0..50 | safe fallback true / 3 | public |
+| `CHECKIN` | `REWARD_*` | points, multipliers, daily cap | safe fallback per key | public except cap |
+| `CHECKIN` | `CLUSTER_MIN_USERS` / `CLUSTER_MIN_CHECKINS` | count | safe fallback 3 / 5 | private/admin |
+| `PASSPORT` | `PASSPORT_ENABLED` | boolean | safe fallback true | public |
+| `PASSPORT` | `PROVINCE_COVERAGE_THRESHOLD` | percent, 0..100 | safe fallback 95 | private/admin |
+| `PASSPORT` | `TOTAL_PROVINCES` | count, 1..200 | safe fallback 63 | public |
+| `POINTS` | `EXPIRY_DAYS` | days, 0..3650 (0 = never) | safe fallback 0 | public |
+| `GUIDE` | `GUIDE_ENABLED` | boolean | safe fallback false | public |
+| `GUIDE` | `PLATFORM_FEE_PERCENT` | percent, 0..100 | safe fallback 20 | public |
+| `GUIDE` | `FEE_RULE_VERSION` | text | safe fallback `2026.08` | private/admin |
+| `GUIDE` | `RESPONSE_DEADLINE_HOURS` | hours, 1..720 | safe fallback 48 | public |
+| `GUIDE` | `PAYOUT_HOLD_DAYS` | days, 0..90 | safe fallback 7 | private/admin |
+| `GUIDE` | `MIN_REVIEWS_TO_SHOW_RATING` | count, 1..100 | safe fallback 3 | public |
+| `GUIDE` | `FREE_SERVICE_LIMIT` | count, 1..100 | safe fallback 3 | public |
+| `GUIDE` | `PREMIUM_MONTHLY_PRICE_VND` / `PREMIUM_YEARLY_PRICE_VND` | VND | safe fallback per slide pricing | public |
+
+## Build note
+
+`.mvn/jvm.config` carries the `--add-opens jdk.compiler/...` flags Lombok needs when
+maven-compiler-plugin runs javac in-process on JDK 16+. Without it every Lombok-generated
+getter and logger is reported as a missing symbol. `pom.xml` also pins the Lombok version
+inside `annotationProcessorPaths`, which does not read `dependencyManagement`.
 
 ## Naming and code quality
 

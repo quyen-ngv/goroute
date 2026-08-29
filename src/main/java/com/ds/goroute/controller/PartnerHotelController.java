@@ -5,7 +5,9 @@ import com.ds.goroute.dto.request.*;
 import com.ds.goroute.dto.response.*;
 import com.ds.goroute.service.HotelMarketplaceService;
 import com.ds.goroute.service.PartnerAuthorizationService;
-import com.ds.goroute.service.StorageService;
+import com.ds.goroute.service.FileUploadService;
+import com.ds.goroute.service.ImageUploadOutcome;
+import com.ds.goroute.service.ImageUploadRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -19,20 +21,32 @@ import org.springframework.web.multipart.MultipartFile;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Set;
 
 @RestController @RequestMapping("/v1/api/partner/hotels") @RequiredArgsConstructor
 public class PartnerHotelController {
     private final HotelMarketplaceService service;
     private final PartnerAuthorizationService authorization;
-    private final StorageService storage;
+    private final FileUploadService fileUploadService;
     @GetMapping public ResponseEntity<BaseResponse<List<HotelProfileResponse>>> hotels(Authentication a,@RequestParam UUID organizationId){return ResponseEntity.ok(BaseResponse.ofSucceeded(service.partnerListHotels(user(a),organizationId)));}
     @PostMapping public ResponseEntity<BaseResponse<HotelProfileResponse>> create(Authentication a,@Valid @RequestBody UpsertHotelRequest r){return ResponseEntity.status(HttpStatus.CREATED).body(BaseResponse.ofSucceeded(service.partnerCreateHotel(user(a),r)));}
     @PutMapping("/{hotelId}") public ResponseEntity<BaseResponse<HotelProfileResponse>> update(Authentication a,@PathVariable UUID hotelId,@Valid @RequestBody UpsertHotelRequest r){return ResponseEntity.ok(BaseResponse.ofSucceeded(service.partnerUpdateHotel(user(a),hotelId,r)));}
-    @PostMapping(value="/media",consumes=MediaType.MULTIPART_FORM_DATA_VALUE) public ResponseEntity<BaseResponse<List<String>>> media(Authentication a,@RequestParam UUID organizationId,@RequestParam("files") List<MultipartFile> files)throws IOException{authorization.requirePermission(organizationId,user(a),"ROOM_WRITE");if(files==null||files.isEmpty()||files.size()>20)throw new IllegalArgumentException("Upload from 1 to 20 images");List<String> urls=new ArrayList<>();for(MultipartFile file:files){String type=file.getContentType();if(type==null||!Set.of("image/jpeg","image/jpg","image/png","image/webp").contains(type.toLowerCase())||file.getSize()>5*1024*1024)throw new IllegalArgumentException("Only JPG, PNG, WEBP images up to 5 MB are accepted");byte[] bytes=file.getBytes();String extension=type.contains("png")?".png":type.contains("webp")?".webp":".jpg";urls.add(storage.uploadFile("marketplace/hotels/"+organizationId+"/"+UUID.randomUUID()+extension,new ByteArrayInputStream(bytes),type,bytes.length));}return ResponseEntity.ok(BaseResponse.ofSucceeded(urls));}
+    /**
+     * Hotel media goes through the shared upload door (MOD-05). The hand-written type and
+     * size checks that used to live here were a copy of the ones in the activity
+     * controller and of the ones in the upload service, and none of them checked content.
+     */
+    @PostMapping(value = "/media", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<BaseResponse<List<ImageUploadOutcome>>> media(
+            Authentication a,
+            @RequestParam UUID organizationId,
+            @RequestParam("files") List<MultipartFile> files) {
+        authorization.requirePermission(organizationId, user(a), "ROOM_WRITE");
+        ImageUploadRequest request = ImageUploadRequest.of(
+                user(a),
+                ImageUploadRequest.ImageEntryPoint.PARTNER_HOTEL,
+                "marketplace/hotels/" + organizationId);
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(fileUploadService.uploadImages(request, files)));
+    }
     @GetMapping("/{hotelId}/rooms") public ResponseEntity<BaseResponse<List<RoomTypeResponse>>> rooms(Authentication a,@PathVariable UUID hotelId){return ResponseEntity.ok(BaseResponse.ofSucceeded(service.partnerListRooms(user(a),hotelId)));}
     @PostMapping("/{hotelId}/rooms") public ResponseEntity<BaseResponse<RoomTypeResponse>> createRoom(Authentication a,@PathVariable UUID hotelId,@Valid @RequestBody UpsertRoomTypeRequest r){return ResponseEntity.status(HttpStatus.CREATED).body(BaseResponse.ofSucceeded(service.partnerCreateRoom(user(a),hotelId,r)));}
     @PutMapping("/rooms/{roomId}") public ResponseEntity<BaseResponse<RoomTypeResponse>> updateRoom(Authentication a,@PathVariable UUID roomId,@Valid @RequestBody UpsertRoomTypeRequest r){return ResponseEntity.ok(BaseResponse.ofSucceeded(service.partnerUpdateRoom(user(a),roomId,r)));}

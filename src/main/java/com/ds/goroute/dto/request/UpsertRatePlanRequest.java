@@ -1,5 +1,9 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.ModerationVisibility;
+
 import com.ds.goroute.type.MarketplaceAvailabilityStatus;
 import com.ds.goroute.type.MealPlan;
 import com.ds.goroute.type.HotelPricingModel;
@@ -19,7 +23,9 @@ import java.util.Map;
 @Data
 public class UpsertRatePlanRequest {
     @NotBlank @Size(max = 100) private String code;
+    @ModeratedText(contentType = ModeratedContentType.PARTNER_LISTING, visibility = ModerationVisibility.PUBLIC)
     @NotBlank @Size(max = 500) private String name;
+    @ModeratedText(contentType = ModeratedContentType.PARTNER_LISTING, visibility = ModerationVisibility.PUBLIC)
     @Size(max = 5000) private String description;
     @Pattern(regexp = "[A-Z]{3}") private String currency = "VND";
     @NotNull @DecimalMin("0") private BigDecimal basePrice;

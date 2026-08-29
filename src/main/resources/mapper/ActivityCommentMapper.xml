@@ -44,5 +44,13 @@
         SELECT COUNT(*) FROM activity_comments WHERE activity_id = #{activityId,javaType=java.util.UUID,jdbcType=OTHER} 
         AND is_deleted = false
     </select>
+    <select id="countByTripId" resultType="java.util.LinkedHashMap">
+        SELECT c.activity_id, COUNT(*) AS comment_count
+        FROM activity_comments c
+        JOIN activities a ON a.id = c.activity_id
+        WHERE a.trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND c.is_deleted = false
+        GROUP BY c.activity_id
+    </select>
 
 </mapper>

@@ -117,8 +117,22 @@ public class CorsFilter implements Filter {
                 ThreadContext.clearAll();
             }
         } catch (Exception e) {
-            log.error(e.toString(), e);
-            response.setStatus(HttpServletResponse.SC_BAD_GATEWAY);
+            Throwable rootCause = e;
+            while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
+                rootCause = rootCause.getCause();
+            }
+            String causeClassName = rootCause.getClass().getName();
+            if (e instanceof org.springframework.web.multipart.MaxUploadSizeExceededException
+                    || causeClassName.contains("SizeLimitExceededException")
+                    || causeClassName.contains("MaxUploadSizeExceededException")) {
+                log.warn("Upload size limit exceeded: {}", e.getMessage());
+                response.setStatus(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+                response.setContentType("application/json;charset=UTF-8");
+                response.getWriter().write("{\"meta\":{\"code\":4131001,\"message\":\"File size exceeds the maximum allowed limit\"}}");
+            } else {
+                log.error(e.toString(), e);
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            }
             ThreadContext.clearAll();
         }
     }

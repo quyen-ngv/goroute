@@ -20,6 +20,7 @@ public class TripResponse {
     private String name;
     private String coverImageUrl;
     private List<String> memoryImageUrls;
+    private List<MemoryImageResponse> memoryImageUrlsV2;
     private String destination;
     private BigDecimal lat;
     private BigDecimal lng;

@@ -118,6 +118,13 @@ public class CommonExceptionHandler extends BaseService {
         return response(errorCode(status), message, null, status);
     }
 
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<BaseResponse<?>> handleMaxUploadSize(org.springframework.web.multipart.MaxUploadSizeExceededException exception) {
+        return response(ErrorConstant.FILE_TOO_LARGE,
+                "File size exceeds the maximum allowed limit", null,
+                HttpStatus.PAYLOAD_TOO_LARGE);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<BaseResponse<?>> handleUnexpectedException(Exception exception) {
         log.error("Unhandled API exception for {} {}",

@@ -13,17 +13,31 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/v1/api/trips/{tripId}/activities/{activityId}/comments")
+@RequestMapping("/v1/api/trips/{tripId}")
 @RequiredArgsConstructor
 @Slf4j
 public class CommentController extends BaseService {
-    
+
     private final CommentService commentService;
 
-    @GetMapping
+    /**
+     * Comment counts for every activity of the trip.
+     *
+     * <p>One request for the whole itinerary rather than one per card: without this the
+     * count badge on each activity would cost a round trip per row.
+     */
+    @GetMapping("/comment-counts")
+    public ResponseEntity<BaseResponse<Map<UUID, Integer>>> getCommentCounts(
+            @PathVariable UUID tripId,
+            @RequestAttribute("userId") UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(commentService.getCommentCounts(tripId, userId)));
+    }
+
+    @GetMapping("/activities/{activityId}/comments")
     public ResponseEntity<BaseResponse<List<CommentResponse>>> getComments(
             @PathVariable UUID tripId,
             @PathVariable UUID activityId,
@@ -32,7 +46,7 @@ public class CommentController extends BaseService {
         return ResponseEntity.ok(ofSucceeded(comments));
     }
 
-    @PostMapping
+    @PostMapping("/activities/{activityId}/comments")
     public ResponseEntity<BaseResponse<CommentResponse>> createComment(
             @PathVariable UUID tripId,
             @PathVariable UUID activityId,
@@ -43,7 +57,7 @@ public class CommentController extends BaseService {
                 .body(ofSucceeded(comment));
     }
 
-    @DeleteMapping("/{commentId}")
+    @DeleteMapping("/activities/{activityId}/comments/{commentId}")
     public ResponseEntity<BaseResponse<Void>> deleteComment(
             @PathVariable UUID tripId,
             @PathVariable UUID activityId,

@@ -1,5 +1,9 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.ModerationVisibility;
+
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -15,7 +19,9 @@ import java.time.LocalDate;
 @AllArgsConstructor
 public class TripDestinationRequest {
     @Size(max = 255)
+    @ModeratedText(contentType = ModeratedContentType.TRIP, visibility = ModerationVisibility.PUBLIC)
     private String name;
+    @ModeratedText(contentType = ModeratedContentType.TRIP, visibility = ModerationVisibility.PUBLIC)
     private String address;
     private String placeId;
     private BigDecimal lat;

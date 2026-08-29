@@ -17,6 +17,8 @@ public interface UserReviewRepository {
 
     Optional<UserReview> findById(UUID id);
 
+    List<UserReview> findByIds(List<UUID> ids);
+
     Optional<UserReview> findByUserAndPlace(UUID userId, UUID placeId);
 
     Optional<UserReview> findByUserAndActivityBooking(UUID userId, UUID activityBookingId);

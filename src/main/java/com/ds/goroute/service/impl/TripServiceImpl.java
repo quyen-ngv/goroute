@@ -20,6 +20,7 @@ import com.ds.goroute.service.StarService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.*;
 import com.ds.goroute.utils.JsonUtils;
+import com.ds.goroute.utils.MemoryImageUrlNormalizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -839,7 +840,8 @@ public class TripServiceImpl implements TripService {
             }
         }
 
-        List<String> memoryImageUrls = getTripMemoryImageUrls(trip.getId());
+        List<MemoryImageResponse> memoryImages = getTripMemoryImages(trip.getId());
+        List<String> memoryImageUrls = getMemoryImageUrls(memoryImages);
         List<TripDestinationResponse> destinationResponses = destinationResponses(trip);
         User owner = trip.getOwnerId() == null
                 ? null
@@ -855,6 +857,7 @@ public class TripServiceImpl implements TripService {
                 .name(trip.getName())
                 .coverImageUrl(coverImageUrl)
                 .memoryImageUrls(memoryImageUrls)
+                .memoryImageUrlsV2(memoryImages)
                 .destination(trip.getDestination())
                 .lat(trip.getDestinationLat())
                 .lng(trip.getDestinationLng())
@@ -1248,7 +1251,7 @@ public class TripServiceImpl implements TripService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
 
-        if (trip.getVisibility() == TripVisibility.PRIVATE) {
+        if (!canViewPublicTrip(trip, viewerId)) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Trip is not shared");
         }
 
@@ -1260,7 +1263,8 @@ public class TripServiceImpl implements TripService {
         if (coverImageUrl == null || coverImageUrl.isEmpty()) {
             coverImageUrl = locationImageService.getImageForDestination(trip.getDestination());
         }
-        List<String> memoryImageUrls = getTripMemoryImageUrls(tripId);
+        List<MemoryImageResponse> memoryImages = getTripMemoryImages(tripId);
+        List<String> memoryImageUrls = getMemoryImageUrls(memoryImages);
 
         // Get activities
         List<com.ds.goroute.entity.Activity> activities = activityRepository.findByTripId(tripId);
@@ -1328,6 +1332,7 @@ public class TripServiceImpl implements TripService {
         List<PublicActivityResponse> activityResponses = activities.stream()
                 .map(a -> {
                     UUID placeId = parseActivityPlaceId(a.getPlaceId());
+                    List<MemoryImageResponse> activityMemoryImages = getActivityMemoryImages(a.getId());
                     List<UserReviewResponse> memberReviews = placeId != null
                             ? buildSharedTripReviews(placeId, trip.getOwnerId(), memberUserIds, viewerId)
                             : null;
@@ -1346,7 +1351,8 @@ public class TripServiceImpl implements TripService {
                             .rating(a.getRating())
                             .reviewCount(memberReviews != null ? memberReviews.size() : null)
                             .photoUrl(a.getPhotoUrl())
-                            .memoryImageUrls(getActivityMemoryImageUrls(a.getId()))
+                            .memoryImageUrls(getMemoryImageUrls(activityMemoryImages))
+                            .memoryImageUrlsV2(activityMemoryImages)
                             .description(a.getDescription())
                             .platformScore(placeId != null ? buildPlatformScore(placeId) : null)
                             .tripAvgScore(calculateTripAverage(memberReviews))
@@ -1368,6 +1374,7 @@ public class TripServiceImpl implements TripService {
                 .name(trip.getName())
                 .coverImageUrl(coverImageUrl)
                 .memoryImageUrls(memoryImageUrls)
+                .memoryImageUrlsV2(memoryImages)
                 .description(trip.getDescription())
                 .destination(trip.getDestination())
                 .lat(trip.getDestinationLat())
@@ -1392,6 +1399,26 @@ public class TripServiceImpl implements TripService {
                 .totalMembers(countAcceptedMembers(trip.getId()))
                 .publicSharedAt(trip.getPublicSharedAt())
                 .build();
+    }
+
+    /**
+     * Whether {@code viewerId} may read this trip through the anonymous public endpoint.
+     *
+     * <p>PUBLIC is open to anyone. SHARED means "members only", not "anyone with the
+     * link" -- it must never fall through to open access just because it is not PRIVATE,
+     * which is the mistake this method exists to make impossible to repeat. PRIVATE is
+     * never viewable here at all.
+     */
+    boolean canViewPublicTrip(Trip trip, UUID viewerId) {
+        return switch (trip.getVisibility()) {
+            case PUBLIC -> true;
+            case SHARED -> viewerId != null
+                    && (trip.getOwnerId().equals(viewerId)
+                            || tripMemberRepository.findByTripIdAndUserId(trip.getId(), viewerId)
+                                    .filter(member -> member.getStatus() == MemberStatus.ACCEPTED)
+                                    .isPresent());
+            case PRIVATE -> false;
+        };
     }
 
     @Override
@@ -1770,7 +1797,8 @@ public class TripServiceImpl implements TripService {
                     if (coverImageUrl == null || coverImageUrl.isEmpty()) {
                         coverImageUrl = locationImageService.getImageForDestination(trip.getDestination());
                     }
-                    List<String> memoryImageUrls = getTripMemoryImageUrls(trip.getId());
+                    List<MemoryImageResponse> memoryImages = getTripMemoryImages(trip.getId());
+                    List<String> memoryImageUrls = getMemoryImageUrls(memoryImages);
 
                     // Get owner info
                     User owner = userRepository.findById(trip.getOwnerId()).orElse(null);
@@ -1783,6 +1811,7 @@ public class TripServiceImpl implements TripService {
                             .name(trip.getName())
                             .coverImageUrl(coverImageUrl)
                             .memoryImageUrls(memoryImageUrls)
+                            .memoryImageUrlsV2(memoryImages)
                             .description(trip.getDescription())
                             .destination(trip.getDestination())
                             .lat(trip.getDestinationLat())
@@ -1817,22 +1846,33 @@ public class TripServiceImpl implements TripService {
                 .count();
     }
 
-    private List<String> getTripMemoryImageUrls(UUID tripId) {
-        return mediaAssetRepository.findByTripId(tripId).stream()
-                .filter(asset -> asset.getMediaType() == null || !"VIDEO".equalsIgnoreCase(asset.getMediaType()))
-                .map(MediaAsset::getUrl)
-                .filter(url -> url != null && !url.isBlank())
-                .distinct()
-                .toList();
+    private List<MemoryImageResponse> getTripMemoryImages(UUID tripId) {
+        return toMemoryImageResponses(mediaAssetRepository.findByTripId(tripId));
     }
 
-    private List<String> getActivityMemoryImageUrls(UUID activityId) {
-        return mediaAssetRepository.findByActivityId(activityId).stream()
-                .filter(asset -> asset.getMediaType() == null || !"VIDEO".equalsIgnoreCase(asset.getMediaType()))
-                .map(MediaAsset::getUrl)
-                .filter(url -> url != null && !url.isBlank())
-                .distinct()
-                .toList();
+    private List<MemoryImageResponse> getActivityMemoryImages(UUID activityId) {
+        return toMemoryImageResponses(mediaAssetRepository.findByActivityId(activityId));
+    }
+
+    private List<MemoryImageResponse> toMemoryImageResponses(List<MediaAsset> assets) {
+        Set<String> seenUrls = new LinkedHashSet<>();
+        List<MemoryImageResponse> images = new ArrayList<>();
+        for (MediaAsset asset : assets) {
+            if (asset.getMediaType() != null && "VIDEO".equalsIgnoreCase(asset.getMediaType())) {
+                continue;
+            }
+            MemoryImageUrlNormalizer.normalize(asset.getUrl())
+                    .filter(seenUrls::add)
+                    .ifPresent(url -> images.add(MemoryImageResponse.builder()
+                            .url(url)
+                            .title(asset.getCaption())
+                            .build()));
+        }
+        return images;
+    }
+
+    private List<String> getMemoryImageUrls(List<MemoryImageResponse> images) {
+        return images.stream().map(MemoryImageResponse::getUrl).toList();
     }
 
     @Override

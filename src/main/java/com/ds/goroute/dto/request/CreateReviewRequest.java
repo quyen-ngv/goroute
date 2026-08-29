@@ -1,5 +1,9 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.ModerationVisibility;
+
 import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -50,6 +54,7 @@ private BigDecimal checkinAccuracy;
 
     // Text review (optional)
     @Size(max = 2000, message = "Review text cannot exceed 2000 characters")
+    @ModeratedText(contentType = ModeratedContentType.REVIEW, visibility = ModerationVisibility.PUBLIC)
     private String text;
 
     // Photos (optional)

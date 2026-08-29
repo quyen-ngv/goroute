@@ -1,5 +1,9 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.ModerationVisibility;
+
 import com.ds.goroute.type.ExpenseCategory;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -27,6 +31,7 @@ public class CreateExpenseRequest {
     @NotNull(message = "Category is required")
     private ExpenseCategory category;
 
+    @ModeratedText(contentType = ModeratedContentType.EXPENSE, visibility = ModerationVisibility.GROUP)
     private String description;
     private UUID activityId;
     private UUID paidBy;

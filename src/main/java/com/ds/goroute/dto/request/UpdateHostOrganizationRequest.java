@@ -1,5 +1,9 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.ModerationVisibility;
+
 import com.ds.goroute.type.OrganizationOperationalStatus;
 import com.ds.goroute.type.OrganizationType;
 
@@ -16,6 +20,7 @@ public class UpdateHostOrganizationRequest {
     @NotBlank @Size(max = 500)
     private String legalName;
     @NotBlank @Size(max = 500)
+    @ModeratedText(contentType = ModeratedContentType.PARTNER_LISTING, visibility = ModerationVisibility.PUBLIC)
     private String displayName;
     private OrganizationType organizationType;
     private OrganizationOperationalStatus operationalStatus;

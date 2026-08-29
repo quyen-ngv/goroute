@@ -250,9 +250,11 @@ public class AwsService implements StorageService {
     private String getCloudfrontUrl(String fileName) {
         String domain = awsProperties.getCloudfrontDomain();
         if (domain != null && !domain.isEmpty()) {
-            // Ensure no double slashes if domain ends with / or filename starts with /
             if (domain.endsWith("/")) domain = domain.substring(0, domain.length() - 1);
             if (fileName.startsWith("/")) fileName = fileName.substring(1);
+            if (domain.startsWith("http://") || domain.startsWith("https://")) {
+                return domain + "/" + fileName;
+            }
             return "https://" + domain + "/" + fileName;
         }
         // Fallback to S3 URL if Cloudfront not configured

@@ -1,5 +1,9 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.ModerationVisibility;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -20,11 +24,14 @@ import java.util.UUID;
 public class UpdateActivityRequest {
     private String placeId;
     private UUID customPlaceId;
+    @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)
     private String name;
+    @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)
     private String address;
     private BigDecimal lat;
     private BigDecimal lng;
     /** Destination point for transport activities. */
+    @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)
     private String endAddress;
     private BigDecimal endLat;
     private BigDecimal endLng;
@@ -40,7 +47,9 @@ public class UpdateActivityRequest {
     private String durationToNext;
     private Integer distanceValueToNext;
     private Integer durationValueToNext;
+    @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)
     private String notes;
+    @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)
     private String description;
     private Boolean isAccommodation;
     private Boolean isStartingPoint;

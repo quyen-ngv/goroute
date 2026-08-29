@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.ModerationFlagMapper">
+
+    <resultMap id="flagMap" type="com.ds.goroute.entity.ModerationFlag">
+        <id property="id" column="id"/>
+        <result property="contentType" column="content_type"/>
+        <result property="contentId" column="content_id"/>
+        <result property="contentOwnerId" column="content_owner_id"/>
+        <result property="source" column="source"/>
+        <result property="category" column="category"/>
+        <result property="severity" column="severity"/>
+        <result property="priority" column="priority"/>
+        <result property="reason" column="reason"/>
+        <result property="contextSnapshot" column="context_snapshot"/>
+        <result property="reportCount" column="report_count"/>
+        <result property="status" column="status"/>
+        <result property="resolutionNote" column="resolution_note"/>
+        <result property="reviewedBy" column="reviewed_by"/>
+        <result property="reviewedAt" column="reviewed_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <resultMap id="reportMap" type="com.ds.goroute.entity.ContentReport">
+        <id property="id" column="id"/>
+        <result property="contentType" column="content_type"/>
+        <result property="contentId" column="content_id"/>
+        <result property="reporterId" column="reporter_id"/>
+        <result property="reason" column="reason"/>
+        <result property="note" column="note"/>
+        <result property="flagId" column="flag_id"/>
+        <result property="status" column="status"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <resultMap id="takedownMap" type="com.ds.goroute.entity.ContentTakedown">
+        <id property="id" column="id"/>
+        <result property="contentType" column="content_type"/>
+        <result property="contentId" column="content_id"/>
+        <result property="ownerId" column="owner_id"/>
+        <result property="category" column="category"/>
+        <result property="reason" column="reason"/>
+        <result property="removedBy" column="removed_by"/>
+        <result property="removedAt" column="removed_at"/>
+        <result property="restoredBy" column="restored_by"/>
+        <result property="restoredAt" column="restored_at"/>
+    </resultMap>
+
+    <sql id="flagColumns">
+        id, content_type, content_id, content_owner_id, source, category, severity, priority,
+        reason, context_snapshot::text AS context_snapshot, report_count, status,
+        resolution_note, reviewed_by, reviewed_at, created_at, updated_at
+    </sql>
+
+    <!-- Folding a repeat signal into the open flag is what keeps "many reports raise
+         priority but never remove content" true at the storage layer. -->
+    <insert id="upsert" parameterType="com.ds.goroute.entity.ModerationFlag">
+        INSERT INTO moderation_flags
+            (id, content_type, content_id, content_owner_id, source, category, severity,
+             priority, reason, context_snapshot, report_count, status, created_at, updated_at)
+        VALUES
+            (#{id}, #{contentType}, #{contentId}, #{contentOwnerId}, #{source}, #{category},
+             #{severity}, #{priority}, #{reason}, #{contextSnapshot}::jsonb, #{reportCount},
+             #{status}, NOW(), NOW())
+        ON CONFLICT (content_type, content_id, source, category) DO UPDATE
+        SET report_count = moderation_flags.report_count + EXCLUDED.report_count,
+            priority = GREATEST(moderation_flags.priority, EXCLUDED.priority)
+                       + LEAST(moderation_flags.report_count, 20),
+            status = CASE WHEN moderation_flags.status = 'REMOVED'
+                          THEN moderation_flags.status ELSE 'PENDING' END,
+            reason = COALESCE(EXCLUDED.reason, moderation_flags.reason),
+            updated_at = NOW()
+    </insert>
+
+    <select id="findById" resultMap="flagMap">
+        SELECT <include refid="flagColumns"/> FROM moderation_flags WHERE id = #{id}
+    </select>
+
+    <select id="findOpen" resultMap="flagMap">
+        SELECT <include refid="flagColumns"/> FROM moderation_flags
+        WHERE content_type = #{contentType} AND content_id = #{contentId}
+          AND source = #{source} AND category = #{category}
+    </select>
+
+    <sql id="queueFilter">
+        <where>
+            <if test="status != null and status != ''">AND status = #{status}</if>
+            <if test="contentType != null and contentType != ''">AND content_type = #{contentType}</if>
+            <if test="category != null and category != ''">AND category = #{category}</if>
+            <if test="source != null and source != ''">AND source = #{source}</if>
+        </where>
+    </sql>
+
+    <!-- Ordered by seriousness, never by arrival time (MOD-06). -->
+    <select id="findQueue" resultMap="flagMap">
+        SELECT <include refid="flagColumns"/> FROM moderation_flags
+        <include refid="queueFilter"/>
+        ORDER BY priority DESC, created_at ASC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countQueue" resultType="long">
+        SELECT COUNT(*) FROM moderation_flags
+        <include refid="queueFilter"/>
+    </select>
+
+    <update id="resolve">
+        UPDATE moderation_flags
+        SET status = #{status},
+            reviewed_by = #{reviewedBy},
+            reviewed_at = NOW(),
+            resolution_note = #{resolutionNote},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <insert id="insertReport" parameterType="com.ds.goroute.entity.ContentReport">
+        INSERT INTO content_reports
+            (id, content_type, content_id, reporter_id, reason, note, flag_id, status, created_at)
+        VALUES
+            (#{id}, #{contentType}, #{contentId}, #{reporterId}, #{reason}, #{note},
+             #{flagId}, #{status}, #{createdAt})
+    </insert>
+
+    <select id="findReport" resultMap="reportMap">
+        SELECT * FROM content_reports
+        WHERE content_type = #{contentType} AND content_id = #{contentId}
+          AND reporter_id = #{reporterId}
+    </select>
+
+    <select id="findReportsForContent" resultMap="reportMap">
+        SELECT * FROM content_reports
+        WHERE content_type = #{contentType} AND content_id = #{contentId}
+        ORDER BY created_at DESC
+    </select>
+
+    <update id="resolveReportsForFlag">
+        UPDATE content_reports SET status = #{status}
+        WHERE flag_id = #{flagId} AND status = 'PENDING'
+    </update>
+
+    <insert id="insertTakedown" parameterType="com.ds.goroute.entity.ContentTakedown">
+        INSERT INTO content_takedowns
+            (id, content_type, content_id, owner_id, category, reason, removed_by, removed_at)
+        VALUES
+            (#{id}, #{contentType}, #{contentId}, #{ownerId}, #{category}, #{reason},
+             #{removedBy}, #{removedAt})
+        ON CONFLICT (content_type, content_id) DO UPDATE
+        SET reason = EXCLUDED.reason,
+            category = EXCLUDED.category,
+            removed_by = EXCLUDED.removed_by,
+            removed_at = EXCLUDED.removed_at,
+            restored_by = NULL,
+            restored_at = NULL
+    </insert>
+
+    <select id="findActiveTakedown" resultMap="takedownMap">
+        SELECT * FROM content_takedowns
+        WHERE content_type = #{contentType} AND content_id = #{contentId} AND restored_at IS NULL
+    </select>
+
+    <select id="findActiveTakedownIds" resultType="java.util.UUID">
+        SELECT content_id FROM content_takedowns
+        WHERE content_type = #{contentType} AND restored_at IS NULL
+          AND content_id IN
+        <foreach item="contentId" collection="contentIds" open="(" separator="," close=")">
+            #{contentId}
+        </foreach>
+    </select>
+
+    <update id="restoreTakedown">
+        UPDATE content_takedowns
+        SET restored_by = #{restoredBy}, restored_at = NOW()
+        WHERE content_type = #{contentType} AND content_id = #{contentId} AND restored_at IS NULL
+    </update>
+</mapper>

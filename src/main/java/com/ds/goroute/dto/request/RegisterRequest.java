@@ -1,5 +1,9 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.ModerationVisibility;
+
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -15,6 +19,7 @@ import lombok.NoArgsConstructor;
 public class RegisterRequest {
     @NotBlank(message = "Full name is required")
     @Size(max = 255)
+    @ModeratedText(contentType = ModeratedContentType.USER_PROFILE, visibility = ModerationVisibility.PUBLIC)
     private String fullName;
 
     @NotBlank(message = "Email is required")

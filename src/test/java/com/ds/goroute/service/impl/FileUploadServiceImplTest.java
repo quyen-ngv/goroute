@@ -3,7 +3,13 @@ package com.ds.goroute.service.impl;
 import com.ds.goroute.config.FileUploadProperties;
 import com.ds.goroute.config.ImgpressProperties;
 import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.service.ImageModerationService;
+import com.ds.goroute.service.ImageUploadOutcome;
+import com.ds.goroute.service.ImageUploadRequest;
 import com.ds.goroute.service.StorageService;
+import com.ds.goroute.service.moderation.ModerationVerdict;
+import com.ds.goroute.type.ModerationAction;
+import com.ds.goroute.type.ModerationCategory;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.util.unit.DataSize;
@@ -12,23 +18,34 @@ import org.springframework.web.client.RestTemplate;
 import java.util.List;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+import com.ds.goroute.repository.AiTripRepository;
 
 class FileUploadServiceImplTest {
 
+    private static final byte[] JPEG = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF};
+
     private final StorageService storageService = mock(StorageService.class);
+    private final ImageModerationService imageModerationService = mock(ImageModerationService.class);
+    private final AiTripRepository aiTripRepository = mock(AiTripRepository.class);
     private final FileUploadProperties properties = properties();
     private final FileUploadServiceImpl service = new FileUploadServiceImpl(
             storageService,
             mock(RestTemplate.class),
             properties,
-            new ImgpressProperties());
+            new ImgpressProperties(),
+            imageModerationService,
+            aiTripRepository);
 
     @Test
     void rejectsFileWhoseBytesDoNotMatchDeclaredImageType() {
@@ -44,14 +61,49 @@ class FileUploadServiceImplTest {
     @Test
     void rejectsOversizedBatchBeforeWritingAnyObject() {
         properties.setMaxBatchFiles(1);
-        MockMultipartFile first = new MockMultipartFile(
-                "files", "one.jpg", "image/jpeg", new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF});
-        MockMultipartFile second = new MockMultipartFile(
-                "files", "two.jpg", "image/jpeg", new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF});
+        MockMultipartFile first = new MockMultipartFile("files", "one.jpg", "image/jpeg", JPEG);
+        MockMultipartFile second = new MockMultipartFile("files", "two.jpg", "image/jpeg", JPEG);
 
-        assertThatThrownBy(() -> service.uploadImages(UUID.randomUUID(), List.of(first, second)))
+        assertThatThrownBy(() -> service.uploadImages(userUpload(), List.of(first, second)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("At most 1 images");
+        verifyNoInteractions(storageService);
+    }
+
+    /**
+     * MOD-04: one rejected photo must not cost the user the rest of the batch, and the
+     * rejection has to be distinguishable from a technical failure.
+     */
+    @Test
+    void keepsTheRestOfTheBatchWhenOneImageIsRejectedForItsContent() {
+        MockMultipartFile good = new MockMultipartFile("files", "beach.jpg", "image/jpeg", JPEG);
+        MockMultipartFile bad = new MockMultipartFile("files", "bad.jpg", "image/jpeg",
+                new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, 1});
+        when(imageModerationService.inspect(any(), any(), any(), any()))
+                .thenReturn(ModerationVerdict.allowed())
+                .thenReturn(ModerationVerdict.of(ModerationAction.BLOCK, ModerationCategory.SEXUAL, null, "x"));
+        when(storageService.uploadFile(anyString(), any(), anyString(), anyLong()))
+                .thenReturn("https://cdn/beach.webp");
+
+        List<ImageUploadOutcome> outcomes = service.uploadImages(userUpload(), List.of(good, bad));
+
+        assertThat(outcomes).hasSize(2);
+        assertThat(outcomes.get(0).isAccepted()).isTrue();
+        assertThat(outcomes.get(1).isAccepted()).isFalse();
+        assertThat(outcomes.get(1).isContentRejection()).isTrue();
+        assertThat(outcomes.get(1).rejectedCategory()).isEqualTo(ModerationCategory.SEXUAL);
+    }
+
+    /** A rejected image must never reach storage, because a stored image already has a URL. */
+    @Test
+    void neverStoresAnImageThatModerationRejected() {
+        MockMultipartFile file = new MockMultipartFile("file", "bad.jpg", "image/jpeg", JPEG);
+        when(imageModerationService.inspect(any(), any(), any(), any()))
+                .thenReturn(ModerationVerdict.of(ModerationAction.BLOCK, ModerationCategory.VIOLENCE, null, "x"));
+
+        ImageUploadOutcome outcome = service.uploadImage(userUpload(), file);
+
+        assertThat(outcome.isContentRejection()).isTrue();
         verifyNoInteractions(storageService);
     }
 
@@ -65,8 +117,7 @@ class FileUploadServiceImplTest {
 
         service.uploadVideo(UUID.randomUUID(), video);
 
-        verify(storageService).uploadFile(
-                anyString(), any(), eq("video/mp4"), eq(12L));
+        verify(storageService).uploadFile(anyString(), any(), eq("video/mp4"), eq(12L));
     }
 
     @Test
@@ -82,6 +133,11 @@ class FileUploadServiceImplTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("configured size limit");
         verifyNoInteractions(storageService);
+    }
+
+    private ImageUploadRequest userUpload() {
+        return new ImageUploadRequest(UUID.randomUUID(),
+                ImageUploadRequest.ImageEntryPoint.USER_UPLOAD, "expenses/test", false);
     }
 
     private FileUploadProperties properties() {

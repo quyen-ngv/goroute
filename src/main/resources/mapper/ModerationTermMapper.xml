@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.ModerationTermMapper">
+
+    <resultMap id="termMap" type="com.ds.goroute.entity.ModerationTerm">
+        <id property="id" column="id"/>
+        <result property="term" column="term"/>
+        <result property="normalizedTerm" column="normalized_term"/>
+        <result property="category" column="category"/>
+        <result property="action" column="action"/>
+        <result property="language" column="language"/>
+        <result property="isExemption" column="is_exemption"/>
+        <result property="note" column="note"/>
+        <result property="isActive" column="is_active"/>
+        <result property="dataVersion" column="data_version"/>
+        <result property="createdBy" column="created_by"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="columns">
+        id, term, normalized_term, category, action, language, is_exemption, note,
+        is_active, data_version, created_by, created_at, updated_at
+    </sql>
+
+    <sql id="adminFilter">
+        <where>
+            <if test="query != null and query != ''">
+                AND (term ILIKE CONCAT('%', #{query}, '%')
+                     OR normalized_term ILIKE CONCAT('%', #{query}, '%')
+                     OR note ILIKE CONCAT('%', #{query}, '%'))
+            </if>
+            <if test="category != null and category != ''">AND category = #{category}</if>
+            <if test="isExemption != null">AND is_exemption = #{isExemption}</if>
+            <if test="active != null">AND is_active = #{active}</if>
+        </where>
+    </sql>
+
+    <select id="findAllActive" resultMap="termMap">
+        SELECT <include refid="columns"/> FROM moderation_terms WHERE is_active = TRUE
+    </select>
+
+    <select id="findAdmin" resultMap="termMap">
+        SELECT <include refid="columns"/> FROM moderation_terms
+        <include refid="adminFilter"/>
+        ORDER BY is_exemption, category, normalized_term
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAdmin" resultType="long">
+        SELECT COUNT(*) FROM moderation_terms
+        <include refid="adminFilter"/>
+    </select>
+
+    <select id="findById" resultMap="termMap">
+        SELECT <include refid="columns"/> FROM moderation_terms WHERE id = #{id}
+    </select>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.ModerationTerm">
+        INSERT INTO moderation_terms
+            (id, term, normalized_term, category, action, language, is_exemption, note,
+             is_active, data_version, created_by, created_at, updated_at)
+        VALUES
+            (#{id}, #{term}, #{normalizedTerm}, #{category}, #{action}, #{language}, #{isExemption},
+             #{note}, #{isActive}, #{dataVersion}, #{createdBy}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <!-- Optimistic locking: two operators editing the same term must not silently
+         overwrite each other, because this table decides what users may publish. -->
+    <update id="update" parameterType="com.ds.goroute.entity.ModerationTerm">
+        UPDATE moderation_terms
+        SET term = #{term},
+            normalized_term = #{normalizedTerm},
+            category = #{category},
+            action = #{action},
+            language = #{language},
+            is_exemption = #{isExemption},
+            note = #{note},
+            is_active = #{isActive},
+            data_version = data_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{id} AND data_version = #{dataVersion}
+    </update>
+
+    <delete id="delete">
+        DELETE FROM moderation_terms WHERE id = #{id}
+    </delete>
+
+    <insert id="insertAudit">
+        INSERT INTO moderation_term_audit (term_id, action, before_value, after_value, changed_by)
+        VALUES (#{termId}, #{action}, #{beforeValue}::jsonb, #{afterValue}::jsonb, #{changedBy})
+    </insert>
+
+    <select id="findAudit" resultType="java.util.LinkedHashMap">
+        SELECT id, term_id, action, before_value::text AS before_value,
+               after_value::text AS after_value, changed_by, changed_at
+        FROM moderation_term_audit
+        WHERE term_id = #{termId}
+        ORDER BY changed_at DESC
+        LIMIT #{limit}
+    </select>
+</mapper>

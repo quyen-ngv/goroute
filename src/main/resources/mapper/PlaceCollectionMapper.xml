@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.PlaceCollectionMapper">
+
+    <resultMap id="collectionMap" type="com.ds.goroute.entity.PlaceCollection">
+        <id property="id" column="id"/>
+        <result property="ownerId" column="owner_id"/>
+        <result property="name" column="name"/>
+        <result property="description" column="description"/>
+        <result property="coverImageUrl" column="cover_image_url"/>
+        <result property="visibility" column="visibility"/>
+        <result property="shareSlug" column="share_slug"/>
+        <result property="itemCount" column="item_count"/>
+        <result property="viewCount" column="view_count"/>
+        <result property="isRemoved" column="is_removed"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <resultMap id="itemMap" type="com.ds.goroute.entity.PlaceCollectionItem">
+        <id property="id" column="id"/>
+        <result property="collectionId" column="collection_id"/>
+        <result property="placeId" column="place_id"/>
+        <result property="displayName" column="display_name"/>
+        <result property="displayNote" column="display_note"/>
+        <result property="latitude" column="latitude"/>
+        <result property="longitude" column="longitude"/>
+        <result property="position" column="position"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <sql id="columns">
+        id, owner_id, name, description, cover_image_url, visibility, share_slug,
+        item_count, view_count, is_removed, created_at, updated_at
+    </sql>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.PlaceCollection">
+        INSERT INTO place_collections
+            (id, owner_id, name, description, cover_image_url, visibility, share_slug,
+             item_count, view_count, is_removed, created_at, updated_at)
+        VALUES
+            (#{id}, #{ownerId}, #{name}, #{description}, #{coverImageUrl}, #{visibility},
+             #{shareSlug}, 0, 0, FALSE, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <update id="update" parameterType="com.ds.goroute.entity.PlaceCollection">
+        UPDATE place_collections
+        SET name = #{name},
+            description = #{description},
+            cover_image_url = #{coverImageUrl},
+            visibility = #{visibility},
+            share_slug = #{shareSlug},
+            updated_at = #{updatedAt}
+        WHERE id = #{id} AND owner_id = #{ownerId} AND is_removed = FALSE
+    </update>
+
+    <select id="findById" resultMap="collectionMap">
+        SELECT <include refid="columns"/> FROM place_collections
+        WHERE id = #{id} AND is_removed = FALSE
+    </select>
+
+    <!-- Un-publishing clears the slug, so an old link resolves to nothing here rather
+         than relying on a caller to check visibility afterwards. -->
+    <select id="findPublicBySlug" resultMap="collectionMap">
+        SELECT <include refid="columns"/> FROM place_collections
+        WHERE share_slug = #{shareSlug}
+          AND visibility = 'PUBLIC'
+          AND is_removed = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns t
+              WHERE t.content_type = 'PLACE_COLLECTION' AND t.content_id = place_collections.id
+                AND t.restored_at IS NULL)
+    </select>
+
+    <select id="findByOwner" resultMap="collectionMap">
+        SELECT <include refid="columns"/> FROM place_collections
+        WHERE owner_id = #{ownerId} AND is_removed = FALSE
+        ORDER BY updated_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countByOwner" resultType="long">
+        SELECT COUNT(*) FROM place_collections WHERE owner_id = #{ownerId} AND is_removed = FALSE
+    </select>
+
+    <update id="markRemoved">
+        UPDATE place_collections SET is_removed = TRUE, share_slug = NULL, updated_at = NOW()
+        WHERE id = #{id} AND owner_id = #{ownerId} AND is_removed = FALSE
+    </update>
+
+    <update id="incrementViewCount">
+        UPDATE place_collections SET view_count = view_count + 1 WHERE id = #{id}
+    </update>
+
+    <insert id="insertItem" parameterType="com.ds.goroute.entity.PlaceCollectionItem">
+        INSERT INTO place_collection_items
+            (id, collection_id, place_id, display_name, display_note, latitude, longitude,
+             position, created_at)
+        VALUES
+            (#{id}, #{collectionId}, #{placeId}, #{displayName}, #{displayNote}, #{latitude},
+             #{longitude}, #{position}, #{createdAt})
+        ON CONFLICT (collection_id, place_id) DO NOTHING
+    </insert>
+
+    <delete id="deleteItem">
+        DELETE FROM place_collection_items WHERE collection_id = #{collectionId} AND id = #{itemId}
+    </delete>
+
+    <update id="updateItemPosition">
+        UPDATE place_collection_items SET position = #{position}
+        WHERE collection_id = #{collectionId} AND id = #{itemId}
+    </update>
+
+    <select id="findItems" resultMap="itemMap">
+        SELECT id, collection_id, place_id, display_name, display_note, latitude, longitude,
+               position, created_at
+        FROM place_collection_items
+        WHERE collection_id = #{collectionId}
+        ORDER BY position, created_at
+    </select>
+
+    <select id="countItems" resultType="int">
+        SELECT COUNT(*) FROM place_collection_items WHERE collection_id = #{collectionId}
+    </select>
+
+    <update id="refreshItemCount">
+        UPDATE place_collections
+        SET item_count = (SELECT COUNT(*) FROM place_collection_items WHERE collection_id = #{collectionId}),
+            updated_at = NOW()
+        WHERE id = #{collectionId}
+    </update>
+</mapper>

@@ -1,5 +1,9 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.ModerationVisibility;
+
 import com.ds.goroute.dto.ActivityItineraryItem;
 import com.ds.goroute.dto.ActivityWhatToExpectItem;
 import com.ds.goroute.dto.GeoCoordinateDto;
@@ -25,7 +29,9 @@ public class UpsertMarketplaceActivityRequest {
     @NotNull private UUID organizationId;
     private UUID placeId;
     private ActivityProductType activityType = ActivityProductType.TOUR;
+    @ModeratedText(contentType = ModeratedContentType.PARTNER_LISTING, visibility = ModerationVisibility.PUBLIC)
     @NotBlank @Size(max=500) private String title;
+    @ModeratedText(contentType = ModeratedContentType.PARTNER_LISTING, visibility = ModerationVisibility.PUBLIC)
     @Size(max=10000) private String description;
     @Size(max=500) private String activityAddress;
     @Size(max=2000) private String url;

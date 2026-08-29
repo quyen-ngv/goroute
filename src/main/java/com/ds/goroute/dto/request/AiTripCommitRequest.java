@@ -1,5 +1,9 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.ModerationVisibility;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import lombok.Data;
@@ -11,6 +15,7 @@ import java.util.UUID;
 @Data
 public class AiTripCommitRequest {
     @NotBlank private String attemptId;
+    @ModeratedText(contentType = ModeratedContentType.TRIP, visibility = ModerationVisibility.PUBLIC)
     private String tripDescription;
     @NotEmpty @Valid private List<Item> items;
 
@@ -18,15 +23,18 @@ public class AiTripCommitRequest {
     public static class Item {
         @NotBlank private String type;
         private UUID placeId;
+        @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)
         @NotBlank private String name;
         @Min(1) private int dayNumber;
         @Min(0) private int sortOrder;
         private LocalTime startTime;
         private LocalTime endTime;
         private Integer endDayNumber;
+        @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)
         private String address;
         private BigDecimal latitude;
         private BigDecimal longitude;
+        @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)
         private String endAddress;
         private BigDecimal endLatitude;
         private BigDecimal endLongitude;
@@ -36,7 +44,9 @@ public class AiTripCommitRequest {
         private Integer durationValueToNext;
         private String distanceToNext;
         private Integer distanceValueToNext;
+        @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)
         private String description;
+        @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)
         private String notes;
     }
 }

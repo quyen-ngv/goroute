@@ -17,4 +17,6 @@ public interface ActivityCommentRepository {
     void deleteById(UUID id);
     
     void softDelete(UUID id);
+
+    java.util.Map<UUID, Integer> countByTripId(UUID tripId);
 }

@@ -24,7 +24,7 @@ public class StarController extends BaseService {
 
     @GetMapping("/transactions")
     public ResponseEntity<?> getTransactions(@RequestAttribute("userId") UUID userId) {
-        List<StarTransaction> transactions = starService.getTransactions(userId);
+        List<StarTransaction> transactions = starService.getTransactions(userId, 50, 0);
         return ResponseEntity.ok(ofSucceeded(transactions));
     }
 

@@ -12,8 +12,10 @@ import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.LocationImageRepository;
 import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.utils.CitySlugResolver;
+import com.ds.goroute.service.FileUploadService;
+import com.ds.goroute.service.ImageUploadOutcome;
+import com.ds.goroute.service.ImageUploadRequest;
 import com.ds.goroute.service.ImageStorageCleanupService;
-import com.ds.goroute.service.StorageService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,7 +39,7 @@ import java.util.stream.Collectors;
 public class LocationImageServiceImpl implements LocationImageService {
 
     private final LocationImageRepository locationImageRepository;
-    private final StorageService storageService;
+    private final FileUploadService fileUploadService;
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final ObjectMapper objectMapper;
 
@@ -150,20 +152,20 @@ public class LocationImageServiceImpl implements LocationImageService {
         log.info("Location image deleted: {}", id);
     }
 
+    /** Curated location imagery goes through the shared upload door like everything else (MOD-05). */
     @Override
     public String uploadLocationImage(MultipartFile file) {
-        try {
-            String fileName = "location-images/" + UUID.randomUUID() + "-" + file.getOriginalFilename();
-            return storageService.uploadFile(
-                fileName,
-                file.getInputStream(),
-                file.getContentType(),
-                file.getSize()
-            );
-        } catch (Exception e) {
-            log.error("Failed to upload location image", e);
-            throw new BusinessException(ErrorConstant.INTERNAL_SERVER_ERROR, "Failed to upload image");
+        ImageUploadOutcome outcome = fileUploadService.uploadImage(
+                ImageUploadRequest.of(null, ImageUploadRequest.ImageEntryPoint.LOCATION_IMAGE, "location-images"),
+                file);
+        if (!outcome.isAccepted()) {
+            throw new BusinessException(
+                    outcome.isContentRejection()
+                            ? ErrorConstant.IMAGE_REJECTED_BY_MODERATION
+                            : ErrorConstant.INVALID_PARAMETERS,
+                    outcome.failureMessage());
         }
+        return outcome.url();
     }
 
     private LocationImageResponse mapToResponse(LocationImage locationImage) {

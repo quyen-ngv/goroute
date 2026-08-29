@@ -1,5 +1,9 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.ModerationVisibility;
+
 import com.ds.goroute.type.ExpenseCategory;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
@@ -27,6 +31,7 @@ public class UpdateExpenseRequest {
     private ExpenseCategory category;
 
     @Size(max = 500, message = "Description cannot exceed 500 characters")
+    @ModeratedText(contentType = ModeratedContentType.EXPENSE, visibility = ModerationVisibility.GROUP)
     private String description;
 
     private UUID activityId;

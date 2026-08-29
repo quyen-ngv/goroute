@@ -19,6 +19,8 @@ public interface UserReviewMapper {
 
     UserReview findById(@Param("id") UUID id);
 
+    List<UserReview> findByIds(@Param("ids") List<UUID> ids);
+
     UserReview findByUserAndPlace(@Param("userId") UUID userId, @Param("placeId") UUID placeId);
 
     UserReview findByUserAndActivityBooking(@Param("userId") UUID userId,

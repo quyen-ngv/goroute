@@ -4,8 +4,14 @@ import com.ds.goroute.config.FileUploadProperties;
 import com.ds.goroute.config.ImgpressProperties;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.FileUploadService;
+import com.ds.goroute.service.ImageModerationService;
+import com.ds.goroute.service.ImageUploadOutcome;
+import com.ds.goroute.service.ImageUploadRequest;
 import com.ds.goroute.service.StorageService;
+import com.ds.goroute.service.moderation.ModerationVerdict;
+import com.ds.goroute.repository.AiTripRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.ParameterizedTypeReference;
@@ -34,58 +40,91 @@ import java.util.UUID;
 
 @Service
 @Slf4j
-public class FileUploadServiceImpl implements FileUploadService {
+public class FileUploadServiceImpl extends BaseService implements FileUploadService {
 
     private final StorageService storageService;
     private final RestTemplate restTemplate;
     private final FileUploadProperties uploadProperties;
     private final ImgpressProperties imgpressProperties;
+    private final ImageModerationService imageModerationService;
+    private final AiTripRepository aiTripRepository;
 
     public FileUploadServiceImpl(
             StorageService storageService,
             @Qualifier("scrapeRestTemplate") RestTemplate restTemplate,
             FileUploadProperties uploadProperties,
-            ImgpressProperties imgpressProperties) {
+            ImgpressProperties imgpressProperties,
+            ImageModerationService imageModerationService,
+            AiTripRepository aiTripRepository) {
         this.storageService = storageService;
         this.restTemplate = restTemplate;
         this.uploadProperties = uploadProperties;
         this.imgpressProperties = imgpressProperties;
+        this.imageModerationService = imageModerationService;
+        this.aiTripRepository = aiTripRepository;
     }
 
     @Override
     public String uploadImage(UUID userId, MultipartFile file) {
-        ValidatedImage image = validate(file);
-        ValidatedImage upload = compressOrOriginal(image);
-        String objectKey = "expenses/" + userId + "/" + UUID.randomUUID() + upload.extension();
-        return storageService.uploadFile(
-                objectKey,
-                new ByteArrayInputStream(upload.bytes()),
-                upload.contentType(),
-                upload.bytes().length);
+        ImageUploadRequest request = ImageUploadRequest.of(
+                userId, ImageUploadRequest.ImageEntryPoint.USER_UPLOAD, "expenses/" + userId);
+        ImageUploadOutcome outcome = uploadImage(request, file);
+        if (!outcome.isAccepted()) {
+            throw toException(outcome);
+        }
+        return outcome.url();
     }
 
     @Override
-    public List<String> uploadImages(UUID userId, List<MultipartFile> files) {
+    public List<ImageUploadOutcome> uploadImages(ImageUploadRequest request, List<MultipartFile> files) {
         if (files == null || files.isEmpty()) {
             throw invalid("At least one image is required");
         }
         if (files.size() > uploadProperties.getMaxBatchFiles()) {
             throw invalid("At most " + uploadProperties.getMaxBatchFiles() + " images are allowed");
         }
-
-        // Validate the entire batch before any object is written.
-        List<ValidatedImage> validated = files.stream().map(this::validate).toList();
-        List<String> urls = new ArrayList<>(validated.size());
-        for (ValidatedImage image : validated) {
-            ValidatedImage upload = compressOrOriginal(image);
-            String objectKey = "expenses/" + userId + "/" + UUID.randomUUID() + upload.extension();
-            urls.add(storageService.uploadFile(
-                    objectKey,
-                    new ByteArrayInputStream(upload.bytes()),
-                    upload.contentType(),
-                    upload.bytes().length));
+        List<ImageUploadOutcome> outcomes = new ArrayList<>(files.size());
+        for (MultipartFile file : files) {
+            outcomes.add(uploadImage(request, file));
         }
-        return urls;
+        return outcomes;
+    }
+
+    @Override
+    public ImageUploadOutcome uploadImage(ImageUploadRequest request, MultipartFile file) {
+        String filename = file == null ? null : file.getOriginalFilename();
+        ValidatedImage image;
+        try {
+            // Cheap technical checks first: a corrupt or oversized file should never
+            // reach a moderation backend that charges per image.
+            image = validate(file, request.userId());
+        } catch (BusinessException exception) {
+            return ImageUploadOutcome.failed(filename, exception.getMessage());
+        }
+        return store(request, image, filename);
+    }
+
+    @Override
+    public ImageUploadOutcome uploadImageFromUrl(ImageUploadRequest request, String sourceUrl) {
+        byte[] bytes;
+        try {
+            bytes = restTemplate.getForObject(sourceUrl, byte[].class);
+        } catch (RuntimeException exception) {
+            return ImageUploadOutcome.failed(sourceUrl, "Could not download the image");
+        }
+        if (bytes == null || bytes.length == 0) {
+            return ImageUploadOutcome.failed(sourceUrl, "The address did not return an image");
+        }
+        long maxSizeBytes = getMaxImageSizeBytes(request.userId());
+        if (bytes.length > maxSizeBytes) {
+            return ImageUploadOutcome.failed(sourceUrl, "Image exceeds the configured size limit");
+        }
+        String contentType = detectContentType(bytes);
+        if (contentType == null) {
+            return ImageUploadOutcome.failed(sourceUrl, "Only JPEG, PNG, and WEBP images are allowed");
+        }
+        ValidatedImage image = new ValidatedImage(bytes, contentType, extension(contentType), "image");
+        return store(request, image, sourceUrl);
     }
 
     @Override
@@ -93,22 +132,68 @@ public class FileUploadServiceImpl implements FileUploadService {
         ValidatedVideo video = validateVideo(file);
         String objectKey = "trip-memory-videos/" + userId + "/" + UUID.randomUUID() + video.extension();
         try (InputStream inputStream = file.getInputStream()) {
-            return storageService.uploadFile(
-                    objectKey,
-                    inputStream,
-                    video.contentType(),
-                    file.getSize());
+            return storageService.uploadFile(objectKey, inputStream, video.contentType(), file.getSize());
         } catch (IOException exception) {
             throw new IllegalStateException("Could not read uploaded video", exception);
         }
     }
 
-    private ValidatedImage validate(MultipartFile file) {
+    /**
+     * Moderation runs before anything is written, so a rejected image never gets a URL.
+     * Storing first and checking after would leave a window in which the image is already
+     * shareable, and for the severe groups that window is the whole problem.
+     */
+    private ImageUploadOutcome store(ImageUploadRequest request, ValidatedImage image, String filename) {
+        ModerationVerdict verdict = imageModerationService.inspect(
+                image.bytes(), image.contentType(), request.userId(), request.entryPoint());
+        if (verdict.blocks()) {
+            return ImageUploadOutcome.rejectedByModeration(filename, verdict.category(),
+                    getMessage("moderation.category." + verdict.category().name()));
+        }
+
+        ValidatedImage upload = request.compress() ? compressOrOriginal(image) : image;
+        String objectKey = request.objectPrefix() + "/" + UUID.randomUUID() + upload.extension();
+        String url = storageService.uploadFile(
+                objectKey,
+                new ByteArrayInputStream(upload.bytes()),
+                upload.contentType(),
+                upload.bytes().length);
+        return ImageUploadOutcome.accepted(filename, url);
+    }
+
+    private BusinessException toException(ImageUploadOutcome outcome) {
+        return outcome.isContentRejection()
+                ? new BusinessException(ErrorConstant.IMAGE_REJECTED_BY_MODERATION, outcome.failureMessage())
+                : new BusinessException(ErrorConstant.INVALID_PARAMETERS, outcome.failureMessage());
+    }
+
+    private boolean isProUser(UUID userId) {
+        if (userId == null) {
+            return false;
+        }
+        try {
+            aiTripRepository.ensureSubscription(userId);
+            return "PRO".equalsIgnoreCase(aiTripRepository.getSubscriptionTier(userId));
+        } catch (Exception e) {
+            log.warn("Could not determine user subscription status for userId={}: {}", userId, e.getMessage());
+            return false;
+        }
+    }
+
+    private long getMaxImageSizeBytes(UUID userId) {
+        return isProUser(userId)
+                ? uploadProperties.getMaxProImageSize().toBytes()
+                : uploadProperties.getMaxImageSize().toBytes();
+    }
+
+    private ValidatedImage validate(MultipartFile file, UUID userId) {
         if (file == null || file.isEmpty()) {
             throw invalid("Image is empty");
         }
-        if (file.getSize() > uploadProperties.getMaxImageSize().toBytes()) {
-            throw invalid("Image exceeds the configured size limit");
+        long maxSizeBytes = getMaxImageSizeBytes(userId);
+        if (file.getSize() > maxSizeBytes) {
+            long maxMb = maxSizeBytes / (1024 * 1024);
+            throw invalid("Image exceeds the maximum allowed size of " + maxMb + "MB");
         }
 
         String contentType = file.getContentType() == null
@@ -207,6 +292,16 @@ public class FileUploadServiceImpl implements FileUploadService {
             throw new IllegalStateException("Compressed image exceeds the configured size limit");
         }
         return Base64.getDecoder().decode(encoded);
+    }
+
+    /** Content type read from the bytes themselves, for images the product downloaded. */
+    private String detectContentType(byte[] bytes) {
+        for (String candidate : uploadProperties.getAllowedImageTypes()) {
+            if (matchesContent(candidate, bytes)) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private boolean matchesContent(String contentType, byte[] bytes) {

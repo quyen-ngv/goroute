@@ -47,6 +47,10 @@
             price_rating = #{priceRating},
             ambiance_rating = #{ambianceRating},
             service_rating = #{serviceRating},
+            checkin_lat = #{checkinLat},
+            checkin_lng = #{checkinLng},
+            checkin_accuracy_m = #{checkinAccuracy},
+            location_verified = #{locationVerified},
             text = #{text},
             photos = #{photos}::text,
             helpful_votes = #{helpfulVotes},
@@ -66,6 +70,13 @@
     <select id="findById" resultMap="UserReviewResultMap">
         SELECT * FROM user_reviews
         WHERE id = #{id}
+    </select>
+
+    <select id="findByIds" resultMap="UserReviewResultMap">
+        SELECT * FROM user_reviews WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
     </select>
 
     <select id="findByUserAndPlace" resultMap="UserReviewResultMap">

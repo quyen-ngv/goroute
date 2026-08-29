@@ -20,7 +20,10 @@ import java.util.List;
 public class FileUploadProperties {
 
     @NotNull
-    private DataSize maxImageSize = DataSize.ofMegabytes(5);
+    private DataSize maxImageSize = DataSize.ofMegabytes(10);
+
+    @NotNull
+    private DataSize maxProImageSize = DataSize.ofMegabytes(50);
 
     @NotNull
     private DataSize maxVideoSize = DataSize.ofMegabytes(50);
@@ -40,6 +43,13 @@ public class FileUploadProperties {
         return maxImageSize != null
                 && maxImageSize.toBytes() > 0
                 && maxImageSize.toBytes() <= DataSize.ofMegabytes(50).toBytes();
+    }
+
+    @AssertTrue(message = "maxProImageSize must be between 1 byte and 100 MB")
+    public boolean isMaxProImageSizeValid() {
+        return maxProImageSize != null
+                && maxProImageSize.toBytes() > 0
+                && maxProImageSize.toBytes() <= DataSize.ofMegabytes(100).toBytes();
     }
 
     @AssertTrue(message = "maxVideoSize must be between 1 byte and 50 MB")

@@ -1,13 +1,13 @@
 package com.ds.goroute.controller;
 
-import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.*;
 import com.ds.goroute.dto.response.*;
-import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.service.ActivityCommerceService;
 import com.ds.goroute.service.PartnerAuthorizationService;
-import com.ds.goroute.service.StorageService;
+import com.ds.goroute.service.FileUploadService;
+import com.ds.goroute.service.ImageUploadOutcome;
+import com.ds.goroute.service.ImageUploadRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -18,25 +18,18 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 @RestController
 @RequestMapping("/v1/api/partner/activities")
 @RequiredArgsConstructor
 public class PartnerActivityCommerceController {
-    private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of("image/jpeg", "image/jpg", "image/png", "image/webp");
-    private static final long MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
-    private static final int MAX_IMAGES_PER_UPLOAD = 20;
 
     private final ActivityCommerceService service;
     private final PartnerAuthorizationService authorization;
-    private final StorageService storage;
+    private final FileUploadService fileUploadService;
 
     @GetMapping
     public ResponseEntity<BaseResponse<List<MarketplaceActivityResponse>>> list(Authentication authentication,
@@ -48,22 +41,20 @@ public class PartnerActivityCommerceController {
      * Receives media only after the host confirms the create/edit action. The browser keeps selected files locally until then.
      */
     @PostMapping(value = "/media", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<BaseResponse<List<String>>> uploadMedia(
+    public ResponseEntity<BaseResponse<List<ImageUploadOutcome>>> uploadMedia(
             Authentication authentication,
             @RequestParam UUID organizationId,
-            @RequestParam("files") List<MultipartFile> files) throws IOException {
+            @RequestParam("files") List<MultipartFile> files) {
         UUID actor = user(authentication);
         authorization.requirePermission(organizationId, actor, "ACTIVITY_WRITE");
-        validateMedia(files);
 
-        List<String> urls = new ArrayList<>();
-        for (MultipartFile file : files) {
-            String contentType = file.getContentType().toLowerCase();
-            byte[] bytes = file.getBytes();
-            String objectKey = "marketplace/activities/" + organizationId + "/" + UUID.randomUUID() + extension(file.getOriginalFilename(), contentType);
-            urls.add(storage.uploadFile(objectKey, new ByteArrayInputStream(bytes), contentType, bytes.length));
-        }
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(urls));
+        // Size, type and magic-byte checks used to be written out again here; they now
+        // live once, in the shared upload door, together with content moderation (MOD-05).
+        ImageUploadRequest request = ImageUploadRequest.of(
+                actor,
+                ImageUploadRequest.ImageEntryPoint.PARTNER_ACTIVITY,
+                "marketplace/activities/" + organizationId);
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(fileUploadService.uploadImages(request, files)));
     }
 
     @PostMapping
@@ -137,35 +128,6 @@ public class PartnerActivityCommerceController {
     public ResponseEntity<BaseResponse<ActivityOrderResponse>> status(Authentication authentication, @PathVariable UUID id,
                                                                        @Valid @RequestBody UpdateActivityOrderStatusRequest request) {
         return ResponseEntity.ok(BaseResponse.ofSucceeded(service.partnerOrderStatus(user(authentication), id, request)));
-    }
-
-    private void validateMedia(List<MultipartFile> files) {
-        if (files == null || files.isEmpty() || files.size() > MAX_IMAGES_PER_UPLOAD) {
-            throw badRequest("Upload from 1 to " + MAX_IMAGES_PER_UPLOAD + " images at a time");
-        }
-        for (MultipartFile file : files) {
-            String type = file == null ? null : file.getContentType();
-            if (file == null || file.isEmpty()) throw badRequest("Image file is empty");
-            if (file.getSize() > MAX_IMAGE_SIZE_BYTES) throw badRequest("Each image must be 5 MB or smaller");
-            if (type == null || !ALLOWED_IMAGE_TYPES.contains(type.toLowerCase())) {
-                throw badRequest("Only JPG, PNG, and WEBP images are accepted");
-            }
-        }
-    }
-
-    private String extension(String originalFilename, String contentType) {
-        if (originalFilename != null) {
-            int dot = originalFilename.lastIndexOf('.');
-            if (dot >= 0 && originalFilename.length() - dot <= 6) {
-                String value = originalFilename.substring(dot).toLowerCase();
-                if (value.matches("\\.(jpg|jpeg|png|webp)")) return value;
-            }
-        }
-        return contentType.contains("png") ? ".png" : contentType.contains("webp") ? ".webp" : ".jpg";
-    }
-
-    private BusinessException badRequest(String message) {
-        return new BusinessException(ErrorConstant.BAD_REQUEST, message, HttpStatus.BAD_REQUEST);
     }
 
     private UUID user(Authentication authentication) {

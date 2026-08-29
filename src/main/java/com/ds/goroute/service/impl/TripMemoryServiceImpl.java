@@ -23,6 +23,7 @@ import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.MemberStatus;
 import com.ds.goroute.type.NotificationType;
+import com.ds.goroute.utils.MemoryImageUrlNormalizer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -68,6 +69,9 @@ public class TripMemoryServiceImpl implements TripMemoryService {
         validateActivity(tripId, request.getActivityId());
 
         ensureMemoryCapacity(tripId, trip);
+        String url = MemoryImageUrlNormalizer.normalize(request.getUrl())
+                .orElseThrow(() -> new BusinessException(
+                        ErrorConstant.INVALID_PARAMETERS, "Memory URL must be a valid HTTP URL"));
 
         MediaAsset mediaAsset = MediaAsset.builder()
                 .id(UUID.randomUUID())
@@ -76,7 +80,7 @@ public class TripMemoryServiceImpl implements TripMemoryService {
                 .entityType(request.getActivityId() != null ? "TRIP_ACTIVITY_MEMORY" : "TRIP_MEMORY")
                 .entityId(request.getActivityId() != null ? request.getActivityId() : tripId)
                 .mediaType("IMAGE")
-                .url(request.getUrl().trim())
+                .url(url)
                 .caption(request.getCaption())
                 .uploadedBy(userId)
                 .build();
@@ -201,7 +205,7 @@ public class TripMemoryServiceImpl implements TripMemoryService {
                 .tripId(asset.getTripId())
                 .activityId(asset.getActivityId())
                 .mediaType(asset.getMediaType() == null ? "IMAGE" : asset.getMediaType())
-                .url(asset.getUrl())
+                .url(MemoryImageUrlNormalizer.normalize(asset.getUrl()).orElse(asset.getUrl()))
                 .caption(asset.getCaption())
                 .uploadedBy(asset.getUploadedBy())
                 .uploaderName(user != null ? user.getFullName() : null)

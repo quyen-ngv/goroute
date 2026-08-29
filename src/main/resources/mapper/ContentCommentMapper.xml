@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.ContentCommentMapper">
+
+    <resultMap id="contentCommentMap" type="com.ds.goroute.entity.ContentComment">
+        <id property="id" column="id"/>
+        <result property="contentType" column="content_type"/>
+        <result property="contentId" column="content_id"/>
+        <result property="parentId" column="parent_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="content" column="content"/>
+        <result property="isDeleted" column="is_deleted"/>
+        <result property="replyCount" column="reply_count"/>
+        <result property="likeCount" column="like_count"/>
+        <result property="hasLiked" column="has_liked"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.ContentComment">
+        INSERT INTO content_comments
+            (id, content_type, content_id, parent_id, user_id, content, is_deleted, created_at, updated_at)
+        VALUES
+            (#{id}, #{contentType}, #{contentId}, #{parentId}, #{userId}, #{content}, FALSE,
+             #{createdAt}, #{updatedAt})
+    </insert>
+
+    <select id="findById" resultMap="contentCommentMap">
+        SELECT * FROM content_comments WHERE id = #{id}
+    </select>
+
+    <select id="findByIdWithStats" resultMap="contentCommentMap">
+        SELECT c.*,
+               (SELECT COUNT(*) FROM content_comments reply
+                WHERE reply.parent_id = c.id AND reply.is_deleted = FALSE) AS reply_count,
+               (SELECT COUNT(*) FROM content_comment_likes reaction
+                WHERE reaction.comment_id = c.id) AS like_count,
+               EXISTS(SELECT 1 FROM content_comment_likes reaction
+                      WHERE reaction.comment_id = c.id AND reaction.user_id = #{viewerId}) AS has_liked
+        FROM content_comments c
+        WHERE c.id = #{id}
+    </select>
+
+    <!-- Deleted parents remain in the result so their replies keep their correct place. -->
+    <select id="findByTarget" resultMap="contentCommentMap">
+        SELECT * FROM content_comments
+        WHERE content_type = #{contentType} AND content_id = #{contentId}
+        ORDER BY created_at ASC, id ASC
+    </select>
+
+    <select id="findPage" resultMap="contentCommentMap">
+        SELECT c.*,
+               (SELECT COUNT(*) FROM content_comments reply
+                WHERE reply.parent_id = c.id AND reply.is_deleted = FALSE) AS reply_count,
+               (SELECT COUNT(*) FROM content_comment_likes reaction
+                WHERE reaction.comment_id = c.id) AS like_count,
+               EXISTS(SELECT 1 FROM content_comment_likes reaction
+                      WHERE reaction.comment_id = c.id AND reaction.user_id = #{viewerId}) AS has_liked
+        FROM content_comments c
+        WHERE c.content_type = #{contentType}
+          AND c.content_id = #{contentId}
+          <choose>
+              <when test="parentId != null">AND c.parent_id = #{parentId}</when>
+              <otherwise>AND c.parent_id IS NULL</otherwise>
+          </choose>
+          <if test="afterCreatedAt != null and afterId != null">
+              AND (c.created_at, c.id) > (#{afterCreatedAt}, #{afterId})
+          </if>
+        ORDER BY c.created_at ASC, c.id ASC
+        LIMIT #{limit}
+    </select>
+
+    <update id="softDelete">
+        UPDATE content_comments
+        SET is_deleted = TRUE, content = NULL, updated_at = NOW()
+        WHERE id = #{id} AND is_deleted = FALSE
+    </update>
+
+    <update id="updateContent">
+        UPDATE content_comments
+        SET content = #{content}, updated_at = NOW()
+        WHERE id = #{id} AND is_deleted = FALSE
+    </update>
+
+    <select id="hasLike" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM content_comment_likes
+                      WHERE comment_id = #{commentId} AND user_id = #{userId})
+    </select>
+
+    <insert id="insertLike">
+        INSERT INTO content_comment_likes(comment_id, user_id)
+        VALUES (#{commentId}, #{userId})
+        ON CONFLICT (comment_id, user_id) DO NOTHING
+    </insert>
+
+    <delete id="deleteLike">
+        DELETE FROM content_comment_likes
+        WHERE comment_id = #{commentId} AND user_id = #{userId}
+    </delete>
+
+    <select id="countActiveByTarget" resultType="int">
+        SELECT COUNT(*) FROM content_comments
+        WHERE content_type = #{contentType} AND content_id = #{contentId} AND is_deleted = FALSE
+    </select>
+</mapper>

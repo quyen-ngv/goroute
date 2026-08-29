@@ -75,11 +75,59 @@ public class ErrorConstant {
     public static final int SOCIAL_LOCATION_TEMPORARILY_BLOCKED = 4000603;
     public static final int SOCIAL_LOCATION_PERMANENTLY_BLOCKED = 4000604;
 
+    /**
+     * Content moderation (epic 12). The blocked-content code carries the violated policy
+     * group in its message so the app can tell the user what to fix instead of showing
+     * "invalid content"; the draft is never discarded.
+     */
+    public static final int CONTENT_BLOCKED_BY_MODERATION = 4000701;
+    public static final int IMAGE_REJECTED_BY_MODERATION = 4000702;
+    public static final int CONTENT_ALREADY_REPORTED = 4000703;
+    public static final int CONTENT_TAKEN_DOWN = 4000704;
+
+    /**
+     * Check-in (epic 06).
+     */
+    public static final int CHECKIN_FEATURE_DISABLED = 4000801;
+    public static final int CHECKIN_PHOTO_REQUIRED = 4000802;
+    public static final int CHECKIN_GALLERY_NOT_ALLOWED = 4000803;
+    public static final int CHECKIN_LOCATION_REQUIRED = 4000804;
+    public static final int CHECKIN_PLACE_IMMUTABLE = 4000805;
+
+    /**
+     * Points wallet (epic 08).
+     */
+    public static final int INSUFFICIENT_POINTS = 4000901;
+    public static final int POINT_TRANSACTION_NOT_REVERSIBLE = 4000902;
+
+    /**
+     * Passport (epic 04).
+     */
+    public static final int PASSPORT_FEATURE_DISABLED = 4001001;
+    public static final int REWARD_OUT_OF_STOCK = 4001002;
+    public static final int REWARD_NOT_REDEEMABLE = 4001003;
+
+    /**
+     * Guide marketplace (epic 07).
+     */
+    public static final int GUIDE_FEATURE_DISABLED = 4001101;
+    public static final int GUIDE_NOT_APPROVED = 4001102;
+    public static final int GUIDE_SERVICE_LIMIT_REACHED = 4001103;
+    public static final int GUIDE_UNAVAILABLE_ON_DATE = 4001104;
+    public static final int GUIDE_CAPACITY_EXCEEDED = 4001105;
+    public static final int GUIDE_BOOKING_STATE_INVALID = 4001106;
+    public static final int GUIDE_PAYOUT_NOT_RELEASABLE = 4001107;
+
     public static final int SYSTEM_CONFIGURATION_NOT_FOUND = 4004208;
 
     public static final int HTTP_CONNECTION_ERROR  = 4009000;
 
     public static final int NULL_META_DATA_RESPONSE  = 4009001;
+
+    /**
+     * File size limit exceeded (413).
+     */
+    public static final int FILE_TOO_LARGE = 4131001;
 
     /**
      * Write the error code prefixed with 401 below

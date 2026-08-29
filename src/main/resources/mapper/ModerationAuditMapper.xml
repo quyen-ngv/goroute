@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.ModerationAuditMapper">
+
+    <insert id="insertDecision" parameterType="com.ds.goroute.entity.ModerationDecision">
+        INSERT INTO moderation_decisions
+            (id, content_type, content_id, field_label, user_id, visibility, layer,
+             decision, category, matched_term_id, matched_text, policy_version, created_at)
+        VALUES
+            (#{id}, #{contentType}, #{contentId}, #{fieldLabel}, #{userId}, #{visibility},
+             #{layer}, #{decision}, #{category}, #{matchedTermId}, #{matchedText},
+             #{policyVersion}, #{createdAt})
+    </insert>
+
+    <insert id="insertImageResult" parameterType="com.ds.goroute.entity.ImageModerationResult">
+        INSERT INTO image_moderation_results
+            (id, object_key, checksum, user_id, entry_point, decision, category,
+             confidence, provider, raw_scores, created_at)
+        VALUES
+            (#{id}, #{objectKey}, #{checksum}, #{userId}, #{entryPoint}, #{decision},
+             #{category}, #{confidence}, #{provider}, #{rawScores}::jsonb, #{createdAt})
+    </insert>
+
+    <select id="summarizeDecisions" resultType="java.util.LinkedHashMap">
+        SELECT decision, layer, COUNT(*) AS total
+        FROM moderation_decisions
+        WHERE created_at &gt;= #{from} AND created_at &lt; #{to}
+        GROUP BY decision, layer
+        ORDER BY total DESC
+    </select>
+
+    <select id="summarizeQueue" resultType="java.util.LinkedHashMap">
+        SELECT
+            COUNT(*) FILTER (WHERE created_at &gt;= #{from} AND created_at &lt; #{to}) AS raised,
+            COUNT(*) FILTER (WHERE status = 'PENDING') AS pending,
+            COUNT(*) FILTER (WHERE status = 'KEPT' AND reviewed_at &gt;= #{from}) AS kept,
+            COUNT(*) FILTER (WHERE status = 'REMOVED' AND reviewed_at &gt;= #{from}) AS removed,
+            COUNT(*) FILTER (WHERE status = 'ESCALATED') AS escalated,
+            COALESCE(AVG(EXTRACT(EPOCH FROM (reviewed_at - created_at)))
+                     FILTER (WHERE reviewed_at &gt;= #{from}), 0) AS average_handling_seconds
+        FROM moderation_flags
+    </select>
+
+    <!-- A "KEPT" decision means the filter was wrong. Ranking terms by how often that
+         happens is the shortest path from a metric to a concrete fix. -->
+    <select id="rankFalsePositiveTerms" resultType="java.util.LinkedHashMap">
+        SELECT t.id AS term_id,
+               t.term,
+               t.category,
+               t.action,
+               COUNT(*) FILTER (WHERE f.status = 'KEPT') AS kept_count,
+               COUNT(*) FILTER (WHERE f.status = 'REMOVED') AS removed_count,
+               COUNT(d.id) AS decision_count
+        FROM moderation_decisions d
+        JOIN moderation_terms t ON t.id = d.matched_term_id
+        LEFT JOIN moderation_flags f
+               ON f.content_type = d.content_type
+              AND f.content_id = d.content_id
+              AND f.category = d.category
+        WHERE d.created_at &gt;= #{from} AND d.matched_term_id IS NOT NULL
+        GROUP BY t.id, t.term, t.category, t.action
+        ORDER BY kept_count DESC, decision_count DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- The miss rate: content a user reported that the automatic layers had allowed. -->
+    <select id="summarizeMisses" resultType="java.util.LinkedHashMap">
+        SELECT
+            COUNT(*) AS reported,
+            COUNT(*) FILTER (
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM moderation_flags f
+                    WHERE f.content_type = r.content_type
+                      AND f.content_id = r.content_id
+                      AND f.source &lt;&gt; 'USER_REPORT'
+                )
+            ) AS missed_by_filter
+        FROM content_reports r
+        WHERE r.created_at &gt;= #{from}
+    </select>
+
+    <select id="rankImageCategories" resultType="java.util.LinkedHashMap">
+        SELECT category,
+               decision,
+               COUNT(*) AS total,
+               COALESCE(AVG(confidence), 0) AS average_confidence
+        FROM image_moderation_results
+        WHERE created_at &gt;= #{from} AND category IS NOT NULL
+        GROUP BY category, decision
+        ORDER BY total DESC
+    </select>
+</mapper>

@@ -13,6 +13,9 @@ import com.ds.goroute.mapper.PlaceContributionMapper;
 import com.ds.goroute.repository.UserReviewRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.repository.TripRepository;
+import com.ds.goroute.service.FileUploadService;
+import com.ds.goroute.service.ImageUploadOutcome;
+import com.ds.goroute.service.ImageUploadRequest;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.UserService;
 import com.ds.goroute.service.StorageService;
@@ -51,6 +54,7 @@ public class UserServiceImpl implements UserService {
     private final TripRepository tripRepository;
     private final PlaceContributionMapper placeContributionMapper;
     private final StorageService storageService;
+    private final FileUploadService fileUploadService;
     private final ImageStorageCleanupService imageStorageCleanupService;
 
     @Override
@@ -178,46 +182,40 @@ public class UserServiceImpl implements UserService {
         userRepository.unfollow(userId, targetUserId);
     }
 
+    /**
+     * Avatars go through the shared upload door like every other image (MOD-05). They
+     * used to reach storage directly with no size, type or content check at all, which
+     * made them the widest hole in the product: an avatar renders on every review, every
+     * comment and every feed row.
+     */
     @Override
     @Transactional
     public String updateAvatar(UUID userId, MultipartFile file) {
-        try {
-            User user = userRepository.findById(userId)
-                    .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
-            String oldAvatarUrl = user.getAvatarUrl();
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
+        String oldAvatarUrl = user.getAvatarUrl();
 
-            if (file.isEmpty()) {
-                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "File is empty");
-            }
-
-            // Generate unique filename
-            String originalFilename = file.getOriginalFilename();
-            String extension = originalFilename != null && originalFilename.contains(".")
-                    ? originalFilename.substring(originalFilename.lastIndexOf("."))
-                    : "";
-            String fileName = "avatars/" + userId + "/" + UUID.randomUUID() + extension;
-
-            // Upload to S3
-            String avatarUrl = storageService.uploadFile(
-                    fileName,
-                    file.getInputStream(),
-                    file.getContentType(),
-                    file.getSize()
-            );
-            
-            user.setAvatarUrl(avatarUrl);
-            userRepository.updateById(user);
-            if (oldAvatarUrl != null && !oldAvatarUrl.equals(avatarUrl)) {
-                storageService.deleteFile(oldAvatarUrl);
-            }
-            
-            log.info("User avatar updated: {} -> {}", userId, avatarUrl);
-            return avatarUrl;
-            
-        } catch (Exception e) {
-            log.error("Failed to update avatar for user: {}", userId, e);
-            throw new BusinessException(ErrorConstant.INTERNAL_SERVER_ERROR, "Failed to upload avatar: " + e.getMessage());
+        ImageUploadOutcome outcome = fileUploadService.uploadImage(
+                ImageUploadRequest.of(userId, ImageUploadRequest.ImageEntryPoint.USER_AVATAR,
+                        "avatars/" + userId),
+                file);
+        if (!outcome.isAccepted()) {
+            throw new BusinessException(
+                    outcome.isContentRejection()
+                            ? ErrorConstant.IMAGE_REJECTED_BY_MODERATION
+                            : ErrorConstant.INVALID_PARAMETERS,
+                    outcome.failureMessage());
         }
+
+        String avatarUrl = outcome.url();
+        user.setAvatarUrl(avatarUrl);
+        userRepository.updateById(user);
+        if (oldAvatarUrl != null && !oldAvatarUrl.equals(avatarUrl)) {
+            storageService.deleteFile(oldAvatarUrl);
+        }
+
+        log.info("User avatar updated: {} -> {}", userId, avatarUrl);
+        return avatarUrl;
     }
 
     @Override

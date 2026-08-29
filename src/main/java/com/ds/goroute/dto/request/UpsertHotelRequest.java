@@ -1,5 +1,9 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.ModerationVisibility;
+
 import com.ds.goroute.type.HotelPropertyType;
 import com.ds.goroute.type.MarketplacePublicationStatus;
 
@@ -22,6 +26,7 @@ public class UpsertHotelRequest {
     @Size(max = 100) private String propertyCode;
     private HotelPropertyType propertyType = HotelPropertyType.HOTEL;
     @Min(1) @Max(5) private Integer starRating;
+    @ModeratedText(contentType = ModeratedContentType.PARTNER_LISTING, visibility = ModerationVisibility.PUBLIC)
     private String description;
     private LocalTime checkInTime;
     private LocalTime checkOutTime;

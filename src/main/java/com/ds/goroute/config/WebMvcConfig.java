@@ -17,7 +17,9 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
         ScrapeHttpClientProperties.class,
         AiTripWorkerProperties.class,
         FileUploadProperties.class,
-        ImgpressProperties.class
+        ImgpressProperties.class,
+        ImageModerationProperties.class,
+        OpenAiImageModerationProperties.class
 })
 public class WebMvcConfig implements WebMvcConfigurer {
 

@@ -23,4 +23,12 @@ public interface ActivityCommentMapper {
     int deleteById(@Param("id") UUID id);
     
     int countByActivityId(@Param("activityId") UUID activityId);
+
+    /**
+     * Comment counts for every activity of one trip, in one query.
+     *
+     * <p>Per-activity counting would be one query per card on the itinerary screen; this
+     * is what lets the entry point carry a count without that.
+     */
+    List<java.util.Map<String, Object>> countByTripId(@Param("tripId") UUID tripId);
 }

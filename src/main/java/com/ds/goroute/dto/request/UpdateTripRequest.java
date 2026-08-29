@@ -1,5 +1,9 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.ModerationVisibility;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -15,6 +19,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class UpdateTripRequest {
+    @ModeratedText(contentType = ModeratedContentType.TRIP, visibility = ModerationVisibility.PUBLIC)
     private String name;
     private String coverImageUrl;
     private LocalDate startDate;
@@ -27,7 +32,9 @@ public class UpdateTripRequest {
     private String currency;
     private String status;
     private String visibility;
+    @ModeratedText(contentType = ModeratedContentType.TRIP, visibility = ModerationVisibility.GROUP)
     private String notes;
+    @ModeratedText(contentType = ModeratedContentType.TRIP, visibility = ModerationVisibility.PUBLIC)
     private String description;
     private Boolean shareExpenses;
     private Boolean shareNotes;

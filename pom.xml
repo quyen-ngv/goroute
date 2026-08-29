@@ -268,9 +268,14 @@
 				<artifactId>maven-compiler-plugin</artifactId>
 				<configuration>
 					<annotationProcessorPaths>
+						<!-- annotationProcessorPaths does not read dependencyManagement, so the
+						     version has to be stated here. Without it Maven resolves an
+						     empty-version artifact, Lombok never runs, and every generated
+						     getter and logger is reported as a missing symbol. -->
 						<path>
 							<groupId>org.projectlombok</groupId>
 							<artifactId>lombok</artifactId>
+							<version>1.18.36</version>
 						</path>
 					</annotationProcessorPaths>
 				</configuration>

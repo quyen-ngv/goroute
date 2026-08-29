@@ -1,15 +1,18 @@
+# syntax=docker/dockerfile:1
+
 # Build stage
 FROM maven:3.9.9-eclipse-temurin-21 AS builder
 ENV JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8"
 WORKDIR /app
 
-# Copy pom.xml trước để cache dependencies
+# Copy only the Maven inputs needed for compilation.
 COPY pom.xml .
-RUN mvn dependency:go-offline -B
+COPY src ./src
 
-# Copy source code
-COPY . .
-RUN mvn clean package -DskipTests
+# Persist Maven's local repository between BuildKit builds. Running the package
+# goal directly avoids dependency:go-offline resolving unrelated plugin BOMs.
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn clean package -DskipTests -B
 
 # Runtime image for the Spring Boot application
 FROM eclipse-temurin:21-jre-jammy
@@ -26,12 +29,10 @@ RUN groupadd --system spring && useradd --system -g spring spring && \
 
 COPY --from=builder --chown=spring:spring /app/target/ticketmaster-0.0.1-SNAPSHOT.jar app.jar
 
-# Copy Firebase credentials
-COPY --from=builder --chown=spring:spring /app/src/main/resources/firebase-credentials.json /app/goroute-credentials.json
-
 # Biến môi trường quan trọng giúp tránh lỗi SSL/Networking khi khởi tạo
 ENV JAVA_OPTS="-Djava.net.preferIPv4Stack=true -Djava.security.egd=file:/dev/./urandom -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8"
-ENV FIREBASE_CREDENTIAL_PATH=/app/goroute-credentials.json
+
+# Firebase credentials are mounted at runtime and are never baked into the image.
 
 USER spring
 

@@ -47,6 +47,11 @@ public class UserReviewRepositoryImpl implements UserReviewRepository {
     }
 
     @Override
+    public List<UserReview> findByIds(List<UUID> ids) {
+        return ids == null || ids.isEmpty() ? List.of() : mapper.findByIds(ids);
+    }
+
+    @Override
     public Optional<UserReview> findByUserAndPlace(UUID userId, UUID placeId) {
         return Optional.ofNullable(mapper.findByUserAndPlace(userId, placeId));
     }

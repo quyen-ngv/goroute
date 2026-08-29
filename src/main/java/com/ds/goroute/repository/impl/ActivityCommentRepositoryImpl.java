@@ -6,7 +6,9 @@ import com.ds.goroute.repository.ActivityCommentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -44,5 +46,18 @@ public class ActivityCommentRepositoryImpl implements ActivityCommentRepository 
     @Override
     public void softDelete(UUID id) {
         activityCommentMapper.softDelete(id);
+    }
+
+    @Override
+    public Map<UUID, Integer> countByTripId(UUID tripId) {
+        Map<UUID, Integer> counts = new LinkedHashMap<>();
+        for (Map<String, Object> row : activityCommentMapper.countByTripId(tripId)) {
+            Object activityId = row.get("activity_id");
+            Object count = row.get("comment_count");
+            if (activityId instanceof UUID id && count instanceof Number number) {
+                counts.put(id, number.intValue());
+            }
+        }
+        return counts;
     }
 }

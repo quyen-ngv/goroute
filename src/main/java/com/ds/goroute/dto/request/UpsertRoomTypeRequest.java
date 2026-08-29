@@ -1,5 +1,9 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.ModerationVisibility;
+
 import com.ds.goroute.type.MarketplaceAvailabilityStatus;
 import com.ds.goroute.type.RoomBathroomType;
 
@@ -18,7 +22,9 @@ import java.util.Map;
 @Data
 public class UpsertRoomTypeRequest {
     @NotBlank @Size(max = 100) private String code;
+    @ModeratedText(contentType = ModeratedContentType.PARTNER_LISTING, visibility = ModerationVisibility.PUBLIC)
     @NotBlank @Size(max = 500) private String name;
+    @ModeratedText(contentType = ModeratedContentType.PARTNER_LISTING, visibility = ModerationVisibility.PUBLIC)
     private String description;
     @NotNull @Min(1) private Integer maxAdults = 1;
     @NotNull @Min(1) private Integer standardAdults = 1;

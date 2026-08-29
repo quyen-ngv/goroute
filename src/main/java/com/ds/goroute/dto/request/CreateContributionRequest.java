@@ -1,5 +1,9 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.ModerationVisibility;
+
 import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -36,6 +40,7 @@ public class CreateContributionRequest {
     private Integer serviceRating;
 
     @Size(max = 2000)
+    @ModeratedText(contentType = ModeratedContentType.USER_PLACE, visibility = ModerationVisibility.PUBLIC)
     private String text;
 
     private List<String> photos;

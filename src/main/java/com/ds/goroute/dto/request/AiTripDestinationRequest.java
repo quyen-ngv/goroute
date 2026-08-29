@@ -1,5 +1,9 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.ModerationVisibility;
+
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -16,6 +20,7 @@ import java.util.UUID;
 @AllArgsConstructor
 public class AiTripDestinationRequest {
     @jakarta.validation.constraints.Size(max = 255)
+    @ModeratedText(contentType = ModeratedContentType.TRIP, visibility = ModerationVisibility.PUBLIC)
     private String name;
     @NotNull(message = "Location image ID is required")
     private UUID locationImageId;

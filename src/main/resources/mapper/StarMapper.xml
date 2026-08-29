@@ -15,6 +15,10 @@
         <result column="transaction_type" property="transactionType"/>
         <result column="reference_key" property="referenceKey"/>
         <result column="description" property="description"/>
+        <result column="balance_after" property="balanceAfter"/>
+        <result column="reverses_transaction_id" property="reversesTransactionId"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="reason" property="reason"/>
         <result column="created_at" property="createdAt"/>
     </resultMap>
     <resultMap id="entitlementMap" type="com.ds.goroute.entity.TripCreationEntitlement">
@@ -25,16 +29,104 @@
         <result column="consumed_at" property="consumedAt"/>
         <result column="created_at" property="createdAt"/>
     </resultMap>
-    <select id="findWallet" resultMap="walletMap">SELECT * FROM user_star_wallets WHERE user_id = #{userId}</select>
-    <insert id="createWallet">INSERT INTO user_star_wallets(user_id) VALUES(#{userId}) ON CONFLICT (user_id) DO NOTHING</insert>
-    <update id="incrementBalance">UPDATE user_star_wallets SET balance = balance + #{amount}, updated_at = CURRENT_TIMESTAMP WHERE user_id = #{userId}</update>
-    <update id="incrementFreeQuota">UPDATE user_star_wallets SET free_trip_quota_used = free_trip_quota_used + 1, updated_at = CURRENT_TIMESTAMP WHERE user_id = #{userId} AND free_trip_quota_used &lt; 2</update>
-    <insert id="insertTransaction">INSERT INTO star_transactions(id,user_id,amount,transaction_type,reference_key,description) VALUES(#{id},#{userId},#{amount},#{transactionType},#{referenceKey},#{description})</insert>
-    <select id="findTransactions" resultMap="transactionMap">SELECT * FROM star_transactions WHERE user_id = #{userId} ORDER BY created_at DESC LIMIT #{limit}</select>
-    <select id="countReference" resultType="int">SELECT COUNT(*) FROM star_transactions WHERE reference_key = #{referenceKey}</select>
-    <insert id="insertEntitlement">INSERT INTO trip_creation_entitlements(id,user_id,stars_spent,expires_at) VALUES(#{id},#{userId},#{starsSpent},#{expiresAt})</insert>
-    <select id="findActiveEntitlement" resultMap="entitlementMap">SELECT * FROM trip_creation_entitlements WHERE user_id=#{userId} AND consumed_at IS NULL AND expires_at &gt; #{now} ORDER BY expires_at ASC LIMIT 1 FOR UPDATE</select>
-    <update id="consumeEntitlement">UPDATE trip_creation_entitlements SET consumed_at=#{now} WHERE id=#{id} AND consumed_at IS NULL</update>
+
+    <sql id="transactionColumns">
+        id, user_id, amount, transaction_type, reference_key, description, balance_after,
+        reverses_transaction_id, created_by, reason, created_at
+    </sql>
+
+    <select id="findWallet" resultMap="walletMap">
+        SELECT user_id, balance, free_trip_quota_used, created_at, updated_at
+        FROM user_star_wallets WHERE user_id = #{userId}
+    </select>
+
+    <!-- Every spend reads through this. See the note on the mapper method. -->
+    <select id="findWalletForUpdate" resultMap="walletMap">
+        SELECT user_id, balance, free_trip_quota_used, created_at, updated_at
+        FROM user_star_wallets WHERE user_id = #{userId} FOR UPDATE
+    </select>
+
+    <insert id="createWallet">
+        INSERT INTO user_star_wallets(user_id) VALUES(#{userId}) ON CONFLICT (user_id) DO NOTHING
+    </insert>
+
+    <update id="incrementBalance">
+        UPDATE user_star_wallets
+        SET balance = balance + #{amount}, updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = #{userId}
+    </update>
+
+    <update id="incrementFreeQuota">
+        UPDATE user_star_wallets
+        SET free_trip_quota_used = free_trip_quota_used + 1, updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = #{userId} AND free_trip_quota_used &lt; 2
+    </update>
+
+    <insert id="insertTransaction">
+        INSERT INTO star_transactions
+            (id, user_id, amount, transaction_type, reference_key, description,
+             balance_after, reverses_transaction_id, created_by, reason)
+        VALUES
+            (#{id}, #{userId}, #{amount}, #{transactionType}, #{referenceKey}, #{description},
+             #{balanceAfter}, #{reversesTransactionId}, #{createdBy}, #{reason})
+    </insert>
+
+    <select id="findTransactions" resultMap="transactionMap">
+        SELECT <include refid="transactionColumns"/> FROM star_transactions
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countTransactions" resultType="long">
+        SELECT COUNT(*) FROM star_transactions WHERE user_id = #{userId}
+    </select>
+
+    <select id="findTransactionById" resultMap="transactionMap">
+        SELECT <include refid="transactionColumns"/> FROM star_transactions WHERE id = #{id}
+    </select>
+
+    <select id="findTransactionByReference" resultMap="transactionMap">
+        SELECT <include refid="transactionColumns"/> FROM star_transactions
+        WHERE reference_key = #{referenceKey}
+    </select>
+
+    <select id="countReference" resultType="int">
+        SELECT COUNT(*) FROM star_transactions WHERE reference_key = #{referenceKey}
+    </select>
+
+    <select id="sumTransactionAmounts" resultType="java.lang.Integer">
+        SELECT COALESCE(SUM(amount), 0) FROM star_transactions WHERE user_id = #{userId}
+    </select>
+
+    <!-- Reconciliation. Small discrepancies accumulate silently unless something looks. -->
+    <select id="findWalletsOutOfBalance" resultType="java.util.UUID">
+        SELECT w.user_id
+        FROM user_star_wallets w
+        LEFT JOIN (
+            SELECT user_id, SUM(amount) AS total FROM star_transactions GROUP BY user_id
+        ) t ON t.user_id = w.user_id
+        WHERE w.balance &lt;&gt; COALESCE(t.total, 0)
+        LIMIT #{limit}
+    </select>
+
+    <insert id="insertEntitlement">
+        INSERT INTO trip_creation_entitlements(id, user_id, stars_spent, expires_at)
+        VALUES(#{id}, #{userId}, #{starsSpent}, #{expiresAt})
+    </insert>
+
+    <select id="findActiveEntitlement" resultMap="entitlementMap">
+        SELECT id, user_id, stars_spent, expires_at, consumed_at, created_at
+        FROM trip_creation_entitlements
+        WHERE user_id = #{userId} AND consumed_at IS NULL AND expires_at &gt; #{now}
+        ORDER BY expires_at ASC LIMIT 1 FOR UPDATE
+    </select>
+
+    <update id="consumeEntitlement">
+        UPDATE trip_creation_entitlements SET consumed_at = #{now}
+        WHERE id = #{id} AND consumed_at IS NULL
+    </update>
+
     <select id="findEligibleCompletionCandidates" resultType="com.ds.goroute.entity.TripCompletionCandidate">
         SELECT t.id AS trip_id, t.owner_id
         FROM trips t

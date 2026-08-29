@@ -39,6 +39,13 @@ public class CommentServiceImpl implements CommentService {
 
     @Override
     @Transactional(readOnly = true)
+    public java.util.Map<UUID, Integer> getCommentCounts(UUID tripId, UUID userId) {
+        verifyTripMember(tripId, userId);
+        return commentRepository.countByTripId(tripId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<CommentResponse> getComments(UUID tripId, UUID activityId, UUID userId) {
         // Verify user is member of trip
         verifyTripMember(tripId, userId);

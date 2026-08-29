@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.PassportMapper">
+
+    <resultMap id="provinceMap" type="com.ds.goroute.entity.Province">
+        <id property="code" column="code"/>
+        <result property="name" column="name"/>
+        <result property="normalizedName" column="normalized_name"/>
+        <result property="region" column="region"/>
+        <result property="aliases" column="aliases"/>
+        <result property="latitude" column="latitude"/>
+        <result property="longitude" column="longitude"/>
+        <result property="datasetVersion" column="dataset_version"/>
+        <result property="isActive" column="is_active"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <resultMap id="eventMap" type="com.ds.goroute.entity.PassportEvent">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="source" column="source"/>
+        <result property="sourceId" column="source_id"/>
+        <result property="placeId" column="place_id"/>
+        <result property="checkinId" column="checkin_id"/>
+        <result property="locationKey" column="location_key"/>
+        <result property="locationName" column="location_name"/>
+        <result property="provinceCode" column="province_code"/>
+        <result property="occurredAt" column="occurred_at"/>
+        <result property="isVerified" column="is_verified"/>
+        <result property="isHidden" column="is_hidden"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <resultMap id="ruleMap" type="com.ds.goroute.entity.PassportStampRule">
+        <id property="code" column="code"/>
+        <id property="version" column="version"/>
+        <result property="name" column="name"/>
+        <result property="description" column="description"/>
+        <result property="conditionType" column="condition_type"/>
+        <result property="threshold" column="threshold"/>
+        <result property="icon" column="icon"/>
+        <result property="rewardPoints" column="reward_points"/>
+        <result property="isActive" column="is_active"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <resultMap id="stampMap" type="com.ds.goroute.entity.PassportStamp">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="ruleCode" column="rule_code"/>
+        <result property="ruleVersion" column="rule_version"/>
+        <result property="triggeringEventId" column="triggering_event_id"/>
+        <result property="awardedAt" column="awarded_at"/>
+    </resultMap>
+
+    <select id="findProvinces" resultMap="provinceMap">
+        SELECT code, name, normalized_name, region, aliases::text AS aliases, latitude, longitude,
+               dataset_version, is_active, created_at
+        FROM provinces
+        WHERE is_active = TRUE
+        <if test="datasetVersion != null">AND dataset_version = #{datasetVersion}</if>
+        ORDER BY code
+    </select>
+
+    <select id="findProvinceByCode" resultMap="provinceMap">
+        SELECT code, name, normalized_name, region, aliases::text AS aliases, latitude, longitude,
+               dataset_version, is_active, created_at
+        FROM provinces WHERE code = #{code}
+    </select>
+
+    <select id="countProvinces" resultType="long">
+        SELECT COUNT(*) FROM provinces WHERE is_active = TRUE
+    </select>
+
+    <!-- PAS-01 progress. Percentages must not be shown to users until this is high
+         enough, because a map with holes in it reads as the user's history being wrong. -->
+    <select id="provinceCoverage" resultType="java.util.LinkedHashMap">
+        SELECT COUNT(*) AS total_places,
+               COUNT(*) FILTER (WHERE province_code IS NOT NULL) AS assigned_places,
+               COUNT(*) FILTER (WHERE province_status = 'AMBIGUOUS') AS ambiguous_places,
+               COUNT(*) FILTER (WHERE latitude IS NOT NULL AND longitude IS NOT NULL) AS places_with_coordinates,
+               COUNT(*) FILTER (WHERE province_code IS NOT NULL
+                                  AND latitude IS NOT NULL AND longitude IS NOT NULL)
+                   AS assigned_places_with_coordinates
+        FROM places
+    </select>
+
+    <select id="findAmbiguousPlaces" resultType="java.util.LinkedHashMap">
+        SELECT id, title, address, latitude, longitude, province_code, province_confidence
+        FROM places
+        WHERE province_status = 'AMBIGUOUS'
+        ORDER BY province_confidence DESC NULLS LAST, id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <update id="assignPlaceProvince">
+        UPDATE places
+        SET province_code = #{provinceCode},
+            province_status = #{status},
+            province_confidence = #{confidence},
+            province_assigned_at = NOW()
+        WHERE id = #{placeId}
+    </update>
+
+    <select id="findPlacesWithoutProvince" resultType="java.util.LinkedHashMap">
+        SELECT id, title, address, latitude, longitude
+        FROM places
+        WHERE province_code IS NULL AND (province_status IS NULL OR province_status = 'PENDING')
+        ORDER BY id
+        LIMIT #{limit}
+    </select>
+
+    <!-- The uniqueness of (source, source_id) is what makes the projection replayable:
+         running it again produces nothing new rather than a second stamp. -->
+    <insert id="insertEvent" parameterType="com.ds.goroute.entity.PassportEvent">
+        INSERT INTO passport_events
+            (id, user_id, source, source_id, place_id, checkin_id, location_key, location_name,
+             province_code, occurred_at, is_verified, is_hidden, created_at)
+        VALUES
+            (#{id}, #{userId}, #{source}, #{sourceId}, #{placeId}, #{checkinId}, #{locationKey},
+             #{locationName}, #{provinceCode}, #{occurredAt}, #{isVerified}, #{isHidden}, #{createdAt})
+        ON CONFLICT (source, source_id) DO NOTHING
+    </insert>
+
+    <select id="findEventsByUser" resultMap="eventMap">
+        SELECT * FROM passport_events
+        WHERE user_id = #{userId}
+        <if test="!includeHidden">AND is_hidden = FALSE</if>
+        ORDER BY occurred_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countEventsByUser" resultType="long">
+        SELECT COUNT(*) FROM passport_events WHERE user_id = #{userId}
+    </select>
+
+    <select id="findEventsByProvince" resultMap="eventMap">
+        SELECT * FROM passport_events
+        WHERE user_id = #{userId} AND province_code = #{provinceCode}
+        ORDER BY occurred_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <update id="setEventHidden">
+        UPDATE passport_events SET is_hidden = #{hidden}
+        WHERE id = #{id} AND user_id = #{userId}
+    </update>
+
+    <!-- Activity check-ins recorded before the passport existed. Without them, somebody
+         who has used the app for a year opens their passport and finds it empty. -->
+    <select id="findLegacyActivityCheckins" resultType="java.util.LinkedHashMap">
+        SELECT c.id AS checkin_id,
+               c.user_id,
+               c.checked_in_at,
+               c.lat,
+               c.lng,
+               a.name AS location_name,
+               p.id AS place_id,
+               p.province_code AS province_code
+        FROM checkins c
+        JOIN activities a ON a.id = c.activity_id
+        -- activities.place_id holds the external identifier, places.id is the internal
+        -- one; the passport event references the internal row.
+        LEFT JOIN places p ON p.place_id = a.place_id
+        WHERE NOT EXISTS (
+            SELECT 1 FROM passport_events e
+            WHERE e.source = 'ACTIVITY_CHECKIN' AND e.source_id = c.id)
+        ORDER BY c.checked_in_at
+        LIMIT #{limit}
+    </select>
+
+    <!--
+      The three counters the stamp rules read, in one pass.
+
+      Note which is which: visits are counted per occurrence, distinct places per location
+      key and provinces per province. Counting the map by occurrence would tell somebody
+      who went to Da Lat three times that they have seen three provinces.
+    -->
+    <select id="summarizeUser" resultType="java.util.LinkedHashMap">
+        SELECT COUNT(*) AS event_count,
+               COUNT(*) FILTER (WHERE is_verified) AS verified_event_count,
+               COUNT(DISTINCT COALESCE(location_key, place_id::text)) AS distinct_place_count,
+               COUNT(DISTINCT province_code) FILTER (WHERE province_code IS NOT NULL)
+                   AS distinct_province_count,
+               MIN(occurred_at) AS first_event_at,
+               MAX(occurred_at) AS last_event_at
+        FROM passport_events
+        WHERE user_id = #{userId}
+    </select>
+
+    <select id="findVisitedProvinceCodes" resultType="java.lang.String">
+        SELECT DISTINCT province_code FROM passport_events
+        WHERE user_id = #{userId} AND province_code IS NOT NULL
+    </select>
+
+    <!--
+      Visits per province for the map. Counted here rather than in Java so 63 provinces
+      cost one query instead of 63, and hidden events are excluded because the map is
+      what the owner chose to keep visible.
+    -->
+    <select id="countEventsByProvince" resultType="java.util.Map">
+        SELECT province_code AS code, COUNT(*) AS total
+        FROM passport_events
+        WHERE user_id = #{userId}
+          AND province_code IS NOT NULL
+          AND is_hidden = FALSE
+        GROUP BY province_code
+    </select>
+
+    <select id="findActiveRules" resultMap="ruleMap">
+        SELECT * FROM passport_stamp_rules WHERE is_active = TRUE ORDER BY threshold, code
+    </select>
+
+    <select id="findRule" resultMap="ruleMap">
+        SELECT * FROM passport_stamp_rules WHERE code = #{code} AND version = #{version}
+    </select>
+
+    <!-- Granting the same stamp twice is prevented here rather than by checking first:
+         two concurrent recalculations both pass a check, and only one passes this. -->
+    <insert id="insertStamp" parameterType="com.ds.goroute.entity.PassportStamp">
+        INSERT INTO passport_stamps (id, user_id, rule_code, rule_version, triggering_event_id, awarded_at)
+        VALUES (#{id}, #{userId}, #{ruleCode}, #{ruleVersion}, #{triggeringEventId}, #{awardedAt})
+        ON CONFLICT (user_id, rule_code, rule_version) DO NOTHING
+    </insert>
+
+    <select id="findStampsByUser" resultMap="stampMap">
+        SELECT * FROM passport_stamps WHERE user_id = #{userId} ORDER BY awarded_at DESC
+    </select>
+
+    <insert id="addWish">
+        INSERT INTO passport_province_wishes (user_id, province_code)
+        VALUES (#{userId}, #{provinceCode})
+        ON CONFLICT (user_id, province_code) DO NOTHING
+    </insert>
+
+    <delete id="removeWish">
+        DELETE FROM passport_province_wishes WHERE user_id = #{userId} AND province_code = #{provinceCode}
+    </delete>
+
+    <select id="findWishedProvinceCodes" resultType="java.lang.String">
+        SELECT province_code FROM passport_province_wishes WHERE user_id = #{userId}
+    </select>
+</mapper>

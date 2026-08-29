@@ -85,6 +85,15 @@ public class SecurityConfig {
                         .requestMatchers("/v1/api/partner/**").hasAnyAuthority("ROLE_PARTNER", "ROLE_ADMIN")
                         .requestMatchers("/v1/api/internal/**").hasAuthority("ROLE_INTERNAL")
                         .requestMatchers("/v1/api/notifications/admin/**").hasAuthority("ROLE_ADMIN")
+                        // A shared collection is meant to be openable by anyone holding the
+                        // link. Only this one method and path is public; every other
+                        // collection route stays authenticated, and un-publishing clears
+                        // the slug so an old link resolves to nothing.
+                        .requestMatchers(HttpMethod.GET, "/v1/api/collections/shared/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/v1/api/checkins/feed").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/v1/api/checkins/places/*",
+                                "/v1/api/checkins/locations/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/v1/api/guides/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/api/contributions/check").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/contributions/places/*/contributors").permitAll()
                         .requestMatchers("/share/**").permitAll()

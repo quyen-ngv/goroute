@@ -1,5 +1,9 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.ModerationVisibility;
+
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
@@ -21,13 +25,16 @@ public class CreateActivityRequest {
     private UUID customPlaceId;
 
     @NotBlank(message = "Activity name is required")
+    @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)
     private String name;
 
+    @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)
     private String address;
     private BigDecimal lat;
     private BigDecimal lng;
 
     /** Destination address for transport activities (origin = address). */
+    @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)
     private String endAddress;
     private BigDecimal endLat;
     private BigDecimal endLng;
@@ -42,7 +49,9 @@ public class CreateActivityRequest {
     private String costCurrency;
     private String category;
     private String transportMode;
+    @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)
     private String notes;
+    @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)
     private String description;
 
     // Special flags
