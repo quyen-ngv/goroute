@@ -7,6 +7,7 @@ import com.ds.goroute.repository.PlaceReviewRepository;
 import com.ds.goroute.type.PlaceTrustLevel;
 import com.ds.goroute.type.ReviewAuthenticityLevel;
 import com.ds.goroute.utils.JsonUtils;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -34,6 +35,15 @@ public class PlaceReviewScoringService {
     private final ExecutorService executorService = Executors.newFixedThreadPool(
         Runtime.getRuntime().availableProcessors()
     );
+
+    /**
+     * The pool lives as long as the bean, so it has to be handed back on shutdown or the
+     * JVM keeps its non-daemon threads alive.
+     */
+    @PreDestroy
+    void shutdownScoringPool() {
+        executorService.shutdown();
+    }
 
     /**
      * Calculate authenticity score for a single review
@@ -203,7 +213,7 @@ public class PlaceReviewScoringService {
 
                         reviewRepository.update(review);
                     } catch (Exception e) {
-                        log.error("Error calculating authenticity score for review {}: {}", review.getId(), e.getMessage());
+                        log.error("Error calculating authenticity score for review {}: {}", review.getId(), e.getMessage(), e);
                     }
                 }, executorService))
                 .collect(Collectors.toList());
@@ -266,7 +276,7 @@ public class PlaceReviewScoringService {
                             placeRepository.update(place);
                         }
                     } catch (Exception e) {
-                        log.error("Error calculating place score for place {}: {}", place.getId(), e.getMessage());
+                        log.error("Error calculating place score for place {}: {}", place.getId(), e.getMessage(), e);
                     }
                 }, executorService))
                 .collect(Collectors.toList());

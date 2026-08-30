@@ -52,14 +52,14 @@ public class CheckinConsequencesListener {
             passportService.recordCheckin(checkin);
         } catch (RuntimeException exception) {
             log.error("Could not record the passport event for check-in {}: {}",
-                    checkin.getId(), exception.getMessage());
+                    checkin.getId(), exception.getMessage(), exception);
         }
 
         try {
             grantReward(checkin);
         } catch (RuntimeException exception) {
             log.error("Could not grant the check-in reward for {}: {}",
-                    checkin.getId(), exception.getMessage());
+                    checkin.getId(), exception.getMessage(), exception);
         }
     }
 

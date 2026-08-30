@@ -68,6 +68,10 @@ public interface PassportMapper {
     /** Visits per province, for the passport map. One query, not one per province. */
     List<Map<String, Object>> countEventsByProvince(@Param("userId") UUID userId);
 
+    /** Curated Location Image anchors and their user's visit state for the Passport map. */
+    List<Map<String, Object>> findPassportLocationImageMap(@Param("userId") UUID userId,
+                                                             @Param("radiusKm") double radiusKm);
+
     // --- stamps ----------------------------------------------------------------------
 
     List<PassportStampRule> findActiveRules();

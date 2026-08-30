@@ -1,5 +1,6 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.AdminPushNotificationRequest;
 import com.ds.goroute.dto.request.AdminSinglePushNotificationRequest;
@@ -31,7 +32,7 @@ public class NotificationController {
 
     @GetMapping
     public ResponseEntity<BaseResponse<List<NotificationResponse>>> getNotifications(
-            @RequestAttribute("userId") UUID userId,
+            @CurrentUser UUID userId,
             @RequestParam(defaultValue = "0") Integer page,
             @RequestParam(defaultValue = "20") Integer size,
             @RequestParam(defaultValue = "false") Boolean unreadOnly,
@@ -45,14 +46,14 @@ public class NotificationController {
 
     @GetMapping("/unread-count")
     public ResponseEntity<BaseResponse<Integer>> getUnreadCount(
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         Integer count = notificationService.getUnreadCount(userId);
         return ResponseEntity.ok(BaseResponse.ofSucceeded(count));
     }
 
     @PutMapping("/{notificationId}/read")
     public ResponseEntity<BaseResponse<Void>> markAsRead(
-            @RequestAttribute("userId") UUID userId,
+            @CurrentUser UUID userId,
             @PathVariable UUID notificationId) {
         notificationService.markAsRead(userId, notificationId);
         return ResponseEntity.ok(BaseResponse.ofSucceeded());
@@ -60,14 +61,14 @@ public class NotificationController {
 
     @PutMapping("/read-all")
     public ResponseEntity<BaseResponse<Void>> markAllAsRead(
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         notificationService.markAllAsRead(userId);
         return ResponseEntity.ok(BaseResponse.ofSucceeded());
     }
 
     @DeleteMapping("/{notificationId}")
     public ResponseEntity<BaseResponse<Void>> deleteNotification(
-            @RequestAttribute("userId") UUID userId,
+            @CurrentUser UUID userId,
             @PathVariable UUID notificationId) {
         notificationService.deleteNotification(userId, notificationId);
         return ResponseEntity.ok(BaseResponse.ofSucceeded());
@@ -76,7 +77,7 @@ public class NotificationController {
     @PostMapping("/admin/push")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse<AdminPushNotificationResponse>> sendAdminPush(
-            @RequestAttribute("userId") UUID adminUserId,
+            @CurrentUser UUID adminUserId,
             @Valid @RequestBody AdminPushNotificationRequest request) {
         
         log.info("Admin push notification request from userId: {}, recipients: {}", 
@@ -104,7 +105,7 @@ public class NotificationController {
     @PostMapping("/admin/push/user")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse<AdminPushNotificationResponse>> sendAdminPushToUser(
-            @RequestAttribute("userId") UUID adminUserId,
+            @CurrentUser UUID adminUserId,
             @Valid @RequestBody AdminSinglePushNotificationRequest request) {
 
         log.info("Single admin push notification request from userId: {}", adminUserId);
@@ -131,14 +132,14 @@ public class NotificationController {
 
     @PostMapping("/devices")
     public ResponseEntity<BaseResponse<UserDeviceResponse>> registerDevice(
-            @RequestAttribute("userId") UUID userId,
+            @CurrentUser UUID userId,
             @Valid @RequestBody RegisterDeviceRequest request) {
         return ResponseEntity.ok(BaseResponse.ofSucceeded(userDeviceService.register(userId, request)));
     }
 
     @PatchMapping("/devices/{deviceId}")
     public ResponseEntity<BaseResponse<Void>> updateDevice(
-            @RequestAttribute("userId") UUID userId,
+            @CurrentUser UUID userId,
             @PathVariable UUID deviceId,
             @Valid @RequestBody UpdateDeviceRequest request) {
         userDeviceService.update(userId, deviceId, request);

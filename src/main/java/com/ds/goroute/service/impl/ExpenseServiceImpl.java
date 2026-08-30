@@ -1,5 +1,7 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.service.TripAccessGuard;
+
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.CreateExpenseRequest;
 import com.ds.goroute.dto.request.UpdateExpenseRequest;
@@ -51,6 +53,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     private final ExpenseRepository expenseRepository;
     private final ExpenseSplitRepository expenseSplitRepository;
     private final ActivityRepository activityRepository;
+    private final TripAccessGuard tripAccessGuard;
     private final TripRepository tripRepository;
     private final TripMemberRepository tripMemberRepository;
     private final UserRepository userRepository;
@@ -61,25 +64,14 @@ public class ExpenseServiceImpl implements ExpenseService {
     /**
      * Check if user has access to trip (must be owner or ACCEPTED member, not LEFT)
      */
-    private void validateTripAccess(UUID tripId, UUID userId) {
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-
-        var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
-        boolean hasAccess = trip.getOwnerId().equals(userId) ||
-                           (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
-
-        if (!hasAccess) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
-        }
+    private Trip validateTripAccess(UUID tripId, UUID userId) {
+        return tripAccessGuard.requireAccess(tripId, userId);
     }
 
     @Override
     @Transactional
     public ExpenseResponse createExpense(UUID tripId, CreateExpenseRequest request, UUID userId) {
-        validateTripAccess(tripId, userId);
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+        Trip trip = validateTripAccess(tripId, userId);
 
         UUID paidBy = request.getPaidBy() != null ? request.getPaidBy() : userId;
 

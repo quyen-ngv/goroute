@@ -1,5 +1,6 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.config.filter.AcceptCurrencyFilter;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.AddBookingToTripRequest;
@@ -8,7 +9,6 @@ import com.ds.goroute.dto.request.UpdateActivityBookingRequest;
 import com.ds.goroute.dto.response.ActivityBookingResponse;
 import com.ds.goroute.dto.response.ActivityResponse;
 import com.ds.goroute.service.ActivityBookingService;
-import com.ds.goroute.service.BaseService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -28,7 +28,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 @Tag(name = "Activity Bookings", description = "Tour catalog from Klook/Viator")
-public class ActivityBookingController extends BaseService {
+public class ActivityBookingController extends BaseController {
 
     private final ActivityBookingService activityBookingService;
 
@@ -107,7 +107,7 @@ public class ActivityBookingController extends BaseService {
     public ResponseEntity<BaseResponse<ActivityResponse>> addToTrip(
             @PathVariable UUID id,
             @Valid @RequestBody AddBookingToTripRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         String currency = (request.getTargetCurrency() != null && !request.getTargetCurrency().isBlank())
                 ? request.getTargetCurrency()
                 : AcceptCurrencyFilter.current();

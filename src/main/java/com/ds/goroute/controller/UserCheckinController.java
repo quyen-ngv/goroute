@@ -1,12 +1,12 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.CreateUserCheckinRequest;
 import com.ds.goroute.dto.request.UpdateUserCheckinRequest;
 import com.ds.goroute.dto.response.CheckinContextResponse;
 import com.ds.goroute.dto.response.UserCheckinResponse;
 import com.ds.goroute.dto.response.CheckinLikeResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.UserCheckinService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -21,7 +21,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -43,7 +42,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/checkins")
 @RequiredArgsConstructor
 @Validated
-public class UserCheckinController extends BaseService {
+public class UserCheckinController extends BaseController {
 
     private static final int MAX_PAGE_SIZE = 50;
 
@@ -57,7 +56,7 @@ public class UserCheckinController extends BaseService {
             @RequestParam(required = false) BigDecimal latitude,
             @RequestParam(required = false) BigDecimal longitude,
             @RequestParam(required = false) BigDecimal accuracyMeters,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(checkinService.context(
                 userId, placeId, locationKey, latitude, longitude, accuracyMeters)));
     }
@@ -65,7 +64,7 @@ public class UserCheckinController extends BaseService {
     @PostMapping
     public ResponseEntity<BaseResponse<UserCheckinResponse>> create(
             @Valid @RequestBody CreateUserCheckinRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ofSucceeded(checkinService.create(userId, request)));
     }
@@ -74,29 +73,30 @@ public class UserCheckinController extends BaseService {
     public ResponseEntity<BaseResponse<UserCheckinResponse>> update(
             @PathVariable UUID checkinId,
             @Valid @RequestBody UpdateUserCheckinRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(checkinService.update(userId, checkinId, request)));
     }
 
     @DeleteMapping("/{checkinId}")
     public ResponseEntity<BaseResponse<Void>> delete(
             @PathVariable UUID checkinId,
-            @RequestAttribute("userId") UUID userId) {
-        checkinService.delete(userId, checkinId);
+            @RequestParam(defaultValue = "false") boolean deleteReview,
+            @CurrentUser UUID userId) {
+        checkinService.delete(userId, checkinId, deleteReview);
         return ResponseEntity.ok(ofSucceeded(null));
     }
 
     @GetMapping("/{checkinId}")
     public ResponseEntity<BaseResponse<UserCheckinResponse>> get(
             @PathVariable UUID checkinId,
-            @RequestAttribute(value = "userId", required = false) UUID userId) {
+            @CurrentUser(required = false) UUID userId) {
         return ResponseEntity.ok(ofSucceeded(checkinService.get(userId, checkinId)));
     }
 
     @PostMapping("/{checkinId}/like")
     public ResponseEntity<BaseResponse<CheckinLikeResponse>> toggleLike(
             @PathVariable UUID checkinId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(checkinService.toggleLike(userId, checkinId)));
     }
 
@@ -110,7 +110,7 @@ public class UserCheckinController extends BaseService {
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime before,
             @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int limit,
-            @RequestAttribute(value = "userId", required = false) UUID userId) {
+            @CurrentUser(required = false) UUID userId) {
         return ResponseEntity.ok(ofSucceeded(checkinService.feed(userId, before, limit)));
     }
 
@@ -119,7 +119,7 @@ public class UserCheckinController extends BaseService {
             @PathVariable("userId") UUID targetUserId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
-            @RequestAttribute(value = "userId", required = false) UUID viewerId) {
+            @CurrentUser(required = false) UUID viewerId) {
         return ResponseEntity.ok(ofSucceeded(checkinService.byUser(viewerId, targetUserId, page, size)));
     }
 

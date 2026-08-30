@@ -170,6 +170,14 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
+    <select id="countByUserAndPlace" resultType="long">
+        SELECT COUNT(*)
+        FROM user_checkins
+        WHERE user_id = #{userId}
+          AND place_id = #{placeId}
+          AND is_removed = FALSE
+    </select>
+
     <select id="findLatestRatedPerUserForPlace" resultMap="checkinMap">
         SELECT DISTINCT ON (user_id) <include refid="columns"/>
         FROM user_checkins
@@ -186,6 +194,14 @@
         WHERE location_key = #{locationKey} AND visibility = 'PUBLIC' AND is_removed = FALSE
         ORDER BY created_at DESC
         LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countByUserAndLocationKey" resultType="long">
+        SELECT COUNT(*)
+        FROM user_checkins
+        WHERE user_id = #{userId}
+          AND location_key = #{locationKey}
+          AND is_removed = FALSE
     </select>
 
     <select id="findLatestRatedPerUserForLocationKey" resultMap="checkinMap">
@@ -211,6 +227,10 @@
 
     <update id="attachReview">
         UPDATE user_checkins SET review_id = #{reviewId}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="detachReview">
+        UPDATE user_checkins SET review_id = NULL, updated_at = NOW() WHERE review_id = #{reviewId}
     </update>
 
     <update id="recordReward">

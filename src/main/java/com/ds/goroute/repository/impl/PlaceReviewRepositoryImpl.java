@@ -132,7 +132,7 @@ public class PlaceReviewRepositoryImpl implements PlaceReviewRepository {
             review.setImages(objectMapper.writeValueAsString(managed));
         } catch (Exception e) {
             log.warn("Discarding malformed or unmanaged images for review {}: {}",
-                    review.getReviewId(), e.getMessage());
+                    review.getReviewId(), e.getMessage(), e);
             review.setImages("[]");
         }
     }

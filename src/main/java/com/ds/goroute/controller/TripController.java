@@ -1,5 +1,6 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.request.CloneTripRequest;
 import com.ds.goroute.dto.request.CreateTripRequest;
 import com.ds.goroute.dto.request.InviteMemberRequest;
@@ -10,7 +11,6 @@ import com.ds.goroute.dto.request.UpdateTripRequest;
 import com.ds.goroute.dto.response.*;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.dto.BaseResponse;
-import com.ds.goroute.service.BaseService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,14 +25,14 @@ import java.util.UUID;
 @RequestMapping("/v1/api/trips")
 @RequiredArgsConstructor
 @Slf4j
-public class TripController extends BaseService {
+public class TripController extends BaseController {
 
     private final TripService tripService;
 
     @PostMapping
     public ResponseEntity<BaseResponse<TripResponse>> createTrip(
             @Valid @RequestBody CreateTripRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         TripResponse trip = tripService.createTrip(request, userId);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ofSucceeded(trip));
@@ -41,7 +41,7 @@ public class TripController extends BaseService {
     @GetMapping
     public ResponseEntity<BaseResponse<List<TripResponse>>> getTrips(
             @RequestParam(required = false) String status,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         List<TripResponse> trips = tripService.getTrips(userId, status);
         return ResponseEntity.ok(ofSucceeded(trips));
     }
@@ -49,7 +49,7 @@ public class TripController extends BaseService {
     @GetMapping("/{tripId}")
     public ResponseEntity<BaseResponse<TripDetailResponse>> getTripDetail(
             @PathVariable UUID tripId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         TripDetailResponse trip = tripService.getTripDetail(tripId, userId);
         return ResponseEntity.ok(ofSucceeded(trip));
     }
@@ -59,7 +59,7 @@ public class TripController extends BaseService {
             @PathVariable UUID tripId,
             @RequestParam int dayNumber,
             @RequestParam(required = false) UUID overrideDestinationId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         TripSearchBiasResponse bias = tripService.resolveSearchBias(
                 tripId,
                 dayNumber,
@@ -72,7 +72,7 @@ public class TripController extends BaseService {
     public ResponseEntity<BaseResponse<TripResponse>> updateTrip(
             @PathVariable UUID tripId,
             @Valid @RequestBody UpdateTripRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         TripResponse trip = tripService.updateTrip(tripId, request, userId);
         return ResponseEntity.ok(ofSucceeded(trip));
     }
@@ -80,21 +80,21 @@ public class TripController extends BaseService {
     @DeleteMapping("/{tripId}")
     public ResponseEntity<BaseResponse<Void>> deleteTrip(
             @PathVariable UUID tripId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         tripService.deleteTrip(tripId, userId);
         return ResponseEntity.ok(ofSucceeded(null));
     }
 
     @GetMapping("/invitations/pending")
     public ResponseEntity<BaseResponse<List<TripInvitationResponse>>> getPendingInvitations(
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         List<TripInvitationResponse> invitations = tripService.getPendingInvitations(userId);
         return ResponseEntity.ok(ofSucceeded(invitations));
     }
 
     @GetMapping("/access-requests/pending")
     public ResponseEntity<BaseResponse<List<TripAccessRequestResponse>>> getPendingAccessRequests(
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         List<TripAccessRequestResponse> requests = tripService.getPendingAccessRequests(userId);
         return ResponseEntity.ok(ofSucceeded(requests));
     }
@@ -103,7 +103,7 @@ public class TripController extends BaseService {
     public ResponseEntity<BaseResponse<TripMemberResponse>> inviteMember(
             @PathVariable UUID tripId,
             @Valid @RequestBody InviteMemberRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         TripMemberResponse member = tripService.inviteMember(tripId, request, userId);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ofSucceeded(member));
@@ -112,7 +112,7 @@ public class TripController extends BaseService {
     @PostMapping("/{tripId}/accept")
     public ResponseEntity<BaseResponse<Void>> acceptInvite(
             @PathVariable UUID tripId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         tripService.acceptInvite(tripId, userId);
         return ResponseEntity.ok(ofSucceeded(null));
     }
@@ -121,7 +121,7 @@ public class TripController extends BaseService {
     public ResponseEntity<BaseResponse<Void>> respondToInvitation(
             @PathVariable UUID tripId,
             @Valid @RequestBody MemberRespondRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         tripService.respondToInvitation(tripId, request.getAction(), userId);
         return ResponseEntity.ok(ofSucceeded(null));
     }
@@ -130,7 +130,7 @@ public class TripController extends BaseService {
     public ResponseEntity<BaseResponse<Void>> removeMember(
             @PathVariable UUID tripId,
             @PathVariable UUID memberId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         tripService.removeMember(tripId, memberId, userId);
         return ResponseEntity.ok(ofSucceeded(null));
     }
@@ -140,7 +140,7 @@ public class TripController extends BaseService {
             @PathVariable UUID tripId,
             @PathVariable UUID memberId,
             @RequestParam String role,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         tripService.updateMemberRole(tripId, memberId, role, userId);
         return ResponseEntity.ok(ofSucceeded(null));
     }
@@ -148,7 +148,7 @@ public class TripController extends BaseService {
     @GetMapping("/{tripId}/members")
     public ResponseEntity<BaseResponse<List<TripMemberResponse>>> getTripMembers(
             @PathVariable UUID tripId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         List<TripMemberResponse> members = tripService.getTripMembers(tripId, userId);
         return ResponseEntity.ok(ofSucceeded(members));
     }
@@ -158,7 +158,7 @@ public class TripController extends BaseService {
             @PathVariable UUID tripId,
             @PathVariable UUID guestMemberId,
             @Valid @RequestBody LinkGuestRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         tripService.linkGuestToUser(tripId, guestMemberId, request, userId);
         return ResponseEntity.ok(ofSucceeded(null));
     }
@@ -168,7 +168,7 @@ public class TripController extends BaseService {
             @PathVariable UUID tripId,
             @PathVariable UUID guestMemberId,
             @Valid @RequestBody UpdateGuestNameRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         tripService.updateGuestName(tripId, guestMemberId, request.getGuestName(), userId);
         return ResponseEntity.ok(ofSucceeded(null));
     }
@@ -176,7 +176,7 @@ public class TripController extends BaseService {
     @PostMapping("/join-by-code")
     public ResponseEntity<BaseResponse<TripResponse>> joinTripByCode(
             @RequestParam String code,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         TripResponse trip = tripService.joinTripByCode(code, userId);
         return ResponseEntity.ok(ofSucceeded(trip));
     }
@@ -185,7 +185,7 @@ public class TripController extends BaseService {
     public ResponseEntity<BaseResponse<Void>> acceptMember(
             @PathVariable UUID tripId,
             @PathVariable UUID memberId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         tripService.acceptMember(tripId, memberId, userId);
         return ResponseEntity.ok(ofSucceeded(null));
     }
@@ -193,7 +193,7 @@ public class TripController extends BaseService {
     @PostMapping("/{tripId}/leave")
     public ResponseEntity<BaseResponse<Void>> leaveTrip(
             @PathVariable UUID tripId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         tripService.leaveTrip(tripId, userId);
         return ResponseEntity.ok(ofSucceeded(null));
     }
@@ -202,7 +202,7 @@ public class TripController extends BaseService {
     public ResponseEntity<BaseResponse<TripResponse>> cloneTrip(
             @PathVariable UUID tripId,
             @Valid @RequestBody CloneTripRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         TripResponse clonedTrip = tripService.cloneTrip(tripId, request, userId);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ofSucceeded(clonedTrip));
@@ -210,7 +210,7 @@ public class TripController extends BaseService {
 
     @GetMapping("/recent-location")
     public ResponseEntity<BaseResponse<TripRecentLocationResponse>> getRecentLocation(
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         TripRecentLocationResponse location = tripService.getRecentLocation(userId);
         return ResponseEntity.ok(ofSucceeded(location));
     }

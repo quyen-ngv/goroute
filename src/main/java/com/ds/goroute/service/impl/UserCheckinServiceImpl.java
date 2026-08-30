@@ -25,6 +25,7 @@ import com.ds.goroute.repository.UserReviewRepository;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.ContentModerationService;
 import com.ds.goroute.service.ReviewScoringService;
+import com.ds.goroute.service.ReviewService;
 import com.ds.goroute.service.UserCheckinService;
 import com.ds.goroute.service.checkin.LocationKeyFactory;
 import com.ds.goroute.service.notification.SocialNotificationService;
@@ -72,6 +73,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     private final UserRepository userRepository;
     private final AiTripRepository subscriptionRepository;
     private final ReviewScoringService scoringService;
+    private final ReviewService reviewService;
     private final ContentModerationService contentModerationService;
     private final BusinessConfigService config;
     private final LocationKeyFactory locationKeyFactory;
@@ -90,10 +92,16 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
         String cluster = locationKey != null ? locationKey
                 : place.map(found -> locationKeyFactory.forPlace(found.getId())).orElse(null);
-        int previousVisits = cluster == null ? 0 : (int) checkinRepository
-                .findByLocationKey(cluster, MAX_PAGE_SIZE, 0).stream()
-                .filter(checkin -> userId.equals(checkin.getUserId()))
-                .count();
+        // Do not derive a user's progress from the public cluster page. That query is
+        // capped at 50 rows and can contain only other users' recent visits, making a
+        // returning author look like a first-time visitor. Count the author's rows
+        // directly so the Place Detail state is deterministic.
+        long previousVisitCount = placeId != null
+                ? checkinRepository.countByUserAndPlace(userId, placeId)
+                : cluster == null
+                ? 0L
+                : checkinRepository.countByUserAndLocationKey(userId, cluster);
+        int previousVisits = (int) Math.min(Integer.MAX_VALUE, previousVisitCount);
 
         int globalRadius = config.getInt(BusinessConfigKey.CHECKIN_VERIFY_RADIUS_METERS);
         int effectiveRadius = effectiveVerificationRadius(place.orElse(null), globalRadius);
@@ -267,14 +275,18 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
     @Override
     @Transactional
-    public void delete(UUID userId, UUID checkinId) {
+    public void delete(UUID userId, UUID checkinId, boolean deleteReview) {
         UserCheckin checkin = requireOwned(userId, checkinId);
         if (checkinRepository.markRemoved(checkinId, userId) != 1) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Check-in not found");
         }
-        // The review deliberately survives, and the place average does not move. Removing
-        // a memory is not the same as retracting an opinion, and somebody clearing out an
-        // old photo would never expect it to be.
+        // Removing a memory is not the same as retracting an opinion, so by default the
+        // review survives and the place average does not move. The author can ask for both
+        // to go, because a check-in is now the only way they can write that review at all
+        // and refusing would leave it with no owner.
+        if (deleteReview && checkin.getReviewId() != null) {
+            reviewService.deleteReview(userId, checkin.getReviewId());
+        }
         events.publishEvent(new CheckinRemovedEvent(checkin.getId(), userId));
     }
 
@@ -418,8 +430,12 @@ public class UserCheckinServiceImpl implements UserCheckinService {
             review.setAmbianceRating(checkin.getAmbianceRating());
             review.setServiceRating(checkin.getServiceRating());
             // The newest rated check-in is the current review. Keep the two surfaces
-            // identical instead of leaving old review prose beside new check-in media.
-            review.setText(checkin.getCaption());
+            // identical instead of leaving old review prose beside new check-in media --
+            // but a visit the author left wordless is not them retracting what they wrote
+            // last time, so an empty caption keeps the existing text rather than erasing it.
+            if (checkin.getCaption() != null && !checkin.getCaption().isBlank()) {
+                review.setText(checkin.getCaption());
+            }
             review.setPhotos(reviewPhotos);
             review.setCheckinLat(checkin.getLatitude());
             review.setCheckinLng(checkin.getLongitude());
@@ -538,13 +554,31 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         Map<UUID, UserReview> linkedReviews = reviewRepository.findByIds(checkins.stream()
                         .map(UserCheckin::getReviewId).filter(Objects::nonNull).distinct().toList())
                 .stream().collect(Collectors.toMap(UserReview::getId, review -> review));
+        Map<UUID, Place> places = loadPlaces(checkins);
 
         return checkins.stream()
                 .map(checkin -> toResponse(checkin, photos.getOrDefault(checkin.getId(), List.of()),
                         authors.get(checkin.getUserId()), latestReviewCheckinIds.contains(checkin.getId()),
                         linkedReviews.get(checkin.getReviewId()), likeCounts.getOrDefault(checkin.getId(), 0),
-                        likedIds.contains(checkin.getId())))
+                        likedIds.contains(checkin.getId()), places.get(checkin.getPlaceId())))
                 .toList();
+    }
+
+    /**
+     * One query for the places on the whole page. The feed post renders a place card, and
+     * looking the place up per row is how a twenty-item feed turns into twenty-one queries.
+     */
+    private Map<UUID, Place> loadPlaces(List<UserCheckin> checkins) {
+        List<UUID> placeIds = checkins.stream()
+                .map(UserCheckin::getPlaceId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (placeIds.isEmpty()) {
+            return Map.of();
+        }
+        return placeRepository.findByIds(placeIds).stream()
+                .collect(Collectors.toMap(Place::getId, place -> place, (first, second) -> first));
     }
 
     private Map<UUID, User> loadAuthors(List<UserCheckin> checkins) {
@@ -562,14 +596,16 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         List<UserCheckinPhoto> photos = loadPhotos ? checkinRepository.findPhotos(checkin.getId()) : List.of();
         UserReview linkedReview = checkin.getReviewId() == null ? null
                 : reviewRepository.findById(checkin.getReviewId()).orElse(null);
+        Place place = checkin.getPlaceId() == null ? null
+                : placeRepository.findById(checkin.getPlaceId()).orElse(null);
         return toResponse(checkin, photos, userRepository.findById(checkin.getUserId()).orElse(null), false,
                 linkedReview, checkinRepository.countLikes(checkin.getId()),
-                viewerId != null && checkinRepository.hasLike(checkin.getId(), viewerId));
+                viewerId != null && checkinRepository.hasLike(checkin.getId(), viewerId), place);
     }
 
     private UserCheckinResponse toResponse(UserCheckin checkin, List<UserCheckinPhoto> photos, User author,
                                            boolean latestReview, UserReview linkedReview, int likeCount,
-                                           boolean hasLiked) {
+                                           boolean hasLiked, Place place) {
         return UserCheckinResponse.builder()
                 .id(checkin.getId())
                 .userId(checkin.getUserId())
@@ -589,6 +625,12 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .provinceCode(checkin.getProvinceCode())
                 .locationSource(checkin.getLocationSource())
                 .locationKey(checkin.getLocationKey())
+                .placeName(place == null ? null : place.getTitle())
+                .placeAddress(place == null ? null : place.getAddress())
+                .placeThumbnail(place == null ? null : place.getThumbnail())
+                .placeReviewCount(place == null ? null : place.getReviewCount())
+                .placeReviewRating(place == null ? null : place.getReviewRating())
+                .placeAdjustedRating(place == null ? null : place.getAdjustedRating())
                 .caption(checkin.getCaption())
                 .overallRating(checkin.getOverallRating())
                 .foodRating(checkin.getFoodRating())

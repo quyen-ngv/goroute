@@ -189,7 +189,7 @@ public class PlaceReviewService {
                 }
 
             } catch (Exception e) {
-                log.error("Error processing review {}: {}", input.getReviewId(), e.getMessage());
+                log.error("Error processing review {}: {}", input.getReviewId(), e.getMessage(), e);
                 errors.add("Error processing review " + input.getReviewId() + ": " + e.getMessage());
                 failed++;
             }
@@ -524,7 +524,7 @@ public class PlaceReviewService {
             List<String> imageUrls = JsonUtils.fromJson(imagesJson, List.class);
             return imageUrls != null ? imageUrls : Collections.emptyList();
         } catch (Exception e) {
-            log.warn("Failed to parse images JSON: {}", e.getMessage());
+            log.warn("Failed to parse images JSON: {}", e.getMessage(), e);
             return Collections.emptyList();
         }
     }
@@ -553,7 +553,7 @@ public class PlaceReviewService {
                     }
                 }
             } catch (Exception e) {
-                log.warn("Failed to parse images JSON for deletion: {}", e.getMessage());
+                log.warn("Failed to parse images JSON for deletion: {}", e.getMessage(), e);
             }
         }
         
@@ -563,7 +563,7 @@ public class PlaceReviewService {
                 storageService.deleteFiles(urlsToDelete);
                 log.debug("Deleted {} old images from S3", urlsToDelete.size());
             } catch (Exception e) {
-                log.error("Failed to delete old images from S3: {}", e.getMessage());
+                log.error("Failed to delete old images from S3: {}", e.getMessage(), e);
             }
         }
     }

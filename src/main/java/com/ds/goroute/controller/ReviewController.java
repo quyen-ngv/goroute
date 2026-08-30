@@ -1,12 +1,12 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.request.CreateReviewRequest;
 import com.ds.goroute.dto.request.UpdateReviewRequest;
 import com.ds.goroute.dto.response.PlaceScoreResponse;
 import com.ds.goroute.dto.response.ReviewScoreResponse;
 import com.ds.goroute.dto.response.UserReviewProfileResponse;
 import com.ds.goroute.dto.response.UserReviewResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.ReviewService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -24,7 +24,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 @Tag(name = "Reviews", description = "User review management APIs")
-public class ReviewController extends BaseService {
+public class ReviewController extends BaseController {
 
     private final ReviewService reviewService;
 
@@ -32,7 +32,7 @@ public class ReviewController extends BaseService {
     @Operation(summary = "Create a new review")
     public ResponseEntity createReview(
             @Valid @RequestBody CreateReviewRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         UserReviewResponse response = reviewService.createReview(userId, request);
         return ResponseEntity.ok(ofSucceeded(response));
     }
@@ -42,7 +42,7 @@ public class ReviewController extends BaseService {
     public ResponseEntity updateReview(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateReviewRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         UserReviewResponse response = reviewService.updateReview(userId, id, request);
         return ResponseEntity.ok(ofSucceeded(response));
     }
@@ -51,7 +51,7 @@ public class ReviewController extends BaseService {
     @Operation(summary = "Delete a review")
     public ResponseEntity deleteReview(
             @PathVariable UUID id,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         reviewService.deleteReview(userId, id);
         return ResponseEntity.ok(ofSucceeded(null));
     }
@@ -62,7 +62,7 @@ public class ReviewController extends BaseService {
             @PathVariable UUID placeId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestAttribute(value = "userId", required = false) UUID userId) {
+            @CurrentUser(required = false) UUID userId) {
         List<UserReviewResponse> reviews = reviewService.getPlaceReviews(placeId, userId, page, size);
         return ResponseEntity.ok(ofSucceeded(reviews));
     }
@@ -73,7 +73,7 @@ public class ReviewController extends BaseService {
             @PathVariable UUID activityBookingId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestAttribute(value = "userId", required = false) UUID userId) {
+            @CurrentUser(required = false) UUID userId) {
         List<UserReviewResponse> reviews = reviewService.getActivityBookingReviews(activityBookingId, userId, page, size);
         return ResponseEntity.ok(ofSucceeded(reviews));
     }
@@ -83,7 +83,7 @@ public class ReviewController extends BaseService {
     public ResponseEntity getMyReviews(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         List<UserReviewResponse> reviews = reviewService.getUserReviews(userId, page, size);
         return ResponseEntity.ok(ofSucceeded(reviews));
     }
@@ -94,7 +94,7 @@ public class ReviewController extends BaseService {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String randomSeed,
-            @RequestAttribute(value = "userId", required = false) UUID userId) {
+            @CurrentUser(required = false) UUID userId) {
         List<UserReviewResponse> reviews = reviewService.getFeedReviews(userId, page, size, randomSeed);
         return ResponseEntity.ok(ofSucceeded(reviews));
     }
@@ -103,7 +103,7 @@ public class ReviewController extends BaseService {
     @Operation(summary = "Vote review as helpful (toggle)")
     public ResponseEntity voteHelpful(
             @PathVariable UUID id,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         UserReviewResponse response = reviewService.voteHelpful(userId, id);
         return ResponseEntity.ok(ofSucceeded(response));
     }
@@ -112,7 +112,7 @@ public class ReviewController extends BaseService {
     @Operation(summary = "Vote review as unhelpful (toggle)")
     public ResponseEntity voteUnhelpful(
             @PathVariable UUID id,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         UserReviewResponse response = reviewService.voteUnhelpful(userId, id);
         return ResponseEntity.ok(ofSucceeded(response));
     }
@@ -133,7 +133,7 @@ public class ReviewController extends BaseService {
 
     @GetMapping("/users/me/profile")
     @Operation(summary = "Get current user's review profile (tier & stats)")
-    public ResponseEntity getMyProfile(@RequestAttribute("userId") UUID userId) {
+    public ResponseEntity getMyProfile(@CurrentUser UUID userId) {
         UserReviewProfileResponse response = reviewService.getUserProfile(userId);
         return ResponseEntity.ok(ofSucceeded(response));
     }

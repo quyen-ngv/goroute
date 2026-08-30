@@ -6,7 +6,6 @@ import com.ds.goroute.dto.request.UpdatePlaceRequest;
 import com.ds.goroute.dto.response.AdminPlaceResponse;
 import com.ds.goroute.dto.response.PlaceReviewRefreshResponse;
 import com.ds.goroute.service.AdminPlaceReviewRefreshService;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.FoodService;
 import com.ds.goroute.service.PlaceAttributeCatalog;
 import com.ds.goroute.service.PlaceService;
@@ -34,7 +33,7 @@ import java.util.List;
 @RequestMapping("/v1/api/admin/places")
 @RequiredArgsConstructor
 @Tag(name = "Admin Places", description = "Administrative place maintenance APIs")
-public class AdminPlaceController extends BaseService {
+public class AdminPlaceController extends BaseController {
 
     private final AdminPlaceReviewRefreshService adminPlaceReviewRefreshService;
     private final PlaceService placeService;

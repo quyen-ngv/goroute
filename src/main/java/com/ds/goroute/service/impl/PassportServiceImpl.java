@@ -6,6 +6,7 @@ import com.ds.goroute.dto.request.UpsertPassportTagRequest;
 import com.ds.goroute.dto.request.UpsertPassportRewardRequest;
 import com.ds.goroute.dto.request.UpsertPassportStampRuleRequest;
 import com.ds.goroute.dto.response.PassportDefinitionResponse;
+import com.ds.goroute.dto.response.PassportLocationMapEntryResponse;
 import com.ds.goroute.dto.response.PassportProvinceOptionResponse;
 import com.ds.goroute.dto.response.PassportStampProgressResponse;
 import com.ds.goroute.dto.response.PassportStampResponse;
@@ -143,9 +144,18 @@ public class PassportServiceImpl implements PassportService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    // getWallet() lazily creates the user's wallet when it does not exist, so this
+    // read model must not run inside a read-only transaction.
+    @Transactional
     public PassportSummaryResponse summary(UUID userId) {
         Map<String, Object> counters = passportMapper.summarizeUser(userId);
+        double locationRadiusKm = config.getDecimal(BusinessConfigKey.PASSPORT_LOCATION_PLACE_RADIUS_KM);
+        List<Map<String, Object>> locationImageRows = passportMapper.findPassportLocationImageMap(
+                userId, locationRadiusKm);
+        int totalLocationImages = locationImageRows.size();
+        int visitedLocationImages = (int) locationImageRows.stream()
+                .filter(row -> asLong(row.get("event_count")) > 0)
+                .count();
         int visitedProvinces = passportMapper.findVisitedProvinceCodes(userId).size();
         int totalProvinces = (int) passportMapper.countProvinces();
         if (totalProvinces == 0) {
@@ -166,6 +176,9 @@ public class PassportServiceImpl implements PassportService {
                 .distinctPlaceCount(asLong(counters.get("distinct_place_count")))
                 .visitedProvinceCount(visitedProvinces)
                 .totalProvinceCount(totalProvinces)
+                .visitedLocationImageCount(visitedLocationImages)
+                .totalLocationImageCount(totalLocationImages)
+                .locationCompletionPercent(locationCompletionPercent(visitedLocationImages, totalLocationImages))
                 .completionPercent(completionPercent(visitedProvinces, totalProvinces))
                 .pointsBalance(pointWallet.getWallet(userId).getBalance())
                 .stamps(stamps)
@@ -209,6 +222,29 @@ public class PassportServiceImpl implements PassportService {
                         .wished(wished.contains(province.getCode()))
                         .eventCount(counts.getOrDefault(province.getCode(), 0))
                         .build())
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PassportLocationMapEntryResponse> locationImageMap(UUID userId) {
+        requireFeatureEnabled();
+        double radiusKm = config.getDecimal(BusinessConfigKey.PASSPORT_LOCATION_PLACE_RADIUS_KM);
+        return passportMapper.findPassportLocationImageMap(userId, radiusKm).stream()
+                .map(row -> PassportLocationMapEntryResponse.builder()
+                        .id(asUuid(row.get("id")))
+                        .name(asString(row.get("name")))
+                        .address(asString(row.get("address")))
+                        .imageUrl(asString(row.get("image_url")))
+                        .latitude(asBigDecimal(row.get("latitude")))
+                        .longitude(asBigDecimal(row.get("longitude")))
+                        .visited(asLong(row.get("event_count")) > 0)
+                        .eventCount((int) asLong(row.get("event_count")))
+                        .build())
+                // Keep configured anchors without coordinates in the response so the
+                // client can list them and explain why the map is unavailable; admins can
+                // then add coordinates instead of silently losing the Passport item.
+                .filter(entry -> entry.getId() != null)
                 .toList();
     }
 
@@ -899,6 +935,15 @@ public class PassportServiceImpl implements PassportService {
                         .countable(!"FIRST_CHECKIN".equals(rule.getConditionType()))
                         .build())
                 .toList();
+    }
+
+    private Double locationCompletionPercent(int visitedLocations, int totalLocations) {
+        if (totalLocations <= 0) {
+            return null;
+        }
+        return BigDecimal.valueOf((double) visitedLocations * 100 / totalLocations)
+                .setScale(1, RoundingMode.HALF_UP)
+                .doubleValue();
     }
 
     /**

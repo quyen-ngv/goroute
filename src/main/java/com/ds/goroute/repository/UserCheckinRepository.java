@@ -30,9 +30,13 @@ public interface UserCheckinRepository {
 
     List<UserCheckin> findByPlace(UUID placeId, int limit, int offset);
 
+    long countByUserAndPlace(UUID userId, UUID placeId);
+
     List<UserCheckin> findLatestRatedPerUserForPlace(UUID placeId);
 
     List<UserCheckin> findByLocationKey(String locationKey, int limit, int offset);
+
+    long countByUserAndLocationKey(UUID userId, String locationKey);
 
     List<UserCheckin> findLatestRatedPerUserForLocationKey(String locationKey);
 
@@ -41,6 +45,12 @@ public interface UserCheckinRepository {
     int attachPlaceToCluster(String locationKey, UUID placeId);
 
     int attachReview(UUID id, UUID reviewId);
+
+    /**
+     * Clears the link from every check-in that pointed at a review which no longer exists,
+     * so a deleted review cannot leave rows claiming to carry one.
+     */
+    int detachReview(UUID reviewId);
 
     int recordReward(UUID id, int rewardPoints, String rewardReason);
 

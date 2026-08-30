@@ -5,7 +5,6 @@ import com.ds.goroute.dto.request.CreateLocationImageRequest;
 import com.ds.goroute.dto.request.UpdateLocationImageRequest;
 import com.ds.goroute.dto.response.LocationImageResponse;
 import com.ds.goroute.dto.response.CityWeatherResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.CityWeatherService;
 import com.ds.goroute.service.LocationImageService;
 import jakarta.validation.Valid;
@@ -24,7 +23,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/location-images")
 @RequiredArgsConstructor
 @Slf4j
-public class LocationImageController extends BaseService {
+public class LocationImageController extends BaseController {
     
     private final LocationImageService locationImageService;
     private final CityWeatherService cityWeatherService;

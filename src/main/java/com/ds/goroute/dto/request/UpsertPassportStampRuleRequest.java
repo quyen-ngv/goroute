@@ -35,7 +35,12 @@ public class UpsertPassportStampRuleRequest {
     @Max(100000)
     private Integer threshold = 1;
 
-    @Size(max = 100)
+    /**
+     * An uploaded badge image URL, or a legacy emoji/glyph name when the rule has no
+     * artwork yet. Sized like every other image URL in the catalogue: the old 100-character
+     * limit was set for "🏅" and silently rejected the save that carried a storage URL.
+     */
+    @Size(max = 1000)
     private String icon;
 
     @Min(0)

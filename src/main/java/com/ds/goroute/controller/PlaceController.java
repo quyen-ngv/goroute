@@ -9,7 +9,6 @@ import com.ds.goroute.dto.response.PlaceResponse;
 import com.ds.goroute.dto.response.PlaceReviewResponse;
 import com.ds.goroute.dto.response.FoodSummaryResponse;
 import com.ds.goroute.dto.response.FoodTagResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.FoodService;
 import com.ds.goroute.service.PlaceService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,7 +33,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 @Tag(name = "Places", description = "Place management APIs")
-public class PlaceController extends BaseService {
+public class PlaceController extends BaseController {
 
     private final PlaceService placeService;
     private final FoodService foodService;

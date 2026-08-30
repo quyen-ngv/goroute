@@ -13,6 +13,7 @@ import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.ImageStorageCleanupService;
+import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.service.redis.RedisService;
 import com.ds.goroute.type.ActivityStatus;
@@ -46,6 +47,7 @@ class ActivityServiceImplTest {
     @Mock private PlaceRepository placeRepository;
     @Mock private NotificationHelper notificationHelper;
     @Mock private ImageStorageCleanupService imageStorageCleanupService;
+    @Mock private TripAccessGuard tripAccessGuard;
 
     @InjectMocks private ActivityServiceImpl service;
 
@@ -78,10 +80,9 @@ class ActivityServiceImplTest {
                 .thumbnail("https://example.com/place.jpg")
                 .build();
 
-        when(tripRepository.findById(tripId)).thenReturn(java.util.Optional.of(
-                Trip.builder().id(tripId).ownerId(userId).build()));
-        when(tripMemberRepository.findByTripIdAndUserId(tripId, userId))
-                .thenReturn(java.util.Optional.empty());
+        // Access control now lives in TripAccessGuard, which has its own test.
+        when(tripAccessGuard.requireAccess(tripId, userId))
+                .thenReturn(Trip.builder().id(tripId).ownerId(userId).build());
         when(activityRepository.findByTripId(tripId)).thenReturn(List.of(activity));
         when(placeRepository.findByIds(List.of(placeId))).thenReturn(List.of(place));
         when(placeRepository.findByPlaceIds(List.of())).thenReturn(List.of());

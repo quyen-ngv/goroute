@@ -106,7 +106,7 @@ public class ImageMigrationJob {
                 
             } catch (Exception e) {
                 failed.incrementAndGet();
-                log.error("Failed to migrate place {}: {}", place.getPlaceId(), e.getMessage());
+                log.error("Failed to migrate place {}: {}", place.getPlaceId(), e.getMessage(), e);
             }
         }
         
@@ -153,7 +153,7 @@ public class ImageMigrationJob {
                 
             } catch (Exception e) {
                 failed.incrementAndGet();
-                log.error("Failed to migrate review {}: {}", review.getId(), e.getMessage());
+                log.error("Failed to migrate review {}: {}", review.getId(), e.getMessage(), e);
             }
         }
         
@@ -186,7 +186,7 @@ public class ImageMigrationJob {
                 
             } catch (Exception e) {
                 failed.incrementAndGet();
-                log.error("Failed to migrate activity {}: {}", activity.getId(), e.getMessage());
+                log.error("Failed to migrate activity {}: {}", activity.getId(), e.getMessage(), e);
             }
         }
         
@@ -243,7 +243,7 @@ public class ImageMigrationJob {
                 
             } catch (Exception e) {
                 failed.incrementAndGet();
-                log.error("Failed to migrate booking {}: {}", booking.getId(), e.getMessage());
+                log.error("Failed to migrate booking {}: {}", booking.getId(), e.getMessage(), e);
             }
         }
         
@@ -276,7 +276,7 @@ public class ImageMigrationJob {
                 
             } catch (Exception e) {
                 failed.incrementAndGet();
-                log.error("Failed to migrate food {}: {}", food.getId(), e.getMessage());
+                log.error("Failed to migrate food {}: {}", food.getId(), e.getMessage(), e);
             }
         }
         
@@ -333,7 +333,7 @@ public class ImageMigrationJob {
                 
             } catch (Exception e) {
                 failed.incrementAndGet();
-                log.error("Failed to migrate expense {}: {}", expense.getId(), e.getMessage());
+                log.error("Failed to migrate expense {}: {}", expense.getId(), e.getMessage(), e);
             }
         }
         
@@ -388,7 +388,7 @@ public class ImageMigrationJob {
             return objectMapper.writeValueAsString(newArray);
             
         } catch (Exception e) {
-            log.error("Error migrating review images array: {}", e.getMessage());
+            log.error("Error migrating review images array: {}", e.getMessage(), e);
             return "[]";
         }
     }
@@ -443,7 +443,7 @@ public class ImageMigrationJob {
             return objectMapper.writeValueAsString(newArray);
             
         } catch (Exception e) {
-            log.error("Error migrating itinerary images: {}", e.getMessage());
+            log.error("Error migrating itinerary images: {}", e.getMessage(), e);
             return itineraryJson;
         }
     }

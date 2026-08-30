@@ -46,11 +46,20 @@ public interface UserCheckinService {
     UserCheckinResponse update(UUID userId, UUID checkinId, UpdateUserCheckinRequest request);
 
     /**
-     * Hides the check-in. The author's review of the place survives, and the place average
-     * does not move: deleting one bad photo from last year should not silently retract an
-     * opinion nobody meant to touch.
+     * Hides the check-in. By default the author's review of the place survives and the place
+     * average does not move: deleting one bad photo from last year should not silently
+     * retract an opinion nobody meant to touch.
+     *
+     * <p>{@code deleteReview} exists because the composer is currently the only way to write
+     * a place review at all. Without it, dropping the visit would strand the review with no
+     * surface that can remove it.
      */
-    void delete(UUID userId, UUID checkinId);
+    void delete(UUID userId, UUID checkinId, boolean deleteReview);
+
+    /** Keeps the check-in only, which is what every existing caller meant. */
+    default void delete(UUID userId, UUID checkinId) {
+        delete(userId, checkinId, false);
+    }
 
     UserCheckinResponse get(UUID viewerId, UUID checkinId);
 

@@ -7,7 +7,6 @@ import com.ds.goroute.dto.request.CreateNationwidePlaceImportJobRequest;
 import com.ds.goroute.dto.request.CreatePlaceDetailRefreshJobRequest;
 import com.ds.goroute.dto.response.PlaceImportJobResponse;
 import com.ds.goroute.dto.response.AdminPlaceImportRunResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.PlaceImportJobService;
 import com.ds.goroute.service.NationwidePlaceImportJobService;
 import com.ds.goroute.service.PlaceDetailRefreshJobService;
@@ -26,7 +25,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/admin/place-import-jobs")
 @RequiredArgsConstructor
 @Tag(name = "Admin Place Import Jobs", description = "Admin-only async jobs that import inactive user-discovered places")
-public class PlaceImportJobController extends BaseService {
+public class PlaceImportJobController extends BaseController {
 
     private final PlaceImportJobService placeImportJobService;
     private final NationwidePlaceImportJobService nationwidePlaceImportJobService;

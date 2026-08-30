@@ -156,7 +156,7 @@ public class ImageArchiveServiceImpl implements ImageArchiveService {
             return objectMapper.writeValueAsString(newArrayNode);
             
         } catch (Exception e) {
-            log.error("Error compressing images from JSON: {}", e.getMessage());
+            log.error("Error compressing images from JSON: {}", e.getMessage(), e);
             return imagesJson;
         }
     }
@@ -199,7 +199,7 @@ public class ImageArchiveServiceImpl implements ImageArchiveService {
             log.info("Compressed {}/{} images successfully", resultMap.size(), minioUrls.size());
             
         } catch (Exception e) {
-            log.error("Error in batch compression: {}", e.getMessage());
+            log.error("Error in batch compression: {}", e.getMessage(), e);
         } finally {
             executor.shutdownNow();
         }
@@ -272,7 +272,7 @@ public class ImageArchiveServiceImpl implements ImageArchiveService {
             }
             
         } catch (Exception e) {
-            log.error("Failed to download from MinIO {}: {}", imageUrl, e.getMessage());
+            log.error("Failed to download from MinIO {}: {}", imageUrl, e.getMessage(), e);
         }
         
         return null;
@@ -311,7 +311,7 @@ public class ImageArchiveServiceImpl implements ImageArchiveService {
             }
             
         } catch (Exception e) {
-            log.error("Aggressive compression failed: {}", e.getMessage());
+            log.error("Aggressive compression failed: {}", e.getMessage(), e);
         }
         
         return null;

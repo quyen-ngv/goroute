@@ -120,7 +120,7 @@ public class TextModerationServiceImpl implements TextModerationService {
                     .build());
         } catch (RuntimeException exception) {
             // Losing a metric row must never cost the user their submission.
-            log.warn("Could not record moderation decision for {}: {}", contentType, exception.getMessage());
+            log.warn("Could not record moderation decision for {}: {}", contentType, exception.getMessage(), exception);
         }
     }
 

@@ -36,7 +36,7 @@ import com.ds.goroute.service.ImageMigrationService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.type.PlaceVisibilityStatus;
 import com.ds.goroute.utils.FoodNameResolver;
-import com.ds.goroute.utils.GeoDistanceUtils;
+import com.ds.goroute.utils.GeoDistance;
 import com.ds.goroute.utils.JsonUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -96,7 +96,7 @@ public class PlaceServiceImpl implements PlaceService {
                             log.warn("Failed to migrate thumbnail for place: {}", request.getPlaceId());
                         }
                     } catch (Exception e) {
-                        log.error("Error migrating thumbnail: {}", e.getMessage());
+                        log.error("Error migrating thumbnail: {}", e.getMessage(), e);
                     }
                 }
 
@@ -110,7 +110,7 @@ public class PlaceServiceImpl implements PlaceService {
                             log.warn("No place images migrated successfully for: {}", request.getPlaceId());
                         }
                     } catch (Exception e) {
-                        log.error("Error migrating place images: {}", e.getMessage());
+                        log.error("Error migrating place images: {}", e.getMessage(), e);
                     }
                 }
 
@@ -119,7 +119,7 @@ public class PlaceServiceImpl implements PlaceService {
                     try {
                         request.setMenu(imageMigrationService.migrateMenuJson(request.getMenu(), targetPath));
                     } catch (Exception e) {
-                        log.error("Error migrating menu images: {}", e.getMessage());
+                        log.error("Error migrating menu images: {}", e.getMessage(), e);
                     }
                 }
 
@@ -159,7 +159,7 @@ public class PlaceServiceImpl implements PlaceService {
             return toPlaceResponse(place);
 
         } catch (Exception e) {
-            log.error("Failed to import place {}: {}", request.getPlaceId(), e.getMessage());
+            log.error("Failed to import place {}: {}", request.getPlaceId(), e.getMessage(), e);
             return null; // Skip this place on error
         }
     }
@@ -282,7 +282,7 @@ public class PlaceServiceImpl implements PlaceService {
             for (UUID id : orderedIds) {
                 Place place = placesById.get(id);
                 if (place != null) {
-                    place.setDistance(GeoDistanceUtils.distanceKm(
+                    place.setDistance(GeoDistance.kilometresOrFarAway(
                             latitude, longitude, place.getLatitude(), place.getLongitude()));
                     places.add(place);
                 }
@@ -787,7 +787,7 @@ public class PlaceServiceImpl implements PlaceService {
                     reviewInputs.add(reviewInput);
 
                 } catch (Exception e) {
-                    log.error("Error parsing review node: {}", e.getMessage());
+                    log.error("Error parsing review node: {}", e.getMessage(), e);
                 }
             }
 
@@ -798,7 +798,7 @@ public class PlaceServiceImpl implements PlaceService {
             }
 
         } catch (Exception e) {
-            log.error("Error parsing reviews JSON: {}", e.getMessage());
+            log.error("Error parsing reviews JSON: {}", e.getMessage(), e);
         }
     }
 
@@ -971,7 +971,7 @@ public class PlaceServiceImpl implements PlaceService {
             normalized.set("highlights", normalizeMenuItems(rootNode.get("highlights"), false));
             return objectMapper.treeToValue(normalized, PlaceMenuDto.class);
         } catch (Exception e) {
-            log.warn("Failed to parse menu JSON: {}", e.getMessage());
+            log.warn("Failed to parse menu JSON: {}", e.getMessage(), e);
             return null;
         }
     }
@@ -1054,7 +1054,7 @@ public class PlaceServiceImpl implements PlaceService {
             JsonNode node = objectMapper.readTree(jsonString);
             return node == null || node.isNull() ? null : node;
         } catch (Exception e) {
-            log.warn("Failed to parse place attributes JSON: {}", e.getMessage());
+            log.warn("Failed to parse place attributes JSON: {}", e.getMessage(), e);
             return null;
         }
     }
@@ -1098,7 +1098,7 @@ public class PlaceServiceImpl implements PlaceService {
                     new com.fasterxml.jackson.core.type.TypeReference<Map<String, Integer>>() {
                     });
         } catch (Exception e) {
-            log.warn("Failed to parse JSON to Map: {}", e.getMessage());
+            log.warn("Failed to parse JSON to Map: {}", e.getMessage(), e);
             return null;
         }
     }
@@ -1111,7 +1111,7 @@ public class PlaceServiceImpl implements PlaceService {
             return objectMapper.readValue(jsonString,
                     objectMapper.getTypeFactory().constructCollectionType(List.class, clazz));
         } catch (Exception e) {
-            log.warn("Failed to parse JSON to List: {}", e.getMessage());
+            log.warn("Failed to parse JSON to List: {}", e.getMessage(), e);
             return null;
         }
     }
@@ -1125,7 +1125,7 @@ public class PlaceServiceImpl implements PlaceService {
                     new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {
                     });
         } catch (Exception e) {
-            log.warn("Failed to parse destinations JSON: {}", e.getMessage());
+            log.warn("Failed to parse destinations JSON: {}", e.getMessage(), e);
             return Collections.emptyList();
         }
     }
@@ -1137,7 +1137,7 @@ public class PlaceServiceImpl implements PlaceService {
             }
             return objectMapper.writeValueAsString(value);
         } catch (Exception e) {
-            log.warn("Failed to serialize value to JSON: {}", e.getMessage());
+            log.warn("Failed to serialize value to JSON: {}", e.getMessage(), e);
             return "[]";
         }
     }
@@ -1151,7 +1151,7 @@ public class PlaceServiceImpl implements PlaceService {
                     new com.fasterxml.jackson.core.type.TypeReference<Map<String, List<String>>>() {
                     });
         } catch (Exception e) {
-            log.warn("Failed to parse JSON to Map<String, List<String>>: {}", e.getMessage());
+            log.warn("Failed to parse JSON to Map<String, List<String>>: {}", e.getMessage(), e);
             return null;
         }
     }
@@ -1165,7 +1165,7 @@ public class PlaceServiceImpl implements PlaceService {
                     new com.fasterxml.jackson.core.type.TypeReference<Map<String, Map<String, Integer>>>() {
                     });
         } catch (Exception e) {
-            log.warn("Failed to parse JSON to Map<String, Map<String, Integer>>: {}", e.getMessage());
+            log.warn("Failed to parse JSON to Map<String, Map<String, Integer>>: {}", e.getMessage(), e);
             return null;
         }
     }

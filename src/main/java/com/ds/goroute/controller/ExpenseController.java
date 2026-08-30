@@ -1,5 +1,6 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.request.CreateExpenseRequest;
 import com.ds.goroute.dto.request.UpdateExpenseRequest;
 import com.ds.goroute.dto.request.MarkPaymentRequest;
@@ -8,7 +9,6 @@ import com.ds.goroute.dto.response.ExpenseResponse;
 import com.ds.goroute.dto.response.ExpenseSplitResponse;
 import com.ds.goroute.service.ExpenseService;
 import com.ds.goroute.dto.BaseResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.type.ExpenseCategory;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +24,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/trips/{tripId}/expenses")
 @RequiredArgsConstructor
 @Slf4j
-public class ExpenseController extends BaseService {
+public class ExpenseController extends BaseController {
 
     private final ExpenseService expenseService;
 
@@ -32,7 +32,7 @@ public class ExpenseController extends BaseService {
     public ResponseEntity<BaseResponse<List<ExpenseResponse>>> getExpenses(
             @PathVariable UUID tripId,
             @RequestParam(required = false) ExpenseCategory category,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         List<ExpenseResponse> expenses = expenseService.getExpenses(tripId, category, userId);
         return ResponseEntity.ok(ofSucceeded(expenses));
     }
@@ -41,7 +41,7 @@ public class ExpenseController extends BaseService {
     public ResponseEntity<BaseResponse<ExpenseResponse>> createExpense(
             @PathVariable UUID tripId,
             @Valid @RequestBody CreateExpenseRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         ExpenseResponse expense = expenseService.createExpense(tripId, request, userId);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ofSucceeded(expense));
@@ -50,7 +50,7 @@ public class ExpenseController extends BaseService {
     @GetMapping("/overview")
     public ResponseEntity<BaseResponse<BudgetOverviewResponse>> getBudgetOverview(
             @PathVariable UUID tripId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         BudgetOverviewResponse overview = expenseService.getBudgetOverview(tripId, userId);
         return ResponseEntity.ok(ofSucceeded(overview));
     }
@@ -60,7 +60,7 @@ public class ExpenseController extends BaseService {
             @PathVariable UUID tripId,
             @PathVariable UUID expenseId,
             @Valid @RequestBody UpdateExpenseRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         ExpenseResponse expense = expenseService.updateExpense(tripId, expenseId, request, userId);
         return ResponseEntity.ok(ofSucceeded(expense));
     }
@@ -69,7 +69,7 @@ public class ExpenseController extends BaseService {
     public ResponseEntity<BaseResponse<Void>> deleteExpense(
             @PathVariable UUID tripId,
             @PathVariable UUID expenseId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         expenseService.deleteExpense(tripId, expenseId, userId);
         return ResponseEntity.ok(ofSucceeded(null));
     }
@@ -80,7 +80,7 @@ public class ExpenseController extends BaseService {
             @PathVariable UUID expenseId,
             @PathVariable UUID splitId,
             @Valid @RequestBody MarkPaymentRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         log.info("ðŸ”µ markPaymentForSplit endpoint called: tripId={}, expenseId={}, splitId={}, isPaid={}",
                 tripId, expenseId, splitId, request.getIsPaid());
         ExpenseSplitResponse split = expenseService.markPaymentForSplit(tripId, expenseId, splitId, request, userId);
@@ -92,7 +92,7 @@ public class ExpenseController extends BaseService {
             @PathVariable UUID tripId,
             @PathVariable UUID expenseId,
             @Valid @RequestBody MarkPaymentRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         ExpenseResponse expense = expenseService.markAllPaymentsForExpense(tripId, expenseId, request, userId);
         return ResponseEntity.ok(ofSucceeded(expense));
     }
@@ -101,7 +101,7 @@ public class ExpenseController extends BaseService {
     public ResponseEntity<BaseResponse<Void>> markAllPaymentsForTrip(
             @PathVariable UUID tripId,
             @Valid @RequestBody MarkPaymentRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         expenseService.markAllPaymentsForTrip(tripId, request, userId);
         return ResponseEntity.ok(ofSucceeded(null));
     }

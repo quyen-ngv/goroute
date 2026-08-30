@@ -1,9 +1,11 @@
 package com.ds.goroute.exception;
 
 import com.ds.goroute.constant.ErrorConstant;
+import com.ds.goroute.constant.RequestKeyConstant;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.ErrorViolation;
-import com.ds.goroute.service.BaseService;
+import com.ds.goroute.utils.ErrorMessages;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -14,6 +16,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.bind.ServletRequestBindingException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.HttpStatusCodeException;
@@ -25,12 +28,18 @@ import java.util.List;
 
 @RestControllerAdvice
 @Slf4j
-public class CommonExceptionHandler extends BaseService {
+public class CommonExceptionHandler {
+
+    private final HttpServletRequest httpServletRequest;
+
+    public CommonExceptionHandler(HttpServletRequest httpServletRequest) {
+        this.httpServletRequest = httpServletRequest;
+    }
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<BaseResponse<?>> handleBusinessException(BusinessException exception) {
         BusinessError error = exception.getError();
-        String message = getMessage(error);
+        String message = ErrorMessages.of(error);
         error.setMessage(message);
         HttpStatus status = error.getHttpStatus() == null
                 ? statusFromBusinessCode(error.getCode())
@@ -79,6 +88,15 @@ public class CommonExceptionHandler extends BaseService {
     public ResponseEntity<BaseResponse<?>> handleTypeMismatch(MethodArgumentTypeMismatchException exception) {
         return invalidParameters(List.of(violation(
                 exception.getName(), "Parameter has an invalid value")));
+    }
+
+    /**
+     * A required request attribute or header that never arrived. Reported like any other
+     * binding failure instead of falling through to the catch-all and answering 500.
+     */
+    @ExceptionHandler(ServletRequestBindingException.class)
+    public ResponseEntity<BaseResponse<?>> handleMissingRequestValue(ServletRequestBindingException exception) {
+        return invalidParameters(List.of(violation(null, "A required request value is missing")));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -144,8 +162,13 @@ public class CommonExceptionHandler extends BaseService {
 
     private ResponseEntity<BaseResponse<?>> response(
             BusinessError error, String message, List<ErrorViolation> errors, HttpStatusCode status) {
-        BaseResponse<?> body = ofFailed(error, message, errors);
+        BaseResponse<?> body = BaseResponse.ofFailed(requestId(), error, message, errors);
         return ResponseEntity.status(status).body(body);
+    }
+
+    private String requestId() {
+        Object requestId = httpServletRequest.getAttribute(RequestKeyConstant.REQUEST_ID);
+        return requestId == null ? null : requestId.toString();
     }
 
     private ErrorViolation violation(String field, String description) {

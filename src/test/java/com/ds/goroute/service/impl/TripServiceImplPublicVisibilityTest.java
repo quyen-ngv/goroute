@@ -75,7 +75,10 @@ class TripServiceImplPublicVisibilityTest {
                 mock(MediaAssetRepository.class),
                 mock(ImageStorageCleanupService.class),
                 mock(TripDestinationRepository.class),
-                mock(SocialNotificationService.class));
+                mock(SocialNotificationService.class),
+                // Same-thread executor: the fire-and-forget view counter has to have run
+                // by the time the assertions look at it.
+                Runnable::run);
     }
 
     @Test

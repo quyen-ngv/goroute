@@ -62,6 +62,11 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     }
 
     @Override
+    public long countByUserAndPlace(UUID userId, UUID placeId) {
+        return mapper.countByUserAndPlace(userId, placeId);
+    }
+
+    @Override
     public List<UserCheckin> findLatestRatedPerUserForPlace(UUID placeId) {
         return mapper.findLatestRatedPerUserForPlace(placeId);
     }
@@ -69,6 +74,11 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     @Override
     public List<UserCheckin> findByLocationKey(String locationKey, int limit, int offset) {
         return mapper.findByLocationKey(locationKey, limit, offset);
+    }
+
+    @Override
+    public long countByUserAndLocationKey(UUID userId, String locationKey) {
+        return mapper.countByUserAndLocationKey(userId, locationKey);
     }
 
     @Override
@@ -89,6 +99,11 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     @Override
     public int attachReview(UUID id, UUID reviewId) {
         return mapper.attachReview(id, reviewId);
+    }
+
+    @Override
+    public int detachReview(UUID reviewId) {
+        return mapper.detachReview(reviewId);
     }
 
     @Override

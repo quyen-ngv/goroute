@@ -42,6 +42,19 @@ public class UserCheckinResponse {
      */
     private String locationKey;
 
+    /** Catalogue place summary, so a feed post can render the place card without a second call. */
+    private String placeName;
+    private String placeAddress;
+    private String placeThumbnail;
+    private Integer placeReviewCount;
+    private BigDecimal placeReviewRating;
+
+    /**
+     * The recalculated rating when the scoring job has run for this place. Clients prefer it
+     * over {@link #placeReviewRating} and fall back to the Google figure while it is null.
+     */
+    private BigDecimal placeAdjustedRating;
+
     private String caption;
 
     private Integer overallRating;

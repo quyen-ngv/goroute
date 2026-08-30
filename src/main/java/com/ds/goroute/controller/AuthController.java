@@ -7,7 +7,6 @@ import com.ds.goroute.dto.request.RefreshTokenRequest;
 import com.ds.goroute.dto.request.RegisterRequest;
 import com.ds.goroute.dto.response.AuthResponse;
 import com.ds.goroute.service.AuthService;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.dto.BaseResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -26,7 +25,7 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 @Slf4j
 @Tag(name = "Authentication", description = "Authentication and authorization endpoints")
-public class AuthController extends BaseService {
+public class AuthController extends BaseController {
     
     private final AuthService authService;
 

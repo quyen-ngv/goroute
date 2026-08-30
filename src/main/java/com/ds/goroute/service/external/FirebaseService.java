@@ -37,7 +37,7 @@ public class FirebaseService {
                 sendPush(device.getFcmToken(), message.title(), message.body(), data);
                 sent = true;
             } catch (Exception e) {
-                log.error("Failed to send push to device {}: {}", device.getId(), e.getMessage());
+                log.error("Failed to send push to device {}: {}", device.getId(), e.getMessage(), e);
             }
         }
         return sent;

@@ -183,7 +183,7 @@ public class ImageStorageCleanupService {
             UUID id = args.length > 0 && args[0] instanceof UUID uuid ? uuid : null;
             return imageCleanupMapper.selectRows(sql, id);
         } catch (Exception e) {
-            log.error("Image reference query failed. Cleanup stopped to avoid unsafe deletes: {}", e.getMessage());
+            log.error("Image reference query failed. Cleanup stopped to avoid unsafe deletes: {}", e.getMessage(), e);
             throw new BusinessException(
                     ErrorConstant.INTERNAL_SERVER_ERROR,
                     "Image reference query failed; cleanup aborted"

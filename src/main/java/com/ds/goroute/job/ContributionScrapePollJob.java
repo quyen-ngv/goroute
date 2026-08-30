@@ -45,7 +45,7 @@ public class ContributionScrapePollJob {
                     return;
                 }
             } catch (Exception e) {
-                log.warn("Contribution scrape poll attempt failed for group {}: {}", groupId, e.getMessage());
+                log.warn("Contribution scrape poll attempt failed for group {}: {}", groupId, e.getMessage(), e);
             }
 
             attempts++;

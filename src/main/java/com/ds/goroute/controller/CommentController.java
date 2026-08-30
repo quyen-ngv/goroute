@@ -1,9 +1,9 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.CreateCommentRequest;
 import com.ds.goroute.dto.response.CommentResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.CommentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +20,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/trips/{tripId}")
 @RequiredArgsConstructor
 @Slf4j
-public class CommentController extends BaseService {
+public class CommentController extends BaseController {
 
     private final CommentService commentService;
 
@@ -33,7 +33,7 @@ public class CommentController extends BaseService {
     @GetMapping("/comment-counts")
     public ResponseEntity<BaseResponse<Map<UUID, Integer>>> getCommentCounts(
             @PathVariable UUID tripId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(commentService.getCommentCounts(tripId, userId)));
     }
 
@@ -41,7 +41,7 @@ public class CommentController extends BaseService {
     public ResponseEntity<BaseResponse<List<CommentResponse>>> getComments(
             @PathVariable UUID tripId,
             @PathVariable UUID activityId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         List<CommentResponse> comments = commentService.getComments(tripId, activityId, userId);
         return ResponseEntity.ok(ofSucceeded(comments));
     }
@@ -51,7 +51,7 @@ public class CommentController extends BaseService {
             @PathVariable UUID tripId,
             @PathVariable UUID activityId,
             @Valid @RequestBody CreateCommentRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         CommentResponse comment = commentService.createComment(tripId, activityId, request, userId);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ofSucceeded(comment));
@@ -62,7 +62,7 @@ public class CommentController extends BaseService {
             @PathVariable UUID tripId,
             @PathVariable UUID activityId,
             @PathVariable UUID commentId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         commentService.deleteComment(tripId, activityId, commentId, userId);
         return ResponseEntity.ok(ofSucceeded(null));
     }

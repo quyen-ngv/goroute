@@ -1,4 +1,4 @@
-package com.ds.goroute.util;
+package com.ds.goroute.utils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;

@@ -1,7 +1,6 @@
 package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.BaseResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -14,7 +13,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/v1/api/admin/images/cleanup")
 @RequiredArgsConstructor
-public class ImageCleanupController extends BaseService {
+public class ImageCleanupController extends BaseController {
 
     private final ImageStorageCleanupService cleanupService;
 

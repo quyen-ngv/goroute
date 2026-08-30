@@ -109,7 +109,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit TRIP_UPDATED: {}", e.getMessage());
+            log.error("Failed to emit TRIP_UPDATED: {}", e.getMessage(), e);
         }
     }
 
@@ -129,7 +129,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit TRIP_DELETED: {}", e.getMessage());
+            log.error("Failed to emit TRIP_DELETED: {}", e.getMessage(), e);
         }
     }
 
@@ -156,7 +156,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit ACTIVITY_ADDED: {}", e.getMessage());
+            log.error("Failed to emit ACTIVITY_ADDED: {}", e.getMessage(), e);
         }
     }
 
@@ -183,7 +183,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit ACTIVITY_UPDATED: {}", e.getMessage());
+            log.error("Failed to emit ACTIVITY_UPDATED: {}", e.getMessage(), e);
         }
     }
 
@@ -207,7 +207,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit ACTIVITY_DELETED: {}", e.getMessage());
+            log.error("Failed to emit ACTIVITY_DELETED: {}", e.getMessage(), e);
         }
     }
 
@@ -234,7 +234,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit MEMBER_ADDED: {}", e.getMessage());
+            log.error("Failed to emit MEMBER_ADDED: {}", e.getMessage(), e);
         }
     }
 
@@ -270,7 +270,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit MEMBER_REMOVED: {}", e.getMessage());
+            log.error("Failed to emit MEMBER_REMOVED: {}", e.getMessage(), e);
         }
     }
 
@@ -298,7 +298,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit MEMBER_ACCEPTED: {}", e.getMessage());
+            log.error("Failed to emit MEMBER_ACCEPTED: {}", e.getMessage(), e);
         }
     }
 
@@ -323,7 +323,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit MEMBER_LEFT: {}", e.getMessage());
+            log.error("Failed to emit MEMBER_LEFT: {}", e.getMessage(), e);
         }
     }
 
@@ -347,7 +347,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit GUEST_LINKED: {}", e.getMessage());
+            log.error("Failed to emit GUEST_LINKED: {}", e.getMessage(), e);
         }
     }
 
@@ -380,7 +380,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit EXPENSE_ADDED: {}", e.getMessage());
+            log.error("Failed to emit EXPENSE_ADDED: {}", e.getMessage(), e);
         }
     }
 
@@ -413,7 +413,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit EXPENSE_UPDATED: {}", e.getMessage());
+            log.error("Failed to emit EXPENSE_UPDATED: {}", e.getMessage(), e);
         }
     }
 
@@ -441,7 +441,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit EXPENSE_DELETED: {}", e.getMessage());
+            log.error("Failed to emit EXPENSE_DELETED: {}", e.getMessage(), e);
         }
     }
 
@@ -484,7 +484,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit PAYMENT_MARKED: {}", e.getMessage());
+            log.error("Failed to emit PAYMENT_MARKED: {}", e.getMessage(), e);
         }
     }
 
@@ -513,7 +513,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit PAYMENT_ALL_MARKED: {}", e.getMessage());
+            log.error("Failed to emit PAYMENT_ALL_MARKED: {}", e.getMessage(), e);
         }
     }
 
@@ -537,7 +537,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit PAYMENT_TRIP_MARKED: {}", e.getMessage());
+            log.error("Failed to emit PAYMENT_TRIP_MARKED: {}", e.getMessage(), e);
         }
     }
 
@@ -567,7 +567,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit CHECKIN: {}", e.getMessage());
+            log.error("Failed to emit CHECKIN: {}", e.getMessage(), e);
         }
     }
 
@@ -598,7 +598,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit NOTE_ADDED: {}", e.getMessage());
+            log.error("Failed to emit NOTE_ADDED: {}", e.getMessage(), e);
         }
     }
 
@@ -629,7 +629,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit NOTE_DELETED: {}", e.getMessage());
+            log.error("Failed to emit NOTE_DELETED: {}", e.getMessage(), e);
         }
     }
 
@@ -659,7 +659,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit COMMENT_ADDED: {}", e.getMessage());
+            log.error("Failed to emit COMMENT_ADDED: {}", e.getMessage(), e);
         }
     }
 
@@ -689,7 +689,7 @@ public class NotificationHelper {
 
             dispatchAfterCommit(event);
         } catch (Exception e) {
-            log.error("Failed to emit COMMENT_DELETED: {}", e.getMessage());
+            log.error("Failed to emit COMMENT_DELETED: {}", e.getMessage(), e);
         }
     }
 }

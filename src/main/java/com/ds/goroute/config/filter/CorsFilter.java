@@ -125,7 +125,7 @@ public class CorsFilter implements Filter {
             if (e instanceof org.springframework.web.multipart.MaxUploadSizeExceededException
                     || causeClassName.contains("SizeLimitExceededException")
                     || causeClassName.contains("MaxUploadSizeExceededException")) {
-                log.warn("Upload size limit exceeded: {}", e.getMessage());
+                log.warn("Upload size limit exceeded: {}", e.getMessage(), e);
                 response.setStatus(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
                 response.setContentType("application/json;charset=UTF-8");
                 response.getWriter().write("{\"meta\":{\"code\":4131001,\"message\":\"File size exceeds the maximum allowed limit\"}}");

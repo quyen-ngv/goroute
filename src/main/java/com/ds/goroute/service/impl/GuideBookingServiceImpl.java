@@ -461,7 +461,7 @@ public class GuideBookingServiceImpl implements GuideBookingService {
             // A guide who does not hear about a request is a guide who loses the customer,
             // but a failed notification must not undo the booking itself.
             log.warn("Could not notify {} about booking {}: {}", userId, booking.getId(),
-                    exception.getMessage());
+                    exception.getMessage(), exception);
         }
     }
 

@@ -1,11 +1,11 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.ModerationPreviewRequest;
 import com.ds.goroute.dto.request.ReportContentRequest;
 import com.ds.goroute.dto.response.ContentReportResponse;
 import com.ds.goroute.dto.response.ModerationPreviewResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.ContentModerationService;
 import com.ds.goroute.service.ModerationAdminService;
 import com.ds.goroute.type.ContentReportReason;
@@ -15,7 +15,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -34,7 +33,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/v1/api")
 @RequiredArgsConstructor
-public class ContentReportController extends BaseService {
+public class ContentReportController extends BaseController {
 
     private final ContentModerationService contentModerationService;
     private final ModerationAdminService moderationAdminService;
@@ -42,7 +41,7 @@ public class ContentReportController extends BaseService {
     @PostMapping("/reports")
     public ResponseEntity<BaseResponse<ContentReportResponse>> report(
             @Valid @RequestBody ReportContentRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ofSucceeded(contentModerationService.report(userId, request)));
     }

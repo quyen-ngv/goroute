@@ -41,12 +41,19 @@ public interface UserCheckinMapper {
                                   @Param("limit") int limit,
                                   @Param("offset") int offset);
 
+    long countByUserAndPlace(@Param("userId") UUID userId,
+                             @Param("placeId") UUID placeId);
+
     /** The check-in currently backing each author's one review of this place. */
     List<UserCheckin> findLatestRatedPerUserForPlace(@Param("placeId") UUID placeId);
 
     List<UserCheckin> findByLocationKey(@Param("locationKey") String locationKey,
                                         @Param("limit") int limit,
                                         @Param("offset") int offset);
+
+    /** Counts this author's check-ins in a location cluster without a public-feed limit. */
+    long countByUserAndLocationKey(@Param("userId") UUID userId,
+                                   @Param("locationKey") String locationKey);
 
     /**
      * The user's most recent rating at one spot. Used when a cluster is promoted: a person
@@ -60,6 +67,8 @@ public interface UserCheckinMapper {
     int attachPlaceToCluster(@Param("locationKey") String locationKey, @Param("placeId") UUID placeId);
 
     int attachReview(@Param("id") UUID id, @Param("reviewId") UUID reviewId);
+
+    int detachReview(@Param("reviewId") UUID reviewId);
 
     int recordReward(@Param("id") UUID id,
                      @Param("rewardPoints") int rewardPoints,

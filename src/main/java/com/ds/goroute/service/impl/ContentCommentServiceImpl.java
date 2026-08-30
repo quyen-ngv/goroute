@@ -173,7 +173,7 @@ public class ContentCommentServiceImpl implements ContentCommentService {
         ContentComment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Comment not found"));
         if (!comment.getUserId().equals(userId)) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN, "You can only edit or delete your own comments");
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You can only edit or delete your own comments");
         }
         if (Boolean.TRUE.equals(comment.getIsDeleted())) {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Comment has been deleted");
@@ -273,9 +273,9 @@ public class ContentCommentServiceImpl implements ContentCommentService {
             return;
         }
         TripMember member = tripMemberRepository.findByTripIdAndUserId(tripId, viewerId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.FORBIDDEN, "You are not a member of this trip"));
+                .orElseThrow(() -> new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You are not a member of this trip"));
         if (member.getStatus() != MemberStatus.ACCEPTED) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN, "You are not a member of this trip");
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You are not a member of this trip");
         }
     }
 

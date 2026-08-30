@@ -3,10 +3,11 @@ package com.ds.goroute.annotations.handler;
 import com.ds.goroute.annotations.LogsActivityAnnotation;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.exception.BusinessException;
-import com.ds.goroute.service.BaseService;
+import com.ds.goroute.constant.RequestKeyConstant;
 import com.ds.goroute.utils.JsonUtils;
 import com.ds.goroute.utils.Utils;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -17,9 +18,11 @@ import org.springframework.core.annotation.Order;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.util.ObjectUtils;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 
 import java.util.Date;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -29,9 +32,11 @@ import static net.logstash.logback.argument.StructuredArguments.entries;
 @Component
 @Order(value = 1)
 @Slf4j
-public class LogsActivityAOPHandler extends BaseService {
+public class LogsActivityAOPHandler {
 
     private final HttpServletRequest httpServletRequest;
+
+    private final ObjectMapper objectMapper;
 
     public static final String service_name = "service_name";
 
@@ -59,8 +64,9 @@ public class LogsActivityAOPHandler extends BaseService {
 
     public static final String headers = "headers";
 
-    public LogsActivityAOPHandler(HttpServletRequest httpServletRequest) {
+    public LogsActivityAOPHandler(HttpServletRequest httpServletRequest, ObjectMapper objectMapper) {
         this.httpServletRequest = httpServletRequest;
+        this.objectMapper = objectMapper;
     }
 
     @Around("execution(* *(..)) && @annotation(logsActivityAnnotation)")
@@ -134,5 +140,28 @@ public class LogsActivityAOPHandler extends BaseService {
 
             log.info(Utils.redact(objectMapper.writeValueAsString(messageObject)), entries(mapCustomizeLog));
         }
+    }
+
+    /**
+     * These three used to be inherited from BaseService. They read nothing but this
+     * aspect's own request, so an aspect no longer has to be a service to log.
+     */
+    private String getRequestId() {
+        Object requestId = httpServletRequest.getAttribute(RequestKeyConstant.REQUEST_ID);
+        return requestId == null ? null : requestId.toString();
+    }
+
+    private Object getRequestBody() {
+        return httpServletRequest.getAttribute(RequestKeyConstant.REQUEST_BODY);
+    }
+
+    private HttpHeaders getHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        Enumeration<String> headerNames = httpServletRequest.getHeaderNames();
+        while (headerNames.hasMoreElements()) {
+            String headerName = headerNames.nextElement();
+            headers.add(headerName, httpServletRequest.getHeader(headerName));
+        }
+        return headers;
     }
 }

@@ -41,22 +41,27 @@
 
     <!-- PROFILES CONFIGURATION -->
 
+    <!--
+         Levels are NOT set here. Spring applies logging.level.* from application.yaml
+         after this file has loaded, so a level declared here is silently overridden.
+         The com.ds.goroute=DEBUG that used to sit below never took effect. These blocks decide
+         only which appenders a profile writes to; LOG_LEVEL decides how much.
+    -->
+
     <!-- Local/Dev: Log to Console (Color) + File -->
     <springProfile name="local,dev,default">
-        <root level="INFO">
+        <root level="${LOG_LEVEL:-INFO}">
             <appender-ref ref="CONSOLE"/>
             <appender-ref ref="FILE"/>
         </root>
-        <logger name="com.ds.goroute" level="DEBUG"/>
     </springProfile>
 
     <!-- Prod/Staging: Log to Console (JSON) + Logstash -->
     <springProfile name="prod,staging">
-        <root level="INFO">
+        <root level="${LOG_LEVEL:-INFO}">
             <appender-ref ref="CONSOLE_JSON"/>
             <appender-ref ref="LOGSTASH"/>
         </root>
-        <logger name="com.ds.goroute" level="INFO"/>
     </springProfile>
 
 </configuration>

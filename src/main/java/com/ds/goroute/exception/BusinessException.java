@@ -1,13 +1,18 @@
 package com.ds.goroute.exception;
 
-import lombok.Builder;
 import lombok.Getter;
 import org.springframework.http.HttpStatus;
 
 import java.io.Serializable;
 
+/**
+ * Carries a {@link BusinessError} alongside the usual exception message.
+ *
+ * <p>Deliberately has no Lombok builder: the generated all-args constructor would set
+ * the final error field without ever calling {@code super(message)}, so every exception
+ * built that way would report a null message.
+ */
 @Getter
-@Builder
 public class BusinessException extends RuntimeException implements Serializable {
 
     private static final long serialVersionUID = 1905122041950251207L;

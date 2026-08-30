@@ -90,7 +90,7 @@ public class GoongClient {
                 advanceKey();
                 log.warn("Goong request to {} returned {}; failing over to another key", path, response.getStatusCode());
             } catch (Exception e) {
-                log.warn("Goong request to {} failed: {}", path, e.getMessage());
+                log.warn("Goong request to {} failed: {}", path, e.getMessage(), e);
                 return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                         .contentType(MediaType.APPLICATION_JSON)
                         .body("{\"error\":{\"code\":\"UPSTREAM\",\"message\":\"Goong request failed\"}}");

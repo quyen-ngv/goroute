@@ -6,7 +6,6 @@ import com.ds.goroute.dto.request.NationwidePlaceImportRequest;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.response.NationwideDuplicateCheckResponse;
 import com.ds.goroute.dto.response.NationwidePlaceImportResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.NationwidePlaceImportJobService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -16,7 +15,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/v1/api/internal/place-import-jobs/nationwide")
 @RequiredArgsConstructor
-public class InternalNationwidePlaceImportController extends BaseService {
+public class InternalNationwidePlaceImportController extends BaseController {
     private final NationwidePlaceImportJobService service;
 
     @PostMapping("/events")

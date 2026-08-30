@@ -5,7 +5,6 @@ import com.ds.goroute.dto.request.AiTripCandidateQueryRequest;
 import com.ds.goroute.dto.request.AiTripCommitRequest;
 import com.ds.goroute.dto.request.AiTripJobEventRequest;
 import com.ds.goroute.service.AiTripGenerationService;
-import com.ds.goroute.service.BaseService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -23,7 +22,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/v1/api/internal/ai-trip-generations")
 @RequiredArgsConstructor
-public class InternalAiTripGenerationController extends BaseService {
+public class InternalAiTripGenerationController extends BaseController {
 
     private final AiTripGenerationService service;
 

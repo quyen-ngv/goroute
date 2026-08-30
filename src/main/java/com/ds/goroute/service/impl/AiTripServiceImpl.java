@@ -750,7 +750,7 @@ public class AiTripServiceImpl implements AiTripService {
             if (e instanceof BusinessException businessException) {
                 throw businessException;
             }
-            log.warn("Failed to parse AI candidate ranking: {}", e.getMessage());
+            log.warn("Failed to parse AI candidate ranking: {}", e.getMessage(), e);
             throw aiTripUnavailable("candidate ranking response was invalid");
         }
     }
@@ -1023,7 +1023,7 @@ public class AiTripServiceImpl implements AiTripService {
             if (e instanceof BusinessException businessException) {
                 throw businessException;
             }
-            log.warn("Failed to parse AI activity sequencing: {}", e.getMessage());
+            log.warn("Failed to parse AI activity sequencing: {}", e.getMessage(), e);
             throw aiTripUnavailable("activity sequencing response was invalid");
         }
     }
@@ -1541,7 +1541,7 @@ public class AiTripServiceImpl implements AiTripService {
             if (e instanceof BusinessException businessException) {
                 throw businessException;
             }
-            log.warn("Failed to parse AI visit tips: {}", e.getMessage());
+            log.warn("Failed to parse AI visit tips: {}", e.getMessage(), e);
             throw aiTripUnavailable("visit tips response was invalid");
         }
     }
@@ -1610,7 +1610,7 @@ public class AiTripServiceImpl implements AiTripService {
                             .toList();
                 }
             } catch (Exception exception) {
-                log.warn("Failed to parse AI draft destinations: {}", exception.getMessage());
+                log.warn("Failed to parse AI draft destinations: {}", exception.getMessage(), exception);
             }
         }
         UUID legacyId;
@@ -1774,7 +1774,7 @@ public class AiTripServiceImpl implements AiTripService {
                     sb.append("\nMobility considerations: ").append(String.join(", ", considerations));
                 }
             } catch (Exception e) {
-                log.warn("Failed to parse mobility considerations: {}", e.getMessage());
+                log.warn("Failed to parse mobility considerations: {}", e.getMessage(), e);
             }
         }
         return sb.toString();
@@ -1791,7 +1791,7 @@ public class AiTripServiceImpl implements AiTripService {
                 return "Dietary restrictions: " + String.join(", ", restrictions);
             }
         } catch (Exception e) {
-            log.warn("Failed to parse dietary restrictions: {}", e.getMessage());
+            log.warn("Failed to parse dietary restrictions: {}", e.getMessage(), e);
         }
         return "";
     }
@@ -1807,7 +1807,7 @@ public class AiTripServiceImpl implements AiTripService {
                 return "Preferred activity types: " + String.join(", ", types);
             }
         } catch (Exception e) {
-            log.warn("Failed to parse activity types: {}", e.getMessage());
+            log.warn("Failed to parse activity types: {}", e.getMessage(), e);
         }
         return "";
     }

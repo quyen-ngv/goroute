@@ -1,5 +1,6 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.exception.BusinessException;
@@ -13,7 +14,6 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -48,7 +48,7 @@ public class AdminMediaController {
     @PostMapping("/upload")
     @PreAuthorize("@adminAuthorization.can(authentication,'media','create')")
     public BaseResponse<Map<String, String>> upload(@RequestParam MultipartFile file,
-                                                    @RequestAttribute UUID userId) {
+                                                    @CurrentUser UUID userId) {
         ImageUploadOutcome outcome = fileUploadService.uploadImage(
                 ImageUploadRequest.of(userId, ImageUploadRequest.ImageEntryPoint.ADMIN_MEDIA, "admin-media"),
                 file);
@@ -63,7 +63,7 @@ public class AdminMediaController {
     @PreAuthorize("@adminAuthorization.can(authentication,'media','create')")
     public BaseResponse<Map<String, String>> fromUrl(@RequestParam String url,
                                                      @RequestParam(required = false) String caption,
-                                                     @RequestAttribute UUID userId) {
+                                                     @CurrentUser UUID userId) {
         ImageUploadOutcome outcome = fileUploadService.uploadImageFromUrl(
                 ImageUploadRequest.of(userId, ImageUploadRequest.ImageEntryPoint.ADMIN_MEDIA_FROM_URL,
                         "admin-media"),

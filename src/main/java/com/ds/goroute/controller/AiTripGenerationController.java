@@ -1,5 +1,6 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.AiTripGenerateRequest;
 import com.ds.goroute.dto.response.AiTripJobResponse;
@@ -18,7 +19,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/ai-trip-generations")
 @RequiredArgsConstructor
 @Slf4j
-public class AiTripGenerationController extends BaseService {
+public class AiTripGenerationController extends BaseController {
     private static final String STREAM_ERROR_MESSAGE = "Unable to start AI trip generation";
 
     private final AiTripGenerationService service;
@@ -26,7 +27,7 @@ public class AiTripGenerationController extends BaseService {
 
     @PostMapping(value="/stream", produces=MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter createAndStream(@Valid @RequestBody AiTripGenerateRequest request,
-                                      @RequestAttribute("userId") UUID userId,
+                                      @CurrentUser UUID userId,
                                       @RequestHeader(value="Idempotency-Key",required=false) String key,
                                       @RequestHeader(value="Accept-Language",required=false) String locale) {
         SseEmitter emitter = new SseEmitter(600_000L); // 10 min timeout
@@ -52,11 +53,11 @@ public class AiTripGenerationController extends BaseService {
     }
 
     @GetMapping("/active")
-    public ResponseEntity<BaseResponse<AiTripJobResponse>> active(@RequestAttribute("userId") UUID userId){return ResponseEntity.ok(ofSucceeded(service.active(userId)));}
+    public ResponseEntity<BaseResponse<AiTripJobResponse>> active(@CurrentUser UUID userId){return ResponseEntity.ok(ofSucceeded(service.active(userId)));}
     @GetMapping("/{jobId}")
-    public ResponseEntity<BaseResponse<AiTripJobResponse>> get(@PathVariable UUID jobId,@RequestAttribute("userId") UUID userId){return ResponseEntity.ok(ofSucceeded(service.get(jobId,userId)));}
+    public ResponseEntity<BaseResponse<AiTripJobResponse>> get(@PathVariable UUID jobId,@CurrentUser UUID userId){return ResponseEntity.ok(ofSucceeded(service.get(jobId,userId)));}
     @GetMapping(value="/{jobId}/events",produces=MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter events(@PathVariable UUID jobId,@RequestAttribute("userId") UUID userId,@RequestHeader(value="Last-Event-ID",defaultValue="0") long after){return service.subscribe(jobId,userId,after);}
+    public SseEmitter events(@PathVariable UUID jobId,@CurrentUser UUID userId,@RequestHeader(value="Last-Event-ID",defaultValue="0") long after){return service.subscribe(jobId,userId,after);}
     @DeleteMapping("/{jobId}")
-    public ResponseEntity<BaseResponse<Void>> cancel(@PathVariable UUID jobId,@RequestAttribute("userId") UUID userId){service.cancel(jobId,userId);return ResponseEntity.ok(ofSucceeded(null));}
+    public ResponseEntity<BaseResponse<Void>> cancel(@PathVariable UUID jobId,@CurrentUser UUID userId){service.cancel(jobId,userId);return ResponseEntity.ok(ofSucceeded(null));}
 }

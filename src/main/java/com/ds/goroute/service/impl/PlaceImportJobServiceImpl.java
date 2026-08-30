@@ -48,7 +48,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import org.springframework.transaction.annotation.Transactional;
-import com.ds.goroute.util.PlaceImportCandidateKey;
+import com.ds.goroute.utils.PlaceImportCandidateKey;
 
 @Service
 @RequiredArgsConstructor
@@ -406,7 +406,7 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
             applyManualActivityMapping(job, item, importedPlace);
             syncSocialVideoLink(job, candidate);
         } catch (Exception e) {
-            log.warn("Place import item failed: job={} item={} error={}", job.getId(), item.getId(), e.getMessage());
+            log.warn("Place import item failed: job={} item={} error={}", job.getId(), item.getId(), e.getMessage(), e);
             failItem(item, e.getMessage());
         }
     }
@@ -748,7 +748,7 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
             placeSocialVideoService.syncSocialJob(socialJob);
         } catch (Exception e) {
             log.warn("Could not link social video {} after place import: {}",
-                    candidate.sourceRefId, e.getMessage());
+                    candidate.sourceRefId, e.getMessage(), e);
         }
     }
 

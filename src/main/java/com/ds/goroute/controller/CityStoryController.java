@@ -1,13 +1,12 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.CreateCityStoryRequest;
 import com.ds.goroute.dto.response.CityStoryFeedResponse;
 import com.ds.goroute.dto.response.CityStoryItemResponse;
 import com.ds.goroute.dto.response.CityStoryLikeResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.CityStoryService;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -20,21 +19,20 @@ import java.util.UUID;
 
 @RestController
 @RequiredArgsConstructor
-public class CityStoryController extends BaseService {
+public class CityStoryController extends BaseController {
 
     private final CityStoryService cityStoryService;
 
     @GetMapping("/v1/api/city-stories/feed")
-    public ResponseEntity<BaseResponse<CityStoryFeedResponse>> getFeed(HttpServletRequest request) {
-        UUID userId = extractOptionalUserId(request);
+    public ResponseEntity<BaseResponse<CityStoryFeedResponse>> getFeed(
+            @CurrentUser(required = false) UUID userId) {
         return ResponseEntity.ok(ofSucceeded(cityStoryService.getFeed(userId)));
     }
 
     @GetMapping("/v1/api/location-images/{locationId}/stories")
     public ResponseEntity<BaseResponse<List<CityStoryItemResponse>>> getLocationStories(
             @PathVariable UUID locationId,
-            HttpServletRequest request) {
-        UUID userId = extractOptionalUserId(request);
+            @CurrentUser(required = false) UUID userId) {
         return ResponseEntity.ok(ofSucceeded(cityStoryService.getStoriesForLocation(locationId, userId)));
     }
 
@@ -57,7 +55,7 @@ public class CityStoryController extends BaseService {
     @PostMapping("/v1/api/city-stories/{storyId}/view")
     public ResponseEntity<BaseResponse<Void>> markViewed(
             @PathVariable UUID storyId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         cityStoryService.markViewed(userId, storyId);
         return ResponseEntity.ok(ofSucceeded(null));
     }
@@ -65,12 +63,8 @@ public class CityStoryController extends BaseService {
     @PostMapping("/v1/api/city-stories/{storyId}/like")
     public ResponseEntity<BaseResponse<CityStoryLikeResponse>> toggleLike(
             @PathVariable UUID storyId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(cityStoryService.toggleLike(userId, storyId)));
     }
 
-    private UUID extractOptionalUserId(HttpServletRequest request) {
-        Object value = request.getAttribute("userId");
-        return value instanceof UUID uuid ? uuid : null;
-    }
 }

@@ -32,6 +32,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
 @Service
@@ -61,6 +62,7 @@ public class TripServiceImpl implements TripService {
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final TripDestinationRepository tripDestinationRepository;
     private final SocialNotificationService socialNotificationService;
+    private final Executor applicationTaskExecutor;
 
     private List<TripDestination> buildDestinationsForTrip(
             UUID tripId,
@@ -1140,7 +1142,7 @@ public class TripServiceImpl implements TripService {
                                 .invitedAt(member.getCreatedAt())
                                 .build();
                     } catch (Exception e) {
-                        log.error("Error processing pending invitation for member: {}, error: {}", member.getId(), e.getMessage());
+                        log.error("Error processing pending invitation for member: {}, error: {}", member.getId(), e.getMessage(), e);
                         return null;
                     }
                 })
@@ -1181,7 +1183,7 @@ public class TripServiceImpl implements TripService {
                                 .requestedAt(member.getCreatedAt())
                                 .build();
                     } catch (Exception e) {
-                        log.error("Error processing pending access request for member: {}, error: {}", member.getId(), e.getMessage());
+                        log.error("Error processing pending access request for member: {}, error: {}", member.getId(), e.getMessage(), e);
                         return null;
                     }
                 })
@@ -1215,7 +1217,7 @@ public class TripServiceImpl implements TripService {
 
         // Validate current user is owner or editor
         tripMemberRepository.findByTripIdAndUserId(tripId, currentUserId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.FORBIDDEN, "You are not a member of this trip"));
+                .orElseThrow(() -> new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You are not a member of this trip"));
 
         // Update all expense splits for this guest member
         List<ExpenseSplit> guestSplits = expenseSplitRepository.findByGuestMemberId(guestMemberId);
@@ -1430,10 +1432,6 @@ public class TripServiceImpl implements TripService {
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
         ensurePublicTripVotable(trip);
 
-        if (trip.getOwnerId().equals(userId)) {
-            throw new BusinessException(ErrorConstant.UNAUTHORIZED, "Cannot vote on your own trip");
-        }
-
         TripHelpfulVote existingVote = tripHelpfulVoteRepository.findByTripIdAndUserId(tripId, userId);
         boolean isHelpfulNow = true;
         if (existingVote != null) {
@@ -1467,10 +1465,6 @@ public class TripServiceImpl implements TripService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
         ensurePublicTripVotable(trip);
-
-        if (trip.getOwnerId().equals(userId)) {
-            throw new BusinessException(ErrorConstant.UNAUTHORIZED, "Cannot vote on your own trip");
-        }
 
         TripHelpfulVote existingVote = tripHelpfulVoteRepository.findByTripIdAndUserId(tripId, userId);
         if (existingVote != null) {
@@ -2050,13 +2044,18 @@ public class TripServiceImpl implements TripService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Fire-and-forget so the detail response is not held up by the counter write.
+     * Runs on the shared bounded pool: a raw {@code new Thread()} here meant one OS
+     * thread per view on a publicly reachable endpoint.
+     */
     private void incrementViewCountAsync(UUID tripId) {
-        new Thread(() -> {
+        applicationTaskExecutor.execute(() -> {
             try {
                 tripRepository.incrementViewCount(tripId);
             } catch (Exception e) {
                 log.warn("Failed to increment view count for trip: {}", tripId, e);
             }
-        }).start();
+        });
     }
 }

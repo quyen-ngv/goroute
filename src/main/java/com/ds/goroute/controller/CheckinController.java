@@ -1,10 +1,10 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.request.CheckinRequest;
 import com.ds.goroute.dto.response.CheckinResponse;
 import com.ds.goroute.service.CheckinService;
 import com.ds.goroute.dto.BaseResponse;
-import com.ds.goroute.service.BaseService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,7 +19,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/trips/{tripId}")
 @RequiredArgsConstructor
 @Slf4j
-public class CheckinController extends BaseService {
+public class CheckinController extends BaseController {
     
     private final CheckinService checkinService;
 
@@ -28,7 +28,7 @@ public class CheckinController extends BaseService {
             @PathVariable UUID tripId,
             @PathVariable UUID activityId,
             @Valid @RequestBody CheckinRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         CheckinResponse checkin = checkinService.checkin(tripId, activityId, request, userId);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ofSucceeded(checkin));
@@ -38,7 +38,7 @@ public class CheckinController extends BaseService {
     public ResponseEntity<BaseResponse<List<CheckinResponse>>> getCheckins(
             @PathVariable UUID tripId,
             @RequestParam(required = false) UUID activityId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         List<CheckinResponse> checkins = checkinService.getCheckins(tripId, activityId, userId);
         return ResponseEntity.ok(ofSucceeded(checkins));
     }

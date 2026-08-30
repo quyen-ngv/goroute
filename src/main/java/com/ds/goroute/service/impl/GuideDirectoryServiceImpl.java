@@ -392,7 +392,7 @@ public class GuideDirectoryServiceImpl implements GuideDirectoryService {
                     profile.getDecidedBy());
         } catch (RuntimeException exception) {
             log.warn("Could not notify guide {} about the decision: {}",
-                    profile.getUserId(), exception.getMessage());
+                    profile.getUserId(), exception.getMessage(), exception);
         }
     }
 

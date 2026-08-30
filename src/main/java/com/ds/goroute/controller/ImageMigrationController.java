@@ -4,7 +4,6 @@ import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.job.ImageMigrationJob;
 import com.ds.goroute.job.ReviewCleanupJob;
-import com.ds.goroute.service.BaseService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -18,7 +17,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/admin/images")
 @RequiredArgsConstructor
 @Slf4j
-public class ImageMigrationController extends BaseService {
+public class ImageMigrationController extends BaseController {
 
     private static final String INTERNAL_ERROR_OPERATION = "image maintenance";
 

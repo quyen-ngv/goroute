@@ -60,7 +60,7 @@ public class ImageModerationServiceImpl implements ImageModerationService {
             // Not a silent pass: the outage is recorded against the image and shows up in
             // the MOD-08 dashboard. Rejecting every upload during a provider outage would
             // take down photo upload for the whole product.
-            log.warn("Image moderation provider {} unavailable: {}", provider.name(), exception.getMessage());
+            log.warn("Image moderation provider {} unavailable: {}", provider.name(), exception.getMessage(), exception);
             record(bytes, userId, entryPoint, provider.name(), ModerationAction.LOG, null, null,
                     Map.<String, Object>of("error", "provider_unavailable"));
             return ModerationVerdict.allowed();
@@ -130,7 +130,7 @@ public class ImageModerationServiceImpl implements ImageModerationService {
                     .createdAt(LocalDateTime.now())
                     .build());
         } catch (RuntimeException exception) {
-            log.warn("Could not record image moderation result: {}", exception.getMessage());
+            log.warn("Could not record image moderation result: {}", exception.getMessage(), exception);
         }
     }
 

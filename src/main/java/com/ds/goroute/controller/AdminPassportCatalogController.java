@@ -10,7 +10,6 @@ import com.ds.goroute.dto.response.PassportProvinceOptionResponse;
 import com.ds.goroute.dto.response.PassportTagResponse;
 import com.ds.goroute.dto.response.PassportRewardResponse;
 import com.ds.goroute.dto.response.PassportStampRuleResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.PassportService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +34,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/v1/api/admin/passport-catalog")
 @RequiredArgsConstructor
-public class AdminPassportCatalogController extends BaseService {
+public class AdminPassportCatalogController extends BaseController {
 
     private final PassportService passportService;
 

@@ -1,9 +1,13 @@
 package com.ds.goroute.config.filter;
 
+import com.ds.goroute.config.ApiSecurityErrorResponseWriter;
+import com.ds.goroute.constant.ErrorConstant;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -16,11 +20,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.List;
 
 @Component
+@RequiredArgsConstructor
 public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
 
     private static final RequestMatcher API_KEY_ENDPOINTS = new OrRequestMatcher(
@@ -32,6 +35,8 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
             new AntPathRequestMatcher("/v1/api/admin/places/import/batch", HttpMethod.POST.name()),
             new AntPathRequestMatcher("/v1/api/admin/places/*", HttpMethod.PUT.name())
     );
+
+    private final ObjectMapper objectMapper;
 
     @Value("${goroute.api-key:}")
     private String gorouteApiKey;
@@ -49,10 +54,10 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
         if (API_KEY_ENDPOINTS.matches(request) && expectedApiKey != null && !expectedApiKey.isBlank()) {
             String suppliedApiKey = request.getHeader("X-API-Key");
             if (suppliedApiKey != null && !suppliedApiKey.isBlank()) {
-                if (!matches(suppliedApiKey, expectedApiKey)) {
-                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                    response.setContentType("application/json");
-                    response.getWriter().write("{\"meta\":{\"code\":4010001,\"message\":\"Invalid X-API-Key\"}}");
+                if (!SecretComparison.matches(suppliedApiKey, expectedApiKey)) {
+                    ApiSecurityErrorResponseWriter.write(objectMapper, request, response,
+                            HttpServletResponse.SC_UNAUTHORIZED,
+                            ErrorConstant.UNAUTHORIZED, "Invalid X-API-Key");
                     return;
                 }
 
@@ -68,13 +73,6 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
-    }
-
-    private boolean matches(String suppliedApiKey, String configuredApiKey) {
-        return MessageDigest.isEqual(
-                suppliedApiKey.getBytes(StandardCharsets.UTF_8),
-                configuredApiKey.getBytes(StandardCharsets.UTF_8)
-        );
     }
 
     private String configuredApiKey() {

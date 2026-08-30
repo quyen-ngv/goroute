@@ -11,8 +11,7 @@ import java.util.List;
  *
  * <p>Three different counts on purpose, because they answer three different questions and
  * conflating them produces numbers users can tell are wrong: visits count occurrences,
- * places count distinct spots, provinces count distinct provinces. Going to Da Lat three
- * times is three visits, one place and one province.
+ * places count distinct spots, and the Passport collection counts curated Location Images.
  */
 @Data
 @Builder
@@ -25,6 +24,13 @@ public class PassportSummaryResponse {
     private long distinctPlaceCount;
     private int visitedProvinceCount;
     private int totalProvinceCount;
+
+    /** Number of configured Location Image anchors covered by this Passport. */
+    private int visitedLocationImageCount;
+    private int totalLocationImageCount;
+
+    /** Completion of the configured Location Image collection, when it is non-empty. */
+    private Double locationCompletionPercent;
 
     /**
      * Null until the province data is complete enough to publish. A percentage computed

@@ -1,5 +1,6 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.CreateGuideBookingRequest;
 import com.ds.goroute.dto.request.UpsertGuideProfileRequest;
@@ -11,7 +12,6 @@ import com.ds.goroute.dto.response.PageResponse;
 import com.ds.goroute.entity.GuideAvailability;
 import com.ds.goroute.entity.GuidePayoutEntry;
 import com.ds.goroute.entity.GuideReview;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.GuideBookingService;
 import com.ds.goroute.service.GuideDirectoryService;
 import com.ds.goroute.type.GuideBookingStatus;
@@ -28,7 +28,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -51,7 +50,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/guides")
 @RequiredArgsConstructor
 @Validated
-public class GuideController extends BaseService {
+public class GuideController extends BaseController {
 
     private static final int MAX_PAGE_SIZE = 50;
 
@@ -103,19 +102,19 @@ public class GuideController extends BaseService {
     @PutMapping("/me")
     public ResponseEntity<BaseResponse<GuideProfileResponse>> upsertProfile(
             @Valid @RequestBody UpsertGuideProfileRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(directoryService.createOrUpdateProfile(userId, request)));
     }
 
     @GetMapping("/me")
     public ResponseEntity<BaseResponse<GuideProfileResponse>> myProfile(
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(directoryService.myProfile(userId)));
     }
 
     @PostMapping("/me/submit")
     public ResponseEntity<BaseResponse<GuideProfileResponse>> submit(
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(directoryService.submitForVerification(userId)));
     }
 
@@ -123,21 +122,21 @@ public class GuideController extends BaseService {
     public ResponseEntity<BaseResponse<Void>> attachDocument(
             @RequestParam @Size(max = 40) String documentType,
             @RequestParam @Size(max = 1000) String fileUrl,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         directoryService.attachIdentityDocument(userId, documentType, fileUrl);
         return ResponseEntity.status(HttpStatus.CREATED).body(ofSucceeded(null));
     }
 
     @GetMapping("/me/services")
     public ResponseEntity<BaseResponse<List<GuideServiceResponse>>> myServices(
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(directoryService.myServices(userId)));
     }
 
     @PostMapping("/me/services")
     public ResponseEntity<BaseResponse<GuideServiceResponse>> createService(
             @Valid @RequestBody UpsertGuideServiceRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ofSucceeded(directoryService.createService(userId, request)));
     }
@@ -146,7 +145,7 @@ public class GuideController extends BaseService {
     public ResponseEntity<BaseResponse<GuideServiceResponse>> updateService(
             @PathVariable UUID serviceId,
             @Valid @RequestBody UpsertGuideServiceRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(directoryService.updateService(userId, serviceId, request)));
     }
 
@@ -154,7 +153,7 @@ public class GuideController extends BaseService {
     public ResponseEntity<BaseResponse<List<GuideAvailability>>> availability(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(directoryService.availability(userId, from, to)));
     }
 
@@ -164,7 +163,7 @@ public class GuideController extends BaseService {
             @RequestParam boolean blocked,
             @RequestParam(required = false) @Min(1) Integer maxGuests,
             @RequestParam(required = false) @Size(max = 300) String note,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         directoryService.setAvailability(userId, date, blocked, maxGuests, note);
         return ResponseEntity.ok(ofSucceeded(null));
     }
@@ -174,7 +173,7 @@ public class GuideController extends BaseService {
             @RequestParam(required = false) GuideBookingStatus status,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(bookingService.forGuide(userId, status, page, size)));
     }
 
@@ -183,21 +182,21 @@ public class GuideController extends BaseService {
             @PathVariable UUID bookingId,
             @RequestParam boolean accept,
             @RequestParam(required = false) @Size(max = 1000) String reason,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(bookingService.respond(userId, bookingId, accept, reason)));
     }
 
     @PostMapping("/me/bookings/{bookingId}/complete")
     public ResponseEntity<BaseResponse<GuideBookingResponse>> complete(
             @PathVariable UUID bookingId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(bookingService.complete(userId, bookingId)));
     }
 
     @GetMapping("/me/performance")
     public ResponseEntity<BaseResponse<Map<String, Object>>> performance(
             @RequestParam(defaultValue = "30") @Min(1) @Max(365) int days,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(bookingService.performance(userId, days)));
     }
 
@@ -205,7 +204,7 @@ public class GuideController extends BaseService {
     public ResponseEntity<BaseResponse<List<GuidePayoutEntry>>> payouts(
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(bookingService.payoutLedger(userId, page, size)));
     }
 
@@ -213,7 +212,7 @@ public class GuideController extends BaseService {
     public ResponseEntity<BaseResponse<GuideReview>> respondToReview(
             @PathVariable UUID reviewId,
             @RequestParam @Size(max = 2000) String response,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(bookingService.respondToReview(userId, reviewId, response)));
     }
 
@@ -222,7 +221,7 @@ public class GuideController extends BaseService {
     @PostMapping("/bookings")
     public ResponseEntity<BaseResponse<GuideBookingResponse>> book(
             @Valid @RequestBody CreateGuideBookingRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ofSucceeded(bookingService.request(userId, request)));
     }
@@ -231,21 +230,21 @@ public class GuideController extends BaseService {
     public ResponseEntity<BaseResponse<List<GuideBookingResponse>>> myBookings(
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(bookingService.forTraveler(userId, page, size)));
     }
 
     @GetMapping("/bookings/{bookingId}")
     public ResponseEntity<BaseResponse<GuideBookingResponse>> booking(
             @PathVariable UUID bookingId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(bookingService.get(userId, bookingId)));
     }
 
     @PostMapping("/bookings/{bookingId}/confirm")
     public ResponseEntity<BaseResponse<GuideBookingResponse>> confirm(
             @PathVariable UUID bookingId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(bookingService.confirm(userId, bookingId)));
     }
 
@@ -253,7 +252,7 @@ public class GuideController extends BaseService {
     public ResponseEntity<BaseResponse<GuideBookingResponse>> cancel(
             @PathVariable UUID bookingId,
             @RequestParam(required = false) @Size(max = 1000) String reason,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(bookingService.cancel(userId, bookingId, reason)));
     }
 
@@ -261,7 +260,7 @@ public class GuideController extends BaseService {
     public ResponseEntity<BaseResponse<GuideBookingResponse>> dispute(
             @PathVariable UUID bookingId,
             @RequestParam @Size(max = 1000) String reason,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(bookingService.openDispute(userId, bookingId, reason)));
     }
 
@@ -270,7 +269,7 @@ public class GuideController extends BaseService {
             @PathVariable UUID bookingId,
             @RequestParam @Min(1) @Max(5) int rating,
             @RequestParam(required = false) @Size(max = 3000) String comment,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ofSucceeded(bookingService.review(userId, bookingId, rating, comment)));
     }

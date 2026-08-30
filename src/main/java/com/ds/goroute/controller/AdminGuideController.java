@@ -1,9 +1,9 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.response.GuideProfileResponse;
 import com.ds.goroute.dto.response.PageResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.GuideBookingService;
 import com.ds.goroute.service.GuideDirectoryService;
 import com.ds.goroute.type.GuideProfileStatus;
@@ -17,7 +17,6 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -31,7 +30,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/admin/guides")
 @RequiredArgsConstructor
 @Validated
-public class AdminGuideController extends BaseService {
+public class AdminGuideController extends BaseController {
 
     private static final int MAX_PAGE_SIZE = 100;
 
@@ -67,7 +66,7 @@ public class AdminGuideController extends BaseService {
             @RequestParam GuideProfileStatus status,
             @RequestParam(required = false) @Size(max = 2000) String decisionNote,
             @RequestParam(required = false) @Size(max = 2000) String informationRequested,
-            @RequestAttribute UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(
                 directoryService.decide(userId, guideId, status, decisionNote, informationRequested)));
     }
@@ -78,7 +77,7 @@ public class AdminGuideController extends BaseService {
     public ResponseEntity<BaseResponse<Void>> freezePayout(
             @PathVariable UUID bookingId,
             @RequestParam boolean frozen,
-            @RequestAttribute UUID userId) {
+            @CurrentUser UUID userId) {
         bookingService.freezePayout(userId, bookingId, frozen);
         return ResponseEntity.ok(ofSucceeded(null));
     }

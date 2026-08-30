@@ -37,7 +37,7 @@ public class PlaceSocialVideoBackfillRunner {
                     placeSocialVideoService.syncSocialJob(job);
                 } catch (Exception e) {
                     log.warn("Could not backfill place-video links for social job {}: {}",
-                            job.getId(), e.getMessage());
+                            job.getId(), e.getMessage(), e);
                 }
             }
             processed += jobs.size();

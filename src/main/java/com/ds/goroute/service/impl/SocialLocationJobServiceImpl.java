@@ -31,8 +31,8 @@ import com.ds.goroute.thirdparty.scrape.ScrapeSocialLocationJobResponse;
 import com.ds.goroute.type.SocialLocationJobStatus;
 import com.ds.goroute.type.PlaceImportJobItemStatus;
 import com.ds.goroute.type.NotificationType;
-import com.ds.goroute.util.SocialLocationSourceKey;
-import com.ds.goroute.util.PlaceImportCandidateKey;
+import com.ds.goroute.utils.SocialLocationSourceKey;
+import com.ds.goroute.utils.PlaceImportCandidateKey;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -447,7 +447,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
             placeSocialVideoService.syncSocialJob(job);
         } catch (Exception e) {
             log.warn("Could not link resolved places to social video for job {}: {}",
-                    job.getId(), e.getMessage());
+                    job.getId(), e.getMessage(), e);
         }
         recordAiApiCall(job, request, status);
         if (status == SocialLocationJobStatus.REJECTED_TOPIC) {
@@ -467,12 +467,12 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                                 .build());
             } catch (Exception e) {
                 log.warn("Could not queue automatic place import for social job {}: {}",
-                        job.getId(), e.getMessage());
+                        job.getId(), e.getMessage(), e);
             }
             try {
                 notifyExtractionCompleted(job, request.getResult());
             } catch (Exception e) {
-                log.warn("Could not notify completion for social job {}: {}", job.getId(), e.getMessage());
+                log.warn("Could not notify completion for social job {}: {}", job.getId(), e.getMessage(), e);
             }
         }
         log.info("Social location callback processed: job_id={} python_job_id={} status={}",

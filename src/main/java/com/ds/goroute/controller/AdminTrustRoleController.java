@@ -1,10 +1,10 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.DecideTrustRoleRequest;
 import com.ds.goroute.dto.response.PageResponse;
 import com.ds.goroute.dto.response.TrustRoleResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.TrustRoleService;
 import com.ds.goroute.type.TrustRole;
 import com.ds.goroute.type.TrustRoleStatus;
@@ -18,7 +18,6 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -32,7 +31,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/admin/trust-roles")
 @RequiredArgsConstructor
 @Validated
-public class AdminTrustRoleController extends BaseService {
+public class AdminTrustRoleController extends BaseController {
 
     private static final int MAX_PAGE_SIZE = 100;
 
@@ -55,7 +54,7 @@ public class AdminTrustRoleController extends BaseService {
     public ResponseEntity<BaseResponse<TrustRoleResponse>> decide(
             @PathVariable UUID roleId,
             @Valid @RequestBody DecideTrustRoleRequest request,
-            @RequestAttribute UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(trustRoleService.decide(userId, roleId, request)));
     }
 

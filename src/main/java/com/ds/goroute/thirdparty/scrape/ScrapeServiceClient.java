@@ -40,7 +40,7 @@ private String apiKey;
                     restTemplate.getForEntity(url, ScrapeResolveResponse.class);
             return response.getBody();
         } catch (Exception e) {
-            log.warn("Scrape resolve failed for url {}: {}", googleMapsUrl, e.getMessage());
+            log.warn("Scrape resolve failed for url {}: {}", googleMapsUrl, e.getMessage(), e);
             return null;
         }
     }
@@ -57,7 +57,7 @@ private String apiKey;
                     restTemplate.getForEntity(url, ScrapePlaceSearchResponse.class);
             return response.getBody();
         } catch (Exception e) {
-            log.warn("Place search failed for query {}: {}", query, e.getMessage());
+            log.warn("Place search failed for query {}: {}", query, e.getMessage(), e);
             return null;
         }
     }
@@ -72,7 +72,7 @@ private String apiKey;
                     restTemplate.postForEntity(url, entity, ScrapeJobTriggerResponse.class);
             return response.getBody();
         } catch (Exception e) {
-            log.error("Scrape trigger failed for url {}: {}", request.getUrl(), e.getMessage());
+            log.error("Scrape trigger failed for url {}: {}", request.getUrl(), e.getMessage(), e);
             return null;
         }
     }
@@ -87,7 +87,7 @@ private String apiKey;
                     restTemplate.postForEntity(url, entity, ScrapeJobTriggerResponse.class);
             return response.getBody();
         } catch (Exception e) {
-            log.error("Place scrape/import trigger failed for url {}: {}", request.getUrl(), e.getMessage());
+            log.error("Place scrape/import trigger failed for url {}: {}", request.getUrl(), e.getMessage(), e);
             return null;
         }
     }
@@ -102,7 +102,7 @@ private String apiKey;
                     restTemplate.postForEntity(url, entity, ScrapeSocialLocationJobResponse.class);
             return response.getBody();
         } catch (Exception e) {
-            log.error("Social location trigger failed for url {}: {}", request.getUrl(), e.getMessage());
+            log.error("Social location trigger failed for url {}: {}", request.getUrl(), e.getMessage(), e);
             return null;
         }
     }
@@ -112,7 +112,7 @@ private String apiKey;
         try {
             return restTemplate.getForObject(url, ScrapeJobStatusResponse.class);
         } catch (Exception e) {
-            log.warn("Scrape poll failed for job {}: {}", jobId, e.getMessage());
+            log.warn("Scrape poll failed for job {}: {}", jobId, e.getMessage(), e);
             return null;
         }
     }
@@ -123,7 +123,7 @@ private String apiKey;
         try {
             return restTemplate.getForObject(url, Map.class);
         } catch (Exception e) {
-            log.warn("Scrape job data poll failed for job {}: {}", jobId, e.getMessage());
+            log.warn("Scrape job data poll failed for job {}: {}", jobId, e.getMessage(), e);
             return null;
         }
     }
@@ -133,7 +133,7 @@ private String apiKey;
         try {
             return restTemplate.postForObject(url, request, ScrapeJobTriggerResponse.class);
         } catch (Exception e) {
-            log.error("Nationwide scrape trigger failed: {}", e.getMessage());
+            log.error("Nationwide scrape trigger failed: {}", e.getMessage(), e);
             return null;
         }
     }
@@ -153,7 +153,7 @@ private String apiKey;
                     ScrapeJobTriggerResponse.class);
             return response.getBody();
         } catch (Exception e) {
-            log.error("Place detail refresh trigger failed: {}", e.getMessage());
+            log.error("Place detail refresh trigger failed: {}", e.getMessage(), e);
             return null;
         }
     }
@@ -173,7 +173,7 @@ private String apiKey;
                     ScrapeJobTriggerResponse.class);
             return response.getBody();
         } catch (Exception e) {
-            log.error("Place review refresh trigger failed: {}", e.getMessage());
+            log.error("Place review refresh trigger failed: {}", e.getMessage(), e);
             return null;
         }
     }
@@ -193,7 +193,7 @@ private String apiKey;
                     ScrapeJobTriggerResponse.class);
             return response.getBody();
         } catch (Exception e) {
-            log.error("Place review refresh rerun failed for job {}: {}", jobId, e.getMessage());
+            log.error("Place review refresh rerun failed for job {}: {}", jobId, e.getMessage(), e);
             return null;
         }
     }
@@ -204,7 +204,7 @@ private String apiKey;
             restTemplate.postForEntity(url, Map.of(), Void.class);
             return true;
         } catch (Exception e) {
-            log.warn("Scrape job cancel failed for {}: {}", jobId, e.getMessage());
+            log.warn("Scrape job cancel failed for {}: {}", jobId, e.getMessage(), e);
             return false;
         }
     }

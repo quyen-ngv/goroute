@@ -155,7 +155,7 @@ public class PlaceSocialVideoServiceImpl implements PlaceSocialVideoService {
         try {
             return objectMapper.readTree(value);
         } catch (Exception e) {
-            log.warn("Could not parse social job result while linking videos: {}", e.getMessage());
+            log.warn("Could not parse social job result while linking videos: {}", e.getMessage(), e);
             return null;
         }
     }

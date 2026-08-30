@@ -78,7 +78,7 @@ public class OpenAiClient implements AiClient {
                     .filter(content -> !content.isBlank())
                     .findFirst();
         } catch (Exception e) {
-            log.warn("OpenAI request failed: {}", e.getMessage());
+            log.warn("OpenAI request failed: {}", e.getMessage(), e);
             return Optional.empty();
         }
     }

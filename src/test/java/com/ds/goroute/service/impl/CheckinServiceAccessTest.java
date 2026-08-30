@@ -1,5 +1,7 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.service.TripAccessGuard;
+
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.ActivityRepository;
@@ -30,6 +32,7 @@ class CheckinServiceAccessTest {
     private final CheckinServiceImpl service = new CheckinServiceImpl(
             checkinRepository,
             activityRepository,
+            new TripAccessGuard(tripRepository, tripMemberRepository),
             tripRepository,
             tripMemberRepository,
             mock(UserRepository.class),

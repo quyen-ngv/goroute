@@ -1,10 +1,10 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.response.PublicTripResponse;
 import com.ds.goroute.dto.response.TripVoteResponse;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.dto.BaseResponse;
-import com.ds.goroute.service.BaseService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
@@ -21,7 +21,7 @@ import java.util.UUID;
 
 @RestController
 @Slf4j
-public class PublicTripController extends BaseService {
+public class PublicTripController extends BaseController {
     
     private final TripService tripService;
 
@@ -32,7 +32,7 @@ public class PublicTripController extends BaseService {
     @GetMapping("/v1/api/public/trips/{tripId}")
     public ResponseEntity<BaseResponse<PublicTripResponse>> getPublicTrip(
             @PathVariable UUID tripId,
-            @RequestAttribute(value = "userId", required = false) UUID userId) {
+            @CurrentUser(required = false) UUID userId) {
         PublicTripResponse trip = tripService.getPublicTrip(tripId, userId);
         return ResponseEntity.ok(ofSucceeded(trip));
     }
@@ -40,7 +40,7 @@ public class PublicTripController extends BaseService {
     @PostMapping("/v1/api/public/trips/{tripId}/helpful")
     public ResponseEntity<BaseResponse<TripVoteResponse>> voteTripHelpful(
             @PathVariable UUID tripId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         TripVoteResponse result = tripService.voteTripHelpful(tripId, userId);
         return ResponseEntity.ok(ofSucceeded(result));
     }
@@ -48,7 +48,7 @@ public class PublicTripController extends BaseService {
     @PostMapping("/v1/api/public/trips/{tripId}/unhelpful")
     public ResponseEntity<BaseResponse<TripVoteResponse>> voteTripUnhelpful(
             @PathVariable UUID tripId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         TripVoteResponse result = tripService.voteTripUnhelpful(tripId, userId);
         return ResponseEntity.ok(ofSucceeded(result));
     }
@@ -65,7 +65,7 @@ public class PublicTripController extends BaseService {
             @RequestParam(required = false) String randomSeed,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestAttribute(value = "userId", required = false) UUID userId
+            @CurrentUser(required = false) UUID userId
     ) {
         UUID excludedUserId = excludeUserTrips ? userId : null;
         List<PublicTripResponse> trips = tripService.searchPublicTrips(

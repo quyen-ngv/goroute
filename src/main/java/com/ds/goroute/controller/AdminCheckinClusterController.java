@@ -1,10 +1,10 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.PromoteCheckinClusterRequest;
 import com.ds.goroute.dto.response.CheckinClusterResponse;
 import com.ds.goroute.dto.response.PageResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.CheckinClusterAdminService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -17,7 +17,6 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -31,7 +30,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/admin/checkin-clusters")
 @RequiredArgsConstructor
 @Validated
-public class AdminCheckinClusterController extends BaseService {
+public class AdminCheckinClusterController extends BaseController {
 
     private static final int MAX_PAGE_SIZE = 100;
 
@@ -58,7 +57,7 @@ public class AdminCheckinClusterController extends BaseService {
     public ResponseEntity<BaseResponse<CheckinClusterResponse>> promote(
             @PathVariable @Size(max = 40) String locationKey,
             @Valid @RequestBody PromoteCheckinClusterRequest request,
-            @RequestAttribute UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(service.promote(userId, locationKey, request)));
     }
 
@@ -67,7 +66,7 @@ public class AdminCheckinClusterController extends BaseService {
     public ResponseEntity<BaseResponse<CheckinClusterResponse>> merge(
             @PathVariable @Size(max = 40) String locationKey,
             @RequestParam UUID placeId,
-            @RequestAttribute UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(service.merge(userId, locationKey, placeId)));
     }
 
@@ -76,7 +75,7 @@ public class AdminCheckinClusterController extends BaseService {
     public ResponseEntity<BaseResponse<Void>> ignore(
             @PathVariable @Size(max = 40) String locationKey,
             @RequestParam(required = false) @Size(max = 1000) String note,
-            @RequestAttribute UUID userId) {
+            @CurrentUser UUID userId) {
         service.ignore(userId, locationKey, note);
         return ResponseEntity.ok(ofSucceeded(null));
     }
@@ -85,7 +84,7 @@ public class AdminCheckinClusterController extends BaseService {
     @PreAuthorize("@adminAuthorization.can(authentication,'checkin-clusters','update')")
     public ResponseEntity<BaseResponse<Void>> revert(
             @PathVariable @Size(max = 40) String locationKey,
-            @RequestAttribute UUID userId) {
+            @CurrentUser UUID userId) {
         service.revertPromotion(userId, locationKey);
         return ResponseEntity.ok(ofSucceeded(null));
     }

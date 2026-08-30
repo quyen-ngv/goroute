@@ -1,11 +1,11 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.AddCollectionItemRequest;
 import com.ds.goroute.dto.request.UpsertPlaceCollectionRequest;
 import com.ds.goroute.dto.response.PageResponse;
 import com.ds.goroute.dto.response.PlaceCollectionResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.PlaceCollectionService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -20,7 +20,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -34,7 +33,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/collections")
 @RequiredArgsConstructor
 @Validated
-public class PlaceCollectionController extends BaseService {
+public class PlaceCollectionController extends BaseController {
 
     private static final int MAX_PAGE_SIZE = 50;
 
@@ -44,7 +43,7 @@ public class PlaceCollectionController extends BaseService {
     public ResponseEntity<BaseResponse<PageResponse<PlaceCollectionResponse>>> mine(
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         List<PlaceCollectionResponse> items = service.listMine(userId, page, size);
         return ResponseEntity.ok(ofSucceeded(PageResponse.of(items, service.countMine(userId), page, size)));
     }
@@ -52,7 +51,7 @@ public class PlaceCollectionController extends BaseService {
     @PostMapping
     public ResponseEntity<BaseResponse<PlaceCollectionResponse>> create(
             @Valid @RequestBody UpsertPlaceCollectionRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ofSucceeded(service.create(userId, request)));
     }
@@ -60,7 +59,7 @@ public class PlaceCollectionController extends BaseService {
     @GetMapping("/{collectionId}")
     public ResponseEntity<BaseResponse<PlaceCollectionResponse>> get(
             @PathVariable UUID collectionId,
-            @RequestAttribute(value = "userId", required = false) UUID userId) {
+            @CurrentUser(required = false) UUID userId) {
         return ResponseEntity.ok(ofSucceeded(service.get(userId, collectionId)));
     }
 
@@ -68,14 +67,14 @@ public class PlaceCollectionController extends BaseService {
     public ResponseEntity<BaseResponse<PlaceCollectionResponse>> update(
             @PathVariable UUID collectionId,
             @Valid @RequestBody UpsertPlaceCollectionRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(service.update(userId, collectionId, request)));
     }
 
     @DeleteMapping("/{collectionId}")
     public ResponseEntity<BaseResponse<Void>> delete(
             @PathVariable UUID collectionId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         service.delete(userId, collectionId);
         return ResponseEntity.ok(ofSucceeded(null));
     }
@@ -84,7 +83,7 @@ public class PlaceCollectionController extends BaseService {
     public ResponseEntity<BaseResponse<PlaceCollectionResponse>> addItem(
             @PathVariable UUID collectionId,
             @Valid @RequestBody AddCollectionItemRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ofSucceeded(service.addItem(userId, collectionId, request)));
     }
@@ -93,7 +92,7 @@ public class PlaceCollectionController extends BaseService {
     public ResponseEntity<BaseResponse<PlaceCollectionResponse>> removeItem(
             @PathVariable UUID collectionId,
             @PathVariable UUID itemId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(service.removeItem(userId, collectionId, itemId)));
     }
 
@@ -101,7 +100,7 @@ public class PlaceCollectionController extends BaseService {
     public ResponseEntity<BaseResponse<PlaceCollectionResponse>> reorder(
             @PathVariable UUID collectionId,
             @RequestBody List<UUID> orderedItemIds,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(service.reorder(userId, collectionId, orderedItemIds)));
     }
 

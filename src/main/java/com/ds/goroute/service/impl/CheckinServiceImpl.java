@@ -1,5 +1,7 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.service.TripAccessGuard;
+
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.CheckinRequest;
 import com.ds.goroute.dto.response.CheckinResponse;
@@ -35,6 +37,7 @@ public class CheckinServiceImpl implements CheckinService {
     
     private final CheckinRepository checkinRepository;
     private final ActivityRepository activityRepository;
+    private final TripAccessGuard tripAccessGuard;
     private final TripRepository tripRepository;
     private final TripMemberRepository tripMemberRepository;
     private final UserRepository userRepository;
@@ -126,14 +129,7 @@ public class CheckinServiceImpl implements CheckinService {
     }
 
     private Trip requireTripAccess(UUID tripId, UUID userId) {
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-        TripMember member = tripMemberRepository.findByTripIdAndUserId(tripId, userId).orElse(null);
-        if (!trip.getOwnerId().equals(userId)
-                && (member == null || member.getStatus() != MemberStatus.ACCEPTED)) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
-        }
-        return trip;
+        return tripAccessGuard.requireAccess(tripId, userId);
     }
 
     private CheckinResponse mapToCheckinResponse(Checkin checkin) {

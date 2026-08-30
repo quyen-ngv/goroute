@@ -49,7 +49,7 @@ class JwtAuthenticationFilterTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
 
-        new JwtAuthenticationFilter(jwt, admin, users).doFilter(request, response, chain);
+        new JwtAuthenticationFilter(jwt, admin, users, new com.fasterxml.jackson.databind.ObjectMapper()).doFilter(request, response, chain);
 
         assertEquals(403, response.getStatus());
         verify(chain, never()).doFilter(request, response);

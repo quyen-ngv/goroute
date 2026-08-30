@@ -1,24 +1,16 @@
 package com.ds.goroute.exception;
 
 import com.ds.goroute.constant.ErrorConstant;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class CommonExceptionHandlerTest {
 
-    private final CommonExceptionHandler handler = new CommonExceptionHandler();
-
-    @BeforeEach
-    void setUpRequest() {
-        ReflectionTestUtils.setField(handler, "httpServletRequest", new MockHttpServletRequest());
-        ReflectionTestUtils.setField(handler, "httpServletResponse", new MockHttpServletResponse());
-    }
+    private final CommonExceptionHandler handler =
+            new CommonExceptionHandler(new MockHttpServletRequest());
 
     @Test
     void mapsBusinessCodePrefixToHttpStatus() {

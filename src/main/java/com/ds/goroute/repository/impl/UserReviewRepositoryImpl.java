@@ -140,7 +140,7 @@ public class UserReviewRepositoryImpl implements UserReviewRepository {
             review.setPhotos(objectMapper.writeValueAsString(managed));
         } catch (Exception e) {
             log.warn("Discarding malformed or unmanaged photos for user review {}: {}",
-                    review.getId(), e.getMessage());
+                    review.getId(), e.getMessage(), e);
             review.setPhotos("[]");
         }
     }

@@ -219,7 +219,7 @@ public class NotificationServiceImpl implements NotificationService {
                 }
 
             } catch (Exception e) {
-                log.error("Failed to send admin push to {}: {}", email, e.getMessage());
+                log.error("Failed to send admin push to {}: {}", email, e.getMessage(), e);
                 failedEmails.add(email);
             }
         }
@@ -328,7 +328,7 @@ public class NotificationServiceImpl implements NotificationService {
                     deepLink = (String) dataMap.get("deepLink");
                 }
             } catch (Exception e) {
-                log.warn("Failed to parse deepLink from notification data: {}", e.getMessage());
+                log.warn("Failed to parse deepLink from notification data: {}", e.getMessage(), e);
             }
         }
 

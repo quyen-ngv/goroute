@@ -55,7 +55,7 @@ public class ReviewCleanupJob {
                 }
 
             } catch (Exception e) {
-                log.error("Failed to cleanup reviews for place {}: {}", place.getId(), e.getMessage());
+                log.error("Failed to cleanup reviews for place {}: {}", place.getId(), e.getMessage(), e);
             }
         }
 

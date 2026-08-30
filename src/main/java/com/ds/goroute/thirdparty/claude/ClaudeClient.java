@@ -79,7 +79,7 @@ public class ClaudeClient implements AiClient {
                     .filter(text -> text != null && !text.isBlank())
                     .findFirst();
         } catch (Exception e) {
-            log.warn("Claude request failed: {}", e.getMessage());
+            log.warn("Claude request failed: {}", e.getMessage(), e);
             return Optional.empty();
         }
     }

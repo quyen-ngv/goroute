@@ -87,6 +87,8 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=prod
       - DB_URL=jdbc:postgresql://goroute-db:5432/goroute
+      # Unset -> our code logs at DEBUG. Set LOG_LEVEL=ERROR for errors only.
+      - LOG_LEVEL=${GOROUTE_LOG_LEVEL:-ERROR}
       - DB_USERNAME=goroute
       - DB_PASSWORD=goroute123
       - JWT_SECRET=${GOROUTE_JWT_SECRET:-404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}

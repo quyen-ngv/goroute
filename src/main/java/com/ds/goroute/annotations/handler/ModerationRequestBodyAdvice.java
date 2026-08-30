@@ -1,8 +1,9 @@
 package com.ds.goroute.annotations.handler;
 
+import com.ds.goroute.constant.RequestKeyConstant;
+import com.ds.goroute.utils.ErrorMessages;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.exception.BusinessException;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.TextModerationService;
 import com.ds.goroute.service.moderation.ModeratedFieldScanner;
 import com.ds.goroute.service.moderation.ModerationVerdict;
@@ -36,9 +37,8 @@ import java.util.UUID;
 @ControllerAdvice
 @RequiredArgsConstructor
 @Slf4j
-public class ModerationRequestBodyAdvice extends BaseService implements RequestBodyAdvice {
+public class ModerationRequestBodyAdvice implements RequestBodyAdvice {
 
-    private static final String USER_ID_ATTRIBUTE = "userId";
 
     private final TextModerationService textModerationService;
 
@@ -89,8 +89,8 @@ public class ModerationRequestBodyAdvice extends BaseService implements RequestB
      */
     private BusinessException blocked(ModerationVerdict verdict) {
         String message = verdict.category() == null
-                ? getMessage(ErrorConstant.CONTENT_BLOCKED_BY_MODERATION)
-                : getMessage("moderation.category." + verdict.category().name());
+                ? ErrorMessages.of(ErrorConstant.CONTENT_BLOCKED_BY_MODERATION)
+                : ErrorMessages.of("moderation.category." + verdict.category().name());
         return new BusinessException(ErrorConstant.CONTENT_BLOCKED_BY_MODERATION, message);
     }
 
@@ -99,7 +99,7 @@ public class ModerationRequestBodyAdvice extends BaseService implements RequestB
         if (attributes == null) {
             return null;
         }
-        Object value = attributes.getAttribute(USER_ID_ATTRIBUTE, RequestAttributes.SCOPE_REQUEST);
+        Object value = attributes.getAttribute(RequestKeyConstant.USER_ID, RequestAttributes.SCOPE_REQUEST);
         return value instanceof UUID userId ? userId : null;
     }
 }

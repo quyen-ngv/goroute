@@ -21,7 +21,7 @@ public class PlaceReviewRefreshActivationListener {
             reviewRefreshService.trigger(event.placeId(), 200);
         } catch (Exception exception) {
             log.error("Could not enqueue review refresh for activated place {}: {}",
-                    event.placeId(), exception.getMessage());
+                    event.placeId(), exception.getMessage(), exception);
         }
     }
 }

@@ -30,4 +30,10 @@ public class RequestKeyConstant {
 
     public static final String AUTHORIZATION = "Authorization";
 
+    /** Request attribute the authentication filters set once a caller is identified. */
+    public static final String USER_ID = "userId";
+
+    /** Request attribute holding the identified caller's email. */
+    public static final String EMAIL = "email";
+
 }

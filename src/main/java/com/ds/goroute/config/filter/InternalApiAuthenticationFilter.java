@@ -20,8 +20,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -63,7 +61,7 @@ public class InternalApiAuthenticationFilter extends OncePerRequestFilter {
         }
 
         String suppliedToken = request.getHeader(INTERNAL_TOKEN_HEADER);
-        if (!constantTimeEquals(suppliedToken, expectedToken)) {
+        if (!SecretComparison.matches(suppliedToken, expectedToken)) {
             writeError(response, HttpServletResponse.SC_UNAUTHORIZED,
                     ErrorConstant.UNAUTHORIZED, "Invalid internal credentials");
             return;
@@ -78,14 +76,6 @@ public class InternalApiAuthenticationFilter extends OncePerRequestFilter {
                             List.of(new SimpleGrantedAuthority("ROLE_INTERNAL"))));
         }
         filterChain.doFilter(request, response);
-    }
-
-    private boolean constantTimeEquals(String suppliedToken, String expectedToken) {
-        byte[] supplied = suppliedToken == null
-                ? new byte[0]
-                : suppliedToken.getBytes(StandardCharsets.UTF_8);
-        byte[] expected = expectedToken.getBytes(StandardCharsets.UTF_8);
-        return MessageDigest.isEqual(supplied, expected);
     }
 
     private void writeError(HttpServletResponse response, int status, int code, String message) throws IOException {

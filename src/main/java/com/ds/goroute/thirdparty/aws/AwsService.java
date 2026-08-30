@@ -279,7 +279,7 @@ public class AwsService implements StorageService {
                 log.debug("Deleted S3 object: {}", key);
             }
         } catch (Exception e) {
-            log.error("Failed to delete S3 object {}: {}", fileUrl, e.getMessage());
+            log.error("Failed to delete S3 object {}: {}", fileUrl, e.getMessage(), e);
         }
     }
 
@@ -317,7 +317,7 @@ public class AwsService implements StorageService {
                 log.debug("Deleted {} S3 objects", batch.size());
             }
         } catch (Exception e) {
-            log.error("Failed to batch delete S3 objects: {}", e.getMessage());
+            log.error("Failed to batch delete S3 objects: {}", e.getMessage(), e);
         }
     }
 
@@ -362,7 +362,7 @@ public class AwsService implements StorageService {
                         .build();
                 s3Client.copyObject(request);
             } catch (Exception e) {
-                log.error("Failed to backup S3 object key {} to {}: {}", key, normalizedPrefix, e.getMessage());
+                log.error("Failed to backup S3 object key {} to {}: {}", key, normalizedPrefix, e.getMessage(), e);
                 throw new RuntimeException("S3 backup failed for key: " + key, e);
             }
         }
@@ -398,7 +398,7 @@ public class AwsService implements StorageService {
                 log.debug("Deleted {} S3 object keys", batch.size());
             }
         } catch (Exception e) {
-            log.error("Failed to batch delete S3 object keys: {}", e.getMessage());
+            log.error("Failed to batch delete S3 object keys: {}", e.getMessage(), e);
         }
     }
 

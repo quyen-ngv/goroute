@@ -149,7 +149,7 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
                 searcherManager.release(searcher);
             }
         } catch (IOException e) {
-            log.warn("Could not verify place Lucene index: {}", e.getMessage());
+            log.warn("Could not verify place Lucene index: {}", e.getMessage(), e);
         }
     }
 
@@ -476,7 +476,7 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         try {
             searcherManager.maybeRefresh();
         } catch (IOException e) {
-            log.warn("Failed to refresh place Lucene searcher: {}", e.getMessage());
+            log.warn("Failed to refresh place Lucene searcher: {}", e.getMessage(), e);
         }
     }
 }

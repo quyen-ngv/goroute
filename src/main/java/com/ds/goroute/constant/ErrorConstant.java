@@ -2,8 +2,6 @@ package com.ds.goroute.constant;
 
 public class ErrorConstant {
 
-    public static final int FORBIDDEN = 400003;
-
     private ErrorConstant() {}
 
     /**
@@ -141,6 +139,9 @@ public class ErrorConstant {
      * 403
      */
     public static final int FORBIDDEN_ERROR = 4030001;
+
+    /** The caller must change a temporary password before using the partner or admin portal. */
+    public static final int PASSWORD_CHANGE_REQUIRED = 4031002;
 
     /**
      *  Write the error code prefixed with 404 below

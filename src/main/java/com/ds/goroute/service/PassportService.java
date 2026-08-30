@@ -11,6 +11,7 @@ import com.ds.goroute.dto.response.PassportTagResponse;
 import com.ds.goroute.dto.response.PlacePassportTagsResponse;
 import com.ds.goroute.dto.response.PassportRewardResponse;
 import com.ds.goroute.dto.response.PassportStampRuleResponse;
+import com.ds.goroute.dto.response.PassportLocationMapEntryResponse;
 import com.ds.goroute.dto.response.ProvinceMapEntryResponse;
 import com.ds.goroute.entity.PassportEvent;
 import com.ds.goroute.entity.UserCheckin;
@@ -40,6 +41,8 @@ public interface PassportService {
     PassportSummaryResponse summary(UUID userId);
 
     List<ProvinceMapEntryResponse> provinceMap(UUID userId);
+
+    List<PassportLocationMapEntryResponse> locationImageMap(UUID userId);
 
     List<PassportEvent> timeline(UUID userId, int page, int size);
 

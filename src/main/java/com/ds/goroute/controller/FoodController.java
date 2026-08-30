@@ -4,7 +4,6 @@ import com.ds.goroute.dto.response.CitySlugOptionResponse;
 import com.ds.goroute.dto.response.FoodDetailResponse;
 import com.ds.goroute.dto.response.FoodPlacePageResponse;
 import com.ds.goroute.dto.response.FoodSummaryResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.FoodService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -20,7 +19,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/foods")
 @RequiredArgsConstructor
 @Tag(name = "Foods", description = "Food discovery (public)")
-public class FoodController extends BaseService {
+public class FoodController extends BaseController {
 
     private final FoodService foodService;
 

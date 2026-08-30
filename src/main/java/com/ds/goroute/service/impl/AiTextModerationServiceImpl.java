@@ -76,7 +76,7 @@ public class AiTextModerationServiceImpl implements AiTextModerationService {
         } catch (RuntimeException exception) {
             // MOD-03 rule: a failing or slow external service is logged, never escalated
             // into a publishing outage.
-            log.warn("AI moderation unavailable for {} {}: {}", contentType, contentId, exception.getMessage());
+            log.warn("AI moderation unavailable for {} {}: {}", contentType, contentId, exception.getMessage(), exception);
         }
     }
 

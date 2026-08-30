@@ -9,7 +9,10 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
+import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+import java.util.List;
 
 @Configuration
 @EnableConfigurationProperties({
@@ -23,17 +26,25 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 })
 public class WebMvcConfig implements WebMvcConfigurer {
 
+    private final CurrentUserArgumentResolver currentUserArgumentResolver;
     private final ApiRequestLimitsInterceptor apiRequestLimitsInterceptor;
     private final ScrapeHttpClientProperties scrapeHttpClientProperties;
     private final AiTripWorkerProperties aiTripWorkerProperties;
 
     public WebMvcConfig(
+            CurrentUserArgumentResolver currentUserArgumentResolver,
             ApiRequestLimitsInterceptor apiRequestLimitsInterceptor,
             ScrapeHttpClientProperties scrapeHttpClientProperties,
             AiTripWorkerProperties aiTripWorkerProperties) {
+        this.currentUserArgumentResolver = currentUserArgumentResolver;
         this.apiRequestLimitsInterceptor = apiRequestLimitsInterceptor;
         this.scrapeHttpClientProperties = scrapeHttpClientProperties;
         this.aiTripWorkerProperties = aiTripWorkerProperties;
+    }
+
+    @Override
+    public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
+        resolvers.add(currentUserArgumentResolver);
     }
 
     @Override

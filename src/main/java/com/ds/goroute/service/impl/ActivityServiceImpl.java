@@ -1,5 +1,7 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.service.TripAccessGuard;
+
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.CreateActivityRequest;
 import com.ds.goroute.dto.request.ReorderActivitiesRequest;
@@ -49,6 +51,7 @@ import java.util.Map;
 public class ActivityServiceImpl implements ActivityService {
 
     private final ActivityRepository activityRepository;
+    private final TripAccessGuard tripAccessGuard;
     private final TripRepository tripRepository;
     private final TripMemberRepository tripMemberRepository;
     private final CheckinRepository checkinRepository;
@@ -153,15 +156,7 @@ public class ActivityServiceImpl implements ActivityService {
     }
 
     private Trip requireTripAccess(UUID tripId, UUID userId) {
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-        var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
-        boolean hasAccess = trip.getOwnerId().equals(userId)
-                || (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
-        if (!hasAccess) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
-        }
-        return trip;
+        return tripAccessGuard.requireAccess(tripId, userId);
     }
 
     @Override

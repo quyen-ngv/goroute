@@ -2,7 +2,6 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.request.PlaceDetailRefreshJobEventRequest;
 import com.ds.goroute.dto.BaseResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.PlaceDetailRefreshJobService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/v1/api/internal/place-import-jobs/place-details-refresh")
 @RequiredArgsConstructor
-public class InternalPlaceDetailRefreshController extends BaseService {
+public class InternalPlaceDetailRefreshController extends BaseController {
     private final PlaceDetailRefreshJobService service;
 
     @PostMapping("/events")

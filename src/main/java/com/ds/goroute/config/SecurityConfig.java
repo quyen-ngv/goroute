@@ -93,7 +93,16 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/v1/api/checkins/feed").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/checkins/places/*",
                                 "/v1/api/checkins/locations/*").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/v1/api/guides/**").permitAll()
+                        // A guide's own workspace is private. It has to be matched before
+                        // the directory reads below, because "/v1/api/guides/*" would
+                        // otherwise also match "/v1/api/guides/me".
+                        .requestMatchers("/v1/api/guides/me", "/v1/api/guides/me/**").authenticated()
+                        .requestMatchers(HttpMethod.GET,
+                                "/v1/api/guides/search",
+                                "/v1/api/guides/services/*",
+                                "/v1/api/guides/*",
+                                "/v1/api/guides/*/services",
+                                "/v1/api/guides/*/reviews").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/api/contributions/check").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/contributions/places/*/contributors").permitAll()
                         .requestMatchers("/share/**").permitAll()

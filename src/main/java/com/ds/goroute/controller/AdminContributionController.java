@@ -2,7 +2,6 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.request.RejectContributionRequest;
 import com.ds.goroute.dto.response.AdminContributionGroupResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.PlaceContributionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -18,7 +17,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/admin/contributions")
 @RequiredArgsConstructor
 @Tag(name = "Admin Contributions", description = "Admin contribution moderation APIs")
-public class AdminContributionController extends BaseService {
+public class AdminContributionController extends BaseController {
 
     private final PlaceContributionService contributionService;
 

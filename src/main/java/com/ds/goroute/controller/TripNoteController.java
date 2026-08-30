@@ -1,10 +1,10 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.CreateTripNoteRequest;
 import com.ds.goroute.dto.request.UpdateTripNoteRequest;
 import com.ds.goroute.dto.response.TripNoteResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.TripNoteService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +20,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/trips/{tripId}/notes")
 @RequiredArgsConstructor
 @Slf4j
-public class TripNoteController extends BaseService {
+public class TripNoteController extends BaseController {
     
     private final TripNoteService tripNoteService;
 
@@ -28,7 +28,7 @@ public class TripNoteController extends BaseService {
     public ResponseEntity<BaseResponse<List<TripNoteResponse>>> getTripNotes(
             @PathVariable UUID tripId,
             @RequestParam(required = false) UUID activityId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         List<TripNoteResponse> notes;
         if (activityId != null) {
             notes = tripNoteService.getActivityNotes(tripId, activityId, userId);
@@ -42,7 +42,7 @@ public class TripNoteController extends BaseService {
     public ResponseEntity<BaseResponse<TripNoteResponse>> createTripNote(
             @PathVariable UUID tripId,
             @Valid @RequestBody CreateTripNoteRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         TripNoteResponse note = tripNoteService.createTripNote(tripId, request, userId);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ofSucceeded(note));
@@ -53,7 +53,7 @@ public class TripNoteController extends BaseService {
             @PathVariable UUID tripId,
             @PathVariable UUID noteId,
             @Valid @RequestBody UpdateTripNoteRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         TripNoteResponse note = tripNoteService.updateTripNote(tripId, noteId, request, userId);
         return ResponseEntity.ok(ofSucceeded(note));
     }
@@ -62,7 +62,7 @@ public class TripNoteController extends BaseService {
     public ResponseEntity<BaseResponse<Void>> deleteTripNote(
             @PathVariable UUID tripId,
             @PathVariable UUID noteId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         tripNoteService.deleteTripNote(tripId, noteId, userId);
         return ResponseEntity.ok(ofSucceeded(null));
     }

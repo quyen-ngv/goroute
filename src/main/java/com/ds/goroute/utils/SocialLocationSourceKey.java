@@ -1,4 +1,4 @@
-package com.ds.goroute.util;
+package com.ds.goroute.utils;
 
 import java.net.URI;
 import java.util.Locale;

@@ -29,6 +29,9 @@ public class UserReviewResponse {
     private String placeThumbnail;
     private Integer placeReviewCount;
     private BigDecimal placeReviewRating;
+
+    /** Recalculated rating; clients fall back to {@link #placeReviewRating} while it is null. */
+    private BigDecimal placeAdjustedRating;
     private String placeCategory;
     private PlaceGroup placeGroup;
     private BigDecimal placeLatitude;

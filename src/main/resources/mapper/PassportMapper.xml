@@ -255,6 +255,60 @@
         GROUP BY province_code
     </select>
 
+    <!--
+      Passport map anchors are the Location Images selected by operators.  A check-in
+      counts against an anchor when its recorded coordinates (or its catalogue Place
+      coordinates) fall inside the configured radius.  This keeps the map useful for
+      both normal Place check-ins and coordinate-only check-ins without deriving the
+      Passport collection from the unrelated 63-province reference table.
+    -->
+    <select id="findPassportLocationImageMap" resultType="java.util.LinkedHashMap">
+        WITH configured_anchors AS (
+            SELECT DISTINCT li.id, li.full_address, li.image_url, li.latitude, li.longitude
+            FROM passport_definition_location_images dli
+            JOIN passport_definitions pd ON pd.id = dli.passport_id AND pd.is_active = TRUE
+            JOIN location_images li ON li.id = dli.location_image_id
+        ), anchors AS (
+            SELECT id, full_address, image_url, latitude, longitude
+            FROM configured_anchors
+            UNION ALL
+            -- Legacy Passports created before Location Image scope was introduced had
+            -- no rows in the join table. Keep their map useful until an admin attaches
+            -- anchors explicitly by exposing the curated Location Images as the default.
+            SELECT li.id, li.full_address, li.image_url, li.latitude, li.longitude
+            FROM location_images li
+            WHERE NOT EXISTS (SELECT 1 FROM configured_anchors)
+        ), event_points AS (
+            SELECT e.id,
+                   e.user_id,
+                   COALESCE(e.latitude, p.latitude) AS latitude,
+                   COALESCE(e.longitude, p.longitude) AS longitude
+            FROM passport_events e
+            LEFT JOIN places p ON p.id = e.place_id
+            WHERE e.is_hidden = FALSE
+        )
+        SELECT a.id AS id,
+               a.full_address AS name,
+               a.full_address AS address,
+               a.image_url AS image_url,
+               a.latitude AS latitude,
+               a.longitude AS longitude,
+               COUNT(e.id)::int AS event_count,
+               (COUNT(e.id) > 0) AS visited
+        FROM anchors a
+        LEFT JOIN event_points e
+          ON e.user_id = #{userId}
+         AND e.latitude IS NOT NULL
+         AND e.longitude IS NOT NULL
+         AND 6371 * acos(LEAST(1, GREATEST(-1,
+               cos(radians(a.latitude)) * cos(radians(e.latitude)) *
+               cos(radians(e.longitude) - radians(a.longitude)) +
+               sin(radians(a.latitude)) * sin(radians(e.latitude))
+             ))) &lt;= #{radiusKm}
+        GROUP BY a.id, a.full_address, a.image_url, a.latitude, a.longitude
+        ORDER BY a.full_address, a.id
+    </select>
+
     <select id="findActiveRules" resultMap="ruleMap">
         SELECT * FROM passport_stamp_rules WHERE is_active = TRUE ORDER BY threshold, code
     </select>

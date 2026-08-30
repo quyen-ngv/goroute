@@ -125,7 +125,7 @@ public class ImageArchiveJob {
                 
             } catch (Exception e) {
                 failed.incrementAndGet();
-                log.error("Failed place {}: {}", place.getPlaceId(), e.getMessage());
+                log.error("Failed place {}: {}", place.getPlaceId(), e.getMessage(), e);
             }
         }
         
@@ -171,7 +171,7 @@ public class ImageArchiveJob {
                 
             } catch (Exception e) {
                 failed.incrementAndGet();
-                log.error("Failed review {}: {}", review.getId(), e.getMessage());
+                log.error("Failed review {}: {}", review.getId(), e.getMessage(), e);
             }
         }
         
@@ -206,7 +206,7 @@ public class ImageArchiveJob {
                 
             } catch (Exception e) {
                 failed.incrementAndGet();
-                log.error("Failed activity {}: {}", activity.getId(), e.getMessage());
+                log.error("Failed activity {}: {}", activity.getId(), e.getMessage(), e);
             }
         }
         
@@ -260,7 +260,7 @@ public class ImageArchiveJob {
                 
             } catch (Exception e) {
                 failed.incrementAndGet();
-                log.error("Failed booking {}: {}", booking.getId(), e.getMessage());
+                log.error("Failed booking {}: {}", booking.getId(), e.getMessage(), e);
             }
         }
         
@@ -295,7 +295,7 @@ public class ImageArchiveJob {
                 
             } catch (Exception e) {
                 failed.incrementAndGet();
-                log.error("Failed food {}: {}", food.getId(), e.getMessage());
+                log.error("Failed food {}: {}", food.getId(), e.getMessage(), e);
             }
         }
         
@@ -349,7 +349,7 @@ public class ImageArchiveJob {
                 
             } catch (Exception e) {
                 failed.incrementAndGet();
-                log.error("Failed expense {}: {}", expense.getId(), e.getMessage());
+                log.error("Failed expense {}: {}", expense.getId(), e.getMessage(), e);
             }
         }
         
@@ -403,7 +403,7 @@ public class ImageArchiveJob {
             return objectMapper.writeValueAsString(newArray);
             
         } catch (Exception e) {
-            log.error("Error compressing review images: {}", e.getMessage());
+            log.error("Error compressing review images: {}", e.getMessage(), e);
             return imagesJson;
         }
     }
@@ -455,7 +455,7 @@ public class ImageArchiveJob {
             return objectMapper.writeValueAsString(newArray);
             
         } catch (Exception e) {
-            log.error("Error compressing itinerary images: {}", e.getMessage());
+            log.error("Error compressing itinerary images: {}", e.getMessage(), e);
             return itineraryJson;
         }
     }

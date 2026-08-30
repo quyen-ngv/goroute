@@ -93,7 +93,7 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
                 searcherManager.release(searcher);
             }
         } catch (IOException e) {
-            log.warn("Could not verify activity booking Lucene index: {}", e.getMessage());
+            log.warn("Could not verify activity booking Lucene index: {}", e.getMessage(), e);
         }
     }
 
@@ -779,7 +779,7 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
         try {
             searcherManager.maybeRefresh();
         } catch (IOException e) {
-            log.warn("Failed to refresh activity booking Lucene searcher: {}", e.getMessage());
+            log.warn("Failed to refresh activity booking Lucene searcher: {}", e.getMessage(), e);
         }
     }
 
@@ -877,7 +877,7 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
         try {
             return sortBookingsByRelevance(bookings, query.trim(), minLuceneScore);
         } catch (Exception e) {
-            log.warn("Failed to rank activities by query: {}", e.getMessage());
+            log.warn("Failed to rank activities by query: {}", e.getMessage(), e);
             return bookings;
         }
     }

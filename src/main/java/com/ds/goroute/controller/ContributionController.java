@@ -1,12 +1,12 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.request.CheckContributionRequest;
 import com.ds.goroute.dto.request.CreateContributionRequest;
 import com.ds.goroute.dto.response.CheckContributionResponse;
 import com.ds.goroute.dto.response.ContributionResponse;
 import com.ds.goroute.dto.response.ContributedPlaceResponse;
 import com.ds.goroute.dto.response.ContributorSummaryResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.PlaceContributionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -22,7 +22,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/contributions")
 @RequiredArgsConstructor
 @Tag(name = "Contributions", description = "User place contribution APIs")
-public class ContributionController extends BaseService {
+public class ContributionController extends BaseController {
 
     private final PlaceContributionService contributionService;
 
@@ -37,7 +37,7 @@ public class ContributionController extends BaseService {
     @Operation(summary = "Submit a new place contribution with pending review")
     public ResponseEntity create(
             @Valid @RequestBody CreateContributionRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         ContributionResponse response = contributionService.createContribution(userId, request);
         return ResponseEntity.ok(ofSucceeded(response));
     }
@@ -46,7 +46,7 @@ public class ContributionController extends BaseService {
     @Operation(summary = "Cancel a pending contribution")
     public ResponseEntity cancel(
             @PathVariable UUID contributionId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         contributionService.cancelContribution(userId, contributionId);
         return ResponseEntity.ok(ofSucceeded(null));
     }
@@ -54,7 +54,7 @@ public class ContributionController extends BaseService {
     @GetMapping("/me")
     @Operation(summary = "List current user's contributions and their statuses")
     public ResponseEntity listMine(
-            @RequestAttribute("userId") UUID userId,
+            @CurrentUser UUID userId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         List<ContributionResponse> items = contributionService.getMyContributions(userId, page, size);
@@ -64,7 +64,7 @@ public class ContributionController extends BaseService {
     @GetMapping("/me/places")
     @Operation(summary = "List places the user successfully contributed")
     public ResponseEntity listMyPlaces(
-            @RequestAttribute("userId") UUID userId,
+            @CurrentUser UUID userId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         List<ContributedPlaceResponse> items = contributionService.getMyContributedPlaces(userId, page, size);

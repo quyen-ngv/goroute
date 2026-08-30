@@ -48,7 +48,7 @@ public class ExchangeRateServiceImpl implements ExchangeRateService {
         try {
             return fetchRate(from, to);
         } catch (Exception e) {
-            log.warn("Exchange rate fetch failed {}->{}: {}", from, to, e.getMessage());
+            log.warn("Exchange rate fetch failed {}->{}: {}", from, to, e.getMessage(), e);
             return BigDecimal.ONE;
         }
     }

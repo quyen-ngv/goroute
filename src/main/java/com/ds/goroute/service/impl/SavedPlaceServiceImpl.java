@@ -255,7 +255,7 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
             return objectMapper.readTree(payload);
         } catch (Exception exception) {
             log.warn("Failed to read a social-location job result while building recent saves: {}",
-                    exception.getMessage());
+                    exception.getMessage(), exception);
             return null;
         }
     }

@@ -1,5 +1,6 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.ModerationPreviewRequest;
 import com.ds.goroute.dto.request.ResolveModerationFlagRequest;
@@ -10,7 +11,6 @@ import com.ds.goroute.dto.response.ModerationPreviewResponse;
 import com.ds.goroute.dto.response.ModerationTermAuditResponse;
 import com.ds.goroute.dto.response.ModerationTermResponse;
 import com.ds.goroute.dto.response.PageResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.ModerationAdminService;
 import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.ModerationCategory;
@@ -29,7 +29,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -44,7 +43,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/admin/moderation")
 @RequiredArgsConstructor
 @Validated
-public class AdminModerationController extends BaseService {
+public class AdminModerationController extends BaseController {
 
     private static final int MAX_PAGE_SIZE = 100;
     private static final int MAX_METRICS_DAYS = 365;
@@ -71,7 +70,7 @@ public class AdminModerationController extends BaseService {
     @PreAuthorize("@adminAuthorization.can(authentication,'moderation-terms','create')")
     public ResponseEntity<BaseResponse<ModerationTermResponse>> createTerm(
             @Valid @RequestBody UpsertModerationTermRequest request,
-            @RequestAttribute UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ofSucceeded(service.createTerm(userId, request)));
     }
@@ -81,14 +80,14 @@ public class AdminModerationController extends BaseService {
     public ResponseEntity<BaseResponse<ModerationTermResponse>> updateTerm(
             @PathVariable UUID id,
             @Valid @RequestBody UpsertModerationTermRequest request,
-            @RequestAttribute UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(service.updateTerm(userId, id, request)));
     }
 
     @DeleteMapping("/terms/{id}")
     @PreAuthorize("@adminAuthorization.can(authentication,'moderation-terms','delete')")
     public ResponseEntity<BaseResponse<Void>> deleteTerm(@PathVariable UUID id,
-                                                         @RequestAttribute UUID userId) {
+                                                         @CurrentUser UUID userId) {
         service.deleteTerm(userId, id);
         return ResponseEntity.ok(ofSucceeded(null));
     }
@@ -134,7 +133,7 @@ public class AdminModerationController extends BaseService {
     public ResponseEntity<BaseResponse<ModerationFlagResponse>> resolve(
             @PathVariable UUID id,
             @Valid @RequestBody ResolveModerationFlagRequest request,
-            @RequestAttribute UUID userId) {
+            @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(service.resolve(userId, id, request)));
     }
 

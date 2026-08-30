@@ -71,7 +71,7 @@ public class GuideMarketplaceJob {
             } catch (RuntimeException exception) {
                 // Left for the next run rather than marked done: a document recorded as
                 // deleted but still in storage is the worst of both outcomes.
-                log.error("Could not purge guide document {}: {}", id, exception.getMessage());
+                log.error("Could not purge guide document {}: {}", id, exception.getMessage(), exception);
             }
         }
         if (purged > 0) {

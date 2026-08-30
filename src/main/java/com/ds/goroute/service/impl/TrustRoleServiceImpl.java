@@ -150,7 +150,7 @@ public class TrustRoleServiceImpl implements TrustRoleService {
                     role.getDecidedBy());
         } catch (RuntimeException exception) {
             log.warn("Could not notify {} about their role decision: {}",
-                    role.getUserId(), exception.getMessage());
+                    role.getUserId(), exception.getMessage(), exception);
         }
     }
 

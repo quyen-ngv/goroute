@@ -2,7 +2,6 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.request.BatchReviewRequest;
 import com.ds.goroute.dto.request.RefreshPlaceReviewsRequest;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.PlaceReviewScoringService;
 import com.ds.goroute.service.PlaceReviewService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -23,7 +22,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 @Tag(name = "Place Reviews", description = "Place review management and scoring APIs")
-public class PlaceReviewController extends BaseService {
+public class PlaceReviewController extends BaseController {
 
     private final PlaceReviewService placeReviewService;
     private final PlaceReviewScoringService scoringService;

@@ -1,5 +1,6 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.UpdateDeviceRequest;
 import com.ds.goroute.service.UserDeviceService;
@@ -19,7 +20,7 @@ public class DeviceController {
 
     @PatchMapping("/{deviceId}")
     public ResponseEntity<BaseResponse<Void>> updateDevice(
-            @RequestAttribute("userId") UUID userId,
+            @CurrentUser UUID userId,
             @PathVariable UUID deviceId,
             @Valid @RequestBody UpdateDeviceRequest request) {
         userDeviceService.update(userId, deviceId, request);
@@ -28,7 +29,7 @@ public class DeviceController {
 
     @DeleteMapping("/{deviceId}")
     public ResponseEntity<BaseResponse<Void>> deleteDevice(
-            @RequestAttribute("userId") UUID userId,
+            @CurrentUser UUID userId,
             @PathVariable UUID deviceId) {
         userDeviceService.delete(userId, deviceId);
         return ResponseEntity.ok(BaseResponse.ofSucceeded());

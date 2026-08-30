@@ -1,5 +1,6 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.utils.ErrorMessages;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.ModerationPreviewRequest;
 import com.ds.goroute.dto.request.ResolveModerationFlagRequest;
@@ -16,7 +17,6 @@ import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.ModerationAuditRepository;
 import com.ds.goroute.repository.ModerationFlagRepository;
 import com.ds.goroute.repository.ModerationTermRepository;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.ModerationAdminService;
 import com.ds.goroute.service.NotificationService;
 import com.ds.goroute.service.TextModerationService;
@@ -40,7 +40,7 @@ import java.util.UUID;
 
 @Service
 @Slf4j
-public class ModerationAdminServiceImpl extends BaseService implements ModerationAdminService {
+public class ModerationAdminServiceImpl implements ModerationAdminService {
 
     private static final int MAX_PAGE_SIZE = 100;
     private static final int FALSE_POSITIVE_RANKING_SIZE = 20;
@@ -170,7 +170,7 @@ public class ModerationAdminServiceImpl extends BaseService implements Moderatio
                 .matchedTerm(verdict.matchedText())
                 .message(verdict.category() == null
                         ? null
-                        : getMessage("moderation.category." + verdict.category().name()))
+                        : ErrorMessages.of("moderation.category." + verdict.category().name()))
                 .build();
     }
 
@@ -242,8 +242,8 @@ public class ModerationAdminServiceImpl extends BaseService implements Moderatio
                     flag.getContentOwnerId(),
                     null,
                     NotificationType.ADMIN_MESSAGE,
-                    getMessage(ErrorConstant.CONTENT_TAKEN_DOWN),
-                    getMessage("moderation.category." + flag.getCategory().name()),
+                    ErrorMessages.of(ErrorConstant.CONTENT_TAKEN_DOWN),
+                    ErrorMessages.of("moderation.category." + flag.getCategory().name()),
                     Map.of("contentType", flag.getContentType().name(),
                             "contentId", flag.getContentId().toString(),
                             "category", flag.getCategory().name()),
@@ -252,7 +252,7 @@ public class ModerationAdminServiceImpl extends BaseService implements Moderatio
             // A silent removal creates a support ticket; a failed notification must not
             // undo a moderation decision either.
             log.warn("Could not notify {} about a takedown: {}",
-                    flag.getContentOwnerId(), exception.getMessage());
+                    flag.getContentOwnerId(), exception.getMessage(), exception);
         }
     }
 

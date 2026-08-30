@@ -238,7 +238,7 @@ public class CheckinClusterAdminServiceImpl implements CheckinClusterAdminServic
                     null);
         } catch (RuntimeException exception) {
             log.warn("Could not notify {} that their rating became public: {}",
-                    checkin.getUserId(), exception.getMessage());
+                    checkin.getUserId(), exception.getMessage(), exception);
         }
     }
 

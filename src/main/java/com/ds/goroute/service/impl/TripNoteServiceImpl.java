@@ -130,7 +130,7 @@ public class TripNoteServiceImpl implements TripNoteService {
 
         // Only note owner can delete
         if (!note.getUserId().equals(userId)) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN, "You can only delete your own notes");
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You can only delete your own notes");
         }
 
         tripNoteRepository.softDelete(noteId);
@@ -147,10 +147,10 @@ public class TripNoteServiceImpl implements TripNoteService {
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
 
         TripMember member = tripMemberRepository.findByTripIdAndUserId(tripId, userId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.FORBIDDEN, "You are not a member of this trip"));
+                .orElseThrow(() -> new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You are not a member of this trip"));
 
         if (member.getStatus() != MemberStatus.ACCEPTED) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN, "You are not a member of this trip");
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You are not a member of this trip");
         }
     }
 
@@ -192,7 +192,7 @@ public class TripNoteServiceImpl implements TripNoteService {
 
         // Only note owner can update
         if (!note.getUserId().equals(userId)) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN, "You can only update your own notes");
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You can only update your own notes");
         }
 
         boolean wasShared = Boolean.TRUE.equals(note.getIsShared());

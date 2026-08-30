@@ -12,12 +12,17 @@ import org.springframework.http.MediaType;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
-final class ApiSecurityErrorResponseWriter {
+/**
+ * The one place an authentication or authorization failure is turned into the standard
+ * response envelope. Filters used to hand-write their own JSON strings, so a client saw a
+ * different shape depending on which check rejected it.
+ */
+public final class ApiSecurityErrorResponseWriter {
 
     private ApiSecurityErrorResponseWriter() {
     }
 
-    static void write(
+    public static void write(
             ObjectMapper objectMapper,
             HttpServletRequest request,
             HttpServletResponse response,

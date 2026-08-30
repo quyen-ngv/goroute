@@ -1,12 +1,12 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.request.CreateActivityRequest;
 import com.ds.goroute.dto.request.ReorderActivitiesRequest;
 import com.ds.goroute.dto.request.UpdateActivityRequest;
 import com.ds.goroute.dto.response.ActivityResponse;
 import com.ds.goroute.service.ActivityService;
 import com.ds.goroute.dto.BaseResponse;
-import com.ds.goroute.service.BaseService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +21,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/trips/{tripId}/activities")
 @RequiredArgsConstructor
 @Slf4j
-public class ActivityController extends BaseService {
+public class ActivityController extends BaseController {
     
     private final ActivityService activityService;
 
@@ -29,7 +29,7 @@ public class ActivityController extends BaseService {
     public ResponseEntity<BaseResponse<List<ActivityResponse>>> getActivities(
             @PathVariable UUID tripId,
             @RequestParam(required = false) Integer day,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         List<ActivityResponse> activities = activityService.getActivities(tripId, day, userId);
         return ResponseEntity.ok(ofSucceeded(activities));
     }
@@ -38,7 +38,7 @@ public class ActivityController extends BaseService {
     public ResponseEntity<BaseResponse<ActivityResponse>> createActivity(
             @PathVariable UUID tripId,
             @Valid @RequestBody CreateActivityRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         ActivityResponse activity = activityService.createActivity(tripId, request, userId);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ofSucceeded(activity));
@@ -49,7 +49,7 @@ public class ActivityController extends BaseService {
             @PathVariable UUID tripId,
             @PathVariable UUID activityId,
             @Valid @RequestBody UpdateActivityRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         ActivityResponse activity = activityService.updateActivity(tripId, activityId, request, userId);
         return ResponseEntity.ok(ofSucceeded(activity));
     }
@@ -58,7 +58,7 @@ public class ActivityController extends BaseService {
     public ResponseEntity<BaseResponse<Void>> deleteActivity(
             @PathVariable UUID tripId,
             @PathVariable UUID activityId,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         activityService.deleteActivity(tripId, activityId, userId);
         return ResponseEntity.ok(ofSucceeded(null));
     }
@@ -67,7 +67,7 @@ public class ActivityController extends BaseService {
     public ResponseEntity<BaseResponse<Void>> reorderActivities(
             @PathVariable UUID tripId,
             @Valid @RequestBody ReorderActivitiesRequest request,
-            @RequestAttribute("userId") UUID userId) {
+            @CurrentUser UUID userId) {
         activityService.reorderActivities(tripId, request, userId);
         return ResponseEntity.ok(ofSucceeded(null));
     }

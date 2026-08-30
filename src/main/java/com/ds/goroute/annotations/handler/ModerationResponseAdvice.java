@@ -1,5 +1,6 @@
 package com.ds.goroute.annotations.handler;
 
+import com.ds.goroute.constant.RequestKeyConstant;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.service.AiTextModerationService;
 import com.ds.goroute.service.ContentModerationService;
@@ -39,7 +40,6 @@ import java.util.UUID;
 @Slf4j
 public class ModerationResponseAdvice implements ResponseBodyAdvice<Object> {
 
-    private static final String USER_ID_ATTRIBUTE = "userId";
 
     private final ContentModerationService contentModerationService;
     private final AiTextModerationService aiTextModerationService;
@@ -101,7 +101,7 @@ public class ModerationResponseAdvice implements ResponseBodyAdvice<Object> {
 
     private UUID currentUserId(ServerHttpRequest request) {
         if (request instanceof ServletServerHttpRequest servletRequest) {
-            Object value = servletRequest.getServletRequest().getAttribute(USER_ID_ATTRIBUTE);
+            Object value = servletRequest.getServletRequest().getAttribute(RequestKeyConstant.USER_ID);
             return value instanceof UUID userId ? userId : null;
         }
         return null;

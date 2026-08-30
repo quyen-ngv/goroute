@@ -1,10 +1,10 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.utils.ErrorMessages;
 import com.ds.goroute.config.FileUploadProperties;
 import com.ds.goroute.config.ImgpressProperties;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.exception.BusinessException;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.FileUploadService;
 import com.ds.goroute.service.ImageModerationService;
 import com.ds.goroute.service.ImageUploadOutcome;
@@ -40,7 +40,7 @@ import java.util.UUID;
 
 @Service
 @Slf4j
-public class FileUploadServiceImpl extends BaseService implements FileUploadService {
+public class FileUploadServiceImpl implements FileUploadService {
 
     private final StorageService storageService;
     private final RestTemplate restTemplate;
@@ -148,7 +148,7 @@ public class FileUploadServiceImpl extends BaseService implements FileUploadServ
                 image.bytes(), image.contentType(), request.userId(), request.entryPoint());
         if (verdict.blocks()) {
             return ImageUploadOutcome.rejectedByModeration(filename, verdict.category(),
-                    getMessage("moderation.category." + verdict.category().name()));
+                    ErrorMessages.of("moderation.category." + verdict.category().name()));
         }
 
         ValidatedImage upload = request.compress() ? compressOrOriginal(image) : image;
@@ -175,7 +175,7 @@ public class FileUploadServiceImpl extends BaseService implements FileUploadServ
             aiTripRepository.ensureSubscription(userId);
             return "PRO".equalsIgnoreCase(aiTripRepository.getSubscriptionTier(userId));
         } catch (Exception e) {
-            log.warn("Could not determine user subscription status for userId={}: {}", userId, e.getMessage());
+            log.warn("Could not determine user subscription status for userId={}: {}", userId, e.getMessage(), e);
             return false;
         }
     }

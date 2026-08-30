@@ -44,6 +44,7 @@ public class ReviewServiceImpl implements ReviewService {
     private final ReviewHelpfulVoteRepository voteRepository;
     private final UserRepository userRepository;
     private final PlaceRepository placeRepository;
+    private final UserCheckinRepository checkinRepository;
     private final ActivityBookingRepository activityBookingRepository;
 
     private final ReviewScoringService scoringService;
@@ -209,6 +210,9 @@ public class ReviewServiceImpl implements ReviewService {
         UUID placeId = review.getPlaceId();
 
         imageStorageCleanupService.deleteImagesForEntityRecord("USER_REVIEW", reviewId);
+        // Check-ins outlive the review they wrote. Cut the link first so no visit is left
+        // pointing at a review that is about to stop existing.
+        checkinRepository.detachReview(reviewId);
         reviewRepository.delete(reviewId);
         profileRepository.decrementReviewCount(userId);
         scoringService.updateUserTier(userId);
@@ -286,10 +290,6 @@ public class ReviewServiceImpl implements ReviewService {
         UserReview review = reviewRepository.findById(reviewId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.REVIEW_NOT_FOUND, "Review not found"));
 
-        if (review.getUserId().equals(userId)) {
-            throw new BusinessException(ErrorConstant.UNAUTHORIZED, "Cannot vote on your own review");
-        }
-
         ReviewHelpfulVote existingVote = voteRepository.findByReviewIdAndUserId(reviewId, userId);
 
         boolean isHelpfulNow = true;
@@ -327,10 +327,6 @@ public class ReviewServiceImpl implements ReviewService {
     public UserReviewResponse voteUnhelpful(UUID userId, UUID reviewId) {
         UserReview review = reviewRepository.findById(reviewId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.REVIEW_NOT_FOUND, "Review not found"));
-
-        if (review.getUserId().equals(userId)) {
-            throw new BusinessException(ErrorConstant.UNAUTHORIZED, "Cannot vote on your own review");
-        }
 
         ReviewHelpfulVote existingVote = voteRepository.findByReviewIdAndUserId(reviewId, userId);
 
@@ -493,6 +489,7 @@ public class ReviewServiceImpl implements ReviewService {
                 .placeThumbnail(place != null ? place.getThumbnail() : null)
                 .placeReviewCount(place != null ? place.getReviewCount() : null)
                 .placeReviewRating(place != null ? place.getReviewRating() : null)
+                .placeAdjustedRating(place != null ? place.getAdjustedRating() : null)
                 .placeCategory(place != null ? place.getCategory() : null)
                 .placeGroup(place != null ? place.getPlaceGroup() : null)
                 .placeLatitude(place != null ? place.getLatitude() : null)

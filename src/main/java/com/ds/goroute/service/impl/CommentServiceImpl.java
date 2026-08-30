@@ -116,7 +116,7 @@ public class CommentServiceImpl implements CommentService {
         
         // Only comment owner can delete
         if (!comment.getUserId().equals(userId)) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN, "You can only delete your own comments");
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You can only delete your own comments");
         }
         
         commentRepository.softDelete(commentId);
@@ -127,10 +127,10 @@ public class CommentServiceImpl implements CommentService {
     
     private void verifyTripMember(UUID tripId, UUID userId) {
         TripMember member = tripMemberRepository.findByTripIdAndUserId(tripId, userId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.FORBIDDEN, "You are not a member of this trip"));
+                .orElseThrow(() -> new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You are not a member of this trip"));
         
         if (member.getStatus() != MemberStatus.ACCEPTED) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN, "You are not a member of this trip");
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You are not a member of this trip");
         }
     }
     

@@ -71,10 +71,10 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
                 log.debug("Image compressed: {} -> {} bytes", imageBytes.length, compressedBytes.length);
             } catch (Exception e) {
                 if (requireCompression) {
-                    log.warn("Compression failed; strict migration rejected image: {}", e.getMessage());
+                    log.warn("Compression failed; strict migration rejected image: {}", e.getMessage(), e);
                     return null;
                 }
-                log.warn("Compression failed, using original if size acceptable: {}", e.getMessage());
+                log.warn("Compression failed, using original if size acceptable: {}", e.getMessage(), e);
                 if (imageBytes.length > MAX_IMAGE_SIZE_BYTES) {
                     log.error("Image too large to upload without compression: {} bytes", imageBytes.length);
                     return imageUrl;
@@ -90,7 +90,7 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
             return newUrl;
             
         } catch (Exception e) {
-            log.error("Failed to migrate image {}: {}", imageUrl, e.getMessage());
+            log.error("Failed to migrate image {}: {}", imageUrl, e.getMessage(), e);
             return requireCompression ? null : imageUrl;
         }
     }
@@ -147,7 +147,7 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
         } catch (TimeoutException e) {
             log.warn("Image migration timeout after {} seconds", timeoutSeconds);
         } catch (Exception e) {
-            log.error("Error in batch image migration: {}", e.getMessage());
+            log.error("Error in batch image migration: {}", e.getMessage(), e);
         } finally {
             executor.shutdownNow();
         }
@@ -202,7 +202,7 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
             return objectMapper.writeValueAsString(newArrayNode);
             
         } catch (Exception e) {
-            log.error("Error migrating images from JSON: {}", e.getMessage());
+            log.error("Error migrating images from JSON: {}", e.getMessage(), e);
             return imagesJson;
         }
     }
@@ -264,7 +264,7 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
             menuObject.remove("source");
             return objectMapper.writeValueAsString(menuObject);
         } catch (Exception e) {
-            log.error("Error migrating menu images: {}", e.getMessage());
+            log.error("Error migrating menu images: {}", e.getMessage(), e);
             return menuJson;
         }
     }
@@ -357,7 +357,7 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
             return null;
             
         } catch (Exception e) {
-            log.error("Failed to download image {}: {}", imageUrl, e.getMessage());
+            log.error("Failed to download image {}: {}", imageUrl, e.getMessage(), e);
             return null;
         }
     }

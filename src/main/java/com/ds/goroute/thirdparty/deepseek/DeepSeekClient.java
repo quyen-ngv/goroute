@@ -77,7 +77,7 @@ public class DeepSeekClient implements AiClient {
                     .filter(content -> !content.isBlank())
                     .findFirst();
         } catch (Exception e) {
-            log.warn("DeepSeek request failed: {}", e.getMessage());
+            log.warn("DeepSeek request failed: {}", e.getMessage(), e);
             return Optional.empty();
         }
     }

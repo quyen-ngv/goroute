@@ -2,7 +2,6 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.request.ModeratePlaceImportMappingRequest;
 import com.ds.goroute.dto.response.AdminPlaceImportMappingResponse;
-import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.PlaceImportJobService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -24,7 +23,7 @@ import java.util.UUID;
 @RequestMapping("/v1/api/admin/place-import-mappings")
 @RequiredArgsConstructor
 @Tag(name = "Admin Place Import Mappings", description = "Moderate imported place mappings before assigning them to user data")
-public class AdminPlaceImportMappingController extends BaseService {
+public class AdminPlaceImportMappingController extends BaseController {
 
     private final PlaceImportJobService placeImportJobService;
 
