@@ -84,6 +84,7 @@ public class LocationImageServiceImpl implements LocationImageService {
             .description(serializeDescription(normalizeDescription(request.getDescription())))
             .imageUrl(request.getImageUrl())
             .avatarUrl(resolveAvatarUrl(request.getAvatarUrl(), request.getImageUrl()))
+            .provinceCode(blankToNull(request.getProvinceCode()))
             .latitude(request.getLatitude())
             .longitude(request.getLongitude())
             .priority(request.getPriority())
@@ -122,6 +123,9 @@ public class LocationImageServiceImpl implements LocationImageService {
             locationImage.setAvatarUrl(request.getAvatarUrl());
         } else if (request.getImageUrl() != null && locationImage.getAvatarUrl() == null) {
             locationImage.setAvatarUrl(request.getImageUrl());
+        }
+        if (request.getProvinceCode() != null) {
+            locationImage.setProvinceCode(blankToNull(request.getProvinceCode()));
         }
         if (request.getPriority() != null) {
             locationImage.setPriority(request.getPriority());
@@ -173,6 +177,7 @@ public class LocationImageServiceImpl implements LocationImageService {
             .id(locationImage.getId())
             .fullAddress(locationImage.getFullAddress())
             .citySlug(locationImage.getCitySlug())
+            .provinceCode(locationImage.getProvinceCode())
             .slogan(locationImage.getSlogan())
             .description(deserializeDescription(locationImage.getDescription()))
             .imageUrl(locationImage.getImageUrl())
@@ -253,5 +258,9 @@ public class LocationImageServiceImpl implements LocationImageService {
             return avatarUrl;
         }
         return imageUrl;
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }

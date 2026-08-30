@@ -24,6 +24,8 @@
         <result property="checkinId" column="checkin_id"/>
         <result property="locationKey" column="location_key"/>
         <result property="locationName" column="location_name"/>
+        <result property="latitude" column="latitude"/>
+        <result property="longitude" column="longitude"/>
         <result property="provinceCode" column="province_code"/>
         <result property="occurredAt" column="occurred_at"/>
         <result property="isVerified" column="is_verified"/>
@@ -44,6 +46,21 @@
         <result property="createdAt" column="created_at"/>
     </resultMap>
 
+    <resultMap id="rewardMap" type="com.ds.goroute.entity.PassportReward">
+        <id property="id" column="id"/>
+        <result property="code" column="code"/>
+        <result property="name" column="name"/>
+        <result property="description" column="description"/>
+        <result property="pointsCost" column="points_cost"/>
+        <result property="requiredStampCode" column="required_stamp_code"/>
+        <result property="totalQuantity" column="total_quantity"/>
+        <result property="issuedQuantity" column="issued_quantity"/>
+        <result property="validDays" column="valid_days"/>
+        <result property="isActive" column="is_active"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
     <resultMap id="stampMap" type="com.ds.goroute.entity.PassportStamp">
         <id property="id" column="id"/>
         <result property="userId" column="user_id"/>
@@ -51,6 +68,37 @@
         <result property="ruleVersion" column="rule_version"/>
         <result property="triggeringEventId" column="triggering_event_id"/>
         <result property="awardedAt" column="awarded_at"/>
+    </resultMap>
+
+    <resultMap id="definitionMap" type="com.ds.goroute.entity.PassportDefinition">
+        <id property="id" column="id"/>
+        <result property="code" column="code"/>
+        <result property="name" column="name"/>
+        <result property="description" column="description"/>
+        <result property="coverImageUrl" column="cover_image_url"/>
+        <result property="isActive" column="is_active"/>
+        <result property="displayOrder" column="display_order"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <resultMap id="tagMap" type="com.ds.goroute.entity.PassportTag">
+        <id property="id" column="id"/>
+        <result property="passportId" column="passport_id"/>
+        <result property="passportCode" column="passport_code"/>
+        <result property="passportName" column="passport_name"/>
+        <result property="code" column="code"/>
+        <result property="name" column="name"/>
+        <result property="description" column="description"/>
+        <result property="imageUrl" column="image_url"/>
+        <result property="qualificationMode" column="qualification_mode"/>
+        <result property="requiredCheckinCount" column="required_checkin_count"/>
+        <result property="isActive" column="is_active"/>
+        <result property="displayOrder" column="display_order"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="earnedAt" column="earned_at"/>
+        <result property="triggeringEventId" column="triggering_event_id"/>
     </resultMap>
 
     <select id="findProvinces" resultMap="provinceMap">
@@ -115,10 +163,10 @@
     <insert id="insertEvent" parameterType="com.ds.goroute.entity.PassportEvent">
         INSERT INTO passport_events
             (id, user_id, source, source_id, place_id, checkin_id, location_key, location_name,
-             province_code, occurred_at, is_verified, is_hidden, created_at)
+             latitude, longitude, province_code, occurred_at, is_verified, is_hidden, created_at)
         VALUES
             (#{id}, #{userId}, #{source}, #{sourceId}, #{placeId}, #{checkinId}, #{locationKey},
-             #{locationName}, #{provinceCode}, #{occurredAt}, #{isVerified}, #{isHidden}, #{createdAt})
+             #{locationName}, #{latitude}, #{longitude}, #{provinceCode}, #{occurredAt}, #{isVerified}, #{isHidden}, #{createdAt})
         ON CONFLICT (source, source_id) DO NOTHING
     </insert>
 
@@ -215,6 +263,27 @@
         SELECT * FROM passport_stamp_rules WHERE code = #{code} AND version = #{version}
     </select>
 
+    <select id="findStampRules" resultMap="ruleMap">
+        SELECT * FROM passport_stamp_rules
+        <if test="!includeInactive">WHERE is_active = TRUE</if>
+        ORDER BY threshold, code, version
+    </select>
+
+    <insert id="insertStampRule" parameterType="com.ds.goroute.entity.PassportStampRule">
+        INSERT INTO passport_stamp_rules
+            (code, version, name, description, condition_type, threshold, icon, reward_points, is_active, created_at)
+        VALUES
+            (#{code}, #{version}, #{name}, #{description}, #{conditionType}, #{threshold}, #{icon},
+             #{rewardPoints}, #{isActive}, #{createdAt})
+    </insert>
+
+    <update id="updateStampRule" parameterType="com.ds.goroute.entity.PassportStampRule">
+        UPDATE passport_stamp_rules
+        SET name = #{name}, description = #{description}, condition_type = #{conditionType},
+            threshold = #{threshold}, icon = #{icon}, reward_points = #{rewardPoints}, is_active = #{isActive}
+        WHERE code = #{code} AND version = #{version}
+    </update>
+
     <!-- Granting the same stamp twice is prevented here rather than by checking first:
          two concurrent recalculations both pass a check, and only one passes this. -->
     <insert id="insertStamp" parameterType="com.ds.goroute.entity.PassportStamp">
@@ -240,4 +309,415 @@
     <select id="findWishedProvinceCodes" resultType="java.lang.String">
         SELECT province_code FROM passport_province_wishes WHERE user_id = #{userId}
     </select>
+
+    <!-- A catalogued place is the most reliable source. Free-text province matching is
+         deliberately done in Java against the official alias list so ambiguous names can
+         safely resolve to no province rather than a guessed stamp. -->
+    <select id="findPlaceProvinceCode" resultType="java.lang.String">
+        SELECT province_code FROM places WHERE id = #{placeId}
+    </select>
+
+    <select id="findActiveQualifyingTags" resultMap="tagMap">
+        SELECT DISTINCT t.*
+        FROM passport_tags t
+        JOIN passport_definitions d ON d.id = t.passport_id AND d.is_active = TRUE
+        WHERE t.is_active = TRUE
+          AND (
+              EXISTS (
+                  SELECT 1 FROM passport_tag_places linked
+                  WHERE linked.passport_tag_id = t.id AND linked.place_id = #{placeId}
+              )
+              OR (
+                  t.qualification_mode = 'PASSPORT_PROVINCES'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM passport_tag_places linked
+                      WHERE linked.passport_tag_id = t.id
+                  )
+                  AND EXISTS (
+                      SELECT 1 FROM passport_definition_provinces dp
+                      WHERE dp.passport_id = d.id AND dp.province_code = #{provinceCode}
+                  )
+              )
+              OR (
+                  t.qualification_mode = 'PASSPORT_LOCATIONS'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM passport_tag_places linked
+                      WHERE linked.passport_tag_id = t.id
+                  )
+                  AND EXISTS (
+                      SELECT 1
+                      FROM passport_definition_location_images pdi
+                      JOIN location_images li ON li.id = pdi.location_image_id
+                      LEFT JOIN places p ON p.id = #{placeId}
+                      WHERE pdi.passport_id = d.id
+                        AND (
+                            (p.id IS NOT NULL AND COALESCE(p.latitude, CAST(#{latitude} AS NUMERIC)) IS NOT NULL AND COALESCE(p.longitude, CAST(#{longitude} AS NUMERIC)) IS NOT NULL
+                             AND 6371 * acos(LEAST(1, GREATEST(-1,
+                                 cos(radians(li.latitude)) * cos(radians(COALESCE(p.latitude, CAST(#{latitude} AS NUMERIC)))) *
+                                 cos(radians(COALESCE(p.longitude, CAST(#{longitude} AS NUMERIC))) - radians(li.longitude)) +
+                                 sin(radians(li.latitude)) * sin(radians(COALESCE(p.latitude, CAST(#{latitude} AS NUMERIC))))
+                             ))) &lt;= #{locationRadiusKm})
+                            OR (p.id IS NULL AND CAST(#{latitude} AS NUMERIC) IS NOT NULL AND CAST(#{longitude} AS NUMERIC) IS NOT NULL
+                             AND li.latitude IS NOT NULL AND li.longitude IS NOT NULL
+                             AND 6371 * acos(LEAST(1, GREATEST(-1,
+                                 cos(radians(li.latitude)) * cos(radians(CAST(#{latitude} AS NUMERIC))) *
+                                 cos(radians(CAST(#{longitude} AS NUMERIC)) - radians(li.longitude)) +
+                                 sin(radians(li.latitude)) * sin(radians(CAST(#{latitude} AS NUMERIC)))
+                             ))) &lt;= #{locationRadiusKm})
+                        )
+                  )
+              )
+          )
+        ORDER BY t.display_order, t.name
+    </select>
+
+    <select id="findPassportTagsForPlace" resultMap="tagMap">
+        SELECT DISTINCT t.*, d.code AS passport_code, d.name AS passport_name,
+               upt.awarded_at, upt.triggering_event_id
+        FROM passport_tags t
+        JOIN passport_definitions d ON d.id = t.passport_id AND d.is_active = TRUE
+        LEFT JOIN passport_tag_places linked
+          ON linked.passport_tag_id = t.id AND linked.place_id = #{placeId}
+        LEFT JOIN places place ON place.id = #{placeId}
+        LEFT JOIN passport_definition_provinces dp
+          ON dp.passport_id = d.id AND dp.province_code = place.province_code
+        LEFT JOIN user_passport_tags upt
+          ON upt.passport_tag_id = t.id AND upt.user_id = #{userId}
+        WHERE t.is_active = TRUE
+          AND (
+              linked.place_id IS NOT NULL
+              OR (
+                  NOT EXISTS (
+                      SELECT 1 FROM passport_tag_places any_link
+                      WHERE any_link.passport_tag_id = t.id
+                  )
+                  AND (
+                      (t.qualification_mode = 'PASSPORT_PROVINCES' AND dp.passport_id IS NOT NULL)
+                      OR (
+                          t.qualification_mode = 'PASSPORT_LOCATIONS'
+                          AND EXISTS (
+                              SELECT 1
+                              FROM passport_definition_location_images pdi
+                              JOIN location_images li ON li.id = pdi.location_image_id
+                              WHERE pdi.passport_id = d.id
+                                AND place.latitude IS NOT NULL AND place.longitude IS NOT NULL
+                                AND li.latitude IS NOT NULL AND li.longitude IS NOT NULL
+                                AND 6371 * acos(LEAST(1, GREATEST(-1,
+                                    cos(radians(li.latitude)) * cos(radians(place.latitude)) *
+                                    cos(radians(place.longitude) - radians(li.longitude)) +
+                                    sin(radians(li.latitude)) * sin(radians(place.latitude))
+                                ))) &lt;= #{locationRadiusKm}
+                          )
+                      )
+                  )
+              )
+          )
+        ORDER BY t.display_order, t.name
+    </select>
+
+    <select id="countUserCheckinsAtPlace" resultType="long">
+        SELECT COUNT(*)
+        FROM passport_events
+        WHERE user_id = #{userId} AND place_id = #{placeId}
+    </select>
+
+    <select id="countTagPlaces" resultType="long">
+        SELECT COUNT(*)
+        FROM passport_tag_places
+        WHERE passport_tag_id = #{tagId}
+    </select>
+
+    <select id="countQualifiedTagPlaces" resultType="long">
+        SELECT COUNT(*)
+        FROM passport_tag_places tp
+        WHERE tp.passport_tag_id = #{tag.id}
+          AND (
+              SELECT COUNT(*)
+              FROM passport_events e
+              WHERE e.user_id = #{userId}
+                AND e.place_id = tp.place_id
+          ) &gt;= COALESCE(#{tag.requiredCheckinCount}, 1)
+    </select>
+
+    <select id="countQualifiedProvinceTagLocations" resultType="long">
+        SELECT COUNT(DISTINCT COALESCE(e.place_id::text, NULLIF(e.location_key, '')))
+        FROM passport_events e
+        JOIN passport_definition_provinces dp
+          ON dp.passport_id = #{tag.passportId}
+         AND dp.province_code = e.province_code
+        WHERE e.user_id = #{userId}
+    </select>
+
+    <select id="countQualifiedLocationTagLocations" resultType="long">
+        SELECT COUNT(DISTINCT COALESCE(e.place_id::text, NULLIF(e.location_key, '')))
+        FROM passport_events e
+        LEFT JOIN places p ON p.id = e.place_id
+        WHERE e.user_id = #{userId}
+          AND EXISTS (
+              SELECT 1
+              FROM passport_definition_location_images pdi
+              JOIN location_images li ON li.id = pdi.location_image_id
+              WHERE pdi.passport_id = #{tag.passportId}
+                AND li.latitude IS NOT NULL AND li.longitude IS NOT NULL
+                AND COALESCE(p.latitude, e.latitude) IS NOT NULL
+                AND COALESCE(p.longitude, e.longitude) IS NOT NULL
+                AND 6371 * acos(LEAST(1, GREATEST(-1,
+                    cos(radians(li.latitude)) * cos(radians(COALESCE(p.latitude, e.latitude))) *
+                    cos(radians(COALESCE(p.longitude, e.longitude)) - radians(li.longitude)) +
+                    sin(radians(li.latitude)) * sin(radians(COALESCE(p.latitude, e.latitude)))
+                ))) &lt;= #{locationRadiusKm}
+          )
+    </select>
+
+    <select id="findTagAwardCandidates" resultType="java.util.LinkedHashMap">
+        SELECT e.user_id, (array_agg(e.id ORDER BY e.occurred_at DESC))[1] AS triggering_event_id
+        FROM passport_events e
+        WHERE (
+            EXISTS (
+                SELECT 1 FROM passport_tag_places tp
+                WHERE tp.passport_tag_id = #{tag.id} AND tp.place_id = e.place_id
+            )
+            OR (
+                #{tag.qualificationMode} = 'PASSPORT_PROVINCES'
+                AND
+                NOT EXISTS (
+                    SELECT 1 FROM passport_tag_places any_link
+                    WHERE any_link.passport_tag_id = #{tag.id}
+                )
+                AND EXISTS (
+                    SELECT 1 FROM passport_definition_provinces dp
+                    WHERE dp.passport_id = #{tag.passportId}
+                      AND dp.province_code = e.province_code
+                )
+            )
+            OR (
+                #{tag.qualificationMode} = 'PASSPORT_LOCATIONS'
+                AND NOT EXISTS (
+                    SELECT 1 FROM passport_tag_places any_link
+                    WHERE any_link.passport_tag_id = #{tag.id}
+                )
+                AND EXISTS (
+                    SELECT 1
+                    FROM passport_definition_location_images pdi
+                    JOIN location_images li ON li.id = pdi.location_image_id
+                    LEFT JOIN places p ON p.id = e.place_id
+                    WHERE pdi.passport_id = #{tag.passportId}
+                      AND li.latitude IS NOT NULL AND li.longitude IS NOT NULL
+                      AND COALESCE(p.latitude, e.latitude) IS NOT NULL
+                      AND COALESCE(p.longitude, e.longitude) IS NOT NULL
+                      AND 6371 * acos(LEAST(1, GREATEST(-1,
+                          cos(radians(li.latitude)) * cos(radians(COALESCE(p.latitude, e.latitude))) *
+                          cos(radians(COALESCE(p.longitude, e.longitude)) - radians(li.longitude)) +
+                          sin(radians(li.latitude)) * sin(radians(COALESCE(p.latitude, e.latitude)))
+                      ))) &lt;= #{locationRadiusKm}
+                )
+            )
+        )
+        GROUP BY e.user_id
+        HAVING (
+            (
+                EXISTS (
+                    SELECT 1 FROM passport_tag_places any_link
+                    WHERE any_link.passport_tag_id = #{tag.id}
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM passport_tag_places tp
+                    WHERE tp.passport_tag_id = #{tag.id}
+                      AND (
+                          SELECT COUNT(*)
+                          FROM passport_events e2
+                          WHERE e2.user_id = e.user_id
+                            AND e2.place_id = tp.place_id
+                      ) &lt; COALESCE(#{tag.requiredCheckinCount}, 1)
+                )
+            )
+            OR (
+                NOT EXISTS (
+                    SELECT 1 FROM passport_tag_places any_link
+                    WHERE any_link.passport_tag_id = #{tag.id}
+                )
+                AND COUNT(DISTINCT COALESCE(e.place_id::text, NULLIF(e.location_key, ''))) &gt;=
+                    COALESCE(#{tag.requiredCheckinCount}, 1)
+            )
+        )
+    </select>
+
+    <insert id="insertUserTag" parameterType="com.ds.goroute.entity.UserPassportTag">
+        INSERT INTO user_passport_tags (user_id, passport_tag_id, triggering_event_id, awarded_at)
+        VALUES (#{userId}, #{passportTagId}, #{triggeringEventId}, #{awardedAt})
+        ON CONFLICT (user_id, passport_tag_id) DO NOTHING
+    </insert>
+
+    <select id="findEarnedTagsByUser" resultMap="tagMap">
+        SELECT t.*, d.code AS passport_code, d.name AS passport_name,
+               upt.awarded_at, upt.triggering_event_id
+        FROM user_passport_tags upt
+        JOIN passport_tags t ON t.id = upt.passport_tag_id
+        JOIN passport_definitions d ON d.id = t.passport_id
+        WHERE upt.user_id = #{userId}
+        ORDER BY upt.awarded_at DESC
+    </select>
+
+    <!-- Operator catalogue. Definition/tag reads include inactive records so an operator
+         can repair or archive them without hidden rows turning into orphaned history. -->
+    <select id="findPassportDefinitions" resultMap="definitionMap">
+        SELECT * FROM passport_definitions
+        <if test="!includeInactive">WHERE is_active = TRUE</if>
+        ORDER BY display_order, name
+    </select>
+
+    <select id="findPassportDefinition" resultMap="definitionMap">
+        SELECT * FROM passport_definitions WHERE id = #{id}
+    </select>
+
+    <insert id="insertPassportDefinition" parameterType="com.ds.goroute.entity.PassportDefinition">
+        INSERT INTO passport_definitions
+            (id, code, name, description, cover_image_url, is_active, display_order, created_at, updated_at)
+        VALUES
+            (#{id}, #{code}, #{name}, #{description}, #{coverImageUrl}, #{isActive}, #{displayOrder},
+             #{createdAt}, #{updatedAt})
+    </insert>
+
+    <update id="updatePassportDefinition" parameterType="com.ds.goroute.entity.PassportDefinition">
+        UPDATE passport_definitions
+        SET code = #{code}, name = #{name}, description = #{description},
+            cover_image_url = #{coverImageUrl}, is_active = #{isActive},
+            display_order = #{displayOrder}, updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <select id="findPassportProvinceCodes" resultType="java.lang.String">
+        SELECT province_code
+        FROM passport_definition_provinces
+        WHERE passport_id = #{passportId}
+        ORDER BY province_code
+    </select>
+
+    <select id="findPassportLocationImageIds" resultType="java.util.UUID">
+        SELECT location_image_id
+        FROM passport_definition_location_images
+        WHERE passport_id = #{passportId}
+        ORDER BY location_image_id
+    </select>
+
+    <select id="countExistingLocationImages" resultType="long">
+        SELECT COUNT(*)
+        FROM location_images
+        WHERE id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <select id="countLocationImagesWithCoordinates" resultType="long">
+        SELECT COUNT(*)
+        FROM location_images
+        WHERE id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+          AND latitude IS NOT NULL
+          AND longitude IS NOT NULL
+    </select>
+
+    <delete id="deletePassportLocationImages">
+        DELETE FROM passport_definition_location_images WHERE passport_id = #{passportId}
+    </delete>
+
+    <insert id="insertPassportLocationImage">
+        INSERT INTO passport_definition_location_images (passport_id, location_image_id)
+        VALUES (#{passportId}, #{locationImageId})
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <delete id="deletePassportProvinces">
+        DELETE FROM passport_definition_provinces WHERE passport_id = #{passportId}
+    </delete>
+
+    <insert id="insertPassportProvince">
+        INSERT INTO passport_definition_provinces (passport_id, province_code)
+        VALUES (#{passportId}, #{provinceCode})
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <select id="findPassportTags" resultMap="tagMap">
+        SELECT t.*, d.code AS passport_code, d.name AS passport_name
+        FROM passport_tags t
+        JOIN passport_definitions d ON d.id = t.passport_id
+        <if test="!includeInactive">WHERE t.is_active = TRUE</if>
+        ORDER BY t.display_order, t.name
+    </select>
+
+    <select id="findPassportTag" resultMap="tagMap">
+        SELECT t.*, d.code AS passport_code, d.name AS passport_name
+        FROM passport_tags t JOIN passport_definitions d ON d.id = t.passport_id
+        WHERE t.id = #{id}
+    </select>
+
+    <insert id="insertPassportTag" parameterType="com.ds.goroute.entity.PassportTag">
+        INSERT INTO passport_tags
+            (id, passport_id, code, name, description, image_url,
+             qualification_mode, required_checkin_count, is_active, display_order, created_at, updated_at)
+        VALUES
+            (#{id}, #{passportId}, #{code}, #{name}, #{description}, #{imageUrl},
+             #{qualificationMode}, #{requiredCheckinCount}, #{isActive}, #{displayOrder},
+             #{createdAt}, #{updatedAt})
+    </insert>
+
+    <update id="updatePassportTag" parameterType="com.ds.goroute.entity.PassportTag">
+        UPDATE passport_tags
+        SET passport_id = #{passportId}, code = #{code}, name = #{name}, description = #{description},
+            image_url = #{imageUrl}, qualification_mode = #{qualificationMode}, province_code = NULL,
+            required_checkin_count = #{requiredCheckinCount},
+            is_active = #{isActive}, display_order = #{displayOrder}, updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <select id="findTagPlaceIds" resultType="java.util.UUID">
+        SELECT place_id FROM passport_tag_places WHERE passport_tag_id = #{tagId}
+    </select>
+
+    <delete id="deleteTagPlaces">
+        DELETE FROM passport_tag_places WHERE passport_tag_id = #{tagId}
+    </delete>
+
+    <insert id="insertTagPlace">
+        INSERT INTO passport_tag_places (passport_tag_id, place_id)
+        VALUES (#{tagId}, #{placeId})
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <select id="countExistingPlaces" resultType="long">
+        SELECT COUNT(*) FROM places
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <select id="findPassportRewards" resultMap="rewardMap">
+        SELECT * FROM passport_rewards
+        <if test="!includeInactive">WHERE is_active = TRUE</if>
+        ORDER BY created_at DESC, name
+    </select>
+
+    <select id="findPassportReward" resultMap="rewardMap">
+        SELECT * FROM passport_rewards WHERE id = #{id}
+    </select>
+
+    <insert id="insertPassportReward" parameterType="com.ds.goroute.entity.PassportReward">
+        INSERT INTO passport_rewards
+            (id, code, name, description, points_cost, required_stamp_code, total_quantity,
+             issued_quantity, valid_days, is_active, created_at, updated_at)
+        VALUES
+            (#{id}, #{code}, #{name}, #{description}, #{pointsCost}, #{requiredStampCode}, #{totalQuantity},
+             0, #{validDays}, #{isActive}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <update id="updatePassportReward" parameterType="com.ds.goroute.entity.PassportReward">
+        UPDATE passport_rewards
+        SET code = #{code}, name = #{name}, description = #{description}, points_cost = #{pointsCost},
+            required_stamp_code = #{requiredStampCode}, total_quantity = #{totalQuantity},
+            valid_days = #{validDays}, is_active = #{isActive}, updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
 </mapper>

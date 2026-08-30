@@ -461,6 +461,7 @@ public class PlaceServiceImpl implements PlaceService {
         place.setDestinations(toJson(request.getDestinations()));
         place.setLatitude(request.getLatitude());
         place.setLongitude(request.getLongitude());
+        place.setVerificationRadiusMeters(request.getVerificationRadiusMeters());
         place.setPlusCode(request.getPlusCode());
         place.setTimezone(request.getTimezone());
         place.setPhone(request.getPhone());
@@ -539,6 +540,8 @@ public class PlaceServiceImpl implements PlaceService {
                 ? existingPlace.getPlaceGroup()
                 : updated.getPlaceGroup());
         updated.setCategory(existingPlace.getCategory() != null ? existingPlace.getCategory() : request.getCategory());
+        // Imports do not carry the admin-only verification override; never erase it.
+        updated.setVerificationRadiusMeters(existingPlace.getVerificationRadiusMeters());
         updated.setDescriptions(existingPlace.getDescriptions() != null ? existingPlace.getDescriptions() : request.getDescriptions());
         updated.setAddress(preferNonBlank(updated.getAddress(), existingPlace.getAddress()));
         updated.setDestinations(preferNonEmptyJson(updated.getDestinations(), existingPlace.getDestinations()));
@@ -916,6 +919,7 @@ public class PlaceServiceImpl implements PlaceService {
                 .destinations(parseJsonToStringList(place.getDestinations()))
                 .latitude(place.getLatitude())
                 .longitude(place.getLongitude())
+                .verificationRadiusMeters(place.getVerificationRadiusMeters())
                 .phone(place.getPhone())
                 .website(place.getWebsite())
                 .googleMapsLink(place.getGoogleMapsLink())

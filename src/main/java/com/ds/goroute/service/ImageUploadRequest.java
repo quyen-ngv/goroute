@@ -48,6 +48,8 @@ public record ImageUploadRequest(UUID userId,
         public static final String ADMIN_MEDIA_FROM_URL = "admin-media-from-url";
         /** Operators and system: curated location imagery. */
         public static final String LOCATION_IMAGE = "admin-location-image";
+        /** Operators: imagery for curated passport collections and proof tags. */
+        public static final String PASSPORT_CATALOG = "admin-passport-catalog";
         /** Guide applicants: profile and identity documents. */
         public static final String GUIDE_PROFILE = "guide-profile";
 

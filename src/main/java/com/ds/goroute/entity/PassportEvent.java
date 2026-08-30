@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
@@ -30,6 +31,8 @@ public class PassportEvent {
     private UUID checkinId;
     private String locationKey;
     private String locationName;
+    private BigDecimal latitude;
+    private BigDecimal longitude;
     private String provinceCode;
     private LocalDateTime occurredAt;
     private Boolean isVerified;

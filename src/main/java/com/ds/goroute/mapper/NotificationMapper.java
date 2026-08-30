@@ -30,6 +30,14 @@ public interface NotificationMapper {
                                      @Param("offset") Integer offset);
     
     Integer countUnread(@Param("userId") UUID userId);
+
+    Notification findRecentUnreadSocialNotification(
+            @Param("userId") UUID userId,
+            @Param("type") com.ds.goroute.type.NotificationType type,
+            @Param("targetType") String targetType,
+            @Param("targetId") UUID targetId);
+
+    int updateSocialNotification(Notification notification);
     
     int updateById(Notification notification);
     

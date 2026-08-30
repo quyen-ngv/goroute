@@ -23,6 +23,7 @@ import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.service.StarService;
 import com.ds.goroute.service.notification.NotificationHelper;
+import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.type.MemberStatus;
 import com.ds.goroute.type.TripVisibility;
 import org.junit.jupiter.api.BeforeEach;
@@ -73,7 +74,8 @@ class TripServiceImplPublicVisibilityTest {
                 mock(PlaceScoreRepository.class),
                 mock(MediaAssetRepository.class),
                 mock(ImageStorageCleanupService.class),
-                mock(TripDestinationRepository.class));
+                mock(TripDestinationRepository.class),
+                mock(SocialNotificationService.class));
     }
 
     @Test

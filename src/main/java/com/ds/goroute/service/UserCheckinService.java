@@ -7,6 +7,7 @@ import com.ds.goroute.dto.response.UserCheckinResponse;
 import com.ds.goroute.dto.response.CheckinLikeResponse;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -25,7 +26,14 @@ public interface UserCheckinService {
      * What the composer should show once a place is chosen: the author's existing rating
      * if any, which controls to show, and the limits currently configured.
      */
-    CheckinContextResponse context(UUID userId, UUID placeId, String locationKey);
+    CheckinContextResponse context(UUID userId, UUID placeId, String locationKey,
+                                   BigDecimal latitude, BigDecimal longitude,
+                                   BigDecimal accuracyMeters);
+
+    /** Backwards-compatible context call for non-composer integrations without a GPS preview. */
+    default CheckinContextResponse context(UUID userId, UUID placeId, String locationKey) {
+        return context(userId, placeId, locationKey, null, null, null);
+    }
 
     /**
      * Creates a check-in, and creates or updates the author's review when they rated a

@@ -18,6 +18,7 @@ import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.service.StarService;
 import com.ds.goroute.service.notification.NotificationHelper;
+import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.type.*;
 import com.ds.goroute.utils.JsonUtils;
 import com.ds.goroute.utils.MemoryImageUrlNormalizer;
@@ -59,6 +60,7 @@ public class TripServiceImpl implements TripService {
     private final MediaAssetRepository mediaAssetRepository;
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final TripDestinationRepository tripDestinationRepository;
+    private final SocialNotificationService socialNotificationService;
 
     private List<TripDestination> buildDestinationsForTrip(
             UUID tripId,
@@ -1433,9 +1435,11 @@ public class TripServiceImpl implements TripService {
         }
 
         TripHelpfulVote existingVote = tripHelpfulVoteRepository.findByTripIdAndUserId(tripId, userId);
+        boolean isHelpfulNow = true;
         if (existingVote != null) {
             if (existingVote.isHelpful()) {
                 tripHelpfulVoteRepository.delete(tripId, userId);
+                isHelpfulNow = false;
             } else {
                 existingVote.setHelpful(true);
                 tripHelpfulVoteRepository.update(existingVote);
@@ -1450,6 +1454,10 @@ public class TripServiceImpl implements TripService {
         }
 
         syncTripVoteCounts(trip);
+        if (isHelpfulNow) {
+            socialNotificationService.notifyLike(
+                    trip.getOwnerId(), userId, "TRIP", tripId);
+        }
         return buildTripVoteResponse(trip, userId);
     }
 

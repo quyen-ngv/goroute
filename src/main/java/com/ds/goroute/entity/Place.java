@@ -32,6 +32,8 @@ public class Place {
     private String address;
     private BigDecimal latitude;
     private BigDecimal longitude;
+    /** Optional per-place check-in verification radius; null falls back to global config. */
+    private Integer verificationRadiusMeters;
     private String plusCode;
     private String timezone;
     private String destinations; // JSON array

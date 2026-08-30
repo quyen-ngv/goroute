@@ -47,6 +47,7 @@ public class StarService {
     private static final int TRANSACTION_LIMIT = 50;
 
     private final StarMapper starMapper;
+    private final StarWalletBootstrapService walletBootstrap;
 
     @Transactional
     public void reserveTripCreation(UUID userId) {
@@ -230,7 +231,7 @@ public class StarService {
     }
 
     private void ensureWallet(UUID userId) {
-        starMapper.createWallet(userId);
+        walletBootstrap.ensureExists(userId);
     }
 
     /** Reads an entry by its idempotency key, for callers that need to see the original. */

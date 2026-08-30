@@ -51,6 +51,14 @@ class BusinessConfigServiceImplTest {
     }
 
     @Test
+    void anInactivePassportConfigRowDisablesTheFeature() {
+        when(store.rawValue(BusinessConfigKey.PASSPORT_ENABLED)).thenReturn(Optional.empty());
+        when(store.explicitlyInactive(BusinessConfigKey.PASSPORT_ENABLED)).thenReturn(true);
+
+        assertThat(service.getBoolean(BusinessConfigKey.PASSPORT_ENABLED)).isFalse();
+    }
+
+    @Test
     void keepsCodeDefaultWhenBooleanValueIsNonsense() {
         stub(BusinessConfigKey.CHECKIN_GALLERY_ALLOWED_FOR_FREE, "maybe");
 

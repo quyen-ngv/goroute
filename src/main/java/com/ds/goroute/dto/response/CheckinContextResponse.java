@@ -42,6 +42,12 @@ public class CheckinContextResponse {
     private int maxPhotos;
     private int maxCaptionLength;
     private int verifyRadiusMeters;
+    /** True when the effective radius came from the selected Place instead of global config. */
+    private boolean placeSpecificRadius;
+    /** Optional preview calculated from the coordinates supplied to the context endpoint. */
+    private Double distanceMeters;
+    private Boolean withinVerificationRadius;
+    private Boolean gpsAccuracyAcceptable;
     private int maxAccuracyMeters;
 
     private boolean guideScreenEnabled;

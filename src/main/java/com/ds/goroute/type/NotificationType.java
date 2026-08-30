@@ -56,6 +56,11 @@ public enum NotificationType {
     // Comment events
     COMMENT_ADDED,
     COMMENT_DELETED,
+
+    // Social interactions on public posts. These are aggregated per recipient and
+    // target to prevent a busy post from producing a push for every single action.
+    SOCIAL_LIKE,
+    SOCIAL_COMMENT,
     
     // Other
     ROUTE_OPTIMIZED,

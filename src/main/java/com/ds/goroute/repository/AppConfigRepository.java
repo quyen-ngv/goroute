@@ -12,5 +12,6 @@ public interface AppConfigRepository {
     int delete(UUID id);
     Optional<AppConfig> findById(UUID id);
     Optional<AppConfig> findActiveByLabelAndKey(String label, String key);
+    Optional<AppConfig> findByLabelAndKey(String label, String key);
     List<AppConfig> findAdmin(String query, String label, Boolean active, int limit, int offset);
 }

@@ -19,6 +19,7 @@ public class LocationImageResponse {
     private UUID id;
     private String fullAddress;
     private String citySlug;
+    private String provinceCode;
     private String slogan;
     private List<LocationDescriptionSection> description;
     private String imageUrl;

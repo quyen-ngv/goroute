@@ -62,6 +62,18 @@ public class NotificationRepositoryImpl implements NotificationRepository {
     public int countUnread(UUID userId) {
         return notificationMapper.countUnread(userId);
     }
+
+    @Override
+    public Optional<Notification> findRecentUnreadSocialNotification(
+            UUID userId, com.ds.goroute.type.NotificationType type, String targetType, UUID targetId) {
+        return Optional.ofNullable(notificationMapper.findRecentUnreadSocialNotification(
+                userId, type, targetType, targetId));
+    }
+
+    @Override
+    public void updateSocialNotification(Notification notification) {
+        notificationMapper.updateSocialNotification(notification);
+    }
     
     @Override
     public void updateById(Notification notification) {

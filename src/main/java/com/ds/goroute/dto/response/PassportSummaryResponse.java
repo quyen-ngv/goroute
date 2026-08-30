@@ -35,6 +35,8 @@ public class PassportSummaryResponse {
     private int pointsBalance;
     private List<PassportStampResponse> stamps;
     private List<PassportStampProgressResponse> nextStamps;
+    /** Place/city proof tags, independently configured from generic achievement stamps. */
+    private List<PassportTagResponse> earnedTags;
 
     private LocalDateTime firstEventAt;
     private LocalDateTime lastEventAt;

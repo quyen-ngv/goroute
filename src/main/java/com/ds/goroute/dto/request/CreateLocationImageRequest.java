@@ -30,6 +30,8 @@ public class CreateLocationImageRequest {
     @NotBlank(message = "Image URL is required")
     private String imageUrl;
     private String avatarUrl;
+    @Size(max = 10)
+    private String provinceCode;
     private BigDecimal latitude;
     private BigDecimal longitude;
     

@@ -3,6 +3,7 @@ package com.ds.goroute.repository.impl;
 import com.ds.goroute.entity.AiTripDraft;
 import com.ds.goroute.mapper.AiTripMapper;
 import com.ds.goroute.repository.AiTripRepository;
+import com.ds.goroute.service.UserSubscriptionBootstrapService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
@@ -14,10 +15,11 @@ import java.util.UUID;
 public class AiTripRepositoryImpl implements AiTripRepository {
 
     private final AiTripMapper aiTripMapper;
+    private final UserSubscriptionBootstrapService subscriptionBootstrap;
 
     @Override
     public void ensureSubscription(UUID userId) {
-        aiTripMapper.ensureSubscription(userId);
+        subscriptionBootstrap.ensureExists(userId);
     }
 
     @Override

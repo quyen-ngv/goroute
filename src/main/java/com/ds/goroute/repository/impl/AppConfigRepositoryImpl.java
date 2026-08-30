@@ -22,6 +22,9 @@ public class AppConfigRepositoryImpl implements AppConfigRepository {
     @Override public Optional<AppConfig> findActiveByLabelAndKey(String label, String key) {
         return Optional.ofNullable(mapper.findActiveByLabelAndKey(label, key));
     }
+    @Override public Optional<AppConfig> findByLabelAndKey(String label, String key) {
+        return Optional.ofNullable(mapper.findByLabelAndKey(label, key));
+    }
     @Override public List<AppConfig> findAdmin(String query, String label, Boolean active, int limit, int offset) {
         return mapper.findAdmin(query, label, active, limit, offset);
     }

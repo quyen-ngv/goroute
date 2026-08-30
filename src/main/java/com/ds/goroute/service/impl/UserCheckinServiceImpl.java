@@ -27,6 +27,7 @@ import com.ds.goroute.service.ContentModerationService;
 import com.ds.goroute.service.ReviewScoringService;
 import com.ds.goroute.service.UserCheckinService;
 import com.ds.goroute.service.checkin.LocationKeyFactory;
+import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.CheckinPhotoSource;
 import com.ds.goroute.type.CheckinVerificationStatus;
@@ -75,10 +76,13 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     private final BusinessConfigService config;
     private final LocationKeyFactory locationKeyFactory;
     private final ApplicationEventPublisher events;
+    private final SocialNotificationService socialNotificationService;
 
     @Override
     @Transactional(readOnly = true)
-    public CheckinContextResponse context(UUID userId, UUID placeId, String locationKey) {
+    public CheckinContextResponse context(UUID userId, UUID placeId, String locationKey,
+                                          BigDecimal latitude, BigDecimal longitude,
+                                          BigDecimal accuracyMeters) {
         Optional<Place> place = placeId == null ? Optional.empty() : placeRepository.findById(placeId);
         Optional<UserReview> existing = placeId == null
                 ? Optional.empty()
@@ -90,6 +94,18 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .findByLocationKey(cluster, MAX_PAGE_SIZE, 0).stream()
                 .filter(checkin -> userId.equals(checkin.getUserId()))
                 .count();
+
+        int globalRadius = config.getInt(BusinessConfigKey.CHECKIN_VERIFY_RADIUS_METERS);
+        int effectiveRadius = effectiveVerificationRadius(place.orElse(null), globalRadius);
+        Double distanceMeters = place.map(found -> GeoDistance.betweenOrNull(
+                latitude, longitude, found.getLatitude(), found.getLongitude())).orElse(null);
+        Boolean withinVerificationRadius = distanceMeters == null
+                ? null
+                : distanceMeters <= effectiveRadius;
+        int maxAccuracyMeters = config.getInt(BusinessConfigKey.CHECKIN_MAX_ACCURACY_METERS);
+        Boolean gpsAccuracyAcceptable = accuracyMeters == null
+                ? null
+                : accuracyMeters.doubleValue() <= maxAccuracyMeters;
 
         return CheckinContextResponse.builder()
                 .checkinEnabled(config.getBoolean(BusinessConfigKey.CHECKIN_ENABLED))
@@ -107,8 +123,14 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .galleryAllowed(isGalleryAllowed(userId))
                 .maxPhotos(config.getInt(BusinessConfigKey.CHECKIN_MAX_PHOTOS))
                 .maxCaptionLength(config.getInt(BusinessConfigKey.CHECKIN_MAX_CAPTION_LENGTH))
-                .verifyRadiusMeters(config.getInt(BusinessConfigKey.CHECKIN_VERIFY_RADIUS_METERS))
-                .maxAccuracyMeters(config.getInt(BusinessConfigKey.CHECKIN_MAX_ACCURACY_METERS))
+                .verifyRadiusMeters(effectiveRadius)
+                .placeSpecificRadius(place.map(Place::getVerificationRadiusMeters)
+                        .map(value -> value >= 20)
+                        .orElse(false))
+                .distanceMeters(distanceMeters)
+                .withinVerificationRadius(withinVerificationRadius)
+                .gpsAccuracyAcceptable(gpsAccuracyAcceptable)
+                .maxAccuracyMeters(maxAccuracyMeters)
                 .guideScreenEnabled(config.getBoolean(BusinessConfigKey.CHECKIN_GUIDE_SCREEN_ENABLED))
                 .guideScreenMaxViews(config.getInt(BusinessConfigKey.CHECKIN_GUIDE_SCREEN_MAX_VIEWS))
                 .cameraRewardMultiplier(config.getDecimal(BusinessConfigKey.CHECKIN_REWARD_CAMERA_MULTIPLIER))
@@ -130,12 +152,6 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         }
 
         List<CreateUserCheckinRequest.CheckinPhotoInput> photos = request.getPhotos();
-        int maxPhotos = config.getInt(BusinessConfigKey.CHECKIN_MAX_PHOTOS);
-        if (photos.size() > maxPhotos) {
-            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
-                    "At most " + maxPhotos + " photos are allowed");
-        }
-
         CheckinPhotoSource photoSource = resolvePhotoSource(photos);
         // The flag only hides the button in the app; refusing the upload here is what
         // actually turns the feature off.
@@ -212,12 +228,6 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     public UserCheckinResponse update(UUID userId, UUID checkinId, UpdateUserCheckinRequest request) {
         UserCheckin checkin = requireOwned(userId, checkinId);
         List<CreateUserCheckinRequest.CheckinPhotoInput> photos = request.getPhotos();
-        int maxPhotos = config.getInt(BusinessConfigKey.CHECKIN_MAX_PHOTOS);
-        if (photos.size() > maxPhotos) {
-            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
-                    "At most " + maxPhotos + " photos are allowed");
-        }
-
         CheckinPhotoSource photoSource = resolvePhotoSource(photos);
         if (photoSource != CheckinPhotoSource.CAMERA && !isGalleryAllowed(userId)) {
             throw new BusinessException(ErrorConstant.CHECKIN_GALLERY_NOT_ALLOWED,
@@ -300,6 +310,8 @@ public class UserCheckinServiceImpl implements UserCheckinService {
             checkinRepository.deleteLike(checkinId, userId);
         } else {
             checkinRepository.insertLike(checkinId, userId);
+            socialNotificationService.notifyLike(
+                    checkin.getUserId(), userId, ModeratedContentType.CHECKIN.name(), checkinId);
         }
         return CheckinLikeResponse.builder()
                 .checkinId(checkinId)
@@ -362,16 +374,30 @@ public class UserCheckinServiceImpl implements UserCheckinService {
             checkin.setVerificationStatus(CheckinVerificationStatus.UNVERIFIED);
             return;
         }
+        // A raw map/reverse-geocoded point has no catalogue boundary to compare against.
+        // Camera + GPS accuracy alone proves where the phone was, not that it was at a
+        // particular Place. Province-wide Passport tags may still count this event, but
+        // the trust badge must remain unverified until the point is linked to a Place.
+        if (place == null) {
+            checkin.setVerificationStatus(CheckinVerificationStatus.UNVERIFIED);
+            return;
+        }
         int maxAccuracy = config.getInt(BusinessConfigKey.CHECKIN_MAX_ACCURACY_METERS);
         if (checkin.getAccuracyMeters() == null || checkin.getAccuracyMeters().doubleValue() > maxAccuracy) {
             checkin.setVerificationStatus(CheckinVerificationStatus.UNVERIFIED);
             return;
         }
-        int radius = config.getInt(BusinessConfigKey.CHECKIN_VERIFY_RADIUS_METERS);
-        boolean withinRadius = distance == null || distance <= radius;
+        int radius = effectiveVerificationRadius(place,
+                config.getInt(BusinessConfigKey.CHECKIN_VERIFY_RADIUS_METERS));
+        boolean withinRadius = distance != null && distance <= radius;
         checkin.setVerificationStatus(withinRadius
                 ? CheckinVerificationStatus.VERIFIED
                 : CheckinVerificationStatus.UNVERIFIED);
+    }
+
+    private int effectiveVerificationRadius(Place place, int globalRadius) {
+        Integer configured = place == null ? null : place.getVerificationRadiusMeters();
+        return configured != null && configured >= 20 ? configured : globalRadius;
     }
 
     /**

@@ -3,6 +3,7 @@ package com.ds.goroute.controller;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.response.PassportSummaryResponse;
 import com.ds.goroute.dto.response.ProvinceMapEntryResponse;
+import com.ds.goroute.dto.response.PlacePassportTagsResponse;
 import com.ds.goroute.entity.PassportEvent;
 import com.ds.goroute.service.BaseService;
 import com.ds.goroute.service.PassportService;
@@ -54,6 +55,13 @@ public class PassportController extends BaseService {
             @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
             @RequestAttribute("userId") UUID userId) {
         return ResponseEntity.ok(ofSucceeded(passportService.timeline(userId, page, size)));
+    }
+
+    @GetMapping("/places/{placeId}/tags")
+    public ResponseEntity<BaseResponse<PlacePassportTagsResponse>> placeTags(
+            @PathVariable UUID placeId,
+            @RequestAttribute("userId") UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(passportService.placePassportTags(userId, placeId)));
     }
 
     @GetMapping("/provinces/{provinceCode}")

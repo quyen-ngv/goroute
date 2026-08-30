@@ -23,6 +23,8 @@ public class LocationImage {
     private String imageUrl;
     private String avatarUrl;
     private String citySlug;
+    /** Optional legacy province code; Passport scope now anchors directly to this image. */
+    private String provinceCode;
     private BigDecimal latitude;
     private BigDecimal longitude;
     private Integer priority;

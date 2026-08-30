@@ -22,6 +22,7 @@ import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.repository.UserReviewRepository;
 import com.ds.goroute.service.ContentCommentService;
 import com.ds.goroute.service.ContentModerationService;
+import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.type.ContentVisibility;
 import com.ds.goroute.type.MemberStatus;
 import com.ds.goroute.type.ModeratedContentType;
@@ -53,6 +54,7 @@ public class ContentCommentServiceImpl implements ContentCommentService {
     private final PlaceCollectionMapper collectionMapper;
     private final UserRepository userRepository;
     private final ContentModerationService contentModerationService;
+    private final SocialNotificationService socialNotificationService;
 
     @Override
     @Transactional(readOnly = true)
@@ -115,6 +117,16 @@ public class ContentCommentServiceImpl implements ContentCommentService {
                 .updatedAt(now)
                 .build();
         commentRepository.insert(comment);
+        if (request.getParentId() != null) {
+            commentRepository.findById(request.getParentId()).ifPresent(parent ->
+                    socialNotificationService.notifyComment(
+                            parent.getUserId(), userId,
+                            ModeratedContentType.CONTENT_COMMENT.name(), parent.getId()));
+        } else {
+            ownerOf(request.getContentType(), request.getContentId()).ifPresent(ownerId ->
+                    socialNotificationService.notifyComment(
+                            ownerId, userId, request.getContentType().name(), request.getContentId()));
+        }
         return toResponse(comment, false);
     }
 
@@ -142,6 +154,8 @@ public class ContentCommentServiceImpl implements ContentCommentService {
             commentRepository.deleteLike(commentId, userId);
         } else {
             commentRepository.insertLike(commentId, userId);
+            socialNotificationService.notifyLike(
+                    comment.getUserId(), userId, ModeratedContentType.CONTENT_COMMENT.name(), commentId);
         }
         ContentComment refreshed = commentRepository.findByIdWithStats(commentId, userId)
                 .orElse(comment);
@@ -235,6 +249,17 @@ public class ContentCommentServiceImpl implements ContentCommentService {
                 || contentType == ModeratedContentType.CHECKIN
                 || contentType == ModeratedContentType.REVIEW
                 || contentType == ModeratedContentType.PLACE_COLLECTION;
+    }
+
+    private java.util.Optional<UUID> ownerOf(ModeratedContentType contentType, UUID contentId) {
+        return switch (contentType) {
+            case TRIP -> tripRepository.findById(contentId).map(Trip::getOwnerId);
+            case CHECKIN -> checkinRepository.findById(contentId).map(UserCheckin::getUserId);
+            case REVIEW -> reviewRepository.findById(contentId).map(review -> review.getUserId());
+            case PLACE_COLLECTION -> java.util.Optional.ofNullable(collectionMapper.findById(contentId))
+                    .map(PlaceCollection::getOwnerId);
+            default -> java.util.Optional.empty();
+        };
     }
 
     private void verifyTripReadable(UUID tripId, UUID viewerId) {

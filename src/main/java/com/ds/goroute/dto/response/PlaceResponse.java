@@ -31,6 +31,7 @@ public class PlaceResponse {
     private List<String> destinations;
     private BigDecimal latitude;
     private BigDecimal longitude;
+    private Integer verificationRadiusMeters;
     private String phone;
     private String website;
     private String googleMapsLink;

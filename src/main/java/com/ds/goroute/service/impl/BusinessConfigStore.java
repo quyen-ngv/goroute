@@ -27,4 +27,11 @@ public class BusinessConfigStore {
         return repository.findActiveByLabelAndKey(configKey.label(), configKey.key())
                 .map(AppConfig::getValue);
     }
+
+    @Cacheable(cacheNames = "businessConfig", key = "#configKey.name() + ':inactive'", sync = true)
+    public boolean explicitlyInactive(BusinessConfigKey configKey) {
+        return repository.findByLabelAndKey(configKey.label(), configKey.key())
+                .map(config -> !Boolean.TRUE.equals(config.getIsActive()))
+                .orElse(false);
+    }
 }

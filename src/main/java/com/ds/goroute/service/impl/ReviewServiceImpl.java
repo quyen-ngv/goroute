@@ -15,6 +15,8 @@ import com.ds.goroute.service.ReviewService;
 import com.ds.goroute.service.ReviewScoringService;
 import com.ds.goroute.service.ReviewFraudDetectionService;
 import com.ds.goroute.service.StarService;
+import com.ds.goroute.service.notification.SocialNotificationService;
+import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.UserTier;
 import com.ds.goroute.utils.JsonUtils;
 import lombok.RequiredArgsConstructor;
@@ -47,6 +49,7 @@ public class ReviewServiceImpl implements ReviewService {
     private final ReviewScoringService scoringService;
     private final ReviewFraudDetectionService fraudDetectionService;
     private final ImageStorageCleanupService imageStorageCleanupService;
+    private final SocialNotificationService socialNotificationService;
 
     /**
      * Create a new review
@@ -289,10 +292,12 @@ public class ReviewServiceImpl implements ReviewService {
 
         ReviewHelpfulVote existingVote = voteRepository.findByReviewIdAndUserId(reviewId, userId);
 
+        boolean isHelpfulNow = true;
         if (existingVote != null) {
             if (existingVote.isHelpful()) {
                 // Already voted helpful, remove vote
                 voteRepository.delete(reviewId, userId);
+                isHelpfulNow = false;
             } else {
                 // Was unhelpful, change to helpful
                 existingVote.setHelpful(true);
@@ -309,7 +314,12 @@ public class ReviewServiceImpl implements ReviewService {
             voteRepository.save(vote);
         }
 
-        return syncVoteCounts(review, userId);
+        UserReviewResponse response = syncVoteCounts(review, userId);
+        if (isHelpfulNow) {
+            socialNotificationService.notifyLike(
+                    review.getUserId(), userId, ModeratedContentType.REVIEW.name(), reviewId);
+        }
+        return response;
     }
 
     @Override

@@ -31,6 +31,9 @@ public class BusinessConfigServiceImpl implements BusinessConfigService {
         require(configKey, BusinessConfigKey.ValueType.BOOLEAN);
         String raw = rawValue(configKey).orElse(null);
         if (raw == null) {
+            if (configKey == BusinessConfigKey.PASSPORT_ENABLED && store.explicitlyInactive(configKey)) {
+                return false;
+            }
             return configKey.defaultBoolean();
         }
         String normalized = raw.trim().toLowerCase(Locale.ROOT);

@@ -2,6 +2,8 @@ package com.ds.goroute.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -33,6 +35,11 @@ public class UpdatePlaceRequest {
 
     @NotNull(message = "Longitude is required")
     private BigDecimal longitude;
+
+    /** Null means use CHECKIN.VERIFY_RADIUS_METERS. */
+    @Min(value = 20, message = "Verification radius must be at least 20 meters")
+    @Max(value = 5000, message = "Verification radius must be at most 5000 meters")
+    private Integer verificationRadiusMeters;
 
     private String plusCode;
     private String timezone;

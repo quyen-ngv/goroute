@@ -80,6 +80,29 @@
         WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
         ORDER BY created_at DESC
     </select>
+
+    <select id="findRecentUnreadSocialNotification" resultMap="NotificationResultMap">
+        SELECT <include refid="notificationColumns"/>
+        FROM notifications
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND type = #{type}
+          AND is_read = FALSE
+          AND data -&gt;&gt; 'targetType' = #{targetType}
+          AND data -&gt;&gt; 'targetId' = CAST(#{targetId,javaType=java.util.UUID,jdbcType=OTHER} AS TEXT)
+          AND created_at &gt;= NOW() - INTERVAL '30 minutes'
+        ORDER BY created_at DESC
+        LIMIT 1
+    </select>
+
+    <update id="updateSocialNotification" parameterType="com.ds.goroute.entity.Notification">
+        UPDATE notifications SET
+            body = #{body},
+            data = #{data,jdbcType=VARCHAR}::jsonb,
+            actor_id = #{actorId,javaType=java.util.UUID,jdbcType=OTHER},
+            is_read = FALSE,
+            created_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
     
     <select id="selectByUserIdAndTripId" resultMap="NotificationResultMap">
         SELECT <include refid="notificationColumns"/>

@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -53,8 +54,12 @@ public class UserCheckinController extends BaseService {
     public ResponseEntity<BaseResponse<CheckinContextResponse>> context(
             @RequestParam(required = false) UUID placeId,
             @RequestParam(required = false) String locationKey,
+            @RequestParam(required = false) BigDecimal latitude,
+            @RequestParam(required = false) BigDecimal longitude,
+            @RequestParam(required = false) BigDecimal accuracyMeters,
             @RequestAttribute("userId") UUID userId) {
-        return ResponseEntity.ok(ofSucceeded(checkinService.context(userId, placeId, locationKey)));
+        return ResponseEntity.ok(ofSucceeded(checkinService.context(
+                userId, placeId, locationKey, latitude, longitude, accuracyMeters)));
     }
 
     @PostMapping

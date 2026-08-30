@@ -17,6 +17,7 @@
         <result property="destinations" column="destinations"/>
         <result property="latitude" column="latitude"/>
         <result property="longitude" column="longitude"/>
+        <result property="verificationRadiusMeters" column="verification_radius_meters"/>
         <result property="plusCode" column="plus_code"/>
         <result property="timezone" column="timezone"/>
         <result property="phone" column="phone"/>
@@ -65,7 +66,7 @@
     <insert id="insert" parameterType="com.ds.goroute.entity.Place">
         INSERT INTO places (
             id, place_id, cid, data_id, input_id,
-            title, place_group, category, address, destinations, latitude, longitude,
+            title, place_group, category, address, destinations, latitude, longitude, verification_radius_meters,
             plus_code, timezone, phone, website, google_maps_link,
             review_count, review_rating, reviews_per_rating,
             thumbnail, images, descriptions, ai_description, ai_references, status, visibility_status, price_range,
@@ -78,7 +79,7 @@
             created_at, updated_at
         ) VALUES (
             #{id}, #{placeId}, #{cid}, #{dataId}, #{inputId},
-            #{title}, #{placeGroup,typeHandler=org.apache.ibatis.type.EnumTypeHandler}, #{category}, #{address}, #{destinations}::jsonb, #{latitude}, #{longitude},
+            #{title}, #{placeGroup,typeHandler=org.apache.ibatis.type.EnumTypeHandler}, #{category}, #{address}, #{destinations}::jsonb, #{latitude}, #{longitude}, #{verificationRadiusMeters},
             #{plusCode}, #{timezone}, #{phone}, #{website}, #{googleMapsLink},
             #{reviewCount}, #{reviewRating}, #{reviewsPerRating},
             #{thumbnail}, #{images}, #{descriptions}, #{aiDescription}, #{aiReferences}::jsonb, #{status}, #{visibilityStatus,javaType=com.ds.goroute.type.PlaceVisibilityStatus}, #{priceRange},
@@ -101,6 +102,7 @@
             destinations = #{destinations}::jsonb,
             latitude = #{latitude},
             longitude = #{longitude},
+            verification_radius_meters = #{verificationRadiusMeters},
             plus_code = #{plusCode},
             timezone = #{timezone},
             phone = #{phone},

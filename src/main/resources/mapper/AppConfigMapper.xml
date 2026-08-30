@@ -40,6 +40,13 @@
         WHERE label = #{label} AND key = #{key} AND is_active = TRUE
     </select>
 
+    <select id="findByLabelAndKey" resultMap="appConfigMap">
+        SELECT <include refid="columns"/> FROM config
+        WHERE label = #{label} AND key = #{key}
+        ORDER BY updated_at DESC
+        LIMIT 1
+    </select>
+
     <select id="findAdmin" resultMap="appConfigMap">
         SELECT <include refid="columns"/> FROM config
         <where>
