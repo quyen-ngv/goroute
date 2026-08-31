@@ -14,5 +14,10 @@ public class CheckinPhotoResponse {
     private String url;
     private CheckinPhotoSource source;
     private Integer position;
+
+    /** Words about this one photo. Null when the author wrote none. */
+    private String title;
+    private String description;
+
     private LocalDateTime capturedAt;
 }

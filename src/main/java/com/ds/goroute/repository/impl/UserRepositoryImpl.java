@@ -47,6 +47,13 @@ public class UserRepositoryImpl implements UserRepository {
     }
     
     @Override
+    public List<User> findByIds(java.util.Collection<UUID> ids) {
+        // An empty IN () is a syntax error, and the answer is knowable here.
+        if (ids == null || ids.isEmpty()) return List.of();
+        return userMapper.selectByIds(ids);
+    }
+
+    @Override
     public List<User> findAll() {
         return userMapper.selectAll();
     }

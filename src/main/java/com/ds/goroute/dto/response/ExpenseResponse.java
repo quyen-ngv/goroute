@@ -26,6 +26,14 @@ public class ExpenseResponse {
     private UserResponse paidBy;
     private UUID paidByGuestMemberId; // For guest payer
     private List<ExpenseSplitResponse> splits;
+    /**
+     * Flat receipt urls. Kept exactly as it was: this is what shipped, and
+     * clients still read it. Built from the same media_assets rows as
+     * {@link #photoUrlsV2}, so the two cannot disagree.
+     */
     private List<String> photoUrls;
+
+    /** The same receipts, with title, description, capture date and location. */
+    private List<MemoryImageResponse> photoUrlsV2;
     private LocalDateTime createdAt;
 }

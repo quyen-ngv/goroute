@@ -14,6 +14,9 @@ public interface ActivityRepository {
     
     List<Activity> findByTripId(UUID tripId);
     
+    /** Number of activities on a trip, for list payloads that do not carry the activities themselves. */
+    int countByTripId(UUID tripId);
+    
     List<Activity> findByTripIdAndDayNumber(UUID tripId, int dayNumber);
     
     void updateById(Activity activity);

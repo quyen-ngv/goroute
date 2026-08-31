@@ -22,6 +22,11 @@ public interface UserCheckinMapper {
     UserCheckin findById(@Param("id") UUID id);
 
     /** Resolves a repeated submit of the same composition back to the row it created. */
+    UserCheckin findMine(@Param("userId") UUID userId,
+                         @Param("activityId") UUID activityId,
+                         @Param("placeId") UUID placeId,
+                         @Param("tripId") UUID tripId);
+
     UserCheckin findByIdempotencyKey(@Param("userId") UUID userId,
                                      @Param("idempotencyKey") String idempotencyKey);
 

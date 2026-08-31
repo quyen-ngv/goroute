@@ -9,9 +9,11 @@ import com.ds.goroute.dto.request.MarkPaymentRequest;
 import com.ds.goroute.dto.response.BudgetOverviewResponse;
 import com.ds.goroute.dto.response.ExpenseResponse;
 import com.ds.goroute.dto.response.ExpenseSplitResponse;
+import com.ds.goroute.dto.response.MemoryImageResponse;
 import com.ds.goroute.dto.response.UserResponse;
 import com.ds.goroute.entity.Activity;
 import com.ds.goroute.entity.Expense;
+import com.ds.goroute.entity.MediaAsset;
 import com.ds.goroute.entity.ExpenseSplit;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.entity.TripMember;
@@ -20,6 +22,7 @@ import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.ExpenseRepository;
 import com.ds.goroute.repository.ExpenseSplitRepository;
+import com.ds.goroute.repository.MediaAssetRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.UserRepository;
@@ -30,6 +33,7 @@ import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.ExpenseCategory;
 import com.ds.goroute.type.MemberStatus;
 import com.ds.goroute.type.NotificationType;
+import com.ds.goroute.utils.MediaAssetResponseMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -60,6 +64,10 @@ public class ExpenseServiceImpl implements ExpenseService {
     private final NotificationHelper notificationHelper;
     private final ExchangeRateService exchangeRateService;
     private final ImageStorageCleanupService imageStorageCleanupService;
+    private final MediaAssetRepository mediaAssetRepository;
+
+    /** Receipts live in media_assets alongside trip memories, keyed by this. */
+    private static final String EXPENSE_ENTITY_TYPE = "EXPENSE";
 
     /**
      * Check if user has access to trip (must be owner or ACCEPTED member, not LEFT)
@@ -106,6 +114,7 @@ public class ExpenseServiceImpl implements ExpenseService {
         applyTripCurrencyConversion(expense, trip);
 
         expenseRepository.insert(expense);
+        syncExpensePhotos(expense, request.getPhotoUrls(), userId);
 
         if (request.getSplits() != null && !request.getSplits().isEmpty()) {
             for (var split : request.getSplits()) {
@@ -157,8 +166,17 @@ public class ExpenseServiceImpl implements ExpenseService {
                     .collect(Collectors.toList());
         }
 
+        // One media query for the whole page rather than one per expense.
+        Map<UUID, List<MediaAsset>> photosByExpense = mediaAssetRepository
+                .findByEntityIds(EXPENSE_ENTITY_TYPE,
+                        expenses.stream().map(Expense::getId).toList())
+                .stream()
+                .collect(Collectors.groupingBy(MediaAsset::getEntityId));
+
         return expenses.stream()
-                .map(this::mapToExpenseResponse)
+                .map(expense -> mapToExpenseResponse(
+                        expense,
+                        photosByExpense.getOrDefault(expense.getId(), List.of())))
                 .collect(Collectors.toList());
     }
 
@@ -243,6 +261,7 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
         Set<UUID> recipients = expenseRecipients(expense);
         imageStorageCleanupService.deleteImagesForEntityRecord("EXPENSE", expenseId);
+        mediaAssetRepository.softDeleteByEntity(EXPENSE_ENTITY_TYPE, expenseId);
         expenseSplitRepository.deleteByExpenseId(expenseId);
         expenseRepository.deleteById(expenseId);
         log.info("Expense deleted: {}", expenseId);
@@ -294,6 +313,7 @@ public class ExpenseServiceImpl implements ExpenseService {
         }
         if (request.getPhotoUrls() != null) {
             expense.setPhotoUrls(request.getPhotoUrls().toArray(new String[0]));
+            syncExpensePhotos(expense, request.getPhotoUrls(), userId);
         }
 
         // Update paidBy if provided
@@ -529,6 +549,56 @@ public class ExpenseServiceImpl implements ExpenseService {
     }
 
     private ExpenseResponse mapToExpenseResponse(Expense expense) {
+        return mapToExpenseResponse(
+                expense,
+                mediaAssetRepository.findByEntity(EXPENSE_ENTITY_TYPE, expense.getId()));
+    }
+
+    /**
+     * Brings the expense's media_assets rows in line with its url list.
+     *
+     * <p>Only the difference is written: a url that already has a row keeps it,
+     * and with it whatever capture date and coordinates were read off the file.
+     * Rewriting every row on each save would quietly erase that metadata the
+     * first time somebody edited an unrelated field.
+     */
+    private void syncExpensePhotos(Expense expense, List<String> urls, UUID userId) {
+        if (urls == null) return;
+
+        List<String> wanted = urls.stream()
+                .filter(url -> url != null && !url.isBlank())
+                .map(String::trim)
+                .distinct()
+                .toList();
+
+        List<MediaAsset> existing =
+                mediaAssetRepository.findByEntity(EXPENSE_ENTITY_TYPE, expense.getId());
+        Set<String> existingUrls = existing.stream()
+                .map(MediaAsset::getUrl)
+                .collect(Collectors.toSet());
+
+        for (MediaAsset asset : existing) {
+            if (!wanted.contains(asset.getUrl())) {
+                mediaAssetRepository.softDelete(asset.getId());
+            }
+        }
+
+        for (String url : wanted) {
+            if (existingUrls.contains(url)) continue;
+            mediaAssetRepository.insert(MediaAsset.builder()
+                    .id(UUID.randomUUID())
+                    .tripId(expense.getTripId())
+                    .activityId(expense.getActivityId())
+                    .entityType(EXPENSE_ENTITY_TYPE)
+                    .entityId(expense.getId())
+                    .mediaType("IMAGE")
+                    .url(url)
+                    .uploadedBy(userId)
+                    .build());
+        }
+    }
+
+    private ExpenseResponse mapToExpenseResponse(Expense expense, List<MediaAsset> photos) {
         log.info("ðŸ”µ mapToExpenseResponse: expenseId={}, paidBy={}, paidByGuestMemberId={}",
                 expense.getId(), expense.getPaidBy(), expense.getPaidByGuestMemberId());
 
@@ -614,6 +684,9 @@ public class ExpenseServiceImpl implements ExpenseService {
                 })
                 .collect(Collectors.toList());
 
+        List<MemoryImageResponse> photoResponses =
+                MediaAssetResponseMapper.toImageResponses(photos);
+
         return ExpenseResponse.builder()
                 .id(expense.getId())
                 .amount(expense.getAmount())
@@ -626,9 +699,25 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .paidBy(paidByResponse)
                 .paidByGuestMemberId(expense.getPaidByGuestMemberId())
                 .splits(splitResponses)
-                .photoUrls(expense.getPhotoUrls() != null ? List.of(expense.getPhotoUrls()) : List.of())
+                .photoUrls(expensePhotoUrls(expense, photoResponses))
+                .photoUrlsV2(photoResponses)
                 .createdAt(expense.getCreatedAt())
                 .build();
+    }
+
+    /**
+     * The flat url list, unchanged in shape from what shipped.
+     *
+     * <p>Prefers the media_assets rows so it agrees with {@code photoUrlsV2},
+     * and falls back to the original {@code expenses.photo_urls} column for a
+     * row the V136 backfill has not reached — an expense written by an older
+     * deploy, for instance.
+     */
+    private List<String> expensePhotoUrls(Expense expense, List<MemoryImageResponse> photos) {
+        if (!photos.isEmpty()) {
+            return MediaAssetResponseMapper.toUrls(photos);
+        }
+        return expense.getPhotoUrls() != null ? List.of(expense.getPhotoUrls()) : List.of();
     }
 
     private com.ds.goroute.dto.response.UserResponse mapToUserResponse(User user) {

@@ -86,6 +86,16 @@ public class UserCheckinController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(null));
     }
 
+    /** "Have I already checked in here?" -- the author's own latest matching visit. */
+    @GetMapping("/mine")
+    public ResponseEntity<BaseResponse<UserCheckinResponse>> mine(
+            @RequestParam(required = false) UUID activityId,
+            @RequestParam(required = false) UUID placeId,
+            @RequestParam(required = false) UUID tripId,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(checkinService.findMine(userId, activityId, placeId, tripId)));
+    }
+
     @GetMapping("/{checkinId}")
     public ResponseEntity<BaseResponse<UserCheckinResponse>> get(
             @PathVariable UUID checkinId,

@@ -28,6 +28,16 @@ public class UserCheckinPhoto {
     private String url;
     private CheckinPhotoSource source;
     private Integer position;
+
+    /**
+     * Words about this one photo, not about the visit.
+     *
+     * <p>The check-in already has a caption for the visit as a whole; these say which
+     * dish, which room, which view, for a reader swiping through the set.
+     */
+    private String title;
+    private String description;
+
     private LocalDateTime capturedAt;
     private BigDecimal latitude;
     private BigDecimal longitude;

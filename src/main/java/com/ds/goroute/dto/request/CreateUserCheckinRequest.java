@@ -133,6 +133,21 @@ public class CreateUserCheckinRequest {
          */
         private LocalDateTime capturedAt;
 
+        /**
+         * Words about this one photo, shown as the reader swipes to it.
+         *
+         * <p>Moderated exactly like the check-in caption: text that reaches other
+         * people goes through the same filter wherever it was typed, or the shorter
+         * field becomes the obvious way around it.
+         */
+        @Size(max = 200)
+        @ModeratedText(contentType = ModeratedContentType.CHECKIN, visibility = ModerationVisibility.PUBLIC)
+        private String title;
+
+        @Size(max = 2000)
+        @ModeratedText(contentType = ModeratedContentType.CHECKIN, visibility = ModerationVisibility.PUBLIC)
+        private String description;
+
         private BigDecimal latitude;
         private BigDecimal longitude;
         private BigDecimal accuracyMeters;

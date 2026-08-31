@@ -3,6 +3,13 @@
 These rules are mandatory for code under this backend. They complement the
 workspace-level `AGENTS.md`; the more specific rule wins when the two differ.
 
+This file owns **how to write backend code**. What the backend currently *does* —
+business rules, state machines, data model, API surface, flows — is documented in
+[`../.agents/docs/`](../.agents/docs/), one file per epic. Read the epic that owns the
+area before editing it, and update it in the same change when the change makes it wrong;
+[`../.agents/docs/MAINTENANCE.md`](../.agents/docs/MAINTENANCE.md) maps each kind of
+change to the file and section to update.
+
 ## Supported stack
 
 - Java 21, Spring Boot 3.x, Spring MVC, Spring Security, Bean Validation,
@@ -216,6 +223,11 @@ Before handoff:
 3. Run the full Maven test suite. Report any test that cannot run and why.
 4. Update this file when architecture, ownership, security conventions, or the
    supported stack changes.
+5. Update `../.agents/docs/` per `../.agents/docs/MAINTENANCE.md` when the change
+   touches an endpoint, an access rule, an enum, a `BusinessConfigKey`, an error code,
+   a migration, a scheduled job, an external integration, or any business rule,
+   threshold, formula or state transition. Record out-of-scope findings in
+   `../.agents/docs/ISSUES.md`.
 
 ## Primary references
 

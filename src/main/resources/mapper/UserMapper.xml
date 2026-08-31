@@ -61,6 +61,17 @@
         SELECT * FROM users WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
     </select>
 
+    <!-- Batch sibling of selectById. Callers that need the names behind a list of
+         ids (photo uploaders on a feed page) would otherwise run one query each. -->
+    <select id="selectByIds" resultMap="UserResultMap">
+        SELECT * FROM users
+        WHERE deleted_at IS NULL
+        AND id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">
+            #{id,javaType=java.util.UUID,jdbcType=OTHER}
+        </foreach>
+    </select>
+
     <update id="updateById" parameterType="com.ds.goroute.entity.User">
         UPDATE users SET
             email = #{email},

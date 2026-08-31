@@ -11,6 +11,15 @@
         <result column="media_type" property="mediaType" jdbcType="VARCHAR"/>
         <result column="url" property="url" jdbcType="VARCHAR"/>
         <result column="caption" property="caption" jdbcType="VARCHAR"/>
+        <result column="description" property="description" jdbcType="VARCHAR"/>
+        <result column="taken_at" property="takenAt" jdbcType="TIMESTAMP"/>
+        <result column="latitude" property="latitude" jdbcType="NUMERIC"/>
+        <result column="longitude" property="longitude" jdbcType="NUMERIC"/>
+        <result column="capture_source" property="captureSource" jdbcType="VARCHAR"/>
+        <result column="date_source" property="dateSource" jdbcType="VARCHAR"/>
+        <result column="place_id" property="placeId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="location_name" property="locationName" jdbcType="VARCHAR"/>
+        <result column="location_source" property="locationSource" jdbcType="VARCHAR"/>
         <result column="uploaded_by" property="uploadedBy" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
         <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
@@ -18,7 +27,10 @@
     </resultMap>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.MediaAsset">
-        INSERT INTO media_assets (id, trip_id, activity_id, entity_type, entity_id, media_type, url, caption, uploaded_by, created_at, updated_at)
+        INSERT INTO media_assets (id, trip_id, activity_id, entity_type, entity_id, media_type, url, caption, description,
+                                  taken_at, latitude, longitude, capture_source, date_source,
+                                  place_id, location_name, location_source,
+                                  uploaded_by, created_at, updated_at)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER},
                 #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
                 #{activityId,javaType=java.util.UUID,jdbcType=OTHER},
@@ -27,6 +39,15 @@
                 #{mediaType},
                 #{url},
                 #{caption},
+                #{description},
+                #{takenAt,jdbcType=TIMESTAMP},
+                #{latitude,jdbcType=NUMERIC},
+                #{longitude,jdbcType=NUMERIC},
+                #{captureSource,jdbcType=VARCHAR},
+                #{dateSource,jdbcType=VARCHAR},
+                #{placeId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{locationName,jdbcType=VARCHAR},
+                #{locationSource,jdbcType=VARCHAR},
                 #{uploadedBy,javaType=java.util.UUID,jdbcType=OTHER},
                 NOW(),
                 NOW())
@@ -57,6 +78,50 @@
         WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
         AND deleted_at IS NULL
     </select>
+
+    <!-- Title and description only. The url is deliberately not updatable here:
+         it is the field the legacy `memoryImageUrls` payload is built from, and
+         a repair migration (V128) already had to clean it up once. -->
+    <update id="updateDetails" parameterType="com.ds.goroute.entity.MediaAsset">
+        UPDATE media_assets
+        SET caption = #{caption},
+            description = #{description},
+            taken_at = #{takenAt,jdbcType=TIMESTAMP},
+            date_source = #{dateSource,jdbcType=VARCHAR},
+            updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+        AND deleted_at IS NULL
+    </update>
+
+    <!-- Expense receipts and anything else keyed by entity rather than by trip.
+         Ordered the way a timeline reads: when the photo was taken, falling
+         back to when it arrived for rows written before V136. -->
+    <select id="selectByEntity" resultMap="MediaAssetResultMap">
+        SELECT * FROM media_assets
+        WHERE entity_type = #{entityType}
+        AND entity_id = #{entityId,javaType=java.util.UUID,jdbcType=OTHER}
+        AND deleted_at IS NULL
+        ORDER BY COALESCE(taken_at, created_at) DESC
+    </select>
+
+    <select id="selectByEntityIds" resultMap="MediaAssetResultMap">
+        SELECT * FROM media_assets
+        WHERE entity_type = #{entityType}
+        AND deleted_at IS NULL
+        AND entity_id IN
+        <foreach item="id" collection="entityIds" open="(" separator="," close=")">
+            #{id,javaType=java.util.UUID,jdbcType=OTHER}
+        </foreach>
+        ORDER BY COALESCE(taken_at, created_at) DESC
+    </select>
+
+    <update id="softDeleteByEntity">
+        UPDATE media_assets
+        SET deleted_at = NOW(), updated_at = NOW()
+        WHERE entity_type = #{entityType}
+        AND entity_id = #{entityId,javaType=java.util.UUID,jdbcType=OTHER}
+        AND deleted_at IS NULL
+    </update>
 
     <update id="softDelete" parameterType="java.util.UUID">
         UPDATE media_assets

@@ -37,6 +37,11 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     }
 
     @Override
+    public Optional<UserCheckin> findMine(UUID userId, UUID activityId, UUID placeId, UUID tripId) {
+        return Optional.ofNullable(mapper.findMine(userId, activityId, placeId, tripId));
+    }
+
+    @Override
     public Optional<UserCheckin> findByIdempotencyKey(UUID userId, String idempotencyKey) {
         return Optional.ofNullable(mapper.findByIdempotencyKey(userId, idempotencyKey));
     }

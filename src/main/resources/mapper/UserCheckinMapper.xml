@@ -45,6 +45,8 @@
         <result property="url" column="url"/>
         <result property="source" column="source"/>
         <result property="position" column="position"/>
+        <result property="title" column="title"/>
+        <result property="description" column="description"/>
         <result property="capturedAt" column="captured_at"/>
         <result property="latitude" column="latitude"/>
         <result property="longitude" column="longitude"/>
@@ -126,6 +128,23 @@
 
     <select id="findById" resultMap="checkinMap">
         SELECT <include refid="columns"/> FROM user_checkins WHERE id = #{id}
+    </select>
+
+    <!-- "Have I already checked in here?"
+
+         Answered from the columns the check-in was written with: activity_id is set
+         when the author attached the visit to a trip activity, so a check-in from
+         last year at the same place, or one they deliberately kept off the trip,
+         cannot be mistaken for this one. The newest wins when there are several. -->
+    <select id="findMine" resultMap="checkinMap">
+        SELECT <include refid="columns"/> FROM user_checkins
+        WHERE user_id = #{userId}
+          AND is_removed = FALSE
+        <if test="activityId != null">AND activity_id = #{activityId}</if>
+        <if test="tripId != null">AND trip_id = #{tripId}</if>
+        <if test="placeId != null">AND place_id = #{placeId}</if>
+        ORDER BY created_at DESC
+        LIMIT 1
     </select>
 
     <select id="findByIdempotencyKey" resultMap="checkinMap">
@@ -246,22 +265,22 @@
 
     <insert id="insertPhoto" parameterType="com.ds.goroute.entity.UserCheckinPhoto">
         INSERT INTO user_checkin_photos
-            (id, checkin_id, url, source, position, captured_at, latitude, longitude,
+            (id, checkin_id, url, source, position, title, description, captured_at, latitude, longitude,
              accuracy_meters, created_at)
         VALUES
-            (#{id}, #{checkinId}, #{url}, #{source}, #{position}, #{capturedAt}, #{latitude},
-             #{longitude}, #{accuracyMeters}, #{createdAt})
+            (#{id}, #{checkinId}, #{url}, #{source}, #{position}, #{title}, #{description},
+             #{capturedAt}, #{latitude}, #{longitude}, #{accuracyMeters}, #{createdAt})
     </insert>
 
     <select id="findPhotos" resultMap="photoMap">
-        SELECT id, checkin_id, url, source, position, captured_at, latitude, longitude,
+        SELECT id, checkin_id, url, source, position, title, description, captured_at, latitude, longitude,
                accuracy_meters, created_at
         FROM user_checkin_photos WHERE checkin_id = #{checkinId} ORDER BY position
     </select>
 
     <!-- Batch-loaded for a feed page so rendering N posts costs one query, not N. -->
     <select id="findPhotosForCheckins" resultMap="photoMap">
-        SELECT id, checkin_id, url, source, position, captured_at, latitude, longitude,
+        SELECT id, checkin_id, url, source, position, title, description, captured_at, latitude, longitude,
                accuracy_meters, created_at
         FROM user_checkin_photos
         WHERE checkin_id IN

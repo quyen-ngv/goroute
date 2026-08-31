@@ -20,6 +20,14 @@ public interface UserCheckinRepository {
 
     Optional<UserCheckin> findById(UUID id);
 
+    /**
+     * The author's own check-in for a given activity, place or trip, newest first.
+     *
+     * <p>At least one filter must be given by the caller; with none it would answer
+     * "your last check-in anywhere", which is never the question being asked.
+     */
+    Optional<UserCheckin> findMine(UUID userId, UUID activityId, UUID placeId, UUID tripId);
+
     Optional<UserCheckin> findByIdempotencyKey(UUID userId, String idempotencyKey);
 
     List<UserCheckin> findFeed(LocalDateTime before, UUID excludeUserId, int limit);

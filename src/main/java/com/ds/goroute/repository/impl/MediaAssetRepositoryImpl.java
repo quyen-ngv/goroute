@@ -41,6 +41,28 @@ public class MediaAssetRepositoryImpl implements MediaAssetRepository {
     }
 
     @Override
+    public List<MediaAsset> findByEntity(String entityType, UUID entityId) {
+        return mediaAssetMapper.selectByEntity(entityType, entityId);
+    }
+
+    @Override
+    public List<MediaAsset> findByEntityIds(String entityType, List<UUID> entityIds) {
+        // An empty IN () is a syntax error, and the answer is knowable here.
+        if (entityIds == null || entityIds.isEmpty()) return List.of();
+        return mediaAssetMapper.selectByEntityIds(entityType, entityIds);
+    }
+
+    @Override
+    public void softDeleteByEntity(String entityType, UUID entityId) {
+        mediaAssetMapper.softDeleteByEntity(entityType, entityId);
+    }
+
+    @Override
+    public void updateDetails(MediaAsset mediaAsset) {
+        mediaAssetMapper.updateDetails(mediaAsset);
+    }
+
+    @Override
     public void softDelete(UUID id) {
         mediaAssetMapper.softDelete(id);
     }

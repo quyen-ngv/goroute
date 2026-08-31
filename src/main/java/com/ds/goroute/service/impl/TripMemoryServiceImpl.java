@@ -2,6 +2,7 @@ package com.ds.goroute.service.impl;
 
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.CreateTripMemoryRequest;
+import com.ds.goroute.dto.request.UpdateTripMemoryRequest;
 import com.ds.goroute.dto.response.TripMemoryResponse;
 import com.ds.goroute.entity.Activity;
 import com.ds.goroute.entity.MediaAsset;
@@ -82,6 +83,15 @@ public class TripMemoryServiceImpl implements TripMemoryService {
                 .mediaType("IMAGE")
                 .url(url)
                 .caption(request.getCaption())
+                .description(request.getDescription())
+                .takenAt(request.getTakenAt())
+                .dateSource(request.getTakenAt() == null ? "UPLOAD" : request.getDateSource())
+                .captureSource(request.getCaptureSource())
+                .latitude(request.getLatitude())
+                .longitude(request.getLongitude())
+                .placeId(request.getPlaceId())
+                .locationName(trimToNull(request.getLocationName()))
+                .locationSource(trimToNull(request.getLocationSource()))
                 .uploadedBy(userId)
                 .build();
 
@@ -125,20 +135,68 @@ public class TripMemoryServiceImpl implements TripMemoryService {
 
     @Override
     @Transactional
+    public TripMemoryResponse updateTripMemory(
+            UUID tripId,
+            UUID memoryId,
+            UpdateTripMemoryRequest request,
+            UUID userId) {
+        getTripAndEnsureMember(tripId, userId);
+        MediaAsset asset = getMemoryOfTrip(tripId, memoryId);
+
+        // Only the uploader edits the words on their own memory. Trip membership
+        // is what lets you see it; it is not what lets you rewrite someone
+        // else's caption.
+        if (!userId.equals(asset.getUploadedBy())) {
+            throw new BusinessException(
+                    ErrorConstant.FORBIDDEN_ERROR, "You can only edit your own memory");
+        }
+
+        asset.setCaption(trimToNull(request.getCaption()));
+        asset.setDescription(trimToNull(request.getDescription()));
+
+        // A date the author typed is worth keeping, but it stops being evidence:
+        // marking it MANUAL is what lets a reader tell it apart from EXIF.
+        if (request.getTakenAt() != null
+                && !request.getTakenAt().equals(asset.getTakenAt())) {
+            asset.setTakenAt(request.getTakenAt());
+            asset.setDateSource("MANUAL");
+        }
+
+        mediaAssetRepository.updateDetails(asset);
+
+        return toResponse(asset, userRepository.findById(asset.getUploadedBy()).orElse(null));
+    }
+
+    @Override
+    @Transactional
     public void deleteTripMemory(UUID tripId, UUID memoryId, UUID userId) {
         getTripAndEnsureMember(tripId, userId);
-        MediaAsset asset = mediaAssetRepository.findById(memoryId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Memory not found"));
-
-        if (!tripId.equals(asset.getTripId())) {
-            throw new BusinessException(ErrorConstant.NOT_FOUND, "Memory not found");
-        }
+        MediaAsset asset = getMemoryOfTrip(tripId, memoryId);
 
         imageStorageCleanupService.deleteImagesForEntityRecord("MEDIA_ASSET", memoryId);
         mediaAssetRepository.softDelete(memoryId);
         notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.MEMORY_DELETED,
                 memoryNotificationData(
                         tripRepository.findById(tripId).orElseThrow(), asset, userId), null);
+    }
+
+    /**
+     * A memory id that belongs to another trip is reported as not found rather
+     * than forbidden: answering "wrong trip" would confirm the id exists.
+     */
+    private MediaAsset getMemoryOfTrip(UUID tripId, UUID memoryId) {
+        MediaAsset asset = mediaAssetRepository.findById(memoryId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Memory not found"));
+        if (!tripId.equals(asset.getTripId())) {
+            throw new BusinessException(ErrorConstant.NOT_FOUND, "Memory not found");
+        }
+        return asset;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private Trip getTripAndEnsureMember(UUID tripId, UUID userId) {
@@ -207,6 +265,15 @@ public class TripMemoryServiceImpl implements TripMemoryService {
                 .mediaType(asset.getMediaType() == null ? "IMAGE" : asset.getMediaType())
                 .url(MemoryImageUrlNormalizer.normalize(asset.getUrl()).orElse(asset.getUrl()))
                 .caption(asset.getCaption())
+                .description(asset.getDescription())
+                .takenAt(asset.getTakenAt())
+                .dateSource(asset.getDateSource())
+                .captureSource(asset.getCaptureSource())
+                .latitude(asset.getLatitude())
+                .longitude(asset.getLongitude())
+                .placeId(asset.getPlaceId())
+                .locationName(asset.getLocationName())
+                .locationSource(asset.getLocationSource())
                 .uploadedBy(asset.getUploadedBy())
                 .uploaderName(user != null ? user.getFullName() : null)
                 .uploaderAvatarUrl(user != null ? user.getAvatarUrl() : null)

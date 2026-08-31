@@ -14,5 +14,12 @@ public interface MediaAssetMapper {
     List<MediaAsset> selectByTripId(@Param("tripId") UUID tripId);
     List<MediaAsset> selectByActivityId(@Param("activityId") UUID activityId);
     int countByTripId(@Param("tripId") UUID tripId);
+    List<MediaAsset> selectByEntity(@Param("entityType") String entityType,
+                                    @Param("entityId") UUID entityId);
+    List<MediaAsset> selectByEntityIds(@Param("entityType") String entityType,
+                                       @Param("entityIds") List<UUID> entityIds);
+    int updateDetails(MediaAsset mediaAsset);
     int softDelete(@Param("id") UUID id);
+    int softDeleteByEntity(@Param("entityType") String entityType,
+                           @Param("entityId") UUID entityId);
 }

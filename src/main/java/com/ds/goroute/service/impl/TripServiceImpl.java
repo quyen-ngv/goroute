@@ -21,6 +21,7 @@ import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.type.*;
 import com.ds.goroute.utils.JsonUtils;
+import com.ds.goroute.utils.MediaAssetResponseMapper;
 import com.ds.goroute.utils.MemoryImageUrlNormalizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -1336,7 +1337,7 @@ public class TripServiceImpl implements TripService {
         List<PublicActivityResponse> activityResponses = activities.stream()
                 .map(a -> {
                     UUID placeId = parseActivityPlaceId(a.getPlaceId());
-                    List<MemoryImageResponse> activityMemoryImages = getActivityMemoryImages(a.getId());
+                    List<MemoryImageResponse> activityMemoryImages = getActivityMemoryImages(a.getId(), a.getName());
                     List<UserReviewResponse> memberReviews = placeId != null
                             ? buildSharedTripReviews(placeId, trip.getOwnerId(), memberUserIds, viewerId)
                             : null;
@@ -1401,6 +1402,7 @@ public class TripServiceImpl implements TripService {
                 .hasVotedHelpful(resolveTripHasVotedHelpful(trip.getId(), viewerId))
                 .isOwnTrip(viewerId != null && trip.getOwnerId().equals(viewerId))
                 .totalMembers(countAcceptedMembers(trip.getId()))
+                .totalActivities(activityResponses != null ? activityResponses.size() : 0)
                 .publicSharedAt(trip.getPublicSharedAt())
                 .build();
     }
@@ -1836,6 +1838,7 @@ public class TripServiceImpl implements TripService {
                             .hasVotedHelpful(resolveTripHasVotedHelpful(trip.getId(), viewerId))
                             .isOwnTrip(viewerId != null && trip.getOwnerId().equals(viewerId))
                             .totalMembers(countAcceptedMembers(trip.getId()))
+                            .totalActivities(activityRepository.countByTripId(trip.getId()))
                             .publicSharedAt(trip.getPublicSharedAt())
                             .build();
                 })
@@ -1849,32 +1852,64 @@ public class TripServiceImpl implements TripService {
     }
 
     private List<MemoryImageResponse> getTripMemoryImages(UUID tripId) {
-        return toMemoryImageResponses(mediaAssetRepository.findByTripId(tripId));
+        List<MediaAsset> assets = mediaAssetRepository.findByTripId(tripId);
+        return toMemoryImageResponses(assets, activityNamesForTripPhotos(tripId, assets));
     }
 
-    private List<MemoryImageResponse> getActivityMemoryImages(UUID activityId) {
-        return toMemoryImageResponses(mediaAssetRepository.findByActivityId(activityId));
+    /**
+     * @param activityName already in hand at every call site, so naming the stop
+     *                     costs nothing here
+     */
+    private List<MemoryImageResponse> getActivityMemoryImages(UUID activityId, String activityName) {
+        List<MediaAsset> assets = mediaAssetRepository.findByActivityId(activityId);
+        Map<UUID, String> names = activityName == null || activityName.isBlank()
+                ? Map.of()
+                : Map.of(activityId, activityName);
+        return toMemoryImageResponses(assets, names);
     }
 
-    private List<MemoryImageResponse> toMemoryImageResponses(List<MediaAsset> assets) {
-        Set<String> seenUrls = new LinkedHashSet<>();
-        List<MemoryImageResponse> images = new ArrayList<>();
-        for (MediaAsset asset : assets) {
-            if (asset.getMediaType() != null && "VIDEO".equalsIgnoreCase(asset.getMediaType())) {
-                continue;
+    private List<MemoryImageResponse> toMemoryImageResponses(List<MediaAsset> assets,
+                                                             Map<UUID, String> activityNames) {
+        return MediaAssetResponseMapper.toImageResponses(assets, uploadersFor(assets), activityNames);
+    }
+
+    /**
+     * The users behind a set of photos, in one query rather than one per photo.
+     *
+     * <p>A trip's memories usually come from a handful of members, so the map is
+     * small even when the gallery is long.
+     */
+    private Map<UUID, User> uploadersFor(List<MediaAsset> assets) {
+        Set<UUID> uploaderIds = assets.stream()
+                .map(MediaAsset::getUploadedBy)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (uploaderIds.isEmpty()) return Map.of();
+        return userRepository.findByIds(uploaderIds).stream()
+                .collect(Collectors.toMap(User::getId, user -> user, (first, second) -> first));
+    }
+
+    /**
+     * Names for the activities a trip's photos are attached to.
+     *
+     * <p>Trip-level memories carry no activity, so a gallery of only those skips
+     * the query entirely.
+     */
+    private Map<UUID, String> activityNamesForTripPhotos(UUID tripId, List<MediaAsset> assets) {
+        boolean anyAttachedToActivity = assets.stream().anyMatch(asset -> asset.getActivityId() != null);
+        if (!anyAttachedToActivity) return Map.of();
+
+        Map<UUID, String> names = new HashMap<>();
+        for (Activity activity : activityRepository.findByTripId(tripId)) {
+            if (activity.getName() != null) {
+                names.put(activity.getId(), activity.getName());
             }
-            MemoryImageUrlNormalizer.normalize(asset.getUrl())
-                    .filter(seenUrls::add)
-                    .ifPresent(url -> images.add(MemoryImageResponse.builder()
-                            .url(url)
-                            .title(asset.getCaption())
-                            .build()));
         }
-        return images;
+        return names;
     }
 
     private List<String> getMemoryImageUrls(List<MemoryImageResponse> images) {
-        return images.stream().map(MemoryImageResponse::getUrl).toList();
+        return MediaAssetResponseMapper.toUrls(images);
     }
 
     @Override

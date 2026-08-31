@@ -43,5 +43,7 @@ public class PublicTripResponse {
     private Boolean hasVotedHelpful;
     private Boolean isOwnTrip;
     private Integer totalMembers;
+    /** Number of activities on the trip. Carried separately because list payloads leave { activities} out. */
+    private Integer totalActivities;
     private LocalDateTime publicSharedAt;
 }

@@ -20,6 +20,8 @@ public interface UserMapper {
     
     User selectById(@Param("id") UUID id);
     
+    java.util.List<User> selectByIds(@Param("ids") java.util.Collection<UUID> ids);
+
     java.util.List<User> selectAll();
 
     java.util.List<User> selectFollowers(@Param("userId") UUID userId);

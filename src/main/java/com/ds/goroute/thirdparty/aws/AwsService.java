@@ -277,6 +277,11 @@ public class AwsService implements StorageService {
                         .bucket(awsProperties.getS3BucketName())
                         .key(key));
                 log.debug("Deleted S3 object: {}", key);
+            } else {
+                // Either a foreign URL we never stored, or our own URL that stopped
+                // matching the configured domain. The second case deletes nothing for
+                // every image in the product, so it must not pass unrecorded.
+                log.warn("No storage key resolved from URL, nothing deleted: {}", fileUrl);
             }
         } catch (Exception e) {
             log.error("Failed to delete S3 object {}: {}", fileUrl, e.getMessage(), e);
@@ -300,24 +305,44 @@ public class AwsService implements StorageService {
                 return;
             }
             
-            // S3 batch delete supports max 1000 objects
-            for (int i = 0; i < keys.size(); i += 1000) {
-                List<String> batch = keys.subList(i, Math.min(i + 1000, keys.size()));
-                
-                var objectIdentifiers = batch.stream()
-                        .map(key -> software.amazon.awssdk.services.s3.model.ObjectIdentifier.builder()
-                                .key(key)
-                                .build())
-                        .toList();
-                
-                s3Client.deleteObjects(builder -> builder
-                        .bucket(awsProperties.getS3BucketName())
-                        .delete(del -> del.objects(objectIdentifiers)));
-                
-                log.debug("Deleted {} S3 objects", batch.size());
-            }
+            deleteInBatches(keys, "URL");
         } catch (Exception e) {
             log.error("Failed to batch delete S3 objects: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Deletes in batches of 1000 and reports what the bucket refused.
+     *
+     * <p>{@code deleteObjects} answers 200 with a per-object error list rather than
+     * throwing, so discarding the response turns a permission or lock failure into a
+     * silent success. Nothing downstream can retry — the delete runs after the caller's
+     * transaction has committed — so the log line is the only record that an object is
+     * still there, and it names the keys.
+     */
+    private void deleteInBatches(List<String> keys, String source) {
+        for (int i = 0; i < keys.size(); i += 1000) {
+            List<String> batch = keys.subList(i, Math.min(i + 1000, keys.size()));
+
+            var objectIdentifiers = batch.stream()
+                    .map(key -> software.amazon.awssdk.services.s3.model.ObjectIdentifier.builder()
+                            .key(key)
+                            .build())
+                    .toList();
+
+            var response = s3Client.deleteObjects(builder -> builder
+                    .bucket(awsProperties.getS3BucketName())
+                    .delete(del -> del.objects(objectIdentifiers)));
+
+            if (response.hasErrors() && !response.errors().isEmpty()) {
+                response.errors().forEach(error -> log.error(
+                        "S3 refused to delete object. bucket={}, key={}, code={}, message={}",
+                        awsProperties.getS3BucketName(), error.key(), error.code(), error.message()));
+                log.error("Deleted {} of {} S3 objects in this batch ({} source)",
+                        batch.size() - response.errors().size(), batch.size(), source);
+            } else {
+                log.debug("Deleted {} S3 objects", batch.size());
+            }
         }
     }
 
@@ -383,20 +408,7 @@ public class AwsService implements StorageService {
                     .distinct()
                     .toList();
 
-            for (int i = 0; i < cleanedKeys.size(); i += 1000) {
-                List<String> batch = cleanedKeys.subList(i, Math.min(i + 1000, cleanedKeys.size()));
-                var objectIdentifiers = batch.stream()
-                        .map(key -> software.amazon.awssdk.services.s3.model.ObjectIdentifier.builder()
-                                .key(key)
-                                .build())
-                        .toList();
-
-                s3Client.deleteObjects(builder -> builder
-                        .bucket(awsProperties.getS3BucketName())
-                        .delete(del -> del.objects(objectIdentifiers)));
-
-                log.debug("Deleted {} S3 object keys", batch.size());
-            }
+            deleteInBatches(cleanedKeys, "key");
         } catch (Exception e) {
             log.error("Failed to batch delete S3 object keys: {}", e.getMessage(), e);
         }

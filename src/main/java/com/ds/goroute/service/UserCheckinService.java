@@ -61,6 +61,15 @@ public interface UserCheckinService {
         delete(userId, checkinId, false);
     }
 
+    /**
+     * The caller's own check-in for an activity, place or trip, if there is one.
+     *
+     * <p>What makes "have I already checked in here" answerable: a check-in stores the
+     * activity and trip it was attached to, so it can be told apart from a visit to the
+     * same place on another journey.
+     */
+    UserCheckinResponse findMine(UUID userId, UUID activityId, UUID placeId, UUID tripId);
+
     UserCheckinResponse get(UUID viewerId, UUID checkinId);
 
     CheckinLikeResponse toggleLike(UUID userId, UUID checkinId);

@@ -24,6 +24,7 @@ import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.repository.UserReviewRepository;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.ContentModerationService;
+import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.ReviewScoringService;
 import com.ds.goroute.service.ReviewService;
 import com.ds.goroute.service.UserCheckinService;
@@ -75,6 +76,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     private final ReviewScoringService scoringService;
     private final ReviewService reviewService;
     private final ContentModerationService contentModerationService;
+    private final ImageStorageCleanupService imageStorageCleanupService;
     private final BusinessConfigService config;
     private final LocationKeyFactory locationKeyFactory;
     private final ApplicationEventPublisher events;
@@ -277,6 +279,10 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     @Transactional
     public void delete(UUID userId, UUID checkinId, boolean deleteReview) {
         UserCheckin checkin = requireOwned(userId, checkinId);
+        // Collected before the row is marked removed, because the photo rows are read
+        // through the check-in and the retain query only spares files the surviving
+        // review still shows. The delete itself runs after this transaction commits.
+        imageStorageCleanupService.deleteImagesForEntityRecord("USER_CHECKIN_PHOTO", checkinId);
         if (checkinRepository.markRemoved(checkinId, userId) != 1) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Check-in not found");
         }
@@ -288,6 +294,18 @@ public class UserCheckinServiceImpl implements UserCheckinService {
             reviewService.deleteReview(userId, checkin.getReviewId());
         }
         events.publishEvent(new CheckinRemovedEvent(checkin.getId(), userId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public UserCheckinResponse findMine(UUID userId, UUID activityId, UUID placeId, UUID tripId) {
+        if (activityId == null && placeId == null && tripId == null) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "An activity, place or trip is required");
+        }
+        return checkinRepository.findMine(userId, activityId, placeId, tripId)
+                .map(checkin -> toResponse(checkin, true, userId))
+                .orElse(null);
     }
 
     @Override
@@ -488,6 +506,8 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                     .url(photo.getUrl())
                     .source(photo.getSource())
                     .position(position++)
+                    .title(photo.getTitle())
+                    .description(photo.getDescription())
                     .capturedAt(photo.getCapturedAt())
                     .latitude(photo.getLatitude())
                     .longitude(photo.getLongitude())
@@ -658,6 +678,8 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                                 .url(photo.getUrl())
                                 .source(photo.getSource())
                                 .position(photo.getPosition())
+                                .title(photo.getTitle())
+                                .description(photo.getDescription())
                                 .capturedAt(photo.getCapturedAt())
                                 .build())
                         .toList())

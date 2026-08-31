@@ -32,6 +32,11 @@ public class ActivityRepositoryImpl implements ActivityRepository {
     }
     
     @Override
+    public int countByTripId(UUID tripId) {
+        return activityMapper.countByTripId(tripId);
+    }
+    
+    @Override
     public List<Activity> findByTripIdAndDayNumber(UUID tripId, int dayNumber) {
         return activityMapper.selectByTripIdAndDayNumber(tripId, dayNumber);
     }

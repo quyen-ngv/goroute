@@ -8,6 +8,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.sql.Array;
 import java.time.LocalDateTime;
@@ -38,13 +40,77 @@ public class ImageStorageCleanupService {
         return specs.keySet().stream().sorted().toList();
     }
 
+    /**
+     * Deletes the storage objects a record owns, keeping any object that a surviving
+     * record still displays.
+     *
+     * <p>The retain step is not a nicety. A rated check-in and the review it wrote point
+     * at the same uploaded files, and either one can be deleted while the other lives on;
+     * without subtracting the survivor's objects, deleting one of them silently breaks
+     * every photo on the other. Each entity that shares files this way declares the query
+     * that finds its survivors in {@link EntitySpec#retainSql()}.
+     *
+     * <p>The delete itself is deferred until the surrounding transaction commits. Removing
+     * an object from storage cannot be rolled back, so doing it inside the transaction
+     * means a later failure leaves the row pointing at a file that is already gone.
+     */
     public DeleteRecordImagesResult deleteImagesForEntityRecord(String entity, UUID id) {
         String normalizedEntity = normalizeEntity(entity);
         Set<String> urls = collectRecordUrls(normalizedEntity, id);
         Set<String> keys = toKeys(urls);
-        storageService.deleteObjectKeys(new ArrayList<>(keys));
-        log.info("Deleted {} image objects for entity {} record {}", keys.size(), normalizedEntity, id);
-        return new DeleteRecordImagesResult(normalizedEntity, id, urls.size(), keys.size(), new ArrayList<>(keys));
+
+        Set<String> retainedKeys = collectRetainedKeys(normalizedEntity, id);
+        if (!retainedKeys.isEmpty()) {
+            int before = keys.size();
+            keys.removeAll(retainedKeys);
+            if (before != keys.size()) {
+                log.info("Kept {} image objects still shown by another record. entity={}, record={}",
+                        before - keys.size(), normalizedEntity, id);
+            }
+        }
+
+        List<String> deletable = new ArrayList<>(keys);
+        deleteAfterCommit(deletable, normalizedEntity, id);
+        return new DeleteRecordImagesResult(normalizedEntity, id, urls.size(), deletable.size(), deletable);
+    }
+
+    /**
+     * Objects another surviving record still points at, and which therefore must outlive
+     * this delete. Empty for every entity that does not share files with another table.
+     */
+    private Set<String> collectRetainedKeys(String entity, UUID id) {
+        String retainSql = requireSpec(entity).retainSql();
+        if (retainSql == null || retainSql.isBlank()) {
+            return Set.of();
+        }
+        return toKeys(queryUrls(retainSql, id));
+    }
+
+    /**
+     * Runs the delete after the transaction commits, or immediately when there is no
+     * transaction to wait for. A rollback then leaves storage untouched, which is the
+     * recoverable direction: an object nobody references is found by the orphan sweep,
+     * while a row pointing at a deleted object is a broken image with no way back.
+     */
+    private void deleteAfterCommit(List<String> keys, String entity, UUID id) {
+        if (keys.isEmpty()) {
+            return;
+        }
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            runDelete(keys, entity, id);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                runDelete(keys, entity, id);
+            }
+        });
+    }
+
+    private void runDelete(List<String> keys, String entity, UUID id) {
+        storageService.deleteObjectKeys(keys);
+        log.info("Deleted {} image objects for entity {} record {}", keys.size(), entity, id);
     }
 
     public OrphanImageCleanupResult cleanupOrphanedImages(
@@ -165,10 +231,21 @@ public class ImageStorageCleanupService {
                           AND cp.photo_url IS NOT NULL
                         """, id));
             }
-            default -> urls.addAll(queryUrls(requireSpec(entity).recordSql(), id));
+            default -> urls.addAll(queryUrls(requireRecordSql(entity), id));
         }
 
         return urls;
+    }
+
+    private String requireRecordSql(String entity) {
+        String recordSql = requireSpec(entity).recordSql();
+        if (recordSql == null) {
+            throw new BusinessException(
+                    ErrorConstant.INVALID_PARAMETERS,
+                    "Entity " + entity + " has no single-id record key; use the orphan cleanup instead"
+            );
+        }
+        return recordSql;
     }
 
     private List<String> queryUrls(String sql, UUID id) {
@@ -361,16 +438,73 @@ public class ImageStorageCleanupService {
                 spec("EXPENSE", "SELECT receipt_url, photo_urls FROM expenses WHERE receipt_url IS NOT NULL OR photo_urls IS NOT NULL", "SELECT receipt_url, photo_urls FROM expenses WHERE id = ? AND (receipt_url IS NOT NULL OR photo_urls IS NOT NULL)", "expenses/"),
                 spec("PLACE", "SELECT thumbnail, images FROM places WHERE thumbnail IS NOT NULL OR images IS NOT NULL", "SELECT thumbnail, images FROM places WHERE id = ? AND (thumbnail IS NOT NULL OR images IS NOT NULL)", "places/"),
                 spec("PLACE_REVIEW", "SELECT profile_picture, images FROM place_reviews WHERE is_deleted = FALSE AND (profile_picture IS NOT NULL OR images IS NOT NULL)", "SELECT profile_picture, images FROM place_reviews WHERE id = ? AND (profile_picture IS NOT NULL OR images IS NOT NULL)", "reviews/"),
-                spec("USER_REVIEW", "SELECT photos FROM user_reviews WHERE photos IS NOT NULL", "SELECT photos FROM user_reviews WHERE id = ? AND photos IS NOT NULL"),
+                // A review written from a check-in shows that visit's uploads. Check-ins
+                // outlive the review they wrote, so deleting the review must leave the
+                // files of every check-in still pointing at it.
+                retaining("USER_REVIEW",
+                        "SELECT photos FROM user_reviews WHERE photos IS NOT NULL",
+                        "SELECT photos FROM user_reviews WHERE id = ? AND photos IS NOT NULL",
+                        """
+                        SELECT p.url
+                        FROM user_checkin_photos p
+                        JOIN user_checkins c ON c.id = p.checkin_id
+                        WHERE c.review_id = ?
+                          AND c.is_removed = FALSE
+                          AND p.url IS NOT NULL
+                        """),
                 spec("ACTIVITY_BOOKING", "SELECT thumbnail, images, what_to_expect, itinerary FROM activity_bookings WHERE thumbnail IS NOT NULL OR images IS NOT NULL OR what_to_expect IS NOT NULL OR itinerary IS NOT NULL", "SELECT thumbnail, images, what_to_expect, itinerary FROM activity_bookings WHERE id = ? AND (thumbnail IS NOT NULL OR images IS NOT NULL OR what_to_expect IS NOT NULL OR itinerary IS NOT NULL)", "bookings/"),
                 spec("FOOD", "SELECT image_url, introduction_images, varieties, how_to_eat_steps FROM foods WHERE image_url IS NOT NULL OR introduction_images IS NOT NULL OR varieties IS NOT NULL OR how_to_eat_steps IS NOT NULL", "SELECT image_url, introduction_images, varieties, how_to_eat_steps FROM foods WHERE id = ? AND (image_url IS NOT NULL OR introduction_images IS NOT NULL OR varieties IS NOT NULL OR how_to_eat_steps IS NOT NULL)", "foods/"),
                 spec("FOOD_CITY_SCORE", "SELECT image_url, introduction_images FROM food_city_scores WHERE image_url IS NOT NULL OR introduction_images IS NOT NULL", "SELECT image_url, introduction_images FROM food_city_scores WHERE id = ? AND (image_url IS NOT NULL OR introduction_images IS NOT NULL)", "foods/"),
                 spec("LOCATION_IMAGE", "SELECT image_url, avatar_url FROM location_images WHERE image_url IS NOT NULL OR avatar_url IS NOT NULL", "SELECT image_url, avatar_url FROM location_images WHERE id = ? AND (image_url IS NOT NULL OR avatar_url IS NOT NULL)", "location-images/"),
-                spec("MEDIA_ASSET", "SELECT url FROM media_assets WHERE deleted_at IS NULL AND url IS NOT NULL", "SELECT url FROM media_assets WHERE id = ? AND url IS NOT NULL", "trip-memory-videos/"),
+                // Admin media is soft-deleted, so allSql filtering on deleted_at is what
+                // releases the object to the orphan sweep. That only closes the loop if the
+                // prefix admin uploads write to is one the sweep actually scans.
+                spec("MEDIA_ASSET", "SELECT url FROM media_assets WHERE deleted_at IS NULL AND url IS NOT NULL", "SELECT url FROM media_assets WHERE id = ? AND url IS NOT NULL", "trip-memory-videos/", "admin-media/"),
                 spec("SAVED_PLACE", "SELECT photo_url FROM saved_places WHERE photo_url IS NOT NULL", "SELECT photo_url FROM saved_places WHERE id = ? AND photo_url IS NOT NULL"),
                 spec("CHECKIN_PHOTO", "SELECT photo_url FROM checkin_photos WHERE photo_url IS NOT NULL", "SELECT photo_url FROM checkin_photos WHERE id = ? AND photo_url IS NOT NULL"),
                 spec("TRIP_PHOTO", "SELECT photo_url, thumbnail_url FROM trip_photos WHERE photo_url IS NOT NULL OR thumbnail_url IS NOT NULL", "SELECT photo_url, thumbnail_url FROM trip_photos WHERE id = ? AND (photo_url IS NOT NULL OR thumbnail_url IS NOT NULL)"),
-                spec("CITY_STORY", "SELECT image_url FROM city_stories WHERE deleted_at IS NULL AND image_url IS NOT NULL", "SELECT image_url FROM city_stories WHERE id = ? AND image_url IS NOT NULL", "city-stories/")
+                spec("CITY_STORY", "SELECT image_url FROM city_stories WHERE deleted_at IS NULL AND image_url IS NOT NULL", "SELECT image_url FROM city_stories WHERE id = ? AND image_url IS NOT NULL", "city-stories/"),
+
+                // Everything below shares the generic upload door (/v1/api/files/upload),
+                // which writes under expenses/<userId>/. That prefix is scanned, so a table
+                // missing from this list does not merely go uncleaned: its objects read as
+                // orphans and the sweep deletes them.
+                //
+                // The record query is keyed by the check-in, not by the photo row, because
+                // the caller deleting a check-in holds the check-in id.
+                retaining("USER_CHECKIN_PHOTO",
+                        "SELECT url FROM user_checkin_photos WHERE url IS NOT NULL",
+                        "SELECT url FROM user_checkin_photos WHERE checkin_id = ? AND url IS NOT NULL",
+                        // The review this visit wrote keeps showing the same files.
+                        "SELECT photos FROM user_reviews WHERE id = (SELECT review_id FROM user_checkins WHERE id = ?) AND photos IS NOT NULL"),
+                spec("PENDING_CONTRIBUTION_REVIEW",
+                        "SELECT photos FROM pending_contribution_reviews WHERE photos IS NOT NULL",
+                        "SELECT photos FROM pending_contribution_reviews WHERE contribution_id = ? AND photos IS NOT NULL"),
+                spec("PLACE_COLLECTION",
+                        "SELECT cover_image_url FROM place_collections WHERE cover_image_url IS NOT NULL",
+                        "SELECT cover_image_url FROM place_collections WHERE id = ? AND cover_image_url IS NOT NULL"),
+                spec("GUIDE_PROFILE",
+                        "SELECT avatar_url FROM guide_profiles WHERE avatar_url IS NOT NULL",
+                        "SELECT avatar_url FROM guide_profiles WHERE id = ? AND avatar_url IS NOT NULL"),
+                spec("PASSPORT_DEFINITION",
+                        "SELECT cover_image_url FROM passport_definitions WHERE cover_image_url IS NOT NULL",
+                        "SELECT cover_image_url FROM passport_definitions WHERE id = ? AND cover_image_url IS NOT NULL",
+                        "passport-catalog/"),
+                spec("PASSPORT_TAG",
+                        "SELECT image_url FROM passport_tags WHERE image_url IS NOT NULL",
+                        "SELECT image_url FROM passport_tags WHERE id = ? AND image_url IS NOT NULL",
+                        "passport-catalog/"),
+                // icon started as an emoji and now holds an uploaded badge URL (V134).
+                // Keyed by (code, version), so there is no single UUID to address one rule
+                // by: it takes part in the orphan sweep but not in per-record deletes.
+                spec("PASSPORT_STAMP_RULE",
+                        "SELECT icon FROM passport_stamp_rules WHERE icon IS NOT NULL",
+                        null,
+                        "passport-catalog/"),
+                spec("ROOM_TYPE",
+                        "SELECT images FROM room_types WHERE images IS NOT NULL",
+                        "SELECT images FROM room_types WHERE id = ? AND images IS NOT NULL",
+                        "marketplace/hotels/", "marketplace/activities/")
         );
 
         Map<String, EntitySpec> map = new LinkedHashMap<>();
@@ -381,10 +515,24 @@ public class ImageStorageCleanupService {
     }
 
     private EntitySpec spec(String entity, String allSql, String recordSql, String... defaultPrefixes) {
-        return new EntitySpec(entity, allSql, recordSql, List.of(defaultPrefixes));
+        return new EntitySpec(entity, allSql, recordSql, null, List.of(defaultPrefixes));
     }
 
-    private record EntitySpec(String entity, String allSql, String recordSql, List<String> defaultPrefixes) {
+    /** An entity whose files are also displayed by another record that can outlive it. */
+    private EntitySpec retaining(String entity, String allSql, String recordSql, String retainSql,
+                                 String... defaultPrefixes) {
+        return new EntitySpec(entity, allSql, recordSql, retainSql, List.of(defaultPrefixes));
+    }
+
+    /**
+     * @param allSql         every URL this table currently references; drives the orphan sweep
+     * @param recordSql      URLs owned by one record, or {@code null} when the table has no
+     *                       single-UUID key to address a record by
+     * @param retainSql      URLs a surviving record still displays, keyed the same way as
+     *                       {@code recordSql}; {@code null} when this table shares nothing
+     */
+    private record EntitySpec(String entity, String allSql, String recordSql, String retainSql,
+                              List<String> defaultPrefixes) {
     }
 
     public record DeleteRecordImagesResult(

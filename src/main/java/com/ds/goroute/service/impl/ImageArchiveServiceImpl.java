@@ -248,9 +248,10 @@ public class ImageArchiveServiceImpl implements ImageArchiveService {
         if (url == null || url.isEmpty()) {
             return false;
         }
-        // Only process old images, not already in resources folder
-        return url.contains("onestudy.id.vn") 
-                && !url.startsWith("http://") 
+        // Only process old images, not already in resources folder.
+        // Scheme is not a signal here: the same object is reachable over http and https,
+        // and excluding http:// skipped legacy rows that were stored before TLS.
+        return url.contains("onestudy.id.vn")
                 && !url.contains("google")
                 && !url.contains("/resources/"); // Skip already processed
     }

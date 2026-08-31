@@ -18,6 +18,9 @@ public interface UserRepository {
     
     Optional<User> findByProviderId(String providerId);
     
+    /** Batch form of {@link #findById}. Ids not found — or soft-deleted — are simply absent. */
+    List<User> findByIds(java.util.Collection<UUID> ids);
+
     List<User> findAll();
 
     List<User> findFollowers(UUID userId);

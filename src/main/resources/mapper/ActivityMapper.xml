@@ -81,6 +81,10 @@
         ORDER BY day_number, start_time NULLS LAST, sort_order NULLS LAST, created_at
     </select>
 
+    <select id="countByTripId" resultType="int">
+        SELECT COUNT(*) FROM activities WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
     <select id="selectByTripIdAndDay" resultMap="ActivityResultMap">
         SELECT * FROM activities WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
         AND day_number = #{dayNumber}
