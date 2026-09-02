@@ -11,4 +11,6 @@ public class UpdateHotelBookingStatusRequest {
     private MarketplaceBookingStatus bookingStatus;
     private String reason;
     private Long expectedVersion;
+    /** Only meaningful with NO_SHOW: whether the property charged the guest (drives commission later). */
+    private Boolean guestCharged;
 }

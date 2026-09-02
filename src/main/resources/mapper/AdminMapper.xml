@@ -54,19 +54,45 @@
         )
     </select>
 
+    <sql id="UserSearchWhere">
+        WHERE u.deleted_at IS NULL
+        <if test="search != null and search != ''">
+            AND (u.username ILIKE CONCAT('%', #{search}, '%')
+              OR u.email ILIKE CONCAT('%', #{search}, '%')
+              OR u.full_name ILIKE CONCAT('%', #{search}, '%'))
+        </if>
+    </sql>
+
+    <!--
+      One row per account carries everything the console list shows, so opening a person is a
+      choice rather than the only way to see whether they are reachable or active at all.
+    -->
     <select id="findUsers" resultType="map">
-        SELECT u.id, u.username, u.email, u.full_name, u.created_at, u.last_login_at,
-               COALESCE(string_agg(r.code, ',' ORDER BY r.code), '') AS roles
+        SELECT u.id, u.username, u.email, u.full_name, u.avatar_url, u.provider,
+               u.account_status, u.language, u.created_at, u.last_login_at,
+               COALESCE(string_agg(DISTINCT r.code, ',' ORDER BY r.code), '') AS roles,
+               (SELECT count(*) FROM user_devices d
+                WHERE d.user_id = u.id AND d.is_active = TRUE) AS device_count,
+               (SELECT count(DISTINCT t.id)
+                FROM trips t
+                LEFT JOIN trip_members tm ON tm.trip_id = t.id
+                WHERE (t.owner_id = u.id OR tm.user_id = u.id)
+                  AND COALESCE(t.is_deleted, false) = false) AS trip_count,
+               (SELECT count(*) FROM user_checkins c WHERE c.user_id = u.id) AS checkin_count,
+               (SELECT count(*) FROM user_reviews rv WHERE rv.user_id = u.id) AS review_count,
+               (SELECT count(*) FROM place_contributions pc WHERE pc.user_id = u.id) AS contribution_count
         FROM users u
         LEFT JOIN admin_user_roles ur ON ur.user_id = u.id
         LEFT JOIN admin_roles r ON r.id = ur.role_id
-        WHERE u.deleted_at IS NULL
-          AND (u.username ILIKE CONCAT('%', #{search}, '%')
-            OR u.email ILIKE CONCAT('%', #{search}, '%')
-            OR u.full_name ILIKE CONCAT('%', #{search}, '%'))
+        <include refid="UserSearchWhere"/>
         GROUP BY u.id
         ORDER BY u.created_at DESC
         LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countUsers" resultType="long">
+        SELECT count(*) FROM users u
+        <include refid="UserSearchWhere"/>
     </select>
 
     <select id="findRoles" resultType="map">
@@ -85,14 +111,21 @@
 
     <select id="findUserDetail" resultType="map">
         SELECT u.id, u.username, u.email, u.full_name, u.avatar_url, u.bio, u.provider,
-               u.language, u.theme, u.created_at, u.updated_at, u.last_login_at,
+               u.language, u.theme, u.account_status, u.must_change_password,
+               u.created_at, u.updated_at, u.last_login_at,
                COALESCE(string_agg(DISTINCT r.code, ',' ORDER BY r.code), '') AS roles,
                (SELECT count(DISTINCT t.id)
                 FROM trips t
                 LEFT JOIN trip_members tm ON tm.trip_id = t.id
                 WHERE (t.owner_id = u.id OR tm.user_id = u.id)
                   AND COALESCE(t.is_deleted, false) = false) AS trip_count,
-               (SELECT count(*) FROM place_contributions pc WHERE pc.user_id = u.id) AS contribution_count
+               (SELECT count(*) FROM place_contributions pc WHERE pc.user_id = u.id) AS contribution_count,
+               (SELECT count(*) FROM user_devices d
+                WHERE d.user_id = u.id AND d.is_active = TRUE) AS device_count,
+               (SELECT count(*) FROM user_checkins c WHERE c.user_id = u.id) AS checkin_count,
+               (SELECT count(*) FROM user_reviews rv WHERE rv.user_id = u.id) AS review_count,
+               (SELECT count(*) FROM user_follows f WHERE f.following_id = u.id) AS follower_count,
+               (SELECT count(*) FROM user_follows f WHERE f.follower_id = u.id) AS following_count
         FROM users u
         LEFT JOIN admin_user_roles ur ON ur.user_id = u.id
         LEFT JOIN admin_roles r ON r.id = ur.role_id

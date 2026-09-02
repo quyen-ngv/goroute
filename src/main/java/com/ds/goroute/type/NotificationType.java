@@ -88,5 +88,23 @@ public enum NotificationType {
     ADMIN_MESSAGE,
     MARKETPLACE_BOOKING_REQUEST,
     MARKETPLACE_BOOKING_CONFIRMED,
-    MARKETPLACE_BOOKING_DECLINED
+    MARKETPLACE_BOOKING_DECLINED,
+    // Sent to the guest when the partner did not answer within the hold window (job).
+    MARKETPLACE_BOOKING_EXPIRED,
+    // Sent to the partner team when the guest withdraws a request or cancels a confirmed booking.
+    MARKETPLACE_BOOKING_CANCELLED_BY_GUEST,
+    // Sent to the guest for the remaining lifecycle steps: checked in, completed, no-show, platform cancel.
+    MARKETPLACE_BOOKING_UPDATED,
+    // Guest asked to change dates/guests/slot; sent to the partner team.
+    MARKETPLACE_CHANGE_REQUESTED,
+    // Partner accepted or declined the change; sent to the guest.
+    MARKETPLACE_CHANGE_ANSWERED,
+    // Stay / visit completed; invite the guest to review.
+    MARKETPLACE_REVIEW_INVITE,
+    // Partner organization verification decided by an operator; sent to the owner.
+    PARTNER_VERIFICATION_DECIDED,
+    // A partner submitted verification documents; sent to operators (optional).
+    PARTNER_VERIFICATION_SUBMITTED,
+    // Monthly commission statement issued; sent to the owner and finance members.
+    PARTNER_STATEMENT_READY
 }

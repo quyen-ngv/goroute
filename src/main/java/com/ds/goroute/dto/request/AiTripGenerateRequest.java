@@ -50,6 +50,10 @@ public class AiTripGenerateRequest {
     @Builder.Default
     private String pace = "BALANCED";
 
+    // FAMOUS | BALANCED | HIDDEN_GEMS — sent by the app, forwarded verbatim to the AI worker
+    @Size(max = 32)
+    private String discoveryStyle;
+
     @Size(max = 2000)
     private String preferenceText;
 

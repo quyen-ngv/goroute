@@ -3,6 +3,7 @@ package com.ds.goroute.service;
 import com.ds.goroute.entity.AiTripGenerationEvent;
 import com.ds.goroute.mapper.AiTripGenerationMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
@@ -26,6 +27,20 @@ public class AiTripSseService {
             emitter.completeWithError(error);
         }
         return emitter;
+    }
+
+    /**
+     * SSE comment heartbeat so proxies (nginx proxy_read_timeout) never see a silent stream
+     * while the worker is between stages — an LLM call can easily stay quiet for minutes.
+     */
+    @Scheduled(fixedDelay = 15_000)
+    public void heartbeat() {
+        for (CopyOnWriteArrayList<SseEmitter> list : emitters.values()) {
+            for (SseEmitter emitter : list) {
+                try { emitter.send(SseEmitter.event().comment("heartbeat")); }
+                catch (Exception error) { try { emitter.complete(); } catch (Exception ignored) { } }
+            }
+        }
     }
 
     public void publish(AiTripGenerationEvent event) {

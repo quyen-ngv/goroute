@@ -447,6 +447,15 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.MARKETPLACE_BOOKING_REQUEST, "New booking request", "A guest sent a booking request. Please review it when you can"),
                 entry(NotificationType.MARKETPLACE_BOOKING_CONFIRMED, "Booking confirmed", "Your booking is confirmed. You're all set!"),
                 entry(NotificationType.MARKETPLACE_BOOKING_DECLINED, "Booking not confirmed", "Your booking request could not be confirmed. Open the app to review your options"),
+                entry(NotificationType.MARKETPLACE_BOOKING_EXPIRED, "Booking request expired", "The partner did not respond in time, so your request was released. You can book again or pick another option"),
+                entry(NotificationType.MARKETPLACE_BOOKING_CANCELLED_BY_GUEST, "Guest cancelled a booking", "A guest cancelled {bookingCode}. The inventory has been released"),
+                entry(NotificationType.MARKETPLACE_BOOKING_UPDATED, "Booking updated", "{bookingCode} is now {statusLabel}. Open My bookings for details"),
+                entry(NotificationType.MARKETPLACE_CHANGE_REQUESTED, "Change request", "A guest asked to change {bookingCode}. Review it before the request expires"),
+                entry(NotificationType.MARKETPLACE_CHANGE_ANSWERED, "Change request {decisionLabel}", "Your change request for {bookingCode} was {decisionLabel}. Open the booking for the details"),
+                entry(NotificationType.MARKETPLACE_REVIEW_INVITE, "How was your stay?", "Your booking {bookingCode} is complete. Share a review to help other travellers"),
+                entry(NotificationType.PARTNER_VERIFICATION_DECIDED, "Verification {decisionLabel}", "Your organization {organizationName} was {decisionLabel}. {reason}"),
+                entry(NotificationType.PARTNER_VERIFICATION_SUBMITTED, "Partner verification submitted", "{organizationName} submitted documents for verification"),
+                entry(NotificationType.PARTNER_STATEMENT_READY, "Statement ready", "Your statement for {periodLabel} is ready: {netAmount} after commission. Open Finance to review it"),
                 entry(NotificationType.ADMIN_ANNOUNCEMENT, "TripMind Announcement", "{body}"),
                 entry(NotificationType.ADMIN_MESSAGE, "Message from TripMind", "{body}")
         );
@@ -507,6 +516,15 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.MARKETPLACE_BOOKING_REQUEST, "Yêu cầu đặt chỗ mới", "Có yêu cầu đặt chỗ mới từ khách đang chờ bạn phản hồi"),
                 entry(NotificationType.MARKETPLACE_BOOKING_CONFIRMED, "Đặt chỗ đã được xác nhận", "Đặt chỗ của bạn đã được xác nhận. Mọi thứ đã sẵn sàng!"),
                 entry(NotificationType.MARKETPLACE_BOOKING_DECLINED, "Đặt chỗ chưa được xác nhận", "Yêu cầu đặt chỗ chưa thể được xác nhận. Mở ứng dụng để xem các lựa chọn khác"),
+                entry(NotificationType.MARKETPLACE_BOOKING_EXPIRED, "Yêu cầu đặt chỗ đã hết hạn", "Đối tác không phản hồi kịp nên yêu cầu của bạn đã được giải phóng. Bạn có thể đặt lại hoặc chọn lựa chọn khác"),
+                entry(NotificationType.MARKETPLACE_BOOKING_CANCELLED_BY_GUEST, "Khách đã huỷ đặt chỗ", "Khách đã huỷ {bookingCode}. Tồn kho đã được trả lại"),
+                entry(NotificationType.MARKETPLACE_BOOKING_UPDATED, "Đặt chỗ được cập nhật", "{bookingCode} hiện ở trạng thái {statusLabel}. Mở Đặt chỗ của tôi để xem chi tiết"),
+                entry(NotificationType.MARKETPLACE_CHANGE_REQUESTED, "Yêu cầu thay đổi", "Khách muốn thay đổi {bookingCode}. Hãy xem xét trước khi yêu cầu hết hạn"),
+                entry(NotificationType.MARKETPLACE_CHANGE_ANSWERED, "Yêu cầu thay đổi {decisionLabel}", "Yêu cầu thay đổi cho {bookingCode} đã {decisionLabel}. Mở đặt chỗ để xem chi tiết"),
+                entry(NotificationType.MARKETPLACE_REVIEW_INVITE, "Chuyến đi thế nào?", "Đặt chỗ {bookingCode} đã hoàn tất. Chia sẻ đánh giá để giúp những người đi sau"),
+                entry(NotificationType.PARTNER_VERIFICATION_DECIDED, "Xác minh {decisionLabel}", "Tổ chức {organizationName} đã {decisionLabel}. {reason}"),
+                entry(NotificationType.PARTNER_VERIFICATION_SUBMITTED, "Đối tác nộp hồ sơ xác minh", "{organizationName} vừa nộp hồ sơ xác minh"),
+                entry(NotificationType.PARTNER_STATEMENT_READY, "Sao kê đã sẵn sàng", "Sao kê kỳ {periodLabel} đã có: còn {netAmount} sau hoa hồng. Mở mục Tài chính để đối soát"),
                 entry(NotificationType.ADMIN_ANNOUNCEMENT, "Thông báo từ TripMind", "{body}"),
                 entry(NotificationType.ADMIN_MESSAGE, "Tin nhắn từ TripMind", "{body}")
         );

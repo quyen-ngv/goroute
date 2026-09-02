@@ -41,15 +41,33 @@
     </delete>
 
     <select id="countByActivityId" parameterType="java.util.UUID" resultType="int">
-        SELECT COUNT(*) FROM activity_comments WHERE activity_id = #{activityId,javaType=java.util.UUID,jdbcType=OTHER} 
-        AND is_deleted = false
+        SELECT COUNT(*) FROM activity_comments c
+        WHERE c.activity_id = #{activityId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND c.is_deleted = false
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns t
+              WHERE t.content_type = 'ACTIVITY_COMMENT'
+                AND t.content_id = c.id
+                AND t.restored_at IS NULL
+          )
     </select>
+    <!--
+      Counts what the reader will actually be shown. Two different removals hide a comment and
+      both have to be honoured here, or a thread shows "3 comments" and opens with two: is_deleted
+      is the author taking their own words back, content_takedowns is a moderator removing them.
+    -->
     <select id="countByTripId" resultType="java.util.LinkedHashMap">
         SELECT c.activity_id, COUNT(*) AS comment_count
         FROM activity_comments c
         JOIN activities a ON a.id = c.activity_id
         WHERE a.trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
           AND c.is_deleted = false
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns t
+              WHERE t.content_type = 'ACTIVITY_COMMENT'
+                AND t.content_id = c.id
+                AND t.restored_at IS NULL
+          )
         GROUP BY c.activity_id
     </select>
 

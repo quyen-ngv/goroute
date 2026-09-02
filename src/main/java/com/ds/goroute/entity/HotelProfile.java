@@ -32,6 +32,7 @@ public class HotelProfile {
     private String parkingDetails;
     private String policies;
     private String bookingContact;
+    private java.math.BigDecimal fromPrice; private String fromPriceCurrency; private Integer roomTypeCount;
     private String status;
     private String disabledReason;
     private Long dataVersion;

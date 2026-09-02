@@ -1,18 +1,31 @@
 package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.BaseResponse;
+import com.ds.goroute.dto.request.DecideOrganizationVerificationRequest;
 import com.ds.goroute.dto.request.UpdateOrganizationStatusRequest;
 import com.ds.goroute.dto.request.AdminProvisionPartnerRequest;
 import com.ds.goroute.dto.request.ProvisionPartnerMemberRequest;
 import com.ds.goroute.dto.request.UpdateHostOrganizationRequest;
 import com.ds.goroute.dto.request.UpsertOrganizationMemberRequest;
 import com.ds.goroute.dto.request.UpsertOrganizationMemberScopeRequest;
+import com.ds.goroute.dto.request.GeneratePartnerStatementRequest;
+import com.ds.goroute.dto.request.ResolveStatementDisputeRequest;
+import com.ds.goroute.dto.request.UpdatePartnerCommissionRequest;
+import com.ds.goroute.dto.request.UpdatePartnerStatementStatusRequest;
 import com.ds.goroute.dto.response.HostOrganizationResponse;
+import com.ds.goroute.dto.response.OrganizationVerificationResponse;
+import com.ds.goroute.dto.response.PageResponse;
+import com.ds.goroute.dto.response.PartnerQualityResponse;
+import com.ds.goroute.dto.response.PartnerStatementResponse;
+import com.ds.goroute.dto.response.VerificationQueueItemResponse;
 import com.ds.goroute.dto.response.OrganizationMemberResponse;
 import com.ds.goroute.dto.response.OrganizationMemberScopeResponse;
 import com.ds.goroute.dto.response.PartnerProvisionResponse;
 import com.ds.goroute.dto.response.PartnerMemberProvisionResponse;
 import com.ds.goroute.service.HostOrganizationService;
+import com.ds.goroute.service.OrganizationVerificationService;
+import com.ds.goroute.service.PartnerQualityService;
+import com.ds.goroute.service.PartnerStatementService;
 import com.ds.goroute.type.OrganizationMemberStatus;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +43,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AdminPartnerOrganizationController {
     private final HostOrganizationService service;
+    private final OrganizationVerificationService verificationService;
+    private final PartnerQualityService qualityService;
+    private final PartnerStatementService statementService;
 
     @PostMapping
     @PreAuthorize("@adminAuthorization.can(authentication,'partner-organizations','create')")
@@ -46,6 +62,93 @@ public class AdminPartnerOrganizationController {
             @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "50") int size) {
         return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminList(q != null ? q : search, status, page, size)));
+    }
+
+    /** Organizations awaiting a verification decision, oldest submission first. Literal path: must not be swallowed by /{organizationId}. */
+    @GetMapping("/verification-queue")
+    @PreAuthorize("@adminAuthorization.can(authentication,'partner-organizations','get')")
+    public ResponseEntity<BaseResponse<PageResponse<VerificationQueueItemResponse>>> verificationQueue(
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "50") int size) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(verificationService.adminQueue(page, size)));
+    }
+
+    @GetMapping("/{organizationId}/verification")
+    @PreAuthorize("@adminAuthorization.can(authentication,'partner-organizations','get')")
+    public ResponseEntity<BaseResponse<OrganizationVerificationResponse>> verification(@PathVariable UUID organizationId) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(verificationService.adminGet(organizationId)));
+    }
+
+    @PostMapping("/{organizationId}/verification/decide")
+    @PreAuthorize("@adminAuthorization.can(authentication,'partner-organizations','update')")
+    public ResponseEntity<BaseResponse<HostOrganizationResponse>> decideVerification(Authentication authentication,
+            @PathVariable UUID organizationId, @Valid @RequestBody DecideOrganizationVerificationRequest request) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(
+                verificationService.adminDecide(actor(authentication), organizationId, request)));
+    }
+
+    @GetMapping("/{organizationId}/quality")
+    @PreAuthorize("@adminAuthorization.can(authentication,'partner-organizations','get')")
+    public ResponseEntity<BaseResponse<PartnerQualityResponse>> quality(@PathVariable UUID organizationId) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(qualityService.adminGet(organizationId)));
+    }
+
+    @PostMapping("/{organizationId}/quality/recompute")
+    @PreAuthorize("@adminAuthorization.can(authentication,'partner-organizations','update')")
+    public ResponseEntity<BaseResponse<PartnerQualityResponse>> recomputeQuality(@PathVariable UUID organizationId) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(qualityService.adminRecompute(organizationId)));
+    }
+
+    // --- Finance: statements, disputes, commission -----------------------------------------------
+
+    @GetMapping("/{organizationId}/statements")
+    @PreAuthorize("@adminAuthorization.can(authentication,'partner-organizations','get')")
+    public ResponseEntity<BaseResponse<PageResponse<PartnerStatementResponse>>> statements(
+            @PathVariable UUID organizationId,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(statementService.adminList(organizationId, page, size)));
+    }
+
+    @GetMapping("/{organizationId}/statements/{statementId}")
+    @PreAuthorize("@adminAuthorization.can(authentication,'partner-organizations','get')")
+    public ResponseEntity<BaseResponse<PartnerStatementResponse>> statement(@PathVariable UUID organizationId,
+            @PathVariable UUID statementId) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(statementService.adminGet(organizationId, statementId)));
+    }
+
+    /** Generates or refreshes a period and issues it. Disputed lines survive a regeneration. */
+    @PostMapping("/{organizationId}/statements/generate")
+    @PreAuthorize("@adminAuthorization.can(authentication,'partner-organizations','update')")
+    public ResponseEntity<BaseResponse<PartnerStatementResponse>> generateStatement(Authentication authentication,
+            @PathVariable UUID organizationId, @Valid @RequestBody GeneratePartnerStatementRequest request) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(statementService.adminGenerate(actor(authentication),
+                organizationId, request.getPeriodStart(), request.getPeriodEnd())));
+    }
+
+    /** Accepting zeroes the line's commission and recomputes the statement; rejecting needs a note. */
+    @PostMapping("/statements/{statementId}/lines/{lineId}/resolve")
+    @PreAuthorize("@adminAuthorization.can(authentication,'partner-organizations','update')")
+    public ResponseEntity<BaseResponse<PartnerStatementResponse>> resolveDispute(Authentication authentication,
+            @PathVariable UUID statementId, @PathVariable UUID lineId,
+            @Valid @RequestBody ResolveStatementDisputeRequest request) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(statementService.adminResolveDispute(actor(authentication),
+                statementId, lineId, Boolean.TRUE.equals(request.getAccept()), request.getNote())));
+    }
+
+    @PatchMapping("/statements/{statementId}/status")
+    @PreAuthorize("@adminAuthorization.can(authentication,'partner-organizations','update')")
+    public ResponseEntity<BaseResponse<PartnerStatementResponse>> statementStatus(Authentication authentication,
+            @PathVariable UUID statementId, @Valid @RequestBody UpdatePartnerStatementStatusRequest request) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(statementService.adminUpdateStatus(actor(authentication),
+                statementId, request.getStatus(), request.getNote())));
+    }
+
+    /** Only future bookings are affected: the rate is frozen on every booking already taken. */
+    @PatchMapping("/{organizationId}/commission")
+    @PreAuthorize("@adminAuthorization.can(authentication,'partner-organizations','update')")
+    public ResponseEntity<BaseResponse<HostOrganizationResponse>> updateCommission(Authentication authentication,
+            @PathVariable UUID organizationId, @Valid @RequestBody UpdatePartnerCommissionRequest request) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(
+                service.adminUpdateCommission(actor(authentication), organizationId, request)));
     }
 
     @GetMapping("/{organizationId}")

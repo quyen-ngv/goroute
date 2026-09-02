@@ -463,7 +463,7 @@ public class ImageStorageCleanupService {
                 spec("SAVED_PLACE", "SELECT photo_url FROM saved_places WHERE photo_url IS NOT NULL", "SELECT photo_url FROM saved_places WHERE id = ? AND photo_url IS NOT NULL"),
                 spec("CHECKIN_PHOTO", "SELECT photo_url FROM checkin_photos WHERE photo_url IS NOT NULL", "SELECT photo_url FROM checkin_photos WHERE id = ? AND photo_url IS NOT NULL"),
                 spec("TRIP_PHOTO", "SELECT photo_url, thumbnail_url FROM trip_photos WHERE photo_url IS NOT NULL OR thumbnail_url IS NOT NULL", "SELECT photo_url, thumbnail_url FROM trip_photos WHERE id = ? AND (photo_url IS NOT NULL OR thumbnail_url IS NOT NULL)"),
-                spec("CITY_STORY", "SELECT image_url FROM city_stories WHERE deleted_at IS NULL AND image_url IS NOT NULL", "SELECT image_url FROM city_stories WHERE id = ? AND image_url IS NOT NULL", "city-stories/"),
+                spec("CITY_STORY", "SELECT image_url, video_url, thumbnail_url FROM city_stories WHERE deleted_at IS NULL AND (image_url IS NOT NULL OR video_url IS NOT NULL OR thumbnail_url IS NOT NULL)", "SELECT image_url, video_url, thumbnail_url FROM city_stories WHERE id = ? AND (image_url IS NOT NULL OR video_url IS NOT NULL OR thumbnail_url IS NOT NULL)", "city-stories/"),
 
                 // Everything below shares the generic upload door (/v1/api/files/upload),
                 // which writes under expenses/<userId>/. That prefix is scanned, so a table
@@ -483,9 +483,6 @@ public class ImageStorageCleanupService {
                 spec("PLACE_COLLECTION",
                         "SELECT cover_image_url FROM place_collections WHERE cover_image_url IS NOT NULL",
                         "SELECT cover_image_url FROM place_collections WHERE id = ? AND cover_image_url IS NOT NULL"),
-                spec("GUIDE_PROFILE",
-                        "SELECT avatar_url FROM guide_profiles WHERE avatar_url IS NOT NULL",
-                        "SELECT avatar_url FROM guide_profiles WHERE id = ? AND avatar_url IS NOT NULL"),
                 spec("PASSPORT_DEFINITION",
                         "SELECT cover_image_url FROM passport_definitions WHERE cover_image_url IS NOT NULL",
                         "SELECT cover_image_url FROM passport_definitions WHERE id = ? AND cover_image_url IS NOT NULL",

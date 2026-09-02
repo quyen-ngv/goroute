@@ -3,6 +3,8 @@ package com.ds.goroute.service.impl;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.CreateHostOrganizationRequest;
 import com.ds.goroute.dto.request.UpdateHostOrganizationRequest;
+import com.ds.goroute.dto.request.UpdatePartnerBillingRequest;
+import com.ds.goroute.dto.request.UpdatePartnerCommissionRequest;
 import com.ds.goroute.dto.request.UpsertOrganizationMemberRequest;
 import com.ds.goroute.dto.request.UpsertOrganizationMemberScopeRequest;
 import com.ds.goroute.dto.request.AdminProvisionPartnerRequest;
@@ -37,6 +39,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Collections;
@@ -157,7 +160,7 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
         // with every subsequent partner endpoint.
         return repository.findForUser(actorUserId).stream()
                 .filter(organization -> canReadOrganization(organization.getId(), actorUserId))
-                .map(this::toResponse)
+                .map(HostOrganizationServiceImpl::toResponse)
                 .toList();
     }
 
@@ -236,11 +239,51 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
         deleteMemberScopeCore(actorUserId, organizationId, memberUserId, scopeId, false);
     }
 
+    @Override
+    @Transactional
+    public HostOrganizationResponse updateBilling(UUID actorUserId, UUID organizationId, UpdatePartnerBillingRequest request) {
+        HostOrganization organization = authorizationService.requirePermission(organizationId, actorUserId, "ORGANIZATION_WRITE");
+        String billingEmail = blankToNull(request.getBillingEmail());
+        String billingDetails = request.getBillingDetails() == null ? null : JsonUtils.toJson(request.getBillingDetails());
+        // A billing-only update: the commission rate is an operator decision and is never writable here.
+        if (repository.updateBillingProfile(organizationId, organization.getDataVersion(), null, billingEmail,
+                true, billingDetails, LocalDateTime.now()) != 1) {
+            throw new BusinessException(ErrorConstant.ALREADY_PROCESSED, "Organization was changed by another user; reload and retry");
+        }
+        organization.setBillingEmail(billingEmail);
+        if (billingDetails != null) organization.setBillingDetails(billingDetails);
+        organization.setDataVersion(organization.getDataVersion() + 1);
+        historyService.record(organizationId, "HOST_ORGANIZATION", organizationId, "BILLING_UPDATED",
+                organization, List.of("billingEmail", "billingDetails"), actorUserId, "USER", null);
+        return toResponse(organization);
+    }
+
+    @Override
+    @Transactional
+    public HostOrganizationResponse adminUpdateCommission(UUID actorUserId, UUID organizationId,
+            UpdatePartnerCommissionRequest request) {
+        HostOrganization organization = findRequired(organizationId);
+        BigDecimal percent = request.getCommissionPercent();
+        if (percent == null || percent.compareTo(BigDecimal.ZERO) < 0 || percent.compareTo(new BigDecimal("50")) > 0) {
+            throw new BusinessException(ErrorConstant.BAD_REQUEST, "commissionPercent must be between 0 and 50");
+        }
+        long expected = requiredVersion(request.getExpectedVersion());
+        if (repository.updateBillingProfile(organizationId, expected, percent, null, false, null,
+                LocalDateTime.now()) != 1) {
+            throw new BusinessException(ErrorConstant.ALREADY_PROCESSED, "Organization was changed; reload and retry");
+        }
+        organization.setCommissionPercent(percent);
+        organization.setDataVersion(expected + 1);
+        historyService.record(organizationId, "HOST_ORGANIZATION", organizationId, "COMMISSION_CHANGED",
+                organization, List.of("commissionPercent"), actorUserId, "ADMIN", null);
+        return toResponse(organization);
+    }
+
     @Override public List<HostOrganizationResponse> adminList(String query, String status, int page, int size) {
         int safeSize = Math.min(Math.max(size, 1), 200);
         int safePage = Math.max(page, 0);
         return repository.findForAdmin(blankToNull(query), blankToNull(status), safeSize, safePage * safeSize)
-                .stream().map(this::toResponse).toList();
+                .stream().map(HostOrganizationServiceImpl::toResponse).toList();
     }
 
     @Override public HostOrganizationResponse adminGet(UUID organizationId) {
@@ -296,16 +339,16 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
         return provisionAndAttachMember(actorUserId, organizationId, request, true);
     }
 
-    @Override public void adminUpdateMemberStatus(UUID actorUserId, UUID organizationId, UUID memberUserId, OrganizationMemberStatus status) {
+    @Override @Transactional public void adminUpdateMemberStatus(UUID actorUserId, UUID organizationId, UUID memberUserId, OrganizationMemberStatus status) {
         updateMemberStatusCore(actorUserId, organizationId, memberUserId, status, true);
     }
 
-    @Override public OrganizationMemberScopeResponse adminUpsertMemberScope(UUID actorUserId, UUID organizationId,
+    @Override @Transactional public OrganizationMemberScopeResponse adminUpsertMemberScope(UUID actorUserId, UUID organizationId,
             UUID memberUserId, UUID scopeId, UpsertOrganizationMemberScopeRequest request) {
         return saveMemberScope(actorUserId, organizationId, memberUserId, scopeId, request, true);
     }
 
-    @Override public void adminDeleteMemberScope(UUID actorUserId, UUID organizationId, UUID memberUserId, UUID scopeId) {
+    @Override @Transactional public void adminDeleteMemberScope(UUID actorUserId, UUID organizationId, UUID memberUserId, UUID scopeId) {
         deleteMemberScopeCore(actorUserId, organizationId, memberUserId, scopeId, true);
     }
 
@@ -453,15 +496,22 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
         }
     }
 
-    private HostOrganizationResponse toResponse(HostOrganization value) {
+    static HostOrganizationResponse toResponse(HostOrganization value) {
         Map<String, Object> settings = value.getSettings() == null ? Collections.emptyMap()
                 : JsonUtils.fromJson(value.getSettings(), new TypeReference<Map<String, Object>>() {});
+        Map<String, Object> billingDetails = value.getBillingDetails() == null ? Collections.emptyMap()
+                : JsonUtils.fromJson(value.getBillingDetails(), new TypeReference<Map<String, Object>>() {});
         return HostOrganizationResponse.builder().id(value.getId()).ownerUserId(value.getOwnerUserId())
                 .legalName(value.getLegalName()).displayName(value.getDisplayName())
                 .organizationType(value.getOrganizationType()).verificationStatus(value.getVerificationStatus())
-                .operationalStatus(value.getOperationalStatus()).defaultCurrency(value.getDefaultCurrency())
+                .operationalStatus(value.getOperationalStatus())
+                .verificationSubmittedAt(value.getVerificationSubmittedAt()).verificationReason(value.getVerificationReason())
+                .verificationDecidedAt(value.getVerificationDecidedAt()).defaultCurrency(value.getDefaultCurrency())
                 .timezone(value.getTimezone()).contactEmail(value.getContactEmail()).contactPhone(value.getContactPhone())
-                .settings(settings == null ? Collections.emptyMap() : settings).dataVersion(value.getDataVersion())
+                .settings(settings == null ? Collections.emptyMap() : settings)
+                .commissionPercent(value.getCommissionPercent()).billingEmail(value.getBillingEmail())
+                .billingDetails(billingDetails == null ? Collections.emptyMap() : billingDetails)
+                .dataVersion(value.getDataVersion())
                 .createdAt(value.getCreatedAt()).updatedAt(value.getUpdatedAt()).build();
     }
 

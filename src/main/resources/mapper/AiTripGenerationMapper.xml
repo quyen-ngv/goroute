@@ -50,4 +50,8 @@
     <select id="findEventsAfter" resultMap="EventMap">
         SELECT * FROM ai_trip_generation_events WHERE job_id=#{jobId} AND id &gt; #{afterId} ORDER BY id ASC LIMIT 500
     </select>
+    <select id="findStaleActiveIds" resultType="java.util.UUID">
+        SELECT id FROM ai_trip_generation_jobs
+        WHERE status IN ('QUEUED','RUNNING') AND updated_at &lt; NOW() - (#{minutes} * INTERVAL '1 minute')
+    </select>
 </mapper>

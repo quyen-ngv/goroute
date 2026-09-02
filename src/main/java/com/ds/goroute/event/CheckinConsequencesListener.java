@@ -5,6 +5,7 @@ import com.ds.goroute.repository.UserCheckinRepository;
 import com.ds.goroute.service.PassportService;
 import com.ds.goroute.service.StarService;
 import com.ds.goroute.service.checkin.CheckinRewardCalculator;
+import com.ds.goroute.service.checkin.CheckinRewardService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -34,7 +35,7 @@ public class CheckinConsequencesListener {
     private final UserCheckinRepository checkinRepository;
     private final PassportService passportService;
     private final StarService pointWallet;
-    private final CheckinRewardCalculator rewardCalculator;
+    private final CheckinRewardService rewardService;
 
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -64,26 +65,18 @@ public class CheckinConsequencesListener {
     }
 
     /**
-     * A check-in is rewarded once. The amount is stored on the row itself, so a replay
-     * finds it already set and stops, and so the author can be told why they got what they
-     * got rather than being left to guess.
+     * Moves an already-decided reward into the wallet.
+     *
+     * <p>The amount is normally worked out and stored by the request that created the check-in, so
+     * that the response could show it. {@link CheckinRewardService#record} therefore usually finds
+     * it set and simply hands it back; it recalculates only for a check-in that reached here
+     * without one. Either way the ledger entry is keyed on the check-in, so a replay adds nothing.
      */
     private void grantReward(UserCheckin checkin) {
-        if (checkin.getRewardPoints() != null) {
-            return;
-        }
-        int earnedToday = checkinRepository.sumRewardPointsSince(
-                checkin.getUserId(), LocalDate.now().atStartOfDay());
-        CheckinRewardCalculator.Reward reward = rewardCalculator.calculate(checkin, earnedToday);
-
-        // Written even when the amount is zero: "you earned nothing, and here is why" is a
-        // far better answer than silence.
-        if (checkinRepository.recordReward(checkin.getId(), reward.points(), reward.reason()) == 0) {
-            return;
-        }
+        CheckinRewardCalculator.Reward reward = rewardService.record(checkin);
         if (reward.isGranted()) {
             pointWallet.grant(checkin.getUserId(), reward.points(), "CHECKIN_EXPLORER_POINTS",
-                    "checkin:" + checkin.getId(), reward.reason());
+                    "checkin:" + checkin.getId(), "Check-in reward (" + reward.reason() + ")");
         }
     }
 

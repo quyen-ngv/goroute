@@ -24,6 +24,15 @@ public class CreateReviewRequest {
 
     private UUID activityBookingId;
 
+    /**
+     * Optional marketplace booking the review is written for. When one is set the server derives
+     * {@code placeId} (hotel stay) or {@code activityBookingId} (activity order) from it and marks
+     * the review as a verified stay/visit. At most one of the two may be present.
+     */
+    private UUID hotelBookingId;
+
+    private UUID activityOrderId;
+
 private UUID tripId; // Deprecated: reviews are scoped to place, not trip.
 
 private BigDecimal checkinLat;

@@ -42,6 +42,8 @@ public record ImageUploadRequest(UUID userId,
         public static final String PARTNER_HOTEL = "partner-hotel";
         /** Partner staff: activity media. */
         public static final String PARTNER_ACTIVITY = "partner-activity";
+        /** Partner staff: organization verification documents (licences, IDs), images only. */
+        public static final String PARTNER_VERIFICATION = "partner-verification";
         /** Operators: media library, direct upload. */
         public static final String ADMIN_MEDIA = "admin-media";
         /** Operators: media library, fetched from an external address. */
@@ -50,8 +52,6 @@ public record ImageUploadRequest(UUID userId,
         public static final String LOCATION_IMAGE = "admin-location-image";
         /** Operators: imagery for curated passport collections and proof tags. */
         public static final String PASSPORT_CATALOG = "admin-passport-catalog";
-        /** Guide applicants: profile and identity documents. */
-        public static final String GUIDE_PROFILE = "guide-profile";
 
         private ImageEntryPoint() {
         }

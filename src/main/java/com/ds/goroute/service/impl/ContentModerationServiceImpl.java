@@ -4,10 +4,12 @@ import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.ReportContentRequest;
 import com.ds.goroute.dto.response.ContentReportResponse;
 import com.ds.goroute.entity.ContentReport;
+import com.ds.goroute.entity.ActivityComment;
 import com.ds.goroute.entity.ContentComment;
 import com.ds.goroute.entity.ModerationFlag;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.ModerationFlagRepository;
+import com.ds.goroute.repository.ActivityCommentRepository;
 import com.ds.goroute.repository.ContentCommentRepository;
 import com.ds.goroute.service.ContentModerationService;
 import com.ds.goroute.service.moderation.ModerationVerdict;
@@ -36,6 +38,7 @@ public class ContentModerationServiceImpl implements ContentModerationService {
 
     private final ModerationFlagRepository flagRepository;
     private final ContentCommentRepository contentCommentRepository;
+    private final ActivityCommentRepository activityCommentRepository;
 
     @Override
     @Transactional
@@ -116,17 +119,33 @@ public class ContentModerationServiceImpl implements ContentModerationService {
     /**
      * A generic report normally only carries an id. A comment is short standalone text,
      * so the reviewer needs its exact context and a removal must notify its author.
+     *
+     * <p>Activity comments are included for the same reason. Without the snapshot a moderator sees
+     * a queue entry with nothing to judge, which is how a report can be filed and then never
+     * actioned -- the takedown that follows is what makes the report worth filing at all.
      */
     private ContentReportMetadata reportMetadata(ReportContentRequest request) {
-        if (request.getContentType() != ModeratedContentType.CONTENT_COMMENT) {
-            return new ContentReportMetadata(null, null);
-        }
-        ContentComment comment = contentCommentRepository.findById(request.getContentId())
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Comment not found"));
-        if (Boolean.TRUE.equals(comment.getIsDeleted())) {
-            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Comment is no longer available");
-        }
-        return new ContentReportMetadata(comment.getUserId(), comment.getContent());
+        return switch (request.getContentType()) {
+            case CONTENT_COMMENT -> {
+                ContentComment comment = contentCommentRepository.findById(request.getContentId())
+                        .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Comment not found"));
+                if (Boolean.TRUE.equals(comment.getIsDeleted())) {
+                    throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                            "Comment is no longer available");
+                }
+                yield new ContentReportMetadata(comment.getUserId(), comment.getContent());
+            }
+            case ACTIVITY_COMMENT -> {
+                ActivityComment comment = activityCommentRepository.findById(request.getContentId())
+                        .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Comment not found"));
+                if (Boolean.TRUE.equals(comment.getIsDeleted())) {
+                    throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                            "Comment is no longer available");
+                }
+                yield new ContentReportMetadata(comment.getUserId(), comment.getContent());
+            }
+            default -> new ContentReportMetadata(null, null);
+        };
     }
 
     private record ContentReportMetadata(UUID ownerId, String contextSnapshot) {

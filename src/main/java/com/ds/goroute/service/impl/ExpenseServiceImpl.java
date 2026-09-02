@@ -69,17 +69,20 @@ public class ExpenseServiceImpl implements ExpenseService {
     /** Receipts live in media_assets alongside trip memories, keyed by this. */
     private static final String EXPENSE_ENTITY_TYPE = "EXPENSE";
 
-    /**
-     * Check if user has access to trip (must be owner or ACCEPTED member, not LEFT)
-     */
+    /** Reading the budget: owner, or an accepted member of any role. */
     private Trip validateTripAccess(UUID tripId, UUID userId) {
         return tripAccessGuard.requireAccess(tripId, userId);
+    }
+
+    /** Writing to the budget: owner or an accepted EDITOR. A viewer may read the totals only. */
+    private Trip validateTripEditAccess(UUID tripId, UUID userId) {
+        return tripAccessGuard.requireEditAccess(tripId, userId);
     }
 
     @Override
     @Transactional
     public ExpenseResponse createExpense(UUID tripId, CreateExpenseRequest request, UUID userId) {
-        Trip trip = validateTripAccess(tripId, userId);
+        Trip trip = validateTripEditAccess(tripId, userId);
 
         UUID paidBy = request.getPaidBy() != null ? request.getPaidBy() : userId;
 
@@ -255,7 +258,7 @@ public class ExpenseServiceImpl implements ExpenseService {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found");
         }
 
-        validateTripAccess(tripId, userId);
+        validateTripEditAccess(tripId, userId);
 
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
@@ -288,7 +291,7 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-        validateTripAccess(tripId, userId);
+        validateTripEditAccess(tripId, userId);
         Set<UUID> affectedRecipients = expenseRecipients(expense);
 
         // Track if amount or currency changed
@@ -738,7 +741,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     public ExpenseSplitResponse markPaymentForSplit(UUID tripId, UUID expenseId, UUID splitId, MarkPaymentRequest request, UUID userId) {
         log.info("Marking payment for split: splitId={}, expenseId={}, tripId={}, userId={}", splitId, expenseId, tripId, userId);
 
-        validateTripAccess(tripId, userId);
+        validateTripEditAccess(tripId, userId);
 
         // 2. Fetch expense
         Expense expense = expenseRepository.findById(expenseId)
@@ -783,7 +786,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     public ExpenseResponse markAllPaymentsForExpense(UUID tripId, UUID expenseId, MarkPaymentRequest request, UUID userId) {
         log.info("Marking all payments for expense: expenseId={}, tripId={}, userId={}", expenseId, tripId, userId);
 
-        validateTripAccess(tripId, userId);
+        validateTripEditAccess(tripId, userId);
 
         // 2. Fetch expense
         Expense expense = expenseRepository.findById(expenseId)
@@ -836,7 +839,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     public void markAllPaymentsForTrip(UUID tripId, MarkPaymentRequest request, UUID userId) {
         log.info("Marking all payments for trip: tripId={}, userId={}", tripId, userId);
 
-        validateTripAccess(tripId, userId);
+        validateTripEditAccess(tripId, userId);
 
         // 2. Get all expenses for trip
         List<Expense> expenses = expenseRepository.findByTripId(tripId);

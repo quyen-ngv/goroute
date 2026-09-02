@@ -28,6 +28,7 @@ import com.ds.goroute.repository.TripBookRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripNoteRepository;
 import com.ds.goroute.repository.TripRepository;
+import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.TripBookService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.MemberStatus;
@@ -64,6 +65,7 @@ public class TripBookServiceImpl implements TripBookService {
     private static final DateTimeFormatter PAGE_DATE_FORMAT = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH);
 
     private final TripRepository tripRepository;
+    private final TripAccessGuard tripAccessGuard;
     private final TripMemberRepository tripMemberRepository;
     private final ActivityRepository activityRepository;
     private final ExpenseRepository expenseRepository;
@@ -75,7 +77,7 @@ public class TripBookServiceImpl implements TripBookService {
     @Override
     @Transactional
     public TripBookResponse generateBook(UUID tripId, UUID userId) {
-        Trip trip = getTripAndEnsureMember(tripId, userId);
+        Trip trip = getTripAndEnsureEditor(tripId, userId);
         TripBook book = tripBookRepository.findBookByTripId(tripId).orElseGet(() -> createBook(tripId));
         tripBookRepository.deleteSlotsByBookId(book.getId());
         tripBookRepository.deletePagesByBookId(book.getId());
@@ -141,7 +143,7 @@ public class TripBookServiceImpl implements TripBookService {
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Book page not found"));
         TripBook book = tripBookRepository.findBookById(page.getBookId())
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Travel book not found"));
-        getTripAndEnsureMember(book.getTripId(), userId);
+        getTripAndEnsureEditor(book.getTripId(), userId);
 
         List<BookSlotResponse> currentSlots = parseSlots(page.getSlots());
         Map<String, BookSlotResponse> updatedBySlotId = request.getSlots().stream()
@@ -203,7 +205,7 @@ public class TripBookServiceImpl implements TripBookService {
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Book page not found"));
         TripBook book = tripBookRepository.findBookById(page.getBookId())
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Travel book not found"));
-        getTripAndEnsureMember(book.getTripId(), userId);
+        getTripAndEnsureEditor(book.getTripId(), userId);
 
         BookPageSlot slot = tripBookRepository.findPageSlot(pageId, slotId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Book page slot not found"));
@@ -231,7 +233,7 @@ public class TripBookServiceImpl implements TripBookService {
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Book page not found"));
         TripBook book = tripBookRepository.findBookById(page.getBookId())
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Travel book not found"));
-        getTripAndEnsureMember(book.getTripId(), userId);
+        getTripAndEnsureEditor(book.getTripId(), userId);
 
         for (BookPageSlot slot : tripBookRepository.findPageSlots(pageId)) {
             slot.setTransform(null);
@@ -377,17 +379,14 @@ public class TripBookServiceImpl implements TripBookService {
                 .thenComparing(Activity::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()));
     }
 
+    /** Reading the book: owner, or an accepted member of any role. */
     private Trip getTripAndEnsureMember(UUID tripId, UUID userId) {
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-        if (trip.getOwnerId().equals(userId)) {
-            return trip;
-        }
-        TripMember member = tripMemberRepository.findByTripIdAndUserId(tripId, userId).orElse(null);
-        if (member == null || member.getStatus() != MemberStatus.ACCEPTED) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You are not a trip member");
-        }
-        return trip;
+        return tripAccessGuard.requireAccess(tripId, userId);
+    }
+
+    /** Generating or laying out the book: owner or an accepted EDITOR. */
+    private Trip getTripAndEnsureEditor(UUID tripId, UUID userId) {
+        return tripAccessGuard.requireEditAccess(tripId, userId);
     }
 
     private TripBookResponse toResponse(TripBook book) {

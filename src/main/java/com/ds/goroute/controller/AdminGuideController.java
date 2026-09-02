@@ -1,84 +1,74 @@
 package com.ds.goroute.controller;
 
 import com.ds.goroute.annotations.CurrentUser;
-import com.ds.goroute.dto.BaseResponse;
-import com.ds.goroute.dto.response.GuideProfileResponse;
+import com.ds.goroute.dto.request.GrantGuideRequest;
 import com.ds.goroute.dto.response.PageResponse;
-import com.ds.goroute.service.GuideBookingService;
-import com.ds.goroute.service.GuideDirectoryService;
-import com.ds.goroute.type.GuideProfileStatus;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.Size;
+import com.ds.goroute.service.UserGuideService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
-/** Guide verification and money controls (GUIDE-01, GUIDE-05). */
+/**
+ * Promoting an account to VietdeGuide, and taking it back.
+ *
+ * <p>Reading is a separate permission from granting: support answers "is this person a guide" far
+ * more often than anybody needs to make one.
+ */
 @RestController
 @RequestMapping("/v1/api/admin/guides")
 @RequiredArgsConstructor
-@Validated
 public class AdminGuideController extends BaseController {
 
-    private static final int MAX_PAGE_SIZE = 100;
-
-    private final GuideDirectoryService directoryService;
-    private final GuideBookingService bookingService;
+    private final UserGuideService guideService;
 
     @GetMapping
     @PreAuthorize("@adminAuthorization.can(authentication,'guides','get')")
-    public ResponseEntity<BaseResponse<PageResponse<GuideProfileResponse>>> queue(
-            @RequestParam(defaultValue = "PENDING_VERIFICATION") GuideProfileStatus status,
-            @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "50") @Min(1) @Max(MAX_PAGE_SIZE) int size) {
-        List<GuideProfileResponse> items = directoryService.verificationQueue(status, page, size);
-        return ResponseEntity.ok(ofSucceeded(
-                PageResponse.of(items, directoryService.countVerificationQueue(status), page, size)));
+    public ResponseEntity<?> list(@RequestParam(required = false) String status,
+                                  @RequestParam(defaultValue = "") String search,
+                                  @RequestParam(defaultValue = "0") int page,
+                                  @RequestParam(defaultValue = "20") int size) {
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        int safePage = Math.max(page, 0);
+        return ResponseEntity.ok(ofSucceeded(PageResponse.of(
+                guideService.list(status, search, safeSize, safePage * safeSize),
+                guideService.count(status, search),
+                safePage,
+                safeSize)));
     }
 
-    /**
-     * Identity documents. Behind its own permission and read separately from the profile,
-     * because seeing somebody's papers should be a deliberate act rather than a side effect
-     * of opening their application.
-     */
-    @GetMapping("/{guideId}/documents")
-    @PreAuthorize("@adminAuthorization.can(authentication,'guides','update')")
-    public ResponseEntity<BaseResponse<List<Map<String, Object>>>> documents(@PathVariable UUID guideId) {
-        return ResponseEntity.ok(ofSucceeded(directoryService.identityDocuments(guideId)));
+    @GetMapping("/users/{userId}")
+    @PreAuthorize("@adminAuthorization.can(authentication,'guides','get')")
+    public ResponseEntity<?> forUser(@PathVariable UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(guideService.find(userId).orElse(null)));
     }
 
-    @PostMapping("/{guideId}/decide")
+    /** PUT rather than POST: granting twice leaves the same one row. */
+    @PutMapping("/users/{userId}")
     @PreAuthorize("@adminAuthorization.can(authentication,'guides','update')")
-    public ResponseEntity<BaseResponse<GuideProfileResponse>> decide(
-            @PathVariable UUID guideId,
-            @RequestParam GuideProfileStatus status,
-            @RequestParam(required = false) @Size(max = 2000) String decisionNote,
-            @RequestParam(required = false) @Size(max = 2000) String informationRequested,
-            @CurrentUser UUID userId) {
-        return ResponseEntity.ok(ofSucceeded(
-                directoryService.decide(userId, guideId, status, decisionNote, informationRequested)));
+    public ResponseEntity<?> grant(@PathVariable UUID userId,
+                                   @Valid @RequestBody(required = false) GrantGuideRequest request,
+                                   @CurrentUser UUID operatorId) {
+        GrantGuideRequest body = request == null ? new GrantGuideRequest() : request;
+        return ResponseEntity.ok(ofSucceeded(guideService.grant(
+                userId, body.getDisplayTitle(), body.getNote(), operatorId)));
     }
 
-    /** Holds a payout while a disagreement is being looked at. */
-    @PostMapping("/bookings/{bookingId}/freeze-payout")
+    @DeleteMapping("/users/{userId}")
     @PreAuthorize("@adminAuthorization.can(authentication,'guides','update')")
-    public ResponseEntity<BaseResponse<Void>> freezePayout(
-            @PathVariable UUID bookingId,
-            @RequestParam boolean frozen,
-            @CurrentUser UUID userId) {
-        bookingService.freezePayout(userId, bookingId, frozen);
-        return ResponseEntity.ok(ofSucceeded(null));
+    public ResponseEntity<?> revoke(@PathVariable UUID userId,
+                                    @RequestParam(required = false) String reason,
+                                    @CurrentUser UUID operatorId) {
+        return ResponseEntity.ok(ofSucceeded(guideService.revoke(userId, reason, operatorId)));
     }
 }

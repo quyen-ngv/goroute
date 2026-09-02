@@ -83,12 +83,16 @@ public class AiTripServiceImpl implements AiTripService {
     }
 
     @Override
-    @Transactional
     public AiTripGenerateResponse generateCandidates(AiTripGenerateRequest request, UUID userId) {
         List<AiTripDestinationSnapshot> destinations = resolveDestinations(request);
         validateGenerateRequest(request, destinations);
 
+        // Deliberately NOT @Transactional: rankCandidatesWithAi calls an external LLM that can
+        // take minutes. Holding the user_subscriptions row lock across that call once wedged the
+        // whole connection pool (every eligibility check queued behind one stuck transaction).
+        // Quota is reserved in its own short transaction and rolled back manually on failure.
         AiTripUsage usage = aiTripQuotaService.reserve(userId);
+        try {
         String tier = usage.getTier();
         int used = usage.getUsed();
         int limit = usage.getLimit();
@@ -147,6 +151,10 @@ public class AiTripServiceImpl implements AiTripService {
                 .appliedDietaryRestrictions(request.getDietaryRestrictions())
                 .backupActivitiesIncluded(request.getIncludeBackupActivities())
                 .build();
+        } catch (RuntimeException error) {
+            aiTripQuotaService.release(userId);
+            throw error;
+        }
     }
 
     private String buildBudgetRangeSummary(AiTripGenerateRequest request) {

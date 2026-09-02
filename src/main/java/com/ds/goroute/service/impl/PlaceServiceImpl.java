@@ -7,6 +7,7 @@ import com.ds.goroute.dto.request.UpdatePlaceRequest;
 import com.ds.goroute.dto.PlaceSearchCriteria;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.response.PlaceAboutDto;
+import com.ds.goroute.dto.response.PlaceDetailRefreshCandidateResponse;
 import com.ds.goroute.dto.response.AdminPlaceResponse;
 import com.ds.goroute.dto.response.AdminPlacePageResponse;
 import com.ds.goroute.dto.response.PlaceImagesDto;
@@ -61,6 +62,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class PlaceServiceImpl implements PlaceService {
+
+    /** Hard ceiling on one detail-refresh sweep, matching CreatePlaceDetailRefreshJobRequest.maxPlaces. */
+    private static final int DETAIL_REFRESH_CANDIDATE_LIMIT = 10000;
 
     private final PlaceRepository placeRepository;
     private final PlaceSourceRepository placeSourceRepository;
@@ -209,27 +213,62 @@ public class PlaceServiceImpl implements PlaceService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<PlaceResponse> getAllPlaces(int page, int size) {
+    public List<PlaceResponse> getAllPlaces(String search, List<String> placeGroups, int page, int size) {
         int safePage = Math.max(0, page);
         int safeSize = Math.max(1, Math.min(size, 500));
-        return placeRepository.findPage(safeSize, safePage * safeSize).stream()
+        /* Same filter as the console list: a picker that cannot search is a picker that only
+         * ever offers the newest page of the catalogue. */
+        return placeRepository
+                .findFilteredPage(blankToNull(search), normalizedPlaceGroups(placeGroups), safeSize, safePage * safeSize)
+                .stream()
                 .map(this::toPlaceResponse)
                 .collect(Collectors.toList());
     }
 
     @Override
     @Transactional(readOnly = true)
-    public AdminPlacePageResponse getAdminPlaces(String search, int page, int size) {
+    public Map<String, Object> getDetailRefreshCandidates(UUID placeId, boolean includeInactive, Integer maxPlaces) {
+        int limit = maxPlaces == null || maxPlaces <= 0
+                ? DETAIL_REFRESH_CANDIDATE_LIMIT
+                : Math.min(maxPlaces, DETAIL_REFRESH_CANDIDATE_LIMIT);
+        List<PlaceDetailRefreshCandidateResponse> items =
+                placeRepository.findDetailRefreshCandidates(placeId, includeInactive, limit);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("databaseCount", placeRepository.countAll());
+        result.put("eligibleCount", items.size());
+        result.put("includeInactive", includeInactive);
+        result.put("items", items);
+        return result;
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static List<String> normalizedPlaceGroups(List<String> placeGroups) {
+        if (placeGroups == null) return null;
+        List<String> groups = placeGroups.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(String::trim)
+                .filter(group -> !group.isEmpty())
+                .collect(Collectors.toList());
+        return groups.isEmpty() ? null : groups;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AdminPlacePageResponse getAdminPlaces(String search, List<String> placeGroups, int page, int size) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 100);
-        String normalizedSearch = search == null || search.isBlank() ? null : search.trim();
+        String normalizedSearch = blankToNull(search);
+        List<String> normalizedGroups = normalizedPlaceGroups(placeGroups);
         List<AdminPlaceResponse> items = placeRepository
-                .findAdminPage(normalizedSearch, safeSize, safePage * safeSize).stream()
+                .findFilteredPage(normalizedSearch, normalizedGroups, safeSize, safePage * safeSize).stream()
                 .map(this::toAdminPlaceResponse)
                 .collect(Collectors.toList());
         return AdminPlacePageResponse.builder()
                 .items(items)
-                .total(placeRepository.countAdmin(normalizedSearch))
+                .total(placeRepository.countFiltered(normalizedSearch, normalizedGroups))
                 .page(safePage)
                 .size(safeSize)
                 .build();
@@ -1042,7 +1081,6 @@ public class PlaceServiceImpl implements PlaceService {
         response.setAvgAuthenticityScore(place.getAvgAuthenticityScore());
         response.setScoreCalculatedAt(place.getScoreCalculatedAt());
         response.setAttributes(PlaceAttributeCatalog.adminAttributes(parseJsonNode(place.getAttributes())));
-        response.setAttributeSchema(PlaceAttributeCatalog.definitions());
         return response;
     }
 

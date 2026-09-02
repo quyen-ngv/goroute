@@ -4,9 +4,11 @@ import com.ds.goroute.entity.PlaceImportJob;
 import com.ds.goroute.entity.PlaceImportJobItem;
 import com.ds.goroute.entity.PlaceImportJobRegion;
 import com.ds.goroute.dto.response.AdminPlaceImportMappingResponse;
+import com.ds.goroute.type.PlaceImportJobStatus;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -52,6 +54,14 @@ public interface PlaceImportJobMapper {
 PlaceImportJob findActiveNationwideJob();
 
 PlaceImportJob findActivePlaceDetailRefreshJob();
+
+    List<PlaceImportJob> findStalledWorkerJobs(@Param("silentSince") LocalDateTime silentSince,
+                                               @Param("limit") int limit);
+
+    int markJobTerminal(@Param("id") UUID id,
+                        @Param("status") PlaceImportJobStatus status,
+                        @Param("errorMessage") String errorMessage,
+                        @Param("completedAt") LocalDateTime completedAt);
 
     PlaceImportJobItem findItemByJobAndGooglePlaceId(@Param("jobId") UUID jobId,
                                                       @Param("googlePlaceId") String googlePlaceId);

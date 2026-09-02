@@ -66,10 +66,31 @@
           AND ai_trips_used &gt; 0
     </update>
 
+    <!--
+      The effective tier, not the stored one. `expires_at` has been on this table since V041 and
+      was never read, so an account that was ever set to PRO stayed PRO for ever. Every caller in
+      the application asks this one query, so answering it correctly here is what makes a paid
+      plan actually end.
+
+      NULL expires_at still means "no end date" — comped and lifetime access, and every PRO row
+      written before plans had a duration. Treating NULL as expired would downgrade those accounts
+      the moment this ships.
+    -->
     <select id="getSubscriptionTier" resultType="string">
-        SELECT tier
+        SELECT CASE
+                   WHEN expires_at IS NOT NULL AND expires_at &lt;= NOW() THEN 'FREE'
+                   ELSE tier
+               END
         FROM user_subscriptions
         WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <select id="getSubscriptionExpiresAt" resultType="java.time.LocalDateTime">
+        SELECT expires_at
+        FROM user_subscriptions
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND tier &lt;&gt; 'FREE'
+          AND (expires_at IS NULL OR expires_at &gt; NOW())
     </select>
 
     <select id="getAiTripsUsed" resultType="int">

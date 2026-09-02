@@ -71,7 +71,13 @@ public class UserReviewResponse {
     private Integer unhelpfulVotes;
     private Boolean hasVotedHelpful; // Current user voted helpful (true) or unhelpful (false) or null
     private Boolean isOwnReview; // Current user is author
-    
+
+    // Marketplace stay/visit link
+    private Boolean verifiedStay; // true when the review is tied to a completed hotel booking or activity order
+    private UUID hotelBookingId;
+    private UUID activityOrderId;
+    private ReviewPartnerResponse partnerResponse; // PUBLISHED partner reply, null when none
+
     // Timestamps
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

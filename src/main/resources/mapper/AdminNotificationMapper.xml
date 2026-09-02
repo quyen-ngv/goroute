@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.AdminNotificationMapper">
+
+    <!--
+      A trip counts for its owner and for anyone who actually joined it. PENDING invitations are
+      deliberately excluded: an unanswered invite is not a trip the person is taking.
+    -->
+    <sql id="TripBelongsToUser">
+        (t.owner_id = u.id
+            OR EXISTS (SELECT 1 FROM trip_members tm
+                       WHERE tm.trip_id = t.id
+                         AND tm.user_id = u.id
+                         AND tm.status = 'ACCEPTED'))
+        AND COALESCE(t.is_deleted, false) = false
+    </sql>
+
+    <sql id="AudienceWhere">
+        <where>
+            u.deleted_at IS NULL
+            AND u.account_status = 'ACTIVE'
+            <if test="audience == 'SPECIFIC_USERS'">
+                <choose>
+                    <when test="userIds != null and userIds.size() > 0">
+                        AND u.id IN
+                        <foreach item="pickedId" collection="userIds" open="(" separator="," close=")">
+                            #{pickedId, javaType=java.util.UUID, jdbcType=OTHER}
+                        </foreach>
+                    </when>
+                    <otherwise>AND 1 = 0</otherwise>
+                </choose>
+            </if>
+            <if test="audience == 'NEW_USERS'">
+                AND u.created_at >= NOW() - (#{withinDays}::int * INTERVAL '1 day')
+            </if>
+            <if test="audience == 'INACTIVE_USERS'">
+                AND (u.last_login_at IS NULL
+                     OR u.last_login_at &lt; NOW() - (#{withinDays}::int * INTERVAL '1 day'))
+            </if>
+            <if test="audience == 'ACTIVE_TRIP'">
+                AND EXISTS (SELECT 1 FROM trips t
+                            WHERE <include refid="TripBelongsToUser"/>
+                              AND CURRENT_DATE BETWEEN t.start_date AND t.end_date)
+            </if>
+            <if test="audience == 'UPCOMING_TRIP'">
+                AND EXISTS (SELECT 1 FROM trips t
+                            WHERE <include refid="TripBelongsToUser"/>
+                              AND t.start_date BETWEEN CURRENT_DATE
+                                  AND CURRENT_DATE + #{withinDays}::int)
+            </if>
+            <if test="audience == 'RECENT_TRIP_ENDED'">
+                AND EXISTS (SELECT 1 FROM trips t
+                            WHERE <include refid="TripBelongsToUser"/>
+                              AND t.end_date BETWEEN CURRENT_DATE - #{withinDays}::int
+                                  AND CURRENT_DATE)
+            </if>
+            <if test="audience == 'NO_TRIP'">
+                AND NOT EXISTS (SELECT 1 FROM trips t
+                                WHERE <include refid="TripBelongsToUser"/>)
+            </if>
+            <if test="onlyWithDevice">
+                AND EXISTS (SELECT 1 FROM user_devices d
+                            WHERE d.user_id = u.id AND d.is_active = TRUE)
+            </if>
+        </where>
+    </sql>
+
+    <sql id="RecipientColumns">
+        u.id, u.username, u.full_name, u.email, u.avatar_url, u.account_status,
+        u.created_at, u.last_login_at,
+        (SELECT count(*) FROM user_devices d WHERE d.user_id = u.id AND d.is_active = TRUE) AS device_count,
+        (SELECT count(*) FROM trips t
+         WHERE (t.owner_id = u.id
+                OR EXISTS (SELECT 1 FROM trip_members tm
+                           WHERE tm.trip_id = t.id AND tm.user_id = u.id AND tm.status = 'ACCEPTED'))
+           AND COALESCE(t.is_deleted, false) = false) AS trip_count,
+        (SELECT min(t.start_date) FROM trips t
+         WHERE (t.owner_id = u.id
+                OR EXISTS (SELECT 1 FROM trip_members tm
+                           WHERE tm.trip_id = t.id AND tm.user_id = u.id AND tm.status = 'ACCEPTED'))
+           AND COALESCE(t.is_deleted, false) = false
+           AND t.end_date >= CURRENT_DATE) AS next_trip_start_date
+    </sql>
+
+    <select id="countAudience" resultType="long">
+        SELECT count(*) FROM users u
+        <include refid="AudienceWhere"/>
+    </select>
+
+    <select id="findAudienceRecipients" resultType="com.ds.goroute.dto.response.AdminNotificationRecipientResponse">
+        SELECT <include refid="RecipientColumns"/>
+        FROM users u
+        <include refid="AudienceWhere"/>
+        ORDER BY u.created_at DESC, u.id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findAudienceUserIds" resultType="java.util.UUID">
+        SELECT u.id FROM users u
+        <include refid="AudienceWhere"/>
+        ORDER BY u.created_at DESC, u.id
+        LIMIT #{limit}
+    </select>
+
+    <select id="searchRecipients" resultType="com.ds.goroute.dto.response.AdminNotificationRecipientResponse">
+        SELECT <include refid="RecipientColumns"/>
+        FROM users u
+        WHERE u.deleted_at IS NULL
+        <if test="search != null and search != ''">
+            AND (u.username ILIKE CONCAT('%', #{search}, '%')
+              OR u.full_name ILIKE CONCAT('%', #{search}, '%')
+              OR u.email ILIKE CONCAT('%', #{search}, '%'))
+        </if>
+        ORDER BY u.created_at DESC, u.id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countSearchRecipients" resultType="long">
+        SELECT count(*) FROM users u
+        WHERE u.deleted_at IS NULL
+        <if test="search != null and search != ''">
+            AND (u.username ILIKE CONCAT('%', #{search}, '%')
+              OR u.full_name ILIKE CONCAT('%', #{search}, '%')
+              OR u.email ILIKE CONCAT('%', #{search}, '%'))
+        </if>
+    </select>
+
+    <!--
+      There is no campaign table: a send writes one notification row per recipient. A batch is
+      therefore recovered by grouping identical content sent in the same minute.
+    -->
+    <select id="findHistory" resultType="com.ds.goroute.dto.response.AdminNotificationHistoryResponse">
+        SELECT n.title,
+               n.body,
+               n.data ->> 'deepLink' AS deep_link,
+               min(n.created_at) AS sent_at,
+               count(*) AS recipient_count,
+               count(*) FILTER (WHERE n.is_read) AS read_count
+        FROM notifications n
+        WHERE n.type IN ('ADMIN_ANNOUNCEMENT', 'ADMIN_MESSAGE')
+        <if test="search != null and search != ''">
+            AND (n.title ILIKE CONCAT('%', #{search}, '%')
+              OR n.body ILIKE CONCAT('%', #{search}, '%'))
+        </if>
+        GROUP BY n.title, n.body, n.data ->> 'deepLink', date_trunc('minute', n.created_at)
+        ORDER BY min(n.created_at) DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countHistory" resultType="long">
+        SELECT count(*) FROM (
+            SELECT 1
+            FROM notifications n
+            WHERE n.type IN ('ADMIN_ANNOUNCEMENT', 'ADMIN_MESSAGE')
+            <if test="search != null and search != ''">
+                AND (n.title ILIKE CONCAT('%', #{search}, '%')
+                  OR n.body ILIKE CONCAT('%', #{search}, '%'))
+            </if>
+            GROUP BY n.title, n.body, n.data ->> 'deepLink', date_trunc('minute', n.created_at)
+        ) batches
+    </select>
+
+</mapper>

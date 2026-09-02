@@ -27,6 +27,7 @@ import com.ds.goroute.type.PlaceImportJobStatus;
 import com.ds.goroute.type.PlaceImportSourceType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,6 +42,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class NationwidePlaceImportJobService {
     private static final String SCORE_SOURCE = "GOOGLE_RECENT_REVIEWS";
     private static final BigDecimal DUPLICATE_DISTANCE_METERS = BigDecimal.valueOf(25);
@@ -174,6 +176,11 @@ public class NationwidePlaceImportJobService {
         }
         if (!type.startsWith("REGION_")) {
             copyCounters(job, event);
+        }
+        if (!"JOB_PROGRESS".equals(type)) {
+            log.info("Nationwide job {} received {} from worker {}{}",
+                    job.getId(), type, event.getPythonJobId(),
+                    event.getRegionCode() == null ? "" : " for region " + event.getRegionCode());
         }
         if ("JOB_COMPLETED".equals(type)) {
             job.setStatus(PlaceImportJobStatus.COMPLETED);

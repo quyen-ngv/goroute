@@ -74,7 +74,17 @@ public class UserCheckinResponse {
     private BigDecimal distanceMeters;
 
     private Integer rewardPoints;
+
+    /** Raw stored reason. A code list since 2026-09; older rows still hold an English sentence. */
     private String rewardReason;
+
+    /**
+     * The same reason split into codes the client localises ({@code PHOTO_CAMERA},
+     * {@code LOCATION_UNVERIFIED}, {@code DAILY_CAP}, ...). Sent because the author is now shown
+     * why they earned what they earned at the moment they earn it, and a server-authored English
+     * sentence cannot do that.
+     */
+    private java.util.List<String> rewardReasonCodes;
 
     private boolean edited;
     private LocalDateTime createdAt;

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.OrganizationVerificationMapper">
+    <resultMap id="DocumentMap" type="com.ds.goroute.entity.OrganizationVerificationDocument">
+        <id property="id" column="id"/>
+        <result property="organizationId" column="organization_id"/>
+        <result property="kind" column="kind"/>
+        <result property="fileUrl" column="file_url"/>
+        <result property="fileName" column="file_name"/>
+        <result property="note" column="note"/>
+        <result property="status" column="status"/>
+        <result property="reviewNote" column="review_note"/>
+        <result property="reviewedBy" column="reviewed_by"/>
+        <result property="reviewedAt" column="reviewed_at"/>
+        <result property="uploadedBy" column="uploaded_by"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insertDocument">
+        INSERT INTO organization_verification_documents (
+            id, organization_id, kind, file_url, file_name, note, status, uploaded_by, created_at
+        ) VALUES (
+            #{id}, #{organizationId}, #{kind}, #{fileUrl}, #{fileName}, #{note}, #{status}, #{uploadedBy}, #{createdAt}
+        )
+    </insert>
+
+    <select id="findDocumentsByOrganization" resultMap="DocumentMap">
+        SELECT * FROM organization_verification_documents
+        WHERE organization_id = #{organizationId}
+        ORDER BY created_at, id
+        LIMIT 100
+    </select>
+
+    <select id="findDocument" resultMap="DocumentMap">
+        SELECT * FROM organization_verification_documents
+        WHERE id = #{id} AND organization_id = #{organizationId}
+    </select>
+
+    <select id="countDocuments" resultType="int">
+        SELECT COUNT(*) FROM organization_verification_documents WHERE organization_id = #{organizationId}
+    </select>
+
+    <update id="updateDocumentReview">
+        UPDATE organization_verification_documents
+        SET status = #{status}, review_note = #{reviewNote}, reviewed_by = #{reviewedBy}, reviewed_at = #{reviewedAt}
+        WHERE id = #{id} AND organization_id = #{organizationId}
+    </update>
+
+    <delete id="deleteDocument">
+        DELETE FROM organization_verification_documents WHERE id = #{id} AND organization_id = #{organizationId}
+    </delete>
+</mapper>

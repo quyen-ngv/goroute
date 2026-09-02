@@ -148,6 +148,22 @@ public class PassportServiceImpl implements PassportService {
     // read model must not run inside a read-only transaction.
     @Transactional
     public PassportSummaryResponse summary(UUID userId) {
+        return buildSummary(userId, true);
+    }
+
+    /**
+     * Somebody else's passport, as their profile shows it: the proofs they earned and
+     * nothing that is theirs alone. The point balance and the progress towards the next
+     * stamp stay out, and the wallet is never touched, so reading a stranger's passport
+     * cannot create a wallet row for them.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public PassportSummaryResponse publicSummary(UUID userId) {
+        return buildSummary(userId, false);
+    }
+
+    private PassportSummaryResponse buildSummary(UUID userId, boolean includePrivate) {
         Map<String, Object> counters = passportMapper.summarizeUser(userId);
         double locationRadiusKm = config.getDecimal(BusinessConfigKey.PASSPORT_LOCATION_PLACE_RADIUS_KM);
         List<Map<String, Object>> locationImageRows = passportMapper.findPassportLocationImageMap(
@@ -180,9 +196,11 @@ public class PassportServiceImpl implements PassportService {
                 .totalLocationImageCount(totalLocationImages)
                 .locationCompletionPercent(locationCompletionPercent(visitedLocationImages, totalLocationImages))
                 .completionPercent(completionPercent(visitedProvinces, totalProvinces))
-                .pointsBalance(pointWallet.getWallet(userId).getBalance())
+                .pointsBalance(includePrivate ? pointWallet.getWallet(userId).getBalance() : 0)
                 .stamps(stamps)
-                .nextStamps(progressTowardsNextStamps(rules, earned, counters, visitedProvinces))
+                .nextStamps(includePrivate
+                        ? progressTowardsNextStamps(rules, earned, counters, visitedProvinces)
+                        : List.of())
                 .earnedTags(passportMapper.findEarnedTagsByUser(userId).stream()
                         .map(this::toTagResponse)
                         .toList())

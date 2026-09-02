@@ -56,10 +56,13 @@
         WHERE user_id = #{userId}
     </update>
 
+    <!-- The bound comes from the service constant. Hard-coding it here once left the
+         quota at 2 while the service advertised 3, so the last free slot was offered by
+         every screen and granted by nothing. -->
     <update id="incrementFreeQuota">
         UPDATE user_star_wallets
         SET free_trip_quota_used = free_trip_quota_used + 1, updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = #{userId} AND free_trip_quota_used &lt; 2
+        WHERE user_id = #{userId} AND free_trip_quota_used &lt; #{quota}
     </update>
 
     <insert id="insertTransaction">
@@ -110,6 +113,23 @@
         LIMIT #{limit}
     </select>
 
+    <!--
+      Wallets with something to take half of, oldest first, paged by the last id already handled.
+      Keyset rather than OFFSET because the job writes as it walks: an OFFSET page would shift
+      under it and skip wallets. Wallets at zero are excluded — halving nothing writes a ledger
+      entry that says nothing.
+    -->
+    <select id="findWalletsWithBalanceAfter" resultType="java.util.UUID">
+        SELECT user_id
+        FROM user_star_wallets
+        WHERE balance &gt; 0
+        <if test="afterUserId != null">
+            AND user_id &gt; #{afterUserId,javaType=java.util.UUID,jdbcType=OTHER}
+        </if>
+        ORDER BY user_id
+        LIMIT #{limit}
+    </select>
+
     <insert id="insertEntitlement">
         INSERT INTO trip_creation_entitlements(id, user_id, stars_spent, expires_at)
         VALUES(#{id}, #{userId}, #{starsSpent}, #{expiresAt})
@@ -120,6 +140,15 @@
         FROM trip_creation_entitlements
         WHERE user_id = #{userId} AND consumed_at IS NULL AND expires_at &gt; #{now}
         ORDER BY expires_at ASC LIMIT 1 FOR UPDATE
+    </select>
+
+    <select id="countEntitlements" resultType="int">
+        SELECT COUNT(*) FROM trip_creation_entitlements WHERE user_id = #{userId}
+    </select>
+
+    <select id="countActiveEntitlements" resultType="int">
+        SELECT COUNT(*) FROM trip_creation_entitlements
+        WHERE user_id = #{userId} AND consumed_at IS NULL AND expires_at &gt; #{now}
     </select>
 
     <update id="consumeEntitlement">

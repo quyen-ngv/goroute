@@ -3,6 +3,7 @@ package com.ds.goroute.service;
 import com.ds.goroute.dto.request.CreateReviewRequest;
 import com.ds.goroute.dto.request.UpdateReviewRequest;
 import com.ds.goroute.dto.response.PlaceScoreResponse;
+import com.ds.goroute.dto.response.ReviewEligibilityResponse;
 import com.ds.goroute.dto.response.ReviewScoreResponse;
 import com.ds.goroute.dto.response.UserReviewProfileResponse;
 import com.ds.goroute.dto.response.UserReviewResponse;
@@ -13,6 +14,11 @@ import java.util.UUID;
 public interface ReviewService {
 
     UserReviewResponse createReview(UUID userId, CreateReviewRequest request);
+
+    /**
+     * Can {@code userId} review the given marketplace booking? Exactly one of the two ids must be set.
+     */
+    ReviewEligibilityResponse getEligibility(UUID userId, UUID hotelBookingId, UUID activityOrderId);
 
     UserReviewResponse updateReview(UUID userId, UUID reviewId, UpdateReviewRequest request);
 

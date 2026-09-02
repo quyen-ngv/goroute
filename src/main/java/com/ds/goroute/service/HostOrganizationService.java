@@ -1,6 +1,8 @@
 package com.ds.goroute.service;
 
 import com.ds.goroute.dto.request.CreateHostOrganizationRequest;
+import com.ds.goroute.dto.request.UpdatePartnerBillingRequest;
+import com.ds.goroute.dto.request.UpdatePartnerCommissionRequest;
 import com.ds.goroute.dto.request.UpdateHostOrganizationRequest;
 import com.ds.goroute.dto.request.UpsertOrganizationMemberRequest;
 import com.ds.goroute.dto.response.HostOrganizationResponse;
@@ -32,6 +34,16 @@ public interface HostOrganizationService {
     OrganizationMemberScopeResponse upsertMemberScope(UUID actorUserId,UUID organizationId,UUID memberUserId,
                                                       UUID scopeId,UpsertOrganizationMemberScopeRequest request);
     void deleteMemberScope(UUID actorUserId,UUID organizationId,UUID memberUserId,UUID scopeId);
+    /** Billing contact and details (ORGANIZATION_WRITE). Never touches the commission rate. */
+    HostOrganizationResponse updateBilling(UUID actorUserId, UUID organizationId, UpdatePartnerBillingRequest request);
+
+    /**
+     * Operator change of the commission rate. Bookings already taken keep the rate frozen on their
+     * own row, so this only applies to bookings created from now on.
+     */
+    HostOrganizationResponse adminUpdateCommission(UUID actorUserId, UUID organizationId,
+                                                   UpdatePartnerCommissionRequest request);
+
     List<HostOrganizationResponse> adminList(String query, String status, int page, int size);
     HostOrganizationResponse adminGet(UUID organizationId);
     List<OrganizationMemberResponse> adminListMembers(UUID organizationId);

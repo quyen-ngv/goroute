@@ -52,12 +52,12 @@
     <result property="updatedBy" column="updated_by"/><result property="createdAt" column="created_at"/><result property="updatedAt" column="updated_at"/>
   </resultMap>
   <resultMap id="OrderMap" type="com.ds.goroute.entity.ActivityOrder">
-    <id property="id" column="id"/><result property="orderCode" column="order_code"/><result property="userId" column="user_id"/>
+    <id property="id" column="id"/><result property="slotStartsAt" column="slot_starts_at"/><result property="slotEndsAt" column="slot_ends_at"/><result property="slotTimezone" column="slot_timezone"/><result property="orderCode" column="order_code"/><result property="userId" column="user_id"/>
     <result property="organizationId" column="organization_id"/><result property="activityBookingId" column="activity_booking_id"/>
     <result property="activityTitle" column="activity_title"/><result property="slotId" column="slot_id"/>
     <result property="participantInfo" column="participant_info"/><result property="currency" column="currency"/>
     <result property="contactInfo" column="contact_info"/><result property="specialRequests" column="special_requests"/>
-    <result property="redemptionStatus" column="redemption_status"/><result property="redeemedAt" column="redeemed_at"/>
+    <result property="redemptionStatus" column="redemption_status"/><result property="redeemedAt" column="redeemed_at"/><result property="redeemedBy" column="redeemed_by"/><result property="guestCharged" column="guest_charged"/>
     <result property="idempotencyKey" column="idempotency_key"/><result property="holdExpiresAt" column="hold_expires_at"/>
     <result property="subtotalAmount" column="subtotal_amount"/><result property="taxAmount" column="tax_amount"/>
     <result property="feeAmount" column="fee_amount"/><result property="discountAmount" column="discount_amount"/>
@@ -75,7 +75,7 @@
     <result property="snapshot" column="snapshot"/><result property="createdAt" column="created_at"/>
   </resultMap>
   <sql id="ProductSelect">SELECT a.*,p.title AS place_title FROM activity_bookings a LEFT JOIN places p ON p.id=a.place_ref_id</sql>
-  <sql id="OrderSelect">SELECT o.*,a.title AS activity_title FROM activity_orders o JOIN activity_bookings a ON a.id=o.activity_booking_id</sql>
+  <sql id="OrderSelect">SELECT o.*,a.title AS activity_title,s.starts_at AS slot_starts_at,s.ends_at AS slot_ends_at,s.timezone AS slot_timezone FROM activity_orders o JOIN activity_bookings a ON a.id=o.activity_booking_id LEFT JOIN activity_slots s ON s.id=o.slot_id</sql>
 
   <insert id="insertProduct">
     INSERT INTO activity_bookings (id,source,url,redirect_url,activity_type,title,description,activity_address,departing_from,destinations,destination_coordinates,
@@ -149,9 +149,21 @@
   <select id="findExpiredPendingOrders" resultMap="OrderMap"><include refid="OrderSelect"/> WHERE o.order_status='PENDING_PARTNER_CONFIRMATION' AND o.hold_expires_at&lt;=#{now} ORDER BY o.hold_expires_at LIMIT #{limit}</select>
   <select id="findOrderItem" resultMap="OrderItemMap">SELECT i.*,p.name AS package_name FROM activity_order_items i JOIN activity_packages p ON p.id=i.package_id WHERE i.order_id=#{orderId}</select>
   <select id="findOrdersByUser" resultMap="OrderMap"><include refid="OrderSelect"/> WHERE o.user_id=#{userId} ORDER BY o.created_at DESC LIMIT #{limit} OFFSET #{offset}</select>
+  <sql id="OrderOrganizationFilter">
+    WHERE o.organization_id=#{organizationId}
+    <if test="status != null and status != ''"> AND o.order_status=#{status}</if>
+    <if test="productIds != null"> AND o.activity_booking_id IN <foreach collection="productIds" item="pid" open="(" separator="," close=")">#{pid}</foreach></if>
+  </sql>
+  <select id="countOrdersByOrganizationFiltered" resultType="long">SELECT COUNT(*) FROM activity_orders o <include refid="OrderOrganizationFilter"/></select>
+  <select id="countActiveOrdersForSlot" resultType="long">SELECT COUNT(*) FROM activity_orders WHERE slot_id=#{slotId} AND order_status IN ('PENDING_PARTNER_CONFIRMATION','CONFIRMED','CHECKED_IN')</select>
+  <select id="findOrderByVoucherCode" resultMap="OrderMap"><include refid="OrderSelect"/> WHERE o.organization_id=#{organizationId} AND o.voucher_code=#{voucherCode}</select>
+  <update id="updateOrderSlot">UPDATE activity_orders SET slot_id=#{slotId},subtotal_amount=#{subtotal},total_amount=#{total},snapshot=#{snapshot}::jsonb,data_version=data_version+1,updated_by=#{actor},updated_at=#{now} WHERE id=#{id} AND data_version=#{expectedVersion}</update>
+  <update id="updateOrderItemPrice">UPDATE activity_order_items SET unit_price=#{unitPrice},total_price=#{totalPrice} WHERE id=#{id}</update>
+  <update id="assignVoucher">UPDATE activity_orders SET voucher_code=#{voucherCode},updated_at=#{now} WHERE id=#{id} AND voucher_code IS NULL</update>
+  <update id="markRedeemed">UPDATE activity_orders SET redemption_status='REDEEMED',redeemed_at=#{now},redeemed_by=#{actor},updated_at=#{now} WHERE id=#{id}</update>
+  <update id="voidVoucher">UPDATE activity_orders SET redemption_status='VOIDED',updated_at=#{now} WHERE id=#{id} AND voucher_code IS NOT NULL AND redemption_status='NOT_REDEEMED'</update>
   <select id="findOrdersByOrganization" resultMap="OrderMap">
-    <include refid="OrderSelect"/> WHERE o.organization_id=#{organizationId}
-    <if test="status != null and status != ''">AND o.order_status=#{status}</if>
+    <include refid="OrderSelect"/> <include refid="OrderOrganizationFilter"/>
     ORDER BY o.created_at DESC LIMIT #{limit} OFFSET #{offset}
   </select>
   <select id="findOrdersAdmin" resultMap="OrderMap">
@@ -164,6 +176,8 @@
     </where>
     ORDER BY o.created_at DESC LIMIT #{limit} OFFSET #{offset}
   </select>
-  <update id="updateOrderStatus">UPDATE activity_orders SET order_status=#{status},data_version=data_version+1,updated_by=#{actor},updated_at=#{now} WHERE id=#{id} AND data_version=#{expectedVersion}</update>
+  <update id="updateOrderStatus">UPDATE activity_orders SET order_status=#{status},guest_charged=COALESCE(#{guestCharged},guest_charged),data_version=data_version+1,updated_by=#{actor},updated_at=#{now} WHERE id=#{id} AND data_version=#{expectedVersion}</update>
   <update id="expireOrderHold">UPDATE activity_orders SET order_status='EXPIRED',data_version=data_version+1,updated_by=#{actor},updated_at=#{now} WHERE id=#{id} AND order_status='PENDING_PARTNER_CONFIRMATION' AND data_version=#{expectedVersion} AND hold_expires_at&lt;=#{now}</update>
+  <select id="countOrdersByOrganization" resultType="long">SELECT COUNT(*) FROM activity_orders o WHERE o.organization_id=#{organizationId} AND o.order_status=#{status}</select>
+  <select id="countOrdersStartingOn" resultType="long">SELECT COUNT(*) FROM activity_orders o JOIN activity_slots s ON s.id=o.slot_id WHERE o.organization_id=#{organizationId} AND o.order_status IN ('CONFIRMED','CHECKED_IN') AND CAST(s.starts_at AS date)=#{day}</select>
 </mapper>

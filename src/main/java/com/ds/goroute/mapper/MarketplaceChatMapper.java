@@ -9,6 +9,8 @@ public interface MarketplaceChatMapper {
  int insertMessage(MarketplaceMessage v);MarketplaceMessage findMessageByClientId(@Param("conversationId")UUID c,@Param("senderId")UUID s,@Param("clientId")String clientId);MarketplaceMessage findMessage(@Param("id")UUID id);
  List<MarketplaceMessage> findMessages(@Param("conversationId")UUID c,@Param("afterSequence")Long after,@Param("limit")int limit);
  int updateConversationLastMessage(@Param("id")UUID id,@Param("at")LocalDateTime at);int markRead(@Param("conversationId")UUID c,@Param("userId")UUID u,@Param("messageId")UUID m);
- int updateConversation(@Param("id")UUID id,@Param("status")String status,@Param("assignedMemberId")UUID member,@Param("at")LocalDateTime at);
+ int updateConversation(@Param("id")UUID id,@Param("status")String status,@Param("assignedMemberId")UUID member,@Param("unassign")boolean unassign,@Param("at")LocalDateTime at);
  int softDeleteMessage(@Param("conversationId")UUID conversationId,@Param("messageId")UUID messageId,@Param("at")LocalDateTime at);
+ long countUnreadForOrganization(@Param("organizationId")UUID organizationId,@Param("viewerId")UUID viewerId);
+ long countOpenForOrganization(@Param("organizationId")UUID organizationId);
 }

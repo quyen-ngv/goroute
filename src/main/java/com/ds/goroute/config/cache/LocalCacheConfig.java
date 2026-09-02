@@ -55,12 +55,20 @@ public class LocalCacheConfig {
         return cacheManager;
     }
 
-    /** Current weather changes frequently enough to refresh every 15 minutes. */
+    /**
+     * Weather snapshots, keyed by grid cell rather than by location.
+     *
+     * <p>30 minutes matches how often Open-Meteo advances its current-conditions slot and
+     * keeps the free tier (10k calls/day) comfortable: one city costs at most 96 upstream
+     * calls a day no matter how many curated location images point into it.
+     */
     @Bean("weatherCacheManager")
     public CacheManager weatherCacheManager() {
-        CaffeineCacheManager cacheManager = new CaffeineCacheManager("cityWeather");
+        CaffeineCacheManager cacheManager = new CaffeineCacheManager("weatherSnapshot");
         cacheManager.setCaffeine(
-            Caffeine.newBuilder().expireAfterWrite(15, TimeUnit.MINUTES)
+            Caffeine.newBuilder()
+                .expireAfterWrite(30, TimeUnit.MINUTES)
+                .maximumSize(5_000)
         );
         return cacheManager;
     }

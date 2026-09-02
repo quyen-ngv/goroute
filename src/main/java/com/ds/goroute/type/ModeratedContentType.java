@@ -24,7 +24,5 @@ public enum ModeratedContentType {
     /** Partner-published catalogue text: hotels, rooms, rates, activities, packages. */
     PARTNER_LISTING,
     USER_PROFILE,
-    CHAT_MESSAGE,
-    GUIDE_PROFILE,
-    GUIDE_SERVICE
+    CHAT_MESSAGE
 }

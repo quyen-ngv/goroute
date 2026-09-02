@@ -7,7 +7,6 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.UUID;
 
 @Data
@@ -33,5 +32,4 @@ public class AdminPlaceResponse extends PlaceResponse {
     private Integer authenticLowStarCount;
     private BigDecimal avgAuthenticityScore;
     private LocalDateTime scoreCalculatedAt;
-    private List<PlaceAttributeDefinition> attributeSchema;
 }

@@ -4,6 +4,7 @@ import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.request.CreateReviewRequest;
 import com.ds.goroute.dto.request.UpdateReviewRequest;
 import com.ds.goroute.dto.response.PlaceScoreResponse;
+import com.ds.goroute.dto.response.ReviewEligibilityResponse;
 import com.ds.goroute.dto.response.ReviewScoreResponse;
 import com.ds.goroute.dto.response.UserReviewProfileResponse;
 import com.ds.goroute.dto.response.UserReviewResponse;
@@ -34,6 +35,16 @@ public class ReviewController extends BaseController {
             @Valid @RequestBody CreateReviewRequest request,
             @CurrentUser UUID userId) {
         UserReviewResponse response = reviewService.createReview(userId, request);
+        return ResponseEntity.ok(ofSucceeded(response));
+    }
+
+    @GetMapping("/eligibility")
+    @Operation(summary = "Check whether the caller may review a completed hotel booking or activity order")
+    public ResponseEntity getEligibility(
+            @RequestParam(required = false) UUID hotelBookingId,
+            @RequestParam(required = false) UUID activityOrderId,
+            @CurrentUser UUID userId) {
+        ReviewEligibilityResponse response = reviewService.getEligibility(userId, hotelBookingId, activityOrderId);
         return ResponseEntity.ok(ofSucceeded(response));
     }
 

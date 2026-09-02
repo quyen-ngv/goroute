@@ -23,6 +23,10 @@ public interface UserReviewRepository {
 
     Optional<UserReview> findByUserAndActivityBooking(UUID userId, UUID activityBookingId);
 
+    Optional<UserReview> findByHotelBookingId(UUID hotelBookingId);
+
+    Optional<UserReview> findByActivityOrderId(UUID activityOrderId);
+
     List<UserReview> findByPlaceId(UUID placeId, int limit, int offset);
 
     List<UserReview> findByActivityBookingId(UUID activityBookingId, int limit, int offset);

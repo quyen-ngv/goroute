@@ -10,4 +10,5 @@ public class UpdateActivityOrderStatusRequest {
     @NotNull private MarketplaceBookingStatus orderStatus;
     private String reason;
     private Long expectedVersion;
+    private Boolean guestCharged;
 }

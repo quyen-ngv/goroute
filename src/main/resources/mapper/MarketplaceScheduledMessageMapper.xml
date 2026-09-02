@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.MarketplaceScheduledMessageMapper">
+
+    <resultMap id="RuleMap" type="com.ds.goroute.entity.MarketplaceScheduledMessage">
+        <id property="id" column="id"/>
+        <result property="organizationId" column="organization_id"/>
+        <result property="templateId" column="template_id"/>
+        <result property="triggerType" column="trigger_type"/>
+        <result property="offsetHours" column="offset_hours"/>
+        <result property="body" column="body"/>
+        <result property="appliesTo" column="applies_to"/>
+        <result property="status" column="status"/>
+        <result property="createdBy" column="created_by"/>
+        <result property="updatedBy" column="updated_by"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="lastRunAt" column="last_run_at"/>
+        <result property="sentCount" column="sent_count"/>
+    </resultMap>
+
+    <resultMap id="RunMap" type="com.ds.goroute.entity.MarketplaceScheduledMessageRun">
+        <id property="id" column="id"/>
+        <result property="scheduledMessageId" column="scheduled_message_id"/>
+        <result property="bookingType" column="booking_type"/>
+        <result property="hotelBookingId" column="hotel_booking_id"/>
+        <result property="activityOrderId" column="activity_order_id"/>
+        <result property="conversationId" column="conversation_id"/>
+        <result property="messageId" column="message_id"/>
+        <result property="sentAt" column="sent_at"/>
+        <result property="status" column="status"/>
+        <result property="detail" column="detail"/>
+        <result property="bookingCode" column="booking_code"/>
+    </resultMap>
+
+    <resultMap id="TargetMap" type="com.ds.goroute.entity.ScheduledMessageTarget">
+        <result property="bookingType" column="booking_type"/>
+        <result property="hotelBookingId" column="hotel_booking_id"/>
+        <result property="activityOrderId" column="activity_order_id"/>
+        <result property="organizationId" column="organization_id"/>
+        <result property="ownerUserId" column="owner_user_id"/>
+        <result property="guestUserId" column="guest_user_id"/>
+        <result property="bookingCode" column="booking_code"/>
+        <result property="guestName" column="guest_name"/>
+        <result property="propertyName" column="property_name"/>
+        <result property="checkInDate" column="check_in_date"/>
+        <result property="checkOutDate" column="check_out_date"/>
+        <result property="slotStartsAt" column="slot_starts_at"/>
+        <result property="status" column="status"/>
+    </resultMap>
+
+    <!-- Statuses a scheduled message may be delivered for. Anything cancelled/expired/failed is
+         never selected, which is how "skip cancelled bookings" is enforced at the source. -->
+    <sql id="deliverableStatuses">('CONFIRMED','CHECKED_IN','COMPLETED')</sql>
+
+    <insert id="insert">
+        INSERT INTO marketplace_scheduled_messages (
+            id, organization_id, template_id, trigger_type, offset_hours, body, applies_to, status,
+            created_by, updated_by, created_at, updated_at
+        ) VALUES (
+            #{id}, #{organizationId}, #{templateId}, #{triggerType}, #{offsetHours}, #{body}, #{appliesTo}, #{status},
+            #{createdBy}, #{updatedBy}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE marketplace_scheduled_messages
+        SET template_id = #{templateId}, trigger_type = #{triggerType}, offset_hours = #{offsetHours},
+            body = #{body}, applies_to = #{appliesTo}, status = #{status},
+            updated_by = #{updatedBy}, updated_at = #{updatedAt}
+        WHERE id = #{id} AND organization_id = #{organizationId}
+    </update>
+
+    <delete id="delete">
+        DELETE FROM marketplace_scheduled_messages WHERE id = #{id} AND organization_id = #{organizationId}
+    </delete>
+
+    <sql id="ruleSelect">
+        SELECT r.*,
+               (SELECT MAX(x.sent_at) FROM marketplace_scheduled_message_runs x WHERE x.scheduled_message_id = r.id) AS last_run_at,
+               (SELECT COUNT(*) FROM marketplace_scheduled_message_runs x WHERE x.scheduled_message_id = r.id AND x.status = 'SENT') AS sent_count
+        FROM marketplace_scheduled_messages r
+    </sql>
+
+    <select id="findById" resultMap="RuleMap">
+        <include refid="ruleSelect"/>
+        WHERE r.id = #{id} AND r.organization_id = #{organizationId}
+    </select>
+
+    <select id="findByOrganization" resultMap="RuleMap">
+        <include refid="ruleSelect"/>
+        WHERE r.organization_id = #{organizationId}
+        ORDER BY r.created_at, r.id
+        LIMIT #{limit}
+    </select>
+
+    <select id="countByOrganization" resultType="int">
+        SELECT COUNT(*) FROM marketplace_scheduled_messages WHERE organization_id = #{organizationId}
+    </select>
+
+    <select id="findEnabled" resultMap="RuleMap">
+        SELECT r.* FROM marketplace_scheduled_messages r
+        WHERE r.status = 'ENABLED'
+        ORDER BY r.created_at, r.id
+        LIMIT #{limit}
+    </select>
+
+    <!--
+        Trigger time.
+
+        Two of the hotel triggers happen on the property's clock: "24h before check-in" means 24h
+        before 14:00 at the hotel, not at the server. So the reference instant supplied by Java is
+        first pinned to the JVM zone it was produced in and then read in the property's zone, and the
+        comparison happens entirely in property-local wall time. ON_BOOKING_CONFIRMED is different:
+        confirmation time is a server-local timestamp column, so it is compared against #{now}
+        directly with no zone conversion at all.
+
+        Confirmation time itself has no column. It is the first marketplace_entity_versions row whose
+        snapshot already carries CONFIRMED (the same marker PartnerQualityMapper uses), falling back
+        to updated_at for bookings older than the history feature.
+
+        The look-back window stops a rule that was enabled today from replaying months of history;
+        it never causes a double send, because the run row does that.
+    -->
+    <sql id="hotelLocalNow">
+        ((CAST(#{now} AS TIMESTAMP) AT TIME ZONE CAST(#{serverZone} AS TEXT))
+          AT TIME ZONE CAST(COALESCE(NULLIF(h.timezone, ''), #{serverZone}) AS TEXT))
+    </sql>
+
+    <sql id="slotLocalNow">
+        ((CAST(#{now} AS TIMESTAMP) AT TIME ZONE CAST(#{serverZone} AS TEXT))
+          AT TIME ZONE CAST(COALESCE(NULLIF(s.timezone, ''), #{serverZone}) AS TEXT))
+    </sql>
+
+    <select id="findDueHotelTargets" resultMap="TargetMap">
+        SELECT 'HOTEL' AS booking_type, b.id AS hotel_booking_id, NULL::uuid AS activity_order_id,
+               b.organization_id, org.owner_user_id, b.user_id AS guest_user_id, b.booking_code,
+               COALESCE(NULLIF(b.guest_lead ->> 'fullName', ''), NULLIF(b.guest_lead ->> 'name', ''),
+                        NULLIF(b.guest_lead ->> 'firstName', ''), u.full_name) AS guest_name,
+               p.title AS property_name, b.check_in_date, b.check_out_date,
+               NULL::timestamp AS slot_starts_at, b.booking_status AS status
+        FROM hotel_bookings b
+        JOIN host_organizations org ON org.id = b.organization_id
+        JOIN hotel_profiles h ON h.id = b.hotel_id
+        LEFT JOIN places p ON p.id = h.place_id
+        LEFT JOIN users u ON u.id = b.user_id
+        WHERE b.organization_id = #{organizationId}
+          AND b.user_id IS NOT NULL
+          AND org.owner_user_id IS NOT NULL
+          AND b.booking_status IN <include refid="deliverableStatuses"/>
+          <choose>
+              <when test="trigger == 'BEFORE_CHECK_IN'">
+                  AND ((b.check_in_date + COALESCE(h.check_in_time, TIME '14:00'))
+                       - (#{offsetHours} * INTERVAL '1 hour'))
+                      BETWEEN (<include refid="hotelLocalNow"/> - (#{lookbackHours} * INTERVAL '1 hour'))
+                          AND <include refid="hotelLocalNow"/>
+              </when>
+              <when test="trigger == 'AFTER_CHECK_OUT'">
+                  AND ((b.check_out_date + COALESCE(h.check_out_time, TIME '12:00'))
+                       + (#{offsetHours} * INTERVAL '1 hour'))
+                      BETWEEN (<include refid="hotelLocalNow"/> - (#{lookbackHours} * INTERVAL '1 hour'))
+                          AND <include refid="hotelLocalNow"/>
+              </when>
+              <otherwise>
+                  AND (COALESCE(
+                          (SELECT MIN(v.created_at) FROM marketplace_entity_versions v
+                            WHERE v.entity_type = 'HOTEL_BOOKING' AND v.entity_id = b.id
+                              AND v.snapshot ->> 'bookingStatus' = 'CONFIRMED'),
+                          b.updated_at) + (#{offsetHours} * INTERVAL '1 hour'))
+                      BETWEEN (CAST(#{now} AS TIMESTAMP) - (#{lookbackHours} * INTERVAL '1 hour'))
+                          AND CAST(#{now} AS TIMESTAMP)
+              </otherwise>
+          </choose>
+          AND NOT EXISTS (SELECT 1 FROM marketplace_scheduled_message_runs run
+                           WHERE run.scheduled_message_id = #{scheduledMessageId} AND run.hotel_booking_id = b.id)
+        ORDER BY b.created_at, b.id
+        LIMIT #{limit}
+    </select>
+
+    <select id="findDueActivityTargets" resultMap="TargetMap">
+        SELECT 'ACTIVITY' AS booking_type, NULL::uuid AS hotel_booking_id, o.id AS activity_order_id,
+               o.organization_id, org.owner_user_id, o.user_id AS guest_user_id, o.order_code AS booking_code,
+               COALESCE(NULLIF(o.contact_info ->> 'fullName', ''), NULLIF(o.contact_info ->> 'name', ''),
+                        u.full_name) AS guest_name,
+               a.title AS property_name, NULL::date AS check_in_date, NULL::date AS check_out_date,
+               s.starts_at AS slot_starts_at, o.order_status AS status
+        FROM activity_orders o
+        JOIN host_organizations org ON org.id = o.organization_id
+        JOIN activity_bookings a ON a.id = o.activity_booking_id
+        LEFT JOIN activity_slots s ON s.id = o.slot_id
+        LEFT JOIN users u ON u.id = o.user_id
+        WHERE o.organization_id = #{organizationId}
+          AND o.user_id IS NOT NULL
+          AND org.owner_user_id IS NOT NULL
+          AND o.order_status IN <include refid="deliverableStatuses"/>
+          <choose>
+              <when test="trigger == 'BEFORE_ACTIVITY'">
+                  AND s.starts_at IS NOT NULL
+                  AND (s.starts_at - (#{offsetHours} * INTERVAL '1 hour'))
+                      BETWEEN (<include refid="slotLocalNow"/> - (#{lookbackHours} * INTERVAL '1 hour'))
+                          AND <include refid="slotLocalNow"/>
+              </when>
+              <otherwise>
+                  AND (COALESCE(
+                          (SELECT MIN(v.created_at) FROM marketplace_entity_versions v
+                            WHERE v.entity_type = 'ACTIVITY_ORDER' AND v.entity_id = o.id
+                              AND v.snapshot ->> 'orderStatus' = 'CONFIRMED'),
+                          o.updated_at) + (#{offsetHours} * INTERVAL '1 hour'))
+                      BETWEEN (CAST(#{now} AS TIMESTAMP) - (#{lookbackHours} * INTERVAL '1 hour'))
+                          AND CAST(#{now} AS TIMESTAMP)
+              </otherwise>
+          </choose>
+          AND NOT EXISTS (SELECT 1 FROM marketplace_scheduled_message_runs run
+                           WHERE run.scheduled_message_id = #{scheduledMessageId} AND run.activity_order_id = o.id)
+        ORDER BY o.created_at, o.id
+        LIMIT #{limit}
+    </select>
+
+    <select id="findHotelBookingStatus" resultType="string">
+        SELECT booking_status FROM hotel_bookings WHERE id = #{id}
+    </select>
+
+    <select id="findActivityOrderStatus" resultType="string">
+        SELECT order_status FROM activity_orders WHERE id = #{id}
+    </select>
+
+    <insert id="insertRun">
+        INSERT INTO marketplace_scheduled_message_runs (
+            id, scheduled_message_id, booking_type, hotel_booking_id, activity_order_id,
+            conversation_id, message_id, sent_at, status, detail
+        ) VALUES (
+            #{id}, #{scheduledMessageId}, #{bookingType}, #{hotelBookingId}, #{activityOrderId},
+            #{conversationId}, #{messageId}, #{sentAt}, #{status}, #{detail}
+        )
+    </insert>
+
+    <update id="updateRunOutcome">
+        UPDATE marketplace_scheduled_message_runs
+        SET status = #{status}, detail = #{detail},
+            conversation_id = COALESCE(#{conversationId}, conversation_id),
+            message_id = COALESCE(#{messageId}, message_id)
+        WHERE id = #{id}
+    </update>
+
+    <select id="findRuns" resultMap="RunMap">
+        SELECT run.*, COALESCE(hb.booking_code, ao.order_code) AS booking_code
+        FROM marketplace_scheduled_message_runs run
+        LEFT JOIN hotel_bookings hb ON hb.id = run.hotel_booking_id
+        LEFT JOIN activity_orders ao ON ao.id = run.activity_order_id
+        WHERE run.scheduled_message_id = #{scheduledMessageId}
+        ORDER BY run.sent_at DESC, run.id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+</mapper>

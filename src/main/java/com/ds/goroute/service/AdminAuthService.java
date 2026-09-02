@@ -1,6 +1,7 @@
 package com.ds.goroute.service;
 
 import com.ds.goroute.dto.request.AdminLoginRequest;
+import com.ds.goroute.dto.request.PartnerRegisterRequest;
 import com.ds.goroute.dto.response.AuthResponse;
 import com.ds.goroute.dto.response.PortalSessionResponse;
 
@@ -8,5 +9,7 @@ import java.util.UUID;
 
 public interface AdminAuthService {
     AuthResponse login(AdminLoginRequest request);
+    /** Creates an ACTIVE owner account and its organization, then signs the new owner in. */
+    AuthResponse partnerRegister(PartnerRegisterRequest request);
     PortalSessionResponse session(UUID userId);
 }

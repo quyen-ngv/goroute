@@ -40,6 +40,12 @@ public interface PassportService {
 
     PassportSummaryResponse summary(UUID userId);
 
+    /**
+     * The same passport as another person sees it on the owner's profile: earned stamps
+     * and tags only, without the point balance or the progress towards what is next.
+     */
+    PassportSummaryResponse publicSummary(UUID userId);
+
     List<ProvinceMapEntryResponse> provinceMap(UUID userId);
 
     List<PassportLocationMapEntryResponse> locationImageMap(UUID userId);

@@ -17,6 +17,7 @@ import com.ds.goroute.service.FileUploadService;
 import com.ds.goroute.service.ImageUploadOutcome;
 import com.ds.goroute.service.ImageUploadRequest;
 import com.ds.goroute.service.ImageStorageCleanupService;
+import com.ds.goroute.service.UserGuideService;
 import com.ds.goroute.service.UserService;
 import com.ds.goroute.service.StorageService;
 import com.ds.goroute.utils.JsonUtils;
@@ -50,6 +51,7 @@ public class UserServiceImpl implements UserService {
     );
     
     private final UserRepository userRepository;
+    private final UserGuideService guideService;
     private final UserReviewRepository userReviewRepository;
     private final TripRepository tripRepository;
     private final PlaceContributionMapper placeContributionMapper;
@@ -264,6 +266,7 @@ public class UserServiceImpl implements UserService {
                 && !isSelf
                 && userRepository.isFollowing(targetUserId, viewerId);
 
+        String guideBadge = guideBadgeFor(targetUserId);
         return PublicUserProfileResponse.builder()
                 .id(user.getId())
                 .fullName(user.getFullName())
@@ -280,12 +283,15 @@ public class UserServiceImpl implements UserService {
                 .followersCount(stats.followersCount())
                 .followingCount(stats.followingCount())
                 .rank(buildRankProgress(stats))
+                .guide(guideBadge != null)
+                .guideTitle(guideBadge)
                 .isFollowing(isFollowing)
                 .isFollowedBy(isFollowedBy)
                 .build();
     }
 
     private UserProfileResponse buildUserProfileResponse(User user, ProfileStats stats) {
+        String guideBadge = guideBadgeFor(user.getId());
         return UserProfileResponse.builder()
                 .id(user.getId())
                 .fullName(user.getFullName())
@@ -310,7 +316,22 @@ public class UserServiceImpl implements UserService {
                 .followersCount(stats.followersCount())
                 .followingCount(stats.followingCount())
                 .rank(buildRankProgress(stats))
+                .guide(guideBadge != null)
+                .guideTitle(guideBadge)
                 .build();
+    }
+
+    /**
+     * The guide title to show, or null when this account is not a guide.
+     *
+     * <p>Returns the title rather than a boolean so one lookup answers both questions; an active
+     * guide with no title still reads as a guide, because the empty title is the normal case.
+     */
+    private String guideBadgeFor(java.util.UUID userId) {
+        return guideService.find(userId)
+                .filter(com.ds.goroute.entity.UserGuideGrant::isActive)
+                .map(grant -> grant.getDisplayTitle() == null ? "" : grant.getDisplayTitle())
+                .orElse(null);
     }
 
     private ProfileStats getProfileStats(UUID userId, boolean includePrivateTrips) {

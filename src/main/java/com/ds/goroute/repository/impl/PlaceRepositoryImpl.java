@@ -1,5 +1,6 @@
 package com.ds.goroute.repository.impl;
 
+import com.ds.goroute.dto.response.PlaceDetailRefreshCandidateResponse;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.mapper.PlaceMapper;
 import com.ds.goroute.repository.PlaceRepository;
@@ -86,13 +87,19 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     }
 
     @Override
-    public List<Place> findAdminPage(String search, int limit, int offset) {
-        return placeMapper.findAdminPage(search, limit, offset);
+    public List<Place> findFilteredPage(String search, List<String> placeGroups, int limit, int offset) {
+        return placeMapper.findFilteredPage(search, placeGroups, limit, offset);
     }
 
     @Override
-    public long countAdmin(String search) {
-        return placeMapper.countAdmin(search);
+    public List<PlaceDetailRefreshCandidateResponse> findDetailRefreshCandidates(
+            UUID placeId, boolean includeInactive, int limit) {
+        return placeMapper.findDetailRefreshCandidates(placeId, includeInactive, limit);
+    }
+
+    @Override
+    public long countFiltered(String search, List<String> placeGroups) {
+        return placeMapper.countFiltered(search, placeGroups);
     }
 
     @Override

@@ -14,6 +14,7 @@ import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.FileUploadService;
 import com.ds.goroute.service.ImageStorageCleanupService;
+import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.MemberStatus;
@@ -46,8 +47,19 @@ class TripMemoryServiceImplTest {
     private final ImageStorageCleanupService imageStorageCleanupService = mock(ImageStorageCleanupService.class);
     private final NotificationHelper notificationHelper = mock(NotificationHelper.class);
 
+    /**
+     * A real guard over the same mocked repositories rather than a mock of the guard itself.
+     *
+     * <p>The membership rules moved out of this service and into the guard; mocking the guard
+     * would move them out of the test too, and these cases exist precisely to prove that an
+     * uploader who is not an editor is refused before any file is written.
+     */
+    private final TripAccessGuard tripAccessGuard =
+            new TripAccessGuard(tripRepository, tripMemberRepository);
+
     private final TripMemoryServiceImpl service = new TripMemoryServiceImpl(
             mediaAssetRepository,
+            tripAccessGuard,
             tripRepository,
             tripMemberRepository,
             activityRepository,

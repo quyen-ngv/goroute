@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.MarketplaceMessageTemplateMapper">
+    <resultMap id="TemplateMap" type="com.ds.goroute.entity.MarketplaceMessageTemplate">
+        <id property="id" column="id"/>
+        <result property="organizationId" column="organization_id"/>
+        <result property="title" column="title"/>
+        <result property="body" column="body"/>
+        <result property="sortOrder" column="sort_order"/>
+        <result property="createdBy" column="created_by"/>
+        <result property="updatedBy" column="updated_by"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO marketplace_message_templates (
+            id, organization_id, title, body, sort_order, created_by, updated_by, created_at, updated_at
+        ) VALUES (
+            #{id}, #{organizationId}, #{title}, #{body}, #{sortOrder}, #{createdBy}, #{updatedBy}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE marketplace_message_templates
+        SET title = #{title}, body = #{body}, sort_order = #{sortOrder}, updated_by = #{updatedBy}, updated_at = #{updatedAt}
+        WHERE id = #{id} AND organization_id = #{organizationId}
+    </update>
+
+    <delete id="delete">
+        DELETE FROM marketplace_message_templates WHERE id = #{id} AND organization_id = #{organizationId}
+    </delete>
+
+    <select id="findById" resultMap="TemplateMap">
+        SELECT * FROM marketplace_message_templates WHERE id = #{id} AND organization_id = #{organizationId}
+    </select>
+
+    <select id="findByOrganization" resultMap="TemplateMap">
+        SELECT * FROM marketplace_message_templates
+        WHERE organization_id = #{organizationId}
+        ORDER BY sort_order, created_at, id
+        LIMIT #{limit}
+    </select>
+
+    <select id="countByOrganization" resultType="int">
+        SELECT COUNT(*) FROM marketplace_message_templates WHERE organization_id = #{organizationId}
+    </select>
+</mapper>

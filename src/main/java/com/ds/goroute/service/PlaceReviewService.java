@@ -10,6 +10,7 @@ import com.ds.goroute.exception.BusinessError;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.PlaceReviewRepository;
+import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.ReviewLanguage;
 import com.ds.goroute.utils.JsonUtils;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +42,7 @@ public class PlaceReviewService {
     private final StorageService storageService;
     private final PlaceReviewScoringService scoringService;
     private final PlaceReviewScoreCalculator scoreCalculator;
+    private final BusinessConfigService businessConfigService;
 
     /**
      * Batch insert reviews from crawler data. Every persisted review image must be a
@@ -233,6 +235,21 @@ public class PlaceReviewService {
         result.put("deleted", 0);
         result.put("deferredDeletion", true);
         result.put("ready", true);
+        return result;
+    }
+
+    /**
+     * Runtime switches the scraper worker reads before each scheduled review refresh.
+     * Keeping them in the config table lets operations stop the daily run without
+     * redeploying the worker container.
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getRefreshSettings() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("dailyRefreshEnabled",
+                businessConfigService.getBoolean(BusinessConfigKey.PLACE_REVIEW_DAILY_REFRESH_ENABLED));
+        result.put("maxReviews",
+                businessConfigService.getInt(BusinessConfigKey.PLACE_REVIEW_REFRESH_MAX_REVIEWS));
         return result;
     }
 

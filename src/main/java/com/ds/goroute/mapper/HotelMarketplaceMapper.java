@@ -16,7 +16,17 @@ public interface HotelMarketplaceMapper {
     HotelProfile findHotelById(@Param("id") UUID id);
     HotelProfile findPublicHotelById(@Param("id") UUID id);
     List<HotelProfile> findHotelsByOrganization(@Param("organizationId") UUID organizationId);
-    List<HotelProfile> findHotelsPublic(@Param("query") String query, @Param("limit") int limit, @Param("offset") int offset);
+    List<HotelProfile> findHotelsPublic(@Param("query") String query, @Param("propertyType") String propertyType,
+                                        @Param("minPrice") java.math.BigDecimal minPrice, @Param("maxPrice") java.math.BigDecimal maxPrice,
+                                        @Param("checkIn") LocalDate checkIn, @Param("checkOut") LocalDate checkOut,
+                                        @Param("rooms") int rooms, @Param("adults") int adults, @Param("children") int children,
+                                        @Param("limit") int limit, @Param("offset") int offset);
+    int updateBookingStay(@Param("id") UUID id, @Param("expectedVersion") long expectedVersion, @Param("checkIn") LocalDate checkIn,
+                          @Param("checkOut") LocalDate checkOut, @Param("adults") int adults, @Param("children") int children,
+                          @Param("subtotal") java.math.BigDecimal subtotal, @Param("total") java.math.BigDecimal total,
+                          @Param("snapshot") String snapshot, @Param("actor") UUID actor, @Param("now") LocalDateTime now);
+    int updateBookingItemStay(@Param("id") UUID id, @Param("adults") int adults, @Param("children") int children,
+                              @Param("unitPrice") java.math.BigDecimal unitPrice, @Param("totalPrice") java.math.BigDecimal totalPrice);
     List<HotelProfile> findHotelsAdmin(@Param("query") String query, @Param("status") String status,
                                        @Param("limit") int limit, @Param("offset") int offset);
 
@@ -59,9 +69,11 @@ public interface HotelMarketplaceMapper {
                              @Param("updatedBy") UUID updatedBy, @Param("updatedAt") LocalDateTime updatedAt);
     List<RoomInventoryDaily> findInventory(@Param("roomTypeId") UUID roomTypeId,
                                            @Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
+    long countActiveBookingsForRatePlan(@Param("ratePlanId") UUID ratePlanId);
+    long countActiveBookingsForRoomType(@Param("roomTypeId") UUID roomTypeId);
     List<HotelAvailabilityDay> findAvailability(@Param("hotelId") UUID hotelId, @Param("roomTypeId") UUID roomTypeId,
                                                 @Param("ratePlanId") UUID ratePlanId,
-                                                @Param("checkIn") LocalDate checkIn, @Param("checkOut") LocalDate checkOut);
+                                                @Param("checkIn") LocalDate checkIn, @Param("checkOut") LocalDate checkOut, @Param("today") LocalDate today);
     int reserveInventory(@Param("roomTypeId") UUID roomTypeId, @Param("ratePlanId") UUID ratePlanId, @Param("checkIn") LocalDate checkIn,
                          @Param("checkOut") LocalDate checkOut, @Param("quantity") int quantity,
                          @Param("updatedBy") UUID updatedBy, @Param("updatedAt") LocalDateTime updatedAt);
@@ -82,13 +94,20 @@ public interface HotelMarketplaceMapper {
     List<HotelBookingItem> findBookingItems(@Param("bookingId") UUID bookingId);
     List<HotelBooking> findBookingsByUser(@Param("userId") UUID userId, @Param("limit") int limit, @Param("offset") int offset);
     List<HotelBooking> findBookingsByOrganization(@Param("organizationId") UUID organizationId,
-                                                  @Param("status") String status, @Param("limit") int limit,
-                                                  @Param("offset") int offset);
+                                                  @Param("status") String status, @Param("hotelIds") List<UUID> hotelIds,
+                                                  @Param("limit") int limit, @Param("offset") int offset);
+    long countBookingsByOrganizationFiltered(@Param("organizationId") UUID organizationId,
+                                             @Param("status") String status, @Param("hotelIds") List<UUID> hotelIds);
     List<HotelBooking> findBookingsAdmin(@Param("query") String query, @Param("status") String status,
                                          @Param("limit") int limit, @Param("offset") int offset);
     int updateBookingStatus(@Param("id") UUID id, @Param("expectedVersion") long expectedVersion,
                             @Param("bookingStatus") String bookingStatus, @Param("paymentStatus") String paymentStatus,
                             @Param("cancellationReason") String cancellationReason,
-                            @Param("cancelledAt") LocalDateTime cancelledAt,
+                            @Param("cancelledAt") LocalDateTime cancelledAt, @Param("guestCharged") Boolean guestCharged,
                             @Param("updatedBy") UUID updatedBy, @Param("updatedAt") LocalDateTime updatedAt);
+
+    long countBookingsByOrganization(@Param("organizationId") UUID organizationId, @Param("status") String status);
+    long countArrivals(@Param("organizationId") UUID organizationId, @Param("day") LocalDate day);
+    long countDepartures(@Param("organizationId") UUID organizationId, @Param("day") LocalDate day);
+    long countInHouse(@Param("organizationId") UUID organizationId);
 }

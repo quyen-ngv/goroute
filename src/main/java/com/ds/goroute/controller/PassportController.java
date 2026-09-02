@@ -42,6 +42,13 @@ public class PassportController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(passportService.summary(userId)));
     }
 
+    /** Somebody else's passport, for their profile. Earned proofs only; see publicSummary. */
+    @GetMapping("/users/{userId}")
+    public ResponseEntity<BaseResponse<PassportSummaryResponse>> userSummary(
+            @PathVariable("userId") UUID targetUserId) {
+        return ResponseEntity.ok(ofSucceeded(passportService.publicSummary(targetUserId)));
+    }
+
     /** Legacy province map kept for older consumers; the Passport screen uses locations-map. */
     @GetMapping("/map")
     public ResponseEntity<BaseResponse<List<ProvinceMapEntryResponse>>> map(
@@ -54,6 +61,17 @@ public class PassportController extends BaseController {
     public ResponseEntity<BaseResponse<List<PassportLocationMapEntryResponse>>> locationsMap(
             @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(passportService.locationImageMap(userId)));
+    }
+
+    /**
+     * The anchors somebody else's passport covers, for the map on their profile. Nothing
+     * here is owner-only: it is the same curated catalogue everyone sees, carrying that
+     * person's visit state.
+     */
+    @GetMapping("/users/{userId}/locations-map")
+    public ResponseEntity<BaseResponse<List<PassportLocationMapEntryResponse>>> userLocationsMap(
+            @PathVariable("userId") UUID targetUserId) {
+        return ResponseEntity.ok(ofSucceeded(passportService.locationImageMap(targetUserId)));
     }
 
     @GetMapping("/timeline")

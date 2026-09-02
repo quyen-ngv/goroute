@@ -53,7 +53,8 @@ public class StarService {
     public void reserveTripCreation(UUID userId) {
         ensureWallet(userId);
         UserStarWallet wallet = starMapper.findWallet(userId);
-        if (wallet.getFreeTripQuotaUsed() < FREE_TRIP_QUOTA && starMapper.incrementFreeQuota(userId) == 1) {
+        if (wallet.getFreeTripQuotaUsed() < FREE_TRIP_QUOTA
+                && starMapper.incrementFreeQuota(userId, FREE_TRIP_QUOTA) == 1) {
             return;
         }
         TripCreationEntitlement entitlement = starMapper.findActiveEntitlement(userId, LocalDateTime.now());
@@ -62,14 +63,53 @@ public class StarService {
         }
     }
 
+    /**
+     * How a trip creation would go right now, without consuming anything.
+     *
+     * <p>Exists so a caller that is about to spend something <em>else</em> on the user's behalf --
+     * an AI generation slot, and the model bill behind it -- can find out first. Asking
+     * {@link #reserveTripCreation} and rolling back is not the same thing: the AI flow reserves its
+     * own quota in a separate short transaction, so a rollback here would not give that back.
+     */
+    @Transactional
+    public TripCreationStatus tripCreationStatus(UUID userId) {
+        ensureWallet(userId);
+        UserStarWallet wallet = starMapper.findWallet(userId);
+        int unlockedSlots = starMapper.countActiveEntitlements(userId, LocalDateTime.now());
+        return new TripCreationStatus(
+                wallet.getFreeTripQuotaUsed() < FREE_TRIP_QUOTA || unlockedSlots > 0,
+                wallet.getFreeTripQuotaUsed(),
+                FREE_TRIP_QUOTA,
+                unlockedSlots);
+    }
+
+    /**
+     * @param available whether the next trip creation would be accepted, which is not the same as
+     *                  having enough stars to buy the right to one
+     */
+    public record TripCreationStatus(boolean available, int freeQuotaUsed, int freeQuota,
+                                     int unlockedSlots) {
+    }
+
+    /**
+     * Buys one trip creation slot.
+     *
+     * <p>The reference key is the position in this user's own sequence of unlocks, not a
+     * fresh UUID. A random key is unique by construction and therefore idempotent against
+     * nothing: two taps on the same button, or a retry after a timeout the client never
+     * saw resolve, each bought their own slot at full price. Counting instead means both
+     * attempts build the same key, the second one loses to the unique index, and the
+     * entitlement is written only for the attempt that actually paid.
+     */
     @Transactional
     public StarWalletResponse unlockTrip(UUID userId) {
-        String reference = "trip_unlock:" + userId + ":" + UUID.randomUUID();
-        spend(userId, TRIP_UNLOCK_COST, "TRIP_UNLOCK", reference,
-                "Unlocked one trip creation slot for 3 months");
-        starMapper.insertEntitlement(TripCreationEntitlement.builder()
-                .id(UUID.randomUUID()).userId(userId).starsSpent(TRIP_UNLOCK_COST)
-                .expiresAt(LocalDateTime.now().plusMonths(3)).build());
+        ensureWallet(userId);
+        String reference = "trip_unlock:" + userId + ":" + starMapper.countEntitlements(userId);
+        record(userId, -TRIP_UNLOCK_COST, "TRIP_UNLOCK", reference,
+                "Unlocked one trip creation slot for 3 months", null, null, null)
+                .ifPresent(charged -> starMapper.insertEntitlement(TripCreationEntitlement.builder()
+                        .id(UUID.randomUUID()).userId(userId).starsSpent(TRIP_UNLOCK_COST)
+                        .expiresAt(LocalDateTime.now().plusMonths(3)).build()));
         return getWallet(userId);
     }
 
@@ -144,15 +184,28 @@ public class StarService {
                         "That adjustment was already recorded."));
     }
 
+    /** The balance alone, for callers that do not need the wallet's whole picture. */
+    @Transactional
+    public int getBalance(UUID userId) {
+        ensureWallet(userId);
+        return starMapper.findWallet(userId).getBalance();
+    }
+
     @Transactional
     public StarWalletResponse getWallet(UUID userId) {
         ensureWallet(userId);
         UserStarWallet wallet = starMapper.findWallet(userId);
+        TripCreationStatus tripQuota = tripCreationStatus(userId);
         return StarWalletResponse.builder()
                 .balance(wallet.getBalance()).freeTripQuotaUsed(wallet.getFreeTripQuotaUsed())
                 .freeTripQuota(FREE_TRIP_QUOTA)
-                .canCreateTrip(wallet.getFreeTripQuotaUsed() < FREE_TRIP_QUOTA || wallet.getBalance() >= TRIP_UNLOCK_COST)
+                // Whether a trip can be created right now, which is not the same as having
+                // enough stars to buy the right to: an affordable unlock still has to be
+                // bought. Answering the second question here is what let the client show a
+                // green tick to somebody whose next trip creation would be refused.
+                .canCreateTrip(tripQuota.available())
                 .starsToUnlockTrip(TRIP_UNLOCK_COST)
+                .unlockedTripSlots(tripQuota.unlockedSlots())
                 .recentTransactions(starMapper.findTransactions(userId, TRANSACTION_LIMIT, 0)).build();
     }
 
@@ -204,6 +257,17 @@ public class StarService {
                                              String description, UUID reversesTransactionId,
                                              UUID operatorId, String reason) {
         UserStarWallet wallet = starMapper.findWalletForUpdate(userId);
+
+        // Read under the lock, so this is not the check-then-insert race it looks like:
+        // every entry for this user is serialised behind the same wallet row. It matters
+        // because in PostgreSQL a unique-index violation aborts the whole transaction --
+        // catching it below leaves nothing else able to run, and a retried job would take
+        // the rest of its work down with it. The index stays as the backstop; this is the
+        // path a replay is expected to take.
+        if (starMapper.countReference(referenceKey) > 0) {
+            return Optional.empty();
+        }
+
         int balanceAfter = wallet.getBalance() + amount;
         if (balanceAfter < 0) {
             throw new BusinessException(ErrorConstant.INSUFFICIENT_POINTS, "You do not have enough points.");

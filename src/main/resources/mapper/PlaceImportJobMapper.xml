@@ -218,6 +218,24 @@
         ORDER BY created_at DESC LIMIT 1
     </select>
 
+    <select id="findStalledWorkerJobs" resultMap="PlaceImportJobResultMap">
+        SELECT * FROM place_import_jobs
+        WHERE source_type IN ('NATIONWIDE', 'PLACE_DETAILS_REFRESH')
+          AND status IN ('QUEUED', 'PROCESSING')
+          AND COALESCE(updated_at, created_at) &lt; #{silentSince}
+        ORDER BY COALESCE(updated_at, created_at)
+        LIMIT #{limit}
+    </select>
+
+    <update id="markJobTerminal">
+        UPDATE place_import_jobs SET
+            status = #{status, javaType=com.ds.goroute.type.PlaceImportJobStatus},
+            error_message = #{errorMessage},
+            completed_at = #{completedAt},
+            updated_at = #{completedAt}
+        WHERE id = #{id} AND status IN ('QUEUED', 'PROCESSING')
+    </update>
+
     <select id="findItemByJobAndGooglePlaceId" resultMap="PlaceImportJobItemResultMap">
         SELECT * FROM place_import_job_items
         WHERE job_id = #{jobId} AND google_place_id = #{googlePlaceId}

@@ -46,7 +46,7 @@ public class CheckinServiceImpl implements CheckinService {
     @Override
     @Transactional
     public CheckinResponse checkin(UUID tripId, UUID activityId, CheckinRequest request, UUID userId) {
-        Trip trip = requireTripAccess(tripId, userId);
+        Trip trip = requireTripEditAccess(tripId, userId);
         Activity activity = activityRepository.findById(activityId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity not found"));
         
@@ -130,6 +130,11 @@ public class CheckinServiceImpl implements CheckinService {
 
     private Trip requireTripAccess(UUID tripId, UUID userId) {
         return tripAccessGuard.requireAccess(tripId, userId);
+    }
+
+    /** Checking in writes to the trip's record of what happened, so it needs an editor's role. */
+    private Trip requireTripEditAccess(UUID tripId, UUID userId) {
+        return tripAccessGuard.requireEditAccess(tripId, userId);
     }
 
     private CheckinResponse mapToCheckinResponse(Checkin checkin) {

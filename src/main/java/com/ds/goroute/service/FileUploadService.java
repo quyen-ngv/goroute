@@ -36,4 +36,7 @@ public interface FileUploadService {
     ImageUploadOutcome uploadImageFromUrl(ImageUploadRequest request, String sourceUrl);
 
     String uploadVideo(UUID userId, MultipartFile file);
+
+    /** Operator upload through a fixed storage prefix, for curated (non-user) video assets. */
+    String uploadVideo(String objectPrefix, MultipartFile file);
 }

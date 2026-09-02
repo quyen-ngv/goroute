@@ -3,6 +3,10 @@ package com.ds.goroute.controller;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.CreateActivityOrderRequest;
 import com.ds.goroute.dto.response.ActivityOrderResponse;
+import com.ds.goroute.dto.request.BookingChangeRequests;
+import com.ds.goroute.dto.response.BookingChangeRequestResponse;
+import com.ds.goroute.dto.response.CancellationPreviewResponse;
+import com.ds.goroute.service.BookingChangeRequestService;
 import com.ds.goroute.service.ActivityCommerceService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +24,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ActivityOrderController {
     private final ActivityCommerceService service;
+    private final BookingChangeRequestService changeRequests;
 
     @PostMapping
     public ResponseEntity<BaseResponse<ActivityOrderResponse>> create(
@@ -45,7 +50,27 @@ public class ActivityOrderController {
         return ResponseEntity.ok(BaseResponse.ofSucceeded(service.getMyOrder(user(authentication), id)));
     }
 
-    @PostMapping("/{id}/cancel")
+    @PostMapping("/{id}/change-requests")
+public ResponseEntity<BaseResponse<BookingChangeRequestResponse>> requestChange(Authentication authentication, @PathVariable UUID id, @Valid @RequestBody BookingChangeRequests.CreateActivityChange r) {
+return ResponseEntity.status(HttpStatus.CREATED).body(BaseResponse.ofSucceeded(changeRequests.requestActivityChange(user(authentication), id, r)));
+}
+
+@GetMapping("/{id}/change-requests")
+public ResponseEntity<BaseResponse<List<BookingChangeRequestResponse>>> changeRequests(Authentication authentication, @PathVariable UUID id) {
+return ResponseEntity.ok(BaseResponse.ofSucceeded(changeRequests.listForActivityOrder(user(authentication), id, false)));
+}
+
+@PostMapping("/{id}/change-requests/{requestId}/withdraw")
+public ResponseEntity<BaseResponse<BookingChangeRequestResponse>> withdrawChange(Authentication authentication, @PathVariable UUID id, @PathVariable UUID requestId) {
+return ResponseEntity.ok(BaseResponse.ofSucceeded(changeRequests.withdraw(user(authentication), requestId)));
+}
+
+@GetMapping("/{id}/cancellation-preview")
+public ResponseEntity<BaseResponse<CancellationPreviewResponse>> cancellationPreview(Authentication authentication, @PathVariable UUID id) {
+return ResponseEntity.ok(BaseResponse.ofSucceeded(service.previewMyCancellation(user(authentication), id)));
+}
+
+@PostMapping("/{id}/cancel")
     public ResponseEntity<BaseResponse<ActivityOrderResponse>> cancel(Authentication authentication, @PathVariable UUID id,
                                                                          @RequestParam(required = false) String reason,
                                                                          @RequestParam(required = false) Long expectedVersion) {

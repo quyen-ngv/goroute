@@ -8,6 +8,7 @@ import com.ds.goroute.repository.HostOrganizationRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -20,6 +21,15 @@ public class HostOrganizationRepositoryImpl implements HostOrganizationRepositor
 
     @Override public int insert(HostOrganization organization) { return mapper.insertOrganization(organization); }
     @Override public int update(HostOrganization organization) { return mapper.updateOrganization(organization); }
+    @Override public int updateVerificationState(HostOrganization organization) { return mapper.updateVerificationState(organization); }
+    @Override public int updateBillingProfile(UUID id, long dataVersion, BigDecimal commissionPercent, String billingEmail,
+            boolean clearBillingEmail, String billingDetails, LocalDateTime updatedAt) {
+        return mapper.updateBillingProfile(id, dataVersion, commissionPercent, billingEmail, clearBillingEmail,
+                billingDetails, updatedAt);
+    }
+    @Override public List<com.ds.goroute.entity.VerificationQueueEntry> findVerificationQueue(int limit, int offset) { return mapper.findVerificationQueue(limit, offset); }
+    @Override public long countVerificationQueue() { return mapper.countVerificationQueue(); }
+    @Override public List<UUID> findAllOrganizationIds() { return mapper.findAllOrganizationIds(); }
     @Override public Optional<HostOrganization> findById(UUID id) { return Optional.ofNullable(mapper.findOrganizationById(id)); }
     @Override public List<HostOrganization> findForUser(UUID userId) { return mapper.findOrganizationsForUser(userId); }
     @Override public List<HostOrganization> findForAdmin(String query, String status, int limit, int offset) {

@@ -32,7 +32,8 @@ public class HotelProfileResponse {
     private Map<String, Object> parkingDetails;
     private Map<String, Object> policies;
     private Map<String, Object> bookingContact;
-    private String status;
+    private java.math.BigDecimal fromPrice; private String fromPriceCurrency; private Integer roomTypeCount;
+ private String status;
     private String disabledReason;
     private Long dataVersion;
     private LocalDateTime createdAt;

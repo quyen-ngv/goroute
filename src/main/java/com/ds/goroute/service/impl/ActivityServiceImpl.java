@@ -66,17 +66,7 @@ public class ActivityServiceImpl implements ActivityService {
     @Override
     @Transactional
     public ActivityResponse createActivity(UUID tripId, CreateActivityRequest request, UUID userId) {
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-
-        // Check if user has access (must be ACCEPTED member, not LEFT)
-        var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
-        boolean hasAccess = trip.getOwnerId().equals(userId) ||
-                           (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
-
-        if (!hasAccess) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
-        }
+        tripAccessGuard.requireEditAccess(tripId, userId);
 
         Activity activity = Activity.builder()
                 .id(UUID.randomUUID())
@@ -169,17 +159,7 @@ public class ActivityServiceImpl implements ActivityService {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Activity not found");
         }
 
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-
-        // Check if user has access (must be ACCEPTED member, not LEFT)
-        var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
-        boolean hasAccess = trip.getOwnerId().equals(userId) ||
-                           (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
-
-        if (!hasAccess) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
-        }
+        tripAccessGuard.requireEditAccess(tripId, userId);
 
         if (request.getPlaceId() != null) activity.setPlaceId(request.getPlaceId());
         if (request.getCustomPlaceId() != null) activity.setCustomPlaceId(request.getCustomPlaceId());
@@ -230,17 +210,7 @@ public class ActivityServiceImpl implements ActivityService {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Activity not found");
         }
 
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-
-        // Check if user has access (must be ACCEPTED member, not LEFT)
-        var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
-        boolean hasAccess = trip.getOwnerId().equals(userId) ||
-                           (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
-
-        if (!hasAccess) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
-        }
+        tripAccessGuard.requireEditAccess(tripId, userId);
 
         imageStorageCleanupService.deleteImagesForEntityRecord("ACTIVITY", activityId);
         activityRepository.deleteById(activityId);
@@ -256,17 +226,7 @@ public class ActivityServiceImpl implements ActivityService {
     @Override
     @Transactional
     public void reorderActivities(UUID tripId, ReorderActivitiesRequest request, UUID userId) {
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-
-        // Check if user has access (must be ACCEPTED member, not LEFT)
-        var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
-        boolean hasAccess = trip.getOwnerId().equals(userId) ||
-                           (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
-
-        if (!hasAccess) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
-        }
+        tripAccessGuard.requireEditAccess(tripId, userId);
 
         // Reorder is now based on time, so this endpoint is deprecated
         // But we keep it for backward compatibility

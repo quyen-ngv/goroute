@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.SubscriptionMapper">
+
+    <resultMap id="PlanResultMap" type="com.ds.goroute.entity.SubscriptionPlan">
+        <id column="code" property="code"/>
+        <result column="tier" property="tier"/>
+        <result column="display_name" property="displayName"/>
+        <result column="duration_days" property="durationDays"/>
+        <result column="price_amount" property="priceAmount"/>
+        <result column="price_currency" property="priceCurrency"/>
+        <result column="is_active" property="isActive"/>
+        <result column="sort_order" property="sortOrder"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <resultMap id="GrantResultMap" type="com.ds.goroute.entity.UserSubscriptionGrant">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="user_id" property="userId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="plan_code" property="planCode"/>
+        <result column="tier" property="tier"/>
+        <result column="duration_days" property="durationDays"/>
+        <result column="starts_at" property="startsAt"/>
+        <result column="expires_at" property="expiresAt"/>
+        <result column="reference_key" property="referenceKey"/>
+        <result column="granted_by" property="grantedBy" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="note" property="note"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <select id="findPlans" resultMap="PlanResultMap">
+        SELECT * FROM subscription_plans
+        <if test="activeOnly">WHERE is_active = TRUE</if>
+        ORDER BY sort_order, duration_days
+    </select>
+
+    <select id="findPlan" resultMap="PlanResultMap">
+        SELECT * FROM subscription_plans WHERE code = #{code}
+    </select>
+
+    <resultMap id="SubscriptionResultMap" type="com.ds.goroute.entity.UserSubscription">
+        <id column="user_id" property="userId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="tier" property="tier"/>
+        <result column="plan_code" property="planCode"/>
+        <result column="ai_trips_used" property="aiTripsUsed"/>
+        <result column="started_at" property="startedAt"/>
+        <result column="expires_at" property="expiresAt"/>
+    </resultMap>
+
+    <select id="findSubscription" resultMap="SubscriptionResultMap">
+        SELECT user_id, tier, plan_code, started_at, expires_at, ai_trips_used
+        FROM user_subscriptions
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <!--
+      Locked, because an extension is read-then-write: without the lock two grants arriving
+      together both read the same end date and the account gets one period instead of two.
+    -->
+    <select id="findExpiresAtForUpdate" resultType="java.time.LocalDateTime">
+        SELECT expires_at
+        FROM user_subscriptions
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+        FOR UPDATE
+    </select>
+
+    <!--
+      A null startsAt means "this extends the period already running", so the original start date
+      stays put — overwriting it would make a renewal look like a brand new customer in every
+      report that counts from started_at.
+    -->
+    <update id="applyPlan">
+        UPDATE user_subscriptions
+        SET tier = #{tier},
+            plan_code = #{planCode},
+            started_at = COALESCE(#{startsAt,jdbcType=TIMESTAMP}, started_at),
+            expires_at = #{expiresAt},
+            updated_at = NOW()
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <!--
+      Ends the period rather than deleting the row: ai_trips_used lives here too, and dropping it
+      would hand back a fresh set of AI generations as a side effect of losing Pro.
+    -->
+    <update id="revokePlan">
+        UPDATE user_subscriptions
+        SET tier = 'FREE',
+            plan_code = NULL,
+            expires_at = #{endedAt},
+            updated_at = NOW()
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <insert id="insertGrant" parameterType="com.ds.goroute.entity.UserSubscriptionGrant">
+        INSERT INTO user_subscription_grants
+            (id, user_id, plan_code, tier, duration_days, starts_at, expires_at,
+             reference_key, granted_by, note)
+        VALUES
+            (#{id,javaType=java.util.UUID,jdbcType=OTHER},
+             #{userId,javaType=java.util.UUID,jdbcType=OTHER},
+             #{planCode}, #{tier}, #{durationDays}, #{startsAt}, #{expiresAt},
+             #{referenceKey}, #{grantedBy,javaType=java.util.UUID,jdbcType=OTHER}, #{note})
+    </insert>
+
+    <select id="findGrantByReference" resultMap="GrantResultMap">
+        SELECT * FROM user_subscription_grants WHERE reference_key = #{referenceKey}
+    </select>
+
+    <select id="findGrants" resultMap="GrantResultMap">
+        SELECT * FROM user_subscription_grants
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+        ORDER BY created_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="countGrants" resultType="int">
+        SELECT COUNT(*) FROM user_subscription_grants
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+</mapper>

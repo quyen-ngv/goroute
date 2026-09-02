@@ -14,7 +14,11 @@ public interface AiTripMapper {
 
     int releaseAiTripQuota(@Param("userId") UUID userId);
 
+    /** The tier in force right now: a lapsed paid plan reads as FREE. */
     String getSubscriptionTier(@Param("userId") UUID userId);
+
+    /** When the current paid period ends, or null for free and open-ended accounts. */
+    java.time.LocalDateTime getSubscriptionExpiresAt(@Param("userId") UUID userId);
 
     Integer getAiTripsUsed(@Param("userId") UUID userId);
 

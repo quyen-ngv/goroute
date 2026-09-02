@@ -542,12 +542,25 @@ public class NotificationHelper {
     }
 
     public void emitCheckin(UUID tripId, UUID activityId, UUID actorId) {
+        emitCheckin(tripId, activityId, actorId, null);
+    }
+
+    /**
+     * Tells the trip that somebody checked in on it.
+     *
+     * <p>A check-in made during a trip does not have to land on a scheduled activity -- the
+     * café nobody planned is still part of the trip -- so [activityId] may be null and
+     * [locationName] carries the name to show instead. The deep link follows the same
+     * split: the activity when there is one, the trip otherwise.
+     */
+    public void emitCheckin(UUID tripId, UUID activityId, UUID actorId, String locationName) {
         try {
             Trip trip = tripRepository.findById(tripId).orElse(null);
             if (trip == null) return;
 
-            Activity activity = activityRepository.findById(activityId).orElse(null);
-            String activityName = activity != null ? activity.getName() : "Unknown";
+            Activity activity = activityId == null ? null : activityRepository.findById(activityId).orElse(null);
+            String activityName = activity != null ? activity.getName()
+                    : (locationName != null && !locationName.isBlank() ? locationName : "Unknown");
 
             User actor = userRepository.findById(actorId).orElse(null);
             String actorName = actor != null ? actor.getUsername() : "Someone";
@@ -561,7 +574,9 @@ public class NotificationHelper {
                     .tripName(trip.getName())
                     .metadata(buildMetadata(
                         tripId.toString(),
-                        "/trip/" + tripId + "/activities/" + activityId
+                        activityId == null
+                                ? "/trip/" + tripId
+                                : "/trip/" + tripId + "/activities/" + activityId
                     ))
                     .build();
 

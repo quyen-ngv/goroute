@@ -51,7 +51,8 @@ class PlaceReviewRefreshServiceTest {
                 imageMigrationService,
                 storageService,
                 mock(PlaceReviewScoringService.class),
-                new PlaceReviewScoreCalculator());
+                new PlaceReviewScoreCalculator(),
+                mock(BusinessConfigService.class));
 
         place = Place.builder()
                 .id(UUID.randomUUID())

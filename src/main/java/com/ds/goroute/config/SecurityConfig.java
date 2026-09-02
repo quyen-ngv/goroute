@@ -58,8 +58,12 @@ public class SecurityConfig {
                         .requestMatchers("/v1/api/auth/**").permitAll()
                         .requestMatchers("/v1/api/public/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/location-images/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/v1/api/weather").permitAll()
                         .requestMatchers("/v1/api/city-stories/feed").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/location-images/*/stories").permitAll()
+                        // Must precede the public GET rule below: this one can expose INACTIVE places.
+                        .requestMatchers(HttpMethod.GET, "/v1/api/places/detail-refresh-candidates")
+                        .hasAnyAuthority("ROLE_ADMIN", "ROLE_API_KEY")
                         .requestMatchers(HttpMethod.GET, "/v1/api/places/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/api/places/import", "/v1/api/places/import/batch")
                         .hasAnyAuthority("ROLE_ADMIN", "ROLE_API_KEY")
@@ -75,13 +79,20 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/v1/api/reviews/places/*/score").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/reviews/activity-bookings/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/reviews/activity-bookings/*/score").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/v1/api/admin/auth/login").permitAll()
+                        // Console login and self-serve partner sign-up are the only public admin-auth routes.
+                        .requestMatchers(HttpMethod.POST, "/v1/api/admin/auth/login",
+                                "/v1/api/admin/auth/partner-register").permitAll()
                         .requestMatchers("/v1/api/admin/auth/session", "/v1/api/account/password").authenticated()
                         .requestMatchers(HttpMethod.POST, "/v1/api/admin/places/import", "/v1/api/admin/places/import/batch")
                         .hasAnyAuthority("ROLE_ADMIN", "ROLE_API_KEY")
                         .requestMatchers(HttpMethod.PUT, "/v1/api/admin/places/*")
                         .hasAnyAuthority("ROLE_ADMIN", "ROLE_API_KEY")
                         .requestMatchers("/v1/api/admin/**").hasAuthority("ROLE_ADMIN")
+                        // Self-serve organization creation: the caller is an ordinary signed-in user who
+                        // only *becomes* a partner (AdminMapper.isPartnerUser) once the organization exists,
+                        // so this exact method+path must be matched BEFORE the /v1/api/partner/** rule
+                        // below, which would otherwise demand ROLE_PARTNER the caller cannot hold yet.
+                        .requestMatchers(HttpMethod.POST, "/v1/api/partner/organizations").authenticated()
                         .requestMatchers("/v1/api/partner/**").hasAnyAuthority("ROLE_PARTNER", "ROLE_ADMIN")
                         .requestMatchers("/v1/api/internal/**").hasAuthority("ROLE_INTERNAL")
                         .requestMatchers("/v1/api/notifications/admin/**").hasAuthority("ROLE_ADMIN")
@@ -93,16 +104,6 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/v1/api/checkins/feed").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/checkins/places/*",
                                 "/v1/api/checkins/locations/*").permitAll()
-                        // A guide's own workspace is private. It has to be matched before
-                        // the directory reads below, because "/v1/api/guides/*" would
-                        // otherwise also match "/v1/api/guides/me".
-                        .requestMatchers("/v1/api/guides/me", "/v1/api/guides/me/**").authenticated()
-                        .requestMatchers(HttpMethod.GET,
-                                "/v1/api/guides/search",
-                                "/v1/api/guides/services/*",
-                                "/v1/api/guides/*",
-                                "/v1/api/guides/*/services",
-                                "/v1/api/guides/*/reviews").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/api/contributions/check").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/contributions/places/*/contributors").permitAll()
                         .requestMatchers("/share/**").permitAll()

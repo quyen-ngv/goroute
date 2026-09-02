@@ -29,4 +29,11 @@ public class LocationImageResponse {
     private Integer priority;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    /**
+     * Live weather, air quality and advisories for this location.
+     *
+     * <p>Only populated when the caller asks for it, and left {@code null} when the
+     * location has no coordinates or the weather provider is unavailable.
+     */
+    private CityWeatherResponse weather;
 }

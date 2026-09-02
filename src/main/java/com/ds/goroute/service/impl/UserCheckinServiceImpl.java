@@ -8,6 +8,8 @@ import com.ds.goroute.dto.response.CheckinPhotoResponse;
 import com.ds.goroute.dto.response.CheckinLikeResponse;
 import com.ds.goroute.dto.response.CheckinLinkedReviewResponse;
 import com.ds.goroute.dto.response.UserCheckinResponse;
+import com.ds.goroute.entity.Activity;
+import com.ds.goroute.entity.Checkin;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.entity.UserCheckin;
@@ -17,7 +19,9 @@ import com.ds.goroute.entity.UserReview;
 import com.ds.goroute.event.CheckinCreatedEvent;
 import com.ds.goroute.event.CheckinRemovedEvent;
 import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.AiTripRepository;
+import com.ds.goroute.repository.CheckinRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.UserCheckinRepository;
 import com.ds.goroute.repository.UserRepository;
@@ -27,10 +31,15 @@ import com.ds.goroute.service.ContentModerationService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.ReviewScoringService;
 import com.ds.goroute.service.ReviewService;
+import com.ds.goroute.service.TripAccessGuard;
+import com.ds.goroute.service.checkin.CheckinRewardCalculator;
+import com.ds.goroute.service.checkin.CheckinRewardService;
 import com.ds.goroute.service.UserCheckinService;
 import com.ds.goroute.service.checkin.LocationKeyFactory;
+import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.type.BusinessConfigKey;
+import com.ds.goroute.type.NotificationType;
 import com.ds.goroute.type.CheckinPhotoSource;
 import com.ds.goroute.type.CheckinVerificationStatus;
 import com.ds.goroute.type.ContentVisibility;
@@ -65,6 +74,9 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     private static final int MAX_PAGE_SIZE = 50;
     private static final String PRO_TIER = "PRO";
 
+    /** How close to a stop of the itinerary counts as having been there. */
+    private static final double ACTIVITY_VISIT_RADIUS_METERS = 200;
+
     /** Place categories where scoring food, price and service actually means something. */
     private static final Set<String> ASPECT_RATING_GROUPS = Set.of("RESTAURANT", "CAFE", "FOOD", "BAR", "HOTEL");
 
@@ -81,6 +93,11 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     private final LocationKeyFactory locationKeyFactory;
     private final ApplicationEventPublisher events;
     private final SocialNotificationService socialNotificationService;
+    private final TripAccessGuard tripAccessGuard;
+    private final CheckinRewardService rewardService;
+    private final ActivityRepository activityRepository;
+    private final CheckinRepository activityVisitRepository;
+    private final NotificationHelper notificationHelper;
 
     @Override
     @Transactional(readOnly = true)
@@ -174,6 +191,10 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 : placeRepository.findById(request.getPlaceId())
                         .orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND, "Place not found"));
 
+        // Checked before anything is written: the trip id decides who gets notified, so an
+        // unverified one would let anybody post into a stranger's trip.
+        Activity activity = requireTripContext(request.getTripId(), request.getActivityId(), userId);
+
         LocalDateTime now = LocalDateTime.now();
         UserCheckin checkin = UserCheckin.builder()
                 .id(UUID.randomUUID())
@@ -229,8 +250,84 @@ public class UserCheckinServiceImpl implements UserCheckinService {
             scoringService.recalculatePlaceScores(checkin.getPlaceId());
         }
 
+        // Worked out here rather than only in the listener, so the response the author is looking
+        // at carries the real number. The listener used to be the only place this happened, which
+        // is why the app could never say "+5" at the moment it was earned -- the field was still
+        // null when the response left. The wallet entry stays asynchronous; it is the ledger write
+        // that must not be able to take a check-in down with it, not the arithmetic.
+        rewardService.record(checkin);
+
         events.publishEvent(new CheckinCreatedEvent(checkin.getId(), userId));
+        // The two halves of the retired activity check-in, kept. The itinerary still gets
+        // its "visited" mark, and the people travelling together are still told -- whether
+        // the visit landed on a scheduled activity or on somewhere the itinerary never
+        // mentioned.
+        markActivityVisited(activity, checkin, userId);
+        if (checkin.getTripId() != null) {
+            notificationHelper.emitCheckin(checkin.getTripId(), checkin.getActivityId(), userId,
+                    activity != null ? activity.getName() : displayName(checkin));
+        }
         return toResponse(checkin, true, userId);
+    }
+
+    /**
+     * Records that this traveller has now been to this stop of the itinerary.
+     *
+     * <p>The trip's own record of a visit, which the activity card counts, kept alive now
+     * that the endpoint that used to write it is gone. Its rule is unchanged: near the
+     * activity, in person. Being too far away is not an error -- the check-in is still a
+     * real post about somewhere -- so it only means the itinerary is not marked.
+     */
+    private void markActivityVisited(Activity activity, UserCheckin checkin, UUID userId) {
+        if (activity == null || activity.getLat() == null || activity.getLng() == null) {
+            return;
+        }
+        Double distance = GeoDistance.betweenOrNull(checkin.getLatitude(), checkin.getLongitude(),
+                activity.getLat(), activity.getLng());
+        if (distance == null || distance > ACTIVITY_VISIT_RADIUS_METERS) {
+            return;
+        }
+        if (activityVisitRepository.findByActivityIdAndUserId(activity.getId(), userId).isPresent()) {
+            return;
+        }
+        activityVisitRepository.insert(Checkin.builder()
+                .id(UUID.randomUUID())
+                .activityId(activity.getId())
+                .userId(userId)
+                .lat(checkin.getLatitude())
+                .lng(checkin.getLongitude())
+                .autoCheckin(false)
+                .build());
+    }
+
+    /**
+     * Verifies a check-in that says it belongs to a trip actually may.
+     *
+     * @return the activity when the check-in is filed under one, null when it is attached to
+     *         the trip alone or to no trip at all
+     */
+    private Activity requireTripContext(UUID tripId, UUID activityId, UUID userId) {
+        if (tripId == null) {
+            if (activityId != null) {
+                throw new BusinessException(ErrorConstant.BAD_REQUEST, "An activity check-in needs its trip");
+            }
+            return null;
+        }
+        tripAccessGuard.requireAccess(tripId, userId);
+        if (activityId == null) {
+            return null;
+        }
+        Activity activity = activityRepository.findById(activityId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity not found"));
+        if (!activity.getTripId().equals(tripId)) {
+            throw new BusinessException(ErrorConstant.NOT_FOUND, "Activity not found");
+        }
+        return activity;
+    }
+
+    /** What the trip should call this place: the author's own name for it wins. */
+    private String displayName(UserCheckin checkin) {
+        return checkin.getCustomName() != null ? checkin.getCustomName() : checkin.getLocationName();
     }
 
     @Override
@@ -272,7 +369,34 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         if (checkin.hasCataloguePlace()) {
             scoringService.recalculatePlaceScores(checkin.getPlaceId());
         }
+        notifyTripCheckinUpdated(checkin, userId);
         return toResponse(checkin, true, userId);
+    }
+
+    /**
+     * Editing a visit made during a trip is the trip's business too -- it is the same
+     * moment being corrected, which is what the old activity check-in said when somebody
+     * checked in at the same activity twice.
+     */
+    private void notifyTripCheckinUpdated(UserCheckin checkin, UUID userId) {
+        UUID tripId = checkin.getTripId();
+        if (tripId == null) {
+            return;
+        }
+        UUID activityId = checkin.getActivityId();
+        Activity activity = activityId == null ? null : activityRepository.findById(activityId).orElse(null);
+
+        Map<String, Object> data = new java.util.HashMap<>();
+        data.put("actorName", notificationHelper.actorName(userId));
+        data.put("activityName", activity != null ? activity.getName() : displayName(checkin));
+        data.put("tripName", notificationHelper.tripName(tripId));
+        data.put("deepLink", activityId == null
+                ? "/trip/" + tripId
+                : "/trip/" + tripId + "/activities/" + activityId);
+        if (activityId != null) {
+            data.put("activityId", activityId);
+        }
+        notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.CHECKIN_UPDATED, data, null);
     }
 
     @Override
@@ -663,6 +787,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .distanceMeters(checkin.getDistanceMeters())
                 .rewardPoints(checkin.getRewardPoints())
                 .rewardReason(checkin.getRewardReason())
+                .rewardReasonCodes(CheckinRewardCalculator.parseReasonCodes(checkin.getRewardReason()))
                 .edited(checkin.getEditedAt() != null)
                 .createdAt(checkin.getCreatedAt())
                 .linkedToReview(checkin.getReviewId() != null)
@@ -681,6 +806,9 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                                 .title(photo.getTitle())
                                 .description(photo.getDescription())
                                 .capturedAt(photo.getCapturedAt())
+                                .latitude(photo.getLatitude())
+                                .longitude(photo.getLongitude())
+                                .accuracyMeters(photo.getAccuracyMeters())
                                 .build())
                         .toList())
                 .build();

@@ -30,6 +30,8 @@ public interface AdminMapper {
                                         @Param("limit") int limit,
                                         @Param("offset") int offset);
 
+    long countUsers(@Param("search") String search);
+
     List<Map<String, Object>> findRoles();
 
     Map<String, Object> findUserDetail(@Param("userId") UUID userId);

@@ -3,6 +3,8 @@ package com.ds.goroute.service.impl;
 import com.ds.goroute.dto.request.CreateReviewRequest;
 import com.ds.goroute.dto.request.UpdateReviewRequest;
 import com.ds.goroute.dto.response.PlaceScoreResponse;
+import com.ds.goroute.dto.response.ReviewEligibilityResponse;
+import com.ds.goroute.dto.response.ReviewPartnerResponse;
 import com.ds.goroute.dto.response.ReviewScoreResponse;
 import com.ds.goroute.dto.response.UserReviewProfileResponse;
 import com.ds.goroute.dto.response.UserReviewResponse;
@@ -16,11 +18,13 @@ import com.ds.goroute.service.ReviewScoringService;
 import com.ds.goroute.service.ReviewFraudDetectionService;
 import com.ds.goroute.service.StarService;
 import com.ds.goroute.service.notification.SocialNotificationService;
+import com.ds.goroute.type.MarketplaceBookingStatus;
 import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.UserTier;
 import com.ds.goroute.utils.JsonUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,6 +50,8 @@ public class ReviewServiceImpl implements ReviewService {
     private final PlaceRepository placeRepository;
     private final UserCheckinRepository checkinRepository;
     private final ActivityBookingRepository activityBookingRepository;
+    private final HotelMarketplaceRepository hotelMarketplaceRepository;
+    private final ActivityCommerceRepository activityCommerceRepository;
 
     private final ReviewScoringService scoringService;
     private final ReviewFraudDetectionService fraudDetectionService;
@@ -58,25 +64,33 @@ public class ReviewServiceImpl implements ReviewService {
     @Override
     @Transactional
     public UserReviewResponse createReview(UUID userId, CreateReviewRequest request) {
-        validateReviewTarget(request.getPlaceId(), request.getActivityBookingId());
+        // A booking-linked review takes its target from the booking; the client-supplied target is ignored.
+        Optional<BookingLink> bookingLink = resolveBookingLink(userId, request.getHotelBookingId(), request.getActivityOrderId());
+        UUID placeId = request.getPlaceId();
+        UUID activityBookingId = request.getActivityBookingId();
+        if (bookingLink.isPresent()) {
+            placeId = bookingLink.get().placeId();
+            activityBookingId = bookingLink.get().activityBookingId();
+        }
+        validateReviewTarget(placeId, activityBookingId);
 
-        Optional<UserReview> existingReview = request.getPlaceId() != null
-                ? reviewRepository.findByUserAndPlace(userId, request.getPlaceId())
-                : reviewRepository.findByUserAndActivityBooking(userId, request.getActivityBookingId());
+        Optional<UserReview> existingReview = placeId != null
+                ? reviewRepository.findByUserAndPlace(userId, placeId)
+                : reviewRepository.findByUserAndActivityBooking(userId, activityBookingId);
         if (existingReview.isPresent()) {
             log.warn("User {} already reviewed target placeId={}, activityBookingId={}. Existing review ID: {}",
-                userId, request.getPlaceId(), request.getActivityBookingId(), existingReview.get().getId());
+                userId, placeId, activityBookingId, existingReview.get().getId());
             throw new BusinessException(ErrorConstant.REVIEW_ALREADY_EXISTS,
                 "You have already reviewed this item. Please update your existing review instead.");
         }
 
         boolean locationVerified = false;
-        if (request.getPlaceId() != null) {
-            var place = placeRepository.findById(request.getPlaceId())
+        if (placeId != null) {
+            var place = placeRepository.findById(placeId)
                     .orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND, "Place not found"));
             locationVerified = isVerifiedLocation(request, place.getLatitude(), place.getLongitude());
         } else {
-            activityBookingRepository.findById(request.getActivityBookingId())
+            activityBookingRepository.findById(activityBookingId)
                     .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity booking not found"));
         }
 
@@ -84,8 +98,10 @@ public class ReviewServiceImpl implements ReviewService {
         UserReview review = UserReview.builder()
                 .id(UUID.randomUUID())
                 .userId(userId)
-                .placeId(request.getPlaceId())
-                .activityBookingId(request.getActivityBookingId())
+                .placeId(placeId)
+                .activityBookingId(activityBookingId)
+                .hotelBookingId(bookingLink.map(BookingLink::hotelBookingId).orElse(null))
+                .activityOrderId(bookingLink.map(BookingLink::activityOrderId).orElse(null))
                 .tripId(null)
                 .checkinLat(request.getCheckinLat())
                 .checkinLng(request.getCheckinLng())
@@ -105,7 +121,16 @@ public class ReviewServiceImpl implements ReviewService {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        reviewRepository.save(review);
+        try {
+            reviewRepository.save(review);
+        } catch (DataIntegrityViolationException ex) {
+            // Unique indexes on (user_id, place_id), hotel_booking_id and activity_order_id: a concurrent
+            // submit for the same target or booking lost the race.
+            log.warn("Duplicate review rejected for user {} placeId={} activityBookingId={} hotelBookingId={} activityOrderId={}",
+                    userId, placeId, activityBookingId, review.getHotelBookingId(), review.getActivityOrderId());
+            throw new BusinessException(ErrorConstant.REVIEW_ALREADY_EXISTS,
+                    "You have already reviewed this item. Please update your existing review instead.");
+        }
 
         // Fraud detection
         fraudDetectionService.detectAndFlagReview(review);
@@ -114,11 +139,122 @@ public class ReviewServiceImpl implements ReviewService {
         profileRepository.incrementReviewCount(userId);
         scoringService.updateUserTier(userId);
 
-        if (request.getPlaceId() != null) {
-            scoringService.recalculatePlaceScores(request.getPlaceId());
+        if (placeId != null) {
+            scoringService.recalculatePlaceScores(placeId);
         }
 
         return mapToResponse(review, userId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ReviewEligibilityResponse getEligibility(UUID userId, UUID hotelBookingId, UUID activityOrderId) {
+        validateBookingSelector(hotelBookingId, activityOrderId);
+        if (hotelBookingId == null && activityOrderId == null) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "hotelBookingId or activityOrderId is required");
+        }
+        return evaluateEligibility(userId, hotelBookingId, activityOrderId);
+    }
+
+    /** Review target plus the booking ids that make it a verified stay/visit. */
+    private record BookingLink(UUID hotelBookingId, UUID activityOrderId, UUID placeId, UUID activityBookingId) {}
+
+    private Optional<BookingLink> resolveBookingLink(UUID userId, UUID hotelBookingId, UUID activityOrderId) {
+        validateBookingSelector(hotelBookingId, activityOrderId);
+        if (hotelBookingId == null && activityOrderId == null) {
+            return Optional.empty();
+        }
+        ReviewEligibilityResponse eligibility = evaluateEligibility(userId, hotelBookingId, activityOrderId);
+        switch (eligibility.getReason()) {
+            case NOT_FOUND -> throw new BusinessException(ErrorConstant.NOT_FOUND,
+                    hotelBookingId != null ? "Hotel booking not found" : "Activity order not found");
+            case NOT_OWNER -> throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR,
+                    "You can only review your own bookings");
+            case NOT_COMPLETED -> throw new BusinessException(ErrorConstant.BAD_REQUEST,
+                    "You can review after your stay/visit");
+            case ALREADY_REVIEWED -> throw new BusinessException(ErrorConstant.REVIEW_ALREADY_EXISTS,
+                    "You have already reviewed this booking");
+            case OK -> { }
+        }
+        return Optional.of(new BookingLink(hotelBookingId, activityOrderId,
+                eligibility.getPlaceId(), eligibility.getActivityBookingId()));
+    }
+
+    private void validateBookingSelector(UUID hotelBookingId, UUID activityOrderId) {
+        if (hotelBookingId != null && activityOrderId != null) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "Only one of hotelBookingId or activityOrderId may be set");
+        }
+    }
+
+    /**
+     * Eligibility rules, shared by the pre-check endpoint and the create path so they can never disagree:
+     * the booking exists, belongs to the caller, has reached CHECKED_IN/COMPLETED, and neither this booking
+     * nor the derived target (the hotel's place / the activity product) has been reviewed by the caller yet.
+     * The per-target check is kept because {@code UNIQUE(user_id, place_id)} still applies to a repeat stay;
+     * the app is expected to offer "update your review" through {@code existingReviewId}.
+     */
+    private ReviewEligibilityResponse evaluateEligibility(UUID userId, UUID hotelBookingId, UUID activityOrderId) {
+        if (hotelBookingId != null) {
+            HotelBooking booking = hotelMarketplaceRepository.findBooking(hotelBookingId).orElse(null);
+            if (booking == null) {
+                return notEligible(ReviewEligibilityResponse.Reason.NOT_FOUND);
+            }
+            if (!userId.equals(booking.getUserId())) {
+                return notEligible(ReviewEligibilityResponse.Reason.NOT_OWNER);
+            }
+            if (!isReviewableStatus(booking.getBookingStatus())) {
+                return notEligible(ReviewEligibilityResponse.Reason.NOT_COMPLETED);
+            }
+            UUID placeId = hotelMarketplaceRepository.findHotel(booking.getHotelId())
+                    .map(HotelProfile::getPlaceId).orElse(null);
+            if (placeId == null) {
+                return notEligible(ReviewEligibilityResponse.Reason.NOT_FOUND);
+            }
+            Optional<UserReview> existing = reviewRepository.findByHotelBookingId(hotelBookingId)
+                    .or(() -> reviewRepository.findByUserAndPlace(userId, placeId));
+            return ReviewEligibilityResponse.builder()
+                    .eligible(existing.isEmpty())
+                    .reason(existing.isEmpty() ? ReviewEligibilityResponse.Reason.OK
+                            : ReviewEligibilityResponse.Reason.ALREADY_REVIEWED)
+                    .existingReviewId(existing.map(UserReview::getId).orElse(null))
+                    .placeId(placeId)
+                    .build();
+        }
+
+        ActivityOrder order = activityCommerceRepository.findOrder(activityOrderId).orElse(null);
+        if (order == null) {
+            return notEligible(ReviewEligibilityResponse.Reason.NOT_FOUND);
+        }
+        if (!userId.equals(order.getUserId())) {
+            return notEligible(ReviewEligibilityResponse.Reason.NOT_OWNER);
+        }
+        if (!isReviewableStatus(order.getOrderStatus())) {
+            return notEligible(ReviewEligibilityResponse.Reason.NOT_COMPLETED);
+        }
+        UUID activityBookingId = order.getActivityBookingId();
+        if (activityBookingId == null) {
+            return notEligible(ReviewEligibilityResponse.Reason.NOT_FOUND);
+        }
+        Optional<UserReview> existing = reviewRepository.findByActivityOrderId(activityOrderId)
+                .or(() -> reviewRepository.findByUserAndActivityBooking(userId, activityBookingId));
+        return ReviewEligibilityResponse.builder()
+                .eligible(existing.isEmpty())
+                .reason(existing.isEmpty() ? ReviewEligibilityResponse.Reason.OK
+                        : ReviewEligibilityResponse.Reason.ALREADY_REVIEWED)
+                .existingReviewId(existing.map(UserReview::getId).orElse(null))
+                .activityBookingId(activityBookingId)
+                .build();
+    }
+
+    private static boolean isReviewableStatus(String status) {
+        return MarketplaceBookingStatus.COMPLETED.name().equals(status)
+                || MarketplaceBookingStatus.CHECKED_IN.name().equals(status);
+    }
+
+    private static ReviewEligibilityResponse notEligible(ReviewEligibilityResponse.Reason reason) {
+        return ReviewEligibilityResponse.builder().eligible(false).reason(reason).build();
     }
 
     /**
@@ -519,8 +655,23 @@ public class ReviewServiceImpl implements ReviewService {
                 .unhelpfulVotes(review.getUnhelpfulVotes() != null ? review.getUnhelpfulVotes() : 0)
                 .hasVotedHelpful(hasVotedHelpful)
                 .isOwnReview(currentUserId != null && review.getUserId().equals(currentUserId))
+                .verifiedStay(review.getHotelBookingId() != null || review.getActivityOrderId() != null)
+                .hotelBookingId(review.getHotelBookingId())
+                .activityOrderId(review.getActivityOrderId())
+                .partnerResponse(toPartnerResponse(review))
                 .createdAt(review.getCreatedAt())
                 .updatedAt(review.getUpdatedAt())
+                .build();
+    }
+
+    private static ReviewPartnerResponse toPartnerResponse(UserReview review) {
+        if (review.getPartnerResponseText() == null || review.getPartnerResponseText().isBlank()) {
+            return null;
+        }
+        return ReviewPartnerResponse.builder()
+                .text(review.getPartnerResponseText())
+                .responderName(review.getPartnerResponderName())
+                .respondedAt(review.getPartnerRespondedAt())
                 .build();
     }
 

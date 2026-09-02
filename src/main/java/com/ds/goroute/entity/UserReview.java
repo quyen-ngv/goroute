@@ -44,4 +44,13 @@ private Boolean locationVerified;
     // Timestamps
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    // Marketplace stay/visit this review is tied to (null for ordinary place reviews)
+    private UUID hotelBookingId;
+    private UUID activityOrderId;
+
+    // Read-only projection of the partner's PUBLISHED response (joined by the mapper, never written)
+    private String partnerResponseText;
+    private String partnerResponderName;
+    private LocalDateTime partnerRespondedAt;
 }

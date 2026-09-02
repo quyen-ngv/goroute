@@ -15,6 +15,7 @@ import com.ds.goroute.service.ExpenseService;
 import com.ds.goroute.service.ExchangeRateService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.LocationImageService;
+import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.service.StarService;
 import com.ds.goroute.service.notification.NotificationHelper;
@@ -43,6 +44,7 @@ public class TripServiceImpl implements TripService {
     private final StarService starService;
 
     private final TripRepository tripRepository;
+    private final TripAccessGuard tripAccessGuard;
     private final TripMemberRepository tripMemberRepository;
     private final UserRepository userRepository;
     private final ActivityRepository activityRepository;
@@ -388,14 +390,8 @@ public class TripServiceImpl implements TripService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
 
-        // Check if user is owner or ACCEPTED member of trip (not LEFT)
-        var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
-        boolean hasAccess = trip.getOwnerId().equals(userId) ||
-                           (member.isPresent() && member.get().getStatus() == MemberStatus.ACCEPTED);
-
-        if (!hasAccess) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only trip members can update trip");
-        }
+        // The owner or an accepted EDITOR. A VIEWER sees the trip and cannot rename or re-date it.
+        tripAccessGuard.requireEditAccess(tripId, userId);
 
         if (request.getName() != null) trip.setName(request.getName());
         if (request.getCoverImageUrl() != null) trip.setCoverImageUrl(request.getCoverImageUrl());
@@ -1657,7 +1653,13 @@ public class TripServiceImpl implements TripService {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You don't have access to clone this trip");
         }
 
-        // 4. Create new trip with user-provided info
+        // 4. A clone is a trip, so it costs what a trip costs. Left out, this was the way
+        // past the quota: copy somebody's public trip instead of starting one. Reserved
+        // after the access check, so a clone the user is not allowed to make cannot spend
+        // a slot on its way to being refused.
+        starService.reserveTripCreation(userId);
+
+        // 5. Create new trip with user-provided info
         Trip newTrip = Trip.builder()
                 .id(UUID.randomUUID())
                 .name(request.getName())
@@ -1698,7 +1700,7 @@ public class TripServiceImpl implements TripService {
         starService.grant(originalTrip.getOwnerId(), 2, "TRIP_CLONED",
                 "clone:" + tripId + ":" + userId, "Someone cloned your trip");
 
-        // 5. Add user as owner member
+        // 6. Add user as owner member
         TripMember owner = TripMember.builder()
                 .id(UUID.randomUUID())
                 .tripId(newTrip.getId())
@@ -1709,14 +1711,14 @@ public class TripServiceImpl implements TripService {
                 .build();
         tripMemberRepository.insert(owner);
 
-        // 6. Increment copy count of original trip
+        // 7. Increment copy count of original trip
         try {
             tripRepository.incrementCopyCount(tripId);
         } catch (Exception e) {
             log.warn("Failed to increment copy count for trip: {}", tripId, e);
         }
 
-        // 7. Clone activities (without expenses)
+        // 8. Clone activities (without expenses)
         List<Activity> originalActivities = activityRepository.findByTripId(tripId);
         for (Activity originalActivity : originalActivities) {
             Activity newActivity = Activity.builder()
@@ -1765,7 +1767,7 @@ public class TripServiceImpl implements TripService {
                     ), List.of(originalTrip.getOwnerId()), null);
         }
 
-        // 8. Return response
+        // 9. Return response
         return mapToTripResponse(newTrip, userId);
     }
 

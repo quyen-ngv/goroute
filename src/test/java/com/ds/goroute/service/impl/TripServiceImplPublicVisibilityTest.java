@@ -22,6 +22,7 @@ import com.ds.goroute.service.ExpenseService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.service.StarService;
+import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.type.MemberStatus;
@@ -56,6 +57,8 @@ class TripServiceImplPublicVisibilityTest {
         service = new TripServiceImpl(
                 mock(StarService.class),
                 mock(TripRepository.class),
+                // getPublicTrip answers for anonymous readers and never consults the guard.
+                mock(TripAccessGuard.class),
                 tripMemberRepository,
                 mock(UserRepository.class),
                 mock(ActivityRepository.class),

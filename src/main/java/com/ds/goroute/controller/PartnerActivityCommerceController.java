@@ -4,6 +4,7 @@ import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.*;
 import com.ds.goroute.dto.response.*;
 import com.ds.goroute.service.ActivityCommerceService;
+import com.ds.goroute.service.BookingChangeRequestService;
 import com.ds.goroute.service.PartnerAuthorizationService;
 import com.ds.goroute.service.FileUploadService;
 import com.ds.goroute.service.ImageUploadOutcome;
@@ -28,6 +29,7 @@ import java.util.UUID;
 public class PartnerActivityCommerceController {
 
     private final ActivityCommerceService service;
+    private final BookingChangeRequestService changeRequests;
     private final PartnerAuthorizationService authorization;
     private final FileUploadService fileUploadService;
 
@@ -112,11 +114,38 @@ public class PartnerActivityCommerceController {
     }
 
     @GetMapping("/orders")
-    public ResponseEntity<BaseResponse<List<ActivityOrderResponse>>> orders(Authentication authentication, @RequestParam UUID organizationId,
+    public ResponseEntity<BaseResponse<PageResponse<ActivityOrderResponse>>> orders(Authentication authentication, @RequestParam UUID organizationId,
                                                                             @RequestParam(required = false) String status,
+                                                                            @RequestParam(required = false) UUID activityId,
                                                                             @RequestParam(defaultValue = "0") int page,
                                                                             @RequestParam(defaultValue = "50") int size) {
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.partnerOrders(user(authentication), organizationId, status, page, size)));
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.partnerOrders(user(authentication), organizationId, status, activityId, page, size)));
+    }
+
+    /** Ticket scanner: redeem by voucher code (CONFIRMED -> CHECKED_IN, redemption stamped). */
+    @GetMapping("/{id}/readiness")
+    public ResponseEntity<BaseResponse<ListingReadinessResponse>> readiness(Authentication authentication, @PathVariable UUID id) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.partnerProductReadiness(user(authentication), id)));
+    }
+
+    @GetMapping("/orders/{id}/change-requests")
+    public ResponseEntity<BaseResponse<List<BookingChangeRequestResponse>>> changeRequests(Authentication authentication, @PathVariable UUID id) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(changeRequests.listForActivityOrder(user(authentication), id, true)));
+    }
+
+    @PostMapping("/orders/{id}/change-requests/{requestId}/decide")
+    public ResponseEntity<BaseResponse<BookingChangeRequestResponse>> decideChange(Authentication authentication, @PathVariable UUID id, @PathVariable UUID requestId, @Valid @RequestBody BookingChangeRequests.Decide decision) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(changeRequests.decide(user(authentication), requestId, decision)));
+    }
+
+    @PostMapping("/orders/redeem")
+    public ResponseEntity<BaseResponse<ActivityOrderResponse>> redeemByVoucher(Authentication authentication, @Valid @RequestBody RedeemVoucherRequest request) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.partnerRedeemByVoucher(user(authentication), request.getOrganizationId(), request.getVoucherCode())));
+    }
+
+    @PostMapping("/orders/{id}/redeem")
+    public ResponseEntity<BaseResponse<ActivityOrderResponse>> redeem(Authentication authentication, @PathVariable UUID id) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.partnerRedeem(user(authentication), id)));
     }
 
     @GetMapping("/orders/{id}")

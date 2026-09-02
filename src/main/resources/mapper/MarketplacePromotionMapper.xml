@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.MarketplacePromotionMapper">
+    <resultMap id="PromotionMap" type="com.ds.goroute.entity.RatePlanPromotion">
+        <id property="id" column="id"/>
+        <result property="organizationId" column="organization_id"/><result property="hotelId" column="hotel_id"/>
+        <result property="ratePlanId" column="rate_plan_id"/><result property="code" column="code"/>
+        <result property="name" column="name"/><result property="promotionType" column="promotion_type"/>
+        <result property="discountPercent" column="discount_percent"/><result property="priority" column="priority"/>
+        <result property="stayStart" column="stay_start"/><result property="stayEnd" column="stay_end"/>
+        <result property="bookStart" column="book_start"/><result property="bookEnd" column="book_end"/>
+        <result property="minAdvanceDays" column="min_advance_days"/><result property="maxAdvanceDays" column="max_advance_days"/>
+        <result property="minNights" column="min_nights"/><result property="daysOfWeek" column="days_of_week"/>
+        <result property="status" column="status"/><result property="dataVersion" column="data_version"/>
+        <result property="createdBy" column="created_by"/><result property="updatedBy" column="updated_by"/>
+        <result property="createdAt" column="created_at"/><result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO rate_plan_promotions (id, organization_id, hotel_id, rate_plan_id, code, name, promotion_type,
+            discount_percent, priority, stay_start, stay_end, book_start, book_end, min_advance_days, max_advance_days,
+            min_nights, days_of_week, status, data_version, created_by, updated_by, created_at, updated_at)
+        VALUES (#{id}, #{organizationId}, #{hotelId}, #{ratePlanId}, #{code}, #{name}, #{promotionType},
+            #{discountPercent}, #{priority}, #{stayStart}, #{stayEnd}, #{bookStart}, #{bookEnd}, #{minAdvanceDays}, #{maxAdvanceDays},
+            #{minNights}, #{daysOfWeek}::jsonb, #{status}, #{dataVersion}, #{createdBy}, #{updatedBy}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <update id="update">
+        UPDATE rate_plan_promotions SET rate_plan_id=#{ratePlanId}, code=#{code}, name=#{name}, promotion_type=#{promotionType},
+            discount_percent=#{discountPercent}, priority=#{priority}, stay_start=#{stayStart}, stay_end=#{stayEnd},
+            book_start=#{bookStart}, book_end=#{bookEnd}, min_advance_days=#{minAdvanceDays}, max_advance_days=#{maxAdvanceDays},
+            min_nights=#{minNights}, days_of_week=#{daysOfWeek}::jsonb, status=#{status},
+            data_version=data_version+1, updated_by=#{updatedBy}, updated_at=#{updatedAt}
+        WHERE id=#{id} AND data_version=#{dataVersion}
+    </update>
+
+    <delete id="delete">DELETE FROM rate_plan_promotions WHERE id=#{id} AND hotel_id=#{hotelId}</delete>
+
+    <select id="findById" resultMap="PromotionMap">SELECT * FROM rate_plan_promotions WHERE id=#{id}</select>
+
+    <select id="findByHotel" resultMap="PromotionMap">
+        SELECT * FROM rate_plan_promotions WHERE hotel_id=#{hotelId}
+        <if test="enabledOnly">AND status='ENABLED'</if>
+        ORDER BY priority ASC, discount_percent DESC, created_at ASC
+    </select>
+
+    <select id="findApplicable" resultMap="PromotionMap">
+        SELECT * FROM rate_plan_promotions
+        WHERE hotel_id=#{hotelId} AND status='ENABLED'
+          AND (rate_plan_id IS NULL OR rate_plan_id=#{ratePlanId})
+          AND (stay_start IS NULL OR stay_start &lt; #{checkOut})
+          AND (stay_end IS NULL OR stay_end &gt;= #{checkIn})
+          AND (book_start IS NULL OR book_start &lt;= #{bookedOn})
+          AND (book_end IS NULL OR book_end &gt;= #{bookedOn})
+        ORDER BY discount_percent DESC, priority ASC, created_at ASC
+    </select>
+
+    <update id="archiveForRatePlan">
+        UPDATE rate_plan_promotions SET status='ARCHIVED', data_version=data_version+1, updated_by=#{actor}, updated_at=#{now}
+        WHERE rate_plan_id=#{ratePlanId} AND status &lt;&gt; 'ARCHIVED'
+    </update>
+</mapper>

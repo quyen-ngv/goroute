@@ -14,8 +14,10 @@ import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.CommentService;
+import com.ds.goroute.service.ContentModerationService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.MemberStatus;
+import com.ds.goroute.type.ModeratedContentType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -36,6 +39,7 @@ public class CommentServiceImpl implements CommentService {
     private final TripMemberRepository tripMemberRepository;
     private final UserRepository userRepository;
     private final NotificationHelper notificationHelper;
+    private final ContentModerationService contentModerationService;
 
     @Override
     @Transactional(readOnly = true)
@@ -59,8 +63,16 @@ public class CommentServiceImpl implements CommentService {
         }
         
         List<ActivityComment> comments = commentRepository.findByActivityId(activityId);
-        
+
+        // A moderator's takedown has to actually take the comment down. Reporting one worked and
+        // removing it did nothing, because this read only ever looked at is_deleted -- the author's
+        // own delete -- and never asked whether moderation had removed it.
+        Set<UUID> takenDown = contentModerationService.takenDownIds(
+                ModeratedContentType.ACTIVITY_COMMENT,
+                comments.stream().map(ActivityComment::getId).toList());
+
         return comments.stream()
+                .filter(comment -> !takenDown.contains(comment.getId()))
                 .map(this::toCommentResponse)
                 .collect(Collectors.toList());
     }

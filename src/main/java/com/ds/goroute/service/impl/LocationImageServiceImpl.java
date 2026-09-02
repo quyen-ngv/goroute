@@ -5,11 +5,13 @@ import com.ds.goroute.dto.LocationDescriptionContent;
 import com.ds.goroute.dto.LocationDescriptionSection;
 import com.ds.goroute.dto.request.CreateLocationImageRequest;
 import com.ds.goroute.dto.request.UpdateLocationImageRequest;
+import com.ds.goroute.dto.response.CityWeatherResponse;
 import com.ds.goroute.dto.response.LocationImageResponse;
 import com.ds.goroute.entity.LocationImage;
 import com.ds.goroute.enums.LocationDescriptionType;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.LocationImageRepository;
+import com.ds.goroute.service.CityWeatherService;
 import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.utils.CitySlugResolver;
 import com.ds.goroute.service.FileUploadService;
@@ -31,6 +33,8 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
 @Service
@@ -42,6 +46,10 @@ public class LocationImageServiceImpl implements LocationImageService {
     private final FileUploadService fileUploadService;
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final ObjectMapper objectMapper;
+    private final CityWeatherService cityWeatherService;
+
+    /** Shared pool; the weather calls are short, cached, and never touch the database. */
+    private final Executor applicationTaskExecutor;
 
     private static final String DEFAULT_IMAGE = "https://images.unsplash.com/photo-1488646953014-85cb44e25828";
 
@@ -61,17 +69,46 @@ public class LocationImageServiceImpl implements LocationImageService {
     @Override
     @Transactional(readOnly = true)
     public List<LocationImageResponse> getAllLocationImages() {
-        return locationImageRepository.findAll().stream()
-            .map(this::mapToResponse)
+        return getAllLocationImages(false);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<LocationImageResponse> getAllLocationImages(boolean includeWeather) {
+        List<LocationImage> locationImages = locationImageRepository.findAll();
+        if (!includeWeather) {
+            return locationImages.stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+        }
+
+        // A cold cache would otherwise cost one sequential upstream round-trip per city.
+        // Weather is cached per grid cell, so repeats across the list collapse into one call.
+        List<CompletableFuture<LocationImageResponse>> pending = locationImages.stream()
+            .map(locationImage -> CompletableFuture.supplyAsync(
+                () -> mapToResponse(locationImage, cityWeatherService.findWeatherQuietly(locationImage)),
+                applicationTaskExecutor))
+            .toList();
+
+        return pending.stream()
+            .map(CompletableFuture::join)
             .collect(Collectors.toList());
     }
 
     @Override
     @Transactional(readOnly = true)
     public LocationImageResponse getLocationImage(UUID id) {
+        return getLocationImage(id, false);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public LocationImageResponse getLocationImage(UUID id, boolean includeWeather) {
         LocationImage locationImage = locationImageRepository.findById(id)
             .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Location image not found"));
-        return mapToResponse(locationImage);
+        return includeWeather
+            ? mapToResponse(locationImage, cityWeatherService.findWeatherQuietly(locationImage))
+            : mapToResponse(locationImage);
     }
 
     @Override
@@ -172,8 +209,18 @@ public class LocationImageServiceImpl implements LocationImageService {
         return outcome.url();
     }
 
+    @Override
+    public String uploadLocationVideo(MultipartFile file) {
+        return fileUploadService.uploadVideo("city-stories", file);
+    }
+
     private LocationImageResponse mapToResponse(LocationImage locationImage) {
+        return mapToResponse(locationImage, null);
+    }
+
+    private LocationImageResponse mapToResponse(LocationImage locationImage, CityWeatherResponse weather) {
         return LocationImageResponse.builder()
+            .weather(weather)
             .id(locationImage.getId())
             .fullAddress(locationImage.getFullAddress())
             .citySlug(locationImage.getCitySlug())

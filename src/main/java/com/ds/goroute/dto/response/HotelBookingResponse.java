@@ -27,7 +27,7 @@ public class HotelBookingResponse {
     private List<Map<String, Object>> guestDetails;
     private String specialRequests;
     private LocalTime estimatedArrivalTime;
-    private LocalDateTime holdExpiresAt;
+    private LocalDateTime holdExpiresAt; private Boolean guestCharged;
     private String currency;
     private BigDecimal subtotalAmount;
     private BigDecimal taxAmount;

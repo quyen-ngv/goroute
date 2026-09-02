@@ -26,6 +26,10 @@ public interface UserReviewMapper {
     UserReview findByUserAndActivityBooking(@Param("userId") UUID userId,
                                             @Param("activityBookingId") UUID activityBookingId);
 
+    UserReview findByHotelBookingId(@Param("hotelBookingId") UUID hotelBookingId);
+
+    UserReview findByActivityOrderId(@Param("activityOrderId") UUID activityOrderId);
+
     List<UserReview> findByPlaceId(@Param("placeId") UUID placeId,
                                    @Param("limit") int limit,
                                    @Param("offset") int offset);

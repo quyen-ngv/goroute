@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.MarketplaceIcalMapper">
+
+    <resultMap id="RoomMap" type="com.ds.goroute.entity.MarketplaceIcalRoom">
+        <id property="roomTypeId" column="room_type_id"/>
+        <result property="hotelId" column="hotel_id"/>
+        <result property="organizationId" column="organization_id"/>
+        <result property="roomName" column="room_name"/>
+        <result property="hotelName" column="hotel_name"/>
+        <result property="icalToken" column="ical_token"/>
+    </resultMap>
+
+    <resultMap id="BookingMap" type="com.ds.goroute.entity.MarketplaceIcalBooking">
+        <id property="bookingId" column="booking_id"/>
+        <result property="bookingCode" column="booking_code"/>
+        <result property="bookingStatus" column="booking_status"/>
+        <result property="checkInDate" column="check_in_date"/>
+        <result property="checkOutDate" column="check_out_date"/>
+        <result property="quantity" column="quantity"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="RoomSelect">
+        SELECT r.id AS room_type_id, r.hotel_id, h.organization_id, r.name AS room_name,
+               p.title AS hotel_name, r.ical_token
+        FROM room_types r
+        JOIN hotel_profiles h ON h.id = r.hotel_id
+        JOIN places p ON p.id = h.place_id
+    </sql>
+
+    <select id="findRoomById" resultMap="RoomMap">
+        <include refid="RoomSelect"/>
+        WHERE r.id = #{roomTypeId}
+    </select>
+
+    <select id="findRoomByToken" resultMap="RoomMap">
+        <include refid="RoomSelect"/>
+        WHERE r.ical_token = #{token}
+    </select>
+
+    <select id="findBookedStays" resultMap="BookingMap">
+        SELECT b.id AS booking_id, b.booking_code, b.booking_status, b.check_in_date, b.check_out_date,
+               SUM(i.quantity) AS quantity, b.updated_at
+        FROM hotel_booking_items i
+        JOIN hotel_bookings b ON b.id = i.booking_id
+        WHERE i.room_type_id = #{roomTypeId}
+          AND b.booking_status IN ('CONFIRMED', 'CHECKED_IN')
+          AND b.check_out_date &gt;= #{fromDate}
+        GROUP BY b.id, b.booking_code, b.booking_status, b.check_in_date, b.check_out_date, b.updated_at
+        ORDER BY b.check_in_date, b.id
+        LIMIT #{limit}
+    </select>
+
+    <select id="findStopSellDays" resultType="java.time.LocalDate">
+        SELECT inventory_date
+        FROM room_inventory_daily
+        WHERE room_type_id = #{roomTypeId}
+          AND stop_sell = TRUE
+          AND inventory_date BETWEEN #{fromDate} AND #{toDate}
+        ORDER BY inventory_date
+        LIMIT #{limit}
+    </select>
+
+    <update id="assignTokenIfMissing">
+        UPDATE room_types SET ical_token = #{token}
+        WHERE id = #{roomTypeId} AND ical_token IS NULL
+    </update>
+
+    <update id="replaceToken">
+        UPDATE room_types SET ical_token = #{token}
+        WHERE id = #{roomTypeId}
+    </update>
+</mapper>

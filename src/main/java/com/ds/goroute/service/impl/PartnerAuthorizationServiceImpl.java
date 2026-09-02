@@ -110,6 +110,39 @@ public class PartnerAuthorizationServiceImpl implements PartnerAuthorizationServ
         catch (BusinessException ex) { return false; }
     }
 
+    @Override
+    public List<UUID> accessibleResourceIds(UUID organizationId, UUID actorUserId, String resourceType,
+                                            List<UUID> candidateIds, String permission) {
+        HostOrganization organization = repository.findById(organizationId).orElse(null);
+        if (organization == null) return List.of();
+        if (adminCan(actorUserId, permission) || organization.getOwnerUserId().equals(actorUserId)) return null;
+        OrganizationMember member = activeMember(organizationId, actorUserId);
+        if (member == null) return List.of();
+        if (repository.findMemberScopes(member.getId(), resourceType).isEmpty()) {
+            return hasPermission(member, permission) ? null : List.of();
+        }
+        return candidateIds.stream()
+                .filter(id -> hasResourcePermission(organizationId, actorUserId, resourceType, id, permission))
+                .toList();
+    }
+
+    @Override
+    public List<UUID> notificationRecipients(UUID organizationId, String resourceType, UUID resourceId,
+                                             String permission, UUID excludeUserId) {
+        HostOrganization organization = repository.findById(organizationId).orElse(null);
+        if (organization == null) return List.of();
+        java.util.LinkedHashSet<UUID> recipients = new java.util.LinkedHashSet<>();
+        if (organization.getOwnerUserId() != null) recipients.add(organization.getOwnerUserId());
+        for (OrganizationMember member : repository.findMembers(organizationId)) {
+            if (!OrganizationMemberStatus.ACTIVE.name().equals(member.getMemberStatus())) continue;
+            if (hasResourcePermission(organizationId, member.getUserId(), resourceType, resourceId, permission)) {
+                recipients.add(member.getUserId());
+            }
+        }
+        if (excludeUserId != null) recipients.remove(excludeUserId);
+        return List.copyOf(recipients);
+    }
+
     private OrganizationMember activeMember(UUID organizationId, UUID userId) {
         OrganizationMember member = repository.findMember(organizationId, userId).orElse(null);
         if (member == null || !OrganizationMemberStatus.ACTIVE.name().equals(member.getMemberStatus())) return null;

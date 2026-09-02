@@ -40,6 +40,12 @@ public class PlaceReviewController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(placeReviewService.prepareRefresh(placeId)));
     }
 
+    @GetMapping("/refresh-settings")
+    @Operation(summary = "Runtime switches the scraper worker reads before a scheduled review refresh")
+    public ResponseEntity refreshSettings() {
+        return ResponseEntity.ok(ofSucceeded(placeReviewService.getRefreshSettings()));
+    }
+
     @GetMapping("/refresh-candidates")
     @Operation(summary = "List review refresh candidates ordered by score/image migration need")
     public ResponseEntity refreshCandidates(

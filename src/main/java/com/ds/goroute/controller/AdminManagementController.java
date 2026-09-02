@@ -3,6 +3,7 @@ package com.ds.goroute.controller;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.AdminUserRequest;
 import com.ds.goroute.dto.request.ResetPasswordRequest;
+import com.ds.goroute.dto.response.PageResponse;
 import com.ds.goroute.dto.response.TemporaryPasswordResponse;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.mapper.AdminMapper;
@@ -28,11 +29,16 @@ public class AdminManagementController {
 
     @GetMapping("/users")
     @PreAuthorize("@adminAuthorization.can(authentication,'users','get')")
-    public BaseResponse<List<Map<String,Object>>> users(@RequestParam(defaultValue="") String search,
-                                                        @RequestParam(defaultValue="0") int page,
-                                                        @RequestParam(defaultValue="20") int size) {
+    public BaseResponse<PageResponse<Map<String,Object>>> users(@RequestParam(defaultValue="") String search,
+                                                                @RequestParam(defaultValue="0") int page,
+                                                                @RequestParam(defaultValue="20") int size) {
         int safeSize = Math.min(Math.max(size, 1), 100);
-        return BaseResponse.ofSucceeded(adminMapper.findUsers(search, safeSize, Math.max(page, 0) * safeSize));
+        int safePage = Math.max(page, 0);
+        return BaseResponse.ofSucceeded(PageResponse.of(
+                adminMapper.findUsers(search, safeSize, safePage * safeSize),
+                adminMapper.countUsers(search),
+                safePage,
+                safeSize));
     }
 
     @GetMapping("/dashboard")

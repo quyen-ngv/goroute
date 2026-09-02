@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.UUID;
 
 public interface HotelMarketplaceService {
-    List<HotelProfileResponse> listPublic(String query, int page, int size);
+    List<HotelProfileResponse> listPublic(HotelSearchQuery query, int page, int size);
     HotelProfileResponse getPublic(UUID hotelId);
     List<RoomTypeResponse> listPublicRooms(UUID hotelId);
     List<RatePlanResponse> listPublicRates(UUID roomTypeId);
@@ -30,7 +30,7 @@ public interface HotelMarketplaceService {
     List<RoomInventoryResponse> partnerUpdateInventory(UUID actor, UUID roomId, BulkUpdateRoomInventoryRequest request);
     List<RatePlanDailyRateResponse> partnerGetRateCalendar(UUID actor, UUID ratePlanId, LocalDate start, LocalDate end);
     List<RatePlanDailyRateResponse> partnerUpdateRateCalendar(UUID actor, UUID ratePlanId, BulkUpdateRatePlanCalendarRequest request);
-    List<HotelBookingResponse> partnerListBookings(UUID actor, UUID organizationId, String status, int page, int size);
+    PageResponse<HotelBookingResponse> partnerListBookings(UUID actor, UUID organizationId, String status, UUID hotelId, int page, int size);
     HotelBookingResponse partnerGetBooking(UUID actor, UUID bookingId);
     HotelBookingResponse partnerUpdateBookingStatus(UUID actor, UUID bookingId, UpdateHotelBookingStatusRequest request);
 
@@ -38,6 +38,25 @@ public interface HotelMarketplaceService {
     List<HotelBookingResponse> listMyBookings(UUID userId, int page, int size);
     HotelBookingResponse getMyBooking(UUID userId, UUID bookingId);
     HotelBookingResponse cancelMyBooking(UUID userId, UUID bookingId, String reason, Long expectedVersion);
+    /** Result of pricing a stay change; {@code available=false} carries the reason instead of throwing. */
+    record StayQuote(boolean available, String reason, java.math.BigDecimal total, String currency, int nights) {}
+    StayQuote quoteStayChange(UUID bookingId, LocalDate checkIn, LocalDate checkOut, Integer adults, Integer children);
+    /** Partner accepted a change request: move inventory, re-price with the current calendar, update the booking. */
+    HotelBookingResponse partnerApplyStayChange(UUID actor, UUID bookingId, LocalDate checkIn, LocalDate checkOut, Integer adults, Integer children, Long expectedVersion);
+    ListingReadinessResponse partnerHotelReadiness(UUID actor, UUID hotelId);
+
+    List<RatePlanPromotionResponse> partnerListPromotions(UUID actor, UUID hotelId);
+    RatePlanPromotionResponse partnerCreatePromotion(UUID actor, UUID hotelId, UpsertRatePlanPromotionRequest request);
+    RatePlanPromotionResponse partnerUpdatePromotion(UUID actor, UUID hotelId, UUID promotionId, UpsertRatePlanPromotionRequest request);
+    void partnerDeletePromotion(UUID actor, UUID hotelId, UUID promotionId);
+
+    /** Policy outcome if the guest cancelled right now; the app shows it before asking for confirmation. */
+    CancellationPreviewResponse previewMyCancellation(UUID userId, UUID bookingId);
+
+    /** Ids of PENDING_PARTNER_CONFIRMATION bookings whose hold deadline has passed, oldest first. */
+    List<UUID> findExpiredPendingBookingIds(java.time.LocalDateTime now, int limit);
+    /** Expires one held booking in its own transaction and releases its inventory. Returns false when it was already handled. */
+    boolean expirePendingBooking(UUID bookingId, java.time.LocalDateTime now);
 
     List<HotelProfileResponse> adminListHotels(String query, String status, int page, int size);
     HotelProfileResponse adminGetHotel(UUID hotelId);

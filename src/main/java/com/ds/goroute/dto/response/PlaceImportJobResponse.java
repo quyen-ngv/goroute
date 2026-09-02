@@ -54,6 +54,7 @@ public class PlaceImportJobResponse {
     private Integer maxPlaces;
     private Boolean headless;
     private Boolean continueOnError;
+    private Boolean includeInactive;
     private String currentPlaceId;
     private String currentPlaceTitle;
     private String errorMessage;

@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.UserGuideMapper">
+
+    <resultMap id="GuideGrantResultMap" type="com.ds.goroute.entity.UserGuideGrant">
+        <id column="user_id" property="userId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="status" property="status"/>
+        <result column="display_title" property="displayTitle"/>
+        <result column="note" property="note"/>
+        <result column="granted_by" property="grantedBy" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="granted_at" property="grantedAt"/>
+        <result column="revoked_by" property="revokedBy" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="revoked_at" property="revokedAt"/>
+        <result column="revoke_reason" property="revokeReason"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <select id="find" resultMap="GuideGrantResultMap">
+        SELECT * FROM user_guide_grants
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <select id="findActiveIds" resultType="java.util.UUID">
+        SELECT user_id FROM user_guide_grants
+        WHERE status = 'ACTIVE'
+          AND user_id IN
+        <foreach item="userId" collection="userIds" open="(" separator="," close=")">
+            #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+        </foreach>
+    </select>
+
+    <!--
+      Re-granting a revoked guide clears the revocation rather than leaving both sets of columns
+      filled: a row saying ACTIVE and still carrying a revoke reason cannot be read by anybody.
+    -->
+    <insert id="upsertActive" parameterType="com.ds.goroute.entity.UserGuideGrant">
+        INSERT INTO user_guide_grants
+            (user_id, status, display_title, note, granted_by, granted_at)
+        VALUES
+            (#{userId,javaType=java.util.UUID,jdbcType=OTHER}, 'ACTIVE',
+             #{displayTitle}, #{note},
+             #{grantedBy,javaType=java.util.UUID,jdbcType=OTHER}, NOW())
+        ON CONFLICT (user_id) DO UPDATE
+        SET status = 'ACTIVE',
+            display_title = EXCLUDED.display_title,
+            note = EXCLUDED.note,
+            granted_by = EXCLUDED.granted_by,
+            granted_at = NOW(),
+            revoked_by = NULL,
+            revoked_at = NULL,
+            revoke_reason = NULL,
+            updated_at = NOW()
+    </insert>
+
+    <update id="revoke">
+        UPDATE user_guide_grants
+        SET status = 'REVOKED',
+            revoked_by = #{revokedBy,javaType=java.util.UUID,jdbcType=OTHER},
+            revoked_at = NOW(),
+            revoke_reason = #{reason},
+            updated_at = NOW()
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND status = 'ACTIVE'
+    </update>
+
+    <sql id="GuideSearchWhere">
+        <where>
+            <if test="status != null and status != ''">
+                AND g.status = #{status}
+            </if>
+            <if test="search != null and search != ''">
+                AND (u.username ILIKE '%' || #{search} || '%'
+                     OR u.email ILIKE '%' || #{search} || '%'
+                     OR u.full_name ILIKE '%' || #{search} || '%')
+            </if>
+        </where>
+    </sql>
+
+    <select id="findAll" resultType="java.util.LinkedHashMap">
+        SELECT g.user_id, g.status, g.display_title, g.note,
+               g.granted_at, g.revoked_at, g.revoke_reason,
+               u.username, u.email, u.full_name, u.avatar_url
+        FROM user_guide_grants g
+        JOIN users u ON u.id = g.user_id
+        <include refid="GuideSearchWhere"/>
+        ORDER BY g.granted_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAll" resultType="long">
+        SELECT count(*)
+        FROM user_guide_grants g
+        JOIN users u ON u.id = g.user_id
+        <include refid="GuideSearchWhere"/>
+    </select>
+
+</mapper>

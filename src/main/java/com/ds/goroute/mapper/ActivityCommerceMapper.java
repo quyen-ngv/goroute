@@ -4,6 +4,7 @@ import com.ds.goroute.entity.*;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -27,8 +28,18 @@ public interface ActivityCommerceMapper {
     List<ActivityOrder> findExpiredPendingOrders(@Param("now")LocalDateTime now,@Param("limit")int limit); int expireOrderHold(@Param("id")UUID id,@Param("expectedVersion")long expectedVersion,@Param("actor")UUID actor,@Param("now")LocalDateTime now);
     ActivityOrderItem findOrderItem(@Param("orderId")UUID orderId);
     List<ActivityOrder> findOrdersByUser(@Param("userId")UUID userId,@Param("limit")int limit,@Param("offset")int offset);
-    List<ActivityOrder> findOrdersByOrganization(@Param("organizationId")UUID organizationId,@Param("status")String status,@Param("limit")int limit,@Param("offset")int offset);
+    List<ActivityOrder> findOrdersByOrganization(@Param("organizationId")UUID organizationId,@Param("status")String status,@Param("productIds")List<UUID> productIds,@Param("limit")int limit,@Param("offset")int offset);
+    long countOrdersByOrganizationFiltered(@Param("organizationId")UUID organizationId,@Param("status")String status,@Param("productIds")List<UUID> productIds);
+    long countActiveOrdersForSlot(@Param("slotId")UUID slotId);
+    ActivityOrder findOrderByVoucherCode(@Param("organizationId")UUID organizationId,@Param("voucherCode")String voucherCode);
+    int updateOrderSlot(@Param("id")UUID id,@Param("expectedVersion")long expectedVersion,@Param("slotId")UUID slotId,@Param("subtotal")java.math.BigDecimal subtotal,@Param("total")java.math.BigDecimal total,@Param("snapshot")String snapshot,@Param("actor")UUID actor,@Param("now")LocalDateTime now);
+    int updateOrderItemPrice(@Param("id")UUID id,@Param("unitPrice")java.math.BigDecimal unitPrice,@Param("totalPrice")java.math.BigDecimal totalPrice);
+    int assignVoucher(@Param("id")UUID id,@Param("voucherCode")String voucherCode,@Param("now")LocalDateTime now);
+    int markRedeemed(@Param("id")UUID id,@Param("actor")UUID actor,@Param("now")LocalDateTime now);
+    int voidVoucher(@Param("id")UUID id,@Param("now")LocalDateTime now);
     List<ActivityOrder> findOrdersAdmin(@Param("query")String query,@Param("status")String status,@Param("limit")int limit,@Param("offset")int offset);
-    int updateOrderStatus(@Param("id")UUID id,@Param("expectedVersion")long expectedVersion,@Param("status")String status,
+    int updateOrderStatus(@Param("id")UUID id,@Param("expectedVersion")long expectedVersion,@Param("status")String status,@Param("guestCharged")Boolean guestCharged,
                           @Param("actor")UUID actor,@Param("now")LocalDateTime now);
+    long countOrdersByOrganization(@Param("organizationId")UUID organizationId,@Param("status")String status);
+    long countOrdersStartingOn(@Param("organizationId")UUID organizationId,@Param("day")LocalDate day);
 }

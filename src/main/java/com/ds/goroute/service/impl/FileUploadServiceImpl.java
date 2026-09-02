@@ -129,8 +129,13 @@ public class FileUploadServiceImpl implements FileUploadService {
 
     @Override
     public String uploadVideo(UUID userId, MultipartFile file) {
+        return uploadVideo("trip-memory-videos/" + userId, file);
+    }
+
+    @Override
+    public String uploadVideo(String objectPrefix, MultipartFile file) {
         ValidatedVideo video = validateVideo(file);
-        String objectKey = "trip-memory-videos/" + userId + "/" + UUID.randomUUID() + video.extension();
+        String objectKey = objectPrefix + "/" + UUID.randomUUID() + video.extension();
         try (InputStream inputStream = file.getInputStream()) {
             return storageService.uploadFile(objectKey, inputStream, video.contentType(), file.getSize());
         } catch (IOException exception) {

@@ -9,4 +9,6 @@ import java.util.UUID;
 public class UpdateConversationStatusRequest {
  private MarketplaceConversationStatus status;
  private UUID assignedMemberId;
+ /** Explicitly clear the assignee. A null assignedMemberId alone keeps the current one. */
+ private boolean unassign;
 }

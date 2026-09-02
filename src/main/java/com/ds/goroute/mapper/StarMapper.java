@@ -29,7 +29,14 @@ public interface StarMapper {
 
     int incrementBalance(@Param("userId") UUID userId, @Param("amount") int amount);
 
-    int incrementFreeQuota(@Param("userId") UUID userId);
+    /**
+     * Consumes one free slot, refusing past the quota.
+     *
+     * <p>The quota is passed in rather than written into the statement: the same number
+     * living in two places is how the third free slot came to be unreachable while the
+     * service still believed it had granted it.
+     */
+    int incrementFreeQuota(@Param("userId") UUID userId, @Param("quota") int quota);
 
     int insertTransaction(StarTransaction transaction);
 
@@ -51,9 +58,24 @@ public interface StarMapper {
     /** Wallets whose balance disagrees with the sum of their entries. */
     List<UUID> findWalletsOutOfBalance(@Param("limit") int limit);
 
+    /**
+     * Wallets holding something, ordered by id and starting after the last one handled.
+     *
+     * <p>Keyset paging, because the caller writes as it walks and an OFFSET page would move
+     * underneath it.
+     */
+    List<UUID> findWalletsWithBalanceAfter(@Param("afterUserId") UUID afterUserId,
+                                           @Param("limit") int limit);
+
     int insertEntitlement(TripCreationEntitlement entitlement);
 
     TripCreationEntitlement findActiveEntitlement(@Param("userId") UUID userId, @Param("now") LocalDateTime now);
+
+    /** Every slot ever bought, used or not -- the sequence an unlock's idempotency key counts. */
+    int countEntitlements(@Param("userId") UUID userId);
+
+    /** Slots bought, not yet used and not yet expired. */
+    int countActiveEntitlements(@Param("userId") UUID userId, @Param("now") LocalDateTime now);
 
     int consumeEntitlement(@Param("id") UUID id, @Param("now") LocalDateTime now);
 

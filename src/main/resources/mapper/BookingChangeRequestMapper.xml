@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.BookingChangeRequestMapper">
+    <resultMap id="ChangeRequestMap" type="com.ds.goroute.entity.BookingChangeRequest">
+        <id property="id" column="id"/>
+        <result property="bookingType" column="booking_type"/><result property="hotelBookingId" column="hotel_booking_id"/>
+        <result property="activityOrderId" column="activity_order_id"/><result property="organizationId" column="organization_id"/>
+        <result property="requestedBy" column="requested_by"/><result property="newCheckInDate" column="new_check_in_date"/>
+        <result property="newCheckOutDate" column="new_check_out_date"/><result property="newAdults" column="new_adults"/>
+        <result property="newChildren" column="new_children"/><result property="newSlotId" column="new_slot_id"/>
+        <result property="message" column="message"/><result property="status" column="status"/>
+        <result property="respondedBy" column="responded_by"/><result property="responseNote" column="response_note"/>
+        <result property="respondedAt" column="responded_at"/><result property="priceBefore" column="price_before"/>
+        <result property="priceAfter" column="price_after"/><result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/><result property="bookingCode" column="booking_code"/>
+        <result property="currency" column="currency"/><result property="newSlotStartsAt" column="new_slot_starts_at"/>
+        <result property="hotelId" column="hotel_id"/><result property="activityBookingId" column="activity_booking_id"/>
+    </resultMap>
+    <sql id="Select">
+        SELECT r.*, COALESCE(hb.booking_code, ao.order_code) AS booking_code, COALESCE(hb.currency, ao.currency) AS currency,
+               s.starts_at AS new_slot_starts_at, hb.hotel_id, ao.activity_booking_id
+        FROM booking_change_requests r
+        LEFT JOIN hotel_bookings hb ON hb.id = r.hotel_booking_id
+        LEFT JOIN activity_orders ao ON ao.id = r.activity_order_id
+        LEFT JOIN activity_slots s ON s.id = r.new_slot_id
+    </sql>
+    <sql id="OrganizationFilter">
+        WHERE r.organization_id = #{organizationId}
+        <if test="status != null and status != ''">AND r.status = #{status}</if>
+        <if test="hotelIds != null or productIds != null">
+            AND (
+                (r.booking_type = 'HOTEL' <if test="hotelIds != null">AND hb.hotel_id IN <foreach collection="hotelIds" item="hid" open="(" separator="," close=")">#{hid}</foreach></if>)
+                OR (r.booking_type = 'ACTIVITY' <if test="productIds != null">AND ao.activity_booking_id IN <foreach collection="productIds" item="pid" open="(" separator="," close=")">#{pid}</foreach></if>)
+            )
+        </if>
+    </sql>
+    <insert id="insert">
+        INSERT INTO booking_change_requests (id, booking_type, hotel_booking_id, activity_order_id, organization_id, requested_by,
+            new_check_in_date, new_check_out_date, new_adults, new_children, new_slot_id, message, status, price_before, price_after, created_at, updated_at)
+        VALUES (#{id}, #{bookingType}, #{hotelBookingId}, #{activityOrderId}, #{organizationId}, #{requestedBy},
+            #{newCheckInDate}, #{newCheckOutDate}, #{newAdults}, #{newChildren}, #{newSlotId}, #{message}, #{status}, #{priceBefore}, #{priceAfter}, #{createdAt}, #{updatedAt})
+    </insert>
+    <select id="findById" resultMap="ChangeRequestMap"><include refid="Select"/> WHERE r.id = #{id}</select>
+    <select id="findForHotelBooking" resultMap="ChangeRequestMap"><include refid="Select"/> WHERE r.hotel_booking_id = #{hotelBookingId} ORDER BY r.created_at DESC</select>
+    <select id="findForActivityOrder" resultMap="ChangeRequestMap"><include refid="Select"/> WHERE r.activity_order_id = #{activityOrderId} ORDER BY r.created_at DESC</select>
+    <select id="findForOrganization" resultMap="ChangeRequestMap">
+        <include refid="Select"/> <include refid="OrganizationFilter"/> ORDER BY r.created_at ASC LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <select id="countForOrganization" resultType="long">
+        SELECT COUNT(*) FROM booking_change_requests r
+        LEFT JOIN hotel_bookings hb ON hb.id = r.hotel_booking_id
+        LEFT JOIN activity_orders ao ON ao.id = r.activity_order_id
+        <include refid="OrganizationFilter"/>
+    </select>
+    <select id="countOpenForOrganization" resultType="long">SELECT COUNT(*) FROM booking_change_requests r WHERE r.organization_id = #{organizationId} AND r.status = 'REQUESTED'</select>
+    <update id="updateStatus">
+        UPDATE booking_change_requests SET status = #{status}, responded_by = #{respondedBy}, response_note = #{responseNote},
+            responded_at = CASE WHEN #{status} IN ('ACCEPTED','DECLINED') THEN #{now} ELSE responded_at END,
+            price_after = COALESCE(#{priceAfter}, price_after), updated_at = #{now}
+        WHERE id = #{id} AND status = #{fromStatus}
+    </update>
+</mapper>

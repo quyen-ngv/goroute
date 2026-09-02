@@ -62,6 +62,16 @@ public class UserReviewRepositoryImpl implements UserReviewRepository {
     }
 
     @Override
+    public Optional<UserReview> findByHotelBookingId(UUID hotelBookingId) {
+        return Optional.ofNullable(mapper.findByHotelBookingId(hotelBookingId));
+    }
+
+    @Override
+    public Optional<UserReview> findByActivityOrderId(UUID activityOrderId) {
+        return Optional.ofNullable(mapper.findByActivityOrderId(activityOrderId));
+    }
+
+    @Override
     public List<UserReview> findByPlaceId(UUID placeId, int limit, int offset) {
         return mapper.findByPlaceId(placeId, limit, offset);
     }

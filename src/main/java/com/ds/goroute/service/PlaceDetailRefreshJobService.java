@@ -13,6 +13,7 @@ import com.ds.goroute.type.PlaceImportJobStatus;
 import com.ds.goroute.type.PlaceImportSourceType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +25,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PlaceDetailRefreshJobService {
     private final PlaceImportJobMapper jobMapper;
     private final ScrapeServiceClient scrapeServiceClient;
@@ -77,6 +79,7 @@ public class PlaceDetailRefreshJobService {
                         .maxPlaces(request.getMaxPlaces())
                         .headless(!Boolean.FALSE.equals(request.getHeadless()))
                         .continueOnError(!Boolean.FALSE.equals(request.getContinueOnError()))
+                        .includeInactive(Boolean.TRUE.equals(request.getIncludeInactive()))
                         .build());
 
         PlaceImportJob persisted = jobMapper.findJobById(job.getId());
@@ -120,11 +123,18 @@ public class PlaceDetailRefreshJobService {
         }
         if (event.getFailedCount() != null) job.setFailedCount(event.getFailedCount());
         if (event.getCurrentPlaceId() != null) job.setCurrentRegionCode(event.getCurrentPlaceId().toString());
-        if (event.getCurrentTitle() != null) job.setCurrentRegionName(event.getCurrentTitle());
+        // current_region_name is VARCHAR(255); the worker echoes back whatever title is
+        // currently stored for the place, which can be corrupt/oversized from a bad past
+        // scrape. Truncate rather than let a display-only progress field 500 the callback.
+        if (event.getCurrentTitle() != null) job.setCurrentRegionName(truncate(event.getCurrentTitle(), 255));
 
         String type = event.getEventType().trim().toUpperCase(Locale.ROOT);
         if (job.getStatus() == PlaceImportJobStatus.CANCELLED && !"JOB_CANCELLED".equals(type)) {
             return;
+        }
+        if (!"JOB_PROGRESS".equals(type)) {
+            log.info("Place detail refresh job {} received {} from worker {}",
+                    job.getId(), type, event.getPythonJobId());
         }
         if ("JOB_COMPLETED".equals(type)) {
             job.setStatus(PlaceImportJobStatus.COMPLETED);
@@ -205,6 +215,7 @@ public class PlaceDetailRefreshJobService {
                 .maxPlaces(config == null ? null : config.getMaxPlaces())
                 .headless(config == null ? null : config.getHeadless())
                 .continueOnError(config == null ? null : config.getContinueOnError())
+                .includeInactive(config == null ? null : config.getIncludeInactive())
                 .currentPlaceId(job.getCurrentRegionCode())
                 .currentPlaceTitle(job.getCurrentRegionName())
                 .errorMessage(job.getErrorMessage())
@@ -230,6 +241,10 @@ public class PlaceDetailRefreshJobService {
         } catch (Exception ignored) {
             return "{}";
         }
+    }
+
+    private String truncate(String value, int maxLength) {
+        return value.length() > maxLength ? value.substring(0, maxLength) : value;
     }
 
     private boolean isTerminal(PlaceImportJobStatus status) {

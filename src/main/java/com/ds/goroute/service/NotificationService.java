@@ -47,6 +47,21 @@ public interface NotificationService {
             String priority
     );
 
+    /**
+     * Announcement fan-out for a resolved audience. Unlike the e-mail variants this always writes
+     * the in-app row — an account with no registered device still sees the announcement on its
+     * next visit — and reports push delivery separately.
+     */
+    com.ds.goroute.dto.response.AdminPushNotificationResponse sendAdminPushNotificationToUsers(
+            List<UUID> userIds,
+            String title,
+            String body,
+            String deepLink,
+            Map<String, Object> data,
+            String imageUrl,
+            String priority
+    );
+
     com.ds.goroute.dto.response.AdminPushNotificationResponse sendAdminPushNotificationToUser(
             UUID userId,
             String email,

@@ -45,10 +45,10 @@ public interface CityStoryMapper {
 
     @Insert("""
         INSERT INTO city_stories (
-            id, location_image_id, image_url, description, place_id,
+            id, location_image_id, image_url, media_type, video_url, thumbnail_url, description, place_id,
             like_count, created_at, updated_at
         ) VALUES (
-            #{id}, #{locationImageId}, #{imageUrl}, #{description}, #{placeId},
+            #{id}, #{locationImageId}, #{imageUrl}, #{mediaType}, #{videoUrl}, #{thumbnailUrl}, #{description}, #{placeId},
             #{likeCount}, #{createdAt}, #{updatedAt}
         )
         """)

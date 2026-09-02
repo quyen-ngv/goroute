@@ -25,4 +25,8 @@ public class CreatePlaceDetailRefreshJobRequest {
 
     @Builder.Default
     private Boolean continueOnError = true;
+
+    /** Refresh INACTIVE places too. Off by default: a sweep normally means the live catalogue. */
+    @Builder.Default
+    private Boolean includeInactive = false;
 }

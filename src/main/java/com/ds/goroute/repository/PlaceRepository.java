@@ -1,5 +1,6 @@
 package com.ds.goroute.repository;
 
+import com.ds.goroute.dto.response.PlaceDetailRefreshCandidateResponse;
 import com.ds.goroute.entity.Place;
 
 import java.math.BigDecimal;
@@ -33,9 +34,12 @@ public interface PlaceRepository {
 
     List<Place> findPage(int limit, int offset);
 
-    List<Place> findAdminPage(String search, int limit, int offset);
+    List<Place> findFilteredPage(String search, List<String> placeGroups, int limit, int offset);
 
-    long countAdmin(String search);
+    List<PlaceDetailRefreshCandidateResponse> findDetailRefreshCandidates(
+            UUID placeId, boolean includeInactive, int limit);
+
+    long countFiltered(String search, List<String> placeGroups);
 
     List<Place> findByIds(List<UUID> ids);
 

@@ -47,4 +47,11 @@
     </select>
     <insert id="insertResponse">INSERT INTO marketplace_review_responses(id,review_id,organization_id,responder_user_id,response_text,status,data_version,created_at,updated_at)VALUES(#{id},#{reviewId},#{organizationId},#{actor},#{text},#{status},1,#{now},#{now})</insert>
     <update id="updateResponse">UPDATE marketplace_review_responses SET responder_user_id=#{actor},response_text=#{text},status=#{status},data_version=data_version+1,updated_at=#{now} WHERE review_id=#{reviewId} AND organization_id=#{organizationId} AND data_version=#{expectedVersion}</update>
+    <select id="countUnansweredByOrganization" resultType="long">
+        SELECT COUNT(*) FROM user_reviews r
+          LEFT JOIN hotel_profiles h ON h.place_id=r.place_id
+          LEFT JOIN activity_bookings a ON a.id=r.activity_booking_id
+        WHERE (h.organization_id=#{organizationId} OR a.host_organization_id=#{organizationId})
+          AND NOT EXISTS(SELECT 1 FROM marketplace_review_responses rr WHERE rr.review_id=r.id AND rr.organization_id=#{organizationId} AND rr.status='PUBLISHED')
+    </select>
 </mapper>

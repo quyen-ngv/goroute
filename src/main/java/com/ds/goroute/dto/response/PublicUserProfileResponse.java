@@ -28,6 +28,12 @@ public class PublicUserProfileResponse {
     private int followersCount;
     private int followingCount;
     private UserRankProgressResponse rank;
+
+    /** True when an operator has vouched for this account as a VietdeGuide. */
+    private boolean guide;
+
+    /** What the guide badge says, when the guide has a speciality worth naming. */
+    private String guideTitle;
     private boolean isFollowing;
     private boolean isFollowedBy;
 }

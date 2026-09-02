@@ -1,6 +1,7 @@
 package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.BaseResponse;
+import com.ds.goroute.dto.request.HotelSearchQuery;
 import com.ds.goroute.dto.response.*;
 import com.ds.goroute.service.HotelMarketplaceService;
 import lombok.RequiredArgsConstructor;
@@ -14,7 +15,14 @@ import java.util.UUID;
 @RestController @RequestMapping("/v1/api/public/hotels") @RequiredArgsConstructor
 public class PublicHotelController {
     private final HotelMarketplaceService service;
-    @GetMapping public ResponseEntity<BaseResponse<List<HotelProfileResponse>>> list(@RequestParam(required=false)String q,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size){return ResponseEntity.ok(BaseResponse.ofSucceeded(service.listPublic(q,page,size)));}
+    /** Availability-aware search: dates + party size only return hotels with a room type that fits and is open every night. */
+    @GetMapping public ResponseEntity<BaseResponse<List<HotelProfileResponse>>> list(@RequestParam(required=false)String q,
+            @RequestParam(required=false)String propertyType,@RequestParam(required=false)java.math.BigDecimal minPrice,@RequestParam(required=false)java.math.BigDecimal maxPrice,
+            @RequestParam(required=false)LocalDate checkIn,@RequestParam(required=false)LocalDate checkOut,
+            @RequestParam(required=false)Integer rooms,@RequestParam(required=false)Integer adults,@RequestParam(required=false)Integer children,
+            @RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size){
+        HotelSearchQuery query=HotelSearchQuery.builder().query(q).propertyType(propertyType).minPrice(minPrice).maxPrice(maxPrice).checkIn(checkIn).checkOut(checkOut).rooms(rooms).adults(adults).children(children).build();
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.listPublic(query,page,size)));}
     @GetMapping("/{hotelId}") public ResponseEntity<BaseResponse<HotelProfileResponse>> get(@PathVariable UUID hotelId){return ResponseEntity.ok(BaseResponse.ofSucceeded(service.getPublic(hotelId)));}
     @GetMapping("/{hotelId}/rooms") public ResponseEntity<BaseResponse<List<RoomTypeResponse>>> rooms(@PathVariable UUID hotelId){return ResponseEntity.ok(BaseResponse.ofSucceeded(service.listPublicRooms(hotelId)));}
     @GetMapping("/rooms/{roomId}/rates") public ResponseEntity<BaseResponse<List<RatePlanResponse>>> rates(@PathVariable UUID roomId){return ResponseEntity.ok(BaseResponse.ofSucceeded(service.listPublicRates(roomId)));}

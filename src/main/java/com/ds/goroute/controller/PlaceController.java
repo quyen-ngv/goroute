@@ -54,12 +54,26 @@ public class PlaceController extends BaseController {
     }
 
     @GetMapping
-    @Operation(summary = "List all places")
+    @Operation(summary = "List places, optionally filtered by keyword and place group")
     public ResponseEntity<BaseResponse<List<PlaceResponse>>> getAllPlaces(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) List<String> placeGroups,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(500) int size) {
-        List<PlaceResponse> responses = placeService.getAllPlaces(page, size);
+        List<PlaceResponse> responses = placeService.getAllPlaces(search, placeGroups, page, size);
         return ResponseEntity.ok(ofSucceeded(responses));
+    }
+
+    @GetMapping("/detail-refresh-candidates")
+    @Operation(summary = "List every place the detail-refresh worker may re-scrape",
+            description = "ACTIVE places only unless includeInactive is set. Not paginated: the worker "
+                    + "consumes the whole eligible set in one call, capped by maxPlaces.")
+    public ResponseEntity<BaseResponse<Map<String, Object>>> detailRefreshCandidates(
+            @RequestParam(required = false) UUID placeId,
+            @RequestParam(defaultValue = "false") boolean includeInactive,
+            @RequestParam(required = false) @Min(1) @Max(10000) Integer maxPlaces) {
+        return ResponseEntity.ok(ofSucceeded(
+                placeService.getDetailRefreshCandidates(placeId, includeInactive, maxPlaces)));
     }
 
     @GetMapping("/{id}")

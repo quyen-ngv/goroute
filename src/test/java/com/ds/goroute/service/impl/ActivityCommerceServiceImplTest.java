@@ -32,7 +32,7 @@ class ActivityCommerceServiceImplTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ActivityCommerceServiceImpl service = new ActivityCommerceServiceImpl(
-            null, null, null, null, null, objectMapper, null, null);
+            null, null, null, null, null, null, objectMapper, null, null);
 
     @Test
     void packageSaleQuantityIsIndependentFromConsumedCapacity() throws Exception {
@@ -63,8 +63,7 @@ class ActivityCommerceServiceImplTest {
         ActivityCommerceRepository repository = mock(ActivityCommerceRepository.class);
         PartnerAuthorizationService authorization = mock(PartnerAuthorizationService.class);
         MarketplaceHistoryService history = mock(MarketplaceHistoryService.class);
-        ActivityCommerceServiceImpl bulkService = new ActivityCommerceServiceImpl(
-                repository, null, null, authorization, history, objectMapper, null, null);
+        ActivityCommerceServiceImpl bulkService = new ActivityCommerceServiceImpl(repository, null, null, authorization, history, null, objectMapper, null, null);
         UUID actorId = UUID.randomUUID();
         UUID organizationId = UUID.randomUUID();
         UUID activityId = UUID.randomUUID();

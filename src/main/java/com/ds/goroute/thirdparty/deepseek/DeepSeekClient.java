@@ -27,6 +27,21 @@ public class DeepSeekClient implements AiClient {
 
     private final RestClient.Builder restClientBuilder;
 
+    @Value("${AI_CONNECT_TIMEOUT_SECONDS:10}")
+    private int connectTimeoutSeconds;
+
+    @Value("${AI_READ_TIMEOUT_SECONDS:90}")
+    private int readTimeoutSeconds;
+
+    /** The default RestClient has NO read timeout; a stalled AI call must fail, not hang a thread. */
+    private org.springframework.http.client.ClientHttpRequestFactory aiRequestFactory() {
+        org.springframework.http.client.SimpleClientHttpRequestFactory factory =
+                new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(connectTimeoutSeconds * 1000);
+        factory.setReadTimeout(readTimeoutSeconds * 1000);
+        return factory;
+    }
+
     @Value("${AI_API_KEY:}")
     private String apiKey;
 
@@ -57,7 +72,7 @@ public class DeepSeekClient implements AiClient {
                     .thinking(DeepSeekThinking.builder().type("disabled").build())
                     .build();
 
-            DeepSeekChatResponse response = restClientBuilder.build()
+            DeepSeekChatResponse response = restClientBuilder.clone().requestFactory(aiRequestFactory()).build()
                     .post()
                     .uri(apiUrl)
                     .contentType(MediaType.APPLICATION_JSON)

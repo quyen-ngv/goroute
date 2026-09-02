@@ -11,6 +11,12 @@ package com.ds.goroute.type;
 public enum BusinessConfigKey {
     FREE_TRIP_MEMORY_LIMIT("TRIP_MEMORY", "FREE_TRIP_MEMORY_LIMIT", 50, 1, 1000),
     PLACE_REVIEW_REFRESH_MAX_REVIEWS("PLACE_REVIEW", "DEFAULT_REFRESH_MAX_REVIEWS", 200, 1, 200),
+    /**
+     * Gates the scraper worker's daily review refresh. The worker reads this before every
+     * scheduled run, so switching it off here stops tomorrow's run without a redeploy.
+     * Administrator-triggered refreshes and the place-activation refresh are unaffected.
+     */
+    PLACE_REVIEW_DAILY_REFRESH_ENABLED("PLACE_REVIEW", "DAILY_REFRESH_ENABLED", true),
 
     // --- Epic 12: content moderation -------------------------------------------------
     MODERATION_TEXT_FILTER_ENABLED("MODERATION", "TEXT_FILTER_ENABLED", true),
@@ -54,18 +60,37 @@ public enum BusinessConfigKey {
     PASSPORT_LOCATION_PLACE_RADIUS_KM("PASSPORT", "LOCATION_PLACE_RADIUS_KM", 5.0d, 0.1d, 50.0d),
 
     // --- Epic 08: shared point wallet ------------------------------------------------
+    /**
+     * Kept for the rows already seeded under this key, and read by nothing. Points do not expire
+     * per-balance by age; they are halved once a year by the keys below. Left registered rather
+     * than deleted so an operator who finds the row in the console sees it described here.
+     *
+     * @deprecated superseded by {@link #POINTS_YEAR_END_RESET_ENABLED}.
+     */
+    @Deprecated
     POINTS_EXPIRY_DAYS("POINTS", "EXPIRY_DAYS", 0, 0, 3650),
 
-    // --- Epic 07: guide marketplace --------------------------------------------------
-    GUIDE_ENABLED("GUIDE", "GUIDE_ENABLED", false),
-    GUIDE_PLATFORM_FEE_PERCENT("GUIDE", "PLATFORM_FEE_PERCENT", 20.0d, 0d, 100d),
-    GUIDE_FEE_RULE_VERSION("GUIDE", "FEE_RULE_VERSION", "2026.08"),
-    GUIDE_RESPONSE_DEADLINE_HOURS("GUIDE", "RESPONSE_DEADLINE_HOURS", 48, 1, 720),
-    GUIDE_PAYOUT_HOLD_DAYS("GUIDE", "PAYOUT_HOLD_DAYS", 7, 0, 90),
-    GUIDE_MIN_REVIEWS_TO_SHOW_RATING("GUIDE", "MIN_REVIEWS_TO_SHOW_RATING", 3, 1, 100),
-    GUIDE_FREE_SERVICE_LIMIT("GUIDE", "FREE_SERVICE_LIMIT", 3, 1, 100),
-    GUIDE_PREMIUM_MONTHLY_PRICE_VND("GUIDE", "PREMIUM_MONTHLY_PRICE_VND", 299000, 0, 100000000),
-    GUIDE_PREMIUM_YEARLY_PRICE_VND("GUIDE", "PREMIUM_YEARLY_PRICE_VND", 2990000, 0, 1000000000);
+    /** Whether the yearly halving runs at all. Off means balances carry over untouched. */
+    POINTS_YEAR_END_RESET_ENABLED("POINTS", "YEAR_END_RESET_ENABLED", true),
+
+    /**
+     * Percentage of the balance a wallet keeps at the turn of the year. 50 halves it, which is
+     * the rule as decided; 100 is the same as switching the reset off.
+     */
+    POINTS_YEAR_END_RETAIN_PERCENT("POINTS", "YEAR_END_RETAIN_PERCENT", 50, 0, 100),
+
+    // --- Epic 11: marketplace partner quality --------------------------------------
+    /** Minutes a partner has to answer a booking request before it counts as outside the SLA. */
+    PARTNER_RESPONSE_SLA_MINUTES("MARKETPLACE", "PARTNER_RESPONSE_SLA_MINUTES", 720, 5, 10080),
+
+    // --- Epic 11: marketplace partner finance ---------------------------------------
+    /**
+     * Version tag frozen onto every booking together with the commission rate, so a statement can
+     * always say which rule set produced a charge even after the rules change.
+     */
+    MARKETPLACE_COMMISSION_RULE_VERSION("MARKETPLACE", "COMMISSION_RULE_VERSION", "2026.09"),
+    /** Days after a statement is issued during which a partner may still dispute one of its lines. */
+    MARKETPLACE_STATEMENT_DISPUTE_WINDOW_DAYS("MARKETPLACE", "STATEMENT_DISPUTE_WINDOW_DAYS", 14, 1, 90);
 
     /** Value shapes the configuration layer knows how to validate. */
     public enum ValueType {

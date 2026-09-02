@@ -10,11 +10,18 @@
         <result property="organizationType" column="organization_type"/>
         <result property="verificationStatus" column="verification_status"/>
         <result property="operationalStatus" column="operational_status"/>
+        <result property="verificationSubmittedAt" column="verification_submitted_at"/>
+        <result property="verificationReason" column="verification_reason"/>
+        <result property="verificationDecidedAt" column="verification_decided_at"/>
+        <result property="verificationDecidedBy" column="verification_decided_by"/>
         <result property="defaultCurrency" column="default_currency"/>
         <result property="timezone" column="timezone"/>
         <result property="contactEmail" column="contact_email"/>
         <result property="contactPhone" column="contact_phone"/>
         <result property="settings" column="settings"/>
+        <result property="commissionPercent" column="commission_percent"/>
+        <result property="billingEmail" column="billing_email"/>
+        <result property="billingDetails" column="billing_details"/>
         <result property="dataVersion" column="data_version"/>
         <result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
@@ -66,6 +73,54 @@
             updated_at = #{updatedAt}
         WHERE id = #{id} AND data_version = #{dataVersion}
     </update>
+
+    <!-- Verification workflow only: leaves the profile columns alone so a partner editing the
+         profile and an admin deciding verification do not overwrite each other's fields. -->
+    <update id="updateVerificationState">
+        UPDATE host_organizations
+        SET verification_status = #{verificationStatus},
+            verification_submitted_at = #{verificationSubmittedAt},
+            verification_reason = #{verificationReason},
+            verification_decided_at = #{verificationDecidedAt},
+            verification_decided_by = #{verificationDecidedBy},
+            data_version = data_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{id} AND data_version = #{dataVersion}
+    </update>
+
+    <!-- Billing/commission only: leaves the profile and verification columns alone so an operator
+         changing the commission cannot overwrite a profile the partner is editing at the same time. -->
+    <update id="updateBillingProfile">
+        UPDATE host_organizations
+        <set>
+            <if test="commissionPercent != null">commission_percent = #{commissionPercent},</if>
+            <if test="billingEmail != null or clearBillingEmail">billing_email = #{billingEmail},</if>
+            <if test="billingDetails != null">billing_details = #{billingDetails}::jsonb,</if>
+            data_version = data_version + 1,
+            updated_at = #{updatedAt}
+        </set>
+        WHERE id = #{id} AND data_version = #{dataVersion}
+    </update>
+
+    <select id="findVerificationQueue" resultType="com.ds.goroute.entity.VerificationQueueEntry">
+        SELECT o.id AS organizationId, o.display_name AS displayName, o.legal_name AS legalName,
+               o.organization_type AS organizationType, o.verification_submitted_at AS submittedAt,
+               (SELECT COUNT(*) FROM organization_verification_documents d WHERE d.organization_id = o.id) AS documentCount,
+               u.full_name AS ownerName, u.email AS ownerEmail
+        FROM host_organizations o
+        LEFT JOIN users u ON u.id = o.owner_user_id
+        WHERE o.verification_status = 'PENDING'
+        ORDER BY o.verification_submitted_at ASC NULLS LAST, o.id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countVerificationQueue" resultType="long">
+        SELECT COUNT(*) FROM host_organizations WHERE verification_status = 'PENDING'
+    </select>
+
+    <select id="findAllOrganizationIds" resultType="java.util.UUID">
+        SELECT id FROM host_organizations ORDER BY created_at, id
+    </select>
 
     <select id="findOrganizationById" resultMap="OrganizationMap">
         SELECT * FROM host_organizations WHERE id = #{id}

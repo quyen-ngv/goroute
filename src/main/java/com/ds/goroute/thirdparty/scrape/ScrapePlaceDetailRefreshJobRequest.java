@@ -19,4 +19,5 @@ public class ScrapePlaceDetailRefreshJobRequest {
     private Integer maxPlaces;
     private Boolean headless;
     private Boolean continueOnError;
+    private Boolean includeInactive;
 }

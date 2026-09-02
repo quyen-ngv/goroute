@@ -16,6 +16,9 @@ public class CityStory {
     private UUID id;
     private UUID locationImageId;
     private String imageUrl;
+    private String mediaType;
+    private String videoUrl;
+    private String thumbnailUrl;
     private String description;
     private UUID placeId;
     private Integer likeCount;

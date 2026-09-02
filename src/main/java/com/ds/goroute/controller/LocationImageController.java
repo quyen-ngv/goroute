@@ -28,18 +28,27 @@ public class LocationImageController extends BaseController {
     private final LocationImageService locationImageService;
     private final CityWeatherService cityWeatherService;
     
+    /**
+     * @param includeWeather opt in to the embedded weather block; off by default because a
+     *                       cold cache costs one upstream call per city in the list
+     */
     @GetMapping
-    public ResponseEntity<BaseResponse<List<LocationImageResponse>>> getAllLocationImages() {
-        List<LocationImageResponse> locationImages = locationImageService.getAllLocationImages();
+    public ResponseEntity<BaseResponse<List<LocationImageResponse>>> getAllLocationImages(
+            @RequestParam(defaultValue = "false") boolean includeWeather) {
+        List<LocationImageResponse> locationImages = locationImageService.getAllLocationImages(includeWeather);
         return ResponseEntity.ok(ofSucceeded(locationImages));
     }
-    
+
+    /** Weather rides along by default here; pass {@code includeWeather=false} to skip it. */
     @GetMapping("/{id}")
-    public ResponseEntity<BaseResponse<LocationImageResponse>> getLocationImage(@PathVariable UUID id) {
-        LocationImageResponse locationImage = locationImageService.getLocationImage(id);
+    public ResponseEntity<BaseResponse<LocationImageResponse>> getLocationImage(
+            @PathVariable UUID id,
+            @RequestParam(defaultValue = "true") boolean includeWeather) {
+        LocationImageResponse locationImage = locationImageService.getLocationImage(id, includeWeather);
         return ResponseEntity.ok(ofSucceeded(locationImage));
     }
 
+    /** Weather on its own, for callers that already hold the location image. */
     @GetMapping("/{id}/weather")
     public ResponseEntity<BaseResponse<CityWeatherResponse>> getCityWeather(@PathVariable UUID id) {
         return ResponseEntity.ok(ofSucceeded(cityWeatherService.getCurrentWeather(id)));
@@ -77,6 +86,14 @@ public class LocationImageController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(imageUrl));
     }
     
+    @PostMapping("/upload-video")
+    @PreAuthorize("@adminAuthorization.can(authentication,'location-images','create')")
+    public ResponseEntity<BaseResponse<String>> uploadLocationVideo(
+            @RequestParam("file") MultipartFile file) {
+        String videoUrl = locationImageService.uploadLocationVideo(file);
+        return ResponseEntity.ok(ofSucceeded(videoUrl));
+    }
+
     @GetMapping("/search")
     public ResponseEntity<BaseResponse<String>> searchImageByDestination(
             @RequestParam String destination) {

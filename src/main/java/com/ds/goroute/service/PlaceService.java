@@ -38,9 +38,17 @@ public interface PlaceService {
     /**
      * Search places by location and filters
      */
-    List<PlaceResponse> getAllPlaces(int page, int size);
+    List<PlaceResponse> getAllPlaces(String search, List<String> placeGroups, int page, int size);
 
-    AdminPlacePageResponse getAdminPlaces(String search, int page, int size);
+    /**
+     * List every place the detail-refresh worker may re-scrape, newest-stale first.
+     *
+     * <p>Unlike {@link #getAllPlaces} this is not a page of the catalogue: the worker needs
+     * the whole eligible set in one call, filtered by visibility rather than by recency.
+     */
+    Map<String, Object> getDetailRefreshCandidates(UUID placeId, boolean includeInactive, Integer maxPlaces);
+
+    AdminPlacePageResponse getAdminPlaces(String search, List<String> placeGroups, int page, int size);
 
     AdminPlaceResponse getAdminPlaceById(UUID id);
 

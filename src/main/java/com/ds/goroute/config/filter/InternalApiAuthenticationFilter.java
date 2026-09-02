@@ -31,6 +31,8 @@ public class InternalApiAuthenticationFilter extends OncePerRequestFilter {
     static final String INTERNAL_API_PREFIX = "/v1/api/internal/";
     static final String AI_TRIP_PREFIX = "/v1/api/internal/ai-trip-generations/";
     static final String INTERNAL_TOKEN_HEADER = "X-Internal-Token";
+    public static final String AI_TRIP_SETTING = "AI_TRIP_INTERNAL_TOKEN";
+    public static final String SCRAPE_CALLBACK_SETTING = "SCRAPE_CALLBACK_TOKEN";
 
     private final InternalApiProperties properties;
     private final ObjectMapper objectMapper;
@@ -47,16 +49,20 @@ public class InternalApiAuthenticationFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
         String requestPath = pathWithinApplication(request);
-        String expectedToken = requestPath.startsWith(AI_TRIP_PREFIX)
+        boolean aiTripRequest = requestPath.startsWith(AI_TRIP_PREFIX);
+        String expectedToken = aiTripRequest
                 ? properties.aiTripToken()
                 : properties.scrapeCallbackToken();
+        String settingName = aiTripRequest ? AI_TRIP_SETTING : SCRAPE_CALLBACK_SETTING;
 
         if (expectedToken == null || expectedToken.isBlank()) {
             if (missingConfigurationLogged.compareAndSet(false, true)) {
-                log.error("Internal API authentication is not configured; internal callbacks are disabled");
+                log.error("{} is not configured; every internal callback below {} is rejected with 503",
+                        settingName, requestPath.startsWith(AI_TRIP_PREFIX) ? AI_TRIP_PREFIX : INTERNAL_API_PREFIX);
             }
             writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
-                    ErrorConstant.INTERNAL_SERVER_ERROR, "Internal callback authentication is unavailable");
+                    ErrorConstant.INTERNAL_SERVER_ERROR,
+                    "Internal callback authentication is unavailable: " + settingName + " is not configured");
             return;
         }
 

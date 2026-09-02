@@ -1,5 +1,6 @@
 package com.ds.goroute.mapper;
 
+import com.ds.goroute.dto.response.PlaceDetailRefreshCandidateResponse;
 import com.ds.goroute.entity.Place;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -37,11 +38,18 @@ public interface PlaceMapper {
 
     List<Place> findPage(@Param("limit") int limit, @Param("offset") int offset);
 
-    List<Place> findAdminPage(@Param("search") String search,
+    List<Place> findFilteredPage(@Param("search") String search,
+                              @Param("placeGroups") List<String> placeGroups,
                               @Param("limit") int limit,
                               @Param("offset") int offset);
 
-    long countAdmin(@Param("search") String search);
+    List<PlaceDetailRefreshCandidateResponse> findDetailRefreshCandidates(
+            @Param("placeId") UUID placeId,
+            @Param("includeInactive") boolean includeInactive,
+            @Param("limit") int limit);
+
+    long countFiltered(@Param("search") String search,
+                    @Param("placeGroups") List<String> placeGroups);
 
     List<Place> findByIds(@Param("ids") List<UUID> ids);
 

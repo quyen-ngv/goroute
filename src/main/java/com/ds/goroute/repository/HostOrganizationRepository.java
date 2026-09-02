@@ -4,6 +4,7 @@ import com.ds.goroute.entity.HostOrganization;
 import com.ds.goroute.entity.OrganizationMember;
 import com.ds.goroute.entity.OrganizationMemberScope;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -12,6 +13,12 @@ import java.util.UUID;
 public interface HostOrganizationRepository {
     int insert(HostOrganization organization);
     int update(HostOrganization organization);
+    int updateVerificationState(HostOrganization organization);
+    int updateBillingProfile(UUID id, long dataVersion, BigDecimal commissionPercent, String billingEmail,
+                             boolean clearBillingEmail, String billingDetails, LocalDateTime updatedAt);
+    List<com.ds.goroute.entity.VerificationQueueEntry> findVerificationQueue(int limit, int offset);
+    long countVerificationQueue();
+    List<UUID> findAllOrganizationIds();
     Optional<HostOrganization> findById(UUID id);
     List<HostOrganization> findForUser(UUID userId);
     List<HostOrganization> findForAdmin(String query, String status, int limit, int offset);

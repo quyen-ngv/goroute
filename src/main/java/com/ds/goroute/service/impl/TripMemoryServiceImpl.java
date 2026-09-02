@@ -16,6 +16,7 @@ import com.ds.goroute.repository.MediaAssetRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.UserRepository;
+import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.FileUploadService;
 import com.ds.goroute.service.ImageStorageCleanupService;
@@ -39,6 +40,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TripMemoryServiceImpl implements TripMemoryService {
     private final MediaAssetRepository mediaAssetRepository;
+    private final TripAccessGuard tripAccessGuard;
     private final TripRepository tripRepository;
     private final TripMemberRepository tripMemberRepository;
     private final ActivityRepository activityRepository;
@@ -66,7 +68,7 @@ public class TripMemoryServiceImpl implements TripMemoryService {
     @Override
     @Transactional
     public TripMemoryResponse addTripMemory(UUID tripId, CreateTripMemoryRequest request, UUID userId) {
-        Trip trip = getTripAndEnsureMember(tripId, userId);
+        Trip trip = getTripAndEnsureEditor(tripId, userId);
         validateActivity(tripId, request.getActivityId());
 
         ensureMemoryCapacity(tripId, trip);
@@ -108,7 +110,7 @@ public class TripMemoryServiceImpl implements TripMemoryService {
             UUID activityId,
             MultipartFile file,
             UUID userId) {
-        Trip trip = getTripAndEnsureMember(tripId, userId);
+        Trip trip = getTripAndEnsureEditor(tripId, userId);
         validateActivity(tripId, activityId);
         if (!isProUser(userId)) {
             throw new BusinessException(ErrorConstant.PRO_VIDEO_UPLOAD_REQUIRED);
@@ -140,7 +142,7 @@ public class TripMemoryServiceImpl implements TripMemoryService {
             UUID memoryId,
             UpdateTripMemoryRequest request,
             UUID userId) {
-        getTripAndEnsureMember(tripId, userId);
+        getTripAndEnsureEditor(tripId, userId);
         MediaAsset asset = getMemoryOfTrip(tripId, memoryId);
 
         // Only the uploader edits the words on their own memory. Trip membership
@@ -170,7 +172,7 @@ public class TripMemoryServiceImpl implements TripMemoryService {
     @Override
     @Transactional
     public void deleteTripMemory(UUID tripId, UUID memoryId, UUID userId) {
-        getTripAndEnsureMember(tripId, userId);
+        getTripAndEnsureEditor(tripId, userId);
         MediaAsset asset = getMemoryOfTrip(tripId, memoryId);
 
         imageStorageCleanupService.deleteImagesForEntityRecord("MEDIA_ASSET", memoryId);
@@ -199,20 +201,14 @@ public class TripMemoryServiceImpl implements TripMemoryService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    /** Browsing the album: owner, or an accepted member of any role. */
     private Trip getTripAndEnsureMember(UUID tripId, UUID userId) {
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+        return tripAccessGuard.requireAccess(tripId, userId);
+    }
 
-        if (trip.getOwnerId().equals(userId)) {
-            return trip;
-        }
-
-        TripMember member = tripMemberRepository.findByTripIdAndUserId(tripId, userId).orElse(null);
-        if (member == null || member.getStatus() != MemberStatus.ACCEPTED) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You are not a trip member");
-        }
-
-        return trip;
+    /** Adding to or editing the album: owner or an accepted EDITOR. */
+    private Trip getTripAndEnsureEditor(UUID tripId, UUID userId) {
+        return tripAccessGuard.requireEditAccess(tripId, userId);
     }
 
     private void validateActivity(UUID tripId, UUID activityId) {

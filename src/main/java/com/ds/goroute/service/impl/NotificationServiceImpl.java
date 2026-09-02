@@ -245,6 +245,72 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
+    public com.ds.goroute.dto.response.AdminPushNotificationResponse sendAdminPushNotificationToUsers(
+            List<UUID> userIds,
+            String title,
+            String body,
+            String deepLink,
+            Map<String, Object> data,
+            String imageUrl,
+            String priority) {
+
+        List<String> notFound = new java.util.ArrayList<>();
+        List<String> noDevice = new java.util.ArrayList<>();
+        List<String> failed = new java.util.ArrayList<>();
+        int successCount = 0;
+
+        Map<String, Object> notificationData = buildAdminNotificationData(title, body, deepLink, data, imageUrl);
+
+        for (UUID userId : userIds) {
+            String label = userId.toString();
+            try {
+                var userOpt = userRepository.findById(userId);
+                if (userOpt.isEmpty()) {
+                    notFound.add(label);
+                    continue;
+                }
+                String email = userOpt.get().getEmail();
+                if (email != null && !email.isBlank()) label = email;
+
+                boolean hasDevice = !userDeviceMapper.findActiveByUserId(userId).isEmpty();
+
+                boolean pushed = createNotificationInternal(
+                        userId,
+                        null,
+                        NotificationType.ADMIN_ANNOUNCEMENT,
+                        title,
+                        body,
+                        notificationData,
+                        null
+                );
+
+                if (!hasDevice) noDevice.add(label);
+                else if (pushed) successCount++;
+                else failed.add(label);
+            } catch (Exception e) {
+                log.error("Failed to send admin announcement to {}: {}", label, e.getMessage(), e);
+                failed.add(label);
+            }
+        }
+
+        String message = String.format(
+                "Delivered push to %d/%d recipients; %d have no device, %d failed",
+                successCount, userIds.size(), noDevice.size(), failed.size());
+
+        return com.ds.goroute.dto.response.AdminPushNotificationResponse.builder()
+                .totalRequested(userIds.size())
+                .successCount(successCount)
+                .notFoundCount(notFound.size())
+                .notFoundEmails(notFound)
+                .noDeviceCount(noDevice.size())
+                .noDeviceEmails(noDevice)
+                .failedCount(failed.size())
+                .failedEmails(failed)
+                .message(message)
+                .build();
+    }
+
+    @Override
     public com.ds.goroute.dto.response.AdminPushNotificationResponse sendAdminPushNotificationToUser(
             UUID userId,
             String email,

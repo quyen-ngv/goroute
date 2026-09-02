@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.PartnerQualityMapper">
+    <resultMap id="SnapshotMap" type="com.ds.goroute.entity.PartnerQualitySnapshot">
+        <id property="id" column="id"/>
+        <result property="organizationId" column="organization_id"/>
+        <result property="windowDays" column="window_days"/>
+        <result property="computedAt" column="computed_at"/>
+        <result property="bookingsTotal" column="bookings_total"/>
+        <result property="bookingsConfirmed" column="bookings_confirmed"/>
+        <result property="bookingsCancelledByHost" column="bookings_cancelled_by_host"/>
+        <result property="bookingsNoShow" column="bookings_no_show"/>
+        <result property="bookingsExpired" column="bookings_expired"/>
+        <result property="avgResponseMinutes" column="avg_response_minutes"/>
+        <result property="responseWithinSlaRate" column="response_within_sla_rate"/>
+        <result property="hostCancellationRate" column="host_cancellation_rate"/>
+        <result property="noShowRate" column="no_show_rate"/>
+        <result property="expiryRate" column="expiry_rate"/>
+        <result property="reviewCount" column="review_count"/>
+        <result property="reviewAverage" column="review_average"/>
+        <result property="badge" column="badge"/>
+    </resultMap>
+
+    <resultMap id="BookingAggregateMap" type="com.ds.goroute.entity.PartnerBookingAggregate">
+        <result property="total" column="total"/>
+        <result property="confirmed" column="confirmed"/>
+        <result property="cancelledByHost" column="cancelled_by_host"/>
+        <result property="noShow" column="no_show"/>
+        <result property="expired" column="expired"/>
+        <result property="responded" column="responded"/>
+        <result property="respondedWithinSla" column="responded_within_sla"/>
+        <result property="responseMinutesSum" column="response_minutes_sum"/>
+    </resultMap>
+
+    <!--
+        Partner response time = first marketplace_entity_versions row for the booking whose snapshot
+        already carries a partner-decided status (CONFIRMED / CANCELLED_BY_HOST, or a later state that
+        implies confirmation) minus the booking's created_at. History rows are written on every status
+        change (HotelMarketplaceServiceImpl / ActivityCommerceServiceImpl record "HOTEL_BOOKING" /
+        "ACTIVITY_ORDER" versions with the entity snapshot), so the JSON status field is the transition
+        marker. Bookings with no such version but a partner-decided current status fall back to
+        updated_at - created_at. System outcomes (EXPIRED, FAILED) and guest/platform cancellations are
+        not partner responses and are left out of the response statistics.
+    -->
+    <sql id="partnerAnsweredStatuses">('CONFIRMED','CHECKED_IN','COMPLETED','NO_SHOW','CANCELLED_BY_HOST')</sql>
+
+    <select id="aggregateHotelBookings" resultMap="BookingAggregateMap">
+        SELECT COUNT(*) AS total,
+               COUNT(*) FILTER (WHERE b.booking_status IN ('CONFIRMED','CHECKED_IN','COMPLETED')) AS confirmed,
+               COUNT(*) FILTER (WHERE b.booking_status = 'CANCELLED_BY_HOST') AS cancelled_by_host,
+               COUNT(*) FILTER (WHERE b.booking_status = 'NO_SHOW') AS no_show,
+               COUNT(*) FILTER (WHERE b.booking_status = 'EXPIRED') AS expired,
+               COUNT(r.response_minutes) AS responded,
+               COUNT(*) FILTER (WHERE r.response_minutes IS NOT NULL AND r.response_minutes &lt;= #{slaMinutes}) AS responded_within_sla,
+               COALESCE(SUM(r.response_minutes), 0) AS response_minutes_sum
+        FROM hotel_bookings b
+        LEFT JOIN LATERAL (
+            SELECT EXTRACT(EPOCH FROM (COALESCE(
+                (SELECT MIN(v.created_at) FROM marketplace_entity_versions v
+                 WHERE v.entity_type = 'HOTEL_BOOKING' AND v.entity_id = b.id
+                   AND v.snapshot ->> 'bookingStatus' IN <include refid="partnerAnsweredStatuses"/>),
+                CASE WHEN b.booking_status IN <include refid="partnerAnsweredStatuses"/> THEN b.updated_at END
+            ) - b.created_at)) / 60 AS response_minutes
+        ) r ON TRUE
+        WHERE b.organization_id = #{organizationId} AND b.created_at &gt;= #{since}
+    </select>
+
+    <select id="aggregateActivityOrders" resultMap="BookingAggregateMap">
+        SELECT COUNT(*) AS total,
+               COUNT(*) FILTER (WHERE o.order_status IN ('CONFIRMED','CHECKED_IN','COMPLETED')) AS confirmed,
+               COUNT(*) FILTER (WHERE o.order_status = 'CANCELLED_BY_HOST') AS cancelled_by_host,
+               COUNT(*) FILTER (WHERE o.order_status = 'NO_SHOW') AS no_show,
+               COUNT(*) FILTER (WHERE o.order_status = 'EXPIRED') AS expired,
+               COUNT(r.response_minutes) AS responded,
+               COUNT(*) FILTER (WHERE r.response_minutes IS NOT NULL AND r.response_minutes &lt;= #{slaMinutes}) AS responded_within_sla,
+               COALESCE(SUM(r.response_minutes), 0) AS response_minutes_sum
+        FROM activity_orders o
+        LEFT JOIN LATERAL (
+            SELECT EXTRACT(EPOCH FROM (COALESCE(
+                (SELECT MIN(v.created_at) FROM marketplace_entity_versions v
+                 WHERE v.entity_type = 'ACTIVITY_ORDER' AND v.entity_id = o.id
+                   AND v.snapshot ->> 'orderStatus' IN <include refid="partnerAnsweredStatuses"/>),
+                CASE WHEN o.order_status IN <include refid="partnerAnsweredStatuses"/> THEN o.updated_at END
+            ) - o.created_at)) / 60 AS response_minutes
+        ) r ON TRUE
+        WHERE o.organization_id = #{organizationId} AND o.created_at &gt;= #{since}
+    </select>
+
+    <!-- Reviews reach an organization through the hotel's place or the activity product it hosts. -->
+    <select id="aggregateReviews" resultType="com.ds.goroute.entity.PartnerReviewAggregate">
+        SELECT COUNT(*) AS reviewCount, AVG(r.overall_rating) AS reviewAverage
+        FROM user_reviews r
+        LEFT JOIN hotel_profiles h ON h.place_id = r.place_id
+        LEFT JOIN activity_bookings a ON a.id = r.activity_booking_id
+        WHERE r.created_at &gt;= #{since}
+          AND (h.organization_id = #{organizationId} OR a.host_organization_id = #{organizationId})
+    </select>
+
+    <insert id="upsertSnapshot">
+        INSERT INTO partner_quality_snapshots (
+            id, organization_id, window_days, computed_at, bookings_total, bookings_confirmed,
+            bookings_cancelled_by_host, bookings_no_show, bookings_expired, avg_response_minutes,
+            response_within_sla_rate, host_cancellation_rate, no_show_rate, expiry_rate,
+            review_count, review_average, badge
+        ) VALUES (
+            #{id}, #{organizationId}, #{windowDays}, #{computedAt}, #{bookingsTotal}, #{bookingsConfirmed},
+            #{bookingsCancelledByHost}, #{bookingsNoShow}, #{bookingsExpired}, #{avgResponseMinutes},
+            #{responseWithinSlaRate}, #{hostCancellationRate}, #{noShowRate}, #{expiryRate},
+            #{reviewCount}, #{reviewAverage}, #{badge}
+        )
+        ON CONFLICT (organization_id, window_days) DO UPDATE SET
+            computed_at = EXCLUDED.computed_at,
+            bookings_total = EXCLUDED.bookings_total,
+            bookings_confirmed = EXCLUDED.bookings_confirmed,
+            bookings_cancelled_by_host = EXCLUDED.bookings_cancelled_by_host,
+            bookings_no_show = EXCLUDED.bookings_no_show,
+            bookings_expired = EXCLUDED.bookings_expired,
+            avg_response_minutes = EXCLUDED.avg_response_minutes,
+            response_within_sla_rate = EXCLUDED.response_within_sla_rate,
+            host_cancellation_rate = EXCLUDED.host_cancellation_rate,
+            no_show_rate = EXCLUDED.no_show_rate,
+            expiry_rate = EXCLUDED.expiry_rate,
+            review_count = EXCLUDED.review_count,
+            review_average = EXCLUDED.review_average,
+            badge = EXCLUDED.badge
+    </insert>
+
+    <select id="findSnapshot" resultMap="SnapshotMap">
+        SELECT * FROM partner_quality_snapshots
+        WHERE organization_id = #{organizationId} AND window_days = #{windowDays}
+    </select>
+</mapper>

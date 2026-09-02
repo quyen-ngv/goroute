@@ -22,6 +22,7 @@ public interface AiTripGenerationMapper {
                        @Param("tripId") UUID tripId);
     int markTerminalAndRelease(@Param("id") UUID id, @Param("status") String status,
                                @Param("error") String error);
+    List<UUID> findStaleActiveIds(@Param("minutes") int minutes);
     void insertEvent(AiTripGenerationEvent event);
     List<AiTripGenerationEvent> findEventsAfter(@Param("jobId") UUID jobId,
                                                 @Param("afterId") long afterId);

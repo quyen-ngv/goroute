@@ -226,7 +226,7 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
-    <sql id="AdminPlaceSearchWhere">
+    <sql id="PlaceFilterWhere">
         <where>
             <if test="search != null and search != ''">
                 AND (
@@ -236,19 +236,54 @@
                     OR CAST(id AS TEXT) ILIKE CONCAT('%', #{search}, '%')
                 )
             </if>
+            <if test="placeGroups != null and placeGroups.size() > 0">
+                AND place_group IN
+                <foreach item="placeGroup" collection="placeGroups" open="(" separator="," close=")">
+                    #{placeGroup}
+                </foreach>
+            </if>
         </where>
     </sql>
 
-    <select id="findAdminPage" resultMap="PlaceResultMap">
+    <select id="findFilteredPage" resultMap="PlaceResultMap">
         SELECT * FROM places
-        <include refid="AdminPlaceSearchWhere"/>
+        <include refid="PlaceFilterWhere"/>
         ORDER BY created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
-    <select id="countAdmin" resultType="long">
+    <select id="countFiltered" resultType="long">
         SELECT COUNT(*) FROM places
-        <include refid="AdminPlaceSearchWhere"/>
+        <include refid="PlaceFilterWhere"/>
+    </select>
+
+    <resultMap id="PlaceDetailRefreshCandidateResultMap"
+               type="com.ds.goroute.dto.response.PlaceDetailRefreshCandidateResponse">
+        <id property="id" column="id"/>
+        <result property="placeId" column="place_id"/>
+        <result property="title" column="title"/>
+        <result property="googleMapsLink" column="google_maps_link"/>
+        <result property="placeGroup" column="place_group"/>
+        <result property="status" column="status"/>
+        <result property="visibilityStatus" column="visibility_status"/>
+        <result property="lastScrapedAt" column="last_scraped_at"/>
+    </resultMap>
+
+    <select id="findDetailRefreshCandidates" resultMap="PlaceDetailRefreshCandidateResultMap">
+        SELECT id, place_id, title, google_maps_link, place_group, status, visibility_status, last_scraped_at
+        FROM places
+        WHERE google_maps_link IS NOT NULL
+          AND BTRIM(google_maps_link) != ''
+        <if test="placeId != null">
+            AND id = #{placeId}
+        </if>
+        <!-- An explicitly chosen place is refreshed whatever its visibility; the filter
+             only decides what a whole-catalogue sweep picks up. -->
+        <if test="placeId == null and !includeInactive">
+            AND visibility_status = 'ACTIVE'
+        </if>
+        ORDER BY last_scraped_at ASC NULLS FIRST, created_at ASC, id ASC
+        LIMIT #{limit}
     </select>
 
     <select id="findByIds" resultMap="PlaceResultMap">

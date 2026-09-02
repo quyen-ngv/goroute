@@ -70,6 +70,8 @@ public class AiTripWorkerDispatcher {
             headers.set(INTERNAL_TOKEN_HEADER, internalToken);
 
             String url = stripTrailingSlash(workerProperties.getWorker().getBaseUrl()) + "/v1/ai-trip/jobs";
+            log.info("Dispatching AI trip job {} to worker at {} (callbackBaseUrl={})", job.getId(), url,
+                    workerProperties.getInternalBaseUrl());
             ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
                     url,
                     HttpMethod.POST,

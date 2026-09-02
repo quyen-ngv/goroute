@@ -22,7 +22,8 @@ import java.util.List;
         FileUploadProperties.class,
         ImgpressProperties.class,
         ImageModerationProperties.class,
-        OpenAiImageModerationProperties.class
+        OpenAiImageModerationProperties.class,
+        PlaceImportWatchdogProperties.class
 })
 public class WebMvcConfig implements WebMvcConfigurer {
 

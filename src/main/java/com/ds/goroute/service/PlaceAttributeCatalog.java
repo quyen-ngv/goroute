@@ -9,6 +9,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -18,12 +21,21 @@ import java.util.Locale;
 public final class PlaceAttributeCatalog {
 
     private static final List<PlaceAttributeDefinition> DEFINITIONS = buildDefinitions();
+    private static final String VERSION = buildVersion();
 
     private PlaceAttributeCatalog() {
     }
 
     public static List<PlaceAttributeDefinition> definitions() {
         return DEFINITIONS;
+    }
+
+    /**
+     * Deterministic fingerprint of the catalog, stable across restarts so the schema
+     * endpoint can serve it as an ETag and let clients revalidate instead of refetching.
+     */
+    public static String version() {
+        return VERSION;
     }
 
     public static ObjectNode defaultAttributes() {
@@ -310,6 +322,26 @@ public final class PlaceAttributeCatalog {
                         key, humanize(key), group, group.getLabel(), type, type.getAllowedValues(), type.getRankByValue(), type.isMultiple()));
             }
         });
+    }
+
+    private static String buildVersion() {
+        StringBuilder source = new StringBuilder();
+        for (PlaceAttributeDefinition definition : DEFINITIONS) {
+            source.append(definition.key()).append('|')
+                    .append(definition.group().name()).append('|')
+                    .append(definition.type().name()).append(';');
+        }
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(source.toString().getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for (int index = 0; index < 8; index++) {
+                hex.append(String.format("%02x", digest[index]));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
     }
 
     private static String humanize(String key) {

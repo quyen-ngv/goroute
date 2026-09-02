@@ -19,4 +19,11 @@ public class CityStoryGroupResponse {
     private String avatarUrl;
     private boolean hasUnviewedStories;
     private List<CityStoryItemResponse> stories;
+    /**
+     * Live weather for the city, so the stories strip can label a card without a
+     * second round-trip and the story viewer opens on data it already holds.
+     *
+     * <p>{@code null} when the location has no coordinates or the provider is down.
+     */
+    private CityWeatherResponse weather;
 }

@@ -364,11 +364,15 @@ class GoRouteClient:
         self.review_template = resolve_placeholders(
             env.get("PLACE_REVIEWS_ENDPOINT", "${API_BASE_URL}/places/{id}/reviews"), env
         )
+        self.attribute_schema_endpoint = resolve_placeholders(
+            env.get("ATTRIBUTE_SCHEMA_ENDPOINT", "${API_BASE_URL}/admin/places/attribute-schema"), env
+        )
         self.cache_path = root / "token_cache.json"
         self.access_token: str | None = None
         self.refresh_token: str | None = None
         self.expires_at: int | None = None
         self.session = requests.Session()
+        self._attribute_schema: list[dict[str, Any]] | None = None
         self._load_cache()
 
     def _load_cache(self) -> None:
@@ -463,6 +467,18 @@ class GoRouteClient:
                 continue
             return response
         return response
+
+    def get_attribute_schema(self) -> list[dict[str, Any]]:
+        """The catalog is static, so fetch it once per run instead of per place."""
+        if self._attribute_schema is None:
+            response = self._request("GET", self.attribute_schema_endpoint, timeout=30)
+            if not 200 <= response.status_code < 300:
+                raise RunnerError(f"GET attribute schema failed: {response_error(response)}")
+            data = envelope(response, operation="GET attribute schema").get("data")
+            if not isinstance(data, list):
+                raise RunnerError("GET attribute schema: data is not an array")
+            self._attribute_schema = [item for item in data if isinstance(item, dict)]
+        return self._attribute_schema
 
     def get_place(self, place_id: str) -> dict[str, Any]:
         url = self.update_template.replace("{id}", place_id)
@@ -1339,7 +1355,7 @@ def main() -> int:
                 raise RunnerError("CSV/API title mismatch")
             if not addresses_match(row.get("address"), current.get("address")):
                 raise RunnerError("CSV/API address mismatch")
-            schema = current.get("attributeSchema") or []
+            schema = client.get_attribute_schema()
             attributes = apply_attribute_updates(current.get("attributes"), schema, item)
             raw_reviews = client.get_place_reviews(place_id, max_pages=args.review_max_pages)
             review_context = build_review_context(raw_reviews)

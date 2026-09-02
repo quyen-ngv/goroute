@@ -27,6 +27,7 @@ import java.util.List;
 public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
 
     private static final RequestMatcher API_KEY_ENDPOINTS = new OrRequestMatcher(
+            new AntPathRequestMatcher("/v1/api/places/detail-refresh-candidates", HttpMethod.GET.name()),
             new AntPathRequestMatcher("/v1/api/places/import", HttpMethod.POST.name()),
             new AntPathRequestMatcher("/v1/api/places/import/batch", HttpMethod.POST.name()),
             new AntPathRequestMatcher("/v1/api/places/*", HttpMethod.PUT.name()),

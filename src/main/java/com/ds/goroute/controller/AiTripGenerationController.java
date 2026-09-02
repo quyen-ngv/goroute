@@ -31,9 +31,11 @@ public class AiTripGenerationController extends BaseController {
                                       @RequestHeader(value="Idempotency-Key",required=false) String key,
                                       @RequestHeader(value="Accept-Language",required=false) String locale) {
         SseEmitter emitter = new SseEmitter(600_000L); // 10 min timeout
+        log.info("AI trip stream requested: user={} city={} idempotencyKey={}", userId, request.getCityName(), key);
         try {
             AiTripGenerationJob job=service.create(request,userId,key,locale);
             SseEmitter actualEmitter=service.subscribe(job.getId(),userId,0);
+            log.info("AI trip stream open: job={} status={} user={}", job.getId(), job.getStatus(), userId);
             if ("QUEUED".equals(job.getStatus())) dispatcher.dispatch(job);
             return actualEmitter;
         } catch (Exception exception) {

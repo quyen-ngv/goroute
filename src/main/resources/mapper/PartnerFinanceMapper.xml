@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.PartnerFinanceMapper">
+
+    <resultMap id="StatementMap" type="com.ds.goroute.entity.PartnerStatement">
+        <id property="id" column="id"/>
+        <result property="organizationId" column="organization_id"/>
+        <result property="organizationName" column="organization_name"/>
+        <result property="periodStart" column="period_start"/>
+        <result property="periodEnd" column="period_end"/>
+        <result property="currency" column="currency"/>
+        <result property="grossAmount" column="gross_amount"/>
+        <result property="commissionAmount" column="commission_amount"/>
+        <result property="netAmount" column="net_amount"/>
+        <result property="bookingCount" column="booking_count"/>
+        <result property="status" column="status"/>
+        <result property="issuedAt" column="issued_at"/>
+        <result property="settledAt" column="settled_at"/>
+        <result property="note" column="note"/>
+        <result property="dataVersion" column="data_version"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <resultMap id="StatementLineMap" type="com.ds.goroute.entity.PartnerStatementLine">
+        <id property="id" column="id"/>
+        <result property="statementId" column="statement_id"/>
+        <result property="bookingType" column="booking_type"/>
+        <result property="hotelBookingId" column="hotel_booking_id"/>
+        <result property="activityOrderId" column="activity_order_id"/>
+        <result property="bookingCode" column="booking_code"/>
+        <result property="guestName" column="guest_name"/>
+        <result property="serviceDate" column="service_date"/>
+        <result property="grossAmount" column="gross_amount"/>
+        <result property="commissionPercent" column="commission_percent"/>
+        <result property="commissionAmount" column="commission_amount"/>
+        <result property="netAmount" column="net_amount"/>
+        <result property="lineReason" column="line_reason"/>
+        <result property="disputeStatus" column="dispute_status"/>
+        <result property="disputeReason" column="dispute_reason"/>
+        <result property="disputeOpenedAt" column="dispute_opened_at"/>
+        <result property="disputeResolvedAt" column="dispute_resolved_at"/>
+        <result property="disputeResolvedBy" column="dispute_resolved_by"/>
+        <result property="disputeResolutionNote" column="dispute_resolution_note"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <resultMap id="BillableRowMap" type="com.ds.goroute.entity.BillableBookingRow">
+        <id property="bookingId" column="booking_id"/>
+        <result property="bookingType" column="booking_type"/>
+        <result property="bookingCode" column="booking_code"/>
+        <result property="guestName" column="guest_name"/>
+        <result property="serviceDate" column="service_date"/>
+        <result property="currency" column="currency"/>
+        <result property="totalAmount" column="total_amount"/>
+        <result property="bookingStatus" column="booking_status"/>
+        <result property="guestCharged" column="guest_charged"/>
+        <result property="cancellationReason" column="cancellation_reason"/>
+        <result property="commissionPercent" column="commission_percent"/>
+        <result property="commissionRuleVersion" column="commission_rule_version"/>
+    </resultMap>
+
+    <!-- ==== Commission stamping ==================================================== -->
+
+    <select id="findHotelBookingOrganization" resultType="java.util.UUID">
+        SELECT organization_id FROM hotel_bookings WHERE id = #{id}
+    </select>
+
+    <select id="findActivityOrderOrganization" resultType="java.util.UUID">
+        SELECT organization_id FROM activity_orders WHERE id = #{id}
+    </select>
+
+    <!-- Idempotent by construction: the guard makes a second call a no-op, so the booking service
+         may call this on every create and the statement generator may call it again defensively. -->
+    <update id="stampHotelBookingCommission">
+        UPDATE hotel_bookings
+        SET commission_percent = #{commissionPercent},
+            commission_amount = ROUND(total_amount * #{commissionPercent} / 100, 2),
+            commission_rule_version = #{ruleVersion}
+        WHERE id = #{id} AND commission_percent IS NULL
+    </update>
+
+    <update id="stampActivityOrderCommission">
+        UPDATE activity_orders
+        SET commission_percent = #{commissionPercent},
+            commission_amount = ROUND(total_amount * #{commissionPercent} / 100, 2),
+            commission_rule_version = #{ruleVersion}
+        WHERE id = #{id} AND commission_percent IS NULL
+    </update>
+
+    <!-- ==== Billable candidates ==================================================== -->
+
+    <!-- Every finished stay whose check-out falls in the period; the billable subset is decided in
+         Java (PartnerStatementServiceImpl.billableLine) so one rule reads in one place. -->
+    <select id="findHotelBillableCandidates" resultMap="BillableRowMap">
+        SELECT b.id AS booking_id, 'HOTEL' AS booking_type, b.booking_code, b.check_out_date AS service_date,
+               b.currency, b.total_amount, b.booking_status, b.guest_charged, b.cancellation_reason,
+               b.commission_percent, b.commission_rule_version,
+               COALESCE(b.guest_lead ->> 'fullName', b.guest_lead ->> 'name', u.full_name) AS guest_name
+        FROM hotel_bookings b
+        LEFT JOIN users u ON u.id = b.user_id
+        WHERE b.organization_id = #{organizationId}
+          AND b.check_out_date &gt;= #{periodStart}
+          AND b.check_out_date &lt;= #{periodEnd}
+          AND b.booking_status IN ('COMPLETED','NO_SHOW','CANCELLED_BY_GUEST','CANCELLED_BY_HOST','CANCELLED_BY_PLATFORM')
+        ORDER BY b.check_out_date, b.booking_code
+    </select>
+
+    <!-- Activity orders keep no cancellation_reason column; the penalty sentence lives on the audit
+         event written by the cancel use case, so it is pulled back the same way here. -->
+    <select id="findActivityBillableCandidates" resultMap="BillableRowMap">
+        SELECT o.id AS booking_id, 'ACTIVITY' AS booking_type, o.order_code AS booking_code,
+               s.starts_at::date AS service_date, o.currency, o.total_amount,
+               o.order_status AS booking_status, o.guest_charged,
+               o.commission_percent, o.commission_rule_version,
+               COALESCE(o.contact_info ->> 'fullName', o.contact_info ->> 'name', u.full_name) AS guest_name,
+               (SELECT e.reason FROM marketplace_audit_events e
+                 WHERE e.entity_type = 'ACTIVITY_ORDER' AND e.entity_id = o.id AND e.reason IS NOT NULL
+                 ORDER BY e.created_at DESC LIMIT 1) AS cancellation_reason
+        FROM activity_orders o
+        JOIN activity_slots s ON s.id = o.slot_id
+        LEFT JOIN users u ON u.id = o.user_id
+        WHERE o.organization_id = #{organizationId}
+          AND s.starts_at::date &gt;= #{periodStart}
+          AND s.starts_at::date &lt;= #{periodEnd}
+          AND o.order_status IN ('COMPLETED','NO_SHOW','CANCELLED_BY_GUEST','CANCELLED_BY_HOST','CANCELLED_BY_PLATFORM')
+        ORDER BY s.starts_at, o.order_code
+    </select>
+
+    <!-- ==== Statements ============================================================= -->
+
+    <insert id="insertStatement">
+        INSERT INTO partner_statements (
+            id, organization_id, period_start, period_end, currency, gross_amount, commission_amount,
+            net_amount, booking_count, status, issued_at, settled_at, note, data_version, created_at, updated_at
+        ) VALUES (
+            #{id}, #{organizationId}, #{periodStart}, #{periodEnd}, #{currency}, #{grossAmount}, #{commissionAmount},
+            #{netAmount}, #{bookingCount}, #{status}, #{issuedAt}, #{settledAt}, #{note}, #{dataVersion},
+            #{createdAt}, #{updatedAt}
+        )
+        ON CONFLICT (organization_id, period_start, period_end) DO NOTHING
+    </insert>
+
+    <update id="updateStatementTotals">
+        UPDATE partner_statements
+        SET gross_amount = #{grossAmount}, commission_amount = #{commissionAmount}, net_amount = #{netAmount},
+            booking_count = #{bookingCount}, currency = #{currency},
+            data_version = data_version + 1, updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateStatementStatus">
+        UPDATE partner_statements
+        <set>
+            status = #{status},
+            <if test="issuedAt != null">issued_at = #{issuedAt},</if>
+            <if test="settledAt != null">settled_at = #{settledAt},</if>
+            <if test="note != null">note = #{note},</if>
+            data_version = data_version + 1,
+            updated_at = #{updatedAt}
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <sql id="StatementSelect">
+        SELECT s.*, o.display_name AS organization_name
+        FROM partner_statements s
+        JOIN host_organizations o ON o.id = s.organization_id
+    </sql>
+
+    <select id="findStatementById" resultMap="StatementMap">
+        <include refid="StatementSelect"/> WHERE s.id = #{id}
+    </select>
+
+    <select id="findStatementByPeriod" resultMap="StatementMap">
+        <include refid="StatementSelect"/>
+        WHERE s.organization_id = #{organizationId} AND s.period_start = #{periodStart} AND s.period_end = #{periodEnd}
+    </select>
+
+    <select id="findLatestIssuedStatement" resultMap="StatementMap">
+        <include refid="StatementSelect"/>
+        WHERE s.organization_id = #{organizationId} AND s.status &lt;&gt; 'OPEN'
+        ORDER BY s.period_start DESC LIMIT 1
+    </select>
+
+    <select id="findStatements" resultMap="StatementMap">
+        <include refid="StatementSelect"/>
+        WHERE s.organization_id = #{organizationId}
+        ORDER BY s.period_start DESC, s.id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countStatements" resultType="long">
+        SELECT COUNT(*) FROM partner_statements WHERE organization_id = #{organizationId}
+    </select>
+
+    <!-- ==== Lines and disputes ===================================================== -->
+
+    <insert id="insertLine">
+        INSERT INTO partner_statement_lines (
+            id, statement_id, booking_type, hotel_booking_id, activity_order_id, booking_code, guest_name,
+            service_date, gross_amount, commission_percent, commission_amount, net_amount, line_reason,
+            dispute_status, created_at
+        ) VALUES (
+            #{id}, #{statementId}, #{bookingType}, #{hotelBookingId}, #{activityOrderId}, #{bookingCode}, #{guestName},
+            #{serviceDate}, #{grossAmount}, #{commissionPercent}, #{commissionAmount}, #{netAmount}, #{lineReason},
+            #{disputeStatus}, #{createdAt}
+        )
+    </insert>
+
+    <select id="findLines" resultMap="StatementLineMap">
+        SELECT * FROM partner_statement_lines
+        WHERE statement_id = #{statementId}
+        ORDER BY service_date, booking_code, id
+    </select>
+
+    <select id="findLine" resultMap="StatementLineMap">
+        SELECT * FROM partner_statement_lines WHERE id = #{id}
+    </select>
+
+    <delete id="deleteUndisputedLines">
+        DELETE FROM partner_statement_lines WHERE statement_id = #{statementId} AND dispute_status = 'NONE'
+    </delete>
+
+    <update id="openDispute">
+        UPDATE partner_statement_lines
+        SET dispute_status = 'OPEN', dispute_reason = #{reason}, dispute_opened_at = #{openedAt}
+        WHERE id = #{id} AND dispute_status = 'NONE'
+    </update>
+
+    <!-- Accepting a dispute zeroes the commission on the line; the statement totals are recomputed
+         from the lines afterwards, never patched by hand. -->
+    <update id="resolveDispute">
+        UPDATE partner_statement_lines
+        SET dispute_status = #{status}, dispute_resolution_note = #{note},
+            dispute_resolved_by = #{resolvedBy}, dispute_resolved_at = #{resolvedAt}
+            <if test="zeroCommission">, commission_amount = 0, net_amount = gross_amount</if>
+        WHERE id = #{id} AND dispute_status = 'OPEN'
+    </update>
+
+    <select id="countOpenDisputes" resultType="long">
+        SELECT COUNT(*) FROM partner_statement_lines l
+        JOIN partner_statements s ON s.id = l.statement_id
+        WHERE s.organization_id = #{organizationId} AND l.dispute_status = 'OPEN'
+    </select>
+</mapper>

@@ -10,7 +10,9 @@ import com.ds.goroute.repository.*;
 import com.ds.goroute.type.*;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ds.goroute.repository.AppConfigRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -23,6 +25,7 @@ import java.util.*;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AiTripGenerationService {
     private final AiTripGenerationMapper mapper;
     private final AiTripQuotaService quotaService;
@@ -31,6 +34,7 @@ public class AiTripGenerationService {
     private final ActivityRepository activityRepository;
     private final ObjectMapper objectMapper;
     private final AiTripSseService sseService;
+    private final AppConfigRepository appConfigRepository;
 
     @Transactional
     public AiTripGenerationJob create(AiTripGenerateRequest request, UUID userId, String idempotencyKey, String locale) {
@@ -38,8 +42,11 @@ public class AiTripGenerationService {
         String key = idempotencyKey == null || idempotencyKey.isBlank() ? UUID.randomUUID().toString() : idempotencyKey.trim();
         String payload = json(request);
         String hash = sha256(payload);
+        log.info("AI trip create: user={} city={} destinations={} pace={} locale={}", userId, request.getCityName(),
+                request.getDestinations() == null ? 0 : request.getDestinations().size(), request.getPace(), locale);
         AiTripGenerationJob existing = mapper.findByUserAndKey(userId, key);
         if (existing != null) {
+            log.info("AI trip create: idempotent hit, returning existing job {} (status={})", existing.getId(), existing.getStatus());
             if (!existing.getRequestHash().equals(hash)) throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Idempotency key was already used for another request");
             return existing;
         }
@@ -51,6 +58,7 @@ public class AiTripGenerationService {
         mapper.insertJob(job);
         AiTripGenerationEvent event = event(job, "QUEUED", "QUEUED", 0, "ai_trip.queued", Map.of());
         mapper.insertEvent(event);
+        log.info("AI trip create: job {} QUEUED for user {} (attempt {})", job.getId(), userId, job.getAttemptId());
         return mapper.findById(job.getId());
     }
 
@@ -64,7 +72,14 @@ public class AiTripGenerationService {
     @Transactional
     public void acceptEvent(UUID jobId, AiTripJobEventRequest request) {
         AiTripGenerationJob job = mapper.findByIdForUpdate(jobId);
-        if (job == null || !job.getAttemptId().equals(request.getAttemptId()) || terminal(job.getStatus())) return;
+        if (job == null || !job.getAttemptId().equals(request.getAttemptId()) || terminal(job.getStatus())) {
+            log.info("AI trip event ignored for job {}: stage={} status={} (job={}, staleAttempt={})", jobId,
+                    request.getStage(), request.getStatus(), job == null ? "missing" : job.getStatus(),
+                    job != null && !job.getAttemptId().equals(request.getAttemptId()));
+            return;
+        }
+        log.info("AI trip event: job {} stage={} status={} progress={}{}", jobId, request.getStage(), request.getStatus(),
+                request.getProgress(), request.getErrorMessage() == null ? "" : " error=" + request.getErrorMessage());
         if ("FAILED".equals(request.getStatus()) || "CANCELLED".equals(request.getStatus())) {
             terminal(job, request.getStatus(), request.getErrorMessage());
             return;
@@ -76,6 +91,14 @@ public class AiTripGenerationService {
         mapper.insertEvent(event); sseService.publish(event);
     }
 
+    /** Editable prompt rules for the AI worker: every active row under config label AI_TRIP. */
+    public Map<String,String> promptConfig(UUID jobId, String attemptId) {
+        verifyAttempt(mapper.findById(jobId), attemptId);
+        Map<String,String> out = new LinkedHashMap<>();
+        for (var c : appConfigRepository.findAdmin(null, "AI_TRIP", true, 200, 0)) out.put(c.getKey(), c.getValue());
+        return out;
+    }
+
     public List<Map<String,Object>> candidates(UUID jobId, String attemptId, AiTripCandidateQueryRequest request) {
         AiTripGenerationJob job = mapper.findById(jobId);
         verifyAttempt(job, attemptId);
@@ -84,7 +107,8 @@ public class AiTripGenerationService {
         List<Map<String,Object>> result = new ArrayList<>();
         for (Place p : places) {
             Map<String,Object> row = new LinkedHashMap<>();
-            row.put("id", p.getId()); row.put("title", p.getTitle()); row.put("address", p.getAddress());
+            row.put("id", p.getId()); row.put("googlePlaceId", p.getPlaceId()); row.put("title", p.getTitle()); row.put("address", p.getAddress());
+            row.put("openHours", tree(p.getOpenHours()));
             row.put("latitude", p.getLatitude()); row.put("longitude", p.getLongitude()); row.put("placeGroup", p.getPlaceGroup());
             row.put("category", p.getCategory()); row.put("reviewCount", p.getReviewCount()); row.put("reviewRating", p.getReviewRating());
             row.put("score", p.getPlaceOverallScore()); row.put("distanceKm", p.getDistance()); row.put("visitDurationMinutes", p.getVisitDurationMinutes());
@@ -93,6 +117,7 @@ public class AiTripGenerationService {
             row.put("menuHighlights", highlightTitles(p.getMenu()));
             result.add(row);
         }
+        log.info("AI trip candidates: job {} groups={} -> {} places", jobId, request.getPlaceGroups(), result.size());
         return result;
     }
 
@@ -100,6 +125,7 @@ public class AiTripGenerationService {
     public UUID commit(UUID jobId, AiTripCommitRequest request) {
         AiTripGenerationJob job = mapper.findByIdForUpdate(jobId);
         verifyAttempt(job, request.getAttemptId());
+        log.info("AI trip commit: job {} with {} items", jobId, request.getItems().size());
         if ("COMPLETED".equals(job.getStatus())) return job.getCreatedTripId();
         if (terminal(job.getStatus())) throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "AI job is already terminal");
         AiTripGenerateRequest original = read(job.getRequestPayload(), AiTripGenerateRequest.class);
@@ -120,6 +146,7 @@ public class AiTripGenerationService {
         if (request.getTripDescription() != null) tripService.updateTrip(trip.getId(), UpdateTripRequest.builder().description(request.getTripDescription()).build(), job.getUserId());
         for (AiTripCommitRequest.Item item : request.getItems()) activityRepository.insert(toActivity(item, trip.getId(), job.getUserId()));
         mapper.markCompleted(jobId, job.getAttemptId(), trip.getId());
+        log.info("AI trip commit: job {} COMPLETED -> trip {}", jobId, trip.getId());
         AiTripGenerationEvent event = event(job, "COMPLETED", "COMPLETED", 100, "ai_trip.completed", Map.of("tripId", trip.getId()));
         mapper.insertEvent(event); sseService.publish(event);
         return trip.getId();
@@ -129,6 +156,7 @@ public class AiTripGenerationService {
     @Transactional public void fail(UUID jobId, String error) { AiTripGenerationJob job=mapper.findByIdForUpdate(jobId); if(job!=null&&!terminal(job.getStatus())) terminal(job,"FAILED",error); }
 
     private void terminal(AiTripGenerationJob job, String status, String error) {
+        log.info("AI trip terminal: job {} -> {}{}", job.getId(), status, error == null ? "" : " (" + error + ")");
         if (mapper.markTerminalAndRelease(job.getId(), status, error) == 1) quotaService.release(job.getUserId());
         AiTripGenerationEvent event=event(job,status,status,job.getProgress(),"ai_trip."+status.toLowerCase(Locale.ROOT),Map.of());
         mapper.insertEvent(event); sseService.publish(event);
@@ -137,14 +165,20 @@ public class AiTripGenerationService {
         Place p = i.getPlaceId()==null ? null : placeRepository.findById(i.getPlaceId()).filter(x -> x.getVisibilityStatus()==PlaceVisibilityStatus.ACTIVE).orElseThrow(() -> new BusinessException(ErrorConstant.INVALID_PARAMETERS,"Selected place is unavailable"));
         boolean transport="TRANSPORT".equals(i.getType());
         TransportMode mode=null; if (i.getTransportMode()!=null) try { mode=TransportMode.valueOf(i.getTransportMode()); } catch(Exception e){ throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,"Invalid transport mode"); }
+        // places.title is VARCHAR(500) but activities.name is VARCHAR(255): a long Google Maps
+        // title (or a transport label built from it) must be truncated, not fail the whole commit.
         return Activity.builder().id(UUID.randomUUID()).tripId(tripId).dayNumber(i.getDayNumber()).sortOrder(i.getSortOrder())
-                .placeRefId(p==null?null:p.getId()).placeId(p==null?null:p.getPlaceId()).name(i.getName())
-                .address(p==null?i.getAddress():p.getAddress()).lat(p==null?i.getLatitude():p.getLatitude()).lng(p==null?i.getLongitude():p.getLongitude())
-                .endAddress(transport?i.getEndAddress():null).endLat(transport?i.getEndLatitude():null).endLng(transport?i.getEndLongitude():null)
-                .startTime(i.getStartTime()).endTime(i.getEndTime()).endDayNumber(i.getEndDayNumber()).category(transport?"transport":i.getCategory())
-                .transportMode(mode).durationToNext(i.getDurationToNext()).durationValueToNext(i.getDurationValueToNext())
-                .distanceToNext(i.getDistanceToNext()).distanceValueToNext(i.getDistanceValueToNext())
+                .placeRefId(p==null?null:p.getId()).placeId(p==null?null:p.getPlaceId()).name(trunc(i.getName(),255))
+                .address(trunc(p==null?i.getAddress():p.getAddress(),500)).lat(p==null?i.getLatitude():p.getLatitude()).lng(p==null?i.getLongitude():p.getLongitude())
+                .endAddress(transport?trunc(i.getEndAddress(),500):null).endLat(transport?i.getEndLatitude():null).endLng(transport?i.getEndLongitude():null)
+                .startTime(i.getStartTime()).endTime(i.getEndTime()).endDayNumber(i.getEndDayNumber()).category(transport?"transport":trunc(i.getCategory(),50))
+                .transportMode(mode).durationToNext(trunc(i.getDurationToNext(),64)).durationValueToNext(i.getDurationValueToNext())
+                .distanceToNext(trunc(i.getDistanceToNext(),64)).distanceValueToNext(i.getDistanceValueToNext())
                 .description(i.getDescription()).notes(i.getNotes()).status(ActivityStatus.CONFIRMED).addedBy(userId).build();
+    }
+    private String trunc(String s, int max) {
+        if (s == null || s.length() <= max) return s;
+        return s.substring(0, max - 1) + "…";
     }
     private void validateItems(AiTripGenerateRequest r,List<AiTripCommitRequest.Item> items){
         int days=(int)ChronoUnit.DAYS.between(r.getDestinations().get(0).getStartDate(),r.getDestinations().get(r.getDestinations().size()-1).getEndDate())+1;

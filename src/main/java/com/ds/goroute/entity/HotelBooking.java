@@ -27,7 +27,7 @@ public class HotelBooking {
     private String specialRequests;
     private java.time.LocalTime estimatedArrivalTime;
     private String idempotencyKey;
-    private LocalDateTime holdExpiresAt;
+    private LocalDateTime holdExpiresAt; private Boolean guestCharged;
     private String currency;
     private BigDecimal subtotalAmount;
     private BigDecimal taxAmount;

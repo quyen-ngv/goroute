@@ -6,6 +6,8 @@ import com.ds.goroute.entity.OrganizationMemberScope;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -13,6 +15,16 @@ import java.util.UUID;
 public interface HostOrganizationMapper {
     int insertOrganization(HostOrganization organization);
     int updateOrganization(HostOrganization organization);
+    int updateVerificationState(HostOrganization organization);
+    int updateBillingProfile(@Param("id") UUID id, @Param("dataVersion") long dataVersion,
+                             @Param("commissionPercent") BigDecimal commissionPercent,
+                             @Param("billingEmail") String billingEmail,
+                             @Param("clearBillingEmail") boolean clearBillingEmail,
+                             @Param("billingDetails") String billingDetails,
+                             @Param("updatedAt") LocalDateTime updatedAt);
+    List<com.ds.goroute.entity.VerificationQueueEntry> findVerificationQueue(@Param("limit") int limit, @Param("offset") int offset);
+    long countVerificationQueue();
+    List<UUID> findAllOrganizationIds();
     HostOrganization findOrganizationById(@Param("id") UUID id);
     List<HostOrganization> findOrganizationsForUser(@Param("userId") UUID userId);
     List<HostOrganization> findOrganizationsAdmin(@Param("query") String query,

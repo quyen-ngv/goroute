@@ -10,6 +10,7 @@
         <result property="starRating" column="star_rating"/><result property="description" column="description"/>
         <result property="checkInTime" column="check_in_time"/><result property="checkOutTime" column="check_out_time"/>
         <result property="timezone" column="timezone"/><result property="amenities" column="amenities"/>
+        <result property="fromPrice" column="from_price"/><result property="fromPriceCurrency" column="from_price_currency"/><result property="roomTypeCount" column="room_type_count"/>
         <result property="languages" column="languages"/><result property="receptionHours" column="reception_hours"/>
         <result property="houseRules" column="house_rules"/><result property="accessibilityFeatures" column="accessibility_features"/>
         <result property="parkingDetails" column="parking_details"/>
@@ -95,7 +96,7 @@
         <result property="feeAmount" column="fee_amount"/><result property="discountAmount" column="discount_amount"/>
         <result property="totalAmount" column="total_amount"/><result property="bookingStatus" column="booking_status"/>
         <result property="paymentStatus" column="payment_status"/><result property="source" column="source"/>
-        <result property="cancellationReason" column="cancellation_reason"/><result property="cancelledAt" column="cancelled_at"/>
+        <result property="cancellationReason" column="cancellation_reason"/><result property="cancelledAt" column="cancelled_at"/><result property="guestCharged" column="guest_charged"/>
         <result property="snapshot" column="snapshot"/><result property="dataVersion" column="data_version"/>
         <result property="createdBy" column="created_by"/><result property="updatedBy" column="updated_by"/>
         <result property="createdAt" column="created_at"/><result property="updatedAt" column="updated_at"/>
@@ -149,14 +150,47 @@
         <include refid="HotelSelect"/> WHERE h.organization_id=#{organizationId} ORDER BY h.created_at DESC
     </select>
     <select id="findHotelsPublic" resultMap="HotelMap">
-        <include refid="HotelSelect"/> JOIN host_organizations o ON o.id=h.organization_id
+        SELECT h.*, p.title AS place_title, p.address AS place_address, p.thumbnail AS place_thumbnail,
+          fp.from_price, fp.from_price_currency,
+          (SELECT COUNT(*) FROM room_types rt WHERE rt.hotel_id=h.id AND rt.status='ENABLED') AS room_type_count
+        FROM hotel_profiles h JOIN places p ON p.id = h.place_id
+        JOIN host_organizations o ON o.id=h.organization_id
+        LEFT JOIN LATERAL (
+            SELECT rp.base_price AS from_price, rp.currency AS from_price_currency
+            FROM rate_plans rp JOIN room_types rt ON rt.id=rp.room_type_id
+            WHERE rt.hotel_id=h.id AND rp.status='ENABLED' AND rt.status='ENABLED'
+            ORDER BY rp.base_price ASC LIMIT 1
+        ) fp ON TRUE
         WHERE h.status='ENABLED' AND p.lifecycle_status='ACTIVE' AND o.operational_status='ENABLED'
         AND o.verification_status='VERIFIED'
         <if test="query != null and query != ''">
             AND (p.title ILIKE CONCAT('%',#{query},'%') OR p.address ILIKE CONCAT('%',#{query},'%'))
         </if>
+        <if test="propertyType != null and propertyType != ''">AND h.property_type=#{propertyType}</if>
+        <if test="minPrice != null">AND fp.from_price IS NOT NULL AND EXISTS (SELECT 1 FROM rate_plans rp JOIN room_types rt ON rt.id=rp.room_type_id WHERE rt.hotel_id=h.id AND rp.status='ENABLED' AND rt.status='ENABLED' AND rp.base_price &gt;= #{minPrice}<if test="maxPrice != null"> AND rp.base_price &lt;= #{maxPrice}</if>)</if>
+        <if test="minPrice == null and maxPrice != null">AND fp.from_price IS NOT NULL AND fp.from_price &lt;= #{maxPrice}</if>
+        <if test="checkIn != null and checkOut != null">
+            AND EXISTS (
+                SELECT 1 FROM room_types rt
+                WHERE rt.hotel_id=h.id AND rt.status='ENABLED'
+                  AND rt.max_adults * #{rooms} &gt;= #{adults} AND rt.max_children * #{rooms} &gt;= #{children}
+                  AND rt.max_occupancy * #{rooms} &gt;= #{adults} + #{children}
+                  AND (SELECT COUNT(*) FROM room_inventory_daily i
+                       WHERE i.room_type_id=rt.id AND i.inventory_date &gt;= #{checkIn} AND i.inventory_date &lt; #{checkOut}
+                         AND NOT i.stop_sell AND (i.total_units-i.reserved_units-i.sold_units-i.blocked_units) &gt;= #{rooms})
+                      = (#{checkOut}::date - #{checkIn}::date)
+            )
+        </if>
         ORDER BY h.created_at DESC LIMIT #{limit} OFFSET #{offset}
     </select>
+    <update id="updateBookingStay">
+        UPDATE hotel_bookings SET check_in_date=#{checkIn},check_out_date=#{checkOut},adults=#{adults},children=#{children},
+          subtotal_amount=#{subtotal},total_amount=#{total},snapshot=#{snapshot}::jsonb,data_version=data_version+1,updated_by=#{actor},updated_at=#{now}
+        WHERE id=#{id} AND data_version=#{expectedVersion}
+    </update>
+    <update id="updateBookingItemStay">
+        UPDATE hotel_booking_items SET adults=#{adults},children=#{children},unit_price=#{unitPrice},total_price=#{totalPrice} WHERE id=#{id}
+    </update>
     <select id="findHotelsAdmin" resultMap="HotelMap">
         <include refid="HotelSelect"/>
         <where>
@@ -301,8 +335,8 @@
         WHERE h.id=#{hotelId} AND r.id=#{roomTypeId} AND h.status='ENABLED' AND r.status='ENABLED' AND rp.status='ENABLED'
           AND o.operational_status='ENABLED' AND o.verification_status='VERIFIED' AND p.lifecycle_status='ACTIVE'
           AND i.inventory_date &gt;=#{checkIn} AND i.inventory_date &lt;#{checkOut}
-          AND (COALESCE(rd.min_advance_days,rp.min_advance_days) IS NULL OR #{checkIn}::date-CURRENT_DATE &gt;= COALESCE(rd.min_advance_days,rp.min_advance_days))
-          AND (COALESCE(rd.max_advance_days,rp.max_advance_days) IS NULL OR #{checkIn}::date-CURRENT_DATE &lt;= COALESCE(rd.max_advance_days,rp.max_advance_days))
+          AND (COALESCE(rd.min_advance_days,rp.min_advance_days) IS NULL OR #{checkIn}::date-#{today}::date &gt;= COALESCE(rd.min_advance_days,rp.min_advance_days))
+          AND (COALESCE(rd.max_advance_days,rp.max_advance_days) IS NULL OR #{checkIn}::date-#{today}::date &lt;= COALESCE(rd.max_advance_days,rp.max_advance_days))
         ORDER BY i.inventory_date
     </select>
     <update id="reserveInventory">
@@ -351,10 +385,17 @@
     <select id="findBookingsByUser" resultMap="BookingMap">
         <include refid="BookingSelect"/> WHERE b.user_id=#{userId} ORDER BY b.created_at DESC LIMIT #{limit} OFFSET #{offset}
     </select>
-    <select id="findBookingsByOrganization" resultMap="BookingMap">
-        <include refid="BookingSelect"/> WHERE b.organization_id=#{organizationId}
+    <sql id="BookingOrganizationFilter">
+        WHERE b.organization_id=#{organizationId}
         <if test="status != null and status != ''">AND b.booking_status=#{status}</if>
+        <if test="hotelIds != null">AND b.hotel_id IN <foreach collection="hotelIds" item="hid" open="(" separator="," close=")">#{hid}</foreach></if>
+    </sql>
+    <select id="findBookingsByOrganization" resultMap="BookingMap">
+        <include refid="BookingSelect"/> <include refid="BookingOrganizationFilter"/>
         ORDER BY b.created_at DESC LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <select id="countBookingsByOrganizationFiltered" resultType="long">
+        SELECT COUNT(*) FROM hotel_bookings b <include refid="BookingOrganizationFilter"/>
     </select>
     <select id="findBookingsAdmin" resultMap="BookingMap">
         <include refid="BookingSelect"/>
@@ -368,8 +409,20 @@
     </select>
     <update id="updateBookingStatus">
         UPDATE hotel_bookings SET booking_status=#{bookingStatus},payment_status=COALESCE(#{paymentStatus},payment_status),
-          cancellation_reason=#{cancellationReason},cancelled_at=#{cancelledAt},data_version=data_version+1,
+          cancellation_reason=#{cancellationReason},cancelled_at=#{cancelledAt},guest_charged=COALESCE(#{guestCharged},guest_charged),data_version=data_version+1,
           updated_by=#{updatedBy},updated_at=#{updatedAt} WHERE id=#{id} AND data_version=#{expectedVersion}
     </update>
     <update id="expireBookingHold">UPDATE hotel_bookings SET booking_status='EXPIRED',cancellation_reason='Partner confirmation deadline expired',cancelled_at=#{now},data_version=data_version+1,updated_by=#{actor},updated_at=#{now} WHERE id=#{id} AND booking_status='PENDING_PARTNER_CONFIRMATION' AND data_version=#{expectedVersion} AND hold_expires_at&lt;=#{now}</update>
+    <select id="countBookingsByOrganization" resultType="long">SELECT COUNT(*) FROM hotel_bookings b WHERE b.organization_id=#{organizationId} AND b.booking_status=#{status}</select>
+    <select id="countArrivals" resultType="long">SELECT COUNT(*) FROM hotel_bookings b WHERE b.organization_id=#{organizationId} AND b.booking_status='CONFIRMED' AND b.check_in_date=#{day}</select>
+    <select id="countDepartures" resultType="long">SELECT COUNT(*) FROM hotel_bookings b WHERE b.organization_id=#{organizationId} AND b.booking_status IN ('CONFIRMED','CHECKED_IN') AND b.check_out_date=#{day}</select>
+    <select id="countActiveBookingsForRatePlan" resultType="long">
+        SELECT COUNT(DISTINCT b.id) FROM hotel_bookings b JOIN hotel_booking_items i ON i.booking_id=b.id
+        WHERE i.rate_plan_id=#{ratePlanId} AND b.booking_status IN ('PENDING_PARTNER_CONFIRMATION','CONFIRMED','CHECKED_IN')
+    </select>
+    <select id="countActiveBookingsForRoomType" resultType="long">
+        SELECT COUNT(DISTINCT b.id) FROM hotel_bookings b JOIN hotel_booking_items i ON i.booking_id=b.id
+        WHERE i.room_type_id=#{roomTypeId} AND b.booking_status IN ('PENDING_PARTNER_CONFIRMATION','CONFIRMED','CHECKED_IN')
+    </select>
+    <select id="countInHouse" resultType="long">SELECT COUNT(*) FROM hotel_bookings b WHERE b.organization_id=#{organizationId} AND b.booking_status='CHECKED_IN'</select>
 </mapper>

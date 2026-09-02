@@ -105,17 +105,6 @@ public class ErrorConstant {
     public static final int REWARD_OUT_OF_STOCK = 4001002;
     public static final int REWARD_NOT_REDEEMABLE = 4001003;
 
-    /**
-     * Guide marketplace (epic 07).
-     */
-    public static final int GUIDE_FEATURE_DISABLED = 4001101;
-    public static final int GUIDE_NOT_APPROVED = 4001102;
-    public static final int GUIDE_SERVICE_LIMIT_REACHED = 4001103;
-    public static final int GUIDE_UNAVAILABLE_ON_DATE = 4001104;
-    public static final int GUIDE_CAPACITY_EXCEEDED = 4001105;
-    public static final int GUIDE_BOOKING_STATE_INVALID = 4001106;
-    public static final int GUIDE_PAYOUT_NOT_RELEASABLE = 4001107;
-
     public static final int SYSTEM_CONFIGURATION_NOT_FOUND = 4004208;
 
     public static final int HTTP_CONNECTION_ERROR  = 4009000;

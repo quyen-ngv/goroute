@@ -19,7 +19,7 @@ public class RoomInventoryResponse {
     private Integer availableUnits;
     private Boolean stopSell;
     private BigDecimal priceOverride;
-    private BigDecimal quotedNightlyPrice;
+    private BigDecimal quotedNightlyPrice; private BigDecimal originalNightlyPrice; private String promotionCode; private BigDecimal promotionPercent;
     private BigDecimal quotedTotal;
     private Integer minStay;
     private Boolean closedToArrival;
