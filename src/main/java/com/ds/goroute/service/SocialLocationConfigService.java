@@ -4,14 +4,19 @@ import com.ds.goroute.repository.AppConfigRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.UUID;
+
 @Service
 @RequiredArgsConstructor
 public class SocialLocationConfigService {
     private static final String LABEL = "SOCIAL_LOCATION";
 
     private final AppConfigRepository repository;
+    private final UserQuotaPolicyService quotaPolicy;
 
-    public int dailyJobLimit() { return positive("DAILY_JOB_LIMIT_DEFAULT", 5); }
+    public int dailyJobLimit(UUID userId) {
+        return quotaPolicy.socialLocationDailyLimit(userId);
+    }
     public int maxConcurrentJobs() { return positive("MAX_CONCURRENT_JOBS", 5); }
     public int maxQueuedJobs() { return positive("MAX_QUEUED_JOBS", 100); }
     public int maxVideoSeconds(String tier) {

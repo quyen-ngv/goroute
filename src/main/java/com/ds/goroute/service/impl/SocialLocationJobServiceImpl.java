@@ -116,12 +116,13 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
             return toResponse(reusableJob);
         }
 
+        int dailyJobLimit = socialConfig.dailyJobLimit(userId);
         if (stalePolicyJob == null
                 && jobMapper.countCreatedByUserSince(userId, LocalDate.now().atStartOfDay())
-                >= socialConfig.dailyJobLimit()) {
+                >= dailyJobLimit) {
             audit(userId, null, sourceUrl, "REJECTED_DAILY_LIMIT", "DAILY_LIMIT_REACHED", null);
             throw new BusinessException(ErrorConstant.SOCIAL_LOCATION_DAILY_LIMIT_REACHED,
-                    Map.of("dailyLimit", socialConfig.dailyJobLimit()));
+                    Map.of("dailyLimit", dailyJobLimit));
         }
         if (jobMapper.countQueued() >= socialConfig.maxQueuedJobs()) {
             audit(userId, null, sourceUrl, "REJECTED_QUEUE_FULL", "QUEUE_FULL", null);

@@ -42,19 +42,20 @@ import com.ds.goroute.constant.ErrorConstant;
 @Slf4j
 public class StarService {
 
-    private static final int FREE_TRIP_QUOTA = 3;
     private static final int TRIP_UNLOCK_COST = 10;
     private static final int TRANSACTION_LIMIT = 50;
 
     private final StarMapper starMapper;
     private final StarWalletBootstrapService walletBootstrap;
+    private final UserQuotaPolicyService quotaPolicy;
 
     @Transactional
     public void reserveTripCreation(UUID userId) {
         ensureWallet(userId);
         UserStarWallet wallet = starMapper.findWallet(userId);
-        if (wallet.getFreeTripQuotaUsed() < FREE_TRIP_QUOTA
-                && starMapper.incrementFreeQuota(userId, FREE_TRIP_QUOTA) == 1) {
+        int freeTripQuota = quotaPolicy.freeTripQuota(userId);
+        if (wallet.getFreeTripQuotaUsed() < freeTripQuota
+                && starMapper.incrementFreeQuota(userId, freeTripQuota) == 1) {
             return;
         }
         TripCreationEntitlement entitlement = starMapper.findActiveEntitlement(userId, LocalDateTime.now());
@@ -76,10 +77,11 @@ public class StarService {
         ensureWallet(userId);
         UserStarWallet wallet = starMapper.findWallet(userId);
         int unlockedSlots = starMapper.countActiveEntitlements(userId, LocalDateTime.now());
+        int freeTripQuota = quotaPolicy.freeTripQuota(userId);
         return new TripCreationStatus(
-                wallet.getFreeTripQuotaUsed() < FREE_TRIP_QUOTA || unlockedSlots > 0,
+                wallet.getFreeTripQuotaUsed() < freeTripQuota || unlockedSlots > 0,
                 wallet.getFreeTripQuotaUsed(),
-                FREE_TRIP_QUOTA,
+                freeTripQuota,
                 unlockedSlots);
     }
 
@@ -198,7 +200,7 @@ public class StarService {
         TripCreationStatus tripQuota = tripCreationStatus(userId);
         return StarWalletResponse.builder()
                 .balance(wallet.getBalance()).freeTripQuotaUsed(wallet.getFreeTripQuotaUsed())
-                .freeTripQuota(FREE_TRIP_QUOTA)
+                .freeTripQuota(tripQuota.freeQuota())
                 // Whether a trip can be created right now, which is not the same as having
                 // enough stars to buy the right to: an affordable unlock still has to be
                 // bought. Answering the second question here is what let the client show a
@@ -294,7 +296,20 @@ public class StarService {
         return Optional.of(transaction);
     }
 
+    /**
+     * Creates the wallet only when this transaction cannot already see one.
+     *
+     * <p>The check is not an optimisation. {@link StarWalletBootstrapService#ensureExists} runs
+     * REQUIRES_NEW, so on a second connection -- and once {@link #record} has taken the wallet
+     * row lock, its {@code INSERT ... ON CONFLICT DO NOTHING} waits on the tuple our own
+     * suspended transaction holds. PostgreSQL sees no cycle to break (the outer transaction is
+     * idle, waiting on nobody), so the request hangs until the JDBC socket timeout kills the
+     * connection. Reading first means the bootstrap only ever runs when no lock can exist yet.
+     */
     private void ensureWallet(UUID userId) {
+        if (starMapper.findWallet(userId) != null) {
+            return;
+        }
         walletBootstrap.ensureExists(userId);
     }
 

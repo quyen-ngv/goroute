@@ -45,28 +45,46 @@ public class FirebaseService {
 
     public void sendPush(String fcmToken, String title, String body, Map<String, Object> data) {
         try {
-            Notification notification = Notification.builder()
+            String imageUrl = imageUrlFrom(data);
+            Notification.Builder notificationBuilder = Notification.builder()
                     .setTitle(title)
-                    .setBody(body)
-                    .build();
+                    .setBody(body);
+            if (imageUrl != null) {
+                notificationBuilder.setImage(imageUrl);
+            }
+
+            AndroidNotification.Builder androidNotificationBuilder = AndroidNotification.builder()
+                    .setTitle(title)
+                    .setBody(body);
+            if (imageUrl != null) {
+                androidNotificationBuilder.setImage(imageUrl);
+            }
+
+            Aps.Builder apsBuilder = Aps.builder()
+                    .setAlert(ApsAlert.builder()
+                            .setTitle(title)
+                            .setBody(body)
+                            .build())
+                    .setSound("default");
+            ApnsConfig.Builder apnsConfigBuilder = ApnsConfig.builder()
+                    .putHeader("apns-priority", "10")
+                    .putHeader("apns-push-type", "alert");
+            if (imageUrl != null) {
+                // iOS only downloads the FCM image attachment when the payload opts into
+                // mutable content and points APNs at the image through fcm_options.
+                apsBuilder.setMutableContent(true);
+                apnsConfigBuilder.setFcmOptions(
+                        ApnsFcmOptions.builder().setImage(imageUrl).build());
+            }
 
             Message.Builder messageBuilder = Message.builder()
                     .setToken(fcmToken)
-                    .setNotification(notification)
+                    .setNotification(notificationBuilder.build())
                     .setAndroidConfig(AndroidConfig.builder()
                             .setPriority(AndroidConfig.Priority.HIGH)
+                            .setNotification(androidNotificationBuilder.build())
                             .build())
-                    .setApnsConfig(ApnsConfig.builder()
-                            .putHeader("apns-priority", "10")
-                            .putHeader("apns-push-type", "alert")
-                            .setAps(Aps.builder()
-                                    .setAlert(ApsAlert.builder()
-                                            .setTitle(title)
-                                            .setBody(body)
-                                            .build())
-                                    .setSound("default")
-                                    .build())
-                            .build());
+                    .setApnsConfig(apnsConfigBuilder.setAps(apsBuilder.build()).build());
 
             if (data != null && !data.isEmpty()) {
                 messageBuilder.putAllData(convertToStringMap(data));
@@ -82,6 +100,18 @@ public class FirebaseService {
             }
             throw new RuntimeException("Failed to send push notification", e);
         }
+    }
+
+    private String imageUrlFrom(Map<String, Object> data) {
+        if (data == null) {
+            return null;
+        }
+        Object value = data.get("imageUrl");
+        if (value == null) {
+            return null;
+        }
+        String imageUrl = String.valueOf(value).trim();
+        return imageUrl.isEmpty() ? null : imageUrl;
     }
 
     private boolean isInvalidToken(FirebaseMessagingException e) {

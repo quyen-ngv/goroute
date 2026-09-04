@@ -24,6 +24,14 @@ public interface WeatherSnapshotProvider {
      */
     WeatherSnapshot getSnapshot(BigDecimal latitude, BigDecimal longitude);
 
+    /**
+     * Fetch a fresh snapshot and replace the cached value for its grid cell.
+     *
+     * <p>Used by the scheduled cache warmer. Unlike {@link #getSnapshot(BigDecimal, BigDecimal)},
+     * this operation always calls Open-Meteo even when the cell is already cached.
+     */
+    WeatherSnapshot refreshSnapshot(BigDecimal latitude, BigDecimal longitude);
+
     record WeatherSnapshot(
         OpenMeteoWeatherResponse weather,
         OpenMeteoAirQualityResponse airQuality

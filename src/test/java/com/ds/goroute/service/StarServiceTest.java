@@ -27,7 +27,8 @@ class StarServiceTest {
 
     private final StarMapper starMapper = mock(StarMapper.class);
     private final StarWalletBootstrapService bootstrap = mock(StarWalletBootstrapService.class);
-    private final StarService service = new StarService(starMapper, bootstrap);
+    private final UserQuotaPolicyService quotaPolicy = mock(UserQuotaPolicyService.class);
+    private final StarService service = new StarService(starMapper, bootstrap, quotaPolicy);
 
     private final UUID userId = UUID.randomUUID();
 
@@ -39,6 +40,7 @@ class StarServiceTest {
     @BeforeEach
     void noEntryRecordedYet() {
         when(starMapper.countReference(anyString())).thenReturn(0);
+        when(quotaPolicy.freeTripQuota(userId)).thenReturn(3);
     }
 
     /**

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.UserQuotaOverrideMapper">
+
+    <resultMap id="userQuotaOverrideMap" type="com.ds.goroute.entity.UserQuotaOverride">
+        <id property="userId" column="user_id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result property="freeTripQuota" column="free_trip_quota" jdbcType="INTEGER"/>
+        <result property="aiTripFreeQuota" column="ai_trip_free_quota" jdbcType="INTEGER"/>
+        <result property="aiTripProQuota" column="ai_trip_pro_quota" jdbcType="INTEGER"/>
+        <result property="socialLocationDailyLimit" column="social_location_daily_limit" jdbcType="INTEGER"/>
+        <result property="dataVersion" column="data_version" jdbcType="BIGINT"/>
+        <result property="createdAt" column="created_at" jdbcType="TIMESTAMP"/>
+        <result property="updatedAt" column="updated_at" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <sql id="columns">
+        user_id, free_trip_quota, ai_trip_free_quota, ai_trip_pro_quota,
+        social_location_daily_limit, data_version, created_at, updated_at
+    </sql>
+
+    <select id="findByUserId" resultMap="userQuotaOverrideMap">
+        SELECT <include refid="columns"/>
+        FROM user_quota_overrides
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.UserQuotaOverride">
+        INSERT INTO user_quota_overrides (
+            user_id, free_trip_quota, ai_trip_free_quota, ai_trip_pro_quota,
+            social_location_daily_limit, data_version, created_at, updated_at
+        )
+        VALUES (
+            #{userId,javaType=java.util.UUID,jdbcType=OTHER},
+            #{freeTripQuota,jdbcType=INTEGER},
+            #{aiTripFreeQuota,jdbcType=INTEGER},
+            #{aiTripProQuota,jdbcType=INTEGER},
+            #{socialLocationDailyLimit,jdbcType=INTEGER},
+            #{dataVersion,jdbcType=BIGINT},
+            #{createdAt,jdbcType=TIMESTAMP},
+            #{updatedAt,jdbcType=TIMESTAMP}
+        )
+    </insert>
+
+    <update id="update" parameterType="com.ds.goroute.entity.UserQuotaOverride">
+        UPDATE user_quota_overrides
+        SET free_trip_quota = #{freeTripQuota,jdbcType=INTEGER},
+            ai_trip_free_quota = #{aiTripFreeQuota,jdbcType=INTEGER},
+            ai_trip_pro_quota = #{aiTripProQuota,jdbcType=INTEGER},
+            social_location_daily_limit = #{socialLocationDailyLimit,jdbcType=INTEGER},
+            data_version = data_version + 1,
+            updated_at = #{updatedAt,jdbcType=TIMESTAMP}
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND data_version = #{dataVersion,jdbcType=BIGINT}
+    </update>
+</mapper>

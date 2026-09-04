@@ -6,6 +6,7 @@ import com.ds.goroute.thirdparty.weather.OpenMeteoClient;
 import com.ds.goroute.thirdparty.weather.OpenMeteoWeatherResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CachePut;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
@@ -27,6 +28,20 @@ public class WeatherSnapshotProviderImpl implements WeatherSnapshotProvider {
         sync = true
     )
     public WeatherSnapshot getSnapshot(BigDecimal latitude, BigDecimal longitude) {
+        return loadSnapshot(latitude, longitude);
+    }
+
+    @Override
+    @CachePut(
+        cacheNames = "weatherSnapshot",
+        cacheManager = "weatherCacheManager",
+        key = "T(com.ds.goroute.utils.GeoGridKey).of(#latitude, #longitude)"
+    )
+    public WeatherSnapshot refreshSnapshot(BigDecimal latitude, BigDecimal longitude) {
+        return loadSnapshot(latitude, longitude);
+    }
+
+    private WeatherSnapshot loadSnapshot(BigDecimal latitude, BigDecimal longitude) {
         OpenMeteoWeatherResponse weather = openMeteoClient.getCurrentWeather(latitude, longitude);
         if (weather == null || weather.getCurrent() == null) {
             throw new RestClientException("Open-Meteo returned an empty forecast response");

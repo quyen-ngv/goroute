@@ -9,6 +9,7 @@ package com.ds.goroute.type;
  * code default instead of changing product behaviour.
  */
 public enum BusinessConfigKey {
+    TRIP_FREE_CREATION_QUOTA("TRIP", "FREE_TRIP_QUOTA", 3, 0, 1000),
     FREE_TRIP_MEMORY_LIMIT("TRIP_MEMORY", "FREE_TRIP_MEMORY_LIMIT", 50, 1, 1000),
     PLACE_REVIEW_REFRESH_MAX_REVIEWS("PLACE_REVIEW", "DEFAULT_REFRESH_MAX_REVIEWS", 200, 1, 200),
     /**
@@ -33,6 +34,13 @@ public enum BusinessConfigKey {
     MODERATION_STRICTNESS_DIRECT("MODERATION", "STRICTNESS_DIRECT", "REPORT_ONLY"),
     MODERATION_STRICTNESS_PRIVATE("MODERATION", "STRICTNESS_PRIVATE", "OFF"),
     MODERATION_POLICY_VERSION("MODERATION", "POLICY_VERSION", "1.0.0"),
+
+    // --- Epic 03: AI trip generation -----------------------------------------------
+    AI_TRIP_FREE_QUOTA("AI_TRIP_QUOTA", "FREE_TRIP_QUOTA", 3, 0, 1000),
+    AI_TRIP_PRO_QUOTA("AI_TRIP_QUOTA", "PRO_TRIP_QUOTA", 10, 0, 1000),
+
+    // --- Epic 09: social-location extraction ---------------------------------------
+    SOCIAL_LOCATION_DAILY_JOB_LIMIT("SOCIAL_LOCATION", "DAILY_JOB_LIMIT_DEFAULT", 5, 0, 1000),
 
     // --- Epic 06: check-in -----------------------------------------------------------
     CHECKIN_ENABLED("CHECKIN", "CHECKIN_ENABLED", true),

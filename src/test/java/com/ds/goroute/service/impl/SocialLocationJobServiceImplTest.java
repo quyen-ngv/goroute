@@ -117,7 +117,7 @@ class SocialLocationJobServiceImplTest {
                 .build();
         when(jobMapper.findReusableByUserIdAndSourceKey(eq(userId), any())).thenReturn(legacyJob);
         when(jobMapper.markDeletedByIdAndUserId(legacyJobId, userId)).thenReturn(1);
-        when(socialConfigService.dailyJobLimit()).thenReturn(10);
+        when(socialConfigService.dailyJobLimit(userId)).thenReturn(10);
         when(socialConfigService.maxQueuedJobs()).thenReturn(100);
         when(socialConfigService.maxVideoSeconds("FREE")).thenReturn(180);
         when(aiTripRepository.getSubscriptionTier(userId)).thenReturn("FREE");

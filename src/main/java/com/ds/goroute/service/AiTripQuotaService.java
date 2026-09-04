@@ -21,11 +21,9 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class AiTripQuotaService {
-    public static final int FREE_LIMIT = 3;
-    public static final int PRO_LIMIT = 10;
-
     private final AiTripRepository repository;
     private final StarService starService;
+    private final UserQuotaPolicyService quotaPolicy;
 
     @Transactional
     public AiTripUsage getUsage(UUID userId) {
@@ -46,7 +44,7 @@ public class AiTripQuotaService {
     public AiTripUsage reserve(UUID userId) {
         repository.ensureSubscription(userId);
         String tier = repository.getSubscriptionTier(userId);
-        int limit = limitForTier(tier);
+        int limit = limitForTier(userId, tier);
 
         if (!starService.tripCreationStatus(userId).available()) {
             throw new BusinessException(ErrorConstant.TRIP_CREATION_QUOTA_EXHAUSTED,
@@ -64,12 +62,12 @@ public class AiTripQuotaService {
         repository.releaseAiTripQuota(userId);
     }
 
-    public int limitForTier(String tier) {
-        return "PRO".equalsIgnoreCase(tier) ? PRO_LIMIT : FREE_LIMIT;
+    public int limitForTier(UUID userId, String tier) {
+        return quotaPolicy.aiTripQuota(userId, tier);
     }
 
     private AiTripUsage usage(UUID userId, String tier, int used) {
-        int limit = limitForTier(tier);
+        int limit = limitForTier(userId, tier);
         StarService.TripCreationStatus tripQuota = starService.tripCreationStatus(userId);
         boolean aiAvailable = used < limit;
         return AiTripUsage.builder()

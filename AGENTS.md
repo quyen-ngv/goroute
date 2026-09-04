@@ -140,8 +140,11 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 
 | Label | Key | Unit/range | Failure behavior | Visibility |
 |---|---|---|---|---|
+| `TRIP` | `FREE_TRIP_QUOTA` | count, 0..1000 | safe fallback 3 | private/admin |
 | `PLACE_REVIEW` | `DEFAULT_REFRESH_MAX_REVIEWS` | count, 1..200 | safe fallback 200 | private/admin |
 | `TRIP_MEMORY` | `FREE_TRIP_MEMORY_LIMIT` | count, 1..1000 | safe fallback 50 | private/admin |
+| `AI_TRIP_QUOTA` | `FREE_TRIP_QUOTA` / `PRO_TRIP_QUOTA` | count, 0..1000 | safe fallback 3 / 10 | private/admin |
+| `SOCIAL_LOCATION` | `DAILY_JOB_LIMIT_DEFAULT` | count/day/user, 0..1000 | safe fallback 5 | private/admin |
 | `MODERATION` | `TEXT_FILTER_ENABLED` | boolean | safe fallback true | private/admin |
 | `MODERATION` | `AI_TEXT_ENABLED` | boolean | safe fallback false | private/admin |
 | `MODERATION` | `AI_TEXT_MAX_LENGTH` | characters, 200..20000 | safe fallback 4000 | private/admin |
