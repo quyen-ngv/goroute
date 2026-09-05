@@ -1,6 +1,7 @@
 package com.ds.goroute.entity;
 
 import com.ds.goroute.type.SocialLocationJobStatus;
+import com.ds.goroute.type.SocialLocationOperation;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -19,6 +20,7 @@ public class SocialLocationJob {
     private String sourceUrl;
     private String sourceKey;
     private String platform;
+    private SocialLocationOperation operation;
     private SocialLocationJobStatus status;
     private String pythonJobId;
     private String language;
@@ -27,6 +29,8 @@ public class SocialLocationJob {
     private Integer maxDurationSeconds;
     private String requestPayload;
     private String resultPayload;
+    private UUID aiTripJobId;
+    private Integer savedSpotCount;
     private String errorCode;
     private String errorMessage;
     private Integer attemptCount;

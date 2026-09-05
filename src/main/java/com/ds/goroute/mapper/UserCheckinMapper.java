@@ -69,6 +69,12 @@ public interface UserCheckinMapper {
 
     int markRemoved(@Param("id") UUID id, @Param("userId") UUID userId);
 
+    /**
+     * Soft-deleted check-ins whose photo rows have not been purged yet.
+     * The cleanup job consumes this bounded queue in oldest-removal order.
+     */
+    List<UUID> findRemovedCheckinIdsWithPhotos(@Param("limit") int limit);
+
     int attachPlaceToCluster(@Param("locationKey") String locationKey, @Param("placeId") UUID placeId);
 
     int attachReview(@Param("id") UUID id, @Param("reviewId") UUID reviewId);

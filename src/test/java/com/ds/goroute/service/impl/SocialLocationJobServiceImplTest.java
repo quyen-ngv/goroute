@@ -7,6 +7,7 @@ import com.ds.goroute.dto.request.CreateSocialPlaceImportJobRequest;
 import com.ds.goroute.entity.AiApiCall;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.SocialLocationJob;
+import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.AiApiCallMapper;
 import com.ds.goroute.mapper.PlaceImportJobMapper;
 import com.ds.goroute.mapper.PlaceMapper;
@@ -17,11 +18,13 @@ import com.ds.goroute.service.NotificationService;
 import com.ds.goroute.service.PlaceImportJobService;
 import com.ds.goroute.service.PlaceSocialVideoService;
 import com.ds.goroute.service.SocialLocationConfigService;
+import com.ds.goroute.service.SocialLocationCompletionService;
 import com.ds.goroute.thirdparty.scrape.ScrapeServiceClient;
 import com.ds.goroute.thirdparty.scrape.ScrapeSocialLocationJobRequest;
 import com.ds.goroute.thirdparty.scrape.ScrapeSocialLocationJobResponse;
 import com.ds.goroute.type.NotificationType;
 import com.ds.goroute.type.SocialLocationJobStatus;
+import com.ds.goroute.type.SocialLocationOperation;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,13 +40,16 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class SocialLocationJobServiceImplTest {
@@ -58,6 +64,7 @@ class SocialLocationJobServiceImplTest {
     private SocialLocationConfigService socialConfigService;
     private AiTripRepository aiTripRepository;
     private SocialLocationRestrictionRepository restrictionRepository;
+    private SocialLocationCompletionService completionService;
     private ObjectMapper objectMapper;
     private SocialLocationJobServiceImpl service;
 
@@ -74,6 +81,7 @@ class SocialLocationJobServiceImplTest {
         socialConfigService = mock(SocialLocationConfigService.class);
         aiTripRepository = mock(AiTripRepository.class);
         restrictionRepository = mock(SocialLocationRestrictionRepository.class);
+        completionService = mock(SocialLocationCompletionService.class);
         objectMapper = new ObjectMapper();
         service = new SocialLocationJobServiceImpl(
                 jobMapper,
@@ -88,6 +96,7 @@ class SocialLocationJobServiceImplTest {
                 aiTripRepository,
                 restrictionRepository,
                 notificationService,
+                completionService,
                 new InternalApiProperties("ai-token", "internal-token")
         );
         ReflectionTestUtils.setField(service, "dispatchTimeoutSeconds", 90L);
@@ -135,6 +144,34 @@ class SocialLocationJobServiceImplTest {
     }
 
     @Test
+    void saveSpotsStillChecksQuotaWhenAnOldCandidatePolicyMustBeReprocessed() {
+        UUID userId = UUID.randomUUID();
+        UUID legacyJobId = UUID.randomUUID();
+        String sourceUrl = "https://www.tiktok.com/@user/video/legacy";
+        SocialLocationJob legacyJob = SocialLocationJob.builder()
+                .id(legacyJobId)
+                .userId(userId)
+                .sourceUrl(sourceUrl)
+                .sourceKey("tiktok:legacy")
+                .platform("tiktok")
+                .status(SocialLocationJobStatus.COMPLETED)
+                .resultPayload("{\"extraction\":{\"candidates\":[]}}")
+                .build();
+        when(jobMapper.findReusableByUserIdAndSourceKey(eq(userId), any())).thenReturn(legacyJob);
+        when(socialConfigService.dailyJobLimit(userId)).thenReturn(1);
+        when(jobMapper.countCreatedByUserSince(eq(userId), any())).thenReturn(1);
+
+        assertThatThrownBy(() -> service.create(userId, CreateSocialLocationJobRequest.builder()
+                .url(sourceUrl)
+                .operation(SocialLocationOperation.SAVE_SPOTS)
+                .build()))
+                .isInstanceOf(BusinessException.class);
+
+        verify(jobMapper).countCreatedByUserSince(eq(userId), any());
+        verify(jobMapper, never()).insert(any());
+    }
+
+    @Test
     void createReusesCompletedResultFromCurrentCandidatePolicy() {
         UUID userId = UUID.randomUUID();
         UUID jobId = UUID.randomUUID();
@@ -162,7 +199,83 @@ class SocialLocationJobServiceImplTest {
     }
 
     @Test
-    void getHidesLegacyAndUnverifiedCandidates() {
+    void saveSpotsChecksSocialQuotaButItineraryDoesNot() {
+        UUID userId = UUID.randomUUID();
+        String sourceUrl = "https://www.instagram.com/reel/123";
+        when(jobMapper.findReusableByUserIdAndSourceKey(eq(userId), any())).thenReturn(null);
+        when(jobMapper.countCreatedByUserSince(eq(userId), any())).thenReturn(0);
+        when(jobMapper.countQueued()).thenReturn(0);
+        when(socialConfigService.dailyJobLimit(userId)).thenReturn(5);
+        when(socialConfigService.maxQueuedJobs()).thenReturn(100);
+        when(socialConfigService.maxVideoSeconds("FREE")).thenReturn(180);
+        when(aiTripRepository.getSubscriptionTier(userId)).thenReturn("FREE");
+
+        service.create(userId, CreateSocialLocationJobRequest.builder()
+                .url(sourceUrl).operation(SocialLocationOperation.SAVE_SPOTS).build());
+
+        verify(jobMapper).countCreatedByUserSince(eq(userId), any());
+        ArgumentCaptor<SocialLocationJob> saveJob = ArgumentCaptor.forClass(SocialLocationJob.class);
+        verify(jobMapper).insert(saveJob.capture());
+        assertThat(saveJob.getValue().getOperation()).isEqualTo(SocialLocationOperation.SAVE_SPOTS);
+
+        reset(jobMapper);
+        when(jobMapper.findReusableByUserIdAndSourceKey(eq(userId), any())).thenReturn(null);
+        when(jobMapper.countQueued()).thenReturn(0);
+        service.create(userId, CreateSocialLocationJobRequest.builder()
+                .url("https://www.instagram.com/reel/456")
+                .operation(SocialLocationOperation.GEN_ITINERARY).build());
+
+        verify(jobMapper, never()).countCreatedByUserSince(any(), any());
+    }
+
+    @Test
+    void cacheHitProjectsRequestedOperationWithoutCallingWorkerOrQuota() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID jobId = UUID.randomUUID();
+        String sourceUrl = "https://www.tiktok.com/@creator/video/123";
+        SocialLocationJob cached = SocialLocationJob.builder()
+                .id(jobId).userId(userId).sourceUrl(sourceUrl).sourceKey("tiktok:123")
+                .platform("tiktok").status(SocialLocationJobStatus.COMPLETED)
+                .resultPayload("{\"extraction\":{\"candidateValidation\":{\"policy\":\"AI_EVIDENCE_JUDGE_V2\"},\"candidates\":[]}}")
+                .build();
+        when(jobMapper.findReusableByUserIdAndSourceKey(eq(userId), any())).thenReturn(cached);
+
+        var response = service.create(userId, CreateSocialLocationJobRequest.builder()
+                .url(sourceUrl).operation(SocialLocationOperation.SAVE_SPOTS).build());
+
+        assertThat(response.getOperation()).isEqualTo(SocialLocationOperation.SAVE_SPOTS);
+        verify(completionService).handleCompleted(eq(cached), any(JsonNode.class));
+        verify(jobMapper, never()).countCreatedByUserSince(any(), any());
+        verify(jobMapper, never()).insert(any());
+        verifyNoInteractions(scrapeServiceClient);
+    }
+
+    @Test
+    void inProgressCacheHitPersistsLatestProjectionChoice() {
+        UUID userId = UUID.randomUUID();
+        UUID jobId = UUID.randomUUID();
+        String sourceUrl = "https://www.instagram.com/reel/123";
+        SocialLocationJob running = SocialLocationJob.builder()
+                .id(jobId).userId(userId).sourceUrl(sourceUrl).sourceKey("instagram:123")
+                .platform("instagram").status(SocialLocationJobStatus.PROCESSING)
+                .operation(SocialLocationOperation.GEN_ITINERARY)
+                .resultPayload("{\"extraction\":{\"candidates\":[]}}")
+                .build();
+        when(jobMapper.findReusableByUserIdAndSourceKey(eq(userId), any())).thenReturn(running);
+
+        var response = service.create(userId, CreateSocialLocationJobRequest.builder()
+                .url(sourceUrl).operation(SocialLocationOperation.SAVE_SPOTS).build());
+
+        assertThat(response.getOperation()).isEqualTo(SocialLocationOperation.SAVE_SPOTS);
+        assertThat(running.getOperation()).isEqualTo(SocialLocationOperation.SAVE_SPOTS);
+        verify(jobMapper).update(running);
+        verify(jobMapper, never()).countCreatedByUserSince(any(), any());
+        verify(jobMapper, never()).insert(any());
+        verifyNoInteractions(scrapeServiceClient);
+    }
+
+    @Test
+    void getKeepsUnresolvedCandidatesForReview() {
         UUID userId = UUID.randomUUID();
         UUID legacyJobId = UUID.randomUUID();
         UUID currentJobId = UUID.randomUUID();
@@ -192,10 +305,11 @@ class SocialLocationJobServiceImplTest {
         var legacyResponse = service.get(userId, legacyJobId);
         var currentResponse = service.get(userId, currentJobId);
 
-        assertThat(legacyResponse.getResult().path("extraction").path("candidates")).isEmpty();
+        assertThat(legacyResponse.getResult().path("extraction").path("candidates")).hasSize(1);
         JsonNode currentCandidates = currentResponse.getResult().path("extraction").path("candidates");
-        assertThat(currentCandidates.size()).isEqualTo(1);
+        assertThat(currentCandidates.size()).isEqualTo(2);
         assertThat(currentCandidates.get(0).path("name").asText()).isEqualTo("certain");
+        assertThat(currentCandidates.get(1).path("name").asText()).isEqualTo("unverified");
     }
 
     @Test
@@ -257,6 +371,27 @@ class SocialLocationJobServiceImplTest {
         assertThat(aiCallCaptor.getValue().getOutputTokens()).isEqualTo(30);
         assertThat(aiCallCaptor.getValue().getTotalTokens()).isEqualTo(150);
         assertThat(aiCallCaptor.getValue().getResponsePayload()).contains("\"name\":\"A\"");
+    }
+
+    @Test
+    void itineraryCompletionSuppressesExtractionNotificationWhenProjectionStartsAiTrip() throws Exception {
+        UUID jobId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        SocialLocationJob job = processingJob(jobId, userId, "tiktok");
+        job.setOperation(SocialLocationOperation.GEN_ITINERARY);
+        when(jobMapper.findById(jobId)).thenReturn(job);
+        when(completionService.handleCompleted(eq(job), any(JsonNode.class))).thenReturn(true);
+
+        service.handleCallback(SocialLocationJobCallbackRequest.builder()
+                .gorouteJobId(jobId).status("COMPLETED")
+                .result(objectMapper.readTree("""
+                        {"extraction":{"contentType":"ITINERARY","candidateValidation":{"policy":"AI_EVIDENCE_JUDGE_V2"},"candidates":[{"name":"A"}]}}
+                        """))
+                .build());
+
+        verify(notificationService, never()).createNotification(
+                any(), any(), eq(NotificationType.SOCIAL_PLACES_EXTRACTED), any(), any(), any(), any());
+        verify(completionService).handleCompleted(eq(job), any(JsonNode.class));
     }
 
     @Test

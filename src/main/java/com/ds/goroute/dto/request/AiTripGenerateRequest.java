@@ -14,6 +14,7 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -78,4 +79,7 @@ public class AiTripGenerateRequest {
 
     @Builder.Default
     private Boolean includeBackupActivities = true; // For indoor alternatives during bad weather
+
+    /** Optional source-video context. It is internal provenance for the worker, not user prompt text. */
+    private Map<String, Object> socialContext;
 }

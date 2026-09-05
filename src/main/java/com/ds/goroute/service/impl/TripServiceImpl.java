@@ -26,6 +26,8 @@ import com.ds.goroute.utils.MediaAssetResponseMapper;
 import com.ds.goroute.utils.MemoryImageUrlNormalizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -384,6 +386,7 @@ public class TripServiceImpl implements TripService {
                 .build();
     }
 
+    @CacheEvict(cacheNames = "publicTripSearch", cacheManager = "searchCacheManager", allEntries = true)
     @Override
     @Transactional
     public TripResponse updateTrip(UUID tripId, UpdateTripRequest request, UUID userId) {
@@ -463,6 +466,7 @@ public class TripServiceImpl implements TripService {
         return mapToTripResponse(trip, userId);
     }
 
+    @CacheEvict(cacheNames = "publicTripSearch", cacheManager = "searchCacheManager", allEntries = true)
     @Override
     @Transactional
     public void deleteTrip(UUID tripId, UUID userId) {
@@ -1423,6 +1427,7 @@ public class TripServiceImpl implements TripService {
         };
     }
 
+    @CacheEvict(cacheNames = "publicTripSearch", cacheManager = "searchCacheManager", allEntries = true)
     @Override
     @Transactional
     public TripVoteResponse voteTripHelpful(UUID tripId, UUID userId) {
@@ -1457,6 +1462,7 @@ public class TripServiceImpl implements TripService {
         return buildTripVoteResponse(trip, userId);
     }
 
+    @CacheEvict(cacheNames = "publicTripSearch", cacheManager = "searchCacheManager", allEntries = true)
     @Override
     @Transactional
     public TripVoteResponse voteTripUnhelpful(UUID tripId, UUID userId) {
@@ -1771,6 +1777,11 @@ public class TripServiceImpl implements TripService {
         return mapToTripResponse(newTrip, userId);
     }
 
+    @Cacheable(
+            cacheNames = "publicTripSearch",
+            cacheManager = "searchCacheManager",
+            keyGenerator = "searchCacheKeyGenerator",
+            unless = "#result == null || #result.isEmpty()")
     @Override
     @Transactional(readOnly = true)
     public List<PublicTripResponse> searchPublicTrips(BigDecimal latitude,

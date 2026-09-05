@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.SocialSavedSpotMapper">
+    <resultMap id="SocialSavedSpotResultMap" type="com.ds.goroute.entity.SocialSavedSpot">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="socialJobId" column="social_job_id"/>
+        <result property="candidateRef" column="candidate_ref"/>
+        <result property="contentType" column="content_type"/>
+        <result property="name" column="name"/>
+        <result property="query" column="query"/>
+        <result property="description" column="description"/>
+        <result property="usefulInfo" column="useful_info"/>
+        <result property="visitGuidance" column="visit_guidance"/>
+        <result property="addressHint" column="address_hint"/>
+        <result property="latitude" column="latitude"/>
+        <result property="longitude" column="longitude"/>
+        <result property="googlePlaceId" column="google_place_id"/>
+        <result property="placeId" column="place_id"/>
+        <result property="dayHint" column="day_hint"/>
+        <result property="sequence" column="sequence"/>
+        <result property="timeHint" column="time_hint"/>
+        <result property="optionGroupId" column="option_group_id"/>
+        <result property="optionIndex" column="option_index"/>
+        <result property="relation" column="relation"/>
+        <result property="identityStatus" column="identity_status"/>
+        <result property="resolutionStatus" column="resolution_status"/>
+        <result property="evidence" column="evidence"/>
+        <result property="imageUrl" column="image_url"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="upsertAll">
+        INSERT INTO social_saved_spots (
+            id, user_id, social_job_id, candidate_ref, content_type, name, query, description,
+            useful_info, visit_guidance, address_hint, latitude, longitude, google_place_id,
+            place_id, day_hint, sequence, time_hint, option_group_id, option_index, relation,
+            identity_status, resolution_status, evidence, image_url, created_at, updated_at
+        ) VALUES
+        <foreach collection="spots" item="spot" separator=",">
+            (#{spot.id}, #{spot.userId}, #{spot.socialJobId}, #{spot.candidateRef}, #{spot.contentType},
+             #{spot.name}, #{spot.query}, #{spot.description},
+             CAST(#{spot.usefulInfo,jdbcType=VARCHAR} AS jsonb),
+             CAST(#{spot.visitGuidance,jdbcType=VARCHAR} AS jsonb),
+             #{spot.addressHint}, #{spot.latitude}, #{spot.longitude}, #{spot.googlePlaceId},
+             #{spot.placeId}, #{spot.dayHint}, #{spot.sequence}, #{spot.timeHint},
+             #{spot.optionGroupId}, #{spot.optionIndex}, #{spot.relation}, #{spot.identityStatus},
+             #{spot.resolutionStatus}, CAST(#{spot.evidence,jdbcType=VARCHAR} AS jsonb),
+             #{spot.imageUrl}, COALESCE(#{spot.createdAt}, NOW()), COALESCE(#{spot.updatedAt}, NOW()))
+        </foreach>
+        ON CONFLICT (user_id, social_job_id, candidate_ref) DO UPDATE SET
+            content_type = EXCLUDED.content_type,
+            name = EXCLUDED.name,
+            query = EXCLUDED.query,
+            description = EXCLUDED.description,
+            useful_info = EXCLUDED.useful_info,
+            visit_guidance = EXCLUDED.visit_guidance,
+            address_hint = EXCLUDED.address_hint,
+            latitude = EXCLUDED.latitude,
+            longitude = EXCLUDED.longitude,
+            google_place_id = EXCLUDED.google_place_id,
+            place_id = EXCLUDED.place_id,
+            day_hint = EXCLUDED.day_hint,
+            sequence = EXCLUDED.sequence,
+            time_hint = EXCLUDED.time_hint,
+            option_group_id = EXCLUDED.option_group_id,
+            option_index = EXCLUDED.option_index,
+            relation = EXCLUDED.relation,
+            identity_status = EXCLUDED.identity_status,
+            resolution_status = EXCLUDED.resolution_status,
+            evidence = EXCLUDED.evidence,
+            image_url = EXCLUDED.image_url,
+            updated_at = NOW()
+    </insert>
+
+    <select id="findByUserId" resultMap="SocialSavedSpotResultMap">
+        SELECT * FROM social_saved_spots
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC, sequence
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <delete id="deleteOwned">
+        DELETE FROM social_saved_spots WHERE user_id = #{userId} AND id = #{id}
+    </delete>
+</mapper>

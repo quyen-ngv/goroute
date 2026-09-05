@@ -10,6 +10,7 @@
         <result property="sourceUrl" column="source_url"/>
         <result property="sourceKey" column="source_key"/>
         <result property="platform" column="platform"/>
+        <result property="operation" column="operation" javaType="com.ds.goroute.type.SocialLocationOperation"/>
         <result property="status" column="status" javaType="com.ds.goroute.type.SocialLocationJobStatus"/>
         <result property="pythonJobId" column="python_job_id"/>
         <result property="language" column="language"/>
@@ -18,6 +19,8 @@
         <result property="maxDurationSeconds" column="max_duration_seconds"/>
         <result property="requestPayload" column="request_payload"/>
         <result property="resultPayload" column="result_payload"/>
+        <result property="aiTripJobId" column="ai_trip_job_id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result property="savedSpotCount" column="saved_spot_count" jdbcType="INTEGER"/>
         <result property="errorCode" column="error_code"/>
         <result property="errorMessage" column="error_message"/>
         <result property="attemptCount" column="attempt_count"/>
@@ -35,18 +38,21 @@
 
     <insert id="insert" parameterType="com.ds.goroute.entity.SocialLocationJob">
         INSERT INTO social_location_jobs (
-            id, user_id, source_url, source_key, platform, status, python_job_id, language,
+            id, user_id, source_url, source_key, platform, operation, status, python_job_id, language,
             user_tier, video_duration_seconds, max_duration_seconds,
             request_payload, result_payload, error_code, error_message,
+            ai_trip_job_id, saved_spot_count,
             attempt_count, next_attempt_at, deadline_at, last_heartbeat_at,
             last_reconciled_at, failure_stage, error_details,
             created_at, started_at, completed_at, updated_at
         ) VALUES (
             #{id}, #{userId}, #{sourceUrl}, #{sourceKey}, #{platform},
+            #{operation, javaType=com.ds.goroute.type.SocialLocationOperation},
             #{status, javaType=com.ds.goroute.type.SocialLocationJobStatus},
             #{pythonJobId}, #{language}, #{userTier}, #{videoDurationSeconds}, #{maxDurationSeconds},
-            #{requestPayload}, #{resultPayload},
-            #{errorCode}, #{errorMessage}, #{attemptCount}, #{nextAttemptAt},
+            #{requestPayload}, #{resultPayload}, #{errorCode}, #{errorMessage},
+            #{aiTripJobId,javaType=java.util.UUID,jdbcType=OTHER}, #{savedSpotCount},
+            #{attemptCount}, #{nextAttemptAt},
             #{deadlineAt}, #{lastHeartbeatAt}, #{lastReconciledAt},
             #{failureStage}, CAST(#{errorDetails,jdbcType=VARCHAR} AS jsonb), #{createdAt}, #{startedAt},
             #{completedAt}, #{updatedAt}
@@ -58,6 +64,7 @@
             source_url = #{sourceUrl},
             source_key = #{sourceKey},
             platform = #{platform},
+            operation = #{operation, javaType=com.ds.goroute.type.SocialLocationOperation},
             status = #{status, javaType=com.ds.goroute.type.SocialLocationJobStatus},
             python_job_id = #{pythonJobId},
             language = #{language},
@@ -66,6 +73,8 @@
             max_duration_seconds = #{maxDurationSeconds},
             request_payload = #{requestPayload},
             result_payload = #{resultPayload},
+            ai_trip_job_id = #{aiTripJobId,javaType=java.util.UUID,jdbcType=OTHER},
+            saved_spot_count = #{savedSpotCount},
             error_code = #{errorCode},
             error_message = #{errorMessage},
             attempt_count = #{attemptCount},
@@ -164,7 +173,10 @@
     </select>
 
     <select id="countCreatedByUserSince" resultType="int">
-        SELECT COUNT(*) FROM social_location_jobs WHERE user_id = #{userId} AND created_at &gt;= #{since}
+        SELECT COUNT(*) FROM social_location_jobs
+        WHERE user_id = #{userId}
+          AND created_at &gt;= #{since}
+          AND (operation IS NULL OR operation = 'SAVE_SPOTS')
     </select>
 
     <select id="lockUserSubmission" resultType="boolean">

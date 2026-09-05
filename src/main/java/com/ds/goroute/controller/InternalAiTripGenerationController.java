@@ -3,6 +3,7 @@ package com.ds.goroute.controller;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.AiTripCandidateQueryRequest;
+import com.ds.goroute.dto.request.AiTripCandidateResolutionRequest;
 import com.ds.goroute.dto.request.AiTripCommitRequest;
 import com.ds.goroute.dto.request.AiTripJobEventRequest;
 import com.ds.goroute.exception.BusinessException;
@@ -43,6 +44,14 @@ public class InternalAiTripGenerationController extends BaseController {
             @RequestHeader("X-Attempt-Id") String attemptId,
             @Valid @RequestBody AiTripCandidateQueryRequest request) {
         return ResponseEntity.ok(ofSucceeded(service.candidates(jobId, attemptId, request)));
+    }
+
+    @PostMapping("/{jobId}/resolve-candidates")
+    public ResponseEntity<BaseResponse<List<Map<String, Object>>>> resolveCandidates(
+            @PathVariable UUID jobId,
+            @RequestHeader("X-Attempt-Id") String attemptId,
+            @Valid @RequestBody AiTripCandidateResolutionRequest request) {
+        return ResponseEntity.ok(ofSucceeded(service.resolveCandidates(jobId, attemptId, request)));
     }
 
     @GetMapping("/{jobId}/config")

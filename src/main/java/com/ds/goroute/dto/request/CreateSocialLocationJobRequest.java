@@ -1,5 +1,7 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.type.SocialLocationOperation;
+
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -15,6 +17,10 @@ import lombok.NoArgsConstructor;
 public class CreateSocialLocationJobRequest {
     @NotBlank(message = "URL is required")
     private String url;
+
+    /** Itinerary is the default product flow; SAVE_SPOTS is the explicit list-only flow. */
+    @Builder.Default
+    private SocialLocationOperation operation = SocialLocationOperation.GEN_ITINERARY;
 
     @Builder.Default
     private String language = "vi";

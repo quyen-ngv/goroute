@@ -45,6 +45,8 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -80,6 +82,7 @@ public class PlaceServiceImpl implements PlaceService {
     private final ApplicationEventPublisher eventPublisher;
 
     private static final Integer maxReview = 50;
+    @CacheEvict(cacheNames = "placeSearch", cacheManager = "searchCacheManager", allEntries = true)
     @Override
     @Transactional
     public PlaceResponse importPlace(ImportPlaceRequest request) {
@@ -168,6 +171,7 @@ public class PlaceServiceImpl implements PlaceService {
         }
     }
 
+    @CacheEvict(cacheNames = "placeSearch", cacheManager = "searchCacheManager", allEntries = true)
     @Override
     @Transactional
     public List<PlaceResponse> importPlaces(List<ImportPlaceRequest> requests) {
@@ -299,6 +303,11 @@ public class PlaceServiceImpl implements PlaceService {
                 minRating, false, citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, null, page, size);
     }
 
+    @Cacheable(
+            cacheNames = "placeSearch",
+            cacheManager = "searchCacheManager",
+            keyGenerator = "searchCacheKeyGenerator",
+            unless = "#result == null || #result.isEmpty()")
     @Override
     public List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
                                             BigDecimal radius, String category, List<String> placeGroups,
@@ -470,6 +479,7 @@ public class PlaceServiceImpl implements PlaceService {
         return a.compareTo(b);
     }
 
+    @CacheEvict(cacheNames = "placeSearch", cacheManager = "searchCacheManager", allEntries = true)
     @Override
     @Transactional
     public void deletePlace(UUID id) {
@@ -485,6 +495,7 @@ public class PlaceServiceImpl implements PlaceService {
         log.info("Deleted place: {}", id);
     }
 
+    @CacheEvict(cacheNames = "placeSearch", cacheManager = "searchCacheManager", allEntries = true)
     @Override
     @Transactional
     public PlaceResponse updatePlace(UUID id, UpdatePlaceRequest request) {

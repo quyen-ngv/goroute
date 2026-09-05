@@ -410,6 +410,10 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         if (checkinRepository.markRemoved(checkinId, userId) != 1) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Check-in not found");
         }
+        // The check-in itself remains as a soft-deleted audit record, but its photo rows
+        // are no longer needed. The storage cleanup above has already protected any URL
+        // that the surviving linked review still displays.
+        checkinRepository.deletePhotos(checkinId);
         // Removing a memory is not the same as retracting an opinion, so by default the
         // review survives and the place average does not move. The author can ask for both
         // to go, because a check-in is now the only way they can write that review at all

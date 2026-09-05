@@ -36,6 +36,8 @@ import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.*;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -113,6 +115,10 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
         }
     }
 
+    @CacheEvict(
+            cacheNames = {"activityBookingSearch", "activityBookingByPlaceSearch"},
+            cacheManager = "searchCacheManager",
+            allEntries = true)
     @Override
     @Transactional
     public ActivityBookingResponse importFromKlook(ImportActivityBookingRequest request) {
@@ -173,6 +179,11 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
         return mapToResponse(booking);
     }
 
+    @Cacheable(
+            cacheNames = "activityBookingSearch",
+            cacheManager = "searchCacheManager",
+            keyGenerator = "searchCacheKeyGenerator",
+            unless = "#result == null || #result.isEmpty()")
     @Override
     public List<ActivityBookingResponse> search(String query, BigDecimal minPrice, BigDecimal maxPrice,
                                                 BigDecimal minRating, List<String> destinations,
@@ -287,6 +298,11 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
         }
     }
 
+    @Cacheable(
+            cacheNames = "activityBookingByPlaceSearch",
+            cacheManager = "searchCacheManager",
+            keyGenerator = "searchCacheKeyGenerator",
+            unless = "#result == null || #result.isEmpty()")
     @Override
     public List<ActivityBookingResponse> searchByPlace(
             UUID placeId, String query, Double radiusKm, String targetCurrency, int page, int size) {
@@ -313,6 +329,10 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
         return mapToResponse(booking, targetCurrency);
     }
 
+    @CacheEvict(
+            cacheNames = {"activityBookingSearch", "activityBookingByPlaceSearch"},
+            cacheManager = "searchCacheManager",
+            allEntries = true)
     @Override
     @Transactional
     public ActivityBookingResponse updateById(UUID id, UpdateActivityBookingRequest request) {
@@ -411,6 +431,10 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
         return mapToResponse(booking);
     }
 
+    @CacheEvict(
+            cacheNames = {"activityBookingSearch", "activityBookingByPlaceSearch"},
+            cacheManager = "searchCacheManager",
+            allEntries = true)
     @Override
     @Transactional
     public void deleteById(UUID id) {

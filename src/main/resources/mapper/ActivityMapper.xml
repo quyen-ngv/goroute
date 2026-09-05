@@ -39,6 +39,11 @@
         <result column="starting_point_date" property="startingPointDate" jdbcType="TIMESTAMP"/>
         <result column="booking_id" property="bookingId" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="booking_source" property="bookingSource" jdbcType="VARCHAR"/>
+        <result column="option_group_id" property="optionGroupId" jdbcType="VARCHAR"/>
+        <result column="option_index" property="optionIndex" jdbcType="INTEGER"/>
+        <result column="relation" property="relation" jdbcType="VARCHAR"/>
+        <result column="source_social_job_id" property="sourceSocialJobId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="source_social_candidate_ref" property="sourceSocialCandidateRef" jdbcType="VARCHAR"/>
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
         <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
     </resultMap>
@@ -51,7 +56,8 @@
                                distance_value_to_next, duration_value_to_next,
                                rating, photo_url, notes, description, status, added_by,
                                is_accommodation, is_starting_point, starting_point_date,
-                               booking_id, booking_source, created_at, updated_at)
+                               booking_id, booking_source, option_group_id, option_index, relation,
+                               source_social_job_id, source_social_candidate_ref, created_at, updated_at)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER},
                 #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
                 #{dayNumber}, #{sortOrder}, #{placeId}, #{customPlaceId,javaType=java.util.UUID,jdbcType=OTHER},
@@ -69,6 +75,8 @@
                 #{addedBy,javaType=java.util.UUID,jdbcType=OTHER},
                 #{isAccommodation}, #{isStartingPoint}, #{startingPointDate},
                 #{bookingId,javaType=java.util.UUID,jdbcType=OTHER}, #{bookingSource},
+                #{optionGroupId}, #{optionIndex}, #{relation},
+                #{sourceSocialJobId,javaType=java.util.UUID,jdbcType=OTHER}, #{sourceSocialCandidateRef},
                 NOW(), NOW())
     </insert>
 
@@ -127,6 +135,11 @@
             <if test="startingPointDate != null">starting_point_date = #{startingPointDate},</if>
             <if test="bookingId != null">booking_id = #{bookingId,javaType=java.util.UUID,jdbcType=OTHER},</if>
             <if test="bookingSource != null">booking_source = #{bookingSource},</if>
+            <if test="optionGroupId != null">option_group_id = #{optionGroupId},</if>
+            <if test="optionIndex != null">option_index = #{optionIndex},</if>
+            <if test="relation != null">relation = #{relation},</if>
+            <if test="sourceSocialJobId != null">source_social_job_id = #{sourceSocialJobId,javaType=java.util.UUID,jdbcType=OTHER},</if>
+            <if test="sourceSocialCandidateRef != null">source_social_candidate_ref = #{sourceSocialCandidateRef},</if>
             updated_at = NOW()
         </set>
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}

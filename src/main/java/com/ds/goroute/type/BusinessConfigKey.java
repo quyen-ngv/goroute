@@ -42,6 +42,11 @@ public enum BusinessConfigKey {
     // --- Epic 09: social-location extraction ---------------------------------------
     SOCIAL_LOCATION_DAILY_JOB_LIMIT("SOCIAL_LOCATION", "DAILY_JOB_LIMIT_DEFAULT", 5, 0, 1000),
 
+    // --- Social video itinerary defaults --------------------------------------------
+    SOCIAL_START_OFFSET_DAYS("AI_TRIP", "SOCIAL_START_OFFSET_DAYS", 5, 0, 30),
+    LOCATION_IMAGE_DEFAULT_URL("LOCATION_IMAGE", "DEFAULT_IMAGE_URL",
+            "https://images.unsplash.com/photo-1488646953014-85cb44e25828"),
+
     // --- Epic 06: check-in -----------------------------------------------------------
     CHECKIN_ENABLED("CHECKIN", "CHECKIN_ENABLED", true),
     CHECKIN_VERIFY_RADIUS_METERS("CHECKIN", "VERIFY_RADIUS_METERS", 200, 20, 5000),

@@ -48,5 +48,13 @@ public class AiTripCommitRequest {
         private String description;
         @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)
         private String notes;
+        private String candidateId;
+        /** Set only after Java has verified an external Goong candidate. */
+        private String externalPlaceResolution;
+        private String optionGroupId;
+        private Integer optionIndex;
+        private String relation;
+        private String sourceSocialJobId;
+        private String sourceSocialCandidateRef;
     }
 }

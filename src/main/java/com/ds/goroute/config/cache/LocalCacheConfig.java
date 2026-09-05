@@ -38,6 +38,21 @@ public class LocalCacheConfig {
         return cacheManager;
     }
 
+    /** Short-lived caches for the expensive, read-only catalogue searches. */
+    @Bean("searchCacheManager")
+    public CacheManager searchCacheManager() {
+        CaffeineCacheManager cacheManager = new CaffeineCacheManager(
+                "placeSearch",
+                "activityBookingSearch",
+                "activityBookingByPlaceSearch",
+                "publicTripSearch");
+        cacheManager.setCaffeine(
+                Caffeine.newBuilder()
+                        .expireAfterWrite(2, TimeUnit.MINUTES)
+                        .maximumSize(2_000));
+        return cacheManager;
+    }
+
     /** Dedicated 6-hour cache for exchange rates (daily updated, low churn). */
     @Bean("foodsByCityCacheManager")
     public CacheManager foodsByCityCacheManager() {
@@ -76,5 +91,10 @@ public class LocalCacheConfig {
     @Bean("customKeyGenerator")
     public KeyGenerator keyGenerator() {
         return new CustomKeyGenerator();
+    }
+
+    @Bean("searchCacheKeyGenerator")
+    public KeyGenerator searchCacheKeyGenerator() {
+        return new SearchCacheKeyGenerator();
     }
 }

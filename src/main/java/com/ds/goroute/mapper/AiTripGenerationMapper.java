@@ -18,8 +18,8 @@ public interface AiTripGenerationMapper {
     void updateProgress(@Param("id") UUID id, @Param("attemptId") String attemptId,
                         @Param("status") String status, @Param("stage") String stage,
                         @Param("progress") int progress, @Param("error") String error);
-    void markCompleted(@Param("id") UUID id, @Param("attemptId") String attemptId,
-                       @Param("tripId") UUID tripId);
+    int markCompleted(@Param("id") UUID id, @Param("attemptId") String attemptId,
+                      @Param("tripId") UUID tripId);
     int markTerminalAndRelease(@Param("id") UUID id, @Param("status") String status,
                                @Param("error") String error);
     List<UUID> findStaleActiveIds(@Param("minutes") int minutes);

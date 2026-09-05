@@ -18,6 +18,7 @@ import com.ds.goroute.service.PlaceImportJobService;
 import com.ds.goroute.service.PlaceSocialVideoService;
 import com.ds.goroute.service.SocialLocationConfigService;
 import com.ds.goroute.service.NotificationService;
+import com.ds.goroute.service.SocialLocationCompletionService;
 import com.ds.goroute.repository.AiTripRepository;
 import com.ds.goroute.repository.SocialLocationRestrictionRepository;
 import com.ds.goroute.entity.SocialLocationSubmissionEvent;
@@ -31,6 +32,7 @@ import com.ds.goroute.thirdparty.scrape.ScrapeSocialLocationJobResponse;
 import com.ds.goroute.type.SocialLocationJobStatus;
 import com.ds.goroute.type.PlaceImportJobItemStatus;
 import com.ds.goroute.type.NotificationType;
+import com.ds.goroute.type.SocialLocationOperation;
 import com.ds.goroute.utils.SocialLocationSourceKey;
 import com.ds.goroute.utils.PlaceImportCandidateKey;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -73,6 +75,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     private final AiTripRepository aiTripRepository;
     private final SocialLocationRestrictionRepository restrictionRepository;
     private final NotificationService notificationService;
+    private final SocialLocationCompletionService completionService;
 
     @Value("${goroute.internal.public-base-url:http://goroute-app:8080}")
     private String internalBaseUrl;
@@ -104,6 +107,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
             throw new IllegalArgumentException("URL must be a TikTok or Instagram URL");
         }
         String sourceKey = SocialLocationSourceKey.fromUrl(sourceUrl);
+        SocialLocationOperation requestedOperation = requestedOperation(request);
         SocialLocationJob reusableJob = jobMapper.findReusableByUserIdAndSourceKey(userId, sourceKey);
         SocialLocationJob stalePolicyJob = null;
         if (reusableJob != null
@@ -113,16 +117,36 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
             reusableJob = null;
         }
         if (reusableJob != null) {
+            if (reusableJob.getOperation() != requestedOperation) {
+                // The extraction is shared, but the requested projection is not. Persist the
+                // latest button choice while the worker is still running so completion cannot
+                // accidentally start an itinerary after the user selected "save spots" (or
+                // vice versa).
+                reusableJob.setOperation(requestedOperation);
+                jobMapper.update(reusableJob);
+            }
+            if (reusableJob.getStatus() == SocialLocationJobStatus.COMPLETED
+                    && reusableJob.getResultPayload() != null) {
+                // The extraction is the cache. A later button press may project the same cached
+                // result into either saved spots or an itinerary without downloading/analyzing
+                // the video again.
+                JsonNode cachedResult = retainOnlyCertainCandidates(
+                        enrichResultWithPlaceMappings(reusableJob.getId(), parseJson(reusableJob.getResultPayload())));
+                try {
+                    completionService.handleCompleted(reusableJob, cachedResult);
+                } catch (Exception e) {
+                    // A cache hit must remain usable even if a downstream projection is
+                    // temporarily unavailable. The next request can retry the projection
+                    // without downloading or extracting the source video again.
+                    log.warn("Could not project cached social job {}: {}",
+                            reusableJob.getId(), e.getMessage(), e);
+                }
+            }
             return toResponse(reusableJob);
         }
 
-        int dailyJobLimit = socialConfig.dailyJobLimit(userId);
-        if (stalePolicyJob == null
-                && jobMapper.countCreatedByUserSince(userId, LocalDate.now().atStartOfDay())
-                >= dailyJobLimit) {
-            audit(userId, null, sourceUrl, "REJECTED_DAILY_LIMIT", "DAILY_LIMIT_REACHED", null);
-            throw new BusinessException(ErrorConstant.SOCIAL_LOCATION_DAILY_LIMIT_REACHED,
-                    Map.of("dailyLimit", dailyJobLimit));
+        if (requestedOperation == SocialLocationOperation.SAVE_SPOTS) {
+            enforceDailyLimit(userId, sourceUrl);
         }
         if (jobMapper.countQueued() >= socialConfig.maxQueuedJobs()) {
             audit(userId, null, sourceUrl, "REJECTED_QUEUE_FULL", "QUEUE_FULL", null);
@@ -140,6 +164,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 .sourceUrl(sourceUrl)
                 .sourceKey(sourceKey)
                 .platform(platform)
+                .operation(requestedOperation)
                 .status(SocialLocationJobStatus.QUEUED)
                 .language(cleanLanguage(request.getLanguage()))
                 .userTier(userTier)
@@ -169,6 +194,16 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 Map.of("tier", userTier,
                         "maxDurationSeconds", maxDurationSeconds));
         return toResponse(job);
+    }
+
+    private void enforceDailyLimit(UUID userId, String sourceUrl) {
+        int dailyJobLimit = socialConfig.dailyJobLimit(userId);
+        if (jobMapper.countCreatedByUserSince(userId, LocalDate.now().atStartOfDay()) < dailyJobLimit) {
+            return;
+        }
+        audit(userId, null, sourceUrl, "REJECTED_DAILY_LIMIT", "DAILY_LIMIT_REACHED", null);
+        throw new BusinessException(ErrorConstant.SOCIAL_LOCATION_DAILY_LIMIT_REACHED,
+                Map.of("dailyLimit", dailyJobLimit));
     }
 
     @Override
@@ -459,6 +494,13 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                             "videoDurationSeconds", job.getVideoDurationSeconds() == null ? 0 : job.getVideoDurationSeconds(),
                             "maxDurationSeconds", job.getMaxDurationSeconds()));
         } else if (status == SocialLocationJobStatus.COMPLETED) {
+            boolean itineraryStarted = false;
+            try {
+                itineraryStarted = completionService.handleCompleted(job, callbackResult);
+            } catch (Exception e) {
+                log.warn("Could not persist completed social job {} side effects: {}",
+                        job.getId(), e.getMessage(), e);
+            }
             try {
                 placeImportJobService.createFromSocialJobs(
                         job.getUserId(),
@@ -470,10 +512,12 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 log.warn("Could not queue automatic place import for social job {}: {}",
                         job.getId(), e.getMessage(), e);
             }
-            try {
-                notifyExtractionCompleted(job, request.getResult());
-            } catch (Exception e) {
-                log.warn("Could not notify completion for social job {}: {}", job.getId(), e.getMessage(), e);
+            if (!itineraryStarted) {
+                try {
+                    notifyExtractionCompleted(job, callbackResult);
+                } catch (Exception e) {
+                    log.warn("Could not notify completion for social job {}: {}", job.getId(), e.getMessage(), e);
+                }
             }
         }
         log.info("Social location callback processed: job_id={} python_job_id={} status={}",
@@ -615,6 +659,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 .id(job.getId())
                 .sourceUrl(job.getSourceUrl())
                 .platform(job.getPlatform())
+                .operation(job.getOperation() == null ? SocialLocationOperation.GEN_ITINERARY : job.getOperation())
                 .status(job.getStatus())
                 .pythonJobId(job.getPythonJobId())
                 .language(job.getLanguage())
@@ -622,6 +667,8 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 .videoDurationSeconds(job.getVideoDurationSeconds())
                 .maxDurationSeconds(job.getMaxDurationSeconds())
                 .result(result)
+                .aiTripJobId(job.getAiTripJobId())
+                .savedSpotCount(job.getSavedSpotCount())
                 .errorCode(job.getErrorCode())
                 .errorMessage(job.getErrorMessage())
                 .attemptCount(job.getAttemptCount())
@@ -649,6 +696,9 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         effectiveRequest.put("language", job.getLanguage());
         effectiveRequest.put("userTier", job.getUserTier());
         effectiveRequest.put("maxDurationSeconds", job.getMaxDurationSeconds());
+        effectiveRequest.put("operation", job.getOperation() == null
+                ? SocialLocationOperation.GEN_ITINERARY.name()
+                : job.getOperation().name());
         effectiveRequest.put("candidatePolicy", CURRENT_CANDIDATE_POLICY);
         effectiveRequest.put("attempt", job.getAttemptCount() == null ? 0 : job.getAttemptCount());
         JsonNode originalRequest = parseJson(job.getRequestPayload());
@@ -749,26 +799,26 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         if (!(copy.path("extraction") instanceof ObjectNode extraction)) {
             return copy;
         }
-        boolean currentPolicy = CURRENT_CANDIDATE_POLICY.equals(extraction
-                .path("candidateValidation")
-                .path("policy")
-                .asText());
-        ArrayNode certainCandidates = objectMapper.createArrayNode();
+        ArrayNode retainedCandidates = objectMapper.createArrayNode();
         JsonNode candidates = extraction.path("candidates");
-        if (currentPolicy && candidates.isArray()) {
+        if (candidates.isArray()) {
             for (JsonNode candidate : candidates) {
-                JsonNode verification = candidate.path("verification");
-                String status = verification.path("status").asText();
-                if (CURRENT_CANDIDATE_POLICY.equals(verification.path("policy").asText())
-                        && ("VERIFIED".equals(status) || "EVIDENCE_VERIFIED".equals(status))) {
-                    certainCandidates.add(candidate);
+                // Resolution confidence is surfaced per candidate. It must never remove a
+                // named mention: unresolved spots become editable ACTIVITY rows downstream.
+                if (candidate != null && candidate.isObject()
+                        && text(candidate, "name", "query") != null) {
+                    retainedCandidates.add(candidate);
                 }
             }
         }
-        extraction.set("candidates", certainCandidates);
-        extraction.put("found", !certainCandidates.isEmpty());
+        extraction.set("candidates", retainedCandidates);
+        extraction.put("found", !retainedCandidates.isEmpty());
         extraction.put("needs_confirmation", false);
         return copy;
+    }
+
+    private SocialLocationOperation requestedOperation(CreateSocialLocationJobRequest request) {
+        return request.getOperation() == null ? SocialLocationOperation.GEN_ITINERARY : request.getOperation();
     }
 
     private Place findExistingPlace(JsonNode candidate) {

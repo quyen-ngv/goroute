@@ -36,13 +36,19 @@ public class NotificationTemplateRenderer {
             return withLocalizedPunctuation(
                     renderSocialPlacesExtracted(normalizedData, lang), lang);
         }
+        if (type == NotificationType.AI_TRIP_CREATED) {
+            return withLocalizedPunctuation(renderAiTripCreated(lang), lang);
+        }
+        if (type == NotificationType.SOCIAL_LIKE || type == NotificationType.SOCIAL_COMMENT) {
+            return withLocalizedPunctuation(renderSocialInteraction(type, normalizedData, lang), lang);
+        }
 
         NotificationMessage template = templates
                 .getOrDefault(lang, templates.get(NotificationLanguage.DEFAULT))
                 .get(type);
 
-        if (template == null) {
-            template = templates.get(NotificationLanguage.DEFAULT).get(type);
+        if (template == null && !NotificationLanguage.DEFAULT.equals(lang)) {
+            return withLocalizedPunctuation(localizedFallback(lang), lang);
         }
         if (template == null) {
             return new NotificationMessage("Trip update", "There is a new update in your trip.");
@@ -52,6 +58,19 @@ public class NotificationTemplateRenderer {
                 interpolate(template.title(), normalizedData),
                 interpolate(template.body(), normalizedData)
         ), lang);
+    }
+
+    private NotificationMessage localizedFallback(String language) {
+        return switch (language) {
+            case "vi" -> new NotificationMessage("Cập nhật chuyến đi", "Có một cập nhật mới trong chuyến đi của bạn");
+            case "hi" -> new NotificationMessage("यात्रा अपडेट", "आपकी यात्रा में एक नया अपडेट है");
+            case "ja" -> new NotificationMessage("旅行の更新", "旅行に新しい更新があります");
+            case "ko" -> new NotificationMessage("여행 업데이트", "여행에 새로운 업데이트가 있습니다");
+            case "ru" -> new NotificationMessage("Обновление поездки", "В вашей поездке есть новое обновление");
+            case "th" -> new NotificationMessage("อัปเดตทริป", "มีการอัปเดตใหม่ในทริปของคุณ");
+            case "zh-TW" -> new NotificationMessage("行程更新", "你的行程有一則新更新");
+            default -> new NotificationMessage("Trip update", "There is a new update in your trip");
+        };
     }
 
     private NotificationMessage withLocalizedPunctuation(NotificationMessage message, String language) {
@@ -128,6 +147,121 @@ public class NotificationTemplateRenderer {
                     "Places extracted",
                     "Places extracted from " + platformName + ": " + placeCount
                             + ". Open Saved Places to review the result");
+        };
+    }
+
+    private NotificationMessage renderAiTripCreated(String language) {
+        return switch (language) {
+            case "vi" -> new NotificationMessage(
+                    "\u0110\u00e3 t\u1ea1o l\u1ecbch tr\u00ecnh",
+                    "\u0110\u00e3 l\u01b0u l\u1ecbch tr\u00ecnh t\u1eeb video. M\u1edf chuy\u1ebfn \u0111i \u0111\u1ec3 xem");
+            case "ja" -> new NotificationMessage("\u65c5\u7a0b\u3092\u4f5c\u6210\u3057\u307e\u3057\u305f", "\u52d5\u753b\u304b\u3089\u65c5\u7a0b\u3092\u4fdd\u5b58\u3057\u307e\u3057\u305f\u3002\u65c5\u884c\u3092\u958b\u3044\u3066\u78ba\u8a8d\u3067\u304d\u307e\u3059");
+            case "ko" -> new NotificationMessage("\uc77c\uc815\uc774 \uc0dd\uc131\ub418\uc5c8\uc5b4\uc694", "\ub3d9\uc601\uc0c1\uc5d0\uc11c \uc77c\uc815\uc744 \uc800\uc7a5\ud588\uc5b4\uc694. \ud2b8\ub9bd\uc744 \uc5f4\uc5b4 \ud655\uc778\ud558\uc138\uc694");
+            case "hi" -> new NotificationMessage("यात्रा कार्यक्रम बनाया गया", "वीडियो से यात्रा कार्यक्रम बन गया है। देखने और संपादित करने के लिए यात्रा खोलें");
+            case "ru" -> new NotificationMessage("Маршрут создан", "Маршрут из видео создан. Откройте поездку, чтобы посмотреть и изменить его");
+            case "th" -> new NotificationMessage("สร้างกำหนดการเดินทางแล้ว", "สร้างกำหนดการจากวิดีโอแล้ว เปิดทริปเพื่อดูและแก้ไข");
+            case "zh-TW" -> new NotificationMessage("行程已建立", "已從影片建立行程。開啟行程即可查看及編輯");
+            default -> new NotificationMessage("Itinerary created", "Your itinerary from the video is ready. Open the trip to review it");
+        };
+    }
+
+    private NotificationMessage renderSocialInteraction(NotificationType type,
+                                                         Map<String, Object> data,
+                                                         String language) {
+        int count = 1;
+        Object rawCount = data.get("actorCount");
+        if (rawCount instanceof Number number) {
+            count = Math.max(1, number.intValue());
+        } else if (rawCount != null) {
+            try {
+                count = Math.max(1, Integer.parseInt(String.valueOf(rawCount)));
+            } catch (NumberFormatException ignored) {
+                // Keep the single-actor fallback.
+            }
+        }
+        String actor = stringValue(data.get("actorName"));
+        String actorLabel = count > 1 ? String.valueOf(count) : (actor == null ? "Someone" : actor);
+        String target = socialTargetLabel(stringValue(data.get("targetType")), language);
+        boolean like = type == NotificationType.SOCIAL_LIKE;
+        return switch (language) {
+            case "vi" -> new NotificationMessage(like ? "Lượt thích mới" : "Bình luận mới",
+                    like ? actorLabel + " đã thích " + target + " của bạn"
+                            : actorLabel + " đã bình luận về " + target + " của bạn");
+            case "hi" -> new NotificationMessage(like ? "नई पसंद" : "नई टिप्पणी",
+                    like ? actorLabel + " ने आपके " + target + " को पसंद किया"
+                            : actorLabel + " ने आपके " + target + " पर टिप्पणी की");
+            case "ja" -> new NotificationMessage(like ? "新しいリアクション" : "新しいコメント",
+                    like ? actorLabel + "があなたの" + target + "にリアクションしました"
+                            : actorLabel + "があなたの" + target + "にコメントしました");
+            case "ko" -> new NotificationMessage(like ? "새 좋아요" : "새 댓글",
+                    like ? actorLabel + " 내 " + target + "을 좋아합니다"
+                            : actorLabel + " 내 " + target + "에 댓글을 남겼습니다");
+            case "ru" -> new NotificationMessage(like ? "Новая реакция" : "Новый комментарий",
+                    like ? actorLabel + " отметили «Нравится» ваш " + target
+                            : actorLabel + " прокомментировали ваш " + target);
+            case "th" -> new NotificationMessage(like ? "มีคนถูกใจใหม่" : "ความคิดเห็นใหม่",
+                    like ? actorLabel + " ถูกใจ" + target + "ของคุณ"
+                            : actorLabel + " แสดงความคิดเห็นเกี่ยวกับ" + target + "ของคุณ");
+            case "zh-TW" -> new NotificationMessage(like ? "新的讚" : "新的留言",
+                    like ? actorLabel + "對你的" + target + "按了讚"
+                            : actorLabel + "評論了你的" + target);
+            default -> new NotificationMessage(like ? "New like" : "New comment",
+                    like ? actorLabel + " liked your " + target
+                            : actorLabel + " commented on your " + target);
+        };
+    }
+
+    private String socialTargetLabel(String raw, String language) {
+        String target = raw == null ? "" : raw.trim().toUpperCase();
+        return switch (language) {
+            case "vi" -> switch (target) {
+                case "TRIP" -> "chuyến đi";
+                case "CHECKIN" -> "check-in";
+                case "REVIEW" -> "đánh giá";
+                default -> "bình luận";
+            };
+            case "hi" -> switch (target) {
+                case "TRIP" -> "यात्रा";
+                case "CHECKIN" -> "चेक-इन";
+                case "REVIEW" -> "समीक्षा";
+                default -> "टिप्पणी";
+            };
+            case "ja" -> switch (target) {
+                case "TRIP" -> "旅行";
+                case "CHECKIN" -> "チェックイン";
+                case "REVIEW" -> "レビュー";
+                default -> "コメント";
+            };
+            case "ko" -> switch (target) {
+                case "TRIP" -> "여행";
+                case "CHECKIN" -> "체크인";
+                case "REVIEW" -> "리뷰";
+                default -> "댓글";
+            };
+            case "ru" -> switch (target) {
+                case "TRIP" -> "поездку";
+                case "CHECKIN" -> "отметку о посещении";
+                case "REVIEW" -> "отзыв";
+                default -> "комментарий";
+            };
+            case "th" -> switch (target) {
+                case "TRIP" -> "ทริป";
+                case "CHECKIN" -> "เช็กอิน";
+                case "REVIEW" -> "รีวิว";
+                default -> "ความคิดเห็น";
+            };
+            case "zh-TW" -> switch (target) {
+                case "TRIP" -> "行程";
+                case "CHECKIN" -> "打卡";
+                case "REVIEW" -> "評價";
+                default -> "留言";
+            };
+            default -> switch (target) {
+                case "TRIP" -> "trip";
+                case "CHECKIN" -> "check-in";
+                case "REVIEW" -> "review";
+                default -> "comment";
+            };
         };
     }
 

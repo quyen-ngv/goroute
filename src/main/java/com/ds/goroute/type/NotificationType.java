@@ -82,6 +82,7 @@ public enum NotificationType {
 
     // Social place extraction
     SOCIAL_PLACES_EXTRACTED,
+    AI_TRIP_CREATED,
     
     // Admin notifications
     ADMIN_ANNOUNCEMENT,

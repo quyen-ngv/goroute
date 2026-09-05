@@ -18,6 +18,8 @@ import com.ds.goroute.service.FileUploadService;
 import com.ds.goroute.service.ImageUploadOutcome;
 import com.ds.goroute.service.ImageUploadRequest;
 import com.ds.goroute.service.ImageStorageCleanupService;
+import com.ds.goroute.service.BusinessConfigService;
+import com.ds.goroute.type.BusinessConfigKey;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -47,6 +49,7 @@ public class LocationImageServiceImpl implements LocationImageService {
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final ObjectMapper objectMapper;
     private final CityWeatherService cityWeatherService;
+    private final BusinessConfigService businessConfigService;
 
     /** Shared pool; the weather calls are short, cached, and never touch the database. */
     private final Executor applicationTaskExecutor;
@@ -56,14 +59,22 @@ public class LocationImageServiceImpl implements LocationImageService {
     @Override
     public String getImageForDestination(String destination) {
         if (destination == null || destination.isEmpty()) {
-            return DEFAULT_IMAGE;
+            return defaultImageUrl();
         }
 
         String normalized = normalizeVietnamese(destination.toLowerCase());
 
         return locationImageRepository.findBestMatch(normalized)
             .map(LocationImage::getImageUrl)
-            .orElse(DEFAULT_IMAGE);
+            .orElse(defaultImageUrl());
+    }
+
+    private String defaultImageUrl() {
+        if (businessConfigService == null) {
+            return DEFAULT_IMAGE;
+        }
+        String configured = businessConfigService.getText(BusinessConfigKey.LOCATION_IMAGE_DEFAULT_URL);
+        return configured == null || configured.isBlank() ? DEFAULT_IMAGE : configured;
     }
 
     @Override

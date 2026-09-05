@@ -97,6 +97,11 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     }
 
     @Override
+    public List<UUID> findRemovedCheckinIdsWithPhotos(int limit) {
+        return mapper.findRemovedCheckinIdsWithPhotos(limit);
+    }
+
+    @Override
     public int attachPlaceToCluster(String locationKey, UUID placeId) {
         return mapper.attachPlaceToCluster(locationKey, placeId);
     }

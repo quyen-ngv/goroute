@@ -50,6 +50,9 @@ public interface UserCheckinRepository {
 
     int markRemoved(UUID id, UUID userId);
 
+    /** Soft-deleted check-ins that still own photo rows, bounded for background cleanup. */
+    List<UUID> findRemovedCheckinIdsWithPhotos(int limit);
+
     int attachPlaceToCluster(String locationKey, UUID placeId);
 
     int attachReview(UUID id, UUID reviewId);

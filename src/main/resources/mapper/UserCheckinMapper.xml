@@ -238,6 +238,19 @@
         WHERE id = #{id} AND user_id = #{userId} AND is_removed = FALSE
     </update>
 
+    <select id="findRemovedCheckinIdsWithPhotos" resultType="java.util.UUID">
+        SELECT c.id
+        FROM user_checkins c
+        WHERE c.is_removed = TRUE
+          AND EXISTS (
+              SELECT 1
+              FROM user_checkin_photos p
+              WHERE p.checkin_id = c.id
+          )
+        ORDER BY c.updated_at ASC, c.id ASC
+        LIMIT #{limit}
+    </select>
+
     <update id="attachPlaceToCluster">
         UPDATE user_checkins
         SET place_id = #{placeId}, updated_at = NOW()

@@ -60,6 +60,14 @@ public class Activity {
     private UUID bookingId;
     private String bookingSource; // KLOOK, VIATOR, null for user-created
 
+    // Social-video provenance and explicit alternatives. Options are separate rows that can
+    // share one time window; provenance remains editable after the trip is created.
+    private String optionGroupId;
+    private Integer optionIndex;
+    private String relation;
+    private UUID sourceSocialJobId;
+    private String sourceSocialCandidateRef;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
