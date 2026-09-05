@@ -22,5 +22,6 @@ public class PublicExpenseResponse {
     private String description;
     private Integer splitCount;
     private List<String> photoUrls;
+    private List<MemoryImageResponse> photoUrlsV2;
     private LocalDateTime createdAt;
 }

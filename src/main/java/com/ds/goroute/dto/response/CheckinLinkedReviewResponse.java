@@ -19,6 +19,7 @@ public class CheckinLinkedReviewResponse {
     private Integer serviceRating;
     private String text;
     private List<String> photos;
+    private List<MemoryImageResponse> photosV2;
     private Integer helpfulVotes;
     private Integer unhelpfulVotes;
     private LocalDateTime updatedAt;

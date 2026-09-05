@@ -28,6 +28,13 @@ public class MemoryImageResponse {
     private UUID id;
     private String url;
 
+    /** The owning row in the central media catalog. */
+    private String entityType;
+    private UUID entityId;
+    private String mediaType;
+    private String assetRole;
+    private Integer position;
+
     /** Short title. Stored as {@code media_assets.caption}. */
     private String title;
 
@@ -49,12 +56,14 @@ public class MemoryImageResponse {
 
     private BigDecimal latitude;
     private BigDecimal longitude;
+    private BigDecimal accuracyMeters;
 
     /** The catalogued place this was taken at, when the author picked one. */
     private UUID placeId;
 
     /** What to show as the location; set even without a {@link #placeId}. */
     private String locationName;
+    private String locationSource;
 
     private LocalDateTime createdAt;
 

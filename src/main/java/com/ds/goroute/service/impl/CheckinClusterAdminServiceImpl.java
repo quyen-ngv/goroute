@@ -173,7 +173,7 @@ public class CheckinClusterAdminServiceImpl implements CheckinClusterAdminServic
     private UUID convertToReview(UserCheckin checkin, UUID placeId, List<String> photoUrls) {
         Optional<UserReview> existing = reviewRepository.findByUserAndPlace(checkin.getUserId(), placeId);
         LocalDateTime now = LocalDateTime.now();
-        String reviewPhotos = photoUrls.isEmpty() ? null : JsonUtils.toJson(photoUrls);
+        String reviewPhotos = JsonUtils.toJson(photoUrls);
 
         if (existing.isPresent()) {
             UserReview review = existing.get();

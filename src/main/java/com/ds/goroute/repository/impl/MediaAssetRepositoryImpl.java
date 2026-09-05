@@ -41,8 +41,28 @@ public class MediaAssetRepositoryImpl implements MediaAssetRepository {
     }
 
     @Override
+    public List<MediaAsset> findTripMemoriesByTripId(UUID tripId) {
+        return mediaAssetMapper.selectTripMemoriesByTripId(tripId);
+    }
+
+    @Override
+    public List<MediaAsset> findTripMemoriesByActivityId(UUID activityId) {
+        return mediaAssetMapper.selectTripMemoriesByActivityId(activityId);
+    }
+
+    @Override
+    public int countTripMemoriesByTripId(UUID tripId) {
+        return mediaAssetMapper.countTripMemoriesByTripId(tripId);
+    }
+
+    @Override
     public List<MediaAsset> findByEntity(String entityType, UUID entityId) {
         return mediaAssetMapper.selectByEntity(entityType, entityId);
+    }
+
+    @Override
+    public List<MediaAsset> findByEntityType(String entityType) {
+        return mediaAssetMapper.selectByEntityType(entityType);
     }
 
     @Override
@@ -60,6 +80,16 @@ public class MediaAssetRepositoryImpl implements MediaAssetRepository {
     @Override
     public void updateDetails(MediaAsset mediaAsset) {
         mediaAssetMapper.updateDetails(mediaAsset);
+    }
+
+    @Override
+    public void updatePosition(MediaAsset mediaAsset) {
+        mediaAssetMapper.updatePosition(mediaAsset);
+    }
+
+    @Override
+    public void updateUrl(UUID id, String url) {
+        mediaAssetMapper.updateUrl(id, url);
     }
 
     @Override

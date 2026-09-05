@@ -999,6 +999,8 @@ public class TripServiceImpl implements TripService {
     private UserReviewResponse mapToSharedTripUserReviewResponse(UserReview review, UUID viewerId) {
         User user = userRepository.findById(review.getUserId()).orElse(null);
         UserReviewProfile profile = userReviewProfileRepository.findByUserId(review.getUserId()).orElse(null);
+        List<MemoryImageResponse> photoResponses = MediaAssetResponseMapper.toImageResponses(
+                mediaAssetRepository.findByEntity("USER_REVIEW", review.getId()));
 
         Boolean hasVotedHelpful = null;
         boolean isOwnReview = false;
@@ -1025,7 +1027,8 @@ public class TripServiceImpl implements TripService {
                 .ambianceRating(review.getAmbianceRating())
                 .serviceRating(review.getServiceRating())
                 .text(review.getText())
-                .photos(parseReviewPhotos(review.getPhotos()))
+                .photos(photoResponses.isEmpty() ? null : MediaAssetResponseMapper.toUrls(photoResponses))
+                .photosV2(photoResponses)
                 .weight(review.getWeight() != null ? review.getWeight() : BigDecimal.ONE)
                 .helpfulVotes(review.getHelpfulVotes() != null ? review.getHelpfulVotes() : 0)
                 .unhelpfulVotes(review.getUnhelpfulVotes() != null ? review.getUnhelpfulVotes() : 0)
@@ -1034,20 +1037,6 @@ public class TripServiceImpl implements TripService {
                 .createdAt(review.getCreatedAt())
                 .updatedAt(review.getUpdatedAt())
                 .build();
-    }
-
-    private List<String> parseReviewPhotos(String photosJson) {
-        if (photosJson == null || photosJson.isBlank()) {
-            return null;
-        }
-        List<?> parsed = JsonUtils.fromJson(photosJson, List.class);
-        if (parsed == null) {
-            return null;
-        }
-        return parsed.stream()
-                .filter(Objects::nonNull)
-                .map(Object::toString)
-                .collect(Collectors.toList());
     }
 
     private BigDecimal calculateTripAverage(List<UserReviewResponse> reviews) {
@@ -1288,8 +1277,16 @@ public class TripServiceImpl implements TripService {
 
         if (Boolean.TRUE.equals(trip.getShareExpenses())) {
             List<com.ds.goroute.entity.Expense> expenses = expenseRepository.findByTripId(tripId);
+            Map<UUID, List<MediaAsset>> expenseAssets = mediaAssetRepository
+                    .findByEntityIds("EXPENSE", expenses.stream().map(Expense::getId).toList())
+                    .stream()
+                    .filter(asset -> asset.getAssetRole() == null
+                            || "PHOTO".equalsIgnoreCase(asset.getAssetRole()))
+                    .collect(Collectors.groupingBy(MediaAsset::getEntityId));
             for (com.ds.goroute.entity.Expense e : expenses) {
                 int splitCount = expenseSplitRepository.findByExpenseId(e.getId()).size();
+                List<MemoryImageResponse> expensePhotoResponses = MediaAssetResponseMapper.toImageResponses(
+                        expenseAssets.getOrDefault(e.getId(), List.of()));
                 PublicExpenseResponse expenseResponse = PublicExpenseResponse.builder()
                         .id(e.getId())
                         .amount(e.getAmount())
@@ -1297,7 +1294,8 @@ public class TripServiceImpl implements TripService {
                         .category(String.valueOf(e.getCategory()))
                         .description(e.getDescription())
                         .splitCount(splitCount)
-                        .photoUrls(e.getPhotoUrls() != null ? List.of(e.getPhotoUrls()) : List.of())
+                        .photoUrls(MediaAssetResponseMapper.toUrls(expensePhotoResponses))
+                        .photoUrlsV2(expensePhotoResponses)
                         .createdAt(e.getCreatedAt())
                         .build();
 
@@ -1865,7 +1863,7 @@ public class TripServiceImpl implements TripService {
     }
 
     private List<MemoryImageResponse> getTripMemoryImages(UUID tripId) {
-        List<MediaAsset> assets = mediaAssetRepository.findByTripId(tripId);
+        List<MediaAsset> assets = mediaAssetRepository.findTripMemoriesByTripId(tripId);
         return toMemoryImageResponses(assets, activityNamesForTripPhotos(tripId, assets));
     }
 
@@ -1874,7 +1872,7 @@ public class TripServiceImpl implements TripService {
      *                     costs nothing here
      */
     private List<MemoryImageResponse> getActivityMemoryImages(UUID activityId, String activityName) {
-        List<MediaAsset> assets = mediaAssetRepository.findByActivityId(activityId);
+        List<MediaAsset> assets = mediaAssetRepository.findTripMemoriesByActivityId(activityId);
         Map<UUID, String> names = activityName == null || activityName.isBlank()
                 ? Map.of()
                 : Map.of(activityId, activityName);

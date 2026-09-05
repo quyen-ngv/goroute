@@ -26,7 +26,7 @@ public class ImageArchiveJob {
     private final ActivityRepository activityRepository;
     private final ActivityBookingRepository activityBookingRepository;
     private final FoodRepository foodRepository;
-    private final ExpenseRepository expenseRepository;
+    private final MediaAssetRepository mediaAssetRepository;
     private final ObjectMapper objectMapper;
 
     private static final String RESOURCES_BASE = "resources/";
@@ -308,40 +308,17 @@ public class ImageArchiveJob {
         AtomicInteger failed = new AtomicInteger(0);
         AtomicInteger skipped = new AtomicInteger(0);
         
-        List<Expense> expenses = expenseRepository.findAll();
-        log.info("Found {} expenses", expenses.size());
+        List<MediaAsset> assets = mediaAssetRepository.findByEntityType("EXPENSE");
+        log.info("Found {} expense media assets", assets.size());
         
-        for (Expense expense : expenses) {
+        for (MediaAsset asset : assets) {
             try {
-                boolean updated = false;
-                String resourcePath = RESOURCES_BASE + "expenses/" + expense.getId() + "/";
-                
-                if (isMinIOUrl(expense.getReceiptUrl())) {
-                    String compressedUrl = imageArchiveService.compressAndDelete(expense.getReceiptUrl(), resourcePath);
-                    if (compressedUrl != null && !compressedUrl.equals(expense.getReceiptUrl())) {
-                        expense.setReceiptUrl(compressedUrl);
-                        updated = true;
+                String resourcePath = RESOURCES_BASE + "expenses/" + asset.getEntityId() + "/";
+                if (isMinIOUrl(asset.getUrl())) {
+                    String compressedUrl = imageArchiveService.compressAndDelete(asset.getUrl(), resourcePath);
+                    if (compressedUrl != null && !compressedUrl.equals(asset.getUrl())) {
+                        mediaAssetRepository.updateUrl(asset.getId(), compressedUrl);
                     }
-                }
-                
-                if (expense.getPhotoUrls() != null && expense.getPhotoUrls().length > 0) {
-                    List<String> urlList = Arrays.asList(expense.getPhotoUrls());
-                    List<String> minioUrls = urlList.stream().filter(this::isMinIOUrl).toList();
-                    
-                    if (!minioUrls.isEmpty()) {
-                        Map<String, String> compressedUrls = imageArchiveService.archiveAndCompressBatch(minioUrls, resourcePath);
-                        
-                        String[] newPhotoUrls = urlList.stream()
-                                .map(url -> compressedUrls.getOrDefault(url, url))
-                                .toArray(String[]::new);
-                        
-                        expense.setPhotoUrls(newPhotoUrls);
-                        updated = true;
-                    }
-                }
-                
-                if (updated) {
-                    expenseRepository.update(expense);
                     success.incrementAndGet();
                 } else {
                     skipped.incrementAndGet();
@@ -349,7 +326,7 @@ public class ImageArchiveJob {
                 
             } catch (Exception e) {
                 failed.incrementAndGet();
-                log.error("Failed expense {}: {}", expense.getId(), e.getMessage(), e);
+                log.error("Failed expense media asset {}: {}", asset.getId(), e.getMessage(), e);
             }
         }
         

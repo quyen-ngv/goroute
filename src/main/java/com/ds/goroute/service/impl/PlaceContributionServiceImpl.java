@@ -11,6 +11,7 @@ import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.repository.UserReviewProfileRepository;
 import com.ds.goroute.repository.UserReviewRepository;
+import com.ds.goroute.repository.MediaAssetRepository;
 import com.ds.goroute.service.PlaceContributionService;
 import com.ds.goroute.service.PlaceService;
 import com.ds.goroute.service.ReviewScoringService;
@@ -21,7 +22,7 @@ import com.ds.goroute.type.ContributionGroupStatus;
 import com.ds.goroute.type.ContributionStatus;
 import com.ds.goroute.utils.GoogleMapsUrlUtils;
 import com.ds.goroute.utils.JsonUtils;
-import com.fasterxml.jackson.core.type.TypeReference;
+import com.ds.goroute.utils.MediaAssetResponseMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -54,6 +55,7 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
     private final ReviewScoringService scoringService;
     private final StarService starService;
     private final StorageService storageService;
+    private final MediaAssetRepository mediaAssetRepository;
     private final ScrapeServiceClient scrapeServiceClient;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -142,6 +144,9 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
                 .build();
         contributionMapper.insertContribution(contribution);
 
+        List<String> pendingPhotos = request.getPhotos() != null
+                ? managedPhotos(request.getPhotos())
+                : List.of();
         PendingContributionReview pendingReview = PendingContributionReview.builder()
                 .id(UUID.randomUUID())
                 .contributionId(contribution.getId())
@@ -151,11 +156,12 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
                 .ambianceRating(request.getAmbianceRating())
                 .serviceRating(request.getServiceRating())
                 .text(request.getText())
-                .photos(request.getPhotos() != null ? JsonUtils.toJson(managedPhotos(request.getPhotos())) : null)
+                .photos(null)
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
         contributionMapper.insertPendingReview(pendingReview);
+        syncPendingReviewPhotos(pendingReview, contribution, pendingPhotos);
 
         return toContributionResponse(contribution, group, pendingReview);
     }
@@ -185,6 +191,11 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
                     "This contribution can no longer be cancelled");
         }
 
+        PendingContributionReview pendingReview =
+                contributionMapper.findPendingReviewByContributionId(contributionId);
+        if (pendingReview != null) {
+            mediaAssetRepository.softDeleteByEntity("PENDING_REVIEW", pendingReview.getId());
+        }
         contributionMapper.deletePendingReviewByContributionId(contributionId);
         contributionMapper.deleteContributionById(contributionId);
 
@@ -523,6 +534,12 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
             if (contribution == null) {
                 continue;
             }
+            List<String> photos = mediaAssetRepository.findByEntity("PENDING_REVIEW", pendingReview.getId())
+                    .stream()
+                    .filter(asset -> asset.getUrl() != null && !asset.getUrl().isBlank())
+                    .sorted(Comparator.comparing(asset -> Optional.ofNullable(asset.getPosition()).orElse(Integer.MAX_VALUE)))
+                    .map(MediaAsset::getUrl)
+                    .toList();
             inputs.add(GorouteContributionReviewInput.builder()
                     .contributionId(contribution.getId())
                     .userId(contribution.getUserId())
@@ -532,7 +549,7 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
                     .ambianceRating(pendingReview.getAmbianceRating())
                     .serviceRating(pendingReview.getServiceRating())
                     .text(pendingReview.getText())
-                    .photos(parsePhotos(pendingReview.getPhotos()))
+                    .photos(photos)
                     .build());
         }
         return inputs;
@@ -787,6 +804,8 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
         if (pendingReview == null) {
             return null;
         }
+        List<MemoryImageResponse> photoResponses = MediaAssetResponseMapper.toImageResponses(
+                mediaAssetRepository.findByEntity("PENDING_REVIEW", pendingReview.getId()));
         return PendingContributionReviewResponse.builder()
                 .id(pendingReview.getId())
                 .overallRating(pendingReview.getOverallRating())
@@ -795,8 +814,28 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
                 .ambianceRating(pendingReview.getAmbianceRating())
                 .serviceRating(pendingReview.getServiceRating())
                 .text(pendingReview.getText())
-                .photos(parsePhotos(pendingReview.getPhotos()))
+                .photos(MediaAssetResponseMapper.toUrls(photoResponses))
+                .photosV2(photoResponses)
                 .build();
+    }
+
+    private void syncPendingReviewPhotos(PendingContributionReview pendingReview,
+                                         PlaceContribution contribution,
+                                         List<String> photos) {
+        for (int index = 0; index < photos.size(); index++) {
+            mediaAssetRepository.insert(MediaAsset.builder()
+                    .id(UUID.randomUUID())
+                    .entityType("PENDING_REVIEW")
+                    .entityId(pendingReview.getId())
+                    .mediaType("IMAGE")
+                    .assetRole("PHOTO")
+                    .position(index)
+                    .url(photos.get(index))
+                    .uploadedBy(contribution.getUserId())
+                    .createdAt(pendingReview.getCreatedAt())
+                    .updatedAt(pendingReview.getUpdatedAt())
+                    .build());
+        }
     }
 
     private ExistingPlaceSummary toExistingPlaceSummary(Place place) {
@@ -806,14 +845,6 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
                 .placeId(place.getPlaceId())
                 .address(place.getAddress())
                 .build();
-    }
-
-    private List<String> parsePhotos(String photosJson) {
-        if (photosJson == null || photosJson.isBlank()) {
-            return List.of();
-        }
-        List<String> photos = JsonUtils.fromJson(photosJson, new TypeReference<List<String>>() {});
-        return photos != null ? photos : List.of();
     }
 
     private List<String> managedPhotos(List<String> photos) {

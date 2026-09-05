@@ -14,6 +14,7 @@ import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.ActivityBookingRepository;
 import com.ds.goroute.repository.ActivityCommerceRepository;
 import com.ds.goroute.repository.HotelMarketplaceRepository;
+import com.ds.goroute.repository.MediaAssetRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.PlaceScoreRepository;
 import com.ds.goroute.repository.ReviewHelpfulVoteRepository;
@@ -50,13 +51,14 @@ class ReviewEligibilityServiceImplTest {
     private final PlaceRepository places = mock(PlaceRepository.class);
     private final HotelMarketplaceRepository hotels = mock(HotelMarketplaceRepository.class);
     private final ActivityCommerceRepository activities = mock(ActivityCommerceRepository.class);
+    private final MediaAssetRepository mediaAssets = mock(MediaAssetRepository.class);
     private final ReviewScoringService scoring = mock(ReviewScoringService.class);
 
     private final ReviewServiceImpl service = new ReviewServiceImpl(
             mock(StarService.class), reviews, profiles, mock(PlaceScoreRepository.class),
             mock(ReviewHelpfulVoteRepository.class), mock(UserRepository.class), places,
             mock(UserCheckinRepository.class), mock(ActivityBookingRepository.class), hotels, activities,
-            scoring, mock(ReviewFraudDetectionService.class), mock(ImageStorageCleanupService.class),
+            mediaAssets, scoring, mock(ReviewFraudDetectionService.class), mock(ImageStorageCleanupService.class),
             mock(SocialNotificationService.class));
 
     private final UUID user = UUID.randomUUID();
@@ -209,7 +211,7 @@ class ReviewEligibilityServiceImplTest {
                 mock(StarService.class), reviews, profiles, mock(PlaceScoreRepository.class),
                 mock(ReviewHelpfulVoteRepository.class), mock(UserRepository.class), places,
                 mock(UserCheckinRepository.class), activityBookings, hotels, activities,
-                scoring, mock(ReviewFraudDetectionService.class), mock(ImageStorageCleanupService.class),
+                mediaAssets, scoring, mock(ReviewFraudDetectionService.class), mock(ImageStorageCleanupService.class),
                 mock(SocialNotificationService.class));
 
         UserReviewResponse response = withBookings.createReview(user, request(null, orderId));

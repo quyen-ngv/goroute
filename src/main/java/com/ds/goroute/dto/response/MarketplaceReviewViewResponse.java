@@ -20,6 +20,7 @@ public class MarketplaceReviewViewResponse {
     private Integer overallRating;
     private String reviewText;
     private List<String> photos;
+    private List<MemoryImageResponse> photosV2;
     private LocalDateTime reviewCreatedAt;
     private UUID responseId;
     private UUID organizationId;

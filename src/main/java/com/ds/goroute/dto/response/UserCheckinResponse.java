@@ -90,6 +90,7 @@ public class UserCheckinResponse {
     private LocalDateTime createdAt;
 
     private List<CheckinPhotoResponse> photos;
+    private List<MemoryImageResponse> photosV2;
 
     /** True when this submission also created or updated the author's review of the place. */
     private boolean linkedToReview;

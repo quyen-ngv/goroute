@@ -3,16 +3,18 @@ package com.ds.goroute.service.impl;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.UpsertMarketplaceReviewResponseRequest;
 import com.ds.goroute.dto.response.MarketplaceReviewViewResponse;
+import com.ds.goroute.dto.response.MemoryImageResponse;
+import com.ds.goroute.entity.MediaAsset;
 import com.ds.goroute.entity.MarketplaceReviewView;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.MarketplaceReviewResponseRepository;
+import com.ds.goroute.repository.MediaAssetRepository;
 import com.ds.goroute.service.MarketplaceHistoryService;
 import com.ds.goroute.service.MarketplaceReviewResponseService;
 import com.ds.goroute.service.PartnerAuthorizationService;
 import com.ds.goroute.type.MarketplaceReviewResponseStatus;
 import com.ds.goroute.type.OrganizationResourceType;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ds.goroute.utils.MediaAssetResponseMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,7 +29,7 @@ public class MarketplaceReviewResponseServiceImpl implements MarketplaceReviewRe
     private final MarketplaceReviewResponseRepository repository;
     private final PartnerAuthorizationService authorizationService;
     private final MarketplaceHistoryService historyService;
-    private final ObjectMapper objectMapper;
+    private final MediaAssetRepository mediaAssetRepository;
 
     @Override
     public List<MarketplaceReviewViewResponse> partnerList(UUID actorUserId, UUID organizationId, int page, int size) {
@@ -132,6 +134,8 @@ public class MarketplaceReviewResponseServiceImpl implements MarketplaceReviewRe
     }
 
     private MarketplaceReviewViewResponse response(MarketplaceReviewView view) {
+        List<MemoryImageResponse> photoAssets = MediaAssetResponseMapper.toImageResponses(
+                mediaAssetRepository.findByEntity("USER_REVIEW", view.getReviewId()));
         return MarketplaceReviewViewResponse.builder()
                 .reviewId(view.getReviewId())
                 .reviewerUserId(view.getReviewerUserId())
@@ -142,7 +146,8 @@ public class MarketplaceReviewResponseServiceImpl implements MarketplaceReviewRe
                 .subjectName(view.getSubjectName())
                 .overallRating(view.getOverallRating())
                 .reviewText(view.getReviewText())
-                .photos(photos(view.getPhotos()))
+                .photos(MediaAssetResponseMapper.toUrls(photoAssets))
+                .photosV2(photoAssets)
                 .reviewCreatedAt(view.getReviewCreatedAt())
                 .responseId(view.getResponseId())
                 .organizationId(view.getOrganizationId())
@@ -154,15 +159,6 @@ public class MarketplaceReviewResponseServiceImpl implements MarketplaceReviewRe
                 .responseCreatedAt(view.getResponseCreatedAt())
                 .responseUpdatedAt(view.getResponseUpdatedAt())
                 .build();
-    }
-
-    private List<String> photos(String json) {
-        if (json == null) return List.of();
-        try {
-            return objectMapper.readValue(json, new TypeReference<List<String>>() {});
-        } catch (Exception ignored) {
-            return List.of();
-        }
     }
 
     private Page page(int page, int size) {

@@ -1,7 +1,9 @@
 package com.ds.goroute.repository.impl;
 
 import com.ds.goroute.entity.UserReview;
+import com.ds.goroute.entity.MediaAsset;
 import com.ds.goroute.mapper.UserReviewMapper;
+import com.ds.goroute.repository.MediaAssetRepository;
 import com.ds.goroute.repository.UserReviewRepository;
 import com.ds.goroute.service.StorageService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -13,6 +15,7 @@ import org.springframework.stereotype.Repository;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Repository
@@ -23,17 +26,27 @@ public class UserReviewRepositoryImpl implements UserReviewRepository {
     private final UserReviewMapper mapper;
     private final StorageService storageService;
     private final ObjectMapper objectMapper;
+    private final MediaAssetRepository mediaAssetRepository;
+
+    private static final String USER_REVIEW_ENTITY_TYPE = "USER_REVIEW";
 
     @Override
     public void save(UserReview review) {
-        enforceManagedPhotos(review);
+        List<String> managedPhotos = managedPhotos(review.getPhotos());
+        review.setPhotos(null);
         mapper.insert(review);
+        syncPhotos(review, managedPhotos);
     }
 
     @Override
     public void update(UserReview review) {
-        enforceManagedPhotos(review);
+        boolean photosWereSupplied = review.getPhotos() != null;
+        List<String> managedPhotos = photosWereSupplied ? managedPhotos(review.getPhotos()) : List.of();
+        review.setPhotos(null);
         mapper.update(review);
+        if (photosWereSupplied) {
+            syncPhotos(review, managedPhotos);
+        }
     }
 
     @Override
@@ -118,6 +131,7 @@ public class UserReviewRepositoryImpl implements UserReviewRepository {
 
     @Override
     public void delete(UUID id) {
+        mediaAssetRepository.softDeleteByEntity(USER_REVIEW_ENTITY_TYPE, id);
         mapper.delete(id);
     }
     
@@ -126,18 +140,20 @@ public class UserReviewRepositoryImpl implements UserReviewRepository {
         if (ids == null || ids.isEmpty()) {
             return;
         }
+        for (UUID id : ids) {
+            mediaAssetRepository.softDeleteByEntity(USER_REVIEW_ENTITY_TYPE, id);
+        }
         mapper.deleteByIds(ids);
     }
 
-    private void enforceManagedPhotos(UserReview review) {
-        if (review == null || review.getPhotos() == null || review.getPhotos().isBlank()) {
-            return;
+    private List<String> managedPhotos(String photosJson) {
+        if (photosJson == null || photosJson.isBlank()) {
+            return List.of();
         }
         try {
-            JsonNode root = objectMapper.readTree(review.getPhotos());
+            JsonNode root = objectMapper.readTree(photosJson);
             if (!root.isArray()) {
-                review.setPhotos("[]");
-                return;
+                return List.of();
             }
             List<String> managed = new java.util.ArrayList<>();
             root.forEach(node -> {
@@ -147,11 +163,48 @@ public class UserReviewRepositoryImpl implements UserReviewRepository {
                     managed.add(node.asText());
                 }
             });
-            review.setPhotos(objectMapper.writeValueAsString(managed));
+            return managed;
         } catch (Exception e) {
             log.warn("Discarding malformed or unmanaged photos for user review {}: {}",
-                    review.getId(), e.getMessage(), e);
-            review.setPhotos("[]");
+                    photosJson, e.getMessage(), e);
+            return List.of();
+        }
+    }
+
+    private void syncPhotos(UserReview review, List<String> wanted) {
+        List<MediaAsset> existing = mediaAssetRepository.findByEntity(
+                USER_REVIEW_ENTITY_TYPE, review.getId());
+        Set<String> wantedSet = new java.util.HashSet<>(wanted);
+        for (MediaAsset asset : existing) {
+            if ((asset.getAssetRole() == null || "PHOTO".equalsIgnoreCase(asset.getAssetRole()))
+                    && !wantedSet.contains(asset.getUrl())) {
+                mediaAssetRepository.softDelete(asset.getId());
+            }
+        }
+        for (int index = 0; index < wanted.size(); index++) {
+            String url = wanted.get(index);
+            Optional<MediaAsset> existingAsset = existing.stream()
+                    .filter(asset -> (asset.getAssetRole() == null
+                            || "PHOTO".equalsIgnoreCase(asset.getAssetRole()))
+                            && url.equals(asset.getUrl()))
+                    .findFirst();
+            if (existingAsset.isPresent()) {
+                existingAsset.get().setPosition(index);
+                mediaAssetRepository.updatePosition(existingAsset.get());
+                continue;
+            }
+            mediaAssetRepository.insert(MediaAsset.builder()
+                    .id(UUID.randomUUID())
+                    .tripId(review.getTripId())
+                    .entityType(USER_REVIEW_ENTITY_TYPE)
+                    .entityId(review.getId())
+                    .mediaType("IMAGE")
+                    .assetRole("PHOTO")
+                    .position(index)
+                    .url(url)
+                    .placeId(review.getPlaceId())
+                    .uploadedBy(review.getUserId())
+                    .build());
         }
     }
 }

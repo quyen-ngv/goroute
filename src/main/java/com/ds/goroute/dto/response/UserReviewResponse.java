@@ -64,6 +64,7 @@ public class UserReviewResponse {
     // Content
     private String text;
     private List<String> photos;
+    private List<MemoryImageResponse> photosV2;
     
     // Metadata
     private BigDecimal weight;

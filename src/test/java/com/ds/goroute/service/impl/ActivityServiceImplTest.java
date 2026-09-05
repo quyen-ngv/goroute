@@ -8,6 +8,7 @@ import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.CheckinRepository;
 import com.ds.goroute.repository.ExpenseRepository;
 import com.ds.goroute.repository.ExpenseSplitRepository;
+import com.ds.goroute.repository.MediaAssetRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripRepository;
@@ -44,6 +45,7 @@ class ActivityServiceImplTest {
     @Mock private ExpenseRepository expenseRepository;
     @Mock private UserRepository userRepository;
     @Mock private ExpenseSplitRepository expenseSplitRepository;
+    @Mock private MediaAssetRepository mediaAssetRepository;
     @Mock private PlaceRepository placeRepository;
     @Mock private NotificationHelper notificationHelper;
     @Mock private ImageStorageCleanupService imageStorageCleanupService;
@@ -88,6 +90,7 @@ class ActivityServiceImplTest {
         when(placeRepository.findByPlaceIds(List.of())).thenReturn(List.of());
         when(checkinRepository.findByActivityId(activityId)).thenReturn(List.of());
         when(expenseRepository.findByActivityId(activityId)).thenReturn(List.of());
+        when(mediaAssetRepository.findByEntityIds("EXPENSE", List.of())).thenReturn(List.of());
 
         List<ActivityResponse> result = service.getActivities(tripId, null, userId);
 

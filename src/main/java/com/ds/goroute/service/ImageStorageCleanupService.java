@@ -206,14 +206,12 @@ public class ImageStorageCleanupService {
             case "TRIP" -> {
                 urls.addAll(queryUrls("SELECT cover_image_url FROM trips WHERE id = ? AND cover_image_url IS NOT NULL", id));
                 urls.addAll(queryUrls("SELECT photo_url FROM activities WHERE trip_id = ? AND photo_url IS NOT NULL", id));
-                urls.addAll(queryUrls("SELECT receipt_url, photo_urls FROM expenses WHERE trip_id = ? AND (receipt_url IS NOT NULL OR photo_urls IS NOT NULL)", id));
-                urls.addAll(queryUrls("SELECT url FROM media_assets WHERE trip_id = ? AND url IS NOT NULL", id));
-                urls.addAll(queryUrls("SELECT photo_url, thumbnail_url FROM trip_photos WHERE trip_id = ? AND (photo_url IS NOT NULL OR thumbnail_url IS NOT NULL)", id));
+                urls.addAll(queryUrls("SELECT url FROM media_assets WHERE trip_id = ? AND deleted_at IS NULL AND url IS NOT NULL", id));
             }
             case "PLACE" -> {
                 urls.addAll(queryUrls("SELECT thumbnail, images FROM places WHERE id = ? AND (thumbnail IS NOT NULL OR images IS NOT NULL)", id));
                 urls.addAll(queryUrls("SELECT profile_picture, images FROM place_reviews WHERE place_id = ? AND (profile_picture IS NOT NULL OR images IS NOT NULL)", id));
-                urls.addAll(queryUrls("SELECT photos FROM user_reviews WHERE place_id = ? AND photos IS NOT NULL", id));
+                urls.addAll(queryUrls("SELECT url FROM media_assets WHERE place_id = ? AND entity_type = 'USER_REVIEW' AND deleted_at IS NULL AND url IS NOT NULL", id));
             }
             case "FOOD" -> {
                 urls.addAll(queryUrls("SELECT image_url, introduction_images, varieties, how_to_eat_steps FROM foods WHERE id = ? AND (image_url IS NOT NULL OR introduction_images IS NOT NULL OR varieties IS NOT NULL OR how_to_eat_steps IS NOT NULL)", id));
@@ -221,8 +219,7 @@ public class ImageStorageCleanupService {
             }
             case "ACTIVITY" -> {
                 urls.addAll(queryUrls("SELECT photo_url FROM activities WHERE id = ? AND photo_url IS NOT NULL", id));
-                urls.addAll(queryUrls("SELECT receipt_url, photo_urls FROM expenses WHERE activity_id = ? AND (receipt_url IS NOT NULL OR photo_urls IS NOT NULL)", id));
-                urls.addAll(queryUrls("SELECT url FROM media_assets WHERE activity_id = ? AND url IS NOT NULL", id));
+                urls.addAll(queryUrls("SELECT url FROM media_assets WHERE activity_id = ? AND deleted_at IS NULL AND url IS NOT NULL", id));
                 urls.addAll(queryUrls("""
                         SELECT cp.photo_url
                         FROM checkin_photos cp
@@ -435,22 +432,24 @@ public class ImageStorageCleanupService {
                 spec("USER", "SELECT avatar_url FROM users WHERE deleted_at IS NULL AND avatar_url IS NOT NULL", "SELECT avatar_url FROM users WHERE id = ? AND avatar_url IS NOT NULL", "avatars/"),
                 spec("TRIP", "SELECT cover_image_url FROM trips WHERE is_deleted = FALSE AND cover_image_url IS NOT NULL", "SELECT cover_image_url FROM trips WHERE id = ? AND cover_image_url IS NOT NULL"),
                 spec("ACTIVITY", "SELECT photo_url FROM activities WHERE photo_url IS NOT NULL", "SELECT photo_url FROM activities WHERE id = ? AND photo_url IS NOT NULL", "activities/"),
-                spec("EXPENSE", "SELECT receipt_url, photo_urls FROM expenses WHERE receipt_url IS NOT NULL OR photo_urls IS NOT NULL", "SELECT receipt_url, photo_urls FROM expenses WHERE id = ? AND (receipt_url IS NOT NULL OR photo_urls IS NOT NULL)", "expenses/"),
+                spec("EXPENSE", "SELECT url FROM media_assets WHERE entity_type = 'EXPENSE' AND deleted_at IS NULL AND url IS NOT NULL", "SELECT url FROM media_assets WHERE entity_type = 'EXPENSE' AND entity_id = ? AND deleted_at IS NULL AND url IS NOT NULL", "expenses/"),
                 spec("PLACE", "SELECT thumbnail, images FROM places WHERE thumbnail IS NOT NULL OR images IS NOT NULL", "SELECT thumbnail, images FROM places WHERE id = ? AND (thumbnail IS NOT NULL OR images IS NOT NULL)", "places/"),
                 spec("PLACE_REVIEW", "SELECT profile_picture, images FROM place_reviews WHERE is_deleted = FALSE AND (profile_picture IS NOT NULL OR images IS NOT NULL)", "SELECT profile_picture, images FROM place_reviews WHERE id = ? AND (profile_picture IS NOT NULL OR images IS NOT NULL)", "reviews/"),
                 // A review written from a check-in shows that visit's uploads. Check-ins
                 // outlive the review they wrote, so deleting the review must leave the
                 // files of every check-in still pointing at it.
                 retaining("USER_REVIEW",
-                        "SELECT photos FROM user_reviews WHERE photos IS NOT NULL",
-                        "SELECT photos FROM user_reviews WHERE id = ? AND photos IS NOT NULL",
+                        "SELECT url FROM media_assets WHERE entity_type = 'USER_REVIEW' AND deleted_at IS NULL AND url IS NOT NULL",
+                        "SELECT url FROM media_assets WHERE entity_type = 'USER_REVIEW' AND entity_id = ? AND deleted_at IS NULL AND url IS NOT NULL",
                         """
-                        SELECT p.url
-                        FROM user_checkin_photos p
-                        JOIN user_checkins c ON c.id = p.checkin_id
-                        WHERE c.review_id = ?
+                        SELECT m.url
+                        FROM media_assets m
+                        JOIN user_checkins c ON c.id = m.entity_id
+                        WHERE m.entity_type = 'USER_CHECKIN'
+                          AND m.deleted_at IS NULL
+                          AND c.review_id = ?
                           AND c.is_removed = FALSE
-                          AND p.url IS NOT NULL
+                          AND m.url IS NOT NULL
                         """),
                 spec("ACTIVITY_BOOKING", "SELECT thumbnail, images, what_to_expect, itinerary FROM activity_bookings WHERE thumbnail IS NOT NULL OR images IS NOT NULL OR what_to_expect IS NOT NULL OR itinerary IS NOT NULL", "SELECT thumbnail, images, what_to_expect, itinerary FROM activity_bookings WHERE id = ? AND (thumbnail IS NOT NULL OR images IS NOT NULL OR what_to_expect IS NOT NULL OR itinerary IS NOT NULL)", "bookings/"),
                 spec("FOOD", "SELECT image_url, introduction_images, varieties, how_to_eat_steps FROM foods WHERE image_url IS NOT NULL OR introduction_images IS NOT NULL OR varieties IS NOT NULL OR how_to_eat_steps IS NOT NULL", "SELECT image_url, introduction_images, varieties, how_to_eat_steps FROM foods WHERE id = ? AND (image_url IS NOT NULL OR introduction_images IS NOT NULL OR varieties IS NOT NULL OR how_to_eat_steps IS NOT NULL)", "foods/"),
@@ -473,13 +472,21 @@ public class ImageStorageCleanupService {
                 // The record query is keyed by the check-in, not by the photo row, because
                 // the caller deleting a check-in holds the check-in id.
                 retaining("USER_CHECKIN_PHOTO",
-                        "SELECT url FROM user_checkin_photos WHERE url IS NOT NULL",
-                        "SELECT url FROM user_checkin_photos WHERE checkin_id = ? AND url IS NOT NULL",
+                        "SELECT url FROM media_assets WHERE entity_type = 'USER_CHECKIN' AND deleted_at IS NULL AND url IS NOT NULL",
+                        "SELECT url FROM media_assets WHERE entity_type = 'USER_CHECKIN' AND entity_id = ? AND deleted_at IS NULL AND url IS NOT NULL",
                         // The review this visit wrote keeps showing the same files.
-                        "SELECT photos FROM user_reviews WHERE id = (SELECT review_id FROM user_checkins WHERE id = ?) AND photos IS NOT NULL"),
+                        """
+                        SELECT m.url
+                        FROM media_assets m
+                        JOIN user_checkins c ON c.review_id = m.entity_id
+                        WHERE m.entity_type = 'USER_REVIEW'
+                          AND m.deleted_at IS NULL
+                          AND c.id = ?
+                          AND m.url IS NOT NULL
+                        """),
                 spec("PENDING_CONTRIBUTION_REVIEW",
-                        "SELECT photos FROM pending_contribution_reviews WHERE photos IS NOT NULL",
-                        "SELECT photos FROM pending_contribution_reviews WHERE contribution_id = ? AND photos IS NOT NULL"),
+                        "SELECT url FROM media_assets WHERE entity_type = 'PENDING_REVIEW' AND deleted_at IS NULL AND url IS NOT NULL",
+                        "SELECT m.url FROM media_assets m JOIN pending_contribution_reviews p ON p.id = m.entity_id WHERE p.contribution_id = ? AND m.entity_type = 'PENDING_REVIEW' AND m.deleted_at IS NULL AND m.url IS NOT NULL"),
                 spec("PLACE_COLLECTION",
                         "SELECT cover_image_url FROM place_collections WHERE cover_image_url IS NOT NULL",
                         "SELECT cover_image_url FROM place_collections WHERE id = ? AND cover_image_url IS NOT NULL"),

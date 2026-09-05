@@ -8,6 +8,7 @@ import com.ds.goroute.dto.response.ReviewPartnerResponse;
 import com.ds.goroute.dto.response.ReviewScoreResponse;
 import com.ds.goroute.dto.response.UserReviewProfileResponse;
 import com.ds.goroute.dto.response.UserReviewResponse;
+import com.ds.goroute.dto.response.MemoryImageResponse;
 import com.ds.goroute.entity.*;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.exception.BusinessException;
@@ -18,6 +19,7 @@ import com.ds.goroute.service.ReviewScoringService;
 import com.ds.goroute.service.ReviewFraudDetectionService;
 import com.ds.goroute.service.StarService;
 import com.ds.goroute.service.notification.SocialNotificationService;
+import com.ds.goroute.utils.MediaAssetResponseMapper;
 import com.ds.goroute.type.MarketplaceBookingStatus;
 import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.UserTier;
@@ -52,6 +54,9 @@ public class ReviewServiceImpl implements ReviewService {
     private final ActivityBookingRepository activityBookingRepository;
     private final HotelMarketplaceRepository hotelMarketplaceRepository;
     private final ActivityCommerceRepository activityCommerceRepository;
+    private final MediaAssetRepository mediaAssetRepository;
+
+    private static final String USER_REVIEW_ENTITY_TYPE = "USER_REVIEW";
 
     private final ReviewScoringService scoringService;
     private final ReviewFraudDetectionService fraudDetectionService;
@@ -365,9 +370,7 @@ public class ReviewServiceImpl implements ReviewService {
         int offset = page * size;
         List<UserReview> reviews = reviewRepository.findByPlaceId(placeId, size, offset);
 
-        return reviews.stream()
-                .map(review -> mapToResponse(review, currentUserId))
-                .collect(Collectors.toList());
+        return mapToResponses(reviews, currentUserId);
     }
 
     @Override
@@ -377,9 +380,7 @@ public class ReviewServiceImpl implements ReviewService {
         int offset = page * size;
         List<UserReview> reviews = reviewRepository.findByActivityBookingId(activityBookingId, size, offset);
 
-        return reviews.stream()
-                .map(review -> mapToResponse(review, currentUserId))
-                .collect(Collectors.toList());
+        return mapToResponses(reviews, currentUserId);
     }
 
     /**
@@ -390,9 +391,7 @@ public class ReviewServiceImpl implements ReviewService {
         int offset = page * size;
         List<UserReview> reviews = reviewRepository.findByUserId(userId, size, offset);
 
-        return reviews.stream()
-                .map(review -> mapToResponse(review, userId))
-                .collect(Collectors.toList());
+        return mapToResponses(reviews, userId);
     }
 
     @Override
@@ -402,9 +401,7 @@ public class ReviewServiceImpl implements ReviewService {
         int offset = page * size;
         List<UserReview> reviews = reviewRepository.findByUserId(targetUserId, size, offset);
 
-        return reviews.stream()
-                .map(review -> mapToResponse(review, viewerId))
-                .collect(Collectors.toList());
+        return mapToResponses(reviews, viewerId);
     }
 
     @Override
@@ -412,9 +409,7 @@ public class ReviewServiceImpl implements ReviewService {
         int offset = page * size;
         List<UserReview> reviews = reviewRepository.findFeedReviews(currentUserId, size, offset, randomSeed);
 
-        return reviews.stream()
-                .map(review -> mapToResponse(review, currentUserId))
-                .collect(Collectors.toList());
+        return mapToResponses(reviews, currentUserId);
     }
 
     /**
@@ -595,7 +590,27 @@ public class ReviewServiceImpl implements ReviewService {
                 .build();
     }
 
+    private List<UserReviewResponse> mapToResponses(List<UserReview> reviews, UUID currentUserId) {
+        if (reviews == null || reviews.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, List<MediaAsset>> photosByReview = mediaAssetRepository
+                .findByEntityIds(USER_REVIEW_ENTITY_TYPE, reviews.stream().map(UserReview::getId).toList())
+                .stream()
+                .collect(Collectors.groupingBy(MediaAsset::getEntityId));
+        return reviews.stream()
+                .map(review -> mapToResponse(review, currentUserId,
+                        photosByReview.getOrDefault(review.getId(), List.of())))
+                .collect(Collectors.toList());
+    }
+
     private UserReviewResponse mapToResponse(UserReview review, UUID currentUserId) {
+        return mapToResponse(review, currentUserId,
+                mediaAssetRepository.findByEntity(USER_REVIEW_ENTITY_TYPE, review.getId()));
+    }
+
+    private UserReviewResponse mapToResponse(UserReview review, UUID currentUserId,
+                                             List<MediaAsset> photoAssets) {
         User user = userRepository.findById(review.getUserId()).orElse(null);
         UserReviewProfile profile = profileRepository.findByUserId(review.getUserId()).orElse(null);
         Place place = review.getPlaceId() != null
@@ -613,6 +628,9 @@ public class ReviewServiceImpl implements ReviewService {
                 hasVotedHelpful = vote.isHelpful();
             }
         }
+
+        List<MemoryImageResponse> photoResponses = MediaAssetResponseMapper.toImageResponses(
+                photoAssets, user != null ? Map.of(user.getId(), user) : Map.of(), Map.of());
 
         return UserReviewResponse.builder()
                 .id(review.getId())
@@ -649,7 +667,8 @@ public class ReviewServiceImpl implements ReviewService {
                 .ambianceRating(review.getAmbianceRating())
                 .serviceRating(review.getServiceRating())
                 .text(review.getText())
-                .photos(review.getPhotos() != null ? JsonUtils.fromJson(review.getPhotos(), List.class) : null)
+                .photos(photoResponses.isEmpty() ? null : MediaAssetResponseMapper.toUrls(photoResponses))
+                .photosV2(photoResponses)
                 .weight(review.getWeight())
                 .helpfulVotes(review.getHelpfulVotes())
                 .unhelpfulVotes(review.getUnhelpfulVotes() != null ? review.getUnhelpfulVotes() : 0)

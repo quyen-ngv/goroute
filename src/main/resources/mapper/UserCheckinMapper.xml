@@ -244,8 +244,11 @@
         WHERE c.is_removed = TRUE
           AND EXISTS (
               SELECT 1
-              FROM user_checkin_photos p
-              WHERE p.checkin_id = c.id
+              FROM media_assets p
+              WHERE p.entity_type = 'USER_CHECKIN'
+                AND p.entity_id = c.id
+                AND (p.asset_role IS NULL OR p.asset_role = 'PHOTO')
+                AND p.deleted_at IS NULL
           )
         ORDER BY c.updated_at ASC, c.id ASC
         LIMIT #{limit}
@@ -277,34 +280,57 @@
     </select>
 
     <insert id="insertPhoto" parameterType="com.ds.goroute.entity.UserCheckinPhoto">
-        INSERT INTO user_checkin_photos
-            (id, checkin_id, url, source, position, title, description, captured_at, latitude, longitude,
-             accuracy_meters, created_at)
-        VALUES
-            (#{id}, #{checkinId}, #{url}, #{source}, #{position}, #{title}, #{description},
-             #{capturedAt}, #{latitude}, #{longitude}, #{accuracyMeters}, #{createdAt})
+        INSERT INTO media_assets
+            (id, trip_id, activity_id, entity_type, entity_id, media_type, url, asset_role,
+             position, caption, description, taken_at, latitude, longitude, accuracy_meters,
+             capture_source, date_source, place_id, location_name, location_source,
+             uploaded_by, created_at, updated_at)
+        SELECT #{id}, c.trip_id, c.activity_id, 'USER_CHECKIN', c.id, 'IMAGE', #{url}, 'PHOTO',
+               #{position}, #{title}, #{description}, #{capturedAt}, #{latitude}, #{longitude},
+               #{accuracyMeters}, #{source},
+               <choose>
+                   <when test="capturedAt != null">'CAPTURE'</when>
+                   <otherwise>'UPLOAD'</otherwise>
+               </choose>,
+               c.place_id, c.location_name, c.location_source, c.user_id, #{createdAt}, #{createdAt}
+        FROM user_checkins c
+        WHERE c.id = #{checkinId}
     </insert>
 
     <select id="findPhotos" resultMap="photoMap">
-        SELECT id, checkin_id, url, source, position, title, description, captured_at, latitude, longitude,
+        SELECT id, entity_id AS checkin_id, url, capture_source AS source, position,
+               caption AS title, description, taken_at AS captured_at, latitude, longitude,
                accuracy_meters, created_at
-        FROM user_checkin_photos WHERE checkin_id = #{checkinId} ORDER BY position
+        FROM media_assets
+        WHERE entity_type = 'USER_CHECKIN'
+          AND entity_id = #{checkinId}
+          AND (asset_role IS NULL OR asset_role = 'PHOTO')
+          AND deleted_at IS NULL
+        ORDER BY position
     </select>
 
     <!-- Batch-loaded for a feed page so rendering N posts costs one query, not N. -->
     <select id="findPhotosForCheckins" resultMap="photoMap">
-        SELECT id, checkin_id, url, source, position, title, description, captured_at, latitude, longitude,
+        SELECT id, entity_id AS checkin_id, url, capture_source AS source, position,
+               caption AS title, description, taken_at AS captured_at, latitude, longitude,
                accuracy_meters, created_at
-        FROM user_checkin_photos
-        WHERE checkin_id IN
+        FROM media_assets
+        WHERE entity_type = 'USER_CHECKIN'
+          AND entity_id IN
         <foreach item="checkinId" collection="checkinIds" open="(" separator="," close=")">
             #{checkinId}
         </foreach>
-        ORDER BY checkin_id, position
+          AND (asset_role IS NULL OR asset_role = 'PHOTO')
+          AND deleted_at IS NULL
+        ORDER BY entity_id, position
     </select>
 
     <delete id="deletePhotos">
-        DELETE FROM user_checkin_photos WHERE checkin_id = #{checkinId}
+        UPDATE media_assets
+        SET deleted_at = NOW(), updated_at = NOW()
+        WHERE entity_type = 'USER_CHECKIN'
+          AND entity_id = #{checkinId}
+          AND deleted_at IS NULL
     </delete>
 
     <select id="hasLike" resultType="boolean">
@@ -369,9 +395,12 @@
                MIN(c.created_at) AS first_seen_at,
                MAX(c.created_at) AS last_seen_at,
                (SELECT string_agg(p.url, ',')
-                  FROM (SELECT url FROM user_checkin_photos ph
-                         JOIN user_checkins uc ON uc.id = ph.checkin_id
-                        WHERE uc.location_key = c.location_key
+                  FROM (SELECT url FROM media_assets ph
+                        JOIN user_checkins uc ON uc.id = ph.entity_id
+                        WHERE ph.entity_type = 'USER_CHECKIN'
+                          AND (ph.asset_role IS NULL OR ph.asset_role = 'PHOTO')
+                          AND ph.deleted_at IS NULL
+                          AND uc.location_key = c.location_key
                         ORDER BY ph.created_at DESC LIMIT 4) p) AS sample_photos
         <include refid="clusterSource"/>
         ORDER BY COUNT(DISTINCT c.user_id) DESC, COUNT(*) DESC

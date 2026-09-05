@@ -21,4 +21,5 @@ public class PendingContributionReviewResponse {
     private Integer serviceRating;
     private String text;
     private List<String> photos;
+    private List<MemoryImageResponse> photosV2;
 }

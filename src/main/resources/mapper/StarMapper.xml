@@ -160,11 +160,14 @@
         SELECT t.id AS trip_id, t.owner_id
         FROM trips t
         LEFT JOIN activities a ON a.trip_id = t.id
-        LEFT JOIN trip_photos tp ON tp.trip_id = t.id
+        LEFT JOIN media_assets ma
+          ON ma.trip_id = t.id
+         AND ma.entity_type IN ('TRIP_MEMORY', 'TRIP_ACTIVITY_MEMORY')
+         AND ma.deleted_at IS NULL
         WHERE t.end_date &lt; CURRENT_DATE
           AND t.visibility = 'PUBLIC'
           AND t.is_deleted = FALSE
         GROUP BY t.id, t.owner_id
-        HAVING COUNT(DISTINCT a.id) &gt;= 5 AND COUNT(DISTINCT tp.id) &gt;= 5
+        HAVING COUNT(DISTINCT a.id) &gt;= 5 AND COUNT(DISTINCT ma.id) &gt;= 5
     </select>
 </mapper>

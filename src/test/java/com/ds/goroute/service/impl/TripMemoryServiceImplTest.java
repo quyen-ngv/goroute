@@ -78,7 +78,7 @@ class TripMemoryServiceImplTest {
         when(tripRepository.findById(tripId)).thenReturn(Optional.of(trip));
         when(businessConfigService.getInt(BusinessConfigKey.FREE_TRIP_MEMORY_LIMIT)).thenReturn(75);
         when(aiTripRepository.getSubscriptionTier(ownerId)).thenReturn("FREE");
-        when(mediaAssetRepository.countByTripId(tripId)).thenReturn(50);
+        when(mediaAssetRepository.countTripMemoriesByTripId(tripId)).thenReturn(50);
         when(userRepository.findById(ownerId)).thenReturn(Optional.empty());
 
         assertThatCode(() -> service.addTripMemory(tripId, request(), ownerId))
@@ -95,7 +95,7 @@ class TripMemoryServiceImplTest {
         when(tripRepository.findById(tripId)).thenReturn(Optional.of(trip));
         when(businessConfigService.getInt(BusinessConfigKey.FREE_TRIP_MEMORY_LIMIT)).thenReturn(50);
         when(aiTripRepository.getSubscriptionTier(ownerId)).thenReturn("FREE");
-        when(mediaAssetRepository.countByTripId(tripId)).thenReturn(50);
+        when(mediaAssetRepository.countTripMemoriesByTripId(tripId)).thenReturn(50);
 
         assertThatThrownBy(() -> service.addTripMemory(tripId, request(), ownerId))
                 .isInstanceOf(BusinessException.class)

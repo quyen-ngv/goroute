@@ -56,8 +56,8 @@ public class TripMemoryServiceImpl implements TripMemoryService {
     public List<TripMemoryResponse> getTripMemories(UUID tripId, UUID userId, UUID activityId) {
         Trip trip = getTripAndEnsureMember(tripId, userId);
         List<MediaAsset> assets = activityId != null
-                ? mediaAssetRepository.findByActivityId(activityId)
-                : mediaAssetRepository.findByTripId(tripId);
+                ? mediaAssetRepository.findTripMemoriesByActivityId(activityId)
+                : mediaAssetRepository.findTripMemoriesByTripId(tripId);
 
         return assets.stream()
                 .filter(asset -> trip.getId().equals(asset.getTripId()))
@@ -83,6 +83,7 @@ public class TripMemoryServiceImpl implements TripMemoryService {
                 .entityType(request.getActivityId() != null ? "TRIP_ACTIVITY_MEMORY" : "TRIP_MEMORY")
                 .entityId(request.getActivityId() != null ? request.getActivityId() : tripId)
                 .mediaType("IMAGE")
+                .assetRole("MEMORY")
                 .url(url)
                 .caption(request.getCaption())
                 .description(request.getDescription())
@@ -125,6 +126,7 @@ public class TripMemoryServiceImpl implements TripMemoryService {
                 .entityType(activityId != null ? "TRIP_ACTIVITY_MEMORY" : "TRIP_MEMORY")
                 .entityId(activityId != null ? activityId : tripId)
                 .mediaType("VIDEO")
+                .assetRole("MEMORY")
                 .url(url)
                 .uploadedBy(userId)
                 .build();
@@ -231,7 +233,8 @@ public class TripMemoryServiceImpl implements TripMemoryService {
 
     private void ensureMemoryCapacity(UUID tripId, Trip trip) {
         int freeTripMemoryLimit = businessConfigService.getInt(BusinessConfigKey.FREE_TRIP_MEMORY_LIMIT);
-        if (!isProTripOwner(trip.getOwnerId()) && mediaAssetRepository.countByTripId(tripId) >= freeTripMemoryLimit) {
+        if (!isProTripOwner(trip.getOwnerId())
+                && mediaAssetRepository.countTripMemoriesByTripId(tripId) >= freeTripMemoryLimit) {
             throw new BusinessException(ErrorConstant.FREE_TRIP_MEMORY_LIMIT_REACHED);
         }
     }

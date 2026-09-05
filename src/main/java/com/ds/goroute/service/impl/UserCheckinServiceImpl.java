@@ -8,6 +8,7 @@ import com.ds.goroute.dto.response.CheckinPhotoResponse;
 import com.ds.goroute.dto.response.CheckinLikeResponse;
 import com.ds.goroute.dto.response.CheckinLinkedReviewResponse;
 import com.ds.goroute.dto.response.UserCheckinResponse;
+import com.ds.goroute.dto.response.MemoryImageResponse;
 import com.ds.goroute.entity.Activity;
 import com.ds.goroute.entity.Checkin;
 import com.ds.goroute.entity.Place;
@@ -16,6 +17,7 @@ import com.ds.goroute.entity.UserCheckin;
 import com.ds.goroute.entity.UserCheckinPhoto;
 import com.ds.goroute.entity.CheckinLikeCount;
 import com.ds.goroute.entity.UserReview;
+import com.ds.goroute.entity.MediaAsset;
 import com.ds.goroute.event.CheckinCreatedEvent;
 import com.ds.goroute.event.CheckinRemovedEvent;
 import com.ds.goroute.exception.BusinessException;
@@ -26,6 +28,7 @@ import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.UserCheckinRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.repository.UserReviewRepository;
+import com.ds.goroute.repository.MediaAssetRepository;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.ContentModerationService;
 import com.ds.goroute.service.ImageStorageCleanupService;
@@ -46,6 +49,7 @@ import com.ds.goroute.type.ContentVisibility;
 import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.utils.GeoDistance;
 import com.ds.goroute.utils.JsonUtils;
+import com.ds.goroute.utils.MediaAssetResponseMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -82,6 +86,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
     private final UserCheckinRepository checkinRepository;
     private final UserReviewRepository reviewRepository;
+    private final MediaAssetRepository mediaAssetRepository;
     private final PlaceRepository placeRepository;
     private final UserRepository userRepository;
     private final AiTripRepository subscriptionRepository;
@@ -566,7 +571,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     private UUID upsertReview(UUID userId, UserCheckin checkin, List<String> photoUrls) {
         Optional<UserReview> existing = reviewRepository.findByUserAndPlace(userId, checkin.getPlaceId());
         LocalDateTime now = LocalDateTime.now();
-        String reviewPhotos = photoUrls.isEmpty() ? null : JsonUtils.toJson(photoUrls);
+        String reviewPhotos = JsonUtils.toJson(photoUrls);
 
         if (existing.isPresent()) {
             UserReview review = existing.get();
@@ -754,6 +759,36 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     private UserCheckinResponse toResponse(UserCheckin checkin, List<UserCheckinPhoto> photos, User author,
                                            boolean latestReview, UserReview linkedReview, int likeCount,
                                            boolean hasLiked, Place place) {
+        List<MemoryImageResponse> photoResponses = photos.stream()
+                .sorted(Comparator.comparing(UserCheckinPhoto::getPosition,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(photo -> MemoryImageResponse.builder()
+                        .id(photo.getId())
+                        .url(photo.getUrl())
+                        .entityType("USER_CHECKIN")
+                        .entityId(checkin.getId())
+                        .mediaType("IMAGE")
+                        .position(photo.getPosition())
+                        .title(photo.getTitle())
+                        .description(photo.getDescription())
+                        .takenAt(photo.getCapturedAt())
+                        .dateSource(photo.getCapturedAt() == null ? "UPLOAD" : "CAPTURE")
+                        .captureSource(photo.getSource() == null ? null : photo.getSource().name())
+                        .latitude(photo.getLatitude())
+                        .longitude(photo.getLongitude())
+                        .accuracyMeters(photo.getAccuracyMeters())
+                        .placeId(checkin.getPlaceId())
+                        .locationName(checkin.getLocationName())
+                        .locationSource(checkin.getLocationSource() == null
+                                ? null : checkin.getLocationSource().name())
+                        .createdAt(photo.getCreatedAt())
+                        .uploadedBy(checkin.getUserId())
+                        .uploaderName(author == null ? null : author.getFullName())
+                        .uploaderAvatarUrl(author == null ? null : author.getAvatarUrl())
+                        .activityId(checkin.getActivityId())
+                        .build())
+                .toList();
+
         return UserCheckinResponse.builder()
                 .id(checkin.getId())
                 .userId(checkin.getUserId())
@@ -815,6 +850,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                                 .accuracyMeters(photo.getAccuracyMeters())
                                 .build())
                         .toList())
+                .photosV2(photoResponses)
                 .build();
     }
 
@@ -822,11 +858,11 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         if (review == null) {
             return null;
         }
-        List<String> photos = review.getPhotos() == null ? List.of()
-                : JsonUtils.fromJson(review.getPhotos(), new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
-        if (photos == null) {
-            photos = List.of();
-        }
+        List<MemoryImageResponse> photoResponses = MediaAssetResponseMapper.toImageResponses(
+                mediaAssetRepository.findByEntity("USER_REVIEW", review.getId()));
+        List<String> photos = photoResponses.isEmpty()
+                ? List.of()
+                : MediaAssetResponseMapper.toUrls(photoResponses);
         return CheckinLinkedReviewResponse.builder()
                 .id(review.getId())
                 .overallRating(review.getOverallRating())
@@ -836,6 +872,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .serviceRating(review.getServiceRating())
                 .text(review.getText())
                 .photos(photos)
+                .photosV2(photoResponses)
                 .helpfulVotes(review.getHelpfulVotes())
                 .unhelpfulVotes(review.getUnhelpfulVotes())
                 .updatedAt(review.getUpdatedAt())

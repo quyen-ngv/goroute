@@ -21,6 +21,12 @@ public class MediaAsset {
     private UUID entityId;
     private String mediaType;
     private String url;
+    /** Logical role inside an entity, e.g. PHOTO or RECEIPT. */
+    private String assetRole;
+
+    /** Stable display order within the owning entity. */
+    private Integer position;
+
     /** Short title. Column has been named `caption` since V046, so it stays. */
     private String caption;
 
@@ -36,6 +42,7 @@ public class MediaAsset {
 
     private BigDecimal latitude;
     private BigDecimal longitude;
+    private BigDecimal accuracyMeters;
 
     /** CAMERA or GALLERY: how the file reached the app. */
     private String captureSource;

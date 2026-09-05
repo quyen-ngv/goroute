@@ -64,7 +64,7 @@
             #{id}, #{userId}, #{placeId}, #{activityBookingId}, #{tripId}, #{hotelBookingId}, #{activityOrderId},
             #{checkinLat}, #{checkinLng}, #{checkinAccuracy}, #{locationVerified},
             #{overallRating}, #{foodRating}, #{priceRating}, #{ambianceRating}, #{serviceRating},
-            #{text}, #{photos}::text, #{weight}, #{helpfulVotes}, #{unhelpfulVotes}
+            #{text}, NULL, #{weight}, #{helpfulVotes}, #{unhelpfulVotes}
         )
     </insert>
 
@@ -80,7 +80,7 @@
             checkin_accuracy_m = #{checkinAccuracy},
             location_verified = #{locationVerified},
             text = #{text},
-            photos = #{photos}::text,
+            photos = NULL,
             helpful_votes = #{helpfulVotes},
             unhelpful_votes = #{unhelpfulVotes},
             updated_at = NOW()
@@ -159,7 +159,12 @@
             OR r.user_id != #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER})
         AND (
             NULLIF(TRIM(COALESCE(r.text, '')), '') IS NOT NULL
-            OR NULLIF(TRIM(COALESCE(r.photos, '')), '') IS NOT NULL
+            OR EXISTS (
+                SELECT 1 FROM media_assets ma
+                WHERE ma.entity_type = 'USER_REVIEW'
+                  AND ma.entity_id = r.id
+                  AND ma.deleted_at IS NULL
+            )
         )
         ORDER BY
             <choose>
@@ -171,7 +176,12 @@
                 (r.overall_rating * 8)
                 + (LEAST(r.helpful_votes, 20) * 2)
                 + CASE WHEN NULLIF(TRIM(COALESCE(r.text, '')), '') IS NOT NULL THEN 10 ELSE 0 END
-                + CASE WHEN NULLIF(TRIM(COALESCE(r.photos, '')), '') IS NOT NULL THEN 8 ELSE 0 END
+                + CASE WHEN EXISTS (
+                    SELECT 1 FROM media_assets ma
+                    WHERE ma.entity_type = 'USER_REVIEW'
+                      AND ma.entity_id = r.id
+                      AND ma.deleted_at IS NULL
+                  ) THEN 8 ELSE 0 END
                 + GREATEST(0, 30 - EXTRACT(EPOCH FROM (NOW() - r.created_at)) / 86400)
                 + MOD(ABS(('x' || SUBSTR(MD5(r.id::text || TO_CHAR(NOW(), 'YYYY-MM-DD-HH12')), 1, 8))::bit(32)::bigint), 10)
             ) DESC,

@@ -45,6 +45,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -110,7 +111,6 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .paidBy(paidBy)
                 .paidByGuestName(paidByGuestName)
                 .paidByGuestMemberId(paidByGuestMemberId)
-                .photoUrls(request.getPhotoUrls() != null ? request.getPhotoUrls().toArray(new String[0]) : null)
                 .createdBy(userId)
                 .build();
 
@@ -315,7 +315,6 @@ public class ExpenseServiceImpl implements ExpenseService {
             expense.setActivityId(request.getActivityId());
         }
         if (request.getPhotoUrls() != null) {
-            expense.setPhotoUrls(request.getPhotoUrls().toArray(new String[0]));
             syncExpensePhotos(expense, request.getPhotoUrls(), userId);
         }
 
@@ -576,18 +575,27 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         List<MediaAsset> existing =
                 mediaAssetRepository.findByEntity(EXPENSE_ENTITY_TYPE, expense.getId());
-        Set<String> existingUrls = existing.stream()
-                .map(MediaAsset::getUrl)
-                .collect(Collectors.toSet());
-
         for (MediaAsset asset : existing) {
+            if (asset.getAssetRole() != null && !"PHOTO".equalsIgnoreCase(asset.getAssetRole())) {
+                continue;
+            }
             if (!wanted.contains(asset.getUrl())) {
                 mediaAssetRepository.softDelete(asset.getId());
             }
         }
 
-        for (String url : wanted) {
-            if (existingUrls.contains(url)) continue;
+        for (int index = 0; index < wanted.size(); index++) {
+            String url = wanted.get(index);
+            Optional<MediaAsset> existingAsset = existing.stream()
+                    .filter(asset -> ("PHOTO".equalsIgnoreCase(asset.getAssetRole())
+                            || asset.getAssetRole() == null)
+                            && url.equals(asset.getUrl()))
+                    .findFirst();
+            if (existingAsset.isPresent()) {
+                existingAsset.get().setPosition(index);
+                mediaAssetRepository.updatePosition(existingAsset.get());
+                continue;
+            }
             mediaAssetRepository.insert(MediaAsset.builder()
                     .id(UUID.randomUUID())
                     .tripId(expense.getTripId())
@@ -595,6 +603,8 @@ public class ExpenseServiceImpl implements ExpenseService {
                     .entityType(EXPENSE_ENTITY_TYPE)
                     .entityId(expense.getId())
                     .mediaType("IMAGE")
+                    .assetRole("PHOTO")
+                    .position(index)
                     .url(url)
                     .uploadedBy(userId)
                     .build());
@@ -687,8 +697,11 @@ public class ExpenseServiceImpl implements ExpenseService {
                 })
                 .collect(Collectors.toList());
 
-        List<MemoryImageResponse> photoResponses =
-                MediaAssetResponseMapper.toImageResponses(photos);
+        List<MemoryImageResponse> photoResponses = MediaAssetResponseMapper.toImageResponses(
+                photos.stream()
+                        .filter(asset -> asset.getAssetRole() == null
+                                || "PHOTO".equalsIgnoreCase(asset.getAssetRole()))
+                        .toList());
 
         return ExpenseResponse.builder()
                 .id(expense.getId())
@@ -708,19 +721,8 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .build();
     }
 
-    /**
-     * The flat url list, unchanged in shape from what shipped.
-     *
-     * <p>Prefers the media_assets rows so it agrees with {@code photoUrlsV2},
-     * and falls back to the original {@code expenses.photo_urls} column for a
-     * row the V136 backfill has not reached — an expense written by an older
-     * deploy, for instance.
-     */
     private List<String> expensePhotoUrls(Expense expense, List<MemoryImageResponse> photos) {
-        if (!photos.isEmpty()) {
-            return MediaAssetResponseMapper.toUrls(photos);
-        }
-        return expense.getPhotoUrls() != null ? List.of(expense.getPhotoUrls()) : List.of();
+        return MediaAssetResponseMapper.toUrls(photos);
     }
 
     private com.ds.goroute.dto.response.UserResponse mapToUserResponse(User user) {

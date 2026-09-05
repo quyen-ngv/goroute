@@ -28,7 +28,7 @@ public class ImageMigrationJob {
     private final ActivityRepository activityRepository;
     private final ActivityBookingRepository activityBookingRepository;
     private final FoodRepository foodRepository;
-    private final ExpenseRepository expenseRepository;
+    private final MediaAssetRepository mediaAssetRepository;
     private final ObjectMapper objectMapper;
 
     /**
@@ -291,49 +291,23 @@ public class ImageMigrationJob {
         AtomicInteger success = new AtomicInteger(0);
         AtomicInteger failed = new AtomicInteger(0);
         
-        List<Expense> expenses = expenseRepository.findAll();
-        log.info("Found {} expenses to process", expenses.size());
+        List<MediaAsset> assets = mediaAssetRepository.findByEntityType("EXPENSE");
+        log.info("Found {} expense media assets to process", assets.size());
         
-        for (Expense expense : expenses) {
+        for (MediaAsset asset : assets) {
             try {
-                boolean updated = false;
-                String targetPath = "expenses/" + expense.getId() + "/";
-                
-                // Migrate receiptUrl
-                if (isExternalUrl(expense.getReceiptUrl())) {
-                    String newUrl = imageMigrationService.migrateImage(expense.getReceiptUrl(), targetPath);
-                    if (newUrl != null) {
-                        expense.setReceiptUrl(newUrl);
-                        updated = true;
+                String targetPath = "expenses/" + asset.getEntityId() + "/";
+                if (isExternalUrl(asset.getUrl())) {
+                    String newUrl = imageMigrationService.migrateImage(asset.getUrl(), targetPath);
+                    if (newUrl != null && !newUrl.equals(asset.getUrl())) {
+                        mediaAssetRepository.updateUrl(asset.getId(), newUrl);
                     }
-                }
-                
-                // Migrate photoUrls array
-                if (expense.getPhotoUrls() != null && expense.getPhotoUrls().length > 0) {
-                    List<String> urlList = Arrays.asList(expense.getPhotoUrls());
-                    List<String> externalUrls = urlList.stream().filter(this::isExternalUrl).toList();
-                    
-                    if (!externalUrls.isEmpty()) {
-                        Map<String, String> migratedUrls = imageMigrationService.migrateImages(externalUrls, targetPath);
-                        
-                        // Replace old URLs with new ones
-                        String[] newPhotoUrls = urlList.stream()
-                                .map(url -> migratedUrls.getOrDefault(url, url))
-                                .toArray(String[]::new);
-                        
-                        expense.setPhotoUrls(newPhotoUrls);
-                        updated = true;
-                    }
-                }
-                
-                if (updated) {
-                    expenseRepository.update(expense);
                     success.incrementAndGet();
                 }
                 
             } catch (Exception e) {
                 failed.incrementAndGet();
-                log.error("Failed to migrate expense {}: {}", expense.getId(), e.getMessage(), e);
+                log.error("Failed to migrate expense media asset {}: {}", asset.getId(), e.getMessage(), e);
             }
         }
         

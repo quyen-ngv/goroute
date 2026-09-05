@@ -24,14 +24,13 @@
 
     <insert id="insert" parameterType="com.ds.goroute.entity.Expense">
         INSERT INTO expenses (id, trip_id, activity_id, amount, currency, exchange_rate, amount_in_trip_currency,
-                             category, description, paid_by, paid_by_guest_name, paid_by_guest_member_id, receipt_url, photo_urls, created_by, created_at, updated_at)
+                             category, description, paid_by, paid_by_guest_name, paid_by_guest_member_id, created_by, created_at, updated_at)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
                 #{activityId,javaType=java.util.UUID,jdbcType=OTHER}, #{amount}, #{currency}, #{exchangeRate},
                 #{amountInTripCurrency},
                 #{category},
                 #{description},
-                #{paidBy,javaType=java.util.UUID,jdbcType=OTHER}, #{paidByGuestName}, #{paidByGuestMemberId,javaType=java.util.UUID,jdbcType=OTHER}, #{receiptUrl},
-                #{photoUrls,jdbcType=ARRAY,typeHandler=org.apache.ibatis.type.ArrayTypeHandler},
+                #{paidBy,javaType=java.util.UUID,jdbcType=OTHER}, #{paidByGuestName}, #{paidByGuestMemberId,javaType=java.util.UUID,jdbcType=OTHER},
                 #{createdBy,javaType=java.util.UUID,jdbcType=OTHER}, NOW(), NOW())
     </insert>
 
@@ -55,7 +54,6 @@
             paid_by = #{paidBy,javaType=java.util.UUID,jdbcType=OTHER},
             paid_by_guest_name = #{paidByGuestName},
             paid_by_guest_member_id = #{paidByGuestMemberId,javaType=java.util.UUID,jdbcType=OTHER},
-            photo_urls = #{photoUrls,jdbcType=ARRAY,typeHandler=org.apache.ibatis.type.ArrayTypeHandler},
             updated_at = NOW()
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </update>

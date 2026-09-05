@@ -23,11 +23,15 @@ import com.ds.goroute.repository.ExpenseSplitRepository;
 import com.ds.goroute.entity.Expense;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.entity.ExpenseSplit;
+import com.ds.goroute.entity.MediaAsset;
 import com.ds.goroute.dto.response.ExpenseResponse;
 import com.ds.goroute.dto.response.UserResponse;
 import com.ds.goroute.dto.response.ExpenseSplitResponse;
 import com.ds.goroute.service.ActivityService;
 import com.ds.goroute.service.ImageStorageCleanupService;
+import com.ds.goroute.repository.MediaAssetRepository;
+import com.ds.goroute.dto.response.MemoryImageResponse;
+import com.ds.goroute.utils.MediaAssetResponseMapper;
 import com.ds.goroute.service.redis.RedisService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.ActivityStatus;
@@ -41,7 +45,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
-import java.util.Arrays;
 import java.util.stream.Collectors;
 import java.util.Map;
 
@@ -62,6 +65,7 @@ public class ActivityServiceImpl implements ActivityService {
     private final PlaceRepository placeRepository;
     private final NotificationHelper notificationHelper;
     private final ImageStorageCleanupService imageStorageCleanupService;
+    private final MediaAssetRepository mediaAssetRepository;
 
     @Override
     @Transactional
@@ -242,9 +246,17 @@ public class ActivityServiceImpl implements ActivityService {
                 .map(Expense::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        Map<UUID, List<MediaAsset>> assetsByExpense = mediaAssetRepository
+                .findByEntityIds("EXPENSE", expenses.stream().map(Expense::getId).toList())
+                .stream()
+                .filter(asset -> asset.getAssetRole() == null
+                        || "PHOTO".equalsIgnoreCase(asset.getAssetRole()))
+                .collect(Collectors.groupingBy(MediaAsset::getEntityId));
+
         // Map expenses to response
         List<ExpenseResponse> expenseResponses = expenses.stream()
-                .map(this::mapToExpenseResponse)
+                .map(expense -> mapToExpenseResponse(
+                        expense, assetsByExpense.getOrDefault(expense.getId(), List.of())))
                 .collect(Collectors.toList());
 
         String address = firstNonBlank(place != null ? place.getAddress() : null, activity.getAddress());
@@ -382,7 +394,7 @@ public class ActivityServiceImpl implements ActivityService {
         return value != null && !value.trim().isEmpty();
     }
 
-    private ExpenseResponse mapToExpenseResponse(Expense expense) {
+    private ExpenseResponse mapToExpenseResponse(Expense expense, List<MediaAsset> photoAssets) {
         // Handle paidBy - can be registered user or guest
         UserResponse paidByUser = null;
         if (expense.getPaidBy() != null) {
@@ -443,10 +455,8 @@ public class ActivityServiceImpl implements ActivityService {
                 })
                 .collect(Collectors.toList());
 
-        // Convert photoUrls array to list
-        List<String> photoUrlsList = expense.getPhotoUrls() != null
-                ? Arrays.asList(expense.getPhotoUrls())
-                : List.of();
+        List<MemoryImageResponse> photoResponses = MediaAssetResponseMapper.toImageResponses(photoAssets);
+        List<String> photoUrlsList = MediaAssetResponseMapper.toUrls(photoResponses);
 
         return ExpenseResponse.builder()
                 .id(expense.getId())
@@ -459,6 +469,7 @@ public class ActivityServiceImpl implements ActivityService {
                 .paidByGuestMemberId(expense.getPaidByGuestMemberId())
                 .splits(splitResponses)
                 .photoUrls(photoUrlsList)
+                .photoUrlsV2(photoResponses)
                 .createdAt(expense.getCreatedAt())
                 .build();
     }

@@ -87,7 +87,7 @@ public class TripBookServiceImpl implements TripBookService {
         List<Activity> activities = activityRepository.findByTripId(tripId).stream()
                 .sorted(activityComparator())
                 .toList();
-        List<MediaAsset> memories = mediaAssetRepository.findByTripId(tripId).stream()
+        List<MediaAsset> memories = mediaAssetRepository.findTripMemoriesByTripId(tripId).stream()
                 .sorted(Comparator.comparing(MediaAsset::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
         Map<UUID, List<MediaAsset>> memoriesByActivity = memories.stream()
