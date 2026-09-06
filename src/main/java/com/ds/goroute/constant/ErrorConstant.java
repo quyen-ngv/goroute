@@ -73,6 +73,9 @@ public class ErrorConstant {
     public static final int SOCIAL_LOCATION_TEMPORARILY_BLOCKED = 4000603;
     public static final int SOCIAL_LOCATION_PERMANENTLY_BLOCKED = 4000604;
 
+    /** The payer already reminded this split within the configured cooldown. */
+    public static final int EXPENSE_PAYMENT_REMINDER_RATE_LIMITED = 4001101;
+
     /**
      * Content moderation (epic 12). The blocked-content code carries the violated policy
      * group in its message so the app can tell the user what to fix instead of showing

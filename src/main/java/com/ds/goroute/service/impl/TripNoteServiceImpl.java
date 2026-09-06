@@ -17,9 +17,11 @@ import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripNoteRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.TripNoteService;
+import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.MemberStatus;
 import com.ds.goroute.type.NotificationType;
+import com.ds.goroute.type.TripRealtimeEventType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -42,19 +44,22 @@ public class TripNoteServiceImpl implements TripNoteService {
     private final UserRepository userRepository;
     private final ActivityRepository activityRepository;
     private final NotificationHelper notificationHelper;
+    private final TripRealtimePublisher tripRealtimePublisher;
 
     public TripNoteServiceImpl(TripNoteRepository tripNoteRepository,
                                TripRepository tripRepository,
                                TripMemberRepository tripMemberRepository,
                                UserRepository userRepository,
                                ActivityRepository activityRepository,
-                               NotificationHelper notificationHelper) {
+                               NotificationHelper notificationHelper,
+                               TripRealtimePublisher tripRealtimePublisher) {
         this.tripNoteRepository = tripNoteRepository;
         this.tripRepository = tripRepository;
         this.tripMemberRepository = tripMemberRepository;
         this.userRepository = userRepository;
         this.activityRepository = activityRepository;
         this.notificationHelper = notificationHelper;
+        this.tripRealtimePublisher = tripRealtimePublisher;
     }
 
     @Override
@@ -114,6 +119,7 @@ public class TripNoteServiceImpl implements TripNoteService {
         if (Boolean.TRUE.equals(note.getIsShared())) {
             notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.NOTE_ADDED,
                     noteNotificationData(tripId, activityId, userId), null);
+            publishSharedNoteChange(TripRealtimeEventType.NOTE_CREATED, tripId, note, userId);
         }
 
         return toTripNoteResponse(note);
@@ -139,6 +145,7 @@ public class TripNoteServiceImpl implements TripNoteService {
         if (Boolean.TRUE.equals(note.getIsShared())) {
             notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.NOTE_DELETED,
                     noteNotificationData(tripId, note.getActivityId(), userId), null);
+            publishSharedNoteChange(TripRealtimeEventType.NOTE_DELETED, tripId, note, userId);
         }
     }
 
@@ -212,6 +219,7 @@ public class TripNoteServiceImpl implements TripNoteService {
                     : NotificationType.NOTE_UPDATED;
             notificationHelper.emitGenericToMembers(tripId, userId, type,
                     noteNotificationData(tripId, note.getActivityId(), userId), null);
+            publishSharedNoteChange(TripRealtimeEventType.NOTE_UPDATED, tripId, note, userId);
         }
 
         return toTripNoteResponse(note);
@@ -232,5 +240,16 @@ public class TripNoteServiceImpl implements TripNoteService {
             data.put("deepLink", "/trip/" + tripId + "/notes");
         }
         return data;
+    }
+
+    private void publishSharedNoteChange(
+            TripRealtimeEventType type,
+            UUID tripId,
+            TripNote note,
+            UUID actorId) {
+        Map<String, Object> payload = note.getActivityId() == null
+                ? Map.of()
+                : Map.of("activityId", note.getActivityId());
+        tripRealtimePublisher.publishAfterCommit(type, tripId, note.getId(), actorId, payload);
     }
 }

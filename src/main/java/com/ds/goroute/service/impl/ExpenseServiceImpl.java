@@ -29,9 +29,11 @@ import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.ExpenseService;
 import com.ds.goroute.service.ExchangeRateService;
 import com.ds.goroute.service.ImageStorageCleanupService;
+import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.ExpenseCategory;
 import com.ds.goroute.type.MemberStatus;
+import com.ds.goroute.type.TripRealtimeEventType;
 import com.ds.goroute.type.NotificationType;
 import com.ds.goroute.utils.MediaAssetResponseMapper;
 import lombok.RequiredArgsConstructor;
@@ -66,6 +68,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     private final ExchangeRateService exchangeRateService;
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final MediaAssetRepository mediaAssetRepository;
+    private final TripRealtimePublisher tripRealtimePublisher;
 
     /** Receipts live in media_assets alongside trip memories, keyed by this. */
     private static final String EXPENSE_ENTITY_TYPE = "EXPENSE";
@@ -153,6 +156,8 @@ public class ExpenseServiceImpl implements ExpenseService {
         notificationHelper.emitGeneric(tripId, userId, NotificationType.EXPENSE_ADDED,
                 expenseNotificationData(expense, trip, userId, "/trip/" + tripId + "/expenses/" + expense.getId()),
                 expenseRecipients(expense), null);
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.EXPENSE_CREATED, tripId, expense.getId(), userId);
 
         return mapToExpenseResponse(expense);
     }
@@ -272,6 +277,8 @@ public class ExpenseServiceImpl implements ExpenseService {
         notificationHelper.emitGeneric(tripId, userId, NotificationType.EXPENSE_DELETED,
                 expenseNotificationData(expense, trip, userId, "/trip/" + tripId + "/expenses"),
                 recipients, null);
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.EXPENSE_DELETED, tripId, expenseId, userId);
     }
 
     @Override
@@ -467,6 +474,13 @@ public class ExpenseServiceImpl implements ExpenseService {
         notificationHelper.emitGeneric(tripId, userId, NotificationType.EXPENSE_UPDATED,
                 expenseNotificationData(expense, trip, userId, "/trip/" + tripId + "/expenses/" + expenseId),
                 affectedRecipients, null);
+        tripRealtimePublisher.publishAfterCommit(
+                request.getSplits() != null || request.getSplitWith() != null
+                        ? TripRealtimeEventType.EXPENSE_SPLITS_UPDATED
+                        : TripRealtimeEventType.EXPENSE_UPDATED,
+                tripId,
+                expenseId,
+                userId);
 
         return mapToExpenseResponse(expense);
     }
@@ -779,6 +793,8 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         notificationHelper.emitPaymentMarked(tripId, expenseId, splitId, split,
             expense.getDescription(), expense.getCurrency(), request.getIsPaid(), userId);
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.EXPENSE_PAYMENT_UPDATED, tripId, expenseId, userId);
 
         return mapToExpenseSplitResponse(split);
     }
@@ -817,6 +833,8 @@ public class ExpenseServiceImpl implements ExpenseService {
         log.info("All payments marked for expense {}: isPaid={}, count={}", expenseId, request.getIsPaid(), splits.size());
 
         notificationHelper.emitPaymentAllMarked(tripId, expenseId, expense.getDescription(), request.getIsPaid(), userId);
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.EXPENSE_PAYMENT_UPDATED, tripId, expenseId, userId);
 
         return mapToExpenseResponse(expense);
     }
@@ -860,6 +878,8 @@ public class ExpenseServiceImpl implements ExpenseService {
         log.info("All payments marked for trip {}: isPaid={}, totalUpdated={}", tripId, request.getIsPaid(), totalUpdated);
 
         notificationHelper.emitPaymentTripMarked(tripId, request.getIsPaid(), userId);
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.EXPENSE_PAYMENT_UPDATED, tripId, null, userId);
     }
 
     private ExpenseSplitResponse mapToExpenseSplitResponse(ExpenseSplit split) {

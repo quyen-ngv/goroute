@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # Build stage
 FROM maven:3.9.9-eclipse-temurin-21 AS builder
 ENV JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8"

@@ -15,9 +15,11 @@ import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.CommentService;
 import com.ds.goroute.service.ContentModerationService;
+import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.MemberStatus;
 import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.TripRealtimeEventType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -40,6 +42,7 @@ public class CommentServiceImpl implements CommentService {
     private final UserRepository userRepository;
     private final NotificationHelper notificationHelper;
     private final ContentModerationService contentModerationService;
+    private final TripRealtimePublisher tripRealtimePublisher;
 
     @Override
     @Transactional(readOnly = true)
@@ -105,6 +108,12 @@ public class CommentServiceImpl implements CommentService {
         log.info("Comment created: {} for activity: {}", comment.getId(), activityId);
         
         notificationHelper.emitCommentCreated(tripId, activityId, userId);
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.COMMENT_CREATED,
+                tripId,
+                comment.getId(),
+                userId,
+                java.util.Map.of("activityId", activityId));
         
         return toCommentResponse(comment);
     }
@@ -135,6 +144,12 @@ public class CommentServiceImpl implements CommentService {
         log.info("Comment deleted: {}", commentId);
         
         notificationHelper.emitCommentDeleted(tripId, activityId, userId);
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.COMMENT_DELETED,
+                tripId,
+                commentId,
+                userId,
+                java.util.Map.of("activityId", activityId));
     }
     
     private void verifyTripMember(UUID tripId, UUID userId) {

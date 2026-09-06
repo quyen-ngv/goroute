@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.WalletMapper">
+
+    <sql id="AccessibleExpenses">
+        SELECT e.*
+        FROM expenses e
+        INNER JOIN trips t ON t.id = e.trip_id AND t.is_deleted = FALSE
+        LEFT JOIN trip_members membership
+            ON membership.trip_id = t.id
+            AND membership.user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+            AND membership.status = 'ACCEPTED'
+        WHERE t.owner_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+           OR membership.id IS NOT NULL
+    </sql>
+
+    <resultMap id="CurrencySummaryMap" type="com.ds.goroute.entity.WalletCurrencySummaryRow">
+        <result column="currency" property="currency"/>
+        <result column="total_spent" property="totalSpent"/>
+        <result column="owed_to_me" property="owedToMe"/>
+        <result column="i_owe" property="iOwe"/>
+        <result column="my_share" property="myShare"/>
+        <result column="my_paid" property="myPaid"/>
+    </resultMap>
+
+    <resultMap id="DebtMap" type="com.ds.goroute.entity.WalletDebtRow">
+        <id column="split_id" property="splitId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="expense_id" property="expenseId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="trip_id" property="tripId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="trip_name" property="tripName"/>
+        <result column="expense_description" property="expenseDescription"/>
+        <result column="amount" property="amount"/>
+        <result column="currency" property="currency"/>
+        <result column="counterpart_user_id" property="counterpartUserId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="counterpart_guest_member_id" property="counterpartGuestMemberId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="counterpart_display_name" property="counterpartDisplayName"/>
+        <result column="counterpart_avatar_url" property="counterpartAvatarUrl"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <resultMap id="ExpenseRowMap" type="com.ds.goroute.entity.WalletExpenseRow">
+        <id column="expense_id" property="expenseId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="trip_id" property="tripId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="trip_name" property="tripName"/>
+        <result column="amount" property="amount"/>
+        <result column="currency" property="currency"/>
+        <result column="category" property="category" jdbcType="VARCHAR"/>
+        <result column="description" property="description"/>
+        <result column="activity_id" property="activityId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="paid_by_user_id" property="paidByUserId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="paid_by_guest_member_id" property="paidByGuestMemberId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="paid_by_guest_name" property="paidByGuestName"/>
+        <result column="paid_by_display_name" property="paidByDisplayName"/>
+        <result column="paid_by_avatar_url" property="paidByAvatarUrl"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="split_id" property="splitId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="split_user_id" property="splitUserId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="split_guest_member_id" property="splitGuestMemberId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="split_guest_name" property="splitGuestName"/>
+        <result column="split_display_name" property="splitDisplayName"/>
+        <result column="split_avatar_url" property="splitAvatarUrl"/>
+        <result column="split_amount" property="splitAmount"/>
+        <result column="split_settled" property="splitSettled"/>
+        <result column="split_settled_at" property="splitSettledAt"/>
+    </resultMap>
+
+    <resultMap id="ReminderMap" type="com.ds.goroute.entity.ExpensePaymentReminder">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="sender_user_id" property="senderUserId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="recipient_user_id" property="recipientUserId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="expense_id" property="expenseId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="split_id" property="splitId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="idempotency_key" property="idempotencyKey"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <select id="selectCurrencySummary" resultMap="CurrencySummaryMap">
+        WITH accessible_expenses AS (<include refid="AccessibleExpenses"/>),
+        expense_totals AS (
+            SELECT currency, SUM(amount) AS total_spent
+            FROM accessible_expenses
+            GROUP BY currency
+        ),
+        split_summary AS (
+            SELECT e.currency,
+                COALESCE(SUM(CASE WHEN e.paid_by = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+                                  AND e.paid_by_guest_member_id IS NULL
+                                  AND es.is_settled = FALSE
+                                  AND es.user_id IS DISTINCT FROM #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+                             THEN es.amount ELSE 0 END), 0) AS owed_to_me,
+                COALESCE(SUM(CASE WHEN es.user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+                                  AND es.is_settled = FALSE
+                                  AND e.paid_by IS DISTINCT FROM #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+                             THEN es.amount ELSE 0 END), 0) AS i_owe,
+                COALESCE(SUM(CASE WHEN es.user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+                             THEN es.amount ELSE 0 END), 0) AS my_share,
+                COALESCE(SUM(CASE WHEN es.user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+                                  AND (e.paid_by = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+                                       OR es.is_settled = TRUE)
+                             THEN es.amount ELSE 0 END), 0) AS my_paid
+            FROM accessible_expenses e
+            LEFT JOIN expense_splits es ON es.expense_id = e.id
+            GROUP BY e.currency
+        )
+        SELECT totals.currency, totals.total_spent,
+               COALESCE(summary.owed_to_me, 0) AS owed_to_me,
+               COALESCE(summary.i_owe, 0) AS i_owe,
+               COALESCE(summary.my_share, 0) AS my_share,
+               COALESCE(summary.my_paid, 0) AS my_paid
+        FROM expense_totals totals
+        LEFT JOIN split_summary summary ON summary.currency = totals.currency
+        ORDER BY totals.currency
+    </select>
+
+    <select id="selectOwedToMe" resultMap="DebtMap">
+        WITH accessible_expenses AS (<include refid="AccessibleExpenses"/>)
+        SELECT es.id AS split_id, e.id AS expense_id, e.trip_id, t.name AS trip_name,
+               e.description AS expense_description, es.amount, e.currency, es.user_id AS counterpart_user_id,
+               es.guest_member_id AS counterpart_guest_member_id,
+               COALESCE(split_user.full_name, split_user.username, split_member.guest_name, es.guest_name, 'Guest') AS counterpart_display_name,
+               split_user.avatar_url AS counterpart_avatar_url, e.created_at
+        FROM accessible_expenses e
+        INNER JOIN trips t ON t.id = e.trip_id
+        INNER JOIN expense_splits es ON es.expense_id = e.id
+        LEFT JOIN users split_user ON split_user.id = es.user_id
+        LEFT JOIN trip_members split_member ON split_member.id = es.guest_member_id
+        WHERE e.paid_by = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND e.paid_by_guest_member_id IS NULL
+          AND es.is_settled = FALSE
+          AND es.user_id IS DISTINCT FROM #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+        ORDER BY e.created_at DESC, es.id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectIOwe" resultMap="DebtMap">
+        WITH accessible_expenses AS (<include refid="AccessibleExpenses"/>)
+        SELECT es.id AS split_id, e.id AS expense_id, e.trip_id, t.name AS trip_name,
+               e.description AS expense_description, es.amount, e.currency,
+               CASE WHEN e.paid_by_guest_member_id IS NULL THEN e.paid_by ELSE NULL END AS counterpart_user_id,
+               e.paid_by_guest_member_id AS counterpart_guest_member_id,
+               COALESCE(paid_user.full_name, paid_user.username, payer_member.guest_name, e.paid_by_guest_name, 'Guest') AS counterpart_display_name,
+               paid_user.avatar_url AS counterpart_avatar_url, e.created_at
+        FROM accessible_expenses e
+        INNER JOIN trips t ON t.id = e.trip_id
+        INNER JOIN expense_splits es ON es.expense_id = e.id
+        LEFT JOIN users paid_user ON paid_user.id = e.paid_by AND e.paid_by_guest_member_id IS NULL
+        LEFT JOIN trip_members payer_member ON payer_member.id = e.paid_by_guest_member_id
+        WHERE es.user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND es.is_settled = FALSE
+          AND e.paid_by IS DISTINCT FROM #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+        ORDER BY e.created_at DESC, es.id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectExpenses" resultMap="ExpenseRowMap">
+        WITH accessible_expenses AS (<include refid="AccessibleExpenses"/>),
+        paged_expenses AS (
+            SELECT * FROM accessible_expenses ORDER BY created_at DESC, id DESC
+            LIMIT #{limit} OFFSET #{offset}
+        )
+        SELECT e.id AS expense_id, e.trip_id, t.name AS trip_name, e.amount, e.currency, e.category,
+               e.description, e.activity_id,
+               CASE WHEN e.paid_by_guest_member_id IS NULL THEN e.paid_by ELSE NULL END AS paid_by_user_id,
+               e.paid_by_guest_member_id, e.paid_by_guest_name,
+               COALESCE(paid_user.full_name, paid_user.username, payer_member.guest_name, e.paid_by_guest_name, 'Guest') AS paid_by_display_name,
+               paid_user.avatar_url AS paid_by_avatar_url, e.created_at,
+               es.id AS split_id, es.user_id AS split_user_id, es.guest_member_id AS split_guest_member_id,
+               es.guest_name AS split_guest_name,
+               COALESCE(split_user.full_name, split_user.username, split_member.guest_name, es.guest_name, 'Guest') AS split_display_name,
+               split_user.avatar_url AS split_avatar_url, es.amount AS split_amount,
+               es.is_settled AS split_settled, es.settled_at AS split_settled_at
+        FROM paged_expenses e
+        INNER JOIN trips t ON t.id = e.trip_id
+        LEFT JOIN users paid_user ON paid_user.id = e.paid_by AND e.paid_by_guest_member_id IS NULL
+        LEFT JOIN trip_members payer_member ON payer_member.id = e.paid_by_guest_member_id
+        LEFT JOIN expense_splits es ON es.expense_id = e.id
+        LEFT JOIN users split_user ON split_user.id = es.user_id
+        LEFT JOIN trip_members split_member ON split_member.id = es.guest_member_id
+        ORDER BY e.created_at DESC, e.id DESC, es.id
+    </select>
+
+    <select id="countExpenses" resultType="long">
+        WITH accessible_expenses AS (<include refid="AccessibleExpenses"/>)
+        SELECT COUNT(*) FROM accessible_expenses
+    </select>
+
+    <select id="selectReminderBySenderAndKey" resultMap="ReminderMap">
+        SELECT id, sender_user_id, recipient_user_id, expense_id, split_id, idempotency_key, created_at
+        FROM expense_payment_reminders
+        WHERE sender_user_id = #{senderUserId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND idempotency_key = #{idempotencyKey}
+    </select>
+
+    <insert id="claimReminderCooldown">
+        INSERT INTO expense_payment_reminder_limits (sender_user_id, split_id, last_sent_at)
+        VALUES (#{senderUserId,javaType=java.util.UUID,jdbcType=OTHER}, #{splitId,javaType=java.util.UUID,jdbcType=OTHER}, #{sentAt})
+        ON CONFLICT (sender_user_id, split_id) DO UPDATE
+        SET last_sent_at = EXCLUDED.last_sent_at
+        WHERE expense_payment_reminder_limits.last_sent_at &lt;= #{cooldownStart}
+    </insert>
+
+    <insert id="insertReminder" parameterType="com.ds.goroute.entity.ExpensePaymentReminder">
+        INSERT INTO expense_payment_reminders
+            (id, sender_user_id, recipient_user_id, expense_id, split_id, idempotency_key, created_at)
+        VALUES
+            (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{senderUserId,javaType=java.util.UUID,jdbcType=OTHER},
+             #{recipientUserId,javaType=java.util.UUID,jdbcType=OTHER}, #{expenseId,javaType=java.util.UUID,jdbcType=OTHER},
+             #{splitId,javaType=java.util.UUID,jdbcType=OTHER}, #{idempotencyKey}, #{createdAt})
+    </insert>
+</mapper>

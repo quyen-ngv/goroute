@@ -96,6 +96,10 @@ public enum BusinessConfigKey {
     /** Minutes a partner has to answer a booking request before it counts as outside the SLA. */
     PARTNER_RESPONSE_SLA_MINUTES("MARKETPLACE", "PARTNER_RESPONSE_SLA_MINUTES", 720, 5, 10080),
 
+    // --- Epic 05: expenses ----------------------------------------------------------
+    /** Minimum interval before the same payer can remind the same outstanding split again. */
+    EXPENSE_PAYMENT_REMINDER_COOLDOWN_MINUTES("EXPENSE", "PAYMENT_REMINDER_COOLDOWN_MINUTES", 1440, 1, 10080),
+
     // --- Epic 11: marketplace partner finance ---------------------------------------
     /**
      * Version tag frozen onto every booking together with the commission rate, so a statement can

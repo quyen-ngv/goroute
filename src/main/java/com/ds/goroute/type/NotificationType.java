@@ -36,6 +36,7 @@ public enum NotificationType {
     PAYMENT_MARKED,
     PAYMENT_ALL_MARKED,
     PAYMENT_TRIP_MARKED,
+    PAYMENT_REMINDER,
     
     // Check-in events
     CHECKIN,

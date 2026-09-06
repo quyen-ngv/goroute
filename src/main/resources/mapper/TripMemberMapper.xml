@@ -43,7 +43,10 @@
             user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER},
             role = #{role},
             status = #{status},
+            invited_by = #{invitedBy,javaType=java.util.UUID,jdbcType=OTHER},
             joined_at = #{joinedAt},
+            created_at = #{createdAt,jdbcType=TIMESTAMP},
+            guest_name = #{guestName,jdbcType=VARCHAR},
             is_guest = #{isGuest,jdbcType=BOOLEAN}
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </update>

@@ -150,6 +150,7 @@ class StarServiceTest {
 
     @Test
     void aGrantUnderAKeyThatWasAlreadyRecordedIsANoOp() {
+        when(starMapper.findWallet(userId)).thenReturn(wallet(0, 0));
         when(starMapper.findWalletForUpdate(userId)).thenReturn(wallet(0, 0));
         when(starMapper.countReference("checkin:abc")).thenReturn(1);
 
@@ -165,5 +166,32 @@ class StarServiceTest {
         when(starMapper.findTransactions(eq(userId), anyInt(), anyInt())).thenReturn(List.of());
 
         assertThat(service.getWallet(userId).isCanCreateTrip()).isFalse();
+    }
+
+    @Test
+    void whenUserHasNoWalletYet_ensureWalletBootstrapsAndReadsTheCommittedWallet() {
+        // The first lookup is cached as empty by the active MyBatis session. The fresh mapper
+        // statement runs after the REQUIRES_NEW bootstrap transaction has committed the row.
+        when(starMapper.findWallet(userId)).thenReturn(null);
+        when(starMapper.findWalletAfterBootstrap(userId)).thenReturn(wallet(0, 0));
+        when(starMapper.incrementFreeQuota(eq(userId), anyInt())).thenReturn(1);
+
+        service.reserveTripCreation(userId);
+
+        verify(bootstrap).ensureExists(userId);
+        verify(starMapper).findWalletAfterBootstrap(userId);
+        verify(starMapper).incrementFreeQuota(userId, 3);
+    }
+
+    @Test
+    void whenWalletRemainsNullAfterBootstrap_throwsExceptionInsteadOfNPE() {
+        when(starMapper.findWallet(userId)).thenReturn(null);
+        when(starMapper.findWalletAfterBootstrap(userId)).thenReturn(null);
+
+        assertThatThrownBy(() -> service.reserveTripCreation(userId))
+                .isInstanceOf(BusinessException.class);
+
+        verify(bootstrap).ensureExists(userId);
+        verify(starMapper).findWalletAfterBootstrap(userId);
     }
 }

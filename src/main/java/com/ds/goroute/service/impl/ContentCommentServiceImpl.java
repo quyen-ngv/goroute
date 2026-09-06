@@ -22,11 +22,13 @@ import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.repository.UserReviewRepository;
 import com.ds.goroute.service.ContentCommentService;
 import com.ds.goroute.service.ContentModerationService;
+import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.type.ContentVisibility;
 import com.ds.goroute.type.MemberStatus;
 import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.TripVisibility;
+import com.ds.goroute.type.TripRealtimeEventType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,6 +57,7 @@ public class ContentCommentServiceImpl implements ContentCommentService {
     private final UserRepository userRepository;
     private final ContentModerationService contentModerationService;
     private final SocialNotificationService socialNotificationService;
+    private final TripRealtimePublisher tripRealtimePublisher;
 
     @Override
     @Transactional(readOnly = true)
@@ -127,6 +130,7 @@ public class ContentCommentServiceImpl implements ContentCommentService {
                     socialNotificationService.notifyComment(
                             ownerId, userId, request.getContentType().name(), request.getContentId()));
         }
+        publishTripCommentChange(TripRealtimeEventType.COMMENT_CREATED, comment, userId);
         return toResponse(comment, false);
     }
 
@@ -137,6 +141,7 @@ public class ContentCommentServiceImpl implements ContentCommentService {
         commentRepository.updateContent(commentId, request.getContent().trim());
         comment.setContent(request.getContent().trim());
         comment.setUpdatedAt(LocalDateTime.now());
+        publishTripCommentChange(TripRealtimeEventType.COMMENT_UPDATED, comment, userId);
         return toResponse(comment, false);
     }
 
@@ -159,6 +164,7 @@ public class ContentCommentServiceImpl implements ContentCommentService {
         }
         ContentComment refreshed = commentRepository.findByIdWithStats(commentId, userId)
                 .orElse(comment);
+        publishTripCommentChange(TripRealtimeEventType.COMMENT_REACTED, refreshed, userId);
         return toResponse(refreshed, false);
     }
 
@@ -167,6 +173,7 @@ public class ContentCommentServiceImpl implements ContentCommentService {
     public void deleteComment(UUID commentId, UUID userId) {
         ContentComment comment = ownEditableComment(commentId, userId);
         commentRepository.softDelete(commentId);
+        publishTripCommentChange(TripRealtimeEventType.COMMENT_DELETED, comment, userId);
     }
 
     private ContentComment ownEditableComment(UUID commentId, UUID userId) {
@@ -179,6 +186,16 @@ public class ContentCommentServiceImpl implements ContentCommentService {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Comment has been deleted");
         }
         return comment;
+    }
+
+    private void publishTripCommentChange(
+            TripRealtimeEventType type,
+            ContentComment comment,
+            UUID actorId) {
+        if (comment.getContentType() != ModeratedContentType.TRIP) {
+            return;
+        }
+        tripRealtimePublisher.publishAfterCommit(type, comment.getContentId(), comment.getId(), actorId);
     }
 
     private CursorPosition decodeCursor(String cursor) {

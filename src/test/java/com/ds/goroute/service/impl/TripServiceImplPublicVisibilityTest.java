@@ -23,6 +23,7 @@ import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.service.StarService;
 import com.ds.goroute.service.TripAccessGuard;
+import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.type.MemberStatus;
@@ -77,6 +78,7 @@ class TripServiceImplPublicVisibilityTest {
                 mock(PlaceScoreRepository.class),
                 mock(MediaAssetRepository.class),
                 mock(ImageStorageCleanupService.class),
+                mock(TripRealtimePublisher.class),
                 mock(TripDestinationRepository.class),
                 mock(SocialNotificationService.class),
                 // Same-thread executor: the fire-and-forget view counter has to have run

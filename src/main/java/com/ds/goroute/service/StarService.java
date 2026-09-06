@@ -51,10 +51,10 @@ public class StarService {
 
     @Transactional
     public void reserveTripCreation(UUID userId) {
-        ensureWallet(userId);
-        UserStarWallet wallet = starMapper.findWallet(userId);
+        UserStarWallet wallet = ensureWallet(userId);
         int freeTripQuota = quotaPolicy.freeTripQuota(userId);
-        if (wallet.getFreeTripQuotaUsed() < freeTripQuota
+        int freeTripQuotaUsed = wallet.getFreeTripQuotaUsed() != null ? wallet.getFreeTripQuotaUsed() : 0;
+        if (freeTripQuotaUsed < freeTripQuota
                 && starMapper.incrementFreeQuota(userId, freeTripQuota) == 1) {
             return;
         }
@@ -74,13 +74,13 @@ public class StarService {
      */
     @Transactional
     public TripCreationStatus tripCreationStatus(UUID userId) {
-        ensureWallet(userId);
-        UserStarWallet wallet = starMapper.findWallet(userId);
+        UserStarWallet wallet = ensureWallet(userId);
         int unlockedSlots = starMapper.countActiveEntitlements(userId, LocalDateTime.now());
         int freeTripQuota = quotaPolicy.freeTripQuota(userId);
+        int freeTripQuotaUsed = wallet.getFreeTripQuotaUsed() != null ? wallet.getFreeTripQuotaUsed() : 0;
         return new TripCreationStatus(
-                wallet.getFreeTripQuotaUsed() < freeTripQuota || unlockedSlots > 0,
-                wallet.getFreeTripQuotaUsed(),
+                freeTripQuotaUsed < freeTripQuota || unlockedSlots > 0,
+                freeTripQuotaUsed,
                 freeTripQuota,
                 unlockedSlots);
     }
@@ -189,17 +189,18 @@ public class StarService {
     /** The balance alone, for callers that do not need the wallet's whole picture. */
     @Transactional
     public int getBalance(UUID userId) {
-        ensureWallet(userId);
-        return starMapper.findWallet(userId).getBalance();
+        UserStarWallet wallet = ensureWallet(userId);
+        return wallet.getBalance() != null ? wallet.getBalance() : 0;
     }
 
     @Transactional
     public StarWalletResponse getWallet(UUID userId) {
-        ensureWallet(userId);
-        UserStarWallet wallet = starMapper.findWallet(userId);
+        UserStarWallet wallet = ensureWallet(userId);
         TripCreationStatus tripQuota = tripCreationStatus(userId);
+        int balance = wallet.getBalance() != null ? wallet.getBalance() : 0;
+        int freeTripQuotaUsed = wallet.getFreeTripQuotaUsed() != null ? wallet.getFreeTripQuotaUsed() : 0;
         return StarWalletResponse.builder()
-                .balance(wallet.getBalance()).freeTripQuotaUsed(wallet.getFreeTripQuotaUsed())
+                .balance(balance).freeTripQuotaUsed(freeTripQuotaUsed)
                 .freeTripQuota(tripQuota.freeQuota())
                 // Whether a trip can be created right now, which is not the same as having
                 // enough stars to buy the right to: an affordable unlock still has to be
@@ -259,6 +260,10 @@ public class StarService {
                                              String description, UUID reversesTransactionId,
                                              UUID operatorId, String reason) {
         UserStarWallet wallet = starMapper.findWalletForUpdate(userId);
+        if (wallet == null) {
+            log.error("Wallet for update not found for user: {}", userId);
+            throw new BusinessException(ErrorConstant.NOT_FOUND, "Star wallet not found");
+        }
 
         // Read under the lock, so this is not the check-then-insert race it looks like:
         // every entry for this user is serialised behind the same wallet row. It matters
@@ -306,11 +311,18 @@ public class StarService {
      * idle, waiting on nobody), so the request hangs until the JDBC socket timeout kills the
      * connection. Reading first means the bootstrap only ever runs when no lock can exist yet.
      */
-    private void ensureWallet(UUID userId) {
-        if (starMapper.findWallet(userId) != null) {
-            return;
+    private UserStarWallet ensureWallet(UUID userId) {
+        UserStarWallet wallet = starMapper.findWallet(userId);
+        if (wallet != null) {
+            return wallet;
         }
         walletBootstrap.ensureExists(userId);
+        wallet = starMapper.findWalletAfterBootstrap(userId);
+        if (wallet == null) {
+            log.error("Failed to load or initialize star wallet for user: {}", userId);
+            throw new BusinessException(ErrorConstant.NOT_FOUND, "Star wallet not found");
+        }
+        return wallet;
     }
 
     /** Reads an entry by its idempotency key, for callers that need to see the original. */

@@ -21,10 +21,12 @@ import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.FileUploadService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.TripMemoryService;
+import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.MemberStatus;
 import com.ds.goroute.type.NotificationType;
+import com.ds.goroute.type.TripRealtimeEventType;
 import com.ds.goroute.utils.MemoryImageUrlNormalizer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -50,6 +52,7 @@ public class TripMemoryServiceImpl implements TripMemoryService {
     private final FileUploadService fileUploadService;
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final NotificationHelper notificationHelper;
+    private final TripRealtimePublisher tripRealtimePublisher;
 
     @Override
     @Transactional(readOnly = true)
@@ -101,6 +104,7 @@ public class TripMemoryServiceImpl implements TripMemoryService {
         mediaAssetRepository.insert(mediaAsset);
         notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.MEMORY_ADDED,
                 memoryNotificationData(trip, mediaAsset, userId), null);
+        publishMemoryChange(TripRealtimeEventType.MEMORY_CREATED, tripId, mediaAsset, userId);
         return toResponse(mediaAsset, userRepository.findById(userId).orElse(null));
     }
 
@@ -134,6 +138,7 @@ public class TripMemoryServiceImpl implements TripMemoryService {
         mediaAssetRepository.insert(mediaAsset);
         notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.MEMORY_ADDED,
                 memoryNotificationData(trip, mediaAsset, userId), null);
+        publishMemoryChange(TripRealtimeEventType.MEMORY_CREATED, tripId, mediaAsset, userId);
         return toResponse(mediaAsset, userRepository.findById(userId).orElse(null));
     }
 
@@ -167,6 +172,7 @@ public class TripMemoryServiceImpl implements TripMemoryService {
         }
 
         mediaAssetRepository.updateDetails(asset);
+        publishMemoryChange(TripRealtimeEventType.MEMORY_UPDATED, tripId, asset, userId);
 
         return toResponse(asset, userRepository.findById(asset.getUploadedBy()).orElse(null));
     }
@@ -182,6 +188,7 @@ public class TripMemoryServiceImpl implements TripMemoryService {
         notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.MEMORY_DELETED,
                 memoryNotificationData(
                         tripRepository.findById(tripId).orElseThrow(), asset, userId), null);
+        publishMemoryChange(TripRealtimeEventType.MEMORY_DELETED, tripId, asset, userId);
     }
 
     /**
@@ -201,6 +208,17 @@ public class TripMemoryServiceImpl implements TripMemoryService {
         if (value == null) return null;
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private void publishMemoryChange(
+            TripRealtimeEventType type,
+            UUID tripId,
+            MediaAsset asset,
+            UUID actorId) {
+        Map<String, Object> payload = asset.getActivityId() == null
+                ? Map.of()
+                : Map.of("activityId", asset.getActivityId());
+        tripRealtimePublisher.publishAfterCommit(type, tripId, asset.getId(), actorId, payload);
     }
 
     /** Browsing the album: owner, or an accepted member of any role. */

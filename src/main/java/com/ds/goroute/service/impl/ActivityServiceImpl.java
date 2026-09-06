@@ -29,6 +29,7 @@ import com.ds.goroute.dto.response.UserResponse;
 import com.ds.goroute.dto.response.ExpenseSplitResponse;
 import com.ds.goroute.service.ActivityService;
 import com.ds.goroute.service.ImageStorageCleanupService;
+import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.repository.MediaAssetRepository;
 import com.ds.goroute.dto.response.MemoryImageResponse;
 import com.ds.goroute.utils.MediaAssetResponseMapper;
@@ -36,6 +37,7 @@ import com.ds.goroute.service.redis.RedisService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.ActivityStatus;
 import com.ds.goroute.type.MemberStatus;
+import com.ds.goroute.type.TripRealtimeEventType;
 import com.ds.goroute.type.TransportMode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -66,6 +68,7 @@ public class ActivityServiceImpl implements ActivityService {
     private final NotificationHelper notificationHelper;
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final MediaAssetRepository mediaAssetRepository;
+    private final TripRealtimePublisher tripRealtimePublisher;
 
     @Override
     @Transactional
@@ -107,6 +110,8 @@ public class ActivityServiceImpl implements ActivityService {
         log.info("Activity created: {} in trip: {}", activity.getId(), tripId);
 
         notificationHelper.emitActivityCreated(activity, userId);
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.ACTIVITY_CREATED, tripId, activity.getId(), userId);
 
         return mapToActivityResponse(activity, findLinkedPlace(activity));
     }
@@ -200,6 +205,8 @@ public class ActivityServiceImpl implements ActivityService {
         log.info("Activity updated: {}", activityId);
 
         notificationHelper.emitActivityUpdated(activity, userId);
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.ACTIVITY_UPDATED, tripId, activityId, userId);
 
         return mapToActivityResponse(activity, findLinkedPlace(activity));
     }
@@ -225,6 +232,8 @@ public class ActivityServiceImpl implements ActivityService {
         log.info("Activity deleted: {}", activityId);
 
         notificationHelper.emitActivityDeleted(activity, userId);
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.ACTIVITY_DELETED, tripId, activityId, userId);
     }
 
     @Override
@@ -235,6 +244,8 @@ public class ActivityServiceImpl implements ActivityService {
         // Reorder is now based on time, so this endpoint is deprecated
         // But we keep it for backward compatibility
         log.info("Activities reorder requested in trip: {} (deprecated - order by time)", tripId);
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.ACTIVITY_REORDERED, tripId, null, userId);
     }
 
     private ActivityResponse mapToActivityResponse(Activity activity, Place place) {

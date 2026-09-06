@@ -40,6 +40,16 @@
         FROM user_star_wallets WHERE user_id = #{userId}
     </select>
 
+    <!--
+      Lazy bootstrap commits in REQUIRES_NEW. The preceding findWallet() may have cached an
+      empty result in this transaction's MyBatis session, so this fresh read must clear that
+      local cache before it queries the newly committed wallet row.
+    -->
+    <select id="findWalletAfterBootstrap" resultMap="walletMap" flushCache="true" useCache="false">
+        SELECT user_id, balance, free_trip_quota_used, created_at, updated_at
+        FROM user_star_wallets WHERE user_id = #{userId}
+    </select>
+
     <!-- Every spend reads through this. See the note on the mapper method. -->
     <select id="findWalletForUpdate" resultMap="walletMap">
         SELECT user_id, balance, free_trip_quota_used, created_at, updated_at

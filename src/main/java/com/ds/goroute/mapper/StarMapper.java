@@ -17,6 +17,15 @@ public interface StarMapper {
     UserStarWallet findWallet(@Param("userId") UUID userId);
 
     /**
+     * Reads a wallet after it may have been created in a nested transaction.
+     *
+     * <p>Unlike {@link #findWallet}, this statement clears the current MyBatis session's
+     * local cache before it runs. The first lookup during lazy bootstrap can cache an empty
+     * result, while {@code StarWalletBootstrapService} commits the insert in REQUIRES_NEW.
+     */
+    UserStarWallet findWalletAfterBootstrap(@Param("userId") UUID userId);
+
+    /**
      * Reads the wallet with the row locked.
      *
      * <p>Spending has to go through this. Without the lock two simultaneous redemptions

@@ -16,6 +16,7 @@ import com.ds.goroute.service.ExchangeRateService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.service.TripAccessGuard;
+import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.service.StarService;
 import com.ds.goroute.service.notification.NotificationHelper;
@@ -65,6 +66,7 @@ public class TripServiceImpl implements TripService {
     private final PlaceScoreRepository placeScoreRepository;
     private final MediaAssetRepository mediaAssetRepository;
     private final ImageStorageCleanupService imageStorageCleanupService;
+    private final TripRealtimePublisher tripRealtimePublisher;
     private final TripDestinationRepository tripDestinationRepository;
     private final SocialNotificationService socialNotificationService;
     private final Executor applicationTaskExecutor;
@@ -329,12 +331,15 @@ public class TripServiceImpl implements TripService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
 
-        // Check if user has access (must be ACCEPTED member, not LEFT)
+        // Trip detail is available only to the owner or an ACCEPTED member.
         var member = tripMemberRepository.findByTripIdAndUserId(tripId, userId);
-        if (member.isEmpty() || member.get().getStatus() == MemberStatus.LEFT) {
-            if (!trip.getOwnerId().equals(userId)) {
-                throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
-            }
+        boolean isOwner = trip.getOwnerId().equals(userId);
+        boolean isAcceptedMember = member
+                .map(TripMember::getStatus)
+                .filter(MemberStatus.ACCEPTED::equals)
+                .isPresent();
+        if (!isOwner && !isAcceptedMember) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
         }
 
         List<TripMember> members = tripMemberRepository.findByTripId(tripId);
@@ -462,6 +467,8 @@ public class TripServiceImpl implements TripService {
         }
 
         notificationHelper.emitTripUpdated(trip, userId);
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.TRIP_UPDATED, tripId, tripId, userId);
 
         return mapToTripResponse(trip, userId);
     }
@@ -478,6 +485,11 @@ public class TripServiceImpl implements TripService {
         }
 
         imageStorageCleanupService.deleteImagesForEntityRecord("TRIP", tripId);
+        
+        // Publish realtime event before actual deletion so subscribers still exist
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.TRIP_DELETED, tripId, tripId, userId);
+        
         tripRepository.deleteById(tripId);
         log.info("Trip deleted: {}", tripId);
 
@@ -495,6 +507,7 @@ public class TripServiceImpl implements TripService {
         }
 
         TripMember member;
+        boolean memberAlreadyPersisted = false;
 
         // Check if adding guest member
         if (Boolean.TRUE.equals(request.getIsGuest())) {
@@ -534,25 +547,51 @@ public class TripServiceImpl implements TripService {
                         .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found with username: " + identifier));
             }
 
+            MemberRole requestedRole = MemberRole.valueOf(request.getRole());
             var existingMember = tripMemberRepository.findByTripIdAndUserId(tripId, invitedUser.getId());
             if (existingMember.isPresent()) {
-                throw new BusinessException(ErrorConstant.TRIP_MEMBER_ALREADY_EXISTS);
-            }
+                member = existingMember.get();
+                if (!isReactivatableMember(member)) {
+                    throw new BusinessException(ErrorConstant.TRIP_MEMBER_ALREADY_EXISTS);
+                }
 
-            member = TripMember.builder()
-                    .id(UUID.randomUUID())
-                    .tripId(tripId)
-                    .userId(invitedUser.getId())
-                    .role(MemberRole.valueOf(request.getRole()))
-                    .status(MemberStatus.PENDING)
-                    .invitedBy(userId)
-                    .isGuest(false)
-                    .build();
+                // The unique (trip_id, user_id) constraint means a declined/left row
+                // must be reactivated instead of inserting a second membership row.
+                member.setRole(requestedRole);
+                member.setStatus(MemberStatus.PENDING);
+                member.setInvitedBy(userId);
+                member.setJoinedAt(null);
+                member.setCreatedAt(LocalDateTime.now());
+                member.setGuestName(null);
+                member.setIsGuest(false);
+                tripMemberRepository.updateById(member);
+                memberAlreadyPersisted = true;
+            } else {
+                member = TripMember.builder()
+                        .id(UUID.randomUUID())
+                        .tripId(tripId)
+                        .userId(invitedUser.getId())
+                        .role(requestedRole)
+                        .status(MemberStatus.PENDING)
+                        .invitedBy(userId)
+                        .isGuest(false)
+                        .build();
+            }
 
             log.info("Member invited to trip: {} - {}", tripId, invitedUser.getId());
         }
 
-        tripMemberRepository.insert(member);
+        if (!memberAlreadyPersisted) {
+            // New members and guests are inserted here.
+            tripMemberRepository.insert(member);
+        }
+        tripRealtimePublisher.publishAfterCommit(
+                member.getStatus() == MemberStatus.ACCEPTED
+                        ? TripRealtimeEventType.MEMBER_ACCEPTED
+                        : TripRealtimeEventType.MEMBER_INVITED,
+                tripId,
+                member.getId(),
+                userId);
 
         if (member.getUserId() != null && member.getStatus() == MemberStatus.PENDING) {
             Map<String, Object> inviteData = new HashMap<>();
@@ -583,6 +622,12 @@ public class TripServiceImpl implements TripService {
         if (member.getStatus() != MemberStatus.PENDING) {
             throw new BusinessException(ErrorConstant.TRIP_INVITATION_NOT_PENDING);
         }
+        if (member.getInvitedBy() == null) {
+            throw new BusinessException(
+                    ErrorConstant.FORBIDDEN_ERROR,
+                    "Join requests must be accepted by the trip owner"
+            );
+        }
 
         member.setStatus(MemberStatus.ACCEPTED);
         member.setJoinedAt(LocalDateTime.now());
@@ -593,6 +638,8 @@ public class TripServiceImpl implements TripService {
                 "Your invited traveler joined a trip");
 
         notificationHelper.emitMemberAccepted(member, trip, userId);
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.MEMBER_ACCEPTED, tripId, member.getId(), userId);
     }
 
     @Override
@@ -618,6 +665,8 @@ public class TripServiceImpl implements TripService {
                             "deepLink", "/trip/" + tripId + "/members"
                     ), List.of(member.getInvitedBy()), null);
         }
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.MEMBER_DECLINED, tripId, member.getId(), userId);
     }
 
     @Override
@@ -670,6 +719,8 @@ public class TripServiceImpl implements TripService {
                                 "deepLink", "/trip/" + tripId + "/members"),
                         List.of(member.getInvitedBy()), null);
             }
+            tripRealtimePublisher.publishAfterCommit(
+                    TripRealtimeEventType.MEMBER_DECLINED, tripId, memberId, userId);
             return;
         }
 
@@ -683,6 +734,8 @@ public class TripServiceImpl implements TripService {
                         Map.of("actorName", notificationHelper.actorName(userId), "tripName", trip.getName()),
                         List.of(member.getUserId()), null);
             }
+            tripRealtimePublisher.publishAfterCommit(
+                    TripRealtimeEventType.MEMBER_REMOVED, tripId, memberId, userId);
             return;
         }
 
@@ -706,6 +759,8 @@ public class TripServiceImpl implements TripService {
                         "tripName", trip.getName(),
                         "deepLink", "/trip/" + tripId + "/members"
                 ), member.getUserId() == null ? List.of() : List.of(member.getUserId()));
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.MEMBER_REMOVED, tripId, memberId, userId);
     }
 
     @Override
@@ -752,6 +807,8 @@ public class TripServiceImpl implements TripService {
         }
         notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.MEMBER_ROLE_UPDATED,
                 roleData, member.getUserId() == null ? List.of() : List.of(member.getUserId()));
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.MEMBER_ROLE_UPDATED, tripId, memberId, userId);
     }
 
     @Override
@@ -787,6 +844,8 @@ public class TripServiceImpl implements TripService {
                         "tripName", trip.getName(),
                         "deepLink", "/trip/" + tripId + "/members"
                 ), null);
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.MEMBER_GUEST_UPDATED, tripId, guestMemberId, userId);
     }
 
     @Override
@@ -1237,6 +1296,8 @@ public class TripServiceImpl implements TripService {
                 targetData, List.of(targetUserId), null);
         notificationHelper.emitGenericToMembers(tripId, currentUserId, NotificationType.GUEST_LINKED,
                 linkedData, List.of(targetUserId));
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.MEMBER_REMOVED, tripId, guestMemberId, currentUserId);
     }
 
     @Override
@@ -1529,22 +1590,37 @@ public class TripServiceImpl implements TripService {
         Trip trip = tripRepository.findByShareCode(code)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found with code: " + code));
 
-        // Check if user is already a member
+        // Check if user is already an active/pending member. A declined or left
+        // membership is reusable because trip_members has a unique user/trip key.
         var existingMember = tripMemberRepository.findByTripIdAndUserId(trip.getId(), userId);
+        TripMember member;
         if (existingMember.isPresent()) {
-            throw new BusinessException(ErrorConstant.TRIP_MEMBER_ALREADY_EXISTS);
+            member = existingMember.get();
+            if (!isReactivatableMember(member)) {
+                throw new BusinessException(ErrorConstant.TRIP_MEMBER_ALREADY_EXISTS);
+            }
+
+            // A code join is an owner approval request, not an invitation. Clear
+            // invitedBy so acceptMember() can distinguish the two workflows.
+            member.setRole(MemberRole.VIEWER);
+            member.setStatus(MemberStatus.PENDING);
+            member.setInvitedBy(null);
+            member.setJoinedAt(null);
+            member.setCreatedAt(LocalDateTime.now());
+            member.setGuestName(null);
+            member.setIsGuest(false);
+            tripMemberRepository.updateById(member);
+        } else {
+            member = TripMember.builder()
+                    .id(UUID.randomUUID())
+                    .tripId(trip.getId())
+                    .userId(userId)
+                    .role(MemberRole.VIEWER)
+                    .status(MemberStatus.PENDING)
+                    .build();
+
+            tripMemberRepository.insert(member);
         }
-
-        // Create new member with PENDING status
-        TripMember member = TripMember.builder()
-                .id(UUID.randomUUID())
-                .tripId(trip.getId())
-                .userId(userId)
-                .role(MemberRole.VIEWER)
-                .status(MemberStatus.PENDING)
-                .build();
-
-        tripMemberRepository.insert(member);
         log.info("User joined trip by code: tripId={}, userId={}, code={}", trip.getId(), userId, code);
 
         notificationHelper.emitGeneric(trip.getId(), userId, NotificationType.MEMBER_JOIN_REQUESTED,
@@ -1553,8 +1629,15 @@ public class TripServiceImpl implements TripService {
                         "tripName", trip.getName(),
                         "deepLink", "/trip/" + trip.getId() + "/members"
                 ), List.of(trip.getOwnerId()), null);
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.MEMBER_INVITED, trip.getId(), member.getId(), userId);
 
         return mapToTripResponse(trip, userId);
+    }
+
+    private boolean isReactivatableMember(TripMember member) {
+        return member.getStatus() == MemberStatus.DECLINED
+                || member.getStatus() == MemberStatus.LEFT;
     }
 
     @Override
@@ -1605,6 +1688,8 @@ public class TripServiceImpl implements TripService {
                         "tripName", trip.getName(),
                         "deepLink", "/trip/" + tripId + "/members"
                 ), List.of(member.getUserId()));
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.MEMBER_ACCEPTED, tripId, memberId, userId);
     }
 
     @Override
@@ -1627,6 +1712,8 @@ public class TripServiceImpl implements TripService {
         log.info("Member left trip: tripId={}, userId={}", tripId, userId);
 
         notificationHelper.emitMemberLeft(member, trip, userId);
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.MEMBER_REMOVED, tripId, member.getId(), userId);
     }
 
     @Override

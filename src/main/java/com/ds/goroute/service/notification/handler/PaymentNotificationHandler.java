@@ -4,6 +4,7 @@ import com.ds.goroute.service.NotificationService;
 import com.ds.goroute.service.notification.event.TripEvent;
 import com.ds.goroute.service.notification.strategy.AllMembersStrategy;
 import com.ds.goroute.service.notification.strategy.ExpenseMembersStrategy;
+import com.ds.goroute.service.notification.strategy.DirectRecipientsStrategy;
 import com.ds.goroute.service.notification.strategy.PayeeOnlyStrategy;
 import com.ds.goroute.type.NotificationType;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,7 @@ public class PaymentNotificationHandler implements NotificationEventHandler {
     private final PayeeOnlyStrategy payeeOnlyStrategy;
     private final ExpenseMembersStrategy expenseMembersStrategy;
     private final AllMembersStrategy allMembersStrategy;
+    private final DirectRecipientsStrategy directRecipientsStrategy;
 
     @Override
     public void handle(TripEvent event) {
@@ -40,6 +42,8 @@ public class PaymentNotificationHandler implements NotificationEventHandler {
             recipients = payeeOnlyStrategy.getRecipients(event);
         } else if (event.getType() == NotificationType.PAYMENT_ALL_MARKED) {
             recipients = expenseMembersStrategy.getRecipients(event);
+        } else if (event.getType() == NotificationType.PAYMENT_REMINDER) {
+            recipients = directRecipientsStrategy.getRecipients(event);
         } else { // PAYMENT_TRIP_MARKED
             recipients = allMembersStrategy.getRecipients(event);
         }
@@ -57,6 +61,7 @@ public class PaymentNotificationHandler implements NotificationEventHandler {
     public boolean supports(TripEvent event) {
         return event.getType() == NotificationType.PAYMENT_MARKED
             || event.getType() == NotificationType.PAYMENT_ALL_MARKED
-            || event.getType() == NotificationType.PAYMENT_TRIP_MARKED;
+            || event.getType() == NotificationType.PAYMENT_TRIP_MARKED
+            || event.getType() == NotificationType.PAYMENT_REMINDER;
     }
 }

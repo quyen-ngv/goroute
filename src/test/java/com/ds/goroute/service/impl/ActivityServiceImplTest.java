@@ -15,6 +15,7 @@ import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.TripAccessGuard;
+import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.service.redis.RedisService;
 import com.ds.goroute.type.ActivityStatus;
@@ -50,6 +51,7 @@ class ActivityServiceImplTest {
     @Mock private NotificationHelper notificationHelper;
     @Mock private ImageStorageCleanupService imageStorageCleanupService;
     @Mock private TripAccessGuard tripAccessGuard;
+    @Mock private TripRealtimePublisher tripRealtimePublisher;
 
     @InjectMocks private ActivityServiceImpl service;
 

@@ -15,6 +15,7 @@ import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.FileUploadService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.TripAccessGuard;
+import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.MemberStatus;
@@ -68,7 +69,8 @@ class TripMemoryServiceImplTest {
             businessConfigService,
             fileUploadService,
             imageStorageCleanupService,
-            notificationHelper);
+            notificationHelper,
+            mock(TripRealtimePublisher.class));
 
     @Test
     void usesConfiguredLimitForFreeTripMemory() {
