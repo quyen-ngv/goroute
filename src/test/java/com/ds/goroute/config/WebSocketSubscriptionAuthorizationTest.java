@@ -8,18 +8,20 @@ import io.jsonwebtoken.impl.DefaultClaims;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.beans.factory.ObjectProvider;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
+import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 
-import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -44,77 +46,24 @@ class WebSocketSubscriptionAuthorizationTest {
 
     @Mock
     private MessageChannel messageChannel;
+    @Mock
+    private ChannelRegistration channelRegistration;
+    @Mock
+    private ObjectProvider<org.springframework.messaging.simp.user.SimpUserRegistry> simpUserRegistryProvider;
 
     private ChannelInterceptor interceptor;
 
     @BeforeEach
     void setUp() {
-        // Create interceptor inline to match WebSocketConfig pattern
-        interceptor = new ChannelInterceptor() {
-            @Override
-            public Message<?> preSend(Message<?> message, MessageChannel channel) {
-                StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
-                if (StompCommand.CONNECT.equals(accessor.getCommand())) {
-                    authenticate(accessor);
-                }
-                if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())
-                        && accessor.getDestination() != null
-                        && accessor.getDestination().startsWith("/topic/marketplace/conversations/")) {
-                    if (accessor.getUser() == null) {
-                        throw new AccessDeniedException("Authentication required for marketplace chat");
-                    }
-                    try {
-                        UUID conversationId = UUID.fromString(accessor.getDestination().substring("/topic/marketplace/conversations/".length()));
-                        UUID userId = UUID.fromString(accessor.getUser().getName());
-                        marketplaceConversationAccessService.requireAccess(conversationId, userId);
-                    } catch (IllegalArgumentException ex) {
-                        throw new AccessDeniedException("Invalid marketplace conversation destination");
-                    }
-                }
-                if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())
-                        && accessor.getDestination() != null
-                        && accessor.getDestination().startsWith("/topic/trips/")) {
-                    UUID userId = requireUserId(accessor);
-                    try {
-                        UUID tripId = UUID.fromString(accessor.getDestination().substring("/topic/trips/".length()));
-                        tripAccessGuard.requireAccess(tripId, userId);
-                    } catch (IllegalArgumentException exception) {
-                        throw new AccessDeniedException("Invalid trip destination");
-                    }
-                }
-                return message;
-            }
-        };
-    }
-
-    private void authenticate(StompHeaderAccessor accessor) {
-        String authorization = accessor.getFirstNativeHeader("Authorization");
-        if (authorization == null || !authorization.startsWith("Bearer ")) {
-            throw new AccessDeniedException("Authentication required for WebSocket connection");
-        }
-        String token = authorization.substring("Bearer ".length());
-        if (!jwtUtils.validateToken(token)) {
-            throw new AccessDeniedException("Invalid WebSocket authentication token");
-        }
-        Claims claims = jwtUtils.getClaimsFromToken(token);
-        UUID userId;
-        try {
-            userId = UUID.fromString(claims.get("userId", String.class));
-        } catch (IllegalArgumentException | NullPointerException exception) {
-            throw new AccessDeniedException("Invalid WebSocket user");
-        }
-        accessor.setUser(new UsernamePasswordAuthenticationToken(userId.toString(), null, List.of()));
-    }
-
-    private UUID requireUserId(StompHeaderAccessor accessor) {
-        if (accessor.getUser() == null) {
-            throw new AccessDeniedException("Authentication required for trip updates");
-        }
-        try {
-            return UUID.fromString(accessor.getUser().getName());
-        } catch (IllegalArgumentException exception) {
-            throw new AccessDeniedException("Invalid WebSocket user");
-        }
+        WebSocketConfig config = new WebSocketConfig(
+                marketplaceConversationAccessService,
+                tripAccessGuard,
+                jwtUtils,
+                simpUserRegistryProvider);
+        config.configureClientInboundChannel(channelRegistration);
+        ArgumentCaptor<ChannelInterceptor> captor = ArgumentCaptor.forClass(ChannelInterceptor.class);
+        verify(channelRegistration).interceptors(captor.capture());
+        interceptor = captor.getValue();
     }
 
     @Test
@@ -130,7 +79,7 @@ class WebSocketSubscriptionAuthorizationTest {
         when(jwtUtils.getClaimsFromToken(token)).thenReturn(claims);
 
         // Mock trip access - member has access
-        doNothing().when(tripAccessGuard).requireAccess(tripId, userId);
+        when(tripAccessGuard.requireAccess(tripId, userId)).thenReturn(null);
 
         // Create CONNECT message
         StompHeaderAccessor connectAccessor = StompHeaderAccessor.create(StompCommand.CONNECT);
@@ -140,6 +89,7 @@ class WebSocketSubscriptionAuthorizationTest {
         // Create SUBSCRIBE message to trip topic
         StompHeaderAccessor subscribeAccessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
         subscribeAccessor.setDestination("/topic/trips/" + tripId);
+        subscribeAccessor.setUser(new UsernamePasswordAuthenticationToken(userId.toString(), null));
         Message<?> subscribeMessage = MessageBuilder.createMessage(new byte[0], subscribeAccessor.getMessageHeaders());
 
         // Should not throw
@@ -175,6 +125,7 @@ class WebSocketSubscriptionAuthorizationTest {
         // Create SUBSCRIBE message to trip topic
         StompHeaderAccessor subscribeAccessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
         subscribeAccessor.setDestination("/topic/trips/" + tripId);
+        subscribeAccessor.setUser(new UsernamePasswordAuthenticationToken(userId.toString(), null));
         Message<?> subscribeMessage = MessageBuilder.createMessage(new byte[0], subscribeAccessor.getMessageHeaders());
 
         // CONNECT should succeed
@@ -260,6 +211,7 @@ class WebSocketSubscriptionAuthorizationTest {
         // Create SUBSCRIBE message to marketplace topic
         StompHeaderAccessor subscribeAccessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
         subscribeAccessor.setDestination("/topic/marketplace/conversations/" + conversationId);
+        subscribeAccessor.setUser(new UsernamePasswordAuthenticationToken(userId.toString(), null));
         Message<?> subscribeMessage = MessageBuilder.createMessage(new byte[0], subscribeAccessor.getMessageHeaders());
 
         // Should not throw

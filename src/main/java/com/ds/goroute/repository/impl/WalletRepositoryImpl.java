@@ -2,6 +2,7 @@ package com.ds.goroute.repository.impl;
 
 import com.ds.goroute.entity.ExpensePaymentReminder;
 import com.ds.goroute.entity.WalletCurrencySummaryRow;
+import com.ds.goroute.entity.WalletCategorySummaryRow;
 import com.ds.goroute.entity.WalletDebtRow;
 import com.ds.goroute.entity.WalletExpenseRow;
 import com.ds.goroute.mapper.WalletMapper;
@@ -20,6 +21,7 @@ public class WalletRepositoryImpl implements WalletRepository {
     private final WalletMapper walletMapper;
 
     @Override public List<WalletCurrencySummaryRow> findCurrencySummary(UUID userId) { return walletMapper.selectCurrencySummary(userId); }
+    @Override public List<WalletCategorySummaryRow> findCategorySummary(UUID userId) { return walletMapper.selectCategorySummary(userId); }
     @Override public List<WalletDebtRow> findOwedToMe(UUID userId, int limit) { return walletMapper.selectOwedToMe(userId, limit); }
     @Override public List<WalletDebtRow> findIOwe(UUID userId, int limit) { return walletMapper.selectIOwe(userId, limit); }
     @Override public List<WalletExpenseRow> findExpenses(UUID userId, int limit, int offset) { return walletMapper.selectExpenses(userId, limit, offset); }

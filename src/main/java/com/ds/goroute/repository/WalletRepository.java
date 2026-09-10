@@ -2,6 +2,7 @@ package com.ds.goroute.repository;
 
 import com.ds.goroute.entity.ExpensePaymentReminder;
 import com.ds.goroute.entity.WalletCurrencySummaryRow;
+import com.ds.goroute.entity.WalletCategorySummaryRow;
 import com.ds.goroute.entity.WalletDebtRow;
 import com.ds.goroute.entity.WalletExpenseRow;
 
@@ -12,6 +13,7 @@ import java.util.UUID;
 
 public interface WalletRepository {
     List<WalletCurrencySummaryRow> findCurrencySummary(UUID userId);
+    List<WalletCategorySummaryRow> findCategorySummary(UUID userId);
     List<WalletDebtRow> findOwedToMe(UUID userId, int limit);
     List<WalletDebtRow> findIOwe(UUID userId, int limit);
     List<WalletExpenseRow> findExpenses(UUID userId, int limit, int offset);

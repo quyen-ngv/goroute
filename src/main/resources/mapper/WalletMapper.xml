@@ -23,6 +23,12 @@
         <result column="my_paid" property="myPaid"/>
     </resultMap>
 
+    <resultMap id="CategorySummaryMap" type="com.ds.goroute.entity.WalletCategorySummaryRow">
+        <result column="currency" property="currency"/>
+        <result column="category" property="category"/>
+        <result column="amount" property="amount"/>
+    </resultMap>
+
     <resultMap id="DebtMap" type="com.ds.goroute.entity.WalletDebtRow">
         <id column="split_id" property="splitId" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="expense_id" property="expenseId" javaType="java.util.UUID" jdbcType="OTHER"/>
@@ -110,6 +116,14 @@
         FROM expense_totals totals
         LEFT JOIN split_summary summary ON summary.currency = totals.currency
         ORDER BY totals.currency
+    </select>
+
+    <select id="selectCategorySummary" resultMap="CategorySummaryMap">
+        WITH accessible_expenses AS (<include refid="AccessibleExpenses"/>)
+        SELECT currency, COALESCE(category::text, 'OTHER') AS category, SUM(amount) AS amount
+        FROM accessible_expenses
+        GROUP BY currency, COALESCE(category::text, 'OTHER')
+        ORDER BY currency, amount DESC
     </select>
 
     <select id="selectOwedToMe" resultMap="DebtMap">

@@ -2,6 +2,7 @@ package com.ds.goroute.service.impl;
 
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.response.WalletCurrencySummaryResponse;
+import com.ds.goroute.dto.response.WalletCategorySummaryResponse;
 import com.ds.goroute.dto.response.WalletDebtResponse;
 import com.ds.goroute.dto.response.WalletExpenseResponse;
 import com.ds.goroute.dto.response.WalletExpenseSplitResponse;
@@ -56,6 +57,10 @@ public class WalletServiceImpl implements WalletService {
         int offset = page * pageSize;
         return WalletResponse.builder()
                 .currencies(walletRepository.findCurrencySummary(userId).stream().map(this::toCurrency).toList())
+                .categoryBreakdown(walletRepository.findCategorySummary(userId).stream()
+                        .map(row -> WalletCategorySummaryResponse.builder()
+                                .currency(row.getCurrency()).category(row.getCategory())
+                                .amount(zero(row.getAmount())).build()).toList())
                 .owedToMe(walletRepository.findOwedToMe(userId, debtLimit).stream()
                         .map(row -> toDebt(row, row.getCounterpartUserId() != null)).toList())
                 .iOwe(walletRepository.findIOwe(userId, debtLimit).stream()

@@ -757,7 +757,10 @@ public class ExpenseServiceImpl implements ExpenseService {
     public ExpenseSplitResponse markPaymentForSplit(UUID tripId, UUID expenseId, UUID splitId, MarkPaymentRequest request, UUID userId) {
         log.info("Marking payment for split: splitId={}, expenseId={}, tripId={}, userId={}", splitId, expenseId, tripId, userId);
 
-        validateTripEditAccess(tripId, userId);
+        // Settling is a participant action, not a budget edit: an accepted viewer may
+        // update only their own split, while the authorization below still lets the
+        // registered payer reconcile splits they funded.
+        validateTripAccess(tripId, userId);
 
         // 2. Fetch expense
         Expense expense = expenseRepository.findById(expenseId)

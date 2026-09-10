@@ -14,6 +14,7 @@ import java.util.List;
 @AllArgsConstructor
 public class WalletResponse {
     private List<WalletCurrencySummaryResponse> currencies;
+    private List<WalletCategorySummaryResponse> categoryBreakdown;
     private List<WalletDebtResponse> owedToMe;
     private List<WalletDebtResponse> iOwe;
     private List<WalletExpenseResponse> expenses;

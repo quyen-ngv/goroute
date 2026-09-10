@@ -7,6 +7,7 @@ import com.ds.goroute.entity.ExpensePaymentReminder;
 import com.ds.goroute.entity.ExpenseSplit;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.entity.WalletCurrencySummaryRow;
+import com.ds.goroute.entity.WalletCategorySummaryRow;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.ExpenseRepository;
 import com.ds.goroute.repository.ExpenseSplitRepository;
@@ -56,6 +57,11 @@ class WalletServiceImplTest {
         WalletCurrencySummaryRow vnd = currency("VND", "250000", "125000", "30000", "70000", "40000");
         WalletCurrencySummaryRow usd = currency("USD", "40.50", "12.50", "0", "18", "18");
         when(walletRepository.findCurrencySummary(userId)).thenReturn(List.of(vnd, usd));
+        WalletCategorySummaryRow food = new WalletCategorySummaryRow();
+        food.setCurrency("VND");
+        food.setCategory("FOOD");
+        food.setAmount(new BigDecimal("150000"));
+        when(walletRepository.findCategorySummary(userId)).thenReturn(List.of(food));
         when(walletRepository.findOwedToMe(userId, 100)).thenReturn(List.of());
         when(walletRepository.findIOwe(userId, 100)).thenReturn(List.of());
         when(walletRepository.findExpenses(userId, 30, 0)).thenReturn(List.of());
@@ -69,6 +75,10 @@ class WalletServiceImplTest {
         assertThat(response.getCurrencies().get(0).getOwedToMe()).isEqualByComparingTo("125000");
         assertThat(response.getCurrencies().get(1).getCurrency()).isEqualTo("USD");
         assertThat(response.getCurrencies().get(1).getMyPaid()).isEqualByComparingTo("18");
+        assertThat(response.getCategoryBreakdown()).singleElement().satisfies(category -> {
+            assertThat(category.getCurrency()).isEqualTo("VND");
+            assertThat(category.getAmount()).isEqualByComparingTo("150000");
+        });
         verify(walletRepository).findExpenses(userId, 30, 0);
         verify(walletRepository).countExpenses(userId);
     }

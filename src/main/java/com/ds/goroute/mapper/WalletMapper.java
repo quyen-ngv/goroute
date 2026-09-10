@@ -2,6 +2,7 @@ package com.ds.goroute.mapper;
 
 import com.ds.goroute.entity.ExpensePaymentReminder;
 import com.ds.goroute.entity.WalletCurrencySummaryRow;
+import com.ds.goroute.entity.WalletCategorySummaryRow;
 import com.ds.goroute.entity.WalletDebtRow;
 import com.ds.goroute.entity.WalletExpenseRow;
 import org.apache.ibatis.annotations.Mapper;
@@ -15,6 +16,8 @@ import java.util.UUID;
 @Mapper
 public interface WalletMapper {
     List<WalletCurrencySummaryRow> selectCurrencySummary(@Param("userId") UUID userId);
+
+    List<WalletCategorySummaryRow> selectCategorySummary(@Param("userId") UUID userId);
 
     List<WalletDebtRow> selectOwedToMe(@Param("userId") UUID userId, @Param("limit") int limit);
 

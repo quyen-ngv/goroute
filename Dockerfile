@@ -18,7 +18,10 @@ FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
 
 # Tạo thư mục log và data directories
-RUN mkdir -p /app/logs /app/data/lucene-index /app/data/subtitles && \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /app/logs /app/data/lucene-index /app/data/subtitles && \
     chmod -R 777 /app/logs /app/data
 
 # Thêm app user

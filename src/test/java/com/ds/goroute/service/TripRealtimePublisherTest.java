@@ -66,4 +66,20 @@ class TripRealtimePublisherTest {
         assertThat(event.getValue().actorId()).isNull();
         assertThat(event.getValue().payload()).containsEntry("source", "itinerary");
     }
+
+    @Test
+    void doesNotEmitWhenOwningTransactionRollsBack() {
+        TripRealtimePublisher publisher = new TripRealtimePublisher(messagingTemplate);
+        UUID tripId = UUID.randomUUID();
+
+        TransactionSynchronizationManager.initSynchronization();
+        publisher.publishAfterCommit(
+                TripRealtimeEventType.EXPENSE_UPDATED, tripId, UUID.randomUUID());
+
+        TransactionSynchronization synchronization = TransactionSynchronizationManager
+                .getSynchronizations().get(0);
+        synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+
+        verify(messagingTemplate, never()).convertAndSend(any(String.class), any(Object.class));
+    }
 }

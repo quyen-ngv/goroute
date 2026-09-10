@@ -6,6 +6,7 @@ import com.ds.goroute.utils.JwtUtils;
 import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.beans.factory.ObjectProvider;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -25,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -37,6 +39,8 @@ class WebSocketConfigTest {
     private TripAccessGuard tripAccessGuard;
     @Mock
     private JwtUtils jwtUtils;
+    @Mock
+    private ObjectProvider<org.springframework.messaging.simp.user.SimpUserRegistry> simpUserRegistryProvider;
     @Mock
     private ChannelRegistration registration;
     @Mock
@@ -74,14 +78,61 @@ class WebSocketConfigTest {
     }
 
     @Test
+    void rejectsTripDestinationWithASecondPathSegment() {
+        UUID userId = UUID.randomUUID();
+        UUID tripId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> inboundInterceptor().preSend(
+                subscribeToDestination("/topic/trips/" + tripId + "/private"), channel))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(tripAccessGuard, never()).requireAccess(tripId, userId);
+    }
+
+    @Test
     void rejectsUnauthenticatedConnectBeforeAnyTripSubscriptionIsAccepted() {
         assertThatThrownBy(() -> inboundInterceptor().preSend(connect(null), channel))
                 .isInstanceOf(AccessDeniedException.class);
     }
 
+    @Test
+    void rejectsTripMessageForMemberRemovedAfterSubscription() {
+        UUID userId = UUID.randomUUID();
+        UUID tripId = UUID.randomUUID();
+        doThrow(new AccessDeniedException("membership revoked"))
+                .when(tripAccessGuard).requireAccess(tripId, userId);
+
+        ChannelInterceptor interceptor = outboundInterceptor();
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.MESSAGE);
+        accessor.setDestination("/topic/trips/" + tripId);
+        accessor.setUser(new UsernamePasswordAuthenticationToken(userId.toString(), null));
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertThat(interceptor.preSend(message, channel)).isNull();
+    }
+
+    @Test
+    void keepsMarketplaceMessagesOutsideTripAuthorization() {
+        ChannelInterceptor interceptor = outboundInterceptor();
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.MESSAGE);
+        accessor.setDestination("/topic/marketplace/conversations/" + UUID.randomUUID());
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertThat(interceptor.preSend(message, channel)).isSameAs(message);
+    }
+
     private ChannelInterceptor inboundInterceptor() {
-        WebSocketConfig config = new WebSocketConfig(marketplaceAccess, tripAccessGuard, jwtUtils);
+        WebSocketConfig config = new WebSocketConfig(
+                marketplaceAccess, tripAccessGuard, jwtUtils, simpUserRegistryProvider);
         config.configureClientInboundChannel(registration);
+        ArgumentCaptor<ChannelInterceptor> captor = ArgumentCaptor.forClass(ChannelInterceptor.class);
+        verify(registration).interceptors(captor.capture());
+        return captor.getValue();
+    }
+
+    private ChannelInterceptor outboundInterceptor() {
+        WebSocketConfig config = new WebSocketConfig(
+                marketplaceAccess, tripAccessGuard, jwtUtils, simpUserRegistryProvider);
+        config.configureClientOutboundChannel(registration);
         ArgumentCaptor<ChannelInterceptor> captor = ArgumentCaptor.forClass(ChannelInterceptor.class);
         verify(registration).interceptors(captor.capture());
         return captor.getValue();
@@ -96,8 +147,16 @@ class WebSocketConfigTest {
     }
 
     private Message<byte[]> subscribe(UUID tripId, UUID userId) {
+        return subscribeToDestination("/topic/trips/" + tripId, userId);
+    }
+
+    private Message<byte[]> subscribeToDestination(String destination) {
+        return subscribeToDestination(destination, UUID.randomUUID());
+    }
+
+    private Message<byte[]> subscribeToDestination(String destination, UUID userId) {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
-        accessor.setDestination("/topic/trips/" + tripId);
+        accessor.setDestination(destination);
         accessor.setUser(new UsernamePasswordAuthenticationToken(userId.toString(), null));
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
     }
