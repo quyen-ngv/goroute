@@ -3,11 +3,13 @@ package com.ds.goroute.service.impl;
 import com.ds.goroute.config.FileUploadProperties;
 import com.ds.goroute.config.ImgpressProperties;
 import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.ImageModerationService;
 import com.ds.goroute.service.ImageUploadOutcome;
 import com.ds.goroute.service.ImageUploadRequest;
 import com.ds.goroute.service.StorageService;
 import com.ds.goroute.service.moderation.ModerationVerdict;
+import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.ModerationAction;
 import com.ds.goroute.type.ModerationCategory;
 import org.junit.jupiter.api.Test;
@@ -17,6 +19,8 @@ import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -37,6 +41,7 @@ class FileUploadServiceImplTest {
 
     private final StorageService storageService = mock(StorageService.class);
     private final ImageModerationService imageModerationService = mock(ImageModerationService.class);
+    private final BusinessConfigService businessConfigService = mock(BusinessConfigService.class);
     private final AiTripRepository aiTripRepository = mock(AiTripRepository.class);
     private final FileUploadProperties properties = properties();
     private final FileUploadServiceImpl service = new FileUploadServiceImpl(
@@ -45,6 +50,7 @@ class FileUploadServiceImplTest {
             properties,
             new ImgpressProperties(),
             imageModerationService,
+            businessConfigService,
             aiTripRepository);
 
     @Test
@@ -60,7 +66,8 @@ class FileUploadServiceImplTest {
 
     @Test
     void rejectsOversizedBatchBeforeWritingAnyObject() {
-        properties.setMaxBatchFiles(1);
+        when(businessConfigService.getInt(BusinessConfigKey.UPLOAD_MAX_BATCH_FILES))
+                .thenReturn(1);
         MockMultipartFile first = new MockMultipartFile("files", "one.jpg", "image/jpeg", JPEG);
         MockMultipartFile second = new MockMultipartFile("files", "two.jpg", "image/jpeg", JPEG);
 
@@ -82,6 +89,10 @@ class FileUploadServiceImplTest {
         when(imageModerationService.inspect(any(), any(), any(), any()))
                 .thenReturn(ModerationVerdict.allowed())
                 .thenReturn(ModerationVerdict.of(ModerationAction.BLOCK, ModerationCategory.SEXUAL, null, "x"));
+        when(businessConfigService.getInt(BusinessConfigKey.UPLOAD_MAX_BATCH_FILES))
+                .thenReturn(30);
+        when(businessConfigService.getBoolean(BusinessConfigKey.IMAGE_COMPRESSION_ENABLED))
+                .thenReturn(false);
         when(storageService.uploadFile(anyString(), any(), anyString(), anyLong()))
                 .thenReturn("https://cdn/beach.webp");
 
@@ -135,6 +146,45 @@ class FileUploadServiceImplTest {
         verifyNoInteractions(storageService);
     }
 
+    @Test
+    void uploadsMultipleImagesInParallelPreservingInputOrder() {
+        ExecutorService pool = Executors.newFixedThreadPool(3);
+        try {
+            FileUploadServiceImpl parallelService = new FileUploadServiceImpl(
+                    storageService,
+                    mock(RestTemplate.class),
+                    properties,
+                    new ImgpressProperties(),
+                    imageModerationService,
+                    businessConfigService,
+                    aiTripRepository,
+                    pool);
+
+            when(businessConfigService.getInt(BusinessConfigKey.UPLOAD_MAX_BATCH_FILES))
+                    .thenReturn(10);
+            when(businessConfigService.getBoolean(BusinessConfigKey.IMAGE_COMPRESSION_ENABLED))
+                    .thenReturn(false);
+            when(imageModerationService.inspect(any(), any(), any(), any()))
+                    .thenReturn(ModerationVerdict.allowed());
+            when(storageService.uploadFile(anyString(), any(), anyString(), anyLong()))
+                    .thenAnswer(invocation -> "https://cdn/" + invocation.getArgument(0));
+
+            MockMultipartFile file1 = new MockMultipartFile("files", "img1.jpg", "image/jpeg", JPEG);
+            MockMultipartFile file2 = new MockMultipartFile("files", "img2.jpg", "image/jpeg", JPEG);
+            MockMultipartFile file3 = new MockMultipartFile("files", "img3.jpg", "image/jpeg", JPEG);
+
+            List<ImageUploadOutcome> outcomes = parallelService.uploadImages(userUpload(), List.of(file1, file2, file3));
+
+            assertThat(outcomes).hasSize(3);
+            assertThat(outcomes.get(0).originalFilename()).isEqualTo("img1.jpg");
+            assertThat(outcomes.get(1).originalFilename()).isEqualTo("img2.jpg");
+            assertThat(outcomes.get(2).originalFilename()).isEqualTo("img3.jpg");
+            assertThat(outcomes).allMatch(ImageUploadOutcome::isAccepted);
+        } finally {
+            pool.shutdown();
+        }
+    }
+
     private ImageUploadRequest userUpload() {
         return new ImageUploadRequest(UUID.randomUUID(),
                 ImageUploadRequest.ImageEntryPoint.USER_UPLOAD, "expenses/test", false);
@@ -144,7 +194,6 @@ class FileUploadServiceImplTest {
         FileUploadProperties configured = new FileUploadProperties();
         configured.setMaxImageSize(DataSize.ofMegabytes(5));
         configured.setMaxVideoSize(DataSize.ofMegabytes(50));
-        configured.setMaxBatchFiles(10);
         return configured;
     }
 }

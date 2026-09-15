@@ -711,9 +711,10 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
         return checkins.stream()
                 .map(checkin -> toResponse(checkin, photos.getOrDefault(checkin.getId(), List.of()),
-                        authors.get(checkin.getUserId()), latestReviewCheckinIds.contains(checkin.getId()),
+                        authors.getOrDefault(checkin.getUserId(), null), latestReviewCheckinIds.contains(checkin.getId()),
                         linkedReviews.get(checkin.getReviewId()), likeCounts.getOrDefault(checkin.getId(), 0),
-                        likedIds.contains(checkin.getId()), places.get(checkin.getPlaceId())))
+                        likedIds.contains(checkin.getId()), 
+                        checkin.getPlaceId() == null ? null : places.get(checkin.getPlaceId())))
                 .toList();
     }
 

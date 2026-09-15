@@ -107,7 +107,22 @@ public enum BusinessConfigKey {
      */
     MARKETPLACE_COMMISSION_RULE_VERSION("MARKETPLACE", "COMMISSION_RULE_VERSION", "2026.09"),
     /** Days after a statement is issued during which a partner may still dispute one of its lines. */
-    MARKETPLACE_STATEMENT_DISPUTE_WINDOW_DAYS("MARKETPLACE", "STATEMENT_DISPUTE_WINDOW_DAYS", 14, 1, 90);
+    MARKETPLACE_STATEMENT_DISPUTE_WINDOW_DAYS("MARKETPLACE", "STATEMENT_DISPUTE_WINDOW_DAYS", 14, 1, 90),
+
+    // --- Media upload & compression -------------------------------------------------
+    /**
+     * Whether to compress uploaded images through the external ImagePress service.
+     * When disabled (default), images are stored as-is after validation and moderation,
+     * which is faster but results in larger storage size and slower client downloads.
+     * When enabled, images are compressed to WebP format before storage.
+     */
+    IMAGE_COMPRESSION_ENABLED("MEDIA_UPLOAD", "COMPRESSION_ENABLED", false),
+    
+    /**
+     * Maximum number of files allowed in a single batch upload request.
+     * Higher values allow faster bulk uploads but may strain server resources.
+     */
+    UPLOAD_MAX_BATCH_FILES("MEDIA_UPLOAD", "MAX_BATCH_FILES", 30, 1, 100);
 
     /** Value shapes the configuration layer knows how to validate. */
     public enum ValueType {

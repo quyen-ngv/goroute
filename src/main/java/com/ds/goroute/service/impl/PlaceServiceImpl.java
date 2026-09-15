@@ -35,6 +35,7 @@ import com.ds.goroute.service.PlaceSocialVideoService;
 import com.ds.goroute.service.PlaceTranslationService;
 import com.ds.goroute.service.ImageMigrationService;
 import com.ds.goroute.service.ImageStorageCleanupService;
+import com.ds.goroute.service.StorageService;
 import com.ds.goroute.type.PlaceVisibilityStatus;
 import com.ds.goroute.utils.FoodNameResolver;
 import com.ds.goroute.utils.GeoDistance;
@@ -50,6 +51,8 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -78,6 +81,7 @@ public class PlaceServiceImpl implements PlaceService {
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final PlaceTranslationService placeTranslationService;
     private final PlaceSocialVideoService placeSocialVideoService;
+    private final StorageService storageService;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -502,6 +506,9 @@ public class PlaceServiceImpl implements PlaceService {
         Place place = placeRepository.findById(id).orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND));
         PlaceVisibilityStatus previousVisibility = place.getVisibilityStatus();
 
+        // Collect old image URLs before update
+        Set<String> oldImageUrls = collectPlaceImageUrls(place);
+
         // Update all fields
         place.setTitle(request.getTitle());
         place.setCategory(request.getCategory());
@@ -542,6 +549,12 @@ public class PlaceServiceImpl implements PlaceService {
         place.setEmails(request.getEmails());
         place.setAttributes(serializeAttributes(request.getAttributes()));
         place.setUpdatedAt(LocalDateTime.now());
+
+        // Collect new image URLs after update
+        Set<String> newImageUrls = collectPlaceImageUrls(place);
+
+        // Delete removed images from storage
+        deleteRemovedPlaceImages(oldImageUrls, newImageUrls);
 
         placeRepository.update(place);
         placeTranslationService.syncTranslations(place, request.getTranslations());
@@ -636,7 +649,7 @@ public class PlaceServiceImpl implements PlaceService {
         updated.setScoreCalculatedAt(existingPlace.getScoreCalculatedAt());
         updated.setScoreSampleCount(existingPlace.getScoreSampleCount());
         updated.setScoreSource(existingPlace.getScoreSource());
-        updated.setLastScrapedAt(existingPlace.getLastScrapedAt());
+        updated.setLastScrapedAt(LocalDateTime.now());  // Update to current time on refresh
         updated.setVisibilityStatus(parseVisibilityStatus(request.getVisibilityStatus(), existingPlace.getVisibilityStatus()));
         updated.setUpdatedAt(LocalDateTime.now());
 
@@ -742,6 +755,7 @@ public class PlaceServiceImpl implements PlaceService {
                 .emails(request.getEmails())
                 .attributes(serializeAttributes(request.getAttributes()))
                 .rawData(request.getRawData())
+                .lastScrapedAt(LocalDateTime.now())  // Set last_scraped_at on first import
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
@@ -1135,6 +1149,93 @@ public class PlaceServiceImpl implements PlaceService {
         } catch (Exception e) {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
                     "aiReferences must be valid JSON");
+        }
+    }
+
+    /**
+     * Collect all image URLs from a place (thumbnail + images array).
+     */
+    private Set<String> collectPlaceImageUrls(Place place) {
+        Set<String> urls = new HashSet<>();
+        
+        // Add thumbnail
+        if (place.getThumbnail() != null && !place.getThumbnail().trim().isEmpty()) {
+            urls.add(place.getThumbnail().trim());
+        }
+        
+        // Add images from JSON array
+        if (place.getImages() != null && !place.getImages().trim().isEmpty()) {
+            try {
+                JsonNode imagesNode = objectMapper.readTree(place.getImages());
+                if (imagesNode.isArray()) {
+                    for (JsonNode item : imagesNode) {
+                        String imageUrl = null;
+                        if (item.isTextual()) {
+                            imageUrl = item.asText();
+                        } else if (item.isObject() && item.has("image")) {
+                            imageUrl = item.get("image").asText();
+                        }
+                        if (imageUrl != null && !imageUrl.trim().isEmpty()) {
+                            urls.add(imageUrl.trim());
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Failed to parse images JSON for place {}: {}", place.getId(), e.getMessage());
+            }
+        }
+        
+        return urls;
+    }
+
+    /**
+     * Delete images that were removed (exist in old but not in new).
+     * Uses StorageService to delete from MinIO after transaction commits.
+     */
+    private void deleteRemovedPlaceImages(Set<String> oldUrls, Set<String> newUrls) {
+        Set<String> removedUrls = new HashSet<>(oldUrls);
+        removedUrls.removeAll(newUrls);
+        
+        if (removedUrls.isEmpty()) {
+            return;
+        }
+        
+        List<String> urlsToDelete = new ArrayList<>(removedUrls);
+        log.info("Detected {} removed place images to delete", urlsToDelete.size());
+        
+        // Schedule deletion after transaction commits to avoid orphaned DB references
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            // No transaction, delete immediately
+            deleteImageUrls(urlsToDelete);
+        } else {
+            // Delete after commit
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    deleteImageUrls(urlsToDelete);
+                }
+            });
+        }
+    }
+
+    private void deleteImageUrls(List<String> urls) {
+        try {
+            // Convert URLs to storage keys and delete
+            List<String> keys = new ArrayList<>();
+            for (String url : urls) {
+                String key = storageService.extractObjectKey(url);
+                if (key != null && !key.isEmpty()) {
+                    keys.add(key);
+                }
+            }
+            
+            if (!keys.isEmpty()) {
+                storageService.deleteObjectKeys(keys);
+                log.info("Successfully deleted {} place image objects from storage", keys.size());
+            }
+        } catch (Exception e) {
+            log.error("Failed to delete removed place images: {}", e.getMessage(), e);
+            // Don't throw - allow the update to proceed even if cleanup fails
         }
     }
 

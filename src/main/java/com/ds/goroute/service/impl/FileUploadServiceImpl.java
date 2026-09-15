@@ -5,14 +5,17 @@ import com.ds.goroute.config.FileUploadProperties;
 import com.ds.goroute.config.ImgpressProperties;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.FileUploadService;
 import com.ds.goroute.service.ImageModerationService;
 import com.ds.goroute.service.ImageUploadOutcome;
 import com.ds.goroute.service.ImageUploadRequest;
 import com.ds.goroute.service.StorageService;
 import com.ds.goroute.service.moderation.ModerationVerdict;
+import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.repository.AiTripRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.io.ByteArrayResource;
@@ -37,6 +40,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 
 @Service
 @Slf4j
@@ -47,21 +53,40 @@ public class FileUploadServiceImpl implements FileUploadService {
     private final FileUploadProperties uploadProperties;
     private final ImgpressProperties imgpressProperties;
     private final ImageModerationService imageModerationService;
+    private final BusinessConfigService businessConfigService;
     private final AiTripRepository aiTripRepository;
+    private final Executor applicationTaskExecutor;
 
+    @Autowired
     public FileUploadServiceImpl(
             StorageService storageService,
             @Qualifier("scrapeRestTemplate") RestTemplate restTemplate,
             FileUploadProperties uploadProperties,
             ImgpressProperties imgpressProperties,
             ImageModerationService imageModerationService,
-            AiTripRepository aiTripRepository) {
+            BusinessConfigService businessConfigService,
+            AiTripRepository aiTripRepository,
+            @Qualifier("applicationTaskExecutor") Executor applicationTaskExecutor) {
         this.storageService = storageService;
         this.restTemplate = restTemplate;
         this.uploadProperties = uploadProperties;
         this.imgpressProperties = imgpressProperties;
         this.imageModerationService = imageModerationService;
+        this.businessConfigService = businessConfigService;
         this.aiTripRepository = aiTripRepository;
+        this.applicationTaskExecutor = applicationTaskExecutor;
+    }
+
+    public FileUploadServiceImpl(
+            StorageService storageService,
+            RestTemplate restTemplate,
+            FileUploadProperties uploadProperties,
+            ImgpressProperties imgpressProperties,
+            ImageModerationService imageModerationService,
+            BusinessConfigService businessConfigService,
+            AiTripRepository aiTripRepository) {
+        this(storageService, restTemplate, uploadProperties, imgpressProperties,
+                imageModerationService, businessConfigService, aiTripRepository, Runnable::run);
     }
 
     @Override
@@ -80,24 +105,47 @@ public class FileUploadServiceImpl implements FileUploadService {
         if (files == null || files.isEmpty()) {
             throw invalid("At least one image is required");
         }
-        if (files.size() > uploadProperties.getMaxBatchFiles()) {
-            throw invalid("At most " + uploadProperties.getMaxBatchFiles() + " images are allowed");
+        int maxBatchFiles = businessConfigService.getInt(BusinessConfigKey.UPLOAD_MAX_BATCH_FILES);
+        if (files.size() > maxBatchFiles) {
+            throw invalid("At most " + maxBatchFiles + " images are allowed");
         }
-        List<ImageUploadOutcome> outcomes = new ArrayList<>(files.size());
-        for (MultipartFile file : files) {
-            outcomes.add(uploadImage(request, file));
+        long maxSizeBytes = getMaxImageSizeBytes(request.userId());
+        if (files.size() == 1) {
+            return List.of(uploadImage(request, files.get(0), maxSizeBytes));
         }
-        return outcomes;
+
+        List<CompletableFuture<ImageUploadOutcome>> futures = files.stream()
+                .map(file -> CompletableFuture.supplyAsync(
+                        () -> uploadImage(request, file, maxSizeBytes),
+                        applicationTaskExecutor))
+                .toList();
+
+        return futures.stream()
+                .map(future -> {
+                    try {
+                        return future.join();
+                    } catch (CompletionException ex) {
+                        if (ex.getCause() instanceof RuntimeException runtimeException) {
+                            throw runtimeException;
+                        }
+                        throw ex;
+                    }
+                })
+                .toList();
     }
 
     @Override
     public ImageUploadOutcome uploadImage(ImageUploadRequest request, MultipartFile file) {
+        return uploadImage(request, file, getMaxImageSizeBytes(request.userId()));
+    }
+
+    private ImageUploadOutcome uploadImage(ImageUploadRequest request, MultipartFile file, long maxSizeBytes) {
         String filename = file == null ? null : file.getOriginalFilename();
         ValidatedImage image;
         try {
             // Cheap technical checks first: a corrupt or oversized file should never
             // reach a moderation backend that charges per image.
-            image = validate(file, request.userId());
+            image = validate(file, maxSizeBytes);
         } catch (BusinessException exception) {
             return ImageUploadOutcome.failed(filename, exception.getMessage());
         }
@@ -156,7 +204,11 @@ public class FileUploadServiceImpl implements FileUploadService {
                     ErrorMessages.of("moderation.category." + verdict.category().name()));
         }
 
-        ValidatedImage upload = request.compress() ? compressOrOriginal(image) : image;
+        // Compress only if compression is enabled in business config and requested by caller
+        boolean compressionEnabled = businessConfigService.getBoolean(BusinessConfigKey.IMAGE_COMPRESSION_ENABLED);
+        ValidatedImage upload = (request.compress() && compressionEnabled)
+                ? compressOrOriginal(image)
+                : image;
         String objectKey = request.objectPrefix() + "/" + UUID.randomUUID() + upload.extension();
         String url = storageService.uploadFile(
                 objectKey,
@@ -192,10 +244,13 @@ public class FileUploadServiceImpl implements FileUploadService {
     }
 
     private ValidatedImage validate(MultipartFile file, UUID userId) {
+        return validate(file, getMaxImageSizeBytes(userId));
+    }
+
+    private ValidatedImage validate(MultipartFile file, long maxSizeBytes) {
         if (file == null || file.isEmpty()) {
             throw invalid("Image is empty");
         }
-        long maxSizeBytes = getMaxImageSizeBytes(userId);
         if (file.getSize() > maxSizeBytes) {
             long maxMb = maxSizeBytes / (1024 * 1024);
             throw invalid("Image exceeds the maximum allowed size of " + maxMb + "MB");
@@ -257,7 +312,7 @@ public class FileUploadServiceImpl implements FileUploadService {
                 return new ValidatedImage(compressed, "image/webp", ".webp", original.filename());
             }
         } catch (RuntimeException exception) {
-            log.warn("Image compression unavailable; storing validated original image");
+            log.warn("Image compression failed; storing validated original image", exception);
         }
         return original;
     }

@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.AdminRoleManagementMapper">
+
+    <!-- Find all roles with their permissions -->
+    <select id="findAllRoles" resultType="map">
+        SELECT 
+            r.code,
+            r.name,
+            r.created_at,
+            COUNT(DISTINCT rp.permission_id) as permission_count,
+            COALESCE(
+                array_agg(DISTINCT p.resource ORDER BY p.resource) FILTER (WHERE p.resource IS NOT NULL),
+                ARRAY[]::varchar[]
+            ) as resources,
+            COALESCE(
+                json_agg(
+                    json_build_object('resource', p.resource, 'action', p.action)
+                    ORDER BY p.resource, p.action
+                ) FILTER (WHERE p.id IS NOT NULL),
+                '[]'::json
+            ) as permission_details
+        FROM admin_roles r
+        LEFT JOIN admin_role_permissions rp ON rp.role_id = r.id
+        LEFT JOIN admin_permissions p ON p.id = rp.permission_id
+        GROUP BY r.id, r.code, r.name, r.created_at
+        ORDER BY r.code
+    </select>
+
+    <!-- Find all users with admin access -->
+    <select id="findAllAdminUsers" resultType="map">
+        SELECT 
+            u.id::text as user_id,
+            u.username,
+            u.email,
+            u.full_name,
+            COALESCE(
+                json_agg(
+                    json_build_object('code', r.code, 'name', r.name)
+                    ORDER BY r.code
+                ) FILTER (WHERE r.id IS NOT NULL),
+                '[]'::json
+            ) as roles,
+            COALESCE(
+                (
+                    SELECT json_agg(
+                        json_build_object('resource', sub.resource, 'action', sub.action)
+                    )
+                    FROM (
+                        SELECT DISTINCT p.resource, p.action
+                        FROM admin_user_roles ur2
+                        LEFT JOIN admin_role_permissions rp2 ON rp2.role_id = ur2.role_id
+                        LEFT JOIN admin_permissions p ON p.id = rp2.permission_id
+                        WHERE ur2.user_id = u.id AND p.id IS NOT NULL
+                        ORDER BY p.resource, p.action
+                    ) sub
+                ),
+                '[]'::json
+            ) as permissions
+        FROM users u
+        INNER JOIN admin_user_roles ur ON ur.user_id = u.id
+        LEFT JOIN admin_roles r ON r.id = ur.role_id
+        WHERE u.deleted_at IS NULL
+        <if test="search != null and search != ''">
+            AND (
+                u.username ILIKE CONCAT('%', #{search}, '%')
+                OR u.email ILIKE CONCAT('%', #{search}, '%')
+                OR u.full_name ILIKE CONCAT('%', #{search}, '%')
+            )
+        </if>
+        GROUP BY u.id, u.username, u.email, u.full_name
+        ORDER BY u.username
+    </select>
+
+    <!-- Search all users (including non-admin) for role assignment -->
+    <select id="searchAllUsers" resultType="map">
+        SELECT 
+            u.id::text as user_id,
+            u.username,
+            u.email,
+            u.full_name,
+            CASE WHEN ur.user_id IS NOT NULL THEN true ELSE false END as has_admin_access
+        FROM users u
+        LEFT JOIN admin_user_roles ur ON ur.user_id = u.id
+        WHERE u.deleted_at IS NULL
+        <if test="search != null and search != ''">
+            AND (
+                u.username ILIKE CONCAT('%', #{search}, '%')
+                OR u.email ILIKE CONCAT('%', #{search}, '%')
+                OR u.full_name ILIKE CONCAT('%', #{search}, '%')
+            )
+        </if>
+        GROUP BY u.id, u.username, u.email, u.full_name, ur.user_id
+        ORDER BY has_admin_access DESC, u.username
+        LIMIT 50
+    </select>
+
+    <!-- Find user with roles -->
+    <select id="findUserWithRoles" resultType="map">
+        SELECT 
+            u.id::text as user_id,
+            u.username,
+            u.email,
+            u.full_name,
+            COALESCE(
+                json_agg(
+                    json_build_object('code', r.code, 'name', r.name)
+                    ORDER BY r.code
+                ) FILTER (WHERE r.id IS NOT NULL),
+                '[]'::json
+            ) as roles,
+            COALESCE(
+                (
+                    SELECT json_agg(
+                        json_build_object('resource', sub.resource, 'action', sub.action)
+                    )
+                    FROM (
+                        SELECT DISTINCT p.resource, p.action
+                        FROM admin_user_roles ur2
+                        LEFT JOIN admin_role_permissions rp2 ON rp2.role_id = ur2.role_id
+                        LEFT JOIN admin_permissions p ON p.id = rp2.permission_id
+                        WHERE ur2.user_id = u.id AND p.id IS NOT NULL
+                        ORDER BY p.resource, p.action
+                    ) sub
+                ),
+                '[]'::json
+            ) as permissions
+        FROM users u
+        LEFT JOIN admin_user_roles ur ON ur.user_id = u.id
+        LEFT JOIN admin_roles r ON r.id = ur.role_id
+        WHERE u.id = #{userId, javaType=java.util.UUID, jdbcType=OTHER}
+          AND u.deleted_at IS NULL
+        GROUP BY u.id, u.username, u.email, u.full_name
+    </select>
+
+    <!-- Delete specific role from user -->
+    <delete id="deleteUserRole">
+        DELETE FROM admin_user_roles
+        WHERE user_id = #{userId, javaType=java.util.UUID, jdbcType=OTHER}
+          AND role_id = (SELECT id FROM admin_roles WHERE code = #{roleCode})
+    </delete>
+
+</mapper>
