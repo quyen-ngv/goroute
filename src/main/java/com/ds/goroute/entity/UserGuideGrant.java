@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -34,6 +35,9 @@ public class UserGuideGrant {
     private String revokeReason;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    /** Tourist areas this guide covers; loaded alongside the grant, never part of the row. */
+    private List<UUID> locationImageIds;
 
     public boolean isActive() {
         return "ACTIVE".equals(status);

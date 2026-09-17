@@ -25,7 +25,10 @@ import com.ds.goroute.type.NotificationType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -44,6 +47,7 @@ public class BookingChangeRequestServiceImpl implements BookingChangeRequestServ
     private final PartnerAuthorizationService authorization;
     private final NotificationService notificationService;
     private final MarketplaceHistoryService history;
+    private final PlatformTransactionManager transactionManager;
 
     @Override
     @Transactional
@@ -176,8 +180,17 @@ public class BookingChangeRequestServiceImpl implements BookingChangeRequestServ
         try { mapper.insert(request); }
         catch (DataIntegrityViolationException ex) { throw conflict("There is already an open change request for this booking"); }
     }
+    /**
+     * Expires the request in its own transaction, because every caller throws straight afterwards.
+     * Written on the caller's transaction the row would be rolled back with the error and the
+     * request would stay REQUESTED for ever, waiting on a booking that can never answer it. The
+     * caller still throws, so the response the partner sees is unchanged.
+     */
     private void expire(BookingChangeRequest request) {
-        mapper.updateStatus(request.getId(), BookingChangeRequestStatus.REQUESTED.name(), BookingChangeRequestStatus.EXPIRED.name(), null, "Booking no longer active", null, LocalDateTime.now());
+        TransactionTemplate outOfBand = new TransactionTemplate(transactionManager);
+        outOfBand.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        outOfBand.executeWithoutResult(status -> mapper.updateStatus(request.getId(), BookingChangeRequestStatus.REQUESTED.name(),
+                BookingChangeRequestStatus.EXPIRED.name(), null, "Booking no longer active", null, LocalDateTime.now()));
     }
     private void notifyPartner(UUID orgId, String type, UUID resourceId, String permission, String code, UUID bookingId, String idKey, UUID requestId, UUID guestId) {
         Map<String, Object> data = Map.of(idKey, bookingId.toString(), "bookingCode", code, "changeRequestId", requestId.toString(), "deepLink", "/partner/bookings?tab=changes");

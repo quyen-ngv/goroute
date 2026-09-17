@@ -11,7 +11,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -44,6 +47,7 @@ public class SubscriptionService {
 
     private final SubscriptionMapper mapper;
     private final UserSubscriptionBootstrapService bootstrap;
+    private final PlatformTransactionManager transactionManager;
 
     @Transactional(readOnly = true)
     public List<SubscriptionPlan> plans(boolean activeOnly) {
@@ -144,11 +148,18 @@ public class SubscriptionService {
                 .grantedBy(operatorId)
                 .note(note)
                 .build();
+        // The insert gets its own savepoint. On PostgreSQL the unique-index violation aborts the
+        // whole transaction, so catching it and then reading the summary back would fail with
+        // "current transaction is aborted" and turn an already-applied grant into a 500. Rolling
+        // back to the savepoint leaves this transaction able to answer.
+        TransactionTemplate savepoint = new TransactionTemplate(transactionManager);
+        savepoint.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
         try {
-            mapper.insertGrant(record);
+            savepoint.executeWithoutResult(status -> mapper.insertGrant(record));
         } catch (DuplicateKeyException exception) {
             // Two requests with the same key raced past the read above. The other one wrote the
             // period; this one adds nothing.
+            log.info("Subscription grant {} was applied by a concurrent request for user {}", key, userId);
             return readSummary(userId);
         }
 

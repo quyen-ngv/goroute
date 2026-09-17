@@ -609,6 +609,7 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
                 .redirectUrl(booking.getRedirectUrl())
                 .title(booking.getTitle())
                 .description(booking.getDescription())
+                .locationImageId(booking.getLocationImageId())
                 .activityAddress(booking.getActivityAddress())
                 .departingFrom(booking.getDepartingFrom())
                 .destinations(destinations)

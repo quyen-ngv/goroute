@@ -61,6 +61,18 @@ private BigDecimal checkinAccuracy;
     @Max(value = 5, message = "Service rating must be between 1 and 5")
     private Integer serviceRating;
 
+    @Min(value = 1, message = "Location rating must be between 1 and 5")
+    @Max(value = 5, message = "Location rating must be between 1 and 5")
+    private Integer locationRating;
+
+    @Min(value = 1, message = "Cleanliness rating must be between 1 and 5")
+    @Max(value = 5, message = "Cleanliness rating must be between 1 and 5")
+    private Integer cleanlinessRating;
+
+    @Min(value = 1, message = "Facilities rating must be between 1 and 5")
+    @Max(value = 5, message = "Facilities rating must be between 1 and 5")
+    private Integer facilitiesRating;
+
     // Text review (optional)
     @Size(max = 2000, message = "Review text cannot exceed 2000 characters")
     @ModeratedText(contentType = ModeratedContentType.REVIEW, visibility = ModerationVisibility.PUBLIC)

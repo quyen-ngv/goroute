@@ -33,11 +33,30 @@ public class HotelProfile {
     private String policies;
     private String bookingContact;
     private java.math.BigDecimal fromPrice; private String fromPriceCurrency; private Integer roomTypeCount;
+    /** JSON array of image URLs for the property itself (rooms keep their own). */
+    private String images;
+    private Integer openedYear;
+    private Integer renovatedYear;
+    /** Share of every price that is VAT / service charge; prices are stored tax-inclusive. */
+    private java.math.BigDecimal vatPercent;
+    private java.math.BigDecimal serviceChargePercent;
+    /** JSON array of {@link com.ds.goroute.dto.HotelNearbyPlace}. */
+    private String nearbyPlaces;
+    // Read-only projections from the linked place and room types
+    private java.math.BigDecimal placeLatitude;
+    private java.math.BigDecimal placeLongitude;
+    private String placeImages;
+    private java.math.BigDecimal placeReviewRating;
+    private Integer placeReviewCount;
+    private Integer totalRooms;
     private String status;
     private String disabledReason;
     private Long dataVersion;
     private UUID createdBy;
     private UUID updatedBy;
+    /** Curated tourist area (location_images) this row belongs to; null until auto-map resolves one. */
+    private UUID locationImageId;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

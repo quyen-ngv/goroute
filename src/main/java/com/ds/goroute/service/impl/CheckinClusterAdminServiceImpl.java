@@ -7,15 +7,14 @@ import com.ds.goroute.entity.CheckinCluster;
 import com.ds.goroute.entity.CheckinClusterDecision;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.UserCheckin;
-import com.ds.goroute.entity.UserReview;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.UserCheckinRepository;
-import com.ds.goroute.repository.UserReviewRepository;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.CheckinClusterAdminService;
 import com.ds.goroute.service.NotificationService;
 import com.ds.goroute.service.ReviewScoringService;
+import com.ds.goroute.service.checkin.CheckinReviewConverter;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.CheckinClusterDecisionStatus;
 import com.ds.goroute.type.NotificationType;
@@ -51,8 +50,8 @@ public class CheckinClusterAdminServiceImpl implements CheckinClusterAdminServic
     private static final String CLUSTER_PLACE_NAMESPACE = "goroute:cluster:";
 
     private final UserCheckinRepository checkinRepository;
-    private final UserReviewRepository reviewRepository;
     private final PlaceRepository placeRepository;
+    private final CheckinReviewConverter reviewConverter;
     private final ReviewScoringService scoringService;
     private final NotificationService notificationService;
     private final BusinessConfigService config;
@@ -163,59 +162,11 @@ public class CheckinClusterAdminServiceImpl implements CheckinClusterAdminServic
             List<String> photoUrls = checkinRepository.findPhotos(rated.getId()).stream()
                     .map(photo -> photo.getUrl())
                     .toList();
-            UUID reviewId = convertToReview(rated, placeId, photoUrls);
+            UUID reviewId = reviewConverter.convert(rated, placeId, photoUrls);
             checkinRepository.attachReview(rated.getId(), reviewId);
             notifyRatingIsNowPublic(rated, placeId);
         }
         scoringService.recalculatePlaceScores(placeId);
-    }
-
-    private UUID convertToReview(UserCheckin checkin, UUID placeId, List<String> photoUrls) {
-        Optional<UserReview> existing = reviewRepository.findByUserAndPlace(checkin.getUserId(), placeId);
-        LocalDateTime now = LocalDateTime.now();
-        String reviewPhotos = JsonUtils.toJson(photoUrls);
-
-        if (existing.isPresent()) {
-            UserReview review = existing.get();
-            review.setOverallRating(checkin.getOverallRating());
-            review.setFoodRating(checkin.getFoodRating());
-            review.setPriceRating(checkin.getPriceRating());
-            review.setAmbianceRating(checkin.getAmbianceRating());
-            review.setServiceRating(checkin.getServiceRating());
-            review.setText(checkin.getCaption());
-            review.setPhotos(reviewPhotos);
-            review.setCheckinLat(checkin.getLatitude());
-            review.setCheckinLng(checkin.getLongitude());
-            review.setCheckinAccuracy(checkin.getAccuracyMeters());
-            review.setLocationVerified(Boolean.FALSE);
-            review.setUpdatedAt(now);
-            reviewRepository.update(review);
-            return review.getId();
-        }
-
-        UserReview review = UserReview.builder()
-                .id(UUID.randomUUID())
-                .userId(checkin.getUserId())
-                .placeId(placeId)
-                .overallRating(checkin.getOverallRating())
-                .foodRating(checkin.getFoodRating())
-                .priceRating(checkin.getPriceRating())
-                .ambianceRating(checkin.getAmbianceRating())
-                .serviceRating(checkin.getServiceRating())
-                .text(checkin.getCaption())
-                .photos(reviewPhotos)
-                .checkinLat(checkin.getLatitude())
-                .checkinLng(checkin.getLongitude())
-                .checkinAccuracy(checkin.getAccuracyMeters())
-                .locationVerified(Boolean.FALSE)
-                .weight(BigDecimal.ONE)
-                .helpfulVotes(0)
-                .unhelpfulVotes(0)
-                .createdAt(checkin.getCreatedAt())
-                .updatedAt(now)
-                .build();
-        reviewRepository.save(review);
-        return review.getId();
     }
 
     /**

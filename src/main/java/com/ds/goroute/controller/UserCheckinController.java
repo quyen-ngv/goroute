@@ -12,7 +12,6 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -26,7 +25,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
@@ -111,17 +109,16 @@ public class UserCheckinController extends BaseController {
     }
 
     /**
-     * The feed pages on the timestamp of the last row seen rather than on a page number:
-     * with new posts arriving while somebody scrolls, offset paging repeats some and skips
-     * others, which is the single most noticeable way a feed looks broken.
+     * Pages by number rather than on the last row's timestamp: posts with photos come
+     * first, so the order is not chronological and a timestamp cursor would skip rows. A
+     * post arriving mid-scroll only pushes rows down, which the client de-duplicates by id.
      */
     @GetMapping("/feed")
     public ResponseEntity<BaseResponse<List<UserCheckinResponse>>> feed(
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime before,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int limit,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
             @CurrentUser(required = false) UUID userId) {
-        return ResponseEntity.ok(ofSucceeded(checkinService.feed(userId, before, limit)));
+        return ResponseEntity.ok(ofSucceeded(checkinService.feed(userId, page, size)));
     }
 
     @GetMapping("/users/{userId}")

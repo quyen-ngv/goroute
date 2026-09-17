@@ -28,6 +28,8 @@ public class LocationImage {
     private BigDecimal latitude;
     private BigDecimal longitude;
     private Integer priority;
+    /** Radius in km within which an operational row is considered part of this tourist area. */
+    private BigDecimal coverageRadiusKm;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 

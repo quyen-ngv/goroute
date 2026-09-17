@@ -30,6 +30,8 @@ public class Place {
     private PlaceGroup placeGroup;
     private String category;
     private String address;
+    /** Province this row was resolved to; what a check-in inherits when it is linked here. */
+    private String provinceCode;
     private BigDecimal latitude;
     private BigDecimal longitude;
     /** Optional per-place check-in verification radius; null falls back to global config. */
@@ -95,6 +97,9 @@ public class Place {
     private LocalDateTime lastScrapedAt;
 
     // Metadata
+    /** Curated tourist area (location_images) this row belongs to; null until auto-map resolves one. */
+    private UUID locationImageId;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 

@@ -61,6 +61,7 @@ public interface TripService {
                                                String keyword,
                                                boolean allPublic,
                                                String randomSeed,
+                                               boolean preferImages,
                                                int page, int size,
                                                UUID viewerId,
                                                UUID excludeUserId);

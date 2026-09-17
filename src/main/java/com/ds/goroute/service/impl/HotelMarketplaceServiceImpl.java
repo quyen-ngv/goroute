@@ -48,7 +48,7 @@ import java.util.*;
 @Service
 @RequiredArgsConstructor
 public class HotelMarketplaceServiceImpl implements HotelMarketplaceService {
-    private static final int MAX_BOOKING_NIGHTS = 90;
+    private static final int MAX_BOOKING_NIGHTS = com.ds.goroute.service.marketplace.HotelStayRules.MAX_BOOKING_NIGHTS;
     /** Hours after check-out during which a no-show can still be declared. */
     private static final int NO_SHOW_WINDOW_HOURS = 48;
     @Value("${goroute.marketplace.partner-confirmation-sla-minutes:120}")
@@ -64,6 +64,9 @@ public class HotelMarketplaceServiceImpl implements HotelMarketplaceService {
     private final AdminMapper adminMapper;
     private final MarketplacePromotionRepository promotionRepository;
     private final com.ds.goroute.service.MarketplaceCommissionService commissionService;
+    private final com.ds.goroute.service.marketplace.MarketplaceDisplayPrice displayPrice;
+    private final com.ds.goroute.service.marketplace.HotelStayPricer stayPricer;
+    private final com.ds.goroute.service.marketplace.HotelCatalogAssembler catalogAssembler;
 
     @Override public List<HotelProfileResponse> listPublic(HotelSearchQuery query, int page, int size) {
         PageRange r = pageRange(page, size);
@@ -74,11 +77,11 @@ public class HotelMarketplaceServiceImpl implements HotelMarketplaceService {
         int children = Math.max(0, q.getChildren() == null ? 0 : q.getChildren());
         return repository.findHotelsPublic(blankToNull(q.getQuery()), blankToNull(q.getPropertyType()), q.getMinPrice(), q.getMaxPrice(),
                 stay ? q.getCheckIn() : null, stay ? q.getCheckOut() : null, rooms, adults, children, r.limit(), r.offset())
-                .stream().map(this::hotelResponse).toList();
+                .stream().map(this::hotelResponse).map(this::displayed).toList();
     }
 
     @Override public HotelProfileResponse getPublic(UUID hotelId) {
-        return hotelResponse(publicHotelRequired(hotelId));
+        return displayed(catalogAssembler.toPublicDetail(publicHotelRequired(hotelId)));
     }
 
     @Override public List<RoomTypeResponse> listPublicRooms(UUID hotelId) {
@@ -90,7 +93,7 @@ public class HotelMarketplaceServiceImpl implements HotelMarketplaceService {
         RoomType room = roomRequired(roomTypeId);
         getPublic(room.getHotelId());
         if (!MarketplaceAvailabilityStatus.ENABLED.name().equals(room.getStatus())) throw notFound("Room type not found");
-        return repository.findRatePlans(roomTypeId, false).stream().map(this::rateResponse).toList();
+        return repository.findRatePlans(roomTypeId, false).stream().map(this::rateResponse).map(this::displayed).toList();
     }
 
     @Override public List<RoomInventoryResponse> getAvailability(UUID hotelId, UUID roomTypeId, UUID ratePlanId,
@@ -107,13 +110,16 @@ public class HotelMarketplaceServiceImpl implements HotelMarketplaceService {
         List<PromotionEngine.AppliedNight> priced=priceNights(hotel,rate,days,quantity,adults,children,nights,checkIn,today);
         BigDecimal quotedTotal=priced.stream().map(PromotionEngine.AppliedNight::price).reduce(BigDecimal.ZERO,BigDecimal::add);
         Map<LocalDate,PromotionEngine.AppliedNight> byDate=priced.stream().collect(java.util.stream.Collectors.toMap(PromotionEngine.AppliedNight::date,n->n));
+        // The quote is what the guest compares against the browse price, so it is
+        // converted the same way; the booking it leads to still settles in stayCurrency.
+        String stayCurrency=rate.getCurrency();
         return days.stream().map(day -> {
             PromotionEngine.AppliedNight night=byDate.get(day.getInventoryDate());
             return RoomInventoryResponse.builder().roomTypeId(roomTypeId)
                 .inventoryDate(day.getInventoryDate()).availableUnits(day.getAvailableUnits())
-                .stopSell(day.getStopSell()).priceOverride(day.getNightlyPrice()).minStay(day.getMinStay())
-                .quotedNightlyPrice(night.price()).originalNightlyPrice(night.discounted()?night.originalPrice():null)
-                .promotionCode(night.code()).promotionPercent(night.percent()).quotedTotal(quotedTotal)
+                .stopSell(day.getStopSell()).priceOverride(displayPrice.convert(day.getNightlyPrice(),stayCurrency)).minStay(day.getMinStay())
+                .quotedNightlyPrice(displayPrice.convert(night.price(),stayCurrency)).originalNightlyPrice(night.discounted()?displayPrice.convert(night.originalPrice(),stayCurrency):null)
+                .promotionCode(night.code()).promotionPercent(night.percent()).quotedTotal(displayPrice.convert(quotedTotal,stayCurrency))
                 .closedToArrival(day.getClosedToArrival()).closedToDeparture(day.getClosedToDeparture()).build();
         }).toList();
     }
@@ -136,6 +142,7 @@ public class HotelMarketplaceServiceImpl implements HotelMarketplaceService {
         }
         String timezone = request.getTimezone() == null ? org.getTimezone() : request.getTimezone();
         validateTimezone(timezone);
+        validateOverviewYears(request);
         LocalDateTime now = LocalDateTime.now();
         HotelProfile hotel = HotelProfile.builder().id(UUID.randomUUID()).organizationId(org.getId()).placeId(request.getPlaceId())
                 .propertyCode(blankToNull(request.getPropertyCode())).propertyType(enumNameOrDefault(request.getPropertyType(), "HOTEL"))
@@ -144,7 +151,10 @@ public class HotelMarketplaceServiceImpl implements HotelMarketplaceService {
                 .amenities(json(defaultList(request.getAmenities()))).languages(json(defaultList(request.getLanguages())))
                 .receptionHours(json(defaultMap(request.getReceptionHours()))).houseRules(json(defaultList(request.getHouseRules())))
                 .accessibilityFeatures(json(defaultList(request.getAccessibilityFeatures()))).parkingDetails(json(defaultMap(request.getParkingDetails())))
-                .policies(json(defaultMap(request.getPolicies())))
+                .policies(json(policiesOf(request)))
+                .images(json(defaultList(request.getImages()))).openedYear(request.getOpenedYear()).renovatedYear(request.getRenovatedYear())
+                .vatPercent(request.getVatPercent()).serviceChargePercent(request.getServiceChargePercent())
+                .nearbyPlaces(json(defaultList(request.getNearbyPlaces())))
                 .bookingContact(json(defaultMap(request.getBookingContact()))).status(enumNameOrDefault(request.getStatus(), MarketplacePublicationStatus.DRAFT))
                 .disabledReason(blankToNull(request.getDisabledReason())).dataVersion(1L).createdBy(actor).updatedBy(actor)
                 .createdAt(now).updatedAt(now).build();
@@ -174,7 +184,11 @@ public class HotelMarketplaceServiceImpl implements HotelMarketplaceService {
         hotel.setAmenities(json(defaultList(request.getAmenities()))); hotel.setLanguages(json(defaultList(request.getLanguages())));
         hotel.setReceptionHours(json(defaultMap(request.getReceptionHours()))); hotel.setHouseRules(json(defaultList(request.getHouseRules())));
         hotel.setAccessibilityFeatures(json(defaultList(request.getAccessibilityFeatures()))); hotel.setParkingDetails(json(defaultMap(request.getParkingDetails())));
-        hotel.setPolicies(json(defaultMap(request.getPolicies())));
+        hotel.setPolicies(json(policiesOf(request)));
+        validateOverviewYears(request);
+        hotel.setImages(json(defaultList(request.getImages()))); hotel.setOpenedYear(request.getOpenedYear()); hotel.setRenovatedYear(request.getRenovatedYear());
+        hotel.setVatPercent(request.getVatPercent()); hotel.setServiceChargePercent(request.getServiceChargePercent());
+        hotel.setNearbyPlaces(json(defaultList(request.getNearbyPlaces())));
         hotel.setBookingContact(json(defaultMap(request.getBookingContact())));
         String nextStatus = enumNameOrDefault(request.getStatus(), hotel.getStatus());
         if (MarketplacePublicationStatus.ENABLED.name().equals(nextStatus) && !MarketplacePublicationStatus.ENABLED.name().equals(hotel.getStatus())) {
@@ -287,6 +301,9 @@ public class HotelMarketplaceServiceImpl implements HotelMarketplaceService {
         rate.setRefundable(!Boolean.FALSE.equals(request.getRefundable()));
         String nextRateStatus=enumNameOrDefault(request.getStatus(),rate.getStatus());
         if(!MarketplaceAvailabilityStatus.ENABLED.name().equals(nextRateStatus)&&MarketplaceAvailabilityStatus.ENABLED.name().equals(rate.getStatus())){
+            // Taken before the bookings are counted, so a guest booking this rate right now is
+            // either already counted below or still waiting for this row -- never in between.
+            repository.findRatePlanForUpdate(rateId);
             long live=repository.countActiveBookingsForRatePlan(rateId);
             // Closing a rate silently would leave guests holding a booking on a product that no longer exists.
             if(live>0)throw conflict("This rate plan still has "+live+" active booking(s). Cancel or complete them before closing it");
@@ -352,13 +369,41 @@ public class HotelMarketplaceServiceImpl implements HotelMarketplaceService {
         return rateCalendarResponses(rate, request.getStartDate(), request.getEndDate());
     }
 
+    /**
+     * A cart line is shown, not booked, so an unbookable selection is an answer rather than an error:
+     * the rules below are the ones createBooking enforces, and their message is what the guest reads.
+     * Deliberately not transactional and takes no lock — this is a read of the live calendar.
+     */
+    @Override
+    public MarketplaceQuoteResponse quoteStay(UUID hotelId,UUID roomTypeId,UUID ratePlanId,LocalDate checkIn,LocalDate checkOut,
+                                              int quantity,int adults,int children){
+        try {
+            HotelProfile hotel=publicHotelRequired(hotelId);RoomType room=roomRequired(roomTypeId);RatePlan rate=rateRequired(ratePlanId);
+            if(!hotel.getId().equals(room.getHotelId())||!room.getId().equals(rate.getRoomTypeId())
+                    ||!MarketplacePublicationStatus.ENABLED.name().equals(hotel.getStatus())
+                    ||!MarketplaceAvailabilityStatus.ENABLED.name().equals(room.getStatus())
+                    ||!MarketplaceAvailabilityStatus.ENABLED.name().equals(rate.getStatus()))throw notFound("Bookable hotel rate not found");
+            BigDecimal total=priceStay(hotel,room,rate,checkIn,checkOut,quantity,adults,children,null,null,0);
+            // priceStay is shared with change requests, which are exempt from the booking window;
+            // a new booking is not, so the cart applies it here or a line would promise a stay
+            // createBooking then refuses.
+            requireWithinBookingWindow(hotel,room,rate,checkIn,checkOut);
+            return MarketplaceQuoteResponse.builder().available(true).currency(rate.getCurrency()).totalAmount(total).build();
+        } catch (BusinessException exception) {
+            return MarketplaceQuoteResponse.builder().available(false).unavailableReason(exception.getMessage()).build();
+        }
+    }
+
     @Override
     @Transactional
     public HotelBookingResponse createBooking(UUID userId,CreateHotelBookingRequest request){
         String idempotencyKey=blankToNull(request.getIdempotencyKey());
         if(idempotencyKey!=null){HotelBooking existing=repository.findBookingByUserAndIdempotencyKey(userId,idempotencyKey).orElse(null);if(existing!=null)return bookingResponse(existing);}
         HotelProfile hotel=publicHotelRequired(request.getHotelId());LocalDate today=propertyToday(hotel);validateStay(request.getCheckInDate(),request.getCheckOutDate(),today);
-        RoomType room=roomRequired(request.getRoomTypeId());RatePlan rate=rateRequired(request.getRatePlanId());
+        // Locked, not just read: the partner may be closing this very rate plan. Whichever of the
+        // two gets the row first wins, and the loser sees the winner's result -- this booking is
+        // refused as not bookable, or the close is refused because this booking is now live.
+        RoomType room=roomRequired(request.getRoomTypeId());RatePlan rate=rateRequiredForBooking(request.getRatePlanId());
         if(!hotel.getId().equals(room.getHotelId())||!room.getId().equals(rate.getRoomTypeId())||!MarketplacePublicationStatus.ENABLED.name().equals(hotel.getStatus())
                 ||!MarketplaceAvailabilityStatus.ENABLED.name().equals(room.getStatus())||!MarketplaceAvailabilityStatus.ENABLED.name().equals(rate.getStatus()))throw notFound("Bookable hotel rate not found");
         int quantity=request.getQuantity();if(request.getAdults()>room.getMaxAdults()*quantity||request.getChildren()>room.getMaxChildren()*quantity
@@ -437,7 +482,7 @@ public class HotelMarketplaceServiceImpl implements HotelMarketplaceService {
         try{current=MarketplaceBookingStatus.valueOf(b.getBookingStatus());}catch(IllegalArgumentException ex){throw badRequest("Invalid stored booking status: "+b.getBookingStatus());}
         HotelProfile hotel=hotelRequired(b.getHotelId());
         ZoneId zone;try{zone=ZoneId.of(hotel.getTimezone());}catch(Exception ex){zone=ZoneId.systemDefault();}
-        LocalDateTime start=LocalDateTime.of(b.getCheckInDate(),hotel.getCheckInTime()==null?LocalTime.of(14,0):hotel.getCheckInTime());
+        LocalDateTime start=LocalDateTime.of(b.getCheckInDate(),hotel.getCheckInTime()==null?com.ds.goroute.service.marketplace.HotelStayRules.DEFAULT_CHECK_IN_TIME:hotel.getCheckInTime());
         LocalDateTime now=LocalDateTime.now(zone);
         CancellationPreviewResponse.CancellationPreviewResponseBuilder out=CancellationPreviewResponse.builder().currency(b.getCurrency()).serviceStartsAt(start);
         if(!current.isGuestCancellable())return out.cancellable(false).blockedReason("This booking is "+current.name().toLowerCase(Locale.ROOT).replace('_',' ')+" and can no longer be cancelled").build();
@@ -552,23 +597,8 @@ public class HotelMarketplaceServiceImpl implements HotelMarketplaceService {
                 .minNights(p.getMinNights()).daysOfWeek(readList(p.getDaysOfWeek(),String.class)).status(p.getStatus())
                 .dataVersion(p.getDataVersion()).createdAt(p.getCreatedAt()).updatedAt(p.getUpdatedAt()).build();
     }
-    /** Gross price per night for the whole party, then at most one promotion applied to each night. */
     private List<PromotionEngine.AppliedNight> priceNights(HotelProfile hotel,RatePlan rate,List<HotelAvailabilityDay> days,int quantity,int adults,int children,int nights,LocalDate checkIn,LocalDate today){
-        List<PromotionEngine.Promotion> promotions=enginePromotions(hotel.getId(),rate.getId(),checkIn,checkIn.plusDays(nights),today);
-        return days.stream().map(day->{
-            BigDecimal nightly=day.getNightlyPrice()==null?rate.getBasePrice():day.getNightlyPrice();
-            BigDecimal gross=nightlyQuote(rate,nightly,quantity,adults,children,nights);
-            return PromotionEngine.price(promotions,rate.getId(),day.getInventoryDate(),gross,today,checkIn,nights);
-        }).toList();
-    }
-    private List<PromotionEngine.Promotion> enginePromotions(UUID hotelId,UUID ratePlanId,LocalDate checkIn,LocalDate checkOut,LocalDate today){
-        List<RatePlanPromotion> rows=promotionRepository.findApplicable(hotelId,ratePlanId,checkIn,checkOut,today);
-        if(rows==null||rows.isEmpty())return List.of();
-        return rows.stream().map(p->new PromotionEngine.Promotion(p.getId(),p.getRatePlanId(),p.getCode(),p.getName(),p.getPromotionType(),
-                p.getDiscountPercent(),p.getPriority()==null?100:p.getPriority(),p.getStayStart(),p.getStayEnd(),p.getBookStart(),p.getBookEnd(),
-                p.getMinAdvanceDays(),p.getMaxAdvanceDays(),p.getMinNights(),
-                readList(p.getDaysOfWeek(),String.class).stream().map(d->java.time.DayOfWeek.valueOf(d.trim().toUpperCase(Locale.ROOT))).collect(java.util.stream.Collectors.toSet()),
-                p.getCreatedAt()==null?null:p.getCreatedAt().toLocalDate())).toList();
+        return stayPricer.priceNights(hotel.getId(),rate,days,quantity,adults,children,nights,checkIn,today);
     }
     /** "Today" at the property, not on the server: a Bangkok booking must not be judged by a UTC clock. */
     private LocalDate propertyToday(HotelProfile hotel){
@@ -583,7 +613,7 @@ public class HotelMarketplaceServiceImpl implements HotelMarketplaceService {
     private ListingReadiness.Result hotelReadiness(HotelProfile hotel){
         List<RoomType> rooms=repository.findRoomTypes(hotel.getId(),true);
         List<RoomType> enabledRooms=rooms.stream().filter(r->MarketplaceAvailabilityStatus.ENABLED.name().equals(r.getStatus())).toList();
-        int photos=(hotel.getPlaceThumbnail()==null?0:1)+rooms.stream().mapToInt(r->readList(r.getImages(),String.class).size()).sum();
+        int photos=(hotel.getPlaceThumbnail()==null?0:1)+readList(hotel.getImages(),String.class).size()+rooms.stream().mapToInt(r->readList(r.getImages(),String.class).size()).sum();
         List<RatePlan> enabledRates=new ArrayList<>();
         for(RoomType room:enabledRooms) repository.findRatePlans(room.getId(),false).stream().filter(r->MarketplaceAvailabilityStatus.ENABLED.name().equals(r.getStatus())).forEach(enabledRates::add);
         boolean pricedRate=enabledRates.stream().anyMatch(r->r.getBasePrice()!=null&&r.getBasePrice().signum()>0);
@@ -721,16 +751,38 @@ public class HotelMarketplaceServiceImpl implements HotelMarketplaceService {
         throw badRequest("Status "+target+" can only be set by the platform");
     }
     private HotelBookingResponse bookingResponse(HotelBooking b){List<HotelBookingItemResponse> items=repository.findBookingItems(b.getId()).stream().map(i->HotelBookingItemResponse.builder().id(i.getId()).roomTypeId(i.getRoomTypeId()).ratePlanId(i.getRatePlanId()).roomTypeName(i.getRoomTypeName()).ratePlanName(i.getRatePlanName()).quantity(i.getQuantity()).adults(i.getAdults()).children(i.getChildren()).unitPrice(i.getUnitPrice()).totalPrice(i.getTotalPrice()).snapshot(readMap(i.getSnapshot())).build()).toList();return HotelBookingResponse.builder().id(b.getId()).bookingCode(b.getBookingCode()).userId(b.getUserId()).organizationId(b.getOrganizationId()).hotelId(b.getHotelId()).hotelName(b.getHotelName()).checkInDate(b.getCheckInDate()).checkOutDate(b.getCheckOutDate()).adults(b.getAdults()).children(b.getChildren()).guestLead(readMap(b.getGuestLead())).guestDetails(readValue(b.getGuestDetails(),new TypeReference<List<Map<String,Object>>>(){},List.of())).specialRequests(b.getSpecialRequests()).estimatedArrivalTime(b.getEstimatedArrivalTime()).holdExpiresAt(b.getHoldExpiresAt()).guestCharged(b.getGuestCharged()).currency(b.getCurrency()).subtotalAmount(b.getSubtotalAmount()).taxAmount(b.getTaxAmount()).feeAmount(b.getFeeAmount()).discountAmount(b.getDiscountAmount()).totalAmount(b.getTotalAmount()).bookingStatus(b.getBookingStatus()).paymentStatus(b.getPaymentStatus()).source(b.getSource()).cancellationReason(b.getCancellationReason()).cancelledAt(b.getCancelledAt()).snapshot(readMap(b.getSnapshot())).dataVersion(b.getDataVersion()).items(items).createdAt(b.getCreatedAt()).updatedAt(b.getUpdatedAt()).build();}
-    private HotelProfileResponse hotelResponse(HotelProfile h){return HotelProfileResponse.builder().id(h.getId()).organizationId(h.getOrganizationId()).placeId(h.getPlaceId()).placeTitle(h.getPlaceTitle()).placeAddress(h.getPlaceAddress()).placeThumbnail(h.getPlaceThumbnail()).propertyCode(h.getPropertyCode()).propertyType(h.getPropertyType()).starRating(h.getStarRating()).description(h.getDescription()).checkInTime(h.getCheckInTime()).checkOutTime(h.getCheckOutTime()).timezone(h.getTimezone()).amenities(readList(h.getAmenities(),String.class)).languages(readList(h.getLanguages(),String.class)).receptionHours(readMap(h.getReceptionHours())).houseRules(readList(h.getHouseRules(),String.class)).accessibilityFeatures(readList(h.getAccessibilityFeatures(),String.class)).parkingDetails(readMap(h.getParkingDetails())).policies(readMap(h.getPolicies())).bookingContact(readMap(h.getBookingContact())).status(h.getStatus()).disabledReason(h.getDisabledReason()).fromPrice(h.getFromPrice()).fromPriceCurrency(h.getFromPriceCurrency()).roomTypeCount(h.getRoomTypeCount()).dataVersion(h.getDataVersion()).createdAt(h.getCreatedAt()).updatedAt(h.getUpdatedAt()).build();}
-    private RoomTypeResponse roomResponse(RoomType r){return RoomTypeResponse.builder().id(r.getId()).hotelId(r.getHotelId()).code(r.getCode()).name(r.getName()).description(r.getDescription()).maxAdults(r.getMaxAdults()).standardAdults(r.getStandardAdults()).maxChildren(r.getMaxChildren()).maxInfants(r.getMaxInfants()).maxOccupancy(r.getMaxOccupancy()).bedroomCount(r.getBedroomCount()).bathroomCount(r.getBathroomCount()).viewType(r.getViewType()).bathroomType(r.getBathroomType()).smokingAllowed(r.getSmokingAllowed()).bedConfig(readValue(r.getBedConfig(),new TypeReference<List<Map<String,Object>>>(){},List.of())).amenities(readList(r.getAmenities(),String.class)).accessibilityFeatures(readList(r.getAccessibilityFeatures(),String.class)).images(readList(r.getImages(),String.class)).roomSizeSqm(r.getRoomSizeSqm()).totalUnits(r.getTotalUnits()).status(r.getStatus()).disabledReason(r.getDisabledReason()).dataVersion(r.getDataVersion()).createdAt(r.getCreatedAt()).updatedAt(r.getUpdatedAt()).build();}
-    private RatePlanResponse rateResponse(RatePlan r){return RatePlanResponse.builder().id(r.getId()).roomTypeId(r.getRoomTypeId()).code(r.getCode()).name(r.getName()).description(r.getDescription()).currency(r.getCurrency()).basePrice(r.getBasePrice()).pricingModel(r.getPricingModel()).baseOccupancy(r.getBaseOccupancy()).extraAdultFee(r.getExtraAdultFee()).extraChildFee(r.getExtraChildFee()).mealPlan(r.getMealPlan()).includedBenefits(readList(r.getIncludedBenefits(),String.class)).cancellationPolicy(readMap(r.getCancellationPolicy())).prepaymentPolicy(readMap(r.getPrepaymentPolicy())).noShowPolicy(readMap(r.getNoShowPolicy())).occupancyPricing(readMap(r.getOccupancyPricing())).minStay(r.getMinStay()).maxStay(r.getMaxStay()).minAdvanceDays(r.getMinAdvanceDays()).maxAdvanceDays(r.getMaxAdvanceDays()).refundable(r.getRefundable()).status(r.getStatus()).dataVersion(r.getDataVersion()).createdAt(r.getCreatedAt()).updatedAt(r.getUpdatedAt()).build();}
+    private HotelProfileResponse hotelResponse(HotelProfile h){return catalogAssembler.toResponse(h);}
+    private com.ds.goroute.dto.HotelPolicies policiesOf(UpsertHotelRequest r){return r.getPolicies()==null?new com.ds.goroute.dto.HotelPolicies():r.getPolicies();}
+    private void validateOverviewYears(UpsertHotelRequest r){if(r.getOpenedYear()!=null&&r.getRenovatedYear()!=null&&r.getRenovatedYear()<r.getOpenedYear())throw badRequest("renovatedYear must not be before openedYear");}
+    private RoomTypeResponse roomResponse(RoomType r){return catalogAssembler.toRoomResponse(r);}
+    private RatePlanResponse rateResponse(RatePlan r){return catalogAssembler.toRateResponse(r);}
     private RoomInventoryResponse inventoryResponse(RoomInventoryDaily i){return RoomInventoryResponse.builder().roomTypeId(i.getRoomTypeId()).inventoryDate(i.getInventoryDate()).totalUnits(i.getTotalUnits()).reservedUnits(i.getReservedUnits()).soldUnits(i.getSoldUnits()).blockedUnits(i.getBlockedUnits()).availableUnits(i.getAvailableUnits()).stopSell(i.getStopSell()).priceOverride(i.getPriceOverride()).minStay(i.getMinStay()).closedToArrival(i.getClosedToArrival()).closedToDeparture(i.getClosedToDeparture()).dataVersion(i.getDataVersion()).updatedAt(i.getUpdatedAt()).build();}
     private List<RatePlanDailyRateResponse> rateCalendarResponses(RatePlan rate,LocalDate start,LocalDate end){Map<LocalDate,RatePlanDailyRate> overrides=repository.findRatePlanDailyRates(rate.getId(),start,end).stream().collect(java.util.stream.Collectors.toMap(RatePlanDailyRate::getRateDate,value->value));return start.datesUntil(end.plusDays(1)).map(day->{RatePlanDailyRate value=overrides.get(day);return RatePlanDailyRateResponse.builder().ratePlanId(rate.getId()).rateDate(day).price(value==null?null:value.getPrice()).effectivePrice(value!=null&&value.getPrice()!=null?value.getPrice():rate.getBasePrice()).stopSell(value!=null&&Boolean.TRUE.equals(value.getStopSell())).minStay(value!=null&&value.getMinStay()!=null?value.getMinStay():rate.getMinStay()).maxStay(value!=null&&value.getMaxStay()!=null?value.getMaxStay():rate.getMaxStay()).closedToArrival(value!=null&&Boolean.TRUE.equals(value.getClosedToArrival())).closedToDeparture(value!=null&&Boolean.TRUE.equals(value.getClosedToDeparture())).minAdvanceDays(value!=null&&value.getMinAdvanceDays()!=null?value.getMinAdvanceDays():rate.getMinAdvanceDays()).maxAdvanceDays(value!=null&&value.getMaxAdvanceDays()!=null?value.getMaxAdvanceDays():rate.getMaxAdvanceDays()).dataVersion(value==null?null:value.getDataVersion()).updatedAt(value==null?null:value.getUpdatedAt()).build();}).toList();}
+
+    /**
+     * Public catalogue prices are shown in the guest's currency. Only the money
+     * fields move: policy JSON stays as the partner authored it, and everything
+     * reached through a partner or admin endpoint keeps the stored price.
+     */
+    private HotelProfileResponse displayed(HotelProfileResponse h){if(h.getFromPrice()==null)return h;h.setFromPrice(displayPrice.convert(h.getFromPrice(),h.getFromPriceCurrency()));h.setFromPriceCurrency(displayPrice.currencyOf(h.getFromPriceCurrency()));return h;}
+    private RatePlanResponse displayed(RatePlanResponse r){return catalogAssembler.displayed(r);}
+
+    /** The rate plan's advance-booking window, as createBooking enforces it on the arrival night. */
+    private void requireWithinBookingWindow(HotelProfile hotel,RoomType room,RatePlan rate,LocalDate checkIn,LocalDate checkOut){
+        LocalDate today=propertyToday(hotel);
+        List<HotelAvailabilityDay> days=repository.findAvailability(hotel.getId(),room.getId(),rate.getId(),checkIn,checkOut,today);
+        if(days.isEmpty())throw conflict("Selected room is no longer available");
+        int advanceDays=Math.toIntExact(ChronoUnit.DAYS.between(today,checkIn));
+        int minimumAdvance=Optional.ofNullable(days.get(0).getMinAdvanceDays()).orElse(0);
+        Integer maximumAdvance=days.get(0).getMaxAdvanceDays();
+        if(advanceDays<minimumAdvance||(maximumAdvance!=null&&advanceDays>maximumAdvance))throw badRequest("Check-in date is outside the rate plan booking window");
+    }
 
     private HotelProfile hotelRequired(UUID id){return repository.findHotel(id).orElseThrow(()->notFound("Hotel not found"));}
     private HotelProfile publicHotelRequired(UUID id){return repository.findPublicHotel(id).orElseThrow(()->notFound("Hotel not found"));}
     private RoomType roomRequired(UUID id){return repository.findRoomType(id).orElseThrow(()->notFound("Room type not found"));}
     private RatePlan rateRequired(UUID id){return repository.findRatePlan(id).orElseThrow(()->notFound("Rate plan not found"));}
+    private RatePlan rateRequiredForBooking(UUID id){return repository.findRatePlanForBooking(id).orElseThrow(()->notFound("Rate plan not found"));}
     private HotelBooking bookingRequired(UUID id){return repository.findBooking(id).orElseThrow(()->notFound("Hotel booking not found"));}
     private HotelProfile hotelForRoom(UUID roomId){return hotelRequired(roomRequired(roomId).getHotelId());}
     private boolean organizationBookable(UUID organizationId){return organizationRepository.findById(organizationId)
@@ -738,47 +790,6 @@ public class HotelMarketplaceServiceImpl implements HotelMarketplaceService {
             .orElse(false);}
     private void validateStay(LocalDate in,LocalDate out){validateStay(in,out,LocalDate.now());}
     private void validateStay(LocalDate in,LocalDate out,LocalDate today){if(in==null||out==null||!out.isAfter(in)||in.isBefore(today))throw badRequest("Invalid check-in/check-out dates");long nights=ChronoUnit.DAYS.between(in,out);if(nights>MAX_BOOKING_NIGHTS)throw badRequest("Maximum stay is "+MAX_BOOKING_NIGHTS+" nights");}
-    /**
-     * One night for the whole party.
-     *
-     * <p>{@code occupancy_pricing} is read according to {@code pricing_model}: for
-     * {@code OCCUPANCY_BASED} it maps adults-per-room to the room price (and then the extra-adult fee is
-     * not charged on top, because the table already priced that occupancy); for {@code LENGTH_OF_STAY} it
-     * maps a minimum number of nights to a percentage off. {@code DERIVED} is rejected when a rate is saved.
-     */
-    private BigDecimal nightlyQuote(RatePlan rate,BigDecimal nightlyPrice,int rooms,int adults,int children,int nights){
-        BigDecimal price=nightlyPrice==null?rate.getBasePrice():nightlyPrice;
-        String model=rate.getPricingModel()==null?"STANDARD":rate.getPricingModel();
-        Map<String,Object> table=readMap(rate.getOccupancyPricing());
-        boolean occupancyPriced=false;
-        if("OCCUPANCY_BASED".equals(model)&&!table.isEmpty()){
-            int adultsPerRoom=(int)Math.ceil(adults/(double)Math.max(1,rooms));
-            BigDecimal occupancyPrice=decimalOrNull(table.get(String.valueOf(adultsPerRoom)));
-            if(occupancyPrice!=null){price=occupancyPrice;occupancyPriced=true;}
-        }
-        BigDecimal total=price.multiply(BigDecimal.valueOf(rooms));
-        int base=(rate.getBaseOccupancy()==null?1:rate.getBaseOccupancy())*rooms;
-        int extraAdults=occupancyPriced?0:Math.max(0,adults-base);
-        int extraChildren=Math.max(0,children);
-        if(rate.getExtraAdultFee()!=null) total=total.add(rate.getExtraAdultFee().multiply(BigDecimal.valueOf(extraAdults)));
-        if(rate.getExtraChildFee()!=null) total=total.add(rate.getExtraChildFee().multiply(BigDecimal.valueOf(extraChildren)));
-        if("LENGTH_OF_STAY".equals(model)&&!table.isEmpty()){
-            BigDecimal percent=BigDecimal.ZERO;
-            for(Map.Entry<String,Object> entry:table.entrySet()){
-                Integer threshold=intOrNull(entry.getKey());BigDecimal value=decimalOrNull(entry.getValue());
-                if(threshold!=null&&value!=null&&nights>=threshold&&value.compareTo(percent)>0)percent=value;
-            }
-            if(percent.signum()>0)total=total.multiply(BigDecimal.valueOf(100).subtract(percent)).divide(BigDecimal.valueOf(100),2,RoundingMode.HALF_UP);
-        }
-        return total.setScale(2,RoundingMode.HALF_UP);
-    }
-    private BigDecimal decimalOrNull(Object value){
-        if(value==null)return null;
-        if(value instanceof BigDecimal b)return b;
-        if(value instanceof Number n)return BigDecimal.valueOf(n.doubleValue());
-        try{return new BigDecimal(String.valueOf(value).trim());}catch(NumberFormatException ex){return null;}
-    }
-    private Integer intOrNull(String value){try{return Integer.parseInt(value.trim());}catch(Exception ex){return null;}}
     private void validateRange(LocalDate start,LocalDate end,int max){if(start==null||end==null||end.isBefore(start)||ChronoUnit.DAYS.between(start,end)+1>max)throw badRequest("Invalid date range");}
     private void validateRoom(UpsertRoomTypeRequest r){if(r.getMaxOccupancy()<r.getMaxAdults()||r.getMaxOccupancy()<1)throw badRequest("maxOccupancy must cover adults");if(r.getStandardAdults()>r.getMaxAdults())throw badRequest("standardAdults must be <= maxAdults");}
     private void validateRate(UpsertRatePlanRequest r){if(r.getPricingModel()!=null&&"DERIVED".equals(r.getPricingModel().name()))throw badRequest("Derived pricing is not supported yet; use STANDARD, OCCUPANCY_BASED or LENGTH_OF_STAY");if(r.getMaxStay()!=null&&r.getMaxStay()<r.getMinStay())throw badRequest("maxStay must be >= minStay");if(r.getMaxAdvanceDays()!=null&&r.getMinAdvanceDays()!=null&&r.getMaxAdvanceDays()<r.getMinAdvanceDays())throw badRequest("maxAdvanceDays must be >= minAdvanceDays");try{Currency.getInstance(r.getCurrency());}catch(Exception ex){throw badRequest("Invalid currency");}}

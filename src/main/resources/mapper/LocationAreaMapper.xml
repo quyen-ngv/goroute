@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.LocationAreaMapper">
+
+    <!--
+      Every statement dispatches on the LocationAreaTarget enum through <choose>. The
+      table name is never interpolated, so a caller cannot reach a table the enum does
+      not list.
+    -->
+
+    <sql id="TargetTable">
+        <choose>
+            <when test="target.name() == 'PLACE'">places</when>
+            <when test="target.name() == 'TRIP'">trips</when>
+            <when test="target.name() == 'TRIP_DESTINATION'">trip_destinations</when>
+            <when test="target.name() == 'FOOD_CITY_SCORE'">food_city_scores</when>
+            <when test="target.name() == 'ACTIVITY'">activity_bookings</when>
+            <when test="target.name() == 'HOTEL'">hotel_profiles</when>
+        </choose>
+    </sql>
+
+    <select id="countTotal" resultType="long">
+        SELECT count(*) FROM <include refid="TargetTable"/>
+    </select>
+
+    <select id="countMapped" resultType="long">
+        SELECT count(*) FROM <include refid="TargetTable"/> WHERE location_image_id IS NOT NULL
+    </select>
+
+    <!--
+      goroute_nearest_location_image (V163) returns the nearest area whose own
+      coverage_radius_km reaches the point, so overlapping areas resolve to the closer
+      anchor instead of whichever row the planner happened to read first.
+    -->
+    <update id="assignByCoordinates">
+        <choose>
+            <when test="target.name() == 'PLACE'">
+                UPDATE places
+                SET location_image_id = goroute_nearest_location_image(latitude, longitude)
+                WHERE location_image_id IS NULL
+                  AND latitude IS NOT NULL AND longitude IS NOT NULL
+                  AND goroute_nearest_location_image(latitude, longitude) IS NOT NULL
+            </when>
+            <when test="target.name() == 'TRIP'">
+                UPDATE trips
+                SET location_image_id = goroute_nearest_location_image(destination_lat, destination_lng)
+                WHERE location_image_id IS NULL
+                  AND destination_lat IS NOT NULL AND destination_lng IS NOT NULL
+                  AND goroute_nearest_location_image(destination_lat, destination_lng) IS NOT NULL
+            </when>
+            <when test="target.name() == 'TRIP_DESTINATION'">
+                UPDATE trip_destinations
+                SET location_image_id = goroute_nearest_location_image(lat, lng)
+                WHERE location_image_id IS NULL
+                  AND lat IS NOT NULL AND lng IS NOT NULL
+                  AND goroute_nearest_location_image(lat, lng) IS NOT NULL
+            </when>
+            <when test="target.name() == 'ACTIVITY'">
+                UPDATE activity_bookings
+                SET location_image_id = goroute_nearest_location_image(search_lat::NUMERIC, search_lng::NUMERIC)
+                WHERE location_image_id IS NULL
+                  AND search_lat IS NOT NULL AND search_lng IS NOT NULL
+                  AND goroute_nearest_location_image(search_lat::NUMERIC, search_lng::NUMERIC) IS NOT NULL
+            </when>
+            <otherwise>
+                <!-- FOOD_CITY_SCORE and HOTEL have no coordinates of their own. -->
+                UPDATE <include refid="TargetTable"/> SET location_image_id = location_image_id WHERE FALSE
+            </otherwise>
+        </choose>
+    </update>
+
+    <update id="assignHotelsFromPlace">
+        UPDATE hotel_profiles hp
+        SET location_image_id = p.location_image_id
+        FROM places p
+        WHERE hp.location_image_id IS NULL
+          AND p.id = hp.place_id
+          AND p.location_image_id IS NOT NULL
+    </update>
+
+    <!--
+      Only 7 curated areas were ever given a city_slug, so a slug such as 'sapa' has to
+      fall through to the area whose normalized name is that same word.
+    -->
+    <update id="assignFoodScoresByCitySlug">
+        UPDATE food_city_scores f
+        SET location_image_id = li.id
+        FROM location_images li
+        WHERE f.location_image_id IS NULL
+          AND (
+              (li.city_slug IS NOT NULL AND li.city_slug &lt;&gt; '' AND li.city_slug = f.city_slug)
+              OR replace(li.normalized_address, ' ', '') = f.city_slug
+          )
+    </update>
+
+    <!--
+      Each target projects whatever address/destination text it has into one column, so
+      the name fallback in LocationAreaMatcher has a single shape to search.
+    -->
+    <select id="findUnmapped" resultType="com.ds.goroute.dto.LocationAreaCandidateRow">
+        <choose>
+            <when test="target.name() == 'PLACE'">
+                <!-- Address and destinations only. A business name such as 'Quan Banh Tam Co Hue'
+                     carries a person's name that collides with the area 'Hue'. -->
+                SELECT id,
+                       concat_ws(' ', address,
+                           CASE WHEN jsonb_typeof(destinations) = 'array'
+                                THEN (SELECT string_agg(value, ' ') FROM jsonb_array_elements_text(destinations) AS value)
+                           END) AS match_text
+                FROM places
+            </when>
+            <when test="target.name() == 'TRIP'">
+                SELECT id, destination AS match_text FROM trips
+            </when>
+            <when test="target.name() == 'TRIP_DESTINATION'">
+                SELECT id, concat_ws(' ', address, name) AS match_text FROM trip_destinations
+            </when>
+            <when test="target.name() == 'FOOD_CITY_SCORE'">
+                SELECT id, city_slug AS match_text FROM food_city_scores
+            </when>
+            <when test="target.name() == 'ACTIVITY'">
+                SELECT id,
+                       concat_ws(' ', activity_address, departing_from,
+                           CASE WHEN jsonb_typeof(destinations) = 'array'
+                                THEN (SELECT string_agg(value, ' ') FROM jsonb_array_elements_text(destinations) AS value)
+                           END) AS match_text
+                FROM activity_bookings
+            </when>
+            <otherwise>
+                SELECT id, NULL AS match_text FROM hotel_profiles
+            </otherwise>
+        </choose>
+        WHERE location_image_id IS NULL
+        ORDER BY id
+        LIMIT #{limit}
+    </select>
+
+    <update id="assignArea">
+        UPDATE <include refid="TargetTable"/>
+        SET location_image_id = #{locationImageId}
+        WHERE id = #{id} AND location_image_id IS NULL
+    </update>
+
+    <!--
+      The operator override. No IS NULL guard, so it also corrects a row the auto-map job
+      already filled; jdbcType is spelled out because clearing the area sends a null that
+      Postgres cannot type on its own.
+    -->
+    <update id="setArea">
+        UPDATE <include refid="TargetTable"/>
+        SET location_image_id = #{locationImageId,jdbcType=OTHER}
+        WHERE id = #{id}
+    </update>
+
+    <!--
+      Tours keep both a primary area and a link table. The primary area is what list
+      screens filter on; the link table records the extra areas a multi-day tour crosses.
+      Only the primary is derivable, so only that is synced - operator-added extras are
+      never removed here.
+    -->
+    <insert id="syncActivityAreaLinks">
+        INSERT INTO activity_booking_location_images (activity_booking_id, location_image_id)
+        SELECT id, location_image_id
+        FROM activity_bookings
+        WHERE location_image_id IS NOT NULL
+        ON CONFLICT DO NOTHING
+    </insert>
+
+</mapper>

@@ -2,16 +2,37 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
 <mapper namespace="com.ds.goroute.mapper.WalletMapper">
 
+    <!--
+         The two ways a user reaches a trip, resolved before the expenses are touched.
+         This used to be one OR spanning a LEFT JOIN (t.owner_id = :me OR membership.id
+         IS NOT NULL), which no index can serve: the planner had to build the joined
+         product of every live trip first and filter afterwards, five times per wallet
+         screen.  Split into two branches each branch is a plain index lookup
+         (idx_trips_owner, then idx_trip_members_user on (user_id, status)).
+
+         Same trips, same expenses, no duplicates: UNION - not UNION ALL - collapses a
+         trip the user both owns and is an accepted member of back to one row, and
+         trip_members is UNIQUE (trip_id, user_id) so the old LEFT JOIN could not
+         multiply an expense either.  is_deleted = FALSE still guards both branches.
+    -->
+    <sql id="AccessibleTripIds">
+        SELECT t.id
+        FROM trips t
+        WHERE t.is_deleted = FALSE
+          AND t.owner_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+        UNION
+        SELECT t.id
+        FROM trips t
+        INNER JOIN trip_members membership ON membership.trip_id = t.id
+        WHERE t.is_deleted = FALSE
+          AND membership.user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND membership.status = 'ACCEPTED'
+    </sql>
+
     <sql id="AccessibleExpenses">
         SELECT e.*
         FROM expenses e
-        INNER JOIN trips t ON t.id = e.trip_id AND t.is_deleted = FALSE
-        LEFT JOIN trip_members membership
-            ON membership.trip_id = t.id
-            AND membership.user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
-            AND membership.status = 'ACCEPTED'
-        WHERE t.owner_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
-           OR membership.id IS NOT NULL
+        INNER JOIN (<include refid="AccessibleTripIds"/>) accessible_trip ON accessible_trip.id = e.trip_id
     </sql>
 
     <resultMap id="CurrencySummaryMap" type="com.ds.goroute.entity.WalletCurrencySummaryRow">

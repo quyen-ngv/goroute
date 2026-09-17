@@ -31,6 +31,15 @@ public interface UserRepository {
 
     int countFollowing(UUID userId);
 
+    /** Discover page: the top {@code limit} candidates plus their four counts, in one query. */
+    List<com.ds.goroute.dto.response.DiscoverUserResponse> findDiscoverUsers(UUID userId, int limit);
+
+    /** {@link #findFollowers} plus the four counts each card shows, in one query. */
+    List<com.ds.goroute.dto.response.DiscoverUserResponse> findFollowerProfiles(UUID userId);
+
+    /** {@link #findFollowing} plus the four counts each card shows, in one query. */
+    List<com.ds.goroute.dto.response.DiscoverUserResponse> findFollowingProfiles(UUID userId);
+
     void follow(UUID followerId, UUID followingId);
 
     void unfollow(UUID followerId, UUID followingId);

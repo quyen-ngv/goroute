@@ -87,7 +87,10 @@
     <select id="findTransactions" resultMap="transactionMap">
         SELECT <include refid="transactionColumns"/> FROM star_transactions
         WHERE user_id = #{userId}
-        ORDER BY created_at DESC
+        <!-- id breaks ties: rewards granted in one batch share a created_at, and without a
+             tiebreaker LIMIT/OFFSET paging can skip or repeat those rows. The year-end reset
+             walks this ledger page by page. -->
+        ORDER BY created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 

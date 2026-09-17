@@ -42,7 +42,10 @@ public class PartnerHotelController {
             Authentication a,
             @RequestParam UUID organizationId,
             @RequestParam("files") List<MultipartFile> files) {
-        authorization.requirePermission(organizationId, user(a), "ROOM_WRITE");
+        // Property photos (HOTEL_WRITE) and room photos (ROOM_WRITE) share this upload.
+        if (!authorization.hasPermission(organizationId, user(a), "HOTEL_WRITE")) {
+            authorization.requirePermission(organizationId, user(a), "ROOM_WRITE");
+        }
         ImageUploadRequest request = ImageUploadRequest.of(
                 user(a),
                 ImageUploadRequest.ImageEntryPoint.PARTNER_HOTEL,

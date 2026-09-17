@@ -358,15 +358,26 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         checkin.setEditedAt(LocalDateTime.now());
         checkin.setUpdatedAt(LocalDateTime.now());
 
+        List<String> keptUrls = photos.stream()
+                .map(CreateUserCheckinRequest.CheckinPhotoInput::getUrl)
+                .toList();
+
+        // The review goes first so the cleanup below asks it what it shows *after* this
+        // edit. Asked before, it would still be listing the photo the author just removed
+        // and would keep the file alive for a post that no longer has it.
+        if (checkin.hasRating() && checkin.hasCataloguePlace()) {
+            checkin.setReviewId(upsertReview(userId, checkin, keptUrls));
+        }
+
+        // A photo taken off the visit is taken off it now. The orphan sweep is run by hand
+        // and only after a grace period, so leaving these to it means paying to store
+        // photos nobody can see until somebody remembers to look. Runs while the old rows
+        // are still readable -- deletePhotos below is what makes them unreadable -- and
+        // spares anything the review it just wrote still displays.
+        imageStorageCleanupService.deleteImagesForEntityRecord("USER_CHECKIN_PHOTO", checkinId, keptUrls);
+
         checkinRepository.deletePhotos(checkinId);
         storePhotos(checkinId, photos, checkin.getUpdatedAt());
-
-        if (checkin.hasRating() && checkin.hasCataloguePlace()) {
-            UUID reviewId = upsertReview(userId, checkin, photos.stream()
-                    .map(CreateUserCheckinRequest.CheckinPhotoInput::getUrl)
-                    .toList());
-            checkin.setReviewId(reviewId);
-        }
 
         if (checkinRepository.update(checkin) != 1) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Check-in not found");
@@ -485,8 +496,9 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserCheckinResponse> feed(UUID viewerId, LocalDateTime before, int limit) {
-        return toResponses(checkinRepository.findFeed(before, null, boundedSize(limit)), Set.of(), viewerId);
+    public List<UserCheckinResponse> feed(UUID viewerId, int page, int size) {
+        return toResponses(checkinRepository.findFeed(
+                viewerId, boundedSize(size), boundedPage(page) * boundedSize(size)), Set.of(), viewerId);
     }
 
     @Override
@@ -704,9 +716,13 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                         count -> count.getLikeCount() == null ? 0 : count.getLikeCount()));
         Set<UUID> likedIds = viewerId == null ? Set.of()
                 : new java.util.HashSet<>(checkinRepository.findLikedCheckinIds(viewerId, checkinIds));
-        Map<UUID, UserReview> linkedReviews = reviewRepository.findByIds(checkins.stream()
-                        .map(UserCheckin::getReviewId).filter(Objects::nonNull).distinct().toList())
-                .stream().collect(Collectors.toMap(UserReview::getId, review -> review));
+        List<UUID> reviewIds = checkins.stream()
+                .map(UserCheckin::getReviewId).filter(Objects::nonNull).distinct().toList();
+        // A review taken down by moderation is not shown, even inside the check-in that wrote it.
+        Set<UUID> takenDownReviewIds = contentModerationService.takenDownIds(ModeratedContentType.REVIEW, reviewIds);
+        Map<UUID, UserReview> linkedReviews = reviewRepository.findByIds(reviewIds).stream()
+                .filter(review -> !takenDownReviewIds.contains(review.getId()))
+                .collect(Collectors.toMap(UserReview::getId, review -> review));
         Map<UUID, Place> places = loadPlaces(checkins);
 
         return checkins.stream()
@@ -748,7 +764,9 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
     private UserCheckinResponse toResponse(UserCheckin checkin, boolean loadPhotos, UUID viewerId) {
         List<UserCheckinPhoto> photos = loadPhotos ? checkinRepository.findPhotos(checkin.getId()) : List.of();
-        UserReview linkedReview = checkin.getReviewId() == null ? null
+        UserReview linkedReview = checkin.getReviewId() == null
+                || contentModerationService.isTakenDown(ModeratedContentType.REVIEW, checkin.getReviewId())
+                ? null
                 : reviewRepository.findById(checkin.getReviewId()).orElse(null);
         Place place = checkin.getPlaceId() == null ? null
                 : placeRepository.findById(checkin.getPlaceId()).orElse(null);

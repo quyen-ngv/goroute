@@ -8,8 +8,6 @@ import com.ds.goroute.dto.response.ContributionResponse;
 import com.ds.goroute.dto.response.ContributedPlaceResponse;
 import com.ds.goroute.dto.response.ContributorSummaryResponse;
 import com.ds.goroute.service.PlaceContributionService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -21,20 +19,17 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/v1/api/contributions")
 @RequiredArgsConstructor
-@Tag(name = "Contributions", description = "User place contribution APIs")
 public class ContributionController extends BaseController {
 
     private final PlaceContributionService contributionService;
 
     @PostMapping("/check")
-    @Operation(summary = "Check if a Google Maps URL already exists or has a pending contribution")
     public ResponseEntity check(@Valid @RequestBody CheckContributionRequest request) {
         CheckContributionResponse response = contributionService.checkContribution(request);
         return ResponseEntity.ok(ofSucceeded(response));
     }
 
     @PostMapping
-    @Operation(summary = "Submit a new place contribution with pending review")
     public ResponseEntity create(
             @Valid @RequestBody CreateContributionRequest request,
             @CurrentUser UUID userId) {
@@ -43,7 +38,6 @@ public class ContributionController extends BaseController {
     }
 
     @DeleteMapping("/{contributionId}")
-    @Operation(summary = "Cancel a pending contribution")
     public ResponseEntity cancel(
             @PathVariable UUID contributionId,
             @CurrentUser UUID userId) {
@@ -52,7 +46,6 @@ public class ContributionController extends BaseController {
     }
 
     @GetMapping("/me")
-    @Operation(summary = "List current user's contributions and their statuses")
     public ResponseEntity listMine(
             @CurrentUser UUID userId,
             @RequestParam(defaultValue = "0") int page,
@@ -62,7 +55,6 @@ public class ContributionController extends BaseController {
     }
 
     @GetMapping("/me/places")
-    @Operation(summary = "List places the user successfully contributed")
     public ResponseEntity listMyPlaces(
             @CurrentUser UUID userId,
             @RequestParam(defaultValue = "0") int page,
@@ -72,7 +64,6 @@ public class ContributionController extends BaseController {
     }
 
     @GetMapping("/places/{placeId}/contributors")
-    @Operation(summary = "List users who contributed a place")
     public ResponseEntity listPlaceContributors(@PathVariable UUID placeId) {
         List<ContributorSummaryResponse> items = contributionService.getPlaceContributors(placeId);
         return ResponseEntity.ok(ofSucceeded(items));

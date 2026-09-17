@@ -53,6 +53,28 @@ class AiTripServiceImplMultiDestinationTest {
     private final AiClient aiClient = mock(AiClient.class);
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
+    /**
+     * The service now runs its writes through TransactionTemplate. A bare mock returns
+     * null from getTransaction(), which makes the template NPE, so hand it a real status
+     * object and let commit/rollback do nothing.
+     */
+    private final org.springframework.transaction.PlatformTransactionManager transactionManager =
+            new org.springframework.transaction.PlatformTransactionManager() {
+                @Override
+                public org.springframework.transaction.TransactionStatus getTransaction(
+                        org.springframework.transaction.TransactionDefinition definition) {
+                    return new org.springframework.transaction.support.SimpleTransactionStatus();
+                }
+
+                @Override
+                public void commit(org.springframework.transaction.TransactionStatus status) {
+                }
+
+                @Override
+                public void rollback(org.springframework.transaction.TransactionStatus status) {
+                }
+            };
+
     private AiTripServiceImpl service;
     private UUID hanoiId;
     private UUID danangId;
@@ -68,7 +90,8 @@ class AiTripServiceImplMultiDestinationTest {
                 activityRepository,
                 tripService,
                 aiClient,
-                objectMapper);
+                objectMapper,
+                transactionManager);
         hanoiId = UUID.randomUUID();
         danangId = UUID.randomUUID();
         when(locationImageRepository.findById(hanoiId)).thenReturn(Optional.of(location(

@@ -22,9 +22,16 @@ public interface PartnerFinanceRepository {
 
     int stampActivityOrderCommission(UUID orderId, BigDecimal commissionPercent, String ruleVersion);
 
-    List<BillableBookingRow> findHotelBillableCandidates(UUID organizationId, LocalDate periodStart, LocalDate periodEnd);
+    /**
+     * @param excludeStatementId when set, bookings already carried by another statement are left
+     *                           out; null asks for the unfiltered list
+     */
+    List<BillableBookingRow> findHotelBillableCandidates(UUID organizationId, LocalDate periodStart, LocalDate periodEnd,
+                                                         UUID excludeStatementId);
 
-    List<BillableBookingRow> findActivityBillableCandidates(UUID organizationId, LocalDate periodStart, LocalDate periodEnd);
+    /** @see #findHotelBillableCandidates(UUID, LocalDate, LocalDate, UUID) */
+    List<BillableBookingRow> findActivityBillableCandidates(UUID organizationId, LocalDate periodStart, LocalDate periodEnd,
+                                                            UUID excludeStatementId);
 
     int insertStatement(PartnerStatement statement);
 
@@ -32,6 +39,12 @@ public interface PartnerFinanceRepository {
 
     int updateStatementStatus(UUID statementId, String status, LocalDateTime issuedAt, LocalDateTime settledAt,
                               String note, LocalDateTime updatedAt);
+
+    /** Settles only while the statement is still issued, unsettled and free of open disputes. */
+    int settleStatement(UUID statementId, LocalDateTime settledAt, String note, LocalDateTime updatedAt);
+
+    /** Takes the statement's row lock; false when there is no such statement. */
+    boolean lockStatement(UUID statementId);
 
     Optional<PartnerStatement> findStatementById(UUID statementId);
 

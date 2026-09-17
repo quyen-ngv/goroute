@@ -7,6 +7,7 @@
     <sql id="ActivityBookingColumns">
         id, external_id, source, url, redirect_url,
         title, description,
+        location_image_id,
         activity_address, departing_from, destinations, destination_coordinates,
         search_lat, search_lng, destinations_norm,
         navigation_list, itinerary_stops, pickup_addresses,
@@ -20,6 +21,7 @@
     <sql id="ActivityBookingListColumns">
         id, external_id, source, url, redirect_url,
         title, description,
+        location_image_id,
         activity_address, departing_from, destinations, destination_coordinates,
         search_lat, search_lng, destinations_norm,
         navigation_list, itinerary_stops, pickup_addresses,
@@ -62,6 +64,7 @@
         <result property="itinerary" column="itinerary"/>
         <result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
+        <result property="locationImageId" column="location_image_id"/>
     </resultMap>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.ActivityBooking">
@@ -157,7 +160,7 @@
         WHERE ab.destinations_norm IS NOT NULL
           AND (
             <foreach item="destination" collection="destinations" separator=" OR ">
-                ab.destinations_norm LIKE CONCAT('%', #{destination}, '%')
+                ab.destinations_norm LIKE ('%' || REPLACE(REPLACE(REPLACE(#{destination}, '\', '\\'), '%', '\%'), '_', '\_') || '%') ESCAPE '\'
             </foreach>
           )
         ORDER BY ab.updated_at DESC
@@ -196,7 +199,7 @@
     <select id="searchByKeyword" resultMap="ActivityBookingResultMap">
         SELECT <include refid="ActivityBookingListColumns"/>
         FROM activity_bookings
-        WHERE LOWER(title) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+        WHERE LOWER(title) LIKE ('%' || REPLACE(REPLACE(REPLACE(LOWER(#{keyword}), '\', '\\'), '%', '\%'), '_', '\_') || '%') ESCAPE '\'
         ORDER BY updated_at DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>

@@ -18,6 +18,22 @@ public interface PlaceContributionMapper {
 
     PlaceContributionGroup findGroupById(@Param("id") UUID id);
 
+    /**
+     * Moves a group PENDING -&gt; SCRAPING in one statement.
+     *
+     * @return 1 when this caller won the approval, 0 when the group is gone or somebody else
+     *         (another admin, another app instance) already took it out of PENDING
+     */
+    int claimGroupForScraping(@Param("id") UUID id, @Param("updatedAt") java.time.LocalDateTime updatedAt);
+
+    /**
+     * Returns claimed-but-never-triggered groups to PENDING.
+     *
+     * @return how many groups were released
+     */
+    int releaseStalledScrapingClaims(@Param("staleBefore") java.time.LocalDateTime staleBefore,
+                                     @Param("updatedAt") java.time.LocalDateTime updatedAt);
+
     PlaceContributionGroup findActiveGroupByUrlHash(
             @Param("normalizedUrlHash") String normalizedUrlHash,
             @Param("statuses") List<ContributionGroupStatus> statuses);

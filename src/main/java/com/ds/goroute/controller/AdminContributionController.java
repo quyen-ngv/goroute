@@ -3,8 +3,6 @@ package com.ds.goroute.controller;
 import com.ds.goroute.dto.request.RejectContributionRequest;
 import com.ds.goroute.dto.response.AdminContributionGroupResponse;
 import com.ds.goroute.service.PlaceContributionService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -16,14 +14,12 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/v1/api/admin/contributions")
 @RequiredArgsConstructor
-@Tag(name = "Admin Contributions", description = "Admin contribution moderation APIs")
 public class AdminContributionController extends BaseController {
 
     private final PlaceContributionService contributionService;
 
     @GetMapping
     @PreAuthorize("@adminAuthorization.can(authentication,'contributions','get')")
-    @Operation(summary = "List contribution groups by status")
     public ResponseEntity listGroups(
             @RequestParam(defaultValue = "PENDING") String status,
             @RequestParam(defaultValue = "0") int page,
@@ -34,7 +30,6 @@ public class AdminContributionController extends BaseController {
 
     @GetMapping("/{groupId}")
     @PreAuthorize("@adminAuthorization.can(authentication,'contributions','get')")
-    @Operation(summary = "Get contribution group detail")
     public ResponseEntity getGroup(@PathVariable UUID groupId) {
         AdminContributionGroupResponse response = contributionService.adminGetGroup(groupId);
         return ResponseEntity.ok(ofSucceeded(response));
@@ -42,7 +37,6 @@ public class AdminContributionController extends BaseController {
 
     @PostMapping("/{groupId}/approve")
     @PreAuthorize("@adminAuthorization.can(authentication,'contributions','update')")
-    @Operation(summary = "Approve contribution group and trigger scrape/import")
     public ResponseEntity approve(@PathVariable UUID groupId) {
         contributionService.adminApprove(groupId);
         AdminContributionGroupResponse response = contributionService.adminGetGroup(groupId);
@@ -51,7 +45,6 @@ public class AdminContributionController extends BaseController {
 
     @PostMapping("/{groupId}/reject")
     @PreAuthorize("@adminAuthorization.can(authentication,'contributions','update')")
-    @Operation(summary = "Reject contribution group")
     public ResponseEntity reject(
             @PathVariable UUID groupId,
             @RequestBody(required = false) RejectContributionRequest request) {
@@ -62,7 +55,6 @@ public class AdminContributionController extends BaseController {
 
     @PostMapping("/{groupId}/sync")
     @PreAuthorize("@adminAuthorization.can(authentication,'contributions','update')")
-    @Operation(summary = "Poll scrape job status and sync group state")
     public ResponseEntity sync(@PathVariable UUID groupId) {
         contributionService.syncScrapingGroup(groupId);
         AdminContributionGroupResponse response = contributionService.adminGetGroup(groupId);

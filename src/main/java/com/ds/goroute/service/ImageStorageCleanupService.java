@@ -12,6 +12,8 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.sql.Array;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -36,6 +38,19 @@ public class ImageStorageCleanupService {
 
     private final Map<String, EntitySpec> specs = buildSpecs();
 
+    /**
+     * How long an object nothing points at is left alone before the sweep may delete it.
+     *
+     * <p>Unreferenced is not the same as unwanted while an upload is still on its way to
+     * becoming a record: every composer stores the file first and saves the row that names
+     * it afterwards. The longest version of that gap is a check-in captured with no
+     * connection, whose photos are uploaded on the first signal and stay in the app's
+     * offline queue until the draft is sent or expires (14 days). Deleting inside that
+     * window takes the photos off a post that has not arrived yet, and no backup prefix
+     * puts them back on it.
+     */
+    private static final Duration MIN_ORPHAN_AGE = Duration.ofDays(14);
+
     public List<String> supportedEntities() {
         return specs.keySet().stream().sorted().toList();
     }
@@ -55,9 +70,23 @@ public class ImageStorageCleanupService {
      * means a later failure leaves the row pointing at a file that is already gone.
      */
     public DeleteRecordImagesResult deleteImagesForEntityRecord(String entity, UUID id) {
+        return deleteImagesForEntityRecord(entity, id, List.of());
+    }
+
+    /**
+     * The same delete for a record that is being edited rather than removed: everything it
+     * referenced, minus {@code keptUrls} -- the ones it still references after the edit.
+     *
+     * <p>Call this before the edit rewrites the rows, while the old URLs can still be read,
+     * and after any record that shares them has been rewritten, so the retain step is
+     * asked what survives the edit rather than what was there before it.
+     */
+    public DeleteRecordImagesResult deleteImagesForEntityRecord(String entity, UUID id,
+                                                                Collection<String> keptUrls) {
         String normalizedEntity = normalizeEntity(entity);
         Set<String> urls = collectRecordUrls(normalizedEntity, id);
         Set<String> keys = toKeys(urls);
+        keys.removeAll(toKeys(keptUrls));
 
         Set<String> retainedKeys = collectRetainedKeys(normalizedEntity, id);
         if (!retainedKeys.isEmpty()) {
@@ -132,16 +161,29 @@ public class ImageStorageCleanupService {
             );
         }
 
-        List<String> scannedKeys = prefixes.stream()
-                .flatMap(prefix -> storageService.listObjectKeys(prefix).stream())
-                .distinct()
-                .sorted()
-                .toList();
+        Map<String, Instant> scanned = new LinkedHashMap<>();
+        for (String prefix : prefixes) {
+            for (StorageService.StoredObject object : storageService.listObjects(prefix)) {
+                scanned.putIfAbsent(object.key(), object.lastModified());
+            }
+        }
 
-        List<String> allOrphanKeys = scannedKeys.stream()
-                .filter(key -> !referencedKeys.contains(key))
-                .sorted()
-                .toList();
+        Instant newestDeletable = Instant.now().minus(MIN_ORPHAN_AGE);
+        List<String> allOrphanKeys = new ArrayList<>();
+        int tooNewCount = 0;
+        for (String key : scanned.keySet().stream().sorted().toList()) {
+            if (referencedKeys.contains(key)) {
+                continue;
+            }
+            Instant writtenAt = scanned.get(key);
+            // An unknown write time is treated as brand new. Guessing old here is the one
+            // mistake this sweep cannot take back.
+            if (writtenAt == null || writtenAt.isAfter(newestDeletable)) {
+                tooNewCount++;
+                continue;
+            }
+            allOrphanKeys.add(key);
+        }
         int safeLimit = Math.max(1, limit);
         List<String> orphanKeys = allOrphanKeys.stream()
                 .limit(safeLimit)
@@ -161,13 +203,15 @@ public class ImageStorageCleanupService {
         }
 
         log.info(
-                "Image orphan cleanup completed. dryRun={}, prefixes={}, scanned={}, referenced={}, totalOrphans={}, returnedOrphans={}, backedUp={}, deleted={}",
+                "Image orphan cleanup completed. dryRun={}, prefixes={}, scanned={}, referenced={}, totalOrphans={}, returnedOrphans={}, keptTooNew={}, minAgeDays={}, backedUp={}, deleted={}",
                 dryRun,
                 prefixes,
-                scannedKeys.size(),
+                scanned.size(),
                 referencedKeys.size(),
                 allOrphanKeys.size(),
                 orphanKeys.size(),
+                tooNewCount,
+                MIN_ORPHAN_AGE.toDays(),
                 backupCount,
                 deletedCount
         );
@@ -176,11 +220,13 @@ public class ImageStorageCleanupService {
                 normalizedEntities,
                 new ArrayList<>(prefixes),
                 dryRun,
-                scannedKeys.size(),
+                scanned.size(),
                 referencedKeys.size(),
                 orphanKeys.size(),
                 allOrphanKeys.size(),
                 allOrphanKeys.size() > orphanKeys.size(),
+                tooNewCount,
+                MIN_ORPHAN_AGE.toDays(),
                 deletedCount,
                 backupCount,
                 resolvedBackupPrefix,
@@ -557,6 +603,8 @@ public class ImageStorageCleanupService {
             int orphanObjectCount,
             int totalOrphanObjectCount,
             boolean limited,
+            int keptTooNewObjectCount,
+            long minimumOrphanAgeDays,
             int deletedObjectCount,
             int backupObjectCount,
             String backupPrefix,

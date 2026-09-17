@@ -62,9 +62,25 @@ public class TripMemoryServiceImpl implements TripMemoryService {
                 ? mediaAssetRepository.findTripMemoriesByActivityId(activityId)
                 : mediaAssetRepository.findTripMemoriesByTripId(tripId);
 
-        return assets.stream()
+        List<MediaAsset> visible = assets.stream()
                 .filter(asset -> trip.getId().equals(asset.getTripId()))
-                .map(asset -> toResponse(asset, userRepository.findById(asset.getUploadedBy()).orElse(null)))
+                .toList();
+
+        // One lookup for every uploader on the page instead of one per memory.
+        // findByIds applies the same deleted_at IS NULL filter findById did, so an
+        // uploader whose account is gone still resolves to a null uploader here.
+        java.util.Map<UUID, com.ds.goroute.entity.User> uploaders = userRepository.findByIds(
+                        visible.stream().map(MediaAsset::getUploadedBy)
+                                .filter(java.util.Objects::nonNull)
+                                .distinct()
+                                .toList())
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        com.ds.goroute.entity.User::getId, user -> user, (a, b) -> a));
+
+        return visible.stream()
+                .map(asset -> toResponse(asset,
+                        asset.getUploadedBy() == null ? null : uploaders.get(asset.getUploadedBy())))
                 .toList();
     }
 

@@ -2,9 +2,11 @@ package com.ds.goroute.service.notification;
 
 import com.ds.goroute.entity.Notification;
 import com.ds.goroute.entity.User;
+import com.ds.goroute.repository.ContentCommentRepository;
 import com.ds.goroute.repository.NotificationRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.NotificationService;
+import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.NotificationType;
 import com.google.gson.Gson;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +36,7 @@ public class SocialNotificationService {
     private final NotificationRepository notificationRepository;
     private final NotificationService notificationService;
     private final UserRepository userRepository;
+    private final ContentCommentRepository contentCommentRepository;
     private final Gson gson;
 
     public void notifyLike(UUID recipientId, UUID actorId, String targetType, UUID targetId) {
@@ -145,7 +148,29 @@ public class SocialNotificationService {
                 : user.getUsername();
     }
 
+    /**
+     * Where a tap on the notification lands.
+     *
+     * <p>Every non-trip target used to fall through to {@code /trips}, so being liked on a
+     * check-in or a review opened the reader's own trip list instead of the post that was
+     * liked. A comment target is the comment itself, which has no screen of its own: it
+     * resolves to the post the thread hangs under.
+     */
     private String deepLinkFor(String targetType, UUID targetId) {
+        if (ModeratedContentType.CONTENT_COMMENT.name().equals(targetType)) {
+            return contentCommentRepository.findById(targetId)
+                    .map(comment -> deepLinkFor(comment.getContentType().name(), comment.getContentId()))
+                    .orElse("/trips");
+        }
+        if (ModeratedContentType.CHECKIN.name().equals(targetType)) {
+            return "/checkins/" + targetId;
+        }
+        if (ModeratedContentType.REVIEW.name().equals(targetType)) {
+            return "/reviews/" + targetId;
+        }
+        if (ModeratedContentType.PLACE_COLLECTION.name().equals(targetType)) {
+            return "/collections/" + targetId;
+        }
         return "TRIP".equals(targetType) ? "/trip/" + targetId : "/trips";
     }
 }

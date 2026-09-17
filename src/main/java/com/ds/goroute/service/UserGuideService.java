@@ -38,7 +38,7 @@ public class UserGuideService {
 
     @Transactional(readOnly = true)
     public Optional<UserGuideGrant> find(UUID userId) {
-        return Optional.ofNullable(mapper.find(userId));
+        return Optional.ofNullable(mapper.find(userId)).map(this::withAreas);
     }
 
     @Transactional(readOnly = true)
@@ -67,7 +67,8 @@ public class UserGuideService {
      * operator on it.
      */
     @Transactional
-    public UserGuideGrant grant(UUID userId, String displayTitle, String note, UUID operatorId) {
+    public UserGuideGrant grant(UUID userId, String displayTitle, String note,
+                                List<UUID> locationImageIds, UUID operatorId) {
         // Checked rather than left to a foreign key, which this table deliberately does not have:
         // the failure would otherwise reach the operator as a constraint name.
         users.findById(userId)
@@ -79,8 +80,15 @@ public class UserGuideService {
                 .note(trimToNull(note))
                 .grantedBy(operatorId)
                 .build());
+        // Null means "leave the areas as they are"; an empty list is an explicit clear, so the
+        // two cannot be collapsed into one branch.
+        if (locationImageIds != null) {
+            mapper.deleteLocationImages(userId);
+            locationImageIds.stream().filter(Objects::nonNull).distinct()
+                    .forEach(areaId -> mapper.insertLocationImage(userId, areaId));
+        }
         log.info("User {} was made a guide by {}", userId, operatorId);
-        return mapper.find(userId);
+        return withAreas(mapper.find(userId));
     }
 
     /**
@@ -95,7 +103,8 @@ public class UserGuideService {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "This account is not a guide");
         }
         log.info("Guide status for user {} was revoked by {}", userId, operatorId);
-        return mapper.find(userId);
+        // The area rows stay: restoring a guide should not silently lose which areas they covered.
+        return withAreas(mapper.find(userId));
     }
 
     @Transactional(readOnly = true)
@@ -106,6 +115,13 @@ public class UserGuideService {
     @Transactional(readOnly = true)
     public long count(String status, String search) {
         return mapper.countAll(trimToNull(status), trimToNull(search));
+    }
+
+    private UserGuideGrant withAreas(UserGuideGrant grant) {
+        if (grant != null) {
+            grant.setLocationImageIds(mapper.findLocationImageIds(grant.getUserId()));
+        }
+        return grant;
     }
 
     private String trimToNull(String value) {

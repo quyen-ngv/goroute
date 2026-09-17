@@ -1,11 +1,14 @@
 package com.ds.goroute.service;
 
+import com.ds.goroute.entity.StarTransaction;
 import com.ds.goroute.mapper.StarMapper;
 import com.ds.goroute.type.BusinessConfigKey;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -28,6 +31,16 @@ public class StarYearEndResetService {
 
     /** Wallets per keyset page. Small enough that a failure re-does very little work. */
     private static final int PAGE_SIZE = 200;
+
+    /** Ledger entries read per page when walking back to the turn of the year. */
+    private static final int LEDGER_PAGE_SIZE = 500;
+
+    /**
+     * How far back the walk is allowed to go. A wallet with more entries than this since the turn
+     * of the year is left alone rather than reduced by a number nobody can defend; the log line
+     * says which one, so it can be settled by hand.
+     */
+    private static final int LEDGER_SCAN_LIMIT = 5_000;
 
     private final StarMapper starMapper;
     private final StarService starService;
@@ -97,18 +110,68 @@ public class StarYearEndResetService {
         if (starService.findByReference(reference).isPresent()) {
             return false;
         }
-        int balance = starService.getBalance(userId);
-        if (balance <= 0) {
+        // The share is taken out of what the wallet held when the year closed, not out of what it
+        // holds now. The job fires every day of January precisely because a run can be missed, and
+        // reading the live balance on the 15th would halve a fortnight of January's earnings too.
+        Integer closing = closingBalance(userId, LocalDate.of(year + 1, 1, 1).atStartOfDay());
+        if (closing == null) {
+            log.warn("Year-end star reset skipped for wallet {}: the balance at the close of {} "
+                    + "could not be established from the ledger", userId, year);
             return false;
         }
-        // Rounded up, so the rounding always favours the user: a balance of 7 keeps 4.
-        int retained = (int) Math.ceil(balance * retainPercent / 100.0);
-        int deduction = balance - retained;
+        if (closing <= 0) {
+            return false;
+        }
+        // Never more than the same rule applied to what is actually in the wallet. Somebody who
+        // spent in January holds less than they closed the year with, and the deduction has to fit
+        // in what is left; when nothing moved since the turn of the year the two are the same
+        // number, which is the normal 1 January run.
+        int deduction = Math.min(share(closing, retainPercent), share(starService.getBalance(userId), retainPercent));
         if (deduction <= 0) {
             return false;
         }
         starService.spend(userId, deduction, "YEAR_END_RESET", reference,
                 "End of " + year + ": balance reduced to " + retainPercent + "%");
         return true;
+    }
+
+    /** What the rule takes off a balance. Rounded so the rounding favours the user: 7 keeps 4. */
+    private static int share(int balance, int retainPercent) {
+        if (balance <= 0) {
+            return 0;
+        }
+        return balance - (int) Math.ceil(balance * retainPercent / 100.0);
+    }
+
+    /**
+     * The balance as it stood at {@code cutoff}, worked out by taking the entries written since
+     * then back off the current balance. The wallet balance is the sum of its ledger, so this is
+     * exact rather than an estimate.
+     *
+     * @return null when the walk would have to read more than {@link #LEDGER_SCAN_LIMIT} entries,
+     *         in which case the caller must not guess at a number
+     */
+    private Integer closingBalance(UUID userId, LocalDateTime cutoff) {
+        int balance = starService.getBalance(userId);
+        int scanned = 0;
+        int offset = 0;
+        while (scanned < LEDGER_SCAN_LIMIT) {
+            List<StarTransaction> page = starMapper.findTransactions(userId, LEDGER_PAGE_SIZE, offset);
+            for (StarTransaction entry : page) {
+                LocalDateTime at = entry.getCreatedAt();
+                // Newest first, so the first entry that predates the cutoff ends the walk. A row
+                // that cannot be placed on either side of it ends the walk as well.
+                if (at == null || entry.getAmount() == null || at.isBefore(cutoff)) {
+                    return balance;
+                }
+                balance -= entry.getAmount();
+                scanned++;
+            }
+            if (page.size() < LEDGER_PAGE_SIZE) {
+                return balance;
+            }
+            offset += page.size();
+        }
+        return null;
     }
 }

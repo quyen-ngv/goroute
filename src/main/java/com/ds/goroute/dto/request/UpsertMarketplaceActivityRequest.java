@@ -63,6 +63,9 @@ public class UpsertMarketplaceActivityRequest {
     @Size(max=50) private List<@Size(max=1000) String> highlights;
     @Valid @Size(max=50) private List<ActivityWhatToExpectItem> whatToExpect;
     @Valid @Size(max=100) private List<ActivityItineraryItem> itinerary;
+    @Size(max=50) private List<@Size(max=1000) String> goodToKnow;
+    @Valid @Size(max=50) private List<com.ds.goroute.dto.ActivityFaqItem> faqs;
+    @Size(max=2000) private String videoUrl;
     private MarketplacePublicationStatus productStatus=MarketplacePublicationStatus.DRAFT;
     private Long expectedVersion;
 }

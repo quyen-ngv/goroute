@@ -11,6 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 import java.util.EnumMap;
@@ -32,6 +33,30 @@ public class HttpImageModerationProvider implements ImageModerationProvider {
     private final ImageModerationProperties properties;
     private final RestClient.Builder restClientBuilder;
 
+    /**
+     * goroute.moderation.image.timeout was configured but never applied: the shared
+     * builder has no timeouts, so a moderation host that stalled mid-response blocked
+     * the upload thread for ever. Worse, the caller only falls back to "allow" on an
+     * exception, and a hang never throws one.
+     */
+    private volatile RestClient restClient;
+
+    private RestClient restClient() {
+        RestClient existing = restClient;
+        if (existing != null) {
+            return existing;
+        }
+        synchronized (this) {
+            if (restClient == null) {
+                SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+                factory.setConnectTimeout(properties.getTimeout());
+                factory.setReadTimeout(properties.getTimeout());
+                restClient = restClientBuilder.requestFactory(factory).build();
+            }
+            return restClient;
+        }
+    }
+
     @Override
     public String name() {
         return "http";
@@ -47,7 +72,7 @@ public class HttpImageModerationProvider implements ImageModerationProvider {
             }
         });
 
-        Map<String, Object> response = restClientBuilder.build()
+        Map<String, Object> response = restClient()
                 .post()
                 .uri(properties.getUrl())
                 .contentType(MediaType.MULTIPART_FORM_DATA)

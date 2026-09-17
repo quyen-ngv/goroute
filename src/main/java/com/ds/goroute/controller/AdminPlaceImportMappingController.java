@@ -3,8 +3,6 @@ package com.ds.goroute.controller;
 import com.ds.goroute.dto.request.ModeratePlaceImportMappingRequest;
 import com.ds.goroute.dto.response.AdminPlaceImportMappingResponse;
 import com.ds.goroute.service.PlaceImportJobService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -22,14 +20,12 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/v1/api/admin/place-import-mappings")
 @RequiredArgsConstructor
-@Tag(name = "Admin Place Import Mappings", description = "Moderate imported place mappings before assigning them to user data")
 public class AdminPlaceImportMappingController extends BaseController {
 
     private final PlaceImportJobService placeImportJobService;
 
     @GetMapping
     @PreAuthorize("@adminAuthorization.can(authentication,'places','get')")
-    @Operation(summary = "List place import mapping history")
     public ResponseEntity list(
             @RequestParam(defaultValue = "ALL") String status,
             @RequestParam(defaultValue = "0") int page,
@@ -41,7 +37,6 @@ public class AdminPlaceImportMappingController extends BaseController {
 
     @PostMapping("/{itemId}/approve")
     @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
-    @Operation(summary = "Approve a mapping and apply it to the activity or social saved item")
     public ResponseEntity approve(
             @PathVariable UUID itemId,
             @RequestBody(required = false) ModeratePlaceImportMappingRequest request) {
@@ -52,7 +47,6 @@ public class AdminPlaceImportMappingController extends BaseController {
 
     @PostMapping("/{itemId}/reject")
     @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
-    @Operation(summary = "Reject a mapping without changing user activity or saved social item")
     public ResponseEntity reject(
             @PathVariable UUID itemId,
             @RequestBody(required = false) ModeratePlaceImportMappingRequest request) {

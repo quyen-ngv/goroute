@@ -1,6 +1,7 @@
 package com.ds.goroute.service.impl;
 
 import com.ds.goroute.constant.ErrorConstant;
+import com.ds.goroute.dto.ExpenseSplitCount;
 import com.ds.goroute.dto.request.CloneTripRequest;
 import com.ds.goroute.dto.request.CreateTripRequest;
 import com.ds.goroute.dto.request.InviteMemberRequest;
@@ -871,7 +872,20 @@ public class TripServiceImpl implements TripService {
     }
 
     private TripResponse mapToTripResponse(Trip trip, UUID userId) {
-        TripStatsResponse stats = calculateTripStats(trip.getId());
+        return mapToTripResponse(trip, userId, null, null);
+    }
+
+    /**
+     * @param preloadedOwner   the owner row when the caller already holds it, so a list of trips
+     *                         owned by one person does not load that person once per trip
+     * @param membersByTripId  the viewer's member row per trip when the caller batch-loaded them;
+     *                         {@code null} falls back to one lookup, an absent key means the
+     *                         viewer is not a member of that trip
+     */
+    private TripResponse mapToTripResponse(Trip trip, UUID userId,
+                                           User preloadedOwner,
+                                           Map<UUID, TripMember> membersByTripId) {
+        TripStatsResponse stats = calculateTripStats(trip);
 
         // Auto fill cover image if not set
         String coverImageUrl = trip.getCoverImageUrl();
@@ -889,7 +903,9 @@ public class TripServiceImpl implements TripService {
             log.info("âœ… User is OWNER (from trip.ownerId)");
         } else {
             // Check if user is member
-            var member = tripMemberRepository.findByTripIdAndUserId(trip.getId(), userId);
+            var member = membersByTripId != null
+                    ? Optional.ofNullable(membersByTripId.get(trip.getId()))
+                    : tripMemberRepository.findByTripIdAndUserId(trip.getId(), userId);
             if (member.isPresent()) {
                 // If member role is OWNER, use it (fallback for old data)
                 if (member.get().getRole() == MemberRole.OWNER) {
@@ -907,9 +923,14 @@ public class TripServiceImpl implements TripService {
         List<MemoryImageResponse> memoryImages = getTripMemoryImages(trip.getId());
         List<String> memoryImageUrls = getMemoryImageUrls(memoryImages);
         List<TripDestinationResponse> destinationResponses = destinationResponses(trip);
-        User owner = trip.getOwnerId() == null
-                ? null
-                : userRepository.findById(trip.getOwnerId()).orElse(null);
+        User owner;
+        if (trip.getOwnerId() == null) {
+            owner = null;
+        } else if (preloadedOwner != null && trip.getOwnerId().equals(preloadedOwner.getId())) {
+            owner = preloadedOwner;
+        } else {
+            owner = userRepository.findById(trip.getOwnerId()).orElse(null);
+        }
         String ownerName = owner == null
                 ? null
                 : (owner.getFullName() != null && !owner.getFullName().isBlank()
@@ -998,6 +1019,14 @@ public class TripServiceImpl implements TripService {
     }
 
     private TripStatsResponse calculateTripStats(UUID tripId) {
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+        return calculateTripStats(trip);
+    }
+
+    /** Same stats for a caller that already holds the trip row, so it is not read twice. */
+    private TripStatsResponse calculateTripStats(Trip trip) {
+        UUID tripId = trip.getId();
         int totalItems = activityRepository.findByTripId(tripId).size();
         int checkedInItems = checkinRepository.findByTripId(tripId).size();
         int totalMembers = countAcceptedMembers(tripId);
@@ -1005,8 +1034,6 @@ public class TripServiceImpl implements TripService {
                 .map(e -> e.getAmountInTripCurrency() != null ? e.getAmountInTripCurrency() : e.getAmount())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
         BigDecimal remainingBudget = trip.getBudget() != null ? trip.getBudget().subtract(totalExpenses) : BigDecimal.ZERO;
 
         return TripStatsResponse.builder()
@@ -1264,9 +1291,23 @@ public class TripServiceImpl implements TripService {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Cannot link to another guest member");
         }
 
-        // Validate current user is owner or editor
-        tripMemberRepository.findByTripIdAndUserId(tripId, currentUserId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You are not a member of this trip"));
+        // Validate current user is owner or editor. The plain member lookup used before this
+        // ignored status and role, so a PENDING invitee or a VIEWER could link a guest away.
+        tripAccessGuard.requireEditAccess(tripId, currentUserId);
+
+        // Linking deletes the guest row. Splits survive that: they are moved onto the target
+        // user below and stop referencing the guest at all, but an expense that names this
+        // guest as its payer does not: expenses.paid_by keeps the member id while the FK on
+        // paid_by_guest_member_id nulls itself out, leaving an expense paid by nobody and money
+        // that is never shown as owed to the linked user. Nothing is silently moved or dropped:
+        // the link is refused until those expenses name a different payer.
+        int paidExpenses = expenseRepository.countByPaidByGuestMemberId(guestMemberId);
+        if (paidExpenses > 0) {
+            throw new BusinessException(
+                    ErrorConstant.TRIP_GUEST_HAS_EXPENSES,
+                    paidExpenses + " expense(s) in this trip are still recorded as paid by this "
+                            + "guest. Change the payer on those expenses first, then link the guest.");
+        }
 
         // Update all expense splits for this guest member
         List<ExpenseSplit> guestSplits = expenseSplitRepository.findByGuestMemberId(guestMemberId);
@@ -1344,8 +1385,14 @@ public class TripServiceImpl implements TripService {
                     .filter(asset -> asset.getAssetRole() == null
                             || "PHOTO".equalsIgnoreCase(asset.getAssetRole()))
                     .collect(Collectors.groupingBy(MediaAsset::getEntityId));
+            // One grouped count for the trip rather than one query per expense: this page is
+            // reachable without signing in, so the query count is whatever a stranger asks for.
+            Map<UUID, Integer> splitCounts = expenseRepository.findSplitCountsByTripId(tripId).stream()
+                    .collect(Collectors.toMap(ExpenseSplitCount::getExpenseId,
+                            count -> count.getSplitCount() == null ? 0 : count.getSplitCount(),
+                            (first, second) -> first));
             for (com.ds.goroute.entity.Expense e : expenses) {
-                int splitCount = expenseSplitRepository.findByExpenseId(e.getId()).size();
+                int splitCount = splitCounts.getOrDefault(e.getId(), 0);
                 List<MemoryImageResponse> expensePhotoResponses = MediaAssetResponseMapper.toImageResponses(
                         expenseAssets.getOrDefault(e.getId(), List.of()));
                 PublicExpenseResponse expenseResponse = PublicExpenseResponse.builder()
@@ -1876,6 +1923,7 @@ public class TripServiceImpl implements TripService {
                                                        String keyword,
                                                        boolean allPublic,
                                                        String randomSeed,
+                                                       boolean preferImages,
                                                        int page,
                                                        int size,
                                                        UUID viewerId,
@@ -1888,6 +1936,7 @@ public class TripServiceImpl implements TripService {
                 keyword,
                 allPublic,
                 randomSeed,
+                preferImages,
                 page,
                 size,
                 excludeUserId
@@ -2163,7 +2212,7 @@ public class TripServiceImpl implements TripService {
     @Override
     @Transactional(readOnly = true)
     public List<TripResponse> getProfileTrips(UUID targetUserId, UUID viewerId) {
-        userRepository.findById(targetUserId)
+        User profileOwner = userRepository.findById(targetUserId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
 
         boolean isSelf = viewerId != null && viewerId.equals(targetUserId);
@@ -2172,8 +2221,20 @@ public class TripServiceImpl implements TripService {
                 : tripRepository.findPublicTripsByOwnerId(targetUserId);
 
         UUID mapViewerId = viewerId != null ? viewerId : targetUserId;
+
+        // Every trip here is owned by the profile's user, and the viewer is one person: both
+        // lookups are the same row over and over. A signed-in stranger opening a profile used
+        // to cost two queries per trip before the trip itself was read.
+        Map<UUID, TripMember> viewerMembership = mapViewerId.equals(targetUserId)
+                ? Map.of()
+                : tripMemberRepository
+                        .findByTripIdsAndUserId(trips.stream().map(Trip::getId).toList(), mapViewerId)
+                        .stream()
+                        .collect(Collectors.toMap(TripMember::getTripId, member -> member,
+                                (first, second) -> first));
+
         return trips.stream()
-                .map(trip -> mapToTripResponse(trip, mapViewerId))
+                .map(trip -> mapToTripResponse(trip, mapViewerId, profileOwner, viewerMembership))
                 .collect(Collectors.toList());
     }
 

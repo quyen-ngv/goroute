@@ -6,9 +6,9 @@ services:
     environment:
       POSTGRES_DB: vocaberry_db
       POSTGRES_USER: vocaberry
-      POSTGRES_PASSWORD: vocaberry_secret
+      POSTGRES_PASSWORD: ${VOCABERRY_DB_PASSWORD:?set VOCABERRY_DB_PASSWORD in the deploy .env}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - vocaberry_db_data:/var/lib/postgresql/data
     networks:
@@ -27,9 +27,9 @@ services:
     environment:
       POSTGRES_DB: goroute
       POSTGRES_USER: goroute
-      POSTGRES_PASSWORD: goroute123
+      POSTGRES_PASSWORD: ${GOROUTE_DB_PASSWORD:?set GOROUTE_DB_PASSWORD in the deploy .env}
     ports:
-      - "5433:5432"  # Different port to avoid conflict
+      - "127.0.0.1:5433:5432"  # Different port to avoid conflict
     volumes:
       - goroute_db_data:/var/lib/postgresql/data
     networks:
@@ -68,8 +68,8 @@ services:
     volumes:
       - minio_data:/data
     environment:
-      MINIO_ROOT_USER: admin
-      MINIO_ROOT_PASSWORD: DoiMatKhauNayDi123!
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in the deploy .env}
     expose:
       - "9000"
       - "9001"
@@ -90,17 +90,31 @@ services:
       # Unset -> our code logs at DEBUG. Set LOG_LEVEL=ERROR for errors only.
       - LOG_LEVEL=${GOROUTE_LOG_LEVEL:-ERROR}
       - DB_USERNAME=goroute
-      - DB_PASSWORD=goroute123
-      - JWT_SECRET=${GOROUTE_JWT_SECRET:-404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+      - DB_PASSWORD=${GOROUTE_DB_PASSWORD:?set GOROUTE_DB_PASSWORD in the deploy .env}
+      - JWT_SECRET=${GOROUTE_JWT_SECRET:?set GOROUTE_JWT_SECRET in the deploy .env}
       - GOROUTE_API_KEY=${GOROUTE_API_KEY:-}
       - FIREBASE_CREDENTIAL_PATH=/app/goroute-credentials.json
-      - GOROUTE_AWS_ACCESS_KEY_ID=admin
-      - GOROUTE_AWS_SECRET_ACCESS_KEY=DoiMatKhauNayDi123!
+      - GOROUTE_AWS_ACCESS_KEY_ID=${GOROUTE_AWS_ACCESS_KEY_ID:-admin}
+      - GOROUTE_AWS_SECRET_ACCESS_KEY=${GOROUTE_AWS_SECRET_ACCESS_KEY:?set GOROUTE_AWS_SECRET_ACCESS_KEY in the deploy .env}
       - GOROUTE_AWS_REGION=us-east-1
       - GOROUTE_AWS_S3_BUCKET_NAME=vietdetour
       - GOROUTE_AWS_ENDPOINT=http://minio:9000
       - GOROUTE_AWS_CLOUDFRONT_DOMAIN=onestudy.id.vn/resource
+    # goroute-app-healthcheck: a hung app (see the 2026-09-02 AI-trip deadlock) used to look
+    # perfectly fine because nothing ever probed it. This marks it unhealthy so 
+    # and any monitoring can see it. Note that neither Docker nor Compose restarts an
+    # unhealthy container by itself - restart: always only reacts to the process exiting -
+    # so acting on it still needs an orchestrator or a watchdog.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
     volumes:
+      # The prod logback profile writes a rolling file under /app/logs. Without this mount it
+      # lives in the container writable layer and is lost on every redeploy.
+      - ./logs/goroute:/app/logs
       - ./goroute-credentials.json:/app/goroute-credentials.json:ro
     depends_on:
       goroute-db:

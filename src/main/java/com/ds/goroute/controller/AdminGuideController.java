@@ -61,7 +61,7 @@ public class AdminGuideController extends BaseController {
                                    @CurrentUser UUID operatorId) {
         GrantGuideRequest body = request == null ? new GrantGuideRequest() : request;
         return ResponseEntity.ok(ofSucceeded(guideService.grant(
-                userId, body.getDisplayTitle(), body.getNote(), operatorId)));
+                userId, body.getDisplayTitle(), body.getNote(), body.getLocationImageIds(), operatorId)));
     }
 
     @DeleteMapping("/users/{userId}")

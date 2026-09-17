@@ -131,6 +131,82 @@
         ORDER BY uf.created_at DESC
     </select>
 
+    <!--
+         Discover, /followers and /following all render the same card: the profile plus
+         four counts.  The counts used to be four queries per row in the service, which
+         made a 20 card page cost eighty round trips; they are correlated subqueries of
+         the one statement that reads the page now.  Each one repeats, verbatim, the
+         predicate of the single row count it replaces (countPublicTripsByOwnerId,
+         UserReviewMapper.countByUserId, countFollowers, countFollowing).
+    -->
+    <sql id="DiscoverCountColumns">
+        (SELECT COUNT(*) FROM trips t
+          WHERE t.owner_id = u.id
+            AND t.visibility = 'PUBLIC'
+            AND t.is_deleted = FALSE) AS trip_count,
+        (SELECT COUNT(*) FROM user_reviews r WHERE r.user_id = u.id) AS review_count,
+        (SELECT COUNT(*) FROM user_follows uf
+            JOIN users fu ON fu.id = uf.follower_id
+          WHERE uf.following_id = u.id
+            AND fu.deleted_at IS NULL) AS followers_count,
+        (SELECT COUNT(*) FROM user_follows uf
+            JOIN users fu ON fu.id = uf.following_id
+          WHERE uf.follower_id = u.id
+            AND fu.deleted_at IS NULL) AS following_count
+    </sql>
+
+    <!--
+         The discover page is the twenty most reviewed accounts the viewer does not
+         already follow.  It used to read every row of users into memory to get there.
+         The candidate CTE keeps the old ordering exactly: review count descending,
+         then newest first, which is the order selectAll produced before the stable
+         sort by review count in the service.
+    -->
+    <select id="selectDiscoverUsers" resultType="com.ds.goroute.dto.response.DiscoverUserResponse">
+        WITH candidates AS (
+            SELECT u.id, u.full_name, u.username, u.avatar_url, u.created_at
+            FROM users u
+            LEFT JOIN (
+                SELECT user_id, COUNT(*) AS review_count
+                FROM user_reviews
+                GROUP BY user_id
+            ) r ON r.user_id = u.id
+            WHERE u.deleted_at IS NULL
+              AND u.id &lt;&gt; #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+              AND NOT EXISTS (
+                  SELECT 1 FROM user_follows f
+                  WHERE f.follower_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+                    AND f.following_id = u.id
+              )
+            ORDER BY COALESCE(r.review_count, 0) DESC, u.created_at DESC
+            LIMIT #{limit}
+        )
+        SELECT u.id, u.full_name, u.username, u.avatar_url,
+               <include refid="DiscoverCountColumns"/>
+        FROM candidates u
+        ORDER BY review_count DESC, u.created_at DESC
+    </select>
+
+    <select id="selectFollowerProfiles" resultType="com.ds.goroute.dto.response.DiscoverUserResponse">
+        SELECT u.id, u.full_name, u.username, u.avatar_url,
+               <include refid="DiscoverCountColumns"/>
+        FROM user_follows edge
+        JOIN users u ON u.id = edge.follower_id
+        WHERE edge.following_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND u.deleted_at IS NULL
+        ORDER BY edge.created_at DESC
+    </select>
+
+    <select id="selectFollowingProfiles" resultType="com.ds.goroute.dto.response.DiscoverUserResponse">
+        SELECT u.id, u.full_name, u.username, u.avatar_url,
+               <include refid="DiscoverCountColumns"/>
+        FROM user_follows edge
+        JOIN users u ON u.id = edge.following_id
+        WHERE edge.follower_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND u.deleted_at IS NULL
+        ORDER BY edge.created_at DESC
+    </select>
+
     <select id="countFollowers" resultType="int">
         SELECT COUNT(*)
         FROM user_follows uf

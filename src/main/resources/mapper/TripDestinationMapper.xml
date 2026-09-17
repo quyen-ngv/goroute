@@ -16,6 +16,7 @@
         <result column="is_primary" property="isPrimary" jdbcType="BOOLEAN"/>
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
         <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
+        <result column="location_image_id" property="locationImageId" jdbcType="OTHER"/>
     </resultMap>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.TripDestination">

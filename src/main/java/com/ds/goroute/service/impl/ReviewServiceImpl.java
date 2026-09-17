@@ -13,6 +13,7 @@ import com.ds.goroute.entity.*;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.*;
+import com.ds.goroute.service.ContentModerationService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.ReviewService;
 import com.ds.goroute.service.ReviewScoringService;
@@ -62,6 +63,7 @@ public class ReviewServiceImpl implements ReviewService {
     private final ReviewFraudDetectionService fraudDetectionService;
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final SocialNotificationService socialNotificationService;
+    private final ContentModerationService contentModerationService;
 
     /**
      * Create a new review
@@ -117,6 +119,9 @@ public class ReviewServiceImpl implements ReviewService {
                 .priceRating(request.getPriceRating())
                 .ambianceRating(request.getAmbianceRating())
                 .serviceRating(request.getServiceRating())
+                .locationRating(request.getLocationRating())
+                .cleanlinessRating(request.getCleanlinessRating())
+                .facilitiesRating(request.getFacilitiesRating())
                 .text(request.getText())
                 .photos(request.getPhotos() != null ? JsonUtils.toJson(request.getPhotos()) : null)
                 .weight(BigDecimal.ONE)
@@ -318,6 +323,15 @@ public class ReviewServiceImpl implements ReviewService {
         if (request.getServiceRating() != null) {
             review.setServiceRating(request.getServiceRating());
         }
+        if (request.getLocationRating() != null) {
+            review.setLocationRating(request.getLocationRating());
+        }
+        if (request.getCleanlinessRating() != null) {
+            review.setCleanlinessRating(request.getCleanlinessRating());
+        }
+        if (request.getFacilitiesRating() != null) {
+            review.setFacilitiesRating(request.getFacilitiesRating());
+        }
         if (request.getText() != null) {
             review.setText(request.getText());
         }
@@ -365,6 +379,16 @@ public class ReviewServiceImpl implements ReviewService {
     /**
      * Get reviews for a place
      */
+    @Override
+    public UserReviewResponse getReview(UUID reviewId, UUID currentUserId) {
+        UserReview review = reviewRepository.findById(reviewId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.REVIEW_NOT_FOUND, "Review not found"));
+        if (contentModerationService.isTakenDown(ModeratedContentType.REVIEW, reviewId)) {
+            throw new BusinessException(ErrorConstant.CONTENT_TAKEN_DOWN, "This content has been removed.");
+        }
+        return mapToResponse(review, currentUserId);
+    }
+
     @Override
     public List<UserReviewResponse> getPlaceReviews(UUID placeId, UUID currentUserId, int page, int size) {
         int offset = page * size;
@@ -666,6 +690,9 @@ public class ReviewServiceImpl implements ReviewService {
                 .priceRating(review.getPriceRating())
                 .ambianceRating(review.getAmbianceRating())
                 .serviceRating(review.getServiceRating())
+                .locationRating(review.getLocationRating())
+                .cleanlinessRating(review.getCleanlinessRating())
+                .facilitiesRating(review.getFacilitiesRating())
                 .text(review.getText())
                 .photos(photoResponses.isEmpty() ? null : MediaAssetResponseMapper.toUrls(photoResponses))
                 .photosV2(photoResponses)

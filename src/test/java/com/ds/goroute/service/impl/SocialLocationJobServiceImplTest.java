@@ -68,6 +68,28 @@ class SocialLocationJobServiceImplTest {
     private ObjectMapper objectMapper;
     private SocialLocationJobServiceImpl service;
 
+    /**
+     * The service now runs its writes through TransactionTemplate. A bare mock returns
+     * null from getTransaction(), which makes the template NPE, so hand it a real status
+     * object and let commit/rollback do nothing.
+     */
+    private final org.springframework.transaction.PlatformTransactionManager transactionManager =
+            new org.springframework.transaction.PlatformTransactionManager() {
+                @Override
+                public org.springframework.transaction.TransactionStatus getTransaction(
+                        org.springframework.transaction.TransactionDefinition definition) {
+                    return new org.springframework.transaction.support.SimpleTransactionStatus();
+                }
+
+                @Override
+                public void commit(org.springframework.transaction.TransactionStatus status) {
+                }
+
+                @Override
+                public void rollback(org.springframework.transaction.TransactionStatus status) {
+                }
+            };
+
     @BeforeEach
     void setUp() {
         jobMapper = mock(SocialLocationJobMapper.class);
@@ -97,6 +119,8 @@ class SocialLocationJobServiceImplTest {
                 restrictionRepository,
                 notificationService,
                 completionService,
+                transactionManager,
+                new com.ds.goroute.config.ScrapeHttpClientProperties(),
                 new InternalApiProperties("ai-token", "internal-token")
         );
         ReflectionTestUtils.setField(service, "dispatchTimeoutSeconds", 90L);

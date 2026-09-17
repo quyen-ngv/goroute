@@ -66,44 +66,62 @@ public class ImageMigrationJob {
         List<Place> places = placeRepository.findAll();
         log.info("Found {} places to process", places.size());
         
+        // `places` is a snapshot of the whole table taken before any image was downloaded, and a
+        // full run takes hours. Writing a row back from that snapshot would restore every column
+        // to the value it had when the run started, silently undoing anything edited meanwhile.
+        // So each row is re-read immediately before it is written and only the image columns this
+        // job owns are carried over -- and only while they still hold the value the migration
+        // started from.
         for (Place place : places) {
             try {
-                boolean updated = false;
                 String targetPath = "places/" + place.getPlaceId() + "/";
-                
-                // Migrate thumbnail
-                if (isExternalUrl(place.getThumbnail())) {
-                    String newUrl = imageMigrationService.migrateImage(place.getThumbnail(), targetPath);
-                    if (newUrl != null) {
-                        place.setThumbnail(newUrl);
-                        updated = true;
-                    }
-                }
-                
-                // Migrate images JSON
-                if (place.getImages() != null && !place.getImages().equals("[]")) {
-                    String newImages = imageMigrationService.migrateImagesJson(place.getImages(), targetPath);
-                    if (!newImages.equals(place.getImages())) {
-                        place.setImages(newImages);
-                        updated = true;
-                    }
+
+                String newThumbnail = isExternalUrl(place.getThumbnail())
+                        ? imageMigrationService.migrateImage(place.getThumbnail(), targetPath)
+                        : null;
+                String newImages = place.getImages() != null && !place.getImages().equals("[]")
+                        ? imageMigrationService.migrateImagesJson(place.getImages(), targetPath)
+                        : null;
+                // Migrate menu photos nested inside the menu JSON object.
+                String newMenu = place.getMenu() != null && !place.getMenu().trim().isEmpty()
+                        ? imageMigrationService.migrateMenuJson(place.getMenu(), targetPath)
+                        : null;
+
+                boolean thumbnailChanged = newThumbnail != null && !newThumbnail.equals(place.getThumbnail());
+                boolean imagesChanged = newImages != null && !newImages.equals(place.getImages());
+                boolean menuChanged = newMenu != null && !newMenu.equals(place.getMenu());
+                if (!thumbnailChanged && !imagesChanged && !menuChanged) {
+                    continue;
                 }
 
-                // Migrate menu photos nested inside the menu JSON object.
-                if (place.getMenu() != null && !place.getMenu().trim().isEmpty()) {
-                    String newMenu = imageMigrationService.migrateMenuJson(place.getMenu(), targetPath);
-                    if (!newMenu.equals(place.getMenu())) {
-                        place.setMenu(newMenu);
-                        updated = true;
-                    }
+                Place current = placeRepository.findById(place.getId()).orElse(null);
+                if (current == null) {
+                    log.debug("Place {} disappeared during migration", place.getPlaceId());
+                    continue;
                 }
-                
-                if (updated) {
-                    placeRepository.update(place);
-                    success.incrementAndGet();
-                    log.debug("Migrated place: {}", place.getPlaceId());
+
+                boolean updated = false;
+                if (thumbnailChanged && Objects.equals(current.getThumbnail(), place.getThumbnail())) {
+                    current.setThumbnail(newThumbnail);
+                    updated = true;
                 }
-                
+                if (imagesChanged && Objects.equals(current.getImages(), place.getImages())) {
+                    current.setImages(newImages);
+                    updated = true;
+                }
+                if (menuChanged && Objects.equals(current.getMenu(), place.getMenu())) {
+                    current.setMenu(newMenu);
+                    updated = true;
+                }
+                if (!updated) {
+                    log.info("Place {} was edited during the migration; leaving it alone", place.getPlaceId());
+                    continue;
+                }
+
+                placeRepository.update(current);
+                success.incrementAndGet();
+                log.debug("Migrated place: {}", place.getPlaceId());
+
             } catch (Exception e) {
                 failed.incrementAndGet();
                 log.error("Failed to migrate place {}: {}", place.getPlaceId(), e.getMessage(), e);
@@ -124,33 +142,53 @@ public class ImageMigrationJob {
         List<PlaceReview> reviews = placeReviewRepository.findAll();
         log.info("Found {} reviews to process", reviews.size());
         
+        // Re-read before writing where the row can be found again, for the same reason as
+        // migratePlaces above. PlaceReviewRepository exposes no read by primary key, so a review
+        // with no scraped review id still has to be written from the snapshot.
         for (PlaceReview review : reviews) {
             try {
-                boolean updated = false;
                 String targetPath = "reviews/" + review.getId() + "/";
-                
-                // Migrate profilePicture
+
+                boolean profileChanged = false;
+                String newProfilePicture = null;
                 if (review.getProfilePicture() != null && !isManagedImage(review.getProfilePicture())) {
-                    String newUrl = imageMigrationService.migrateCompressedImage(
+                    String migrated = imageMigrationService.migrateCompressedImage(
                             review.getProfilePicture(), targetPath + "profile/");
-                    review.setProfilePicture(isManagedImage(newUrl) ? newUrl : null);
+                    newProfilePicture = isManagedImage(migrated) ? migrated : null;
+                    profileChanged = true;
+                }
+
+                // Migrate images JSON array
+                String newImages = review.getImages() != null && !review.getImages().equals("[]")
+                        ? migrateReviewImagesArray(review.getImages(), targetPath)
+                        : null;
+                boolean imagesChanged = newImages != null && !newImages.equals(review.getImages());
+
+                if (!profileChanged && !imagesChanged) {
+                    continue;
+                }
+
+                PlaceReview current = rereadReview(review);
+                if (current == null) {
+                    current = review;
+                }
+                boolean updated = false;
+                if (profileChanged && Objects.equals(current.getProfilePicture(), review.getProfilePicture())) {
+                    current.setProfilePicture(newProfilePicture);
                     updated = true;
                 }
-                
-                // Migrate images JSON array
-                if (review.getImages() != null && !review.getImages().equals("[]")) {
-                    String newImages = migrateReviewImagesArray(review.getImages(), targetPath);
-                    if (!newImages.equals(review.getImages())) {
-                        review.setImages(newImages);
-                        updated = true;
-                    }
+                if (imagesChanged && Objects.equals(current.getImages(), review.getImages())) {
+                    current.setImages(newImages);
+                    updated = true;
                 }
-                
-                if (updated) {
-                    placeReviewRepository.update(review);
-                    success.incrementAndGet();
+                if (!updated) {
+                    log.info("Review {} was edited during the migration; leaving it alone", review.getId());
+                    continue;
                 }
-                
+
+                placeReviewRepository.update(current);
+                success.incrementAndGet();
+
             } catch (Exception e) {
                 failed.incrementAndGet();
                 log.error("Failed to migrate review {}: {}", review.getId(), e.getMessage(), e);
@@ -171,19 +209,25 @@ public class ImageMigrationJob {
         List<Activity> activities = activityRepository.findAll();
         log.info("Found {} activities to process", activities.size());
         
+        // Re-read before writing, for the same reason as migratePlaces above.
         for (Activity activity : activities) {
             try {
                 if (isExternalUrl(activity.getPhotoUrl())) {
                     String targetPath = "activities/" + activity.getId() + "/";
                     String newUrl = imageMigrationService.migrateImage(activity.getPhotoUrl(), targetPath);
-                    
-                    if (newUrl != null) {
-                        activity.setPhotoUrl(newUrl);
-                        activityRepository.update(activity);
+
+                    if (newUrl != null && !newUrl.equals(activity.getPhotoUrl())) {
+                        Activity current = activityRepository.findById(activity.getId()).orElse(null);
+                        if (current == null || !Objects.equals(current.getPhotoUrl(), activity.getPhotoUrl())) {
+                            log.info("Activity {} changed during the migration; leaving it alone", activity.getId());
+                            continue;
+                        }
+                        current.setPhotoUrl(newUrl);
+                        activityRepository.update(current);
                         success.incrementAndGet();
                     }
                 }
-                
+
             } catch (Exception e) {
                 failed.incrementAndGet();
                 log.error("Failed to migrate activity {}: {}", activity.getId(), e.getMessage(), e);
@@ -204,43 +248,56 @@ public class ImageMigrationJob {
         List<ActivityBooking> bookings = activityBookingRepository.findAll();
         log.info("Found {} bookings to process", bookings.size());
         
+        // Re-read before writing, for the same reason as migratePlaces above.
         for (ActivityBooking booking : bookings) {
             try {
-                boolean updated = false;
                 String targetPath = "bookings/" + booking.getId() + "/";
-                
-                // Migrate thumbnail
-                if (isExternalUrl(booking.getThumbnail())) {
-                    String newUrl = imageMigrationService.migrateImage(booking.getThumbnail(), targetPath);
-                    if (newUrl != null) {
-                        booking.setThumbnail(newUrl);
-                        updated = true;
-                    }
-                }
-                
-                // Migrate images JSON
-                if (booking.getImages() != null && !booking.getImages().equals("[]")) {
-                    String newImages = imageMigrationService.migrateImagesJson(booking.getImages(), targetPath);
-                    if (!newImages.equals(booking.getImages())) {
-                        booking.setImages(newImages);
-                        updated = true;
-                    }
-                }
-                
+
+                String newThumbnail = isExternalUrl(booking.getThumbnail())
+                        ? imageMigrationService.migrateImage(booking.getThumbnail(), targetPath)
+                        : null;
+                String newImages = booking.getImages() != null && !booking.getImages().equals("[]")
+                        ? imageMigrationService.migrateImagesJson(booking.getImages(), targetPath)
+                        : null;
                 // Migrate itinerary JSON (complex structure)
-                if (booking.getItinerary() != null && !booking.getItinerary().equals("[]")) {
-                    String newItinerary = migrateItineraryImages(booking.getItinerary(), targetPath + "itinerary/");
-                    if (!newItinerary.equals(booking.getItinerary())) {
-                        booking.setItinerary(newItinerary);
-                        updated = true;
-                    }
+                String newItinerary = booking.getItinerary() != null && !booking.getItinerary().equals("[]")
+                        ? migrateItineraryImages(booking.getItinerary(), targetPath + "itinerary/")
+                        : null;
+
+                boolean thumbnailChanged = newThumbnail != null && !newThumbnail.equals(booking.getThumbnail());
+                boolean imagesChanged = newImages != null && !newImages.equals(booking.getImages());
+                boolean itineraryChanged = newItinerary != null && !newItinerary.equals(booking.getItinerary());
+                if (!thumbnailChanged && !imagesChanged && !itineraryChanged) {
+                    continue;
                 }
-                
-                if (updated) {
-                    activityBookingRepository.update(booking);
-                    success.incrementAndGet();
+
+                ActivityBooking current = activityBookingRepository.findById(booking.getId()).orElse(null);
+                if (current == null) {
+                    log.debug("Booking {} disappeared during migration", booking.getId());
+                    continue;
                 }
-                
+
+                boolean updated = false;
+                if (thumbnailChanged && Objects.equals(current.getThumbnail(), booking.getThumbnail())) {
+                    current.setThumbnail(newThumbnail);
+                    updated = true;
+                }
+                if (imagesChanged && Objects.equals(current.getImages(), booking.getImages())) {
+                    current.setImages(newImages);
+                    updated = true;
+                }
+                if (itineraryChanged && Objects.equals(current.getItinerary(), booking.getItinerary())) {
+                    current.setItinerary(newItinerary);
+                    updated = true;
+                }
+                if (!updated) {
+                    log.info("Booking {} was edited during the migration; leaving it alone", booking.getId());
+                    continue;
+                }
+
+                activityBookingRepository.update(current);
+                success.incrementAndGet();
+
             } catch (Exception e) {
                 failed.incrementAndGet();
                 log.error("Failed to migrate booking {}: {}", booking.getId(), e.getMessage(), e);
@@ -261,19 +318,25 @@ public class ImageMigrationJob {
         List<Food> foods = foodRepository.findAll();
         log.info("Found {} foods to process", foods.size());
         
+        // Re-read before writing, for the same reason as migratePlaces above.
         for (Food food : foods) {
             try {
                 if (isExternalUrl(food.getImageUrl())) {
                     String targetPath = "foods/" + food.getId() + "/";
                     String newUrl = imageMigrationService.migrateImage(food.getImageUrl(), targetPath);
-                    
-                    if (newUrl != null) {
-                        food.setImageUrl(newUrl);
-                        foodRepository.update(food);
+
+                    if (newUrl != null && !newUrl.equals(food.getImageUrl())) {
+                        Food current = foodRepository.findFoodById(food.getId()).orElse(null);
+                        if (current == null || !Objects.equals(current.getImageUrl(), food.getImageUrl())) {
+                            log.info("Food {} changed during the migration; leaving it alone", food.getId());
+                            continue;
+                        }
+                        current.setImageUrl(newUrl);
+                        foodRepository.update(current);
                         success.incrementAndGet();
                     }
                 }
-                
+
             } catch (Exception e) {
                 failed.incrementAndGet();
                 log.error("Failed to migrate food {}: {}", food.getId(), e.getMessage(), e);
@@ -315,6 +378,20 @@ public class ImageMigrationJob {
     }
 
     // Helper methods
+
+    /**
+     * Returns the review as it stands now, or null when it cannot be looked up again.
+     *
+     * <p>The only read this repository offers besides the full scan is by scraped review id, so
+     * a Goroute-authored review has no key to re-read by and keeps the old snapshot write.
+     */
+    private PlaceReview rereadReview(PlaceReview snapshot) {
+        if (snapshot.getReviewId() == null || snapshot.getReviewId().isBlank()) {
+            return null;
+        }
+        PlaceReview current = placeReviewRepository.findByReviewId(snapshot.getReviewId()).orElse(null);
+        return current != null && Objects.equals(current.getId(), snapshot.getId()) ? current : null;
+    }
 
     private boolean isExternalUrl(String url) {
         if (url == null || url.isEmpty()) {

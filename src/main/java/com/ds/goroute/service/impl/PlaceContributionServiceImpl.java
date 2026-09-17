@@ -28,11 +28,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 @Service
@@ -58,6 +64,31 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
     private final MediaAssetRepository mediaAssetRepository;
     private final ScrapeServiceClient scrapeServiceClient;
     private final ApplicationEventPublisher eventPublisher;
+    private final PlatformTransactionManager transactionManager;
+
+    /** How long a group may sit claimed-but-not-triggered before it is treated as abandoned. */
+    private static final Duration STALE_APPROVAL_CLAIM = Duration.ofMinutes(10);
+
+    /** How often the abandoned-claim sweep may run, however often its callers ask for it. */
+    private static final Duration STALE_SWEEP_INTERVAL = Duration.ofMinutes(1);
+
+    /** Groups being approved right now in this instance, so a double click waits rather than races. */
+    private final ConcurrentHashMap<UUID, ReentrantLock> approvalGuards = new ConcurrentHashMap<>();
+
+    private final AtomicReference<LocalDateTime> lastStaleClaimSweep = new AtomicReference<>();
+
+    private volatile TransactionTemplate transactionTemplate;
+
+    private TransactionTemplate transactions() {
+        TransactionTemplate template = transactionTemplate;
+        if (template == null) {
+            // REQUIRED: these are the same transactions the method-level @Transactional opened,
+            // just shorter ones, never a second connection layered on the first.
+            template = new TransactionTemplate(transactionManager);
+            transactionTemplate = template;
+        }
+        return template;
+    }
 
     @Value("${goroute.internal.public-base-url:http://goroute-app:8080}")
     private String publicBaseUrl;
@@ -358,49 +389,162 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
         return toAdminGroupResponse(group);
     }
 
+    /**
+     * Approves a group without holding a transaction across the scraper calls.
+     *
+     * <p>It used to be one {@code @Transactional} method that read the status, then made a
+     * resolve call and a trigger call to google-maps-bot, then wrote. Two admins -- or one
+     * double click -- both read PENDING before either wrote, so both triggered a scrape job for
+     * the same place. The group is now moved out of PENDING by a conditional update that only
+     * matches a PENDING row and is committed first, so the second attempt changes no row and is
+     * refused with the same "only pending" error any non-pending group gets -- true across app
+     * instances, since the database row, not the in-process guard, decides it. The remote calls
+     * then run with no transaction open.
+     *
+     * <p>Every outcome is the one it was before: an existing place is merged, a successful
+     * trigger leaves the group SCRAPING with its job ids and starts the poller, and a failed
+     * trigger throws the same error with the group returned to PENDING so it can be retried.
+     */
     @Override
-    @Transactional
     public void adminApprove(UUID groupId) {
-        PlaceContributionGroup group = contributionMapper.findGroupById(groupId);
-        if (group == null) {
-            throw new BusinessException(ErrorConstant.NOT_FOUND, "Contribution group not found");
+        // Frees any group a dead process left claimed, so an abandoned claim does not make its
+        // URL permanently unapprovable. Cheap, bounded, and never touches a live claim.
+        releaseStalledApprovalClaims();
+        ReentrantLock guard = approvalGuards.computeIfAbsent(groupId, id -> new ReentrantLock());
+        guard.lock();
+        try {
+            adminApproveClaimed(groupId);
+        } finally {
+            guard.unlock();
+            if (!guard.hasQueuedThreads()) {
+                approvalGuards.remove(groupId, guard);
+            }
         }
-        if (group.getStatus() != ContributionGroupStatus.PENDING) {
-            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
-                    "Only pending contribution groups can be approved");
-        }
+    }
 
-        ScrapeResolveResponse resolved = scrapeServiceClient.resolveUrl(group.getGoogleMapsUrl());
-        if (resolved != null && resolved.getGooglePlaceId() != null) {
-            group.setResolvedGooglePlaceId(resolved.getGooglePlaceId());
-        }
+    private void adminApproveClaimed(UUID groupId) {
+        // Claim: PENDING -> SCRAPING in one conditional statement, committed before any remote
+        // call. Whoever loses the row changes nothing and is told the group is not pending, so
+        // correctness rests on the row, not on the in-process guard around this method.
+        PlaceContributionGroup group = transactions().execute(status -> {
+            PlaceContributionGroup claimed = contributionMapper.findGroupById(groupId);
+            if (claimed == null) {
+                throw new BusinessException(ErrorConstant.NOT_FOUND, "Contribution group not found");
+            }
+            LocalDateTime claimedAt = LocalDateTime.now();
+            if (contributionMapper.claimGroupForScraping(groupId, claimedAt) == 0) {
+                // Either it was never pending, or another approval took it first: the caller is
+                // told the same thing in both cases, exactly as before.
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                        "Only pending contribution groups can be approved");
+            }
+            claimed.setStatus(ContributionGroupStatus.SCRAPING);
+            claimed.setUpdatedAt(claimedAt);
+            return claimed;
+        });
 
-        Place existingPlace = findExistingPlace(group.getGoogleMapsUrl(), group.getGoogleMapsUrl());
-        if (existingPlace == null && group.getResolvedGooglePlaceId() != null) {
-            existingPlace = placeRepository.findByPlaceId(group.getResolvedGooglePlaceId());
-        }
+        boolean settled = false;
+        try {
+            // No transaction is open for either scraper call.
+            ScrapeResolveResponse resolved = scrapeServiceClient.resolveUrl(group.getGoogleMapsUrl());
+            if (resolved != null && resolved.getGooglePlaceId() != null) {
+                group.setResolvedGooglePlaceId(resolved.getGooglePlaceId());
+            }
 
-        if (existingPlace != null) {
-            mergeGroupToExistingPlace(group, existingPlace);
+            Place existingPlace = findExistingPlace(group.getGoogleMapsUrl(), group.getGoogleMapsUrl());
+            if (existingPlace == null && group.getResolvedGooglePlaceId() != null) {
+                existingPlace = placeRepository.findByPlaceId(group.getResolvedGooglePlaceId());
+            }
+
+            if (existingPlace != null) {
+                Place place = existingPlace;
+                transactions().executeWithoutResult(status -> mergeGroupToExistingPlace(group, place));
+                settled = true;
+                return;
+            }
+
+            UUID gorouteJobId = UUID.randomUUID();
+            ScrapeContributionJobRequest scrapeRequest = buildScrapeRequest(group, gorouteJobId);
+            ScrapeJobTriggerResponse trigger = scrapeServiceClient.triggerContributionScrape(scrapeRequest);
+            if (trigger == null || trigger.getJobId() == null) {
+                throw new BusinessException(ErrorConstant.HTTP_CONNECTION_ERROR,
+                        "Failed to trigger scrape job — google-maps-bot is unavailable");
+            }
+
+            transactions().executeWithoutResult(status -> {
+                group.setGorouteJobId(gorouteJobId);
+                group.setStatus(ContributionGroupStatus.SCRAPING);
+                group.setScrapeJobId(trigger.getJobId());
+                group.setUpdatedAt(LocalDateTime.now());
+                contributionMapper.updateGroup(group);
+                updateContributionsForGroup(group);
+            });
+            settled = true;
+
+            // Published only once the job ids are committed: the listener is @Async and would
+            // otherwise poll a group whose scrape job id it cannot see yet.
+            eventPublisher.publishEvent(new ContributionScrapePollEvent(group.getId()));
+        } finally {
+            if (!settled) {
+                releaseApprovalClaim(groupId);
+            }
+        }
+    }
+
+    /**
+     * Puts back any group that was claimed for approval but never handed to the scraper.
+     *
+     * <p>{@link #releaseApprovalClaim} covers the failures this process lives through. It cannot
+     * cover a process that dies between the claim commit and the trigger call: that group stays
+     * SCRAPING with no scrape job id, nothing ever polls it, and because SCRAPING is an active
+     * status {@code findActiveGroupByUrlHash} keeps attaching new contributions to it, so its URL
+     * can never be imported again. A live claim holds that state for the length of two HTTP calls,
+     * so anything still in it after {@link #STALE_APPROVAL_CLAIM} is abandoned and goes back to
+     * PENDING for an admin to approve again.
+     *
+     * <p>No scheduler of its own: it rides on the two things that are already running when a stuck
+     * group matters -- an admin approving a group, and the scrape poll job's per-tick sync -- and
+     * is rate-limited to one sweep per {@link #STALE_SWEEP_INTERVAL} across all of them.
+     */
+    private void releaseStalledApprovalClaims() {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime last = lastStaleClaimSweep.get();
+        if (last != null && last.isAfter(now.minus(STALE_SWEEP_INTERVAL))) {
             return;
         }
-
-        UUID gorouteJobId = UUID.randomUUID();
-        ScrapeContributionJobRequest scrapeRequest = buildScrapeRequest(group, gorouteJobId);
-        ScrapeJobTriggerResponse trigger = scrapeServiceClient.triggerContributionScrape(scrapeRequest);
-        if (trigger == null || trigger.getJobId() == null) {
-            throw new BusinessException(ErrorConstant.HTTP_CONNECTION_ERROR,
-                    "Failed to trigger scrape job — google-maps-bot is unavailable");
+        if (!lastStaleClaimSweep.compareAndSet(last, now)) {
+            return;
         }
+        try {
+            int released = transactions().execute(status -> contributionMapper.releaseStalledScrapingClaims(
+                    now.minus(STALE_APPROVAL_CLAIM), now));
+            if (released > 0) {
+                log.warn("Returned {} contribution group(s) to PENDING: claimed for approval but never "
+                        + "handed to the scraper", released);
+            }
+        } catch (Exception e) {
+            // A sweep is best effort; it must never fail the approval or the poll that triggered it.
+            log.error("Could not release stalled contribution approval claims: {}", e.getMessage(), e);
+        }
+    }
 
-        group.setGorouteJobId(gorouteJobId);
-        group.setStatus(ContributionGroupStatus.SCRAPING);
-        group.setScrapeJobId(trigger.getJobId());
-        group.setUpdatedAt(LocalDateTime.now());
-        contributionMapper.updateGroup(group);
-        updateContributionsForGroup(group);
-
-        eventPublisher.publishEvent(new ContributionScrapePollEvent(group.getId()));
+    /** Puts a claimed group back in the queue when the approval could not be carried through. */
+    private void releaseApprovalClaim(UUID groupId) {
+        try {
+            transactions().executeWithoutResult(status -> {
+                PlaceContributionGroup current = contributionMapper.findGroupById(groupId);
+                if (current == null || current.getStatus() != ContributionGroupStatus.SCRAPING
+                        || current.getScrapeJobId() != null) {
+                    return;
+                }
+                current.setStatus(ContributionGroupStatus.PENDING);
+                current.setUpdatedAt(LocalDateTime.now());
+                contributionMapper.updateGroup(current);
+            });
+        } catch (Exception e) {
+            log.error("Could not return contribution group {} to PENDING after a failed approval: {}",
+                    groupId, e.getMessage(), e);
+        }
     }
 
     @Override
@@ -446,6 +590,10 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
     @Override
     @Transactional
     public void syncScrapingGroup(UUID groupId) {
+        // The poll job calls this every few seconds while any approval is in flight, which makes it
+        // the one recurring job that already runs when a group can be stuck; the sweep itself is
+        // rate-limited, so polling does not turn it into a per-tick write.
+        releaseStalledApprovalClaims();
         PlaceContributionGroup group = contributionMapper.findGroupById(groupId);
         if (group == null || group.getScrapeJobId() == null) {
             return;

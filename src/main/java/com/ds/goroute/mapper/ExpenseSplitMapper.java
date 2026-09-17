@@ -14,6 +14,12 @@ public interface ExpenseSplitMapper {
     ExpenseSplit selectById(@Param("id") UUID id);
     
     List<ExpenseSplit> selectByExpenseId(@Param("expenseId") UUID expenseId);
+
+    /**
+     * Batch sibling of {@link #selectByExpenseId}. Rendering a trip's expense list used
+     * to run this once per expense; the predicate is the same, widened to a list.
+     */
+    List<ExpenseSplit> selectByExpenseIds(@Param("expenseIds") java.util.Collection<UUID> expenseIds);
     
     List<ExpenseSplit> selectByUserId(@Param("userId") UUID userId);
     

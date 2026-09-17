@@ -5,6 +5,7 @@ import com.ds.goroute.dto.request.ChangePasswordRequest;
 import com.ds.goroute.dto.response.TemporaryPasswordResponse;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.repository.RefreshTokenRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.UserAccountService;
 import com.ds.goroute.type.AuthProvider;
@@ -23,6 +24,7 @@ import java.util.UUID;
 public class UserAccountServiceImpl implements UserAccountService {
     private static final String ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
     private final UserRepository users;
+    private final RefreshTokenRepository refreshTokens;
     private final PasswordEncoder encoder;
     private final SecureRandom random = new SecureRandom();
 
@@ -54,6 +56,9 @@ public class UserAccountServiceImpl implements UserAccountService {
         if (users.updatePassword(userId, encoder.encode(password), true, LocalDateTime.now()) != 1) {
             throw new BusinessException(ErrorConstant.USER_NOT_FOUND);
         }
+        // A password reset must end the sessions it was issued against, otherwise a
+        // stolen refresh token keeps minting access tokens for another 30 days.
+        refreshTokens.deleteByUserId(userId);
         return new TemporaryPasswordResponse(userId, password, true);
     }
 
@@ -70,6 +75,9 @@ public class UserAccountServiceImpl implements UserAccountService {
         if (users.updatePassword(userId, encoder.encode(request.getNewPassword()), false, LocalDateTime.now()) != 1) {
             throw new BusinessException(ErrorConstant.USER_NOT_FOUND);
         }
+        // Same reason as resetPassword: changing the password revokes every refresh
+        // token, so other devices fall back to the login screen instead of staying in.
+        refreshTokens.deleteByUserId(userId);
     }
 
     private String generatePassword() {

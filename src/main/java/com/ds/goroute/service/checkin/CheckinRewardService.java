@@ -2,6 +2,7 @@ package com.ds.goroute.service.checkin;
 
 import com.ds.goroute.entity.UserCheckin;
 import com.ds.goroute.repository.UserCheckinRepository;
+import com.ds.goroute.service.StarService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +27,7 @@ public class CheckinRewardService {
 
     private final UserCheckinRepository checkinRepository;
     private final CheckinRewardCalculator calculator;
+    private final StarService pointWallet;
 
     /**
      * Works out this check-in's reward and stores it, unless it already has one.
@@ -42,6 +44,13 @@ public class CheckinRewardService {
                     checkin.getRewardPoints(),
                     CheckinRewardCalculator.parseReasonCodes(checkin.getRewardReason()));
         }
+
+        // The daily ceiling is a read of a running total followed by a write against it. Without
+        // this lock two check-ins posted at the same moment both read the same total, both find
+        // room under the cap, and the day's ceiling is quietly passed. Taking the author's points
+        // row first puts every reward decision for one person in a queue; the amounts and the cap
+        // itself are untouched, only the order in which two of them are decided.
+        pointWallet.lockPoints(checkin.getUserId());
 
         int earnedToday = checkinRepository.sumRewardPointsSince(
                 checkin.getUserId(), LocalDate.now().atStartOfDay());

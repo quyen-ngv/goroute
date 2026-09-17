@@ -56,6 +56,18 @@ public interface PassportMapper {
 
     int setEventHidden(@Param("id") UUID id, @Param("userId") UUID userId, @Param("hidden") boolean hidden);
 
+    PassportEvent findEventBySource(@Param("source") String source, @Param("sourceId") UUID sourceId);
+
+    /**
+     * Re-points an entry at the place a check-in was moved to. Needed because
+     * {@link #insertEvent} is deliberately a no-op on replay, so the projection can never
+     * correct an entry it has already written.
+     */
+    int updateEventLocation(@Param("id") UUID id,
+                            @Param("placeId") UUID placeId,
+                            @Param("locationKey") String locationKey,
+                            @Param("provinceCode") String provinceCode);
+
     /** Activity check-ins that predate the passport and still need to be brought in. */
     List<Map<String, Object>> findLegacyActivityCheckins(@Param("limit") int limit);
 

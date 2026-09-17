@@ -49,6 +49,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ContentCommentServiceImpl implements ContentCommentService {
     private final ContentCommentRepository commentRepository;
+    private final com.ds.goroute.mapper.ContentCommentMapper commentMapper;
     private final TripRepository tripRepository;
     private final TripMemberRepository tripMemberRepository;
     private final UserCheckinRepository checkinRepository;
@@ -91,14 +92,10 @@ public class ContentCommentServiceImpl implements ContentCommentService {
     @Transactional(readOnly = true)
     public int getActiveCommentCount(ModeratedContentType contentType, UUID contentId, UUID viewerId) {
         verifyTargetReadable(contentType, contentId, viewerId);
-        List<ContentComment> comments = commentRepository.findByTarget(contentType, contentId);
-        Set<UUID> takenDownIds = contentModerationService.takenDownIds(
-                ModeratedContentType.CONTENT_COMMENT,
-                comments.stream().map(ContentComment::getId).toList());
-        return (int) comments.stream()
-                .filter(comment -> !Boolean.TRUE.equals(comment.getIsDeleted()))
-                .filter(comment -> !takenDownIds.contains(comment.getId()))
-                .count();
+        // Used to read every comment row on the target and run a takedown lookup over all
+        // of their ids just to return a number. countActiveByTarget applies the identical
+        // predicate in one aggregate, so the number is the same for every target.
+        return commentMapper.countActiveByTarget(contentType.name(), contentId);
     }
 
     @Override

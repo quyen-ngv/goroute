@@ -52,7 +52,7 @@ class MarketplacePublicAccessServiceImplTest {
         HotelMarketplaceServiceImpl service = new HotelMarketplaceServiceImpl(
                 hotels, mock(HostOrganizationRepository.class), mock(PlaceRepository.class),
                 mock(PartnerAuthorizationService.class), mock(MarketplaceHistoryService.class), mock(NotificationService.class),
-                new ObjectMapper().findAndRegisterModules(), mock(AdminMapper.class), mock(com.ds.goroute.repository.MarketplacePromotionRepository.class), mock(com.ds.goroute.service.MarketplaceCommissionService.class));
+                new ObjectMapper().findAndRegisterModules(), mock(AdminMapper.class), mock(com.ds.goroute.repository.MarketplacePromotionRepository.class), mock(com.ds.goroute.service.MarketplaceCommissionService.class), displayPrice(), pricer(mock(com.ds.goroute.repository.MarketplacePromotionRepository.class)), assembler());
 
         assertEquals(hotelId, service.getPublic(hotelId).getId());
         verify(hotels).findPublicHotel(hotelId);
@@ -70,7 +70,7 @@ class MarketplacePublicAccessServiceImplTest {
         ActivityCommerceServiceImpl service = new ActivityCommerceServiceImpl(
                 activities, mock(PlaceRepository.class), mock(HostOrganizationRepository.class),
                 mock(PartnerAuthorizationService.class), mock(MarketplaceHistoryService.class),
-                mock(com.ds.goroute.service.MarketplaceCommissionService.class), new ObjectMapper().findAndRegisterModules(), mock(NotificationService.class), mock(AdminMapper.class));
+                mock(com.ds.goroute.service.MarketplaceCommissionService.class), new ObjectMapper().findAndRegisterModules(), mock(NotificationService.class), mock(AdminMapper.class), displayPrice());
 
         assertEquals(activityId, service.getPublic(activityId).getId());
         verify(activities).findPublicProduct(activityId);
@@ -103,7 +103,7 @@ class MarketplacePublicAccessServiceImplTest {
         HotelMarketplaceServiceImpl service = new HotelMarketplaceServiceImpl(
                 hotels, mock(HostOrganizationRepository.class), mock(PlaceRepository.class),
                 mock(PartnerAuthorizationService.class), mock(MarketplaceHistoryService.class), mock(NotificationService.class),
-                new ObjectMapper(), mock(AdminMapper.class), mock(com.ds.goroute.repository.MarketplacePromotionRepository.class), mock(com.ds.goroute.service.MarketplaceCommissionService.class));
+                new ObjectMapper(), mock(AdminMapper.class), mock(com.ds.goroute.repository.MarketplacePromotionRepository.class), mock(com.ds.goroute.service.MarketplaceCommissionService.class), displayPrice(), pricer(mock(com.ds.goroute.repository.MarketplacePromotionRepository.class)), assembler());
         CreateHotelBookingRequest request = new CreateHotelBookingRequest();
         request.setHotelId(hotelId);
         request.setRoomTypeId(roomId);
@@ -141,7 +141,7 @@ class MarketplacePublicAccessServiceImplTest {
         ActivityCommerceServiceImpl service = new ActivityCommerceServiceImpl(
                 activities, mock(PlaceRepository.class), mock(HostOrganizationRepository.class),
                 mock(PartnerAuthorizationService.class), mock(MarketplaceHistoryService.class),
-                mock(com.ds.goroute.service.MarketplaceCommissionService.class), new ObjectMapper().findAndRegisterModules(), mock(NotificationService.class), mock(AdminMapper.class));
+                mock(com.ds.goroute.service.MarketplaceCommissionService.class), new ObjectMapper().findAndRegisterModules(), mock(NotificationService.class), mock(AdminMapper.class), displayPrice());
         CreateActivityOrderRequest request = new CreateActivityOrderRequest();request.setActivityId(activityId);request.setPackageId(packageId);request.setSlotId(slotId);request.setUnitQuantities(Map.of("adult",2,"CHILD",1));
 
         service.createOrder(UUID.randomUUID(),request);
@@ -157,7 +157,7 @@ class MarketplacePublicAccessServiceImplTest {
         HotelBooking existing = HotelBooking.builder().id(bookingId).userId(userId).bookingCode("HTL-EXISTING").build();
         when(hotels.findBookingByUserAndIdempotencyKey(userId, "retry-safe-key")).thenReturn(Optional.of(existing));
         when(hotels.findBookingItems(bookingId)).thenReturn(List.of());
-        HotelMarketplaceServiceImpl service = new HotelMarketplaceServiceImpl(hotels, mock(HostOrganizationRepository.class), mock(PlaceRepository.class), mock(PartnerAuthorizationService.class), mock(MarketplaceHistoryService.class), mock(NotificationService.class), new ObjectMapper().findAndRegisterModules(), mock(AdminMapper.class), mock(com.ds.goroute.repository.MarketplacePromotionRepository.class), mock(com.ds.goroute.service.MarketplaceCommissionService.class));
+        HotelMarketplaceServiceImpl service = new HotelMarketplaceServiceImpl(hotels, mock(HostOrganizationRepository.class), mock(PlaceRepository.class), mock(PartnerAuthorizationService.class), mock(MarketplaceHistoryService.class), mock(NotificationService.class), new ObjectMapper().findAndRegisterModules(), mock(AdminMapper.class), mock(com.ds.goroute.repository.MarketplacePromotionRepository.class), mock(com.ds.goroute.service.MarketplaceCommissionService.class), displayPrice(), pricer(mock(com.ds.goroute.repository.MarketplacePromotionRepository.class)), assembler());
         CreateHotelBookingRequest request = new CreateHotelBookingRequest();request.setIdempotencyKey("retry-safe-key");
 
         assertEquals(bookingId, service.createBooking(userId, request).getId());
@@ -176,7 +176,7 @@ class MarketplacePublicAccessServiceImplTest {
         when(hotels.expireBookingHold(org.mockito.ArgumentMatchers.eq(bookingId), org.mockito.ArgumentMatchers.eq(4L), org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.any())).thenReturn(1);
         when(hotels.findBookingItems(bookingId)).thenReturn(List.of(item));
         when(hotels.releaseInventory(org.mockito.ArgumentMatchers.eq(roomId), org.mockito.ArgumentMatchers.eq(checkIn), org.mockito.ArgumentMatchers.eq(checkOut), org.mockito.ArgumentMatchers.eq(2), org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.any())).thenReturn(2);
-        HotelMarketplaceServiceImpl service = new HotelMarketplaceServiceImpl(hotels, mock(HostOrganizationRepository.class), mock(PlaceRepository.class), mock(PartnerAuthorizationService.class), mock(MarketplaceHistoryService.class), mock(NotificationService.class), new ObjectMapper().findAndRegisterModules(), mock(AdminMapper.class), mock(com.ds.goroute.repository.MarketplacePromotionRepository.class), mock(com.ds.goroute.service.MarketplaceCommissionService.class));
+        HotelMarketplaceServiceImpl service = new HotelMarketplaceServiceImpl(hotels, mock(HostOrganizationRepository.class), mock(PlaceRepository.class), mock(PartnerAuthorizationService.class), mock(MarketplaceHistoryService.class), mock(NotificationService.class), new ObjectMapper().findAndRegisterModules(), mock(AdminMapper.class), mock(com.ds.goroute.repository.MarketplacePromotionRepository.class), mock(com.ds.goroute.service.MarketplaceCommissionService.class), displayPrice(), pricer(mock(com.ds.goroute.repository.MarketplacePromotionRepository.class)), assembler());
 
         java.time.LocalDateTime now = java.time.LocalDateTime.now();
         assertEquals(List.of(bookingId), service.findExpiredPendingBookingIds(now, 100));
@@ -190,7 +190,7 @@ class MarketplacePublicAccessServiceImplTest {
                                                        com.ds.goroute.service.MarketplaceCommissionService commissions) {
         return new HotelMarketplaceServiceImpl(hotels, mock(HostOrganizationRepository.class), mock(PlaceRepository.class),
                 mock(PartnerAuthorizationService.class), mock(MarketplaceHistoryService.class), mock(NotificationService.class),
-                new ObjectMapper(), mock(AdminMapper.class), promotions, commissions);
+                new ObjectMapper(), mock(AdminMapper.class), promotions, commissions, displayPrice(), pricer(promotions), assembler());
     }
 
     private HotelMarketplaceRepository pricingRepository(UUID hotelId, UUID roomId, UUID rateId, RatePlan rate,
@@ -267,5 +267,20 @@ class MarketplacePublicAccessServiceImplTest {
         assertEquals(0, new BigDecimal("1000000.00").compareTo(days.get(0).getOriginalNightlyPrice()));
         assertEquals("EARLY30", days.get(0).getPromotionCode());
         assertEquals(0, new BigDecimal("1600000.00").compareTo(days.get(0).getQuotedTotal()));
+    }
+
+    private static com.ds.goroute.service.marketplace.HotelStayPricer pricer(com.ds.goroute.repository.MarketplacePromotionRepository promotions) {
+        return new com.ds.goroute.service.marketplace.HotelStayPricer(promotions, new com.ds.goroute.service.marketplace.MarketplaceJson(new ObjectMapper()));
+    }
+
+    private static com.ds.goroute.service.marketplace.HotelCatalogAssembler assembler() {
+        return new com.ds.goroute.service.marketplace.HotelCatalogAssembler(new com.ds.goroute.service.marketplace.MarketplaceJson(new ObjectMapper().findAndRegisterModules()),
+                mock(com.ds.goroute.repository.PlaceScoreRepository.class), displayPrice());
+    }
+
+    /** Real helper over a stubbed rate source: getRate returns null, so prices pass through. */
+    private static com.ds.goroute.service.marketplace.MarketplaceDisplayPrice displayPrice() {
+        return new com.ds.goroute.service.marketplace.MarketplaceDisplayPrice(
+                mock(com.ds.goroute.service.ExchangeRateService.class));
     }
 }

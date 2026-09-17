@@ -10,6 +10,7 @@ import com.ds.goroute.dto.response.UserRankProgressResponse;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.PlaceContributionMapper;
+import com.ds.goroute.repository.RefreshTokenRepository;
 import com.ds.goroute.repository.UserReviewRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.repository.TripRepository;
@@ -28,13 +29,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -51,6 +49,7 @@ public class UserServiceImpl implements UserService {
     );
     
     private final UserRepository userRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
     private final UserGuideService guideService;
     private final UserReviewRepository userReviewRepository;
     private final TripRepository tripRepository;
@@ -133,36 +132,25 @@ public class UserServiceImpl implements UserService {
     @Transactional(readOnly = true)
     public List<DiscoverUserResponse> discoverUsers(UUID userId, int limit) {
         int resolvedLimit = Math.max(1, Math.min(limit, 20));
-        Set<UUID> followingIds = userRepository.findFollowing(userId).stream()
-                .map(User::getId)
-                .collect(Collectors.toSet());
-
-        return userRepository.findAll().stream()
-                .filter(user -> user.getDeletedAt() == null)
-                .filter(user -> !user.getId().equals(userId))
-                .filter(user -> !followingIds.contains(user.getId()))
-                .map(this::toDiscoverUserResponse)
-                .sorted(Comparator.comparingInt(DiscoverUserResponse::getReviewCount).reversed())
-                .limit(resolvedLimit)
-                .toList();
+        // Used to read every row of `users`, then run four count queries per surviving
+        // row before throwing all but twenty away. Same candidates, same order (review
+        // count desc, then newest first, which is what the stable sort over the
+        // created_at DESC read produced), same counts — one statement.
+        return userRepository.findDiscoverUsers(userId, resolvedLimit);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<DiscoverUserResponse> getFollowers(UUID userId) {
         ensureUserExists(userId);
-        return userRepository.findFollowers(userId).stream()
-                .map(this::toDiscoverUserResponse)
-                .toList();
+        return userRepository.findFollowerProfiles(userId);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<DiscoverUserResponse> getFollowing(UUID userId) {
         ensureUserExists(userId);
-        return userRepository.findFollowing(userId).stream()
-                .map(this::toDiscoverUserResponse)
-                .toList();
+        return userRepository.findFollowingProfiles(userId);
     }
 
     @Override
@@ -229,6 +217,9 @@ public class UserServiceImpl implements UserService {
         imageStorageCleanupService.deleteImagesForEntityRecord("USER", userId);
         // Soft delete user
         userRepository.softDeleteById(userId);
+        // The account is gone, so its refresh tokens must go with it: otherwise a
+        // token held by anyone keeps minting access tokens for up to 30 more days.
+        refreshTokenRepository.deleteByUserId(userId);
         
         log.info("User account soft deleted: {}", userId);
     }
@@ -236,19 +227,6 @@ public class UserServiceImpl implements UserService {
     private void ensureUserExists(UUID userId) {
         userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
-    }
-
-    private DiscoverUserResponse toDiscoverUserResponse(User user) {
-        return DiscoverUserResponse.builder()
-                .id(user.getId())
-                .fullName(user.getFullName())
-                .username(user.getUsername())
-                .avatarUrl(user.getAvatarUrl())
-                .tripCount(tripRepository.countPublicTripsByOwnerId(user.getId()))
-                .reviewCount(userReviewRepository.countByUserId(user.getId()))
-                .followersCount(userRepository.countFollowers(user.getId()))
-                .followingCount(userRepository.countFollowing(user.getId()))
-                .build();
     }
 
     @Override

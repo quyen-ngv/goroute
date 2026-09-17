@@ -24,6 +24,6 @@ public class FoodCityScore {
     private String introductionImages;
     private String flavorProfile;
     private String funFact;
-    private OffsetDateTime createdAt;
+    private UUID locationImageId;private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
 }

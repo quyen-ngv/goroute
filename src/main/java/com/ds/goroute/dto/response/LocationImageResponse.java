@@ -27,6 +27,9 @@ public class LocationImageResponse {
     private BigDecimal latitude;
     private BigDecimal longitude;
     private Integer priority;
+
+    /** Radius in km within which a place/tour/hotel counts as part of this area. */
+    private BigDecimal coverageRadiusKm;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     /**

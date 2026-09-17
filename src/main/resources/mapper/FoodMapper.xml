@@ -87,6 +87,7 @@
         <result property="funFact" column="fun_fact"/>
         <result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
+        <result property="locationImageId" column="location_image_id"/>
     </resultMap>
 
     <resultMap id="FoodPlaceRowMap" type="com.ds.goroute.entity.FoodPlaceRow">
@@ -173,8 +174,8 @@
         SELECT * FROM foods
         <where>
             <if test="q != null and q != ''">
-                AND (LOWER(name_vi) LIKE CONCAT('%', LOWER(#{q}), '%')
-                OR LOWER(name_en) LIKE CONCAT('%', LOWER(#{q}), '%'))
+                AND (LOWER(name_vi) LIKE ('%' || REPLACE(REPLACE(REPLACE(LOWER(#{q}), '\', '\\'), '%', '\%'), '_', '\_') || '%') ESCAPE '\'
+                OR LOWER(name_en) LIKE ('%' || REPLACE(REPLACE(REPLACE(LOWER(#{q}), '\', '\\'), '%', '\%'), '_', '\_') || '%') ESCAPE '\')
             </if>
         </where>
         ORDER BY created_at DESC
@@ -185,8 +186,8 @@
         SELECT COUNT(*) FROM foods
         <where>
             <if test="q != null and q != ''">
-                AND (LOWER(name_vi) LIKE CONCAT('%', LOWER(#{q}), '%')
-                OR LOWER(name_en) LIKE CONCAT('%', LOWER(#{q}), '%'))
+                AND (LOWER(name_vi) LIKE ('%' || REPLACE(REPLACE(REPLACE(LOWER(#{q}), '\', '\\'), '%', '\%'), '_', '\_') || '%') ESCAPE '\'
+                OR LOWER(name_en) LIKE ('%' || REPLACE(REPLACE(REPLACE(LOWER(#{q}), '\', '\\'), '%', '\%'), '_', '\_') || '%') ESCAPE '\')
             </if>
         </where>
     </select>

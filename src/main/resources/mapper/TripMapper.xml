@@ -36,6 +36,7 @@
         <result column="public_shared_at" property="publicSharedAt" jdbcType="TIMESTAMP"/>
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
         <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
+        <result column="location_image_id" property="locationImageId" jdbcType="OTHER"/>
     </resultMap>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.Trip">
@@ -163,6 +164,18 @@
             WHERE distance &lt;= #{radiusKm}
         </if>
         ORDER BY
+            <if test="preferImages">
+                (
+                    NULLIF(TRIM(COALESCE(t.cover_image_url, '')), '') IS NOT NULL
+                    OR EXISTS (
+                        SELECT 1 FROM media_assets ma
+                        WHERE ma.trip_id = t.id
+                          AND ma.entity_type IN ('TRIP_MEMORY', 'TRIP_ACTIVITY_MEMORY')
+                          AND (ma.asset_role IS NULL OR ma.asset_role = 'MEMORY')
+                          AND ma.deleted_at IS NULL
+                    )
+                ) DESC,
+            </if>
             <choose>
                 <when test="randomSeed != null and randomSeed != ''">
                     MD5(t.id::text || #{randomSeed})

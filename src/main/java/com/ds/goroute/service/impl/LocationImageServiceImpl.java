@@ -136,6 +136,7 @@ public class LocationImageServiceImpl implements LocationImageService {
             .latitude(request.getLatitude())
             .longitude(request.getLongitude())
             .priority(request.getPriority())
+            .coverageRadiusKm(request.getCoverageRadiusKm())
             .createdAt(LocalDateTime.now())
             .updatedAt(LocalDateTime.now())
             .build();
@@ -177,6 +178,9 @@ public class LocationImageServiceImpl implements LocationImageService {
         }
         if (request.getPriority() != null) {
             locationImage.setPriority(request.getPriority());
+        }
+        if (request.getCoverageRadiusKm() != null) {
+            locationImage.setCoverageRadiusKm(request.getCoverageRadiusKm());
         }
         if (request.getLatitude() != null) {
             locationImage.setLatitude(request.getLatitude());
@@ -246,6 +250,7 @@ public class LocationImageServiceImpl implements LocationImageService {
             .latitude(locationImage.getLatitude())
             .longitude(locationImage.getLongitude())
             .priority(locationImage.getPriority())
+            .coverageRadiusKm(locationImage.getCoverageRadiusKm())
             .createdAt(locationImage.getCreatedAt())
             .updatedAt(locationImage.getUpdatedAt())
             .build();

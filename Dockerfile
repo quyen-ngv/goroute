@@ -21,8 +21,7 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/* && \
-    mkdir -p /app/logs /app/data/lucene-index /app/data/subtitles && \
-    chmod -R 777 /app/logs /app/data
+    mkdir -p /app/logs /app/data/lucene-index /app/data/subtitles
 
 # Thêm app user
 RUN groupadd --system spring && useradd --system -g spring spring && \
@@ -31,13 +30,17 @@ RUN groupadd --system spring && useradd --system -g spring spring && \
 COPY --from=builder --chown=spring:spring /app/target/ticketmaster-0.0.1-SNAPSHOT.jar app.jar
 
 # Biến môi trường quan trọng giúp tránh lỗi SSL/Networking khi khởi tạo
-ENV JAVA_OPTS="-Djava.net.preferIPv4Stack=true -Djava.security.egd=file:/dev/./urandom -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8"
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError -Djava.net.preferIPv4Stack=true -Djava.security.egd=file:/dev/./urandom -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8"
 
 # Firebase credentials are mounted at runtime and are never baked into the image.
 
 USER spring
 
 EXPOSE 8080
+
+# Reports a hung JVM as unhealthy; acting on that is up to whatever runs the container.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=5 \
+  CMD curl -fsS http://localhost:8080/actuator/health || exit 1
 
 # Chạy ứng dụng với JAVA_OPTS
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

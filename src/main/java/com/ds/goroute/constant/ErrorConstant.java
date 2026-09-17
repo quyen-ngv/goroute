@@ -68,6 +68,14 @@ public class ErrorConstant {
 
     public static final int TRIP_INVITATION_NOT_PENDING = 4000502;
 
+    /**
+     * A guest member cannot be linked to a real account while expenses still name that guest
+     * as the payer: linking deletes the guest row, and the expense would be left pointing at a
+     * member that no longer exists. The message carries the number of expenses involved, as
+     * its first number, so the app can tell the user how much there is to fix.
+     */
+    public static final int TRIP_GUEST_HAS_EXPENSES = 4000503;
+
     public static final int SOCIAL_LOCATION_DAILY_LIMIT_REACHED = 4000601;
     public static final int SOCIAL_LOCATION_QUEUE_FULL = 4000602;
     public static final int SOCIAL_LOCATION_TEMPORARILY_BLOCKED = 4000603;

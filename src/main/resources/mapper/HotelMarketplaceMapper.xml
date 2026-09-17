@@ -19,6 +19,13 @@
         <result property="dataVersion" column="data_version"/><result property="createdBy" column="created_by"/>
         <result property="updatedBy" column="updated_by"/><result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
+        <result property="locationImageId" column="location_image_id"/>
+        <result property="images" column="images"/><result property="openedYear" column="opened_year"/>
+        <result property="renovatedYear" column="renovated_year"/><result property="vatPercent" column="vat_percent"/>
+        <result property="serviceChargePercent" column="service_charge_percent"/><result property="nearbyPlaces" column="nearby_places"/>
+        <result property="placeLatitude" column="place_latitude"/><result property="placeLongitude" column="place_longitude"/>
+        <result property="placeImages" column="place_images"/><result property="placeReviewRating" column="place_review_rating"/>
+        <result property="placeReviewCount" column="place_review_count"/><result property="totalRooms" column="total_rooms"/>
     </resultMap>
     <resultMap id="RoomMap" type="com.ds.goroute.entity.RoomType">
         <id property="id" column="id"/><result property="hotelId" column="hotel_id"/>
@@ -111,8 +118,14 @@
         <result property="createdAt" column="created_at"/>
     </resultMap>
 
+    <sql id="HotelPlaceColumns">
+        p.title AS place_title, p.address AS place_address, p.thumbnail AS place_thumbnail,
+        p.latitude AS place_latitude, p.longitude AS place_longitude, p.images AS place_images,
+        p.review_rating AS place_review_rating, p.review_count AS place_review_count,
+        (SELECT COALESCE(SUM(rt.total_units), 0) FROM room_types rt WHERE rt.hotel_id=h.id AND rt.status='ENABLED') AS total_rooms
+    </sql>
     <sql id="HotelSelect">
-        SELECT h.*, p.title AS place_title, p.address AS place_address, p.thumbnail AS place_thumbnail
+        SELECT h.*, <include refid="HotelPlaceColumns"/>
         FROM hotel_profiles h JOIN places p ON p.id = h.place_id
     </sql>
     <sql id="BookingSelect">
@@ -123,12 +136,14 @@
     <insert id="insertHotel">
         INSERT INTO hotel_profiles (id, organization_id, place_id, property_code, property_type, star_rating,
           description, check_in_time, check_out_time, timezone, amenities, languages, reception_hours, house_rules,
-          accessibility_features, parking_details, policies, booking_contact, status,
+          accessibility_features, parking_details, policies, booking_contact, images, opened_year, renovated_year,
+          vat_percent, service_charge_percent, nearby_places, status,
           disabled_reason, data_version, created_by, updated_by, created_at, updated_at)
         VALUES (#{id}, #{organizationId}, #{placeId}, #{propertyCode}, #{propertyType}, #{starRating}, #{description},
           #{checkInTime}, #{checkOutTime}, #{timezone}, #{amenities}::jsonb, #{languages}::jsonb, #{receptionHours}::jsonb,
           #{houseRules}::jsonb, #{accessibilityFeatures}::jsonb, #{parkingDetails}::jsonb, #{policies}::jsonb,
-          #{bookingContact}::jsonb, #{status}, #{disabledReason}, #{dataVersion}, #{createdBy}, #{updatedBy},
+          #{bookingContact}::jsonb, #{images}::jsonb, #{openedYear}, #{renovatedYear}, #{vatPercent}, #{serviceChargePercent},
+          #{nearbyPlaces}::jsonb, #{status}, #{disabledReason}, #{dataVersion}, #{createdBy}, #{updatedBy},
           #{createdAt}, #{updatedAt})
     </insert>
     <update id="updateHotel">
@@ -137,6 +152,8 @@
           amenities=#{amenities}::jsonb, languages=#{languages}::jsonb, reception_hours=#{receptionHours}::jsonb,
           house_rules=#{houseRules}::jsonb, accessibility_features=#{accessibilityFeatures}::jsonb,
           parking_details=#{parkingDetails}::jsonb, policies=#{policies}::jsonb, booking_contact=#{bookingContact}::jsonb,
+          images=#{images}::jsonb, opened_year=#{openedYear}, renovated_year=#{renovatedYear}, vat_percent=#{vatPercent},
+          service_charge_percent=#{serviceChargePercent}, nearby_places=#{nearbyPlaces}::jsonb,
           status=#{status}, disabled_reason=#{disabledReason}, data_version=data_version+1, updated_by=#{updatedBy},
           updated_at=#{updatedAt} WHERE id=#{id} AND data_version=#{dataVersion}
     </update>
@@ -150,7 +167,7 @@
         <include refid="HotelSelect"/> WHERE h.organization_id=#{organizationId} ORDER BY h.created_at DESC
     </select>
     <select id="findHotelsPublic" resultMap="HotelMap">
-        SELECT h.*, p.title AS place_title, p.address AS place_address, p.thumbnail AS place_thumbnail,
+        SELECT h.*, <include refid="HotelPlaceColumns"/>,
           fp.from_price, fp.from_price_currency,
           (SELECT COUNT(*) FROM room_types rt WHERE rt.hotel_id=h.id AND rt.status='ENABLED') AS room_type_count
         FROM hotel_profiles h JOIN places p ON p.id = h.place_id
@@ -164,7 +181,7 @@
         WHERE h.status='ENABLED' AND p.lifecycle_status='ACTIVE' AND o.operational_status='ENABLED'
         AND o.verification_status='VERIFIED'
         <if test="query != null and query != ''">
-            AND (p.title ILIKE CONCAT('%',#{query},'%') OR p.address ILIKE CONCAT('%',#{query},'%'))
+            AND (p.title ILIKE ('%' || REPLACE(REPLACE(REPLACE(#{query}, '\', '\\'), '%', '\%'), '_', '\_') || '%') ESCAPE '\' OR p.address ILIKE ('%' || REPLACE(REPLACE(REPLACE(#{query}, '\', '\\'), '%', '\%'), '_', '\_') || '%') ESCAPE '\')
         </if>
         <if test="propertyType != null and propertyType != ''">AND h.property_type=#{propertyType}</if>
         <if test="minPrice != null">AND fp.from_price IS NOT NULL AND EXISTS (SELECT 1 FROM rate_plans rp JOIN room_types rt ON rt.id=rp.room_type_id WHERE rt.hotel_id=h.id AND rp.status='ENABLED' AND rt.status='ENABLED' AND rp.base_price &gt;= #{minPrice}<if test="maxPrice != null"> AND rp.base_price &lt;= #{maxPrice}</if>)</if>
@@ -196,7 +213,7 @@
         <where>
             <if test="status != null and status != ''">AND h.status=#{status}</if>
             <if test="query != null and query != ''">
-                AND (p.title ILIKE CONCAT('%',#{query},'%') OR h.property_code ILIKE CONCAT('%',#{query},'%'))
+                AND (p.title ILIKE ('%' || REPLACE(REPLACE(REPLACE(#{query}, '\', '\\'), '%', '\%'), '_', '\_') || '%') ESCAPE '\' OR h.property_code ILIKE ('%' || REPLACE(REPLACE(REPLACE(#{query}, '\', '\\'), '%', '\%'), '_', '\_') || '%') ESCAPE '\')
             </if>
         </where>
         ORDER BY h.created_at DESC LIMIT #{limit} OFFSET #{offset}
@@ -246,6 +263,13 @@
         WHERE id=#{id} AND data_version=#{dataVersion}
     </update>
     <select id="findRatePlanById" resultMap="RateMap">SELECT * FROM rate_plans WHERE id=#{id}</select>
+    <!-- Booking against a rate and closing that rate both read its status and then write against
+         what they read. They take a lock on the row first, so one waits for the other and the
+         loser sees the winner's result rather than a stale one: a closed plan with a live
+         booking on it. Closing takes it exclusively; a booking only has to keep the plan from
+         closing underneath it, so guests share and do not queue behind each other. -->
+    <select id="findRatePlanByIdForUpdate" resultMap="RateMap">SELECT * FROM rate_plans WHERE id=#{id} FOR UPDATE</select>
+    <select id="findRatePlanByIdForShare" resultMap="RateMap">SELECT * FROM rate_plans WHERE id=#{id} FOR SHARE</select>
     <select id="findRatePlansByRoomType" resultMap="RateMap">
         SELECT * FROM rate_plans WHERE room_type_id=#{roomTypeId}
         <if test="!includeDisabled">AND status='ENABLED'</if> ORDER BY created_at
@@ -402,7 +426,7 @@
         <where>
             <if test="status != null and status != ''">AND b.booking_status=#{status}</if>
             <if test="query != null and query != ''">
-                AND (b.booking_code ILIKE CONCAT('%',#{query},'%') OR p.title ILIKE CONCAT('%',#{query},'%'))
+                AND (b.booking_code ILIKE ('%' || REPLACE(REPLACE(REPLACE(#{query}, '\', '\\'), '%', '\%'), '_', '\_') || '%') ESCAPE '\' OR p.title ILIKE ('%' || REPLACE(REPLACE(REPLACE(#{query}, '\', '\\'), '%', '\%'), '_', '\_') || '%') ESCAPE '\')
             </if>
         </where>
         ORDER BY b.created_at DESC LIMIT #{limit} OFFSET #{offset}

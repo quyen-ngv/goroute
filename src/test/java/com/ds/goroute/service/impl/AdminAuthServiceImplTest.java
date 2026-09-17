@@ -83,6 +83,7 @@ class AdminAuthServiceImplTest {
         assertEquals("Legal Co", organization.getValue().getLegalName());
         assertEquals("Display", organization.getValue().getDisplayName());
         assertEquals("owner@example.com", organization.getValue().getContactEmail());
+        assertEquals("0901234567", organization.getValue().getContactPhone());
 
         assertEquals("token", response.getAccessToken());
         assertEquals(user.getValue().getId(), response.getUser().getId());
@@ -98,6 +99,7 @@ class AdminAuthServiceImplTest {
         request.setDisplayName("Display");
         request.setOrganizationType(OrganizationType.BUSINESS);
         request.setTimezone("Asia/Ho_Chi_Minh");
+        request.setContactPhone("0901234567");
         return request;
     }
 }

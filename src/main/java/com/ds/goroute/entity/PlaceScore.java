@@ -28,7 +28,11 @@ public class PlaceScore {
     private BigDecimal priceScore;
     private BigDecimal ambianceScore;
     private BigDecimal serviceScore;
-    
+    // Stay aspects (hotels)
+    private BigDecimal locationScore;
+    private BigDecimal cleanlinessScore;
+    private BigDecimal facilitiesScore;
+
     // Nationality breakdown (JSON)
     private String nationalityBreakdown;
     

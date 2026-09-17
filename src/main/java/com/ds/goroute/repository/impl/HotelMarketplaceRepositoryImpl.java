@@ -29,6 +29,8 @@ public class HotelMarketplaceRepositoryImpl implements HotelMarketplaceRepositor
     @Override public List<RoomType> findRoomTypes(UUID id,boolean x){return mapper.findRoomTypesByHotel(id,x);}
     @Override public int insertRatePlan(RatePlan v){return mapper.insertRatePlan(v);} @Override public int updateRatePlan(RatePlan v){return mapper.updateRatePlan(v);}
     @Override public Optional<RatePlan> findRatePlan(UUID id){return Optional.ofNullable(mapper.findRatePlanById(id));}
+    @Override public Optional<RatePlan> findRatePlanForUpdate(UUID id){return Optional.ofNullable(mapper.findRatePlanByIdForUpdate(id));}
+    @Override public Optional<RatePlan> findRatePlanForBooking(UUID id){return Optional.ofNullable(mapper.findRatePlanByIdForShare(id));}
     @Override public List<RatePlan> findRatePlans(UUID id,boolean x){return mapper.findRatePlansByRoomType(id,x);}
     @Override public int upsertRatePlanDailyRange(UUID r,LocalDate s,LocalDate e,List<Integer> d,BigDecimal p,Boolean stop,Integer min,Integer max,Boolean ca,Boolean cd,Integer minAdvance,Integer maxAdvance,String versions,String clearFields,UUID a,LocalDateTime n){return mapper.upsertRatePlanDailyRange(r,s,e,d,p,stop,min,max,ca,cd,minAdvance,maxAdvance,versions,clearFields,a,n);}
     @Override public List<RatePlanDailyRate> findRatePlanDailyRates(UUID r,LocalDate s,LocalDate e){return mapper.findRatePlanDailyRates(r,s,e);}

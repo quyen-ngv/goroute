@@ -42,7 +42,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -51,6 +53,8 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -75,6 +79,31 @@ public class AiTripServiceImpl implements AiTripService {
     private final TripService tripService;
     private final AiClient aiClient;
     private final ObjectMapper objectMapper;
+    private final PlatformTransactionManager transactionManager;
+
+    /**
+     * One entry per draft that is being confirmed right now in this instance, so a double click
+     * waits for the first confirmation instead of paying for a second set of LLM calls whose
+     * result the draft row lock would then throw away.
+     */
+    private final ConcurrentHashMap<UUID, ReentrantLock> confirmGuards = new ConcurrentHashMap<>();
+
+    private volatile TransactionTemplate confirmTransactionTemplate;
+
+    /** Either the trip this confirmation created, or the draft another one already completed. */
+    private record ConfirmOutcome(TripResponse trip, AiTripDraft alreadyCompleted) {
+    }
+
+    private TransactionTemplate confirmTransaction() {
+        TransactionTemplate template = confirmTransactionTemplate;
+        if (template == null) {
+            // REQUIRED, so tripService's own @Transactional methods join this one exactly as
+            // they joined the method-level transaction this replaced -- one connection, not two.
+            template = new TransactionTemplate(transactionManager);
+            confirmTransactionTemplate = template;
+        }
+        return template;
+    }
 
     @Override
     @Transactional
@@ -170,10 +199,39 @@ public class AiTripServiceImpl implements AiTripService {
         return null;
     }
 
+    /**
+     * Confirms a draft without holding a database connection across the LLM calls.
+     *
+     * <p>This used to be one {@code @Transactional} method: it took the draft row lock, then made
+     * two or more LLM calls of up to 90 seconds each, then wrote the trip. The pool is ten
+     * connections, so ten people confirming at once left nothing for any other request.
+     *
+     * <p>The planning now happens outside any transaction and the writes happen in one short
+     * transaction at the end, which still takes the same {@code FOR UPDATE} row lock and still
+     * re-checks the status under it. Two confirmations of the same draft therefore still
+     * serialise on that lock and still produce exactly one trip: the loser sees COMPLETED and
+     * gets the same completed response it gets today. The in-process guard below only stops the
+     * loser from paying for LLM calls it is about to discard.
+     */
     @Override
-    @Transactional
     public AiTripConfirmResponse confirmTrip(UUID draftId, AiTripConfirmRequest request, UUID userId) {
-        AiTripDraft draft = aiTripRepository.findDraftForUpdate(draftId, userId)
+        ReentrantLock guard = confirmGuards.computeIfAbsent(draftId, id -> new ReentrantLock());
+        guard.lock();
+        try {
+            return confirmTripGuarded(draftId, request, userId);
+        } finally {
+            guard.unlock();
+            if (!guard.hasQueuedThreads()) {
+                // Best effort only: if this races another caller, the worst case is that the two
+                // plan concurrently, and the row lock below still lets only one of them win.
+                confirmGuards.remove(draftId, guard);
+            }
+        }
+    }
+
+    private AiTripConfirmResponse confirmTripGuarded(UUID draftId, AiTripConfirmRequest request, UUID userId) {
+        // Unlocked read: the expensive planning below must not hold a row lock or a connection.
+        AiTripDraft draft = aiTripRepository.findDraft(draftId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "AI trip draft not found"));
 
         if ("COMPLETED".equals(draft.getStatus())) {
@@ -214,43 +272,65 @@ public class AiTripServiceImpl implements AiTripService {
         int filledDays = schedule.stream().map(ScheduledCandidate::dayNumber).max(Integer::compareTo).orElse(0);
         String generationSummary = buildGenerationSummary(draft, selected.size(), schedule, skipped, filledDays);
         String coverageMessage = buildCoverageMessage(selected.size(), schedule.size(), filledDays, draft.getDayCount());
+        Map<Integer, TransportMode> intercityModes = planIntercityTransport(destinations);
 
-        TripResponse trip = tripService.createTrip(CreateTripRequest.builder()
-                .name(draft.getTripName() != null && !draft.getTripName().isBlank() ? draft.getTripName() : draft.getCityName())
-                .destination(draft.getCityName())
-                .destinationPlaceId(draft.getCityId())
-                .destinationLat(draft.getCityLat())
-                .destinationLng(draft.getCityLng())
-                .destinations(destinations.stream()
-                        .map(destination -> TripDestinationRequest.builder()
-                                .name(destination.getName())
-                                .address(destination.getName())
-                                .placeId(destination.getLocationImageId().toString())
-                                .lat(destination.getLatitude())
-                                .lng(destination.getLongitude())
-                                .orderIndex(destination.getOrderIndex())
-                                .startDate(destination.getStartDate())
-                                .endDate(destination.getEndDate())
-                                .isPrimary(destination.getOrderIndex() == 0)
-                                .build())
-                        .toList())
-                .startDate(draft.getStartDate())
-                .endDate(draft.getEndDate())
-                .currency("VND")
-                .build(), userId);
+        // Everything above this point is planning. Only from here on is anything written, so
+        // only from here on is a transaction -- and a connection -- held.
+        ConfirmOutcome outcome = confirmTransaction().execute(status -> {
+            AiTripDraft locked = aiTripRepository.findDraftForUpdate(draftId, userId)
+                    .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "AI trip draft not found"));
+            // The same status check as before, under the same row lock: a confirmation that
+            // finished while this one was planning keeps its trip, and this one creates none.
+            if ("COMPLETED".equals(locked.getStatus())) {
+                return new ConfirmOutcome(null, locked);
+            }
+            if (!"PENDING".equals(locked.getStatus())) {
+                throw new BusinessException(ErrorConstant.AI_TRIP_DRAFT_INACTIVE);
+            }
 
-        if (generationSummary != null && !generationSummary.isBlank()) {
-            trip = tripService.updateTrip(trip.getId(),
-                    UpdateTripRequest.builder().description(generationSummary).build(),
-                    userId);
+            TripResponse created = tripService.createTrip(CreateTripRequest.builder()
+                    .name(draft.getTripName() != null && !draft.getTripName().isBlank() ? draft.getTripName() : draft.getCityName())
+                    .destination(draft.getCityName())
+                    .destinationPlaceId(draft.getCityId())
+                    .destinationLat(draft.getCityLat())
+                    .destinationLng(draft.getCityLng())
+                    .destinations(destinations.stream()
+                            .map(destination -> TripDestinationRequest.builder()
+                                    .name(destination.getName())
+                                    .address(destination.getName())
+                                    .placeId(destination.getLocationImageId().toString())
+                                    .lat(destination.getLatitude())
+                                    .lng(destination.getLongitude())
+                                    .orderIndex(destination.getOrderIndex())
+                                    .startDate(destination.getStartDate())
+                                    .endDate(destination.getEndDate())
+                                    .isPrimary(destination.getOrderIndex() == 0)
+                                    .build())
+                            .toList())
+                    .startDate(draft.getStartDate())
+                    .endDate(draft.getEndDate())
+                    .currency("VND")
+                    .build(), userId);
+
+            if (generationSummary != null && !generationSummary.isBlank()) {
+                created = tripService.updateTrip(created.getId(),
+                        UpdateTripRequest.builder().description(generationSummary).build(),
+                        userId);
+            }
+
+            for (Activity activity : buildActivitiesWithTransport(
+                    created.getId(), userId, destinations, schedule, visitTips, intercityModes)) {
+                activityRepository.insert(activity);
+            }
+
+            aiTripRepository.completeDraft(draftId, userId, request.getIdempotencyKey(), created.getId());
+            return new ConfirmOutcome(created, null);
+        });
+
+        if (outcome.trip() == null) {
+            return completedResponse(outcome.alreadyCompleted());
         }
-
-        for (Activity activity : buildActivitiesWithTransport(
-                trip.getId(), userId, destinations, schedule, visitTips)) {
-            activityRepository.insert(activity);
-        }
-
-        aiTripRepository.completeDraft(draftId, userId, request.getIdempotencyKey(), trip.getId());
+        TripResponse trip = outcome.trip();
 
         List<String> skippedNames = skipped.stream()
                 .map(AiTripCandidateResponse::getName)
@@ -1205,12 +1285,36 @@ public class AiTripServiceImpl implements AiTripService {
                 .build();
     }
 
+    /**
+     * Plans the inter-city legs, which is the last LLM call confirmation makes.
+     *
+     * <p>It used to be made from inside {@code buildActivitiesWithTransport}, which runs while
+     * the trip is being written; hoisting it here keeps every LLM call in the planning phase,
+     * before any transaction is open. The legs it plans, and the modes it picks, are decided by
+     * exactly the same conditions as before.
+     */
+    private Map<Integer, TransportMode> planIntercityTransport(List<AiTripDestinationSnapshot> destinations) {
+        Map<Integer, TransportMode> modes = new HashMap<>();
+        for (int index = 1; index < destinations.size(); index++) {
+            AiTripDestinationSnapshot from = destinations.get(index - 1);
+            AiTripDestinationSnapshot to = destinations.get(index);
+            double centerDistanceKm = distanceKm(
+                    from.getLatitude(), from.getLongitude(), to.getLatitude(), to.getLongitude());
+            if (!requiresIntercityTransportSuggestion(from, to, centerDistanceKm)) {
+                continue;
+            }
+            modes.put(index, recommendIntercityTransport(from, to, centerDistanceKm));
+        }
+        return modes;
+    }
+
     private List<Activity> buildActivitiesWithTransport(
             UUID tripId,
             UUID userId,
             List<AiTripDestinationSnapshot> destinations,
             List<ScheduledCandidate> schedule,
-            Map<String, String> visitTips) {
+            Map<String, String> visitTips,
+            Map<Integer, TransportMode> intercityModes) {
         List<ScheduledCandidate> ordered = schedule.stream()
                 .sorted(Comparator.comparingInt(ScheduledCandidate::dayNumber)
                         .thenComparing(ScheduledCandidate::startTime))
@@ -1225,12 +1329,12 @@ public class AiTripServiceImpl implements AiTripService {
             AiTripDestinationSnapshot to = destinations.get(index);
             double centerDistanceKm = distanceKm(
                     from.getLatitude(), from.getLongitude(), to.getLatitude(), to.getLongitude());
-            if (!requiresIntercityTransportSuggestion(from, to, centerDistanceKm)) {
+            TransportMode mode = intercityModes.get(index);
+            if (mode == null || !requiresIntercityTransportSuggestion(from, to, centerDistanceKm)) {
                 continue;
             }
             ScheduledCandidate previous = lastScheduledForDestination(ordered, from);
             ScheduledCandidate current = firstScheduledForDestination(ordered, to);
-            TransportMode mode = recommendIntercityTransport(from, to, centerDistanceKm);
             Activity transport = buildIntercityTransportActivity(
                     tripId, userId, destinations.get(0).getStartDate(),
                     from, to, previous, current, mode, centerDistanceKm);

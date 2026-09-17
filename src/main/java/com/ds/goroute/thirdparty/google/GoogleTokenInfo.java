@@ -15,4 +15,11 @@ public class GoogleTokenInfo {
     private boolean emailVerified;
     private String name;
     private String picture;
+    /**
+     * Firebase's {@code firebase.sign_in_provider} claim: which identity provider actually
+     * signed this person in ({@code google.com}, {@code apple.com}, ...). Firebase mints the
+     * same kind of token whatever the provider, so without this claim an Apple sign-in
+     * arriving from the web console would be stored as a Google account.
+     */
+    private String signInProvider;
 }

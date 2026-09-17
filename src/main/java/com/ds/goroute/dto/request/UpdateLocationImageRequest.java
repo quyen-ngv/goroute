@@ -2,6 +2,8 @@ package com.ds.goroute.dto.request;
 
 import com.ds.goroute.dto.LocationDescriptionSection;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -31,4 +33,9 @@ public class UpdateLocationImageRequest {
     private BigDecimal latitude;
     private BigDecimal longitude;
     private Integer priority;
+
+    /** Radius in km within which a place/tour/hotel counts as part of this area. */
+    @DecimalMin(value = "0.1", message = "Coverage radius must be greater than 0")
+    @DecimalMax(value = "500", message = "Coverage radius must not exceed 500 km")
+    private BigDecimal coverageRadiusKm;
 }

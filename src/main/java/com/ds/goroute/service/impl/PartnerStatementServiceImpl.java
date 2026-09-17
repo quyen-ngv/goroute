@@ -33,6 +33,7 @@ import com.ds.goroute.type.PartnerStatementStatus;
 import com.ds.goroute.type.StatementDisputeStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -146,6 +147,9 @@ public class PartnerStatementServiceImpl implements PartnerStatementService {
         // Opening a dispute is a financial act, so it takes the reporting permission specifically —
         // plain ORGANIZATION_READ is enough to look at a statement but not to contest one.
         authorization.requirePermission(organizationId, actorUserId, "REPORT_READ");
+        // Taken before the statement is read, so "is it already settled" is still true when the
+        // dispute is written: an operator settling this very statement is holding the same row.
+        finance.lockStatement(statementId);
         PartnerStatement statement = statementOf(organizationId, statementId);
         String cleanedReason = blankToNull(reason);
         if (cleanedReason == null) throw new BusinessException(ErrorConstant.BAD_REQUEST, "A dispute reason is required");
@@ -181,7 +185,7 @@ public class PartnerStatementServiceImpl implements PartnerStatementService {
         LocalDate today = todayIn(organization);
         LocalDate periodStart = today.withDayOfMonth(1);
         LocalDate periodEnd = periodStart.plusMonths(1).minusDays(1);
-        List<LineDraft> drafts = billableDrafts(organizationId, periodStart, periodEnd);
+        List<LineDraft> drafts = billableDrafts(organizationId, periodStart, periodEnd, null);
         BigDecimal defaultPercent = commissionService.currentCommissionPercent(organizationId);
         BigDecimal gross = BigDecimal.ZERO;
         BigDecimal commission = BigDecimal.ZERO;
@@ -238,6 +242,9 @@ public class PartnerStatementServiceImpl implements PartnerStatementService {
     @Transactional
     public PartnerStatementResponse adminResolveDispute(UUID actorUserId, UUID statementId, UUID lineId,
             boolean accept, String note) {
+        // Statement first, then the line: the same order settling and disputing take them in, so
+        // two of them queue instead of deadlocking.
+        finance.lockStatement(statementId);
         PartnerStatement statement = finance.findStatementById(statementId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Statement not found"));
         PartnerStatementLine line = lineOf(statementId, lineId);
@@ -264,6 +271,10 @@ public class PartnerStatementServiceImpl implements PartnerStatementService {
     @Transactional
     public PartnerStatementResponse adminUpdateStatus(UUID actorUserId, UUID statementId,
             PartnerStatementStatus status, String note) {
+        // Held for the rest of this transaction. Settling is a read of the lines followed by a
+        // write against what was read, and a dispute opened in between would otherwise land on a
+        // period that had just been agreed.
+        finance.lockStatement(statementId);
         PartnerStatement statement = finance.findStatementById(statementId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Statement not found"));
         if (status != PartnerStatementStatus.SETTLED) {
@@ -281,7 +292,13 @@ public class PartnerStatementServiceImpl implements PartnerStatementService {
             throw new BusinessException(ErrorConstant.BAD_REQUEST, "Resolve every open dispute before settling");
         }
         LocalDateTime now = LocalDateTime.now();
-        finance.updateStatementStatus(statementId, PartnerStatementStatus.SETTLED.name(), null, now, blankToNull(note), now);
+        // The same three conditions again, this time inside the UPDATE. The checks above stay so
+        // the operator is told which one stopped them; this one is what makes the answer still
+        // true at the moment it is written.
+        if (finance.settleStatement(statementId, now, blankToNull(note), now) != 1) {
+            throw new BusinessException(ErrorConstant.ALREADY_PROCESSED,
+                    "This statement changed while it was being settled; reload it");
+        }
         history.record(statement.getOrganizationId(), "PARTNER_STATEMENT", statementId, "SETTLED", statement,
                 List.of("status"), actorUserId, "ADMIN", blankToNull(note));
         return adminGet(statement.getOrganizationId(), statementId);
@@ -304,8 +321,17 @@ public class PartnerStatementServiceImpl implements PartnerStatementService {
             LocalDate periodEnd, UUID actorUserId, String actorType) {
         UUID organizationId = organization.getId();
         String currency = organization.getDefaultCurrency();
-        PartnerStatement statement = finance.findStatementByPeriod(organizationId, periodStart, periodEnd)
-                .orElseGet(() -> createStatement(organizationId, periodStart, periodEnd, currency));
+        // The miss-then-insert is a race: two admins generating the same new period both read
+        // nothing and both insert, and uq_partner_statement_period lets only one of them win.
+        // The loser must join the winner's statement and regenerate it, not fail with a 500, so
+        // it re-reads the period and carries on into the lock below.
+        PartnerStatement statement = findOrCreateStatement(organizationId, periodStart, periodEnd, currency);
+        // Everything that rewrites a statement queues behind its row: two generators for the same
+        // period would otherwise each delete and rebuild the other's lines. Re-read afterwards,
+        // because whoever held the lock first may have settled or disputed it in the meantime.
+        finance.lockStatement(statement.getId());
+        statement = finance.findStatementById(statement.getId())
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Statement not found"));
         if (PartnerStatementStatus.SETTLED.name().equals(statement.getStatus())) {
             throw new BusinessException(ErrorConstant.BAD_REQUEST,
                     "This period is already settled and can no longer be regenerated");
@@ -320,7 +346,7 @@ public class PartnerStatementServiceImpl implements PartnerStatementService {
 
         BigDecimal defaultPercent = commissionService.currentCommissionPercent(organizationId);
         LocalDateTime now = LocalDateTime.now();
-        for (LineDraft draft : billableDrafts(organizationId, periodStart, periodEnd)) {
+        for (LineDraft draft : billableDrafts(organizationId, periodStart, periodEnd, statement.getId())) {
             if (preserved.contains(draft.bookingId())) continue;
             BigDecimal percent = draft.commissionPercent();
             if (percent == null) {
@@ -357,6 +383,31 @@ public class PartnerStatementServiceImpl implements PartnerStatementService {
         // is told about it: the job runs for every organization, most of which owe nothing.
         if (firstIssue && hasActivity) notifyStatementReady(organization, issued, actorUserId);
         return toResponse(issued, finance.findLines(issued.getId()));
+    }
+
+    /**
+     * The statement for a period, creating it when this is its first generation.
+     *
+     * <p>The insert is the conditional one in the mapper ({@code ON CONFLICT ... DO NOTHING} on
+     * uq_partner_statement_period), so a concurrent first generation of the same period does not
+     * raise a duplicate key: the loser's insert waits for the winner, writes nothing, and the
+     * re-read below hands back the winner's row. The catch covers the same race on a database or
+     * a mapper where that conflict clause is not in force -- the loser re-reads and joins the
+     * winner's statement instead of surfacing a 500 -- and only re-throws when no statement turns
+     * up, which is a real failure rather than a race.
+     */
+    private PartnerStatement findOrCreateStatement(UUID organizationId, LocalDate periodStart,
+            LocalDate periodEnd, String currency) {
+        Optional<PartnerStatement> existing = finance.findStatementByPeriod(organizationId, periodStart, periodEnd);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        try {
+            return createStatement(organizationId, periodStart, periodEnd, currency);
+        } catch (DataIntegrityViolationException e) {
+            return finance.findStatementByPeriod(organizationId, periodStart, periodEnd)
+                    .orElseThrow(() -> e);
+        }
     }
 
     private PartnerStatement createStatement(UUID organizationId, LocalDate periodStart, LocalDate periodEnd, String currency) {
@@ -408,11 +459,17 @@ public class PartnerStatementServiceImpl implements PartnerStatementService {
         return status;
     }
 
-    private List<LineDraft> billableDrafts(UUID organizationId, LocalDate periodStart, LocalDate periodEnd) {
+    /**
+     * @param excludeStatementId the statement being built, so its own lines do not exclude their
+     *                           own bookings; null for the partner's preview of a period, which
+     *                           bills nothing and therefore filters nothing
+     */
+    private List<LineDraft> billableDrafts(UUID organizationId, LocalDate periodStart, LocalDate periodEnd,
+            UUID excludeStatementId) {
         List<LineDraft> drafts = new ArrayList<>();
         List<BillableBookingRow> candidates = new ArrayList<>(
-                finance.findHotelBillableCandidates(organizationId, periodStart, periodEnd));
-        candidates.addAll(finance.findActivityBillableCandidates(organizationId, periodStart, periodEnd));
+                finance.findHotelBillableCandidates(organizationId, periodStart, periodEnd, excludeStatementId));
+        candidates.addAll(finance.findActivityBillableCandidates(organizationId, periodStart, periodEnd, excludeStatementId));
         for (BillableBookingRow row : candidates) {
             billableLine(row).ifPresent(drafts::add);
         }

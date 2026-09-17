@@ -82,7 +82,7 @@ class PartnerStatementServiceImplTest {
         when(finance.findStatementByPeriod(ORGANIZATION_ID, PERIOD_START, PERIOD_END))
                 .thenReturn(Optional.empty(), Optional.of(statement));
         when(finance.findStatementById(statement.getId())).thenReturn(Optional.of(statement));
-        when(finance.findHotelBillableCandidates(ORGANIZATION_ID, PERIOD_START, PERIOD_END)).thenReturn(List.of(
+        when(finance.findHotelBillableCandidates(ORGANIZATION_ID, PERIOD_START, PERIOD_END, statement.getId())).thenReturn(List.of(
                 row("HB-COMPLETED", "COMPLETED", "1000000", null, null),
                 row("HB-NOSHOW-CHARGED", "NO_SHOW", "800000", Boolean.TRUE, null),
                 row("HB-NOSHOW-FREE", "NO_SHOW", "800000", Boolean.FALSE, null),
@@ -92,7 +92,7 @@ class PartnerStatementServiceImplTest {
                 row("HB-FREE-CANCEL", "CANCELLED_BY_GUEST", "600000", null, "Changed plans — free cancellation"),
                 row("HB-UNPARSEABLE", "CANCELLED_BY_HOST", "600000", null, "penalty applied, amount to be agreed"),
                 row("HB-ZERO", "COMPLETED", "0", null, null)));
-        when(finance.findActivityBillableCandidates(ORGANIZATION_ID, PERIOD_START, PERIOD_END)).thenReturn(List.of());
+        when(finance.findActivityBillableCandidates(ORGANIZATION_ID, PERIOD_START, PERIOD_END, statement.getId())).thenReturn(List.of());
 
         service.adminGenerate(ACTOR_ID, ORGANIZATION_ID, PERIOD_START, PERIOD_END);
 
@@ -118,9 +118,9 @@ class PartnerStatementServiceImplTest {
         BillableBookingRow stamped = row("HB-STAMPED", "COMPLETED", "1000000", null, null);
         stamped.setCommissionPercent(new BigDecimal("10.00"));
         BillableBookingRow unstamped = row("HB-UNSTAMPED", "COMPLETED", "1000000", null, null);
-        when(finance.findHotelBillableCandidates(ORGANIZATION_ID, PERIOD_START, PERIOD_END))
+        when(finance.findHotelBillableCandidates(ORGANIZATION_ID, PERIOD_START, PERIOD_END, statement.getId()))
                 .thenReturn(List.of(stamped, unstamped));
-        when(finance.findActivityBillableCandidates(ORGANIZATION_ID, PERIOD_START, PERIOD_END)).thenReturn(List.of());
+        when(finance.findActivityBillableCandidates(ORGANIZATION_ID, PERIOD_START, PERIOD_END, statement.getId())).thenReturn(List.of());
 
         service.adminGenerate(ACTOR_ID, ORGANIZATION_ID, PERIOD_START, PERIOD_END);
 

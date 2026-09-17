@@ -14,6 +14,8 @@ import java.util.UUID;
 @EqualsAndHashCode(callSuper = true)
 @JsonInclude(JsonInclude.Include.ALWAYS)
 public class AdminPlaceResponse extends PlaceResponse {
+    /** Curated tourist area this place resolves to; null until auto-map places it. */
+    private UUID locationImageId;
     private String cid;
     private String dataId;
     private UUID inputId;

@@ -31,6 +31,13 @@ public class ExpenseSplitRepositoryImpl implements ExpenseSplitRepository {
     }
 
     @Override
+    public List<ExpenseSplit> findByExpenseIds(java.util.Collection<UUID> expenseIds) {
+        // An empty IN () is a syntax error, and the answer is knowable here.
+        if (expenseIds == null || expenseIds.isEmpty()) return List.of();
+        return expenseSplitMapper.selectByExpenseIds(expenseIds);
+    }
+
+    @Override
     public List<ExpenseSplit> findByUserId(UUID userId) {
         return expenseSplitMapper.selectByUserId(userId);
     }

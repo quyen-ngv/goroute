@@ -9,8 +9,6 @@ import com.ds.goroute.dto.request.UpdateActivityBookingRequest;
 import com.ds.goroute.dto.response.ActivityBookingResponse;
 import com.ds.goroute.dto.response.ActivityResponse;
 import com.ds.goroute.service.ActivityBookingService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,14 +25,12 @@ import java.util.UUID;
 @RequestMapping("/v1/api/activity-bookings")
 @RequiredArgsConstructor
 @Slf4j
-@Tag(name = "Activity Bookings", description = "Tour catalog from Klook/Viator")
 public class ActivityBookingController extends BaseController {
 
     private final ActivityBookingService activityBookingService;
 
     @PostMapping("/import")
     @PreAuthorize("@adminAuthorization.can(authentication,'activity-bookings','create')")
-    @Operation(summary = "Import activity from Klook JSON")
     public ResponseEntity<BaseResponse<ActivityBookingResponse>> importFromKlook(
             @Valid @RequestBody ImportActivityBookingRequest request) {
         ActivityBookingResponse response = activityBookingService.importFromKlook(request);
@@ -42,7 +38,6 @@ public class ActivityBookingController extends BaseController {
     }
 
     @GetMapping("/search")
-    @Operation(summary = "Search activity bookings by keyword")
     public ResponseEntity<BaseResponse<List<ActivityBookingResponse>>> search(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) BigDecimal minPrice,
@@ -63,7 +58,6 @@ public class ActivityBookingController extends BaseController {
     }
 
     @GetMapping("/search/by-place")
-    @Operation(summary = "List activities near place coordinates; optional q only affects sort order")
     public ResponseEntity<BaseResponse<List<ActivityBookingResponse>>> searchByPlace(
             @RequestParam UUID placeId,
             @RequestParam(required = false) String q,
@@ -77,7 +71,6 @@ public class ActivityBookingController extends BaseController {
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "Get activity booking detail")
     public ResponseEntity<BaseResponse<ActivityBookingResponse>> getById(@PathVariable UUID id) {
         String currency = AcceptCurrencyFilter.current();
         ActivityBookingResponse response = activityBookingService.getById(id, currency);
@@ -86,7 +79,6 @@ public class ActivityBookingController extends BaseController {
 
     @PutMapping("/{id}")
     @PreAuthorize("@adminAuthorization.can(authentication,'activity-bookings','update')")
-    @Operation(summary = "Update activity booking")
     public ResponseEntity<BaseResponse<ActivityBookingResponse>> updateById(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateActivityBookingRequest request) {
@@ -96,14 +88,12 @@ public class ActivityBookingController extends BaseController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("@adminAuthorization.can(authentication,'activity-bookings','delete')")
-    @Operation(summary = "Delete activity booking")
     public ResponseEntity<BaseResponse<String>> deleteById(@PathVariable UUID id) {
         activityBookingService.deleteById(id);
         return ResponseEntity.ok(ofSucceeded("Deleted successfully"));
     }
 
     @PostMapping("/{id}/add-to-trip")
-    @Operation(summary = "Add activity booking to a trip itinerary (converts price to trip currency)")
     public ResponseEntity<BaseResponse<ActivityResponse>> addToTrip(
             @PathVariable UUID id,
             @Valid @RequestBody AddBookingToTripRequest request,
@@ -117,7 +107,6 @@ public class ActivityBookingController extends BaseController {
 
     @PostMapping("/indexing/trigger")
     @PreAuthorize("@adminAuthorization.can(authentication,'activity-bookings','update')")
-    @Operation(summary = "Trigger Lucene reindexing")
     public ResponseEntity<BaseResponse<String>> triggerReindex() {
         activityBookingService.triggerReindex();
         return ResponseEntity.ok(ofSucceeded("Reindexing completed"));

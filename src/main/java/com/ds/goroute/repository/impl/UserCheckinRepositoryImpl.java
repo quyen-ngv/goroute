@@ -3,6 +3,7 @@ package com.ds.goroute.repository.impl;
 import com.ds.goroute.entity.CheckinCluster;
 import com.ds.goroute.entity.CheckinClusterDecision;
 import com.ds.goroute.entity.UserCheckin;
+import com.ds.goroute.entity.UserCheckinLocationHistory;
 import com.ds.goroute.entity.UserCheckinPhoto;
 import com.ds.goroute.entity.CheckinLikeCount;
 import com.ds.goroute.mapper.UserCheckinMapper;
@@ -47,8 +48,8 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     }
 
     @Override
-    public List<UserCheckin> findFeed(LocalDateTime before, UUID excludeUserId, int limit) {
-        return mapper.findFeed(before, excludeUserId, limit);
+    public List<UserCheckin> findFeed(UUID excludeUserId, int limit, int offset) {
+        return mapper.findFeed(excludeUserId, limit, offset);
     }
 
     @Override
@@ -216,5 +217,35 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     @Override
     public List<String> findVisitedProvinceCodes(UUID userId) {
         return mapper.findVisitedProvinceCodes(userId);
+    }
+
+    @Override
+    public List<UserCheckin> findAllForAdmin(String search, UUID userId, Boolean hidden, int limit, int offset) {
+        return mapper.findAllForAdmin(search, userId, hidden, limit, offset);
+    }
+
+    @Override
+    public long countAllForAdmin(String search, UUID userId, Boolean hidden) {
+        return mapper.countAllForAdmin(search, userId, hidden);
+    }
+
+    @Override
+    public int assignPlace(UUID id, UUID placeId, String locationKey, String provinceCode) {
+        return mapper.assignPlace(id, placeId, locationKey, provinceCode);
+    }
+
+    @Override
+    public int insertLocationHistory(UserCheckinLocationHistory history) {
+        return mapper.insertLocationHistory(history);
+    }
+
+    @Override
+    public List<UserCheckinLocationHistory> findLocationHistory(UUID checkinId) {
+        return mapper.findLocationHistory(checkinId);
+    }
+
+    @Override
+    public List<UUID> findReassignedCheckinIds(List<UUID> checkinIds) {
+        return checkinIds == null || checkinIds.isEmpty() ? List.of() : mapper.findReassignedCheckinIds(checkinIds);
     }
 }

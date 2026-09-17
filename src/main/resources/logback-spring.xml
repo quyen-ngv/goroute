@@ -12,27 +12,14 @@
         </encoder>
     </appender>
 
-    <!-- 2. Logstash TCP Appender -->
-    <appender name="LOGSTASH" class="net.logstash.logback.appender.LogstashTcpSocketAppender">
-        <destination>localhost:5000</destination>
-        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
-            <customFields>{"app_name":"${appName}"}</customFields>
-        </encoder>
-        <!-- Drop logs if Logstash is down to prevent blocking app -->
-        <connectionStrategy>
-            <roundRobin>
-                <connectionTTL>5 minutes</connectionTTL>
-            </roundRobin>
-        </connectionStrategy>
-    </appender>
-
-    <!-- 3. Rolling File Appender -->
+    <!-- 2. Rolling File Appender -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <!-- daily rollover -->
-            <fileNamePattern>logs/ticketmaster.%d{yyyy-MM-dd}.log</fileNamePattern>
-            <!-- keep 30 days' worth of history -->
+            <fileNamePattern>${LOG_DIR:-logs}/${appName}.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <!-- keep 30 days' worth of history, capped so a chatty day cannot fill the disk -->
             <maxHistory>30</maxHistory>
+            <totalSizeCap>2GB</totalSizeCap>
         </rollingPolicy>
         <encoder>
             <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
@@ -56,11 +43,16 @@
         </root>
     </springProfile>
 
-    <!-- Prod/Staging: Log to Console (JSON) + Logstash -->
+    <!--
+         Prod/Staging: JSON on stdout (read by the container runtime) plus a rolling
+         file under the mounted /app/logs volume. The old Logstash TCP appender
+         pointed at localhost:5000 inside the container, where nothing listens, so
+         prod logs only ever survived in `docker logs`.
+    -->
     <springProfile name="prod,staging">
         <root level="${LOG_LEVEL:-INFO}">
             <appender-ref ref="CONSOLE_JSON"/>
-            <appender-ref ref="LOGSTASH"/>
+            <appender-ref ref="FILE"/>
         </root>
     </springProfile>
 

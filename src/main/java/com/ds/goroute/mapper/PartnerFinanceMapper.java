@@ -40,13 +40,22 @@ public interface PartnerFinanceMapper {
 
     // --- Billable candidates -------------------------------------------------------------------
 
+    /**
+     * @param excludeStatementId when set, bookings already carried by a <b>different</b> statement
+     *                           are left out, so two overlapping periods cannot bill the same stay
+     *                           twice. Null asks for the unfiltered list (the partner's preview of
+     *                           a period, which is not a bill).
+     */
     List<BillableBookingRow> findHotelBillableCandidates(@Param("organizationId") UUID organizationId,
                                                          @Param("periodStart") LocalDate periodStart,
-                                                         @Param("periodEnd") LocalDate periodEnd);
+                                                         @Param("periodEnd") LocalDate periodEnd,
+                                                         @Param("excludeStatementId") UUID excludeStatementId);
 
+    /** @see #findHotelBillableCandidates(UUID, LocalDate, LocalDate, UUID) */
     List<BillableBookingRow> findActivityBillableCandidates(@Param("organizationId") UUID organizationId,
                                                              @Param("periodStart") LocalDate periodStart,
-                                                             @Param("periodEnd") LocalDate periodEnd);
+                                                             @Param("periodEnd") LocalDate periodEnd,
+                                                             @Param("excludeStatementId") UUID excludeStatementId);
 
     // --- Statements ----------------------------------------------------------------------------
 
@@ -59,6 +68,27 @@ public interface PartnerFinanceMapper {
                               @Param("settledAt") LocalDateTime settledAt,
                               @Param("note") String note,
                               @Param("updatedAt") LocalDateTime updatedAt);
+
+    /**
+     * Settles a statement only if it is still settleable: issued, not already settled, and with no
+     * line under dispute. The three conditions are the same ones the service checks before calling;
+     * carrying them in the UPDATE is what stops a dispute opened between the check and the write
+     * from landing on an already-settled period.
+     *
+     * @return 1 when this call settled it, 0 when it was no longer settleable
+     */
+    int settleStatement(@Param("id") UUID statementId,
+                        @Param("settledAt") LocalDateTime settledAt,
+                        @Param("note") String note,
+                        @Param("updatedAt") LocalDateTime updatedAt);
+
+    /**
+     * Takes the statement's row lock, so that settling, disputing and regenerating queue behind
+     * each other rather than each writing against a statement the other has since changed.
+     *
+     * @return the id when the statement exists and is now locked, null when it does not
+     */
+    UUID lockStatement(@Param("id") UUID statementId);
 
     PartnerStatement findStatementById(@Param("id") UUID statementId);
 

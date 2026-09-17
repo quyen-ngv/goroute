@@ -6,7 +6,6 @@ import com.ds.goroute.dto.response.CheckinContextResponse;
 import com.ds.goroute.dto.response.UserCheckinResponse;
 import com.ds.goroute.dto.response.CheckinLikeResponse;
 
-import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
@@ -74,8 +73,11 @@ public interface UserCheckinService {
 
     CheckinLikeResponse toggleLike(UUID userId, UUID checkinId);
 
-    /** Public feed, newest first, paged on the timestamp of the last row seen. */
-    List<UserCheckinResponse> feed(UUID viewerId, LocalDateTime before, int limit);
+    /**
+     * Public feed without the viewer's own check-ins: posts with photos first, then newest
+     * first.
+     */
+    List<UserCheckinResponse> feed(UUID viewerId, int page, int size);
 
     List<UserCheckinResponse> byUser(UUID viewerId, UUID userId, int page, int size);
 

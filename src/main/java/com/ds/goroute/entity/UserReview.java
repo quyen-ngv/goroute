@@ -31,6 +31,10 @@ private Boolean locationVerified;
     private Integer priceRating;
     private Integer ambianceRating;
     private Integer serviceRating;
+    // Stay aspects, set on hotel reviews
+    private Integer locationRating;
+    private Integer cleanlinessRating;
+    private Integer facilitiesRating;
     
     // Content
     private String text;

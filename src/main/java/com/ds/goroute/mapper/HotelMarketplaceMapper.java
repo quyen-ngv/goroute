@@ -38,6 +38,10 @@ public interface HotelMarketplaceMapper {
     int insertRatePlan(RatePlan ratePlan);
     int updateRatePlan(RatePlan ratePlan);
     RatePlan findRatePlanById(@Param("id") UUID id);
+    /** The same row, locked exclusively until the transaction ends: for closing the plan. */
+    RatePlan findRatePlanByIdForUpdate(@Param("id") UUID id);
+    /** The same row, held against a close until the transaction ends: for booking against it. */
+    RatePlan findRatePlanByIdForShare(@Param("id") UUID id);
     List<RatePlan> findRatePlansByRoomType(@Param("roomTypeId") UUID roomTypeId, @Param("includeDisabled") boolean includeDisabled);
     int upsertRatePlanDailyRange(@Param("ratePlanId") UUID ratePlanId,
                                  @Param("startDate") LocalDate startDate,

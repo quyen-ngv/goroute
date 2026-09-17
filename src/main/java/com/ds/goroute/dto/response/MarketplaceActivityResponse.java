@@ -14,6 +14,8 @@ import java.util.UUID;
 @Data @Builder
 public class MarketplaceActivityResponse {
     private UUID id; private UUID organizationId; private UUID placeId; private String placeTitle; private String externalId; private String title; private String activityType;
+    /** Curated tourist area, from the auto-map job or an operator override. */
+    private UUID locationImageId;
     private String source; private String url; private String redirectUrl; private String description; private String activityAddress;
     private String departingFrom; private List<String> destinations; private List<GeoCoordinateDto> destinationCoordinates;
     private List<String> navigationList; private List<String> itineraryStops; private List<String> pickupAddresses;
@@ -23,6 +25,11 @@ public class MarketplaceActivityResponse {
     private BigDecimal priceAmount; private String priceCurrency;
     private String durationRaw; private BigDecimal durationHours; private Integer visitDurationMinutes; private BigDecimal rating; private Integer reviewCount; private Integer bookedCount; private String thumbnail;
     private List<String> images; private List<String> highlights; private List<ActivityWhatToExpectItem> whatToExpect;
-    private List<ActivityItineraryItem> itinerary; private String productStatus; private String inventoryMode;
+    private List<ActivityItineraryItem> itinerary;
+    private List<String> goodToKnow; private List<com.ds.goroute.dto.ActivityFaqItem> faqs; private String videoUrl;
+    /** TOUR or TICKET: which detail page the app renders. Derived from activityType. */
+    private String productKind; 
+    /** Display name of the partner organization that runs it. */
+    private String operatorName; private String productStatus; private String inventoryMode;
     private Long dataVersion; private LocalDateTime createdAt; private LocalDateTime updatedAt;
 }

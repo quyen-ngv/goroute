@@ -13,6 +13,9 @@
         <result property="priceScore" column="price_score"/>
         <result property="ambianceScore" column="ambiance_score"/>
         <result property="serviceScore" column="service_score"/>
+        <result property="locationScore" column="location_score"/>
+        <result property="cleanlinessScore" column="cleanliness_score"/>
+        <result property="facilitiesScore" column="facilities_score"/>
         <result property="nationalityBreakdown" column="nationality_breakdown"/>
         <result property="lastCalculatedAt" column="last_calculated_at"/>
     </resultMap>
@@ -21,10 +24,12 @@
         INSERT INTO place_scores (
             place_id, tripmind_score, google_score, review_count,
             food_score, price_score, ambiance_score, service_score,
+            location_score, cleanliness_score, facilities_score,
             nationality_breakdown
         ) VALUES (
             #{placeId}, #{tripmindScore}, #{googleScore}, #{reviewCount},
             #{foodScore}, #{priceScore}, #{ambianceScore}, #{serviceScore},
+            #{locationScore}, #{cleanlinessScore}, #{facilitiesScore},
             #{nationalityBreakdown}::text
         )
     </insert>
@@ -38,6 +43,9 @@
             price_score = #{priceScore},
             ambiance_score = #{ambianceScore},
             service_score = #{serviceScore},
+            location_score = #{locationScore},
+            cleanliness_score = #{cleanlinessScore},
+            facilities_score = #{facilitiesScore},
             nationality_breakdown = #{nationalityBreakdown}::text,
             last_calculated_at = NOW()
         WHERE place_id = #{placeId}

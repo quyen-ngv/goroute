@@ -56,11 +56,15 @@ public class MarketplaceActivityProduct {
     private String highlights;
     private String whatToExpect;
     private String itinerary;
+    private String goodToKnow;
+    private String faqs;
+    private String videoUrl;
+    private String operatorName;
     private String productStatus;
     private String inventoryMode;
     private Long dataVersion;
     private UUID createdBy;
     private UUID updatedBy;
-    private LocalDateTime createdAt;
+    private UUID locationImageId;private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

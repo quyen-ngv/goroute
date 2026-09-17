@@ -32,6 +32,20 @@ public interface UserMapper {
 
     int countFollowing(@Param("userId") UUID userId);
 
+    /**
+     * Discover page and the two follow lists all render the same card. These three read
+     * the page and its four counts in one statement instead of one profile query plus
+     * four counts per row.
+     */
+    java.util.List<com.ds.goroute.dto.response.DiscoverUserResponse> selectDiscoverUsers(
+            @Param("userId") UUID userId, @Param("limit") int limit);
+
+    java.util.List<com.ds.goroute.dto.response.DiscoverUserResponse> selectFollowerProfiles(
+            @Param("userId") UUID userId);
+
+    java.util.List<com.ds.goroute.dto.response.DiscoverUserResponse> selectFollowingProfiles(
+            @Param("userId") UUID userId);
+
     int insertFollow(@Param("followerId") UUID followerId, @Param("followingId") UUID followingId);
 
     int deleteFollow(@Param("followerId") UUID followerId, @Param("followingId") UUID followingId);

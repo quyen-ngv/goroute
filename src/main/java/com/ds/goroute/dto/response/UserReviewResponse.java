@@ -60,6 +60,9 @@ public class UserReviewResponse {
     private Integer priceRating;
     private Integer ambianceRating;
     private Integer serviceRating;
+    private Integer locationRating;
+    private Integer cleanlinessRating;
+    private Integer facilitiesRating;
     
     // Content
     private String text;

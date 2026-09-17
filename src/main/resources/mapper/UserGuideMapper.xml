@@ -95,4 +95,27 @@
         <include refid="GuideSearchWhere"/>
     </select>
 
+
+    <!--
+      Areas a guide covers. Unlike every other table in this feature a guide has no coordinate to
+      derive an area from, so these rows are only ever what an operator stated.
+    -->
+    <select id="findLocationImageIds" resultType="java.util.UUID">
+        SELECT location_image_id FROM user_guide_location_images
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+        ORDER BY location_image_id
+    </select>
+
+    <delete id="deleteLocationImages">
+        DELETE FROM user_guide_location_images
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+    </delete>
+
+    <insert id="insertLocationImage">
+        INSERT INTO user_guide_location_images (user_id, location_image_id)
+        VALUES (#{userId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{locationImageId,javaType=java.util.UUID,jdbcType=OTHER})
+        ON CONFLICT DO NOTHING
+    </insert>
+
 </mapper>

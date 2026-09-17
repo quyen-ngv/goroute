@@ -325,6 +325,26 @@ public class StarService {
         return wallet;
     }
 
+    /**
+     * Takes this user's points row lock for the rest of the caller's transaction.
+     *
+     * <p>For the callers that have to read a running total and then write against it — the daily
+     * check-in ceiling is one — where a plain read-then-write lets two simultaneous requests both
+     * see the same total and both pass a cap. Every ledger write already serialises behind this
+     * same row, so waiting on it here adds a queue, not a new lock order.
+     *
+     * <p>Only does anything inside a transaction: the lock lives exactly as long as the one that
+     * took it.
+     */
+    @Transactional
+    public void lockPoints(UUID userId) {
+        ensureWallet(userId);
+        if (starMapper.findWalletForUpdate(userId) == null) {
+            log.error("Wallet for update not found for user: {}", userId);
+            throw new BusinessException(ErrorConstant.NOT_FOUND, "Star wallet not found");
+        }
+    }
+
     /** Reads an entry by its idempotency key, for callers that need to see the original. */
     @Transactional(readOnly = true)
     public Optional<StarTransaction> findByReference(String referenceKey) {

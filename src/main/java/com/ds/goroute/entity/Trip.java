@@ -54,6 +54,9 @@ public class Trip {
     private Boolean isDeleted;
     private LocalDateTime deletedAt;
     private LocalDateTime publicSharedAt;
+    /** Curated tourist area (location_images) this row belongs to; null until auto-map resolves one. */
+    private UUID locationImageId;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

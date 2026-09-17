@@ -38,6 +38,15 @@
         AND user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
     </select>
 
+    <select id="selectByTripIdsAndUserId" resultMap="TripMemberResultMap">
+        SELECT * FROM trip_members
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+        AND trip_id IN
+        <foreach collection="tripIds" item="tripId" open="(" separator="," close=")">
+            #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+        </foreach>
+    </select>
+
     <update id="updateById" parameterType="com.ds.goroute.entity.TripMember">
         UPDATE trip_members SET
             user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER},

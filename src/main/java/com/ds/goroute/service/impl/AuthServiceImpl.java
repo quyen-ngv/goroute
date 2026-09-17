@@ -15,6 +15,7 @@ import com.ds.goroute.entity.User;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.RefreshTokenRepository;
 import com.ds.goroute.repository.TripMemberRepository;
+import com.ds.goroute.repository.ExpenseRepository;
 import com.ds.goroute.repository.ExpenseSplitRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.AuthService;
@@ -48,12 +49,24 @@ public class AuthServiceImpl implements AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final TripMemberRepository tripMemberRepository;
     private final ExpenseSplitRepository expenseSplitRepository;
+    private final ExpenseRepository expenseRepository;
     private final JwtUtils jwtUtils;
     private final PasswordEncoder passwordEncoder;
     private final GoogleTokenVerifier googleTokenVerifier;
     private final AppleTokenVerifier appleTokenVerifier;
 
     private static final long REFRESH_TOKEN_EXPIRY = 2592000000L; // 30 days in ms
+
+    /**
+     * How long a refresh token stays usable after it has been exchanged. It is deliberately
+     * generous rather than tight: the client only learns the replacement token from the
+     * response body, so a refresh that commits here and then loses its response on a flaky
+     * mobile connection leaves the device holding the old token. A day of overlap means
+     * that device recovers on its next attempt instead of being signed out, while a stolen
+     * token still dies a day after the real owner next refreshes rather than lasting the
+     * full thirty.
+     */
+    private static final long ROTATION_GRACE_SECONDS = 86400L;
 
     @Override
     @Transactional
@@ -112,6 +125,15 @@ public class AuthServiceImpl implements AuthService {
     public AuthResponse googleLogin(GoogleLoginRequest request) {
         // Verify Google ID token with Firebase
         GoogleTokenInfo tokenInfo = googleTokenVerifier.verify(request.getIdToken());
+        /*
+         * Firebase issues one token shape for every provider it fronts, so the same endpoint
+         * also carries an Apple sign-in coming from the web console. Record who actually
+         * signed the person in; storing that as GOOGLE would make the account unrecognisable
+         * to the native Apple path, which looks the user up by provider id.
+         */
+        AuthProvider provider = "apple.com".equals(tokenInfo.getSignInProvider())
+                ? AuthProvider.APPLE
+                : AuthProvider.GOOGLE;
 
         // Find user by Google ID or email
         User user = userRepository.findByProviderId(tokenInfo.getSub())
@@ -119,25 +141,30 @@ public class AuthServiceImpl implements AuthService {
                     // Check if email already exists (link Google to existing account)
                     var existingUser = userRepository.findByEmail(tokenInfo.getEmail());
                     if (existingUser.isPresent()) {
+                        requireVerifiedEmailForLinking(tokenInfo);
                         User existing = existingUser.get();
                         existing.setProviderId(tokenInfo.getSub());
-                        existing.setProvider(AuthProvider.GOOGLE);
+                        existing.setProvider(provider);
                         userRepository.update(existing);
-                        log.info("Linked Google account to existing user: {}", tokenInfo.getEmail());
+                        log.info("Linked {} account to existing user: {}", provider, tokenInfo.getEmail());
                         return existing;
                     }
 
                     // Check if email exists but was soft deleted
                     var deletedUser = userRepository.findByEmailIncludingDeleted(tokenInfo.getEmail());
                     if (deletedUser.isPresent()) {
+                        requireVerifiedEmailForLinking(tokenInfo);
                         User existing = deletedUser.get();
                         existing.setProviderId(tokenInfo.getSub());
-                        existing.setProvider(AuthProvider.GOOGLE);
+                        existing.setProvider(provider);
                         existing.setDeletedAt(null); // Restore user
-                        existing.setFullName(tokenInfo.getName());
+                        // Same reason as the insert below: a terse provider must not blank a NOT NULL column.
+                        if (tokenInfo.getName() != null && !tokenInfo.getName().isBlank()) {
+                            existing.setFullName(tokenInfo.getName());
+                        }
                         existing.setAvatarUrl(tokenInfo.getPicture());
                         userRepository.update(existing);
-                        log.info("Restored deleted user via Google: {}", tokenInfo.getEmail());
+                        log.info("Restored deleted user via {}: {}", provider, tokenInfo.getEmail());
                         return existing;
                     }
 
@@ -146,10 +173,17 @@ public class AuthServiceImpl implements AuthService {
                     User newUser = User.builder()
                             .id(UUID.randomUUID())
                             .username(username)
-                            .provider(AuthProvider.GOOGLE)
+                            .provider(provider)
                             .providerId(tokenInfo.getSub())
                             .email(tokenInfo.getEmail())
-                            .fullName(tokenInfo.getName())
+                            /*
+                             * Google always sends a display name; Apple only sends one on the very
+                             * first authorization and Firebase forwards nothing afterwards. The
+                             * column is NOT NULL, so fall back to the generated username rather
+                             * than failing the insert on a provider that is allowed to be terse.
+                             */
+                            .fullName(tokenInfo.getName() == null || tokenInfo.getName().isBlank()
+                                    ? username : tokenInfo.getName())
                             .avatarUrl(tokenInfo.getPicture())
                             .defaultCurrency("VND")
                             .defaultTravelMode("driving")
@@ -158,7 +192,7 @@ public class AuthServiceImpl implements AuthService {
                             .onboardingCompleted(false)
                             .build();
                     userRepository.insert(newUser);
-                    log.info("New user created via Google: {}", tokenInfo.getEmail());
+                    log.info("New user created via {}: {}", provider, tokenInfo.getEmail());
 
                     // Auto-link guest members
                     autoLinkGuestMembers(newUser);
@@ -191,6 +225,7 @@ public class AuthServiceImpl implements AuthService {
                     // Check if email already exists (link Apple to existing account)
                     var existingUser = userRepository.findByEmail(tokenInfo.getEmail());
                     if (existingUser.isPresent()) {
+                        requireVerifiedEmailForLinking(tokenInfo);
                         User existing = existingUser.get();
                         existing.setProviderId(tokenInfo.getSub());
                         existing.setProvider(AuthProvider.APPLE);
@@ -202,6 +237,7 @@ public class AuthServiceImpl implements AuthService {
                     // Check if email exists but was soft deleted
                     var deletedUser = userRepository.findByEmailIncludingDeleted(tokenInfo.getEmail());
                     if (deletedUser.isPresent()) {
+                        requireVerifiedEmailForLinking(tokenInfo);
                         User existing = deletedUser.get();
                         existing.setProviderId(tokenInfo.getSub());
                         existing.setProvider(AuthProvider.APPLE);
@@ -255,7 +291,17 @@ public class AuthServiceImpl implements AuthService {
         User user = userRepository.findById(refreshToken.getUserId())
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
 
-        return generateAuthResponse(user);
+        AuthResponse response = generateAuthResponse(user);
+
+        // Rotate: the presented token stops being a 30-day credential now that a new one
+        // has been handed out. It is not deleted outright because the app refreshes from
+        // two independent places (the Dio interceptor and the realtime client) and both
+        // may present the same token within milliseconds of each other; a short grace
+        // window lets the loser of that race succeed instead of being logged out.
+        refreshTokenRepository.expireById(
+                refreshToken.getId(), LocalDateTime.now().plusSeconds(ROTATION_GRACE_SECONDS));
+
+        return response;
     }
 
     @Override
@@ -301,6 +347,32 @@ public class AuthServiceImpl implements AuthService {
                 .refreshToken(refreshToken.getToken())
                 .user(userResponse)
                 .build();
+    }
+
+    /**
+     * Linking a social identity onto an account that already holds the same email hands
+     * the token holder that account, so the provider has to stand behind the email.
+     * {@code GoogleTokenInfo.emailVerified} is false only when the provider explicitly
+     * said the address is unverified — an absent claim leaves it true, so logins that
+     * work today keep working. Creating a brand new account is untouched: there is no
+     * existing account to take over.
+     */
+    /** Apple half of the same rule; see the Google overload above. */
+    private void requireVerifiedEmailForLinking(AppleTokenInfo tokenInfo) {
+        if (!tokenInfo.isEmailVerified()) {
+            log.warn("Refused to link Apple identity to existing account: provider reports the address unverified");
+            throw new BusinessException(ErrorConstant.UNAUTHORIZED,
+                    "Apple account email is not verified");
+        }
+    }
+
+    private void requireVerifiedEmailForLinking(GoogleTokenInfo tokenInfo) {
+        if (!tokenInfo.isEmailVerified()) {
+            log.warn("Refused to link Google identity to existing account: provider reports {} unverified",
+                    tokenInfo.getEmail());
+            throw new BusinessException(ErrorConstant.UNAUTHORIZED,
+                    "Google account email is not verified");
+        }
     }
 
     private String generateUsername(String email) {
@@ -361,14 +433,23 @@ public class AuthServiceImpl implements AuthService {
                 expenseSplitRepository.update(split);
             }
 
+            // Expenses this guest paid keep both paid_by and paid_by_guest_member_id set
+            // to the trip_members id, and the wallet only counts an expense as paid by a
+            // user when paid_by_guest_member_id IS NULL. Without this the money the guest
+            // laid out stayed invisible to the account they were just linked to, the same
+            // way the splits above would have. Same person, same email, same member row.
+            int movedExpenses = expenseRepository.reassignGuestPayerToUser(guestMember.getId(), user.getId());
+
             // Link guest to real user
             guestMember.setUserId(user.getId());
             guestMember.setIsGuest(false);
             guestMember.setStatus(MemberStatus.ACCEPTED);
             tripMemberRepository.updateById(guestMember);
 
-            log.info("Linked guest member {} to user {} in trip {}, updated {} expense splits",
-                    guestMember.getId(), user.getId(), guestMember.getTripId(), guestSplits.size());
+            log.info("Linked guest member {} to user {} in trip {}, updated {} expense splits"
+                            + " and {} paid expenses",
+                    guestMember.getId(), user.getId(), guestMember.getTripId(), guestSplits.size(),
+                    movedExpenses);
         }
     }
 

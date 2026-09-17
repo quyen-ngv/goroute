@@ -20,9 +20,28 @@
         SELECT * FROM refresh_tokens WHERE token = #{token}
     </select>
 
+    <!-- Tokens are stored hashed. Rows written before that change still hold the raw
+         value, so both spellings are accepted and the hash wins when both exist. -->
+    <select id="selectByAnyToken" resultMap="RefreshTokenResultMap">
+        SELECT * FROM refresh_tokens
+        WHERE token = #{hashed} OR token = #{raw}
+        ORDER BY CASE WHEN token = #{hashed} THEN 0 ELSE 1 END
+        LIMIT 1
+    </select>
+
     <delete id="deleteByToken" parameterType="String">
         DELETE FROM refresh_tokens WHERE token = #{token}
     </delete>
+
+    <delete id="deleteByAnyToken">
+        DELETE FROM refresh_tokens WHERE token = #{hashed} OR token = #{raw}
+    </delete>
+
+    <update id="expireById">
+        UPDATE refresh_tokens SET expires_at = #{expiresAt}
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+        AND expires_at &gt; #{expiresAt}
+    </update>
 
     <delete id="deleteByUserId" parameterType="java.util.UUID">
         DELETE FROM refresh_tokens WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}

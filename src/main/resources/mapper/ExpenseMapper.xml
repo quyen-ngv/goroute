@@ -72,6 +72,29 @@
         ORDER BY created_at DESC
     </select>
 
+    <select id="countByPaidByGuestMemberId" parameterType="java.util.UUID" resultType="int">
+        SELECT COUNT(*) FROM expenses
+        WHERE paid_by_guest_member_id = #{guestMemberId,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <update id="reassignGuestPayerToUser">
+        UPDATE expenses
+        SET paid_by = #{userId,javaType=java.util.UUID,jdbcType=OTHER},
+            paid_by_guest_member_id = NULL,
+            paid_by_guest_name = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE paid_by_guest_member_id = #{guestMemberId,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <select id="selectSplitCountsByTripId" parameterType="java.util.UUID"
+            resultType="com.ds.goroute.dto.ExpenseSplitCount">
+        SELECT e.id AS "expenseId", COUNT(s.id) AS "splitCount"
+        FROM expenses e
+        LEFT JOIN expense_splits s ON s.expense_id = e.id
+        WHERE e.trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+        GROUP BY e.id
+    </select>
+
     <delete id="deleteByTripId" parameterType="java.util.UUID">
         DELETE FROM expenses WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
     </delete>

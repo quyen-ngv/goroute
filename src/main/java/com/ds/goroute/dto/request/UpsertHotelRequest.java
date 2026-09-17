@@ -1,6 +1,12 @@
 package com.ds.goroute.dto.request;
 
 import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.dto.HotelNearbyPlace;
+import com.ds.goroute.dto.HotelPolicies;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import java.math.BigDecimal;
 import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.ModerationVisibility;
 
@@ -37,8 +43,14 @@ public class UpsertHotelRequest {
     private List<String> houseRules;
     private List<String> accessibilityFeatures;
     private Map<String, Object> parkingDetails;
-    private Map<String, Object> policies;
+    @Valid private HotelPolicies policies;
     private Map<String, Object> bookingContact;
+    @Size(max = 50) private List<@Size(max = 2000) String> images;
+    @Min(1800) @Max(2100) private Integer openedYear;
+    @Min(1800) @Max(2100) private Integer renovatedYear;
+    @DecimalMin("0") @DecimalMax("100") private BigDecimal vatPercent;
+    @DecimalMin("0") @DecimalMax("100") private BigDecimal serviceChargePercent;
+    @Valid @Size(max = 30) private List<HotelNearbyPlace> nearbyPlaces;
     private MarketplacePublicationStatus status;
     private String disabledReason;
     private Long expectedVersion;

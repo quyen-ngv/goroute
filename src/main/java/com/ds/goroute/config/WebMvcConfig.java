@@ -12,6 +12,7 @@ import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
+import java.time.Duration;
 import java.util.List;
 
 @Configuration
@@ -53,10 +54,22 @@ public class WebMvcConfig implements WebMvcConfigurer {
         registry.addInterceptor(apiRequestLimitsInterceptor).addPathPatterns("/v1/api/**");
     }
 
+    /**
+     * The shared template: image migration downloads and Apple token verification ride on it.
+     *
+     * <p>It used to be a bare {@code new RestTemplate()}, which waits for ever. A hung upstream
+     * therefore pinned a request thread until the socket died on its own, and every caller that
+     * means to handle a failure only ever sees one when an exception is actually thrown.
+     * Five seconds to connect is generous for any reachable host; thirty to read covers the
+     * slowest thing on this template, which is pulling a full-size image body.
+     */
     @Bean
     @Primary
     public RestTemplate restTemplate() {
-        return new RestTemplate();
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Duration.ofSeconds(5));
+        requestFactory.setReadTimeout(Duration.ofSeconds(30));
+        return new RestTemplate(requestFactory);
     }
 
     @Bean("scrapeRestTemplate")

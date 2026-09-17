@@ -18,6 +18,7 @@ import org.springframework.web.client.RestTemplate;
 
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 @RequiredArgsConstructor
@@ -125,33 +126,55 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
         
         Map<String, String> resultMap = new ConcurrentHashMap<>();
         ExecutorService executor = Executors.newFixedThreadPool(maxThreads);
-        
+        // Flipped when the batch gives up, so a task that is between network calls stops instead
+        // of finishing a download and an upload nobody is waiting for any more. shutdownNow can
+        // interrupt a task that is waiting to start, but never one already blocked on a socket
+        // read, so the abandoning has to be cooperative.
+        AtomicBoolean abandoned = new AtomicBoolean(false);
+        List<CompletableFuture<Void>> futures = List.of();
+
         try {
-            List<CompletableFuture<Void>> futures = imageUrls.stream()
+            futures = imageUrls.stream()
                     .map(imageUrl -> CompletableFuture.runAsync(() -> {
+                        if (abandoned.get()) {
+                            return;
+                        }
                         String newUrl = requireCompression
                                 ? migrateCompressedImage(imageUrl, targetPath)
                                 : migrateImage(imageUrl, targetPath);
-                        if (newUrl != null) {
+                        if (newUrl != null && !abandoned.get()) {
                             resultMap.put(imageUrl, newUrl);
                         }
                     }, executor))
                     .toList();
-            
+
             // Wait for all tasks with timeout
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                     .get(timeoutSeconds, TimeUnit.SECONDS);
-            
+
             log.info("Migrated {}/{} images successfully", resultMap.size(), imageUrls.size());
-            
+
         } catch (TimeoutException e) {
             log.warn("Image migration timeout after {} seconds", timeoutSeconds);
         } catch (Exception e) {
             log.error("Error in batch image migration: {}", e.getMessage(), e);
         } finally {
+            abandoned.set(true);
+            futures.forEach(future -> future.cancel(true));
             executor.shutdownNow();
+            try {
+                // Diagnostic only, and deliberately short: the shared RestTemplate reads with a
+                // 30s timeout so a socket-blocked worker does eventually return and the pool
+                // drains itself. This just makes the abandoned threads visible in the log
+                // instead of leaving them behind silently.
+                if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                    log.warn("Image migration workers still running after shutdown for path {}", targetPath);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
-        
+
         return resultMap;
     }
 

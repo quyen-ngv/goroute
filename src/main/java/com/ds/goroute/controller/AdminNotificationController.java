@@ -10,7 +10,6 @@ import com.ds.goroute.dto.response.AdminNotificationRecipientResponse;
 import com.ds.goroute.dto.response.AdminPushNotificationResponse;
 import com.ds.goroute.dto.response.PageResponse;
 import com.ds.goroute.service.AdminNotificationService;
-import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -47,7 +46,6 @@ public class AdminNotificationController extends BaseController {
 
     @PostMapping("/audience/preview")
     @PreAuthorize("@adminAuthorization.can(authentication,'notifications','get')")
-    @Operation(summary = "Resolve an audience without sending anything")
     public ResponseEntity<BaseResponse<AdminNotificationAudienceResponse>> previewAudience(
             @Valid @RequestBody AdminNotificationAudienceRequest request,
             @RequestParam(defaultValue = "10") @Min(1) @Max(50) int sampleSize) {
@@ -56,7 +54,6 @@ public class AdminNotificationController extends BaseController {
 
     @PostMapping("/broadcast")
     @PreAuthorize("@adminAuthorization.can(authentication,'notifications','create')")
-    @Operation(summary = "Send an announcement to an audience")
     public ResponseEntity<BaseResponse<AdminPushNotificationResponse>> broadcast(
             @CurrentUser UUID adminUserId,
             @Valid @RequestBody AdminBroadcastNotificationRequest request) {
@@ -67,7 +64,6 @@ public class AdminNotificationController extends BaseController {
 
     @GetMapping("/recipients")
     @PreAuthorize("@adminAuthorization.can(authentication,'notifications','get')")
-    @Operation(summary = "Search users to address an announcement to")
     public ResponseEntity<BaseResponse<PageResponse<AdminNotificationRecipientResponse>>> recipients(
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "0") @Min(0) int page,
@@ -77,7 +73,6 @@ public class AdminNotificationController extends BaseController {
 
     @GetMapping("/history")
     @PreAuthorize("@adminAuthorization.can(authentication,'notifications','get')")
-    @Operation(summary = "Announcements already sent, grouped by batch")
     public ResponseEntity<BaseResponse<PageResponse<AdminNotificationHistoryResponse>>> history(
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "0") @Min(0) int page,

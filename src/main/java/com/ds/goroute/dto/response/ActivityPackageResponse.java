@@ -13,7 +13,7 @@ import java.util.UUID;
 @Data @Builder
 public class ActivityPackageResponse {
     private UUID id; private UUID activityId; private String code; private String name; private String description;
-    private String currency; private BigDecimal basePrice; private Integer minQuantity; private Integer maxQuantity;
+    private String currency; private BigDecimal basePrice; private BigDecimal originalPrice; private String packageGroup; private String groupType; private String departureType; private com.ds.goroute.dto.ActivityPackageDetails details; private Integer minQuantity; private Integer maxQuantity;
     private String inventoryType; private List<ActivityPackageUnit> units; private List<String> includedItems; private List<String> excludedItems;
     private List<String> requiredInformation; private String confirmationType; private String voucherType; private Integer validityDays;
     private Map<String,Object> attributes; private Map<String,Object> cancellationPolicy; private String status;

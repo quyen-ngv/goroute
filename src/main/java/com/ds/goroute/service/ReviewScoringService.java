@@ -34,6 +34,16 @@ public class ReviewScoringService {
     private static final int TIME_DECAY_DAYS = 365;
     private static final int SMOOTH_REVIEW_THRESHOLD = 200; // Reviews threshold for time decay
 
+    /** Aspect key → the review rating it averages. Insertion order is irrelevant to the result. */
+    private static final Map<String, java.util.function.Function<UserReview, Integer>> ASPECT_RATINGS = Map.of(
+            "food", UserReview::getFoodRating,
+            "price", UserReview::getPriceRating,
+            "ambiance", UserReview::getAmbianceRating,
+            "service", UserReview::getServiceRating,
+            "location", UserReview::getLocationRating,
+            "cleanliness", UserReview::getCleanlinessRating,
+            "facilities", UserReview::getFacilitiesRating);
+
     /**
      * Calculate weighted average score for a place
      */
@@ -123,7 +133,8 @@ public class ReviewScoringService {
     }
 
     /**
-     * Calculate aspect scores (food, price, ambiance, service)
+     * Calculate aspect scores: food, price, ambiance and service for any place, plus
+     * location, cleanliness and facilities, which only stay reviews carry.
      */
     public Map<String, BigDecimal> calculateAspectScores(UUID placeId) {
         List<UserReview> reviews = reviewRepository.findByPlaceId(placeId, 1000, 0);
@@ -134,23 +145,13 @@ public class ReviewScoringService {
 
         for (UserReview review : reviews) {
             double weight = calculateReviewWeight(review, reviewCount);
-
-            if (review.getFoodRating() != null) {
-                weightedSums.merge("food", review.getFoodRating() * weight, Double::sum);
-                totalWeights.merge("food", weight, Double::sum);
-            }
-            if (review.getPriceRating() != null) {
-                weightedSums.merge("price", review.getPriceRating() * weight, Double::sum);
-                totalWeights.merge("price", weight, Double::sum);
-            }
-            if (review.getAmbianceRating() != null) {
-                weightedSums.merge("ambiance", review.getAmbianceRating() * weight, Double::sum);
-                totalWeights.merge("ambiance", weight, Double::sum);
-            }
-            if (review.getServiceRating() != null) {
-                weightedSums.merge("service", review.getServiceRating() * weight, Double::sum);
-                totalWeights.merge("service", weight, Double::sum);
-            }
+            ASPECT_RATINGS.forEach((aspect, rating) -> {
+                Integer value = rating.apply(review);
+                if (value != null) {
+                    weightedSums.merge(aspect, value * weight, Double::sum);
+                    totalWeights.merge(aspect, weight, Double::sum);
+                }
+            });
         }
 
         Map<String, BigDecimal> aspectScores = new HashMap<>();
@@ -222,6 +223,9 @@ public class ReviewScoringService {
         score.setPriceScore(aspectScores.get("price"));
         score.setAmbianceScore(aspectScores.get("ambiance"));
         score.setServiceScore(aspectScores.get("service"));
+        score.setLocationScore(aspectScores.get("location"));
+        score.setCleanlinessScore(aspectScores.get("cleanliness"));
+        score.setFacilitiesScore(aspectScores.get("facilities"));
 
         // Update review count
         int reviewCount = reviewRepository.countByPlaceId(placeId);

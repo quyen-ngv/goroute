@@ -13,7 +13,10 @@ public interface TripMemberRepository {
     List<TripMember> findByTripId(UUID tripId);
     
     Optional<TripMember> findByTripIdAndUserId(UUID tripId, UUID userId);
-    
+
+    /** One user's member rows across several trips, keyed by trip id by the caller. */
+    List<TripMember> findByTripIdsAndUserId(List<UUID> tripIds, UUID userId);
+
     void updateById(TripMember member);
     
     void deleteById(UUID id);

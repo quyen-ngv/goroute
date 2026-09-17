@@ -18,7 +18,14 @@ public interface TripMemberMapper {
     List<TripMember> selectByUserId(@Param("userId") UUID userId);
     
     TripMember selectByTripIdAndUserId(@Param("tripId") UUID tripId, @Param("userId") UUID userId);
-    
+
+    /**
+     * The same rows as {@link #selectByTripIdAndUserId} for a whole list of trips at once,
+     * so rendering a trip list costs one query instead of one per trip.
+     */
+    List<TripMember> selectByTripIdsAndUserId(@Param("tripIds") List<UUID> tripIds,
+                                              @Param("userId") UUID userId);
+
     int updateById(TripMember member);
     
     int deleteById(@Param("id") UUID id);

@@ -1,5 +1,6 @@
 package com.ds.goroute.repository.impl;
 
+import com.ds.goroute.dto.ExpenseSplitCount;
 import com.ds.goroute.entity.Expense;
 import com.ds.goroute.mapper.ExpenseMapper;
 import com.ds.goroute.repository.ExpenseRepository;
@@ -41,6 +42,21 @@ public class ExpenseRepositoryImpl implements ExpenseRepository {
         return expenseMapper.selectByPaidBy(userId);
     }
     
+    @Override
+    public int countByPaidByGuestMemberId(UUID guestMemberId) {
+        return expenseMapper.countByPaidByGuestMemberId(guestMemberId);
+    }
+
+    @Override
+    public int reassignGuestPayerToUser(UUID guestMemberId, UUID userId) {
+        return expenseMapper.reassignGuestPayerToUser(guestMemberId, userId);
+    }
+
+    @Override
+    public List<ExpenseSplitCount> findSplitCountsByTripId(UUID tripId) {
+        return expenseMapper.selectSplitCountsByTripId(tripId);
+    }
+
     @Override
     public void updateById(Expense expense) {
         expenseMapper.updateById(expense);

@@ -63,6 +63,8 @@ public class PublicTripController extends BaseController {
             @RequestParam(defaultValue = "false") boolean allPublic,
             @RequestParam(defaultValue = "true") boolean excludeUserTrips,
             @RequestParam(required = false) String randomSeed,
+            // Trips with a cover or memory photos first; the feed asks for this.
+            @RequestParam(defaultValue = "false") boolean preferImages,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @CurrentUser(required = false) UUID userId
@@ -76,6 +78,7 @@ public class PublicTripController extends BaseController {
                 keyword,
                 allPublic,
                 randomSeed,
+                preferImages,
                 page,
                 size,
                 userId,

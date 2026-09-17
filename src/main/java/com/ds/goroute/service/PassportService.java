@@ -30,6 +30,17 @@ public interface PassportService {
     void recordCheckin(UserCheckin checkin);
 
     /**
+     * Re-points the passport entry of a check-in an operator moved to another place, and
+     * re-evaluates the stamps and tags.
+     *
+     * <p>Needed because {@link #recordCheckin} is a no-op on replay. A check-in with no
+     * catalogue place often resolves to no province at all, so attaching the right place is
+     * frequently the moment its author first becomes eligible for that province's stamp --
+     * and without this call they would never be given it.
+     */
+    void reprojectCheckinPlace(UserCheckin checkin);
+
+    /**
      * Brings activity check-ins that predate the passport into the event stream. Runs in
      * batches and is safe to interrupt and restart, because somebody who has used the app
      * for a year should not open the passport and find it empty.

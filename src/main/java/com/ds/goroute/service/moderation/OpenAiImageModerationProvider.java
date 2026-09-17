@@ -33,6 +33,26 @@ public class OpenAiImageModerationProvider implements ImageModerationProvider {
     private static final String GRAPHIC_VIOLENCE = "violence/graphic";
 
     private final OpenAiImageModerationProperties properties;
+
+    /**
+     * Timeouts come from HttpClientTimeoutConfig, which customises the auto-configured
+     * builder. Setting a request factory here instead would discard the one a test binds
+     * MockRestServiceServer to, and the call would leave for the real api.openai.com.
+     */
+    private volatile RestClient restClient;
+
+    private RestClient restClient() {
+        RestClient existing = restClient;
+        if (existing != null) {
+            return existing;
+        }
+        synchronized (this) {
+            if (restClient == null) {
+                restClient = restClientBuilder.build();
+            }
+            return restClient;
+        }
+    }
     private final RestClient.Builder restClientBuilder;
 
     @Override
@@ -44,7 +64,7 @@ public class OpenAiImageModerationProvider implements ImageModerationProvider {
     public Map<ModerationCategory, Double> score(byte[] bytes, String contentType) {
         requireApiKey();
 
-        OpenAiModerationResponse response = restClientBuilder.build()
+        OpenAiModerationResponse response = restClient()
                 .post()
                 .uri(properties.getUrl())
                 .contentType(MediaType.APPLICATION_JSON)

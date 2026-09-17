@@ -106,6 +106,28 @@
         SELECT * FROM place_contribution_groups WHERE id = #{id}
     </select>
 
+    <!-- The approval claim. The status test and the write are one statement so that two admins,
+         in one app instance or in two, cannot both read PENDING and both pay for a scrape: the
+         row lock decides it, and the loser gets 0 rows back. -->
+    <update id="claimGroupForScraping">
+        UPDATE place_contribution_groups
+        SET status = 'SCRAPING', updated_at = #{updatedAt}
+        WHERE id = #{id} AND status = 'PENDING'
+    </update>
+
+    <!-- A group claimed above but never handed to the scraper — the process died between the
+         claim commit and the trigger call — would otherwise sit in SCRAPING with no job id for
+         ever, and findActiveGroupByUrlHash would keep attaching new contributions to it, so that
+         URL could never be imported again. A live approval holds this state for seconds, so a
+         row still in it after the staleness window is an abandoned one. -->
+    <update id="releaseStalledScrapingClaims">
+        UPDATE place_contribution_groups
+        SET status = 'PENDING', updated_at = #{updatedAt}
+        WHERE status = 'SCRAPING'
+          AND scrape_job_id IS NULL
+          AND COALESCE(updated_at, created_at) &lt; #{staleBefore}
+    </update>
+
     <select id="findActiveGroupByUrlHash" resultMap="GroupResultMap">
         SELECT * FROM place_contribution_groups
         WHERE normalized_url_hash = #{normalizedUrlHash}

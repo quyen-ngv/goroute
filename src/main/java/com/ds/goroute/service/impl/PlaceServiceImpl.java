@@ -1087,6 +1087,7 @@ public class PlaceServiceImpl implements PlaceService {
 
     private AdminPlaceResponse toAdminPlaceResponse(Place place) {
         AdminPlaceResponse response = objectMapper.convertValue(toPlaceResponse(place), AdminPlaceResponse.class);
+        response.setLocationImageId(place.getLocationImageId());
         response.setCid(place.getCid());
         response.setDataId(place.getDataId());
         response.setInputId(place.getInputId());

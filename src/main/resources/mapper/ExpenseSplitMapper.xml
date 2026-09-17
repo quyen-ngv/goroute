@@ -20,8 +20,23 @@
                 #{guestName}, #{amount}, FALSE)
     </insert>
 
+    <!-- ORDER BY id: without it the order is whatever the plan returns, and it is visible
+         in ExpenseResponse.splits. It changed once already when V161 added an index on
+         expense_id, turning a seq scan into an index scan. -->
     <select id="selectByExpenseId" parameterType="java.util.UUID" resultMap="ExpenseSplitResultMap">
         SELECT * FROM expense_splits WHERE expense_id = #{expenseId,javaType=java.util.UUID,jdbcType=OTHER}
+        ORDER BY id
+    </select>
+
+    <!-- Batch sibling of selectByExpenseId: same table, same predicate and the same
+         ordering, one statement for a whole expense list instead of one per expense. -->
+    <select id="selectByExpenseIds" resultMap="ExpenseSplitResultMap">
+        SELECT * FROM expense_splits
+        WHERE expense_id IN
+        <foreach item="expenseId" collection="expenseIds" open="(" separator="," close=")">
+            #{expenseId,javaType=java.util.UUID,jdbcType=OTHER}
+        </foreach>
+        ORDER BY expense_id, id
     </select>
 
     <update id="updateById" parameterType="com.ds.goroute.entity.ExpenseSplit">

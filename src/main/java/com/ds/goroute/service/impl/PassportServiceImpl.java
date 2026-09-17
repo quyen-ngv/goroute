@@ -72,6 +72,27 @@ public class PassportServiceImpl implements PassportService {
 
     @Override
     @Transactional
+    public void reprojectCheckinPlace(UserCheckin checkin) {
+        if (!isPassportEnabled()) {
+            return;
+        }
+        PassportEvent existing = passportMapper.findEventBySource(SOURCE_USER_CHECKIN, checkin.getId());
+        if (existing == null) {
+            // Never projected -- passport was off, or the consequence failed. Attaching a
+            // place is as good a moment as any to record the visit properly.
+            recordCheckin(checkin);
+            return;
+        }
+        passportMapper.updateEventLocation(existing.getId(), checkin.getPlaceId(),
+                checkin.getLocationKey(), resolveProvinceCode(checkin));
+
+        PassportEvent updated = passportMapper.findEventBySource(SOURCE_USER_CHECKIN, checkin.getId());
+        evaluateStamps(checkin.getUserId(), updated.getId());
+        evaluateTags(checkin.getUserId(), updated);
+    }
+
+    @Override
+    @Transactional
     public void recordCheckin(UserCheckin checkin) {
         if (!isPassportEnabled()) {
             return;

@@ -9,8 +9,6 @@ import com.ds.goroute.dto.response.ReviewScoreResponse;
 import com.ds.goroute.dto.response.UserReviewProfileResponse;
 import com.ds.goroute.dto.response.UserReviewResponse;
 import com.ds.goroute.service.ReviewService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,13 +22,11 @@ import java.util.UUID;
 @RequestMapping("/v1/api/reviews")
 @RequiredArgsConstructor
 @Slf4j
-@Tag(name = "Reviews", description = "User review management APIs")
 public class ReviewController extends BaseController {
 
     private final ReviewService reviewService;
 
     @PostMapping
-    @Operation(summary = "Create a new review")
     public ResponseEntity createReview(
             @Valid @RequestBody CreateReviewRequest request,
             @CurrentUser UUID userId) {
@@ -39,7 +35,6 @@ public class ReviewController extends BaseController {
     }
 
     @GetMapping("/eligibility")
-    @Operation(summary = "Check whether the caller may review a completed hotel booking or activity order")
     public ResponseEntity getEligibility(
             @RequestParam(required = false) UUID hotelBookingId,
             @RequestParam(required = false) UUID activityOrderId,
@@ -49,7 +44,6 @@ public class ReviewController extends BaseController {
     }
 
     @PutMapping("/{id}")
-    @Operation(summary = "Update an existing review")
     public ResponseEntity updateReview(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateReviewRequest request,
@@ -59,7 +53,6 @@ public class ReviewController extends BaseController {
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "Delete a review")
     public ResponseEntity deleteReview(
             @PathVariable UUID id,
             @CurrentUser UUID userId) {
@@ -67,8 +60,19 @@ public class ReviewController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(null));
     }
 
+    /**
+     * One review, for the detail screen a "someone liked/commented on your review"
+     * notification opens. Readable signed out, like the place listing it also appears in.
+     */
+    @GetMapping("/{id}")
+    public ResponseEntity getReview(
+            @PathVariable UUID id,
+            @CurrentUser(required = false) UUID userId) {
+        UserReviewResponse response = reviewService.getReview(id, userId);
+        return ResponseEntity.ok(ofSucceeded(response));
+    }
+
     @GetMapping("/places/{placeId}")
-    @Operation(summary = "Get reviews for a place")
     public ResponseEntity getPlaceReviews(
             @PathVariable UUID placeId,
             @RequestParam(defaultValue = "0") int page,
@@ -79,7 +83,6 @@ public class ReviewController extends BaseController {
     }
 
     @GetMapping("/activity-bookings/{activityBookingId}")
-    @Operation(summary = "Get reviews for an activity booking")
     public ResponseEntity getActivityBookingReviews(
             @PathVariable UUID activityBookingId,
             @RequestParam(defaultValue = "0") int page,
@@ -90,7 +93,6 @@ public class ReviewController extends BaseController {
     }
 
     @GetMapping("/users/me")
-    @Operation(summary = "Get current user's reviews")
     public ResponseEntity getMyReviews(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
@@ -100,7 +102,6 @@ public class ReviewController extends BaseController {
     }
 
     @GetMapping("/feed")
-    @Operation(summary = "Get reviews for feed, excluding current user's reviews when authenticated")
     public ResponseEntity getFeedReviews(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
@@ -111,7 +112,6 @@ public class ReviewController extends BaseController {
     }
 
     @PostMapping("/{id}/helpful")
-    @Operation(summary = "Vote review as helpful (toggle)")
     public ResponseEntity voteHelpful(
             @PathVariable UUID id,
             @CurrentUser UUID userId) {
@@ -120,7 +120,6 @@ public class ReviewController extends BaseController {
     }
 
     @PostMapping("/{id}/unhelpful")
-    @Operation(summary = "Vote review as unhelpful (toggle)")
     public ResponseEntity voteUnhelpful(
             @PathVariable UUID id,
             @CurrentUser UUID userId) {
@@ -129,21 +128,18 @@ public class ReviewController extends BaseController {
     }
 
     @GetMapping("/places/{placeId}/score")
-    @Operation(summary = "Get aggregated score for a place")
     public ResponseEntity getPlaceScore(@PathVariable UUID placeId) {
         PlaceScoreResponse response = reviewService.getPlaceScore(placeId);
         return ResponseEntity.ok(ofSucceeded(response));
     }
 
     @GetMapping("/activity-bookings/{activityBookingId}/score")
-    @Operation(summary = "Get aggregated score for an activity booking")
     public ResponseEntity getActivityBookingScore(@PathVariable UUID activityBookingId) {
         ReviewScoreResponse response = reviewService.getActivityBookingScore(activityBookingId);
         return ResponseEntity.ok(ofSucceeded(response));
     }
 
     @GetMapping("/users/me/profile")
-    @Operation(summary = "Get current user's review profile (tier & stats)")
     public ResponseEntity getMyProfile(@CurrentUser UUID userId) {
         UserReviewProfileResponse response = reviewService.getUserProfile(userId);
         return ResponseEntity.ok(ofSucceeded(response));

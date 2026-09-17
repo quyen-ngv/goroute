@@ -181,10 +181,12 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .stream()
                 .collect(Collectors.groupingBy(MediaAsset::getEntityId));
 
+        ExpenseBatch batch = loadExpenseBatch(expenses);
         return expenses.stream()
                 .map(expense -> mapToExpenseResponse(
                         expense,
-                        photosByExpense.getOrDefault(expense.getId(), List.of())))
+                        photosByExpense.getOrDefault(expense.getId(), List.of()),
+                        batch))
                 .collect(Collectors.toList());
     }
 
@@ -564,10 +566,86 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .divide(expense.getAmount(), 2, RoundingMode.HALF_UP);
     }
 
+    /**
+     * Everything mapToExpenseResponse needs from other tables, read once for a whole page
+     * of expenses. Rendering a hundred expenses used to cost roughly eight hundred queries:
+     * a trip and a payer lookup per expense, a splits query per expense, and a user lookup
+     * per split. These are the same lookups with the same predicates, including the same
+     * "row missing or soft deleted means null" behaviour; only the number of round trips
+     * changes.
+     */
+    private record ExpenseBatch(
+            Map<UUID, Trip> trips,
+            Map<UUID, TripMember> guestMembers,
+            Map<UUID, User> users,
+            Map<UUID, List<ExpenseSplit>> splitsByExpense) {
+
+        Trip trip(UUID tripId) {
+            return tripId == null ? null : trips.get(tripId);
+        }
+
+        TripMember guestMember(UUID memberId) {
+            return memberId == null ? null : guestMembers.get(memberId);
+        }
+
+        User user(UUID userId) {
+            return userId == null ? null : users.get(userId);
+        }
+
+        List<ExpenseSplit> splits(UUID expenseId) {
+            return splitsByExpense.getOrDefault(expenseId, List.of());
+        }
+    }
+
+    private ExpenseBatch loadExpenseBatch(List<Expense> expenses) {
+        if (expenses.isEmpty()) {
+            return new ExpenseBatch(Map.of(), Map.of(), Map.of(), Map.of());
+        }
+
+        Map<UUID, Trip> trips = new HashMap<>();
+        expenses.stream().map(Expense::getTripId).filter(java.util.Objects::nonNull).distinct()
+                .forEach(tripId -> tripRepository.findById(tripId)
+                        .ifPresent(trip -> trips.put(tripId, trip)));
+
+        // trip_members owns no batch finder we may touch, but only guest paid expenses
+        // reach it and the distinct set is usually a single row.
+        Map<UUID, TripMember> guestMembers = new HashMap<>();
+        expenses.stream().map(Expense::getPaidByGuestMemberId).filter(java.util.Objects::nonNull).distinct()
+                .forEach(memberId -> tripMemberRepository.findById(memberId)
+                        .ifPresent(member -> guestMembers.put(memberId, member)));
+
+        // One statement for every split on the page. Neither this nor the per expense
+        // query orders its rows, and grouping keeps each expense in the order the scan
+        // produced them, so the rendered split order is unchanged.
+        Map<UUID, List<ExpenseSplit>> splitsByExpense = new java.util.LinkedHashMap<>();
+        for (ExpenseSplit split : expenseSplitRepository.findByExpenseIds(
+                expenses.stream().map(Expense::getId).toList())) {
+            splitsByExpense.computeIfAbsent(split.getExpenseId(), key -> new java.util.ArrayList<>())
+                    .add(split);
+        }
+
+        Set<UUID> userIds = new java.util.LinkedHashSet<>();
+        expenses.stream()
+                .filter(expense -> expense.getPaidByGuestMemberId() == null)
+                .map(Expense::getPaidBy).filter(java.util.Objects::nonNull).forEach(userIds::add);
+        guestMembers.values().stream().map(TripMember::getUserId)
+                .filter(java.util.Objects::nonNull).forEach(userIds::add);
+        splitsByExpense.values().stream().flatMap(List::stream).map(ExpenseSplit::getUserId)
+                .filter(java.util.Objects::nonNull).forEach(userIds::add);
+
+        // findByIds carries the same deleted_at IS NULL filter findById does, so a soft
+        // deleted user is absent here exactly as it was null there.
+        Map<UUID, User> users = userRepository.findByIds(userIds).stream()
+                .collect(Collectors.toMap(User::getId, user -> user, (a, b) -> a));
+
+        return new ExpenseBatch(trips, guestMembers, users, splitsByExpense);
+    }
+
     private ExpenseResponse mapToExpenseResponse(Expense expense) {
         return mapToExpenseResponse(
                 expense,
-                mediaAssetRepository.findByEntity(EXPENSE_ENTITY_TYPE, expense.getId()));
+                mediaAssetRepository.findByEntity(EXPENSE_ENTITY_TYPE, expense.getId()),
+                loadExpenseBatch(List.of(expense)));
     }
 
     /**
@@ -625,11 +703,12 @@ public class ExpenseServiceImpl implements ExpenseService {
         }
     }
 
-    private ExpenseResponse mapToExpenseResponse(Expense expense, List<MediaAsset> photos) {
+    private ExpenseResponse mapToExpenseResponse(Expense expense, List<MediaAsset> photos,
+                                                 ExpenseBatch batch) {
         log.info("ðŸ”µ mapToExpenseResponse: expenseId={}, paidBy={}, paidByGuestMemberId={}",
                 expense.getId(), expense.getPaidBy(), expense.getPaidByGuestMemberId());
 
-        Trip trip = tripRepository.findById(expense.getTripId()).orElse(null);
+        Trip trip = batch.trip(expense.getTripId());
         BigDecimal amountInTripCurrency = trip != null
                 ? resolveAmountInTripCurrency(expense, trip)
                 : expense.getAmount();
@@ -646,12 +725,12 @@ public class ExpenseServiceImpl implements ExpenseService {
         if (expense.getPaidByGuestMemberId() != null) {
             log.info("   Guest payer detected: {}", expense.getPaidByGuestMemberId());
             // Guest payer - fetch from trip_members
-            TripMember guestMember = tripMemberRepository.findById(expense.getPaidByGuestMemberId()).orElse(null);
+            TripMember guestMember = batch.guestMember(expense.getPaidByGuestMemberId());
             if (guestMember != null) {
                 log.info("   Found guest member: {}", guestMember.getGuestName());
                 if (guestMember.getUserId() != null) {
                     // Guest is linked to a user - fetch user info
-                    User user = userRepository.findById(guestMember.getUserId()).orElse(null);
+                    User user = batch.user(guestMember.getUserId());
                     paidByResponse = mapToUserResponse(user);
                 } else {
                     // Guest is not linked - use guest name
@@ -669,20 +748,20 @@ public class ExpenseServiceImpl implements ExpenseService {
         } else if (expense.getPaidBy() != null) {
             log.info("   Regular user payer: {}", expense.getPaidBy());
             // Regular user payer
-            User paidBy = userRepository.findById(expense.getPaidBy()).orElse(null);
+            User paidBy = batch.user(expense.getPaidBy());
             paidByResponse = mapToUserResponse(paidBy);
         }
 
         log.info("   Final paidByResponse: {}", paidByResponse != null ? paidByResponse.getFullName() : "null");
 
-        List<ExpenseSplit> splits = expenseSplitRepository.findByExpenseId(expense.getId());
+        List<ExpenseSplit> splits = batch.splits(expense.getId());
 
         List<ExpenseSplitResponse> splitResponses = splits.stream()
                 .map(s -> {
                     // Handle guest members (userId can be null)
                     UserResponse userResponse = null;
                     if (s.getUserId() != null) {
-                        User user = userRepository.findById(s.getUserId()).orElse(null);
+                        User user = batch.user(s.getUserId());
                         if (user != null) {
                             userResponse = UserResponse.builder()
                                     .id(user.getId())

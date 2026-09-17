@@ -15,6 +15,7 @@ import com.ds.goroute.service.notification.event.TripEvent;
 import com.ds.goroute.type.NotificationType;
 import com.ds.goroute.utils.JsonUtils;
 import com.google.gson.Gson;
+import jakarta.annotation.Resource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 // import org.springframework.cache.annotation.CacheEvict;
@@ -22,11 +23,14 @@ import lombok.extern.slf4j.Slf4j;
 // import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 // import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -43,6 +47,9 @@ public class NotificationServiceImpl implements NotificationService {
     // private final RedisTemplate<String, Object> redisTemplate;
     private final Gson gson;
 
+    @Resource(name = "notificationExecutor")
+    private Executor notificationExecutor;
+
     @Override
     @Transactional
     // @CacheEvict(value = "notifications", key = "#userId + '_unread'")
@@ -58,8 +65,33 @@ public class NotificationServiceImpl implements NotificationService {
         createNotificationInternal(userId, event.getTripId(), event.getType(), null, null, data, event.getActorId());
     }
 
-    private boolean createNotificationInternal(UUID userId, UUID tripId, NotificationType type,
-                                               String title, String body, Map<String, Object> data, UUID actorId) {
+    private void createNotificationInternal(UUID userId, UUID tripId, NotificationType type,
+                                            String title, String body, Map<String, Object> data, UUID actorId) {
+        pushAfterCommit(userId, type,
+                persistNotification(userId, tripId, type, title, body, data, actorId));
+    }
+
+    /**
+     * Writes the row and waits for the push, reporting whether a device accepted it.
+     *
+     * <p>Only the admin broadcast endpoints use this: they answer the caller with a
+     * per-recipient delivery breakdown, so that answer has to be the real one.
+     */
+    private boolean createNotificationAndPush(UUID userId, UUID tripId, NotificationType type,
+                                              String title, String body, Map<String, Object> data, UUID actorId) {
+        Map<String, Object> payload =
+                persistNotification(userId, tripId, type, title, body, data, actorId);
+        try {
+            return sendPushNotification(userId, type, payload);
+        } catch (Exception e) {
+            log.error("Failed to send push notification: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /** Writes the notification row and returns the push payload built alongside it. */
+    private Map<String, Object> persistNotification(UUID userId, UUID tripId, NotificationType type,
+                                                    String title, String body, Map<String, Object> data, UUID actorId) {
         Map<String, Object> payload = new java.util.HashMap<>();
         if (data != null) {
             payload.putAll(data);
@@ -84,14 +116,41 @@ public class NotificationServiceImpl implements NotificationService {
 
         notificationRepository.insert(notification);
         log.info("Created notification: userId={}, type={}", userId, type);
+        return payload;
+    }
 
-        // Send push notification and report whether at least one device accepted it.
-        try {
-            return sendPushNotification(userId, type, payload);
-        } catch (Exception e) {
-            log.error("Failed to send push notification: {}", e.getMessage(), e);
-            return false;
+    /**
+     * Queues the FCM push for after this transaction commits, on the notification executor.
+     *
+     * <p>The notification row is still written in the caller's transaction, so nothing about
+     * what the user ends up seeing changes. Only the push moves: it used to be a blocking HTTP
+     * call per device made before commit, inside transactions that were holding real locks --
+     * reserved booking inventory, an expiring hold, the AI-trip job row -- so every device
+     * Firebase was slow to answer for extended the time those locks were held. After commit, no
+     * lock is held, and on a rollback there is no notification row to push about either.
+     *
+     * <p>Outside a transaction (a caller that is not {@code @Transactional}) it is simply
+     * handed to the executor straight away.
+     */
+    private void pushAfterCommit(UUID userId, NotificationType type, Map<String, Object> payload) {
+        Runnable push = () -> sendPushNotification(userId, type, payload);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            notificationExecutor.execute(push);
+            return;
         }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                // An exception here propagates to the caller of the already-committed
+                // transactional method and turns a successful booking into a 500. The executor
+                // uses CallerRunsPolicy, so a full queue runs the push inline on this thread.
+                try {
+                    notificationExecutor.execute(push);
+                } catch (Exception ex) {
+                    log.error("Push notification could not be queued after commit for user {}", userId, ex);
+                }
+            }
+        });
     }
 
     @Override
@@ -200,7 +259,7 @@ public class NotificationServiceImpl implements NotificationService {
                 );
 
                 // Create notification record in DB
-                boolean sent = createNotificationInternal(
+                boolean sent = createNotificationAndPush(
                     userId,
                     null, // no tripId for admin notifications
                     NotificationType.ADMIN_ANNOUNCEMENT,
@@ -274,7 +333,7 @@ public class NotificationServiceImpl implements NotificationService {
 
                 boolean hasDevice = !userDeviceMapper.findActiveByUserId(userId).isEmpty();
 
-                boolean pushed = createNotificationInternal(
+                boolean pushed = createNotificationAndPush(
                         userId,
                         null,
                         NotificationType.ADMIN_ANNOUNCEMENT,

@@ -22,6 +22,7 @@ import com.ds.goroute.repository.UserCheckinRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.repository.UserReviewProfileRepository;
 import com.ds.goroute.repository.UserReviewRepository;
+import com.ds.goroute.service.ContentModerationService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.ReviewFraudDetectionService;
 import com.ds.goroute.service.ReviewScoringService;
@@ -59,7 +60,7 @@ class ReviewEligibilityServiceImplTest {
             mock(ReviewHelpfulVoteRepository.class), mock(UserRepository.class), places,
             mock(UserCheckinRepository.class), mock(ActivityBookingRepository.class), hotels, activities,
             mediaAssets, scoring, mock(ReviewFraudDetectionService.class), mock(ImageStorageCleanupService.class),
-            mock(SocialNotificationService.class));
+            mock(SocialNotificationService.class), mock(ContentModerationService.class));
 
     private final UUID user = UUID.randomUUID();
     private final UUID bookingId = UUID.randomUUID();
@@ -212,7 +213,7 @@ class ReviewEligibilityServiceImplTest {
                 mock(ReviewHelpfulVoteRepository.class), mock(UserRepository.class), places,
                 mock(UserCheckinRepository.class), activityBookings, hotels, activities,
                 mediaAssets, scoring, mock(ReviewFraudDetectionService.class), mock(ImageStorageCleanupService.class),
-                mock(SocialNotificationService.class));
+                mock(SocialNotificationService.class), mock(ContentModerationService.class));
 
         UserReviewResponse response = withBookings.createReview(user, request(null, orderId));
 

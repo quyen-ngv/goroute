@@ -1,6 +1,7 @@
 package com.ds.goroute.service.impl;
 
 import com.ds.goroute.config.InternalApiProperties;
+import com.ds.goroute.config.ScrapeHttpClientProperties;
 import com.ds.goroute.dto.request.CreateSocialLocationJobRequest;
 import com.ds.goroute.dto.request.SocialLocationJobCallbackRequest;
 import com.ds.goroute.dto.request.CreateSocialPlaceImportJobRequest;
@@ -44,13 +45,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.UUID;
 import java.time.LocalDate;
 import java.net.URI;
@@ -62,6 +66,9 @@ import java.util.Locale;
 public class SocialLocationJobServiceImpl implements SocialLocationJobService {
 
     private static final String CURRENT_CANDIDATE_POLICY = "AI_EVIDENCE_JUDGE_V2";
+
+    /** error_details marker for a trigger call that was accepted but never answered. */
+    private static final String DISPATCH_OUTCOME_UNVERIFIED = "UNVERIFIED";
 
     private final SocialLocationJobMapper jobMapper;
     private final AiApiCallMapper aiApiCallMapper;
@@ -76,6 +83,15 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     private final SocialLocationRestrictionRepository restrictionRepository;
     private final NotificationService notificationService;
     private final SocialLocationCompletionService completionService;
+    private final PlatformTransactionManager transactionManager;
+    private final ScrapeHttpClientProperties scrapeHttpClientProperties;
+
+    /**
+     * Built lazily from the injected manager so the polling tick can open and close short
+     * transactions around its own database work instead of holding one transaction across
+     * every worker call it makes.
+     */
+    private volatile TransactionTemplate transactionTemplate;
 
     @Value("${goroute.internal.public-base-url:http://goroute-app:8080}")
     private String internalBaseUrl;
@@ -206,23 +222,57 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 Map.of("dailyLimit", dailyJobLimit));
     }
 
+    /**
+     * Runs every couple of seconds. Every database step below happens in its own short
+     * transaction and every worker call happens outside all of them: one transaction used to
+     * span N trigger calls plus 25 polls with a 30s read timeout, which pinned a pooled
+     * connection for minutes, and a single job whose side effects threw marked that shared
+     * transaction rollback-only — sending every already-dispatched job in the batch back to
+     * QUEUED and re-billing the paid extraction on the next tick.
+     */
     @Override
-    @Transactional
     public void dispatchQueuedJobs() {
-        if (!jobMapper.tryDispatchLock()) return;
-        recoverStaleDispatches();
-        reconcileProcessingJobs();
-        int available = socialConfig.maxConcurrentJobs() - jobMapper.countActive();
-        if (available <= 0) return;
-        for (SocialLocationJob job : jobMapper.claimQueued(available)) {
-            dispatch(job);
+        if (!Boolean.TRUE.equals(inTransaction(() -> {
+            if (!jobMapper.tryDispatchLock()) return Boolean.FALSE;
+            recoverStaleDispatches();
+            return Boolean.TRUE;
+        }))) {
+            return;
         }
+        reconcileProcessingJobs();
+        for (SocialLocationJob job : claimJobsToDispatch()) {
+            try {
+                dispatch(job);
+            } catch (Exception e) {
+                // The job stays DISPATCHING and recoverStaleDispatches decides its fate; the
+                // rest of the batch must not be lost with it.
+                log.error("Social-location dispatch failed: job_id={} error={}",
+                        job.getId(), e.getMessage(), e);
+            }
+        }
+    }
+
+    /** Claims work under the same advisory lock and row claim as before, but nothing else. */
+    private List<SocialLocationJob> claimJobsToDispatch() {
+        List<SocialLocationJob> claimed = inTransaction(() -> {
+            if (!jobMapper.tryDispatchLock()) return List.<SocialLocationJob>of();
+            int available = socialConfig.maxConcurrentJobs() - jobMapper.countActive();
+            if (available <= 0) return List.<SocialLocationJob>of();
+            return jobMapper.claimQueued(available);
+        });
+        return claimed == null ? List.of() : claimed;
     }
 
     private void dispatch(SocialLocationJob job) {
         int interval = socialConfig.frameIntervalSeconds();
         int maxFrames = Math.max(1, (int) Math.ceil(job.getMaxDurationSeconds() / (double) interval));
-        ScrapeSocialLocationJobResponse trigger = scrapeServiceClient.triggerSocialLocationJob(
+        // Outside any transaction: this call can block for the worker's full read timeout.
+        // gorouteJobId is the request id: it is stable across every attempt at this job, so a
+        // worker that already accepted it can recognise a repeat submission as the same work.
+        long startedNanos = System.nanoTime();
+        ScrapeSocialLocationJobResponse trigger;
+        try {
+            trigger = scrapeServiceClient.triggerSocialLocationJob(
                 ScrapeSocialLocationJobRequest.builder()
                         .url(job.getSourceUrl())
                         .language(job.getLanguage())
@@ -242,35 +292,94 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                         .mapSearchLimit(1)
                         .headless(true)
                         .build());
+        } catch (ScrapeServiceClient.TriggerUnverifiedException e) {
+            // The client could not rule out that the worker accepted the request and only the
+            // answer was lost (a read timeout above all), so the extraction may be running right
+            // now and re-sending it would pay for the same video twice. Verify instead of retry.
+            markDispatchUnverified(job, Duration.ofNanos(System.nanoTime() - startedNanos), e.getMessage());
+            return;
+        }
 
         if (trigger == null || trigger.getJobId() == null || trigger.getJobId().isBlank()) {
-            retryOrFinish(job, "DISPATCH", "PYTHON_TRIGGER_FAILED",
-                    "Could not submit the job to the social-location worker");
-        } else {
-            SocialLocationJob latest = jobMapper.findById(job.getId());
-            if (latest != null && isTerminal(latest.getStatus())) return;
-            job.setStatus(SocialLocationJobStatus.PROCESSING);
-            job.setPythonJobId(trigger.getJobId());
-            LocalDateTime now = LocalDateTime.now();
-            job.setStartedAt(now);
-            job.setDeadlineAt(now.plusMinutes(Math.max(1, jobTimeoutMinutes)));
-            job.setLastHeartbeatAt(now);
-            job.setLastReconciledAt(now);
-            job.setErrorCode(null);
-            job.setErrorMessage(null);
-            job.setErrorDetails(null);
-            job.setFailureStage(null);
+            // Null means the client proved the request never reached the worker's handler
+            // (connection refused / unknown host / connect timeout) or the worker answered with an
+            // error status; a 2xx without a job id means it answered and started nothing. In every
+            // one of those cases nothing was extracted and nothing was paid for, so the job
+            // retries immediately on the next tick exactly as it did before dispatch was split out.
+            failDispatch(job);
+            return;
         }
+        job.setStatus(SocialLocationJobStatus.PROCESSING);
+        job.setPythonJobId(trigger.getJobId());
+        LocalDateTime now = LocalDateTime.now();
+        job.setStartedAt(now);
+        job.setDeadlineAt(now.plusMinutes(Math.max(1, jobTimeoutMinutes)));
+        job.setLastHeartbeatAt(now);
+        job.setLastReconciledAt(now);
+        job.setErrorCode(null);
+        job.setErrorMessage(null);
+        job.setErrorDetails(null);
+        job.setFailureStage(null);
         job.setUpdatedAt(LocalDateTime.now());
-        jobMapper.update(job);
-        if (job.getStatus() == SocialLocationJobStatus.QUEUED || isTerminal(job.getStatus())) {
-            auditLifecycleRecovery(job);
+        // Conditional on DISPATCHING: a callback that already turned the job terminal while the
+        // trigger call was in flight keeps its result, exactly as the previous terminal check did.
+        runInTransaction(() -> jobMapper.updateIfStatus(job, "DISPATCHING"));
+    }
+
+    /**
+     * The worker refused the request outright, so nothing was extracted and nothing was paid for:
+     * schedule the same retry (or the same terminal failure) the old inline branch did.
+     */
+    private void failDispatch(SocialLocationJob job) {
+        retryOrFinish(job, "DISPATCH", "PYTHON_TRIGGER_FAILED",
+                "Could not submit the job to the social-location worker");
+        job.setUpdatedAt(LocalDateTime.now());
+        runInTransaction(() -> {
+            if (jobMapper.updateIfStatus(job, "DISPATCHING") > 0) {
+                auditLifecycleRecovery(job);
+            }
+        });
+    }
+
+    /**
+     * The trigger call was accepted but its answer was lost, so whether the paid extraction is
+     * running is unknown. The job stays DISPATCHING and is verified rather than re-dispatched:
+     * the worker's callback carries gorouteJobId and still lands on a DISPATCHING job, and only
+     * if nothing has arrived by the job timeout does recoverStaleDispatches requeue it. The
+     * marker lives in error_details, which no response exposes, and every later outcome
+     * (callback, retry or failure) overwrites it.
+     */
+    private void markDispatchUnverified(SocialLocationJob job, Duration elapsed, String reason) {
+        job.setErrorDetails(toJson(Map.of(
+                "stage", "DISPATCH",
+                "dispatchOutcome", DISPATCH_OUTCOME_UNVERIFIED,
+                "triggerElapsedSeconds", elapsed.toSeconds(),
+                "triggerFailure", reason == null ? "" : reason,
+                "attempt", job.getAttemptCount() == null ? 0 : job.getAttemptCount())));
+        job.setUpdatedAt(LocalDateTime.now());
+        runInTransaction(() -> jobMapper.updateIfStatus(job, "DISPATCHING"));
+        log.warn("Social-location trigger outcome unknown: job_id={} attempt={} elapsed_seconds={} "
+                        + "reason={}; awaiting the worker callback instead of re-dispatching",
+                job.getId(), job.getAttemptCount(), elapsed.toSeconds(), reason);
+    }
+
+    private boolean awaitingDispatchVerification(SocialLocationJob job, LocalDateTime verifyBefore) {
+        if (job.getUpdatedAt() == null || !job.getUpdatedAt().isAfter(verifyBefore)) {
+            return false;
         }
+        JsonNode details = parseJson(job.getErrorDetails());
+        return details != null
+                && DISPATCH_OUTCOME_UNVERIFIED.equals(details.path("dispatchOutcome").asText(null));
     }
 
     private void recoverStaleDispatches() {
-        LocalDateTime cutoff = LocalDateTime.now().minusSeconds(Math.max(15, dispatchTimeoutSeconds));
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime cutoff = now.minusSeconds(Math.max(15, dispatchTimeoutSeconds));
+        // A trigger whose outcome is unknown gets the worker's own processing budget to prove
+        // itself with a callback before we spend money on a second run of the same video.
+        LocalDateTime verifyBefore = now.minusMinutes(Math.max(1, jobTimeoutMinutes));
         for (SocialLocationJob job : jobMapper.findStaleDispatching(cutoff, 25)) {
+            if (awaitingDispatchVerification(job, verifyBefore)) continue;
             retryOrFinish(job, "DISPATCH", "DISPATCH_TIMEOUT",
                     "The social-location worker did not acknowledge the job in time");
             if (jobMapper.updateIfStatus(job, "DISPATCHING") == 0) continue;
@@ -281,19 +390,38 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     }
 
     private void reconcileProcessingJobs() {
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime reconcileBefore = now.minusSeconds(Math.max(5, reconcileIntervalSeconds));
-        for (SocialLocationJob candidate : jobMapper.findProcessingForReconciliation(reconcileBefore, 25)) {
-            Map<String, Object> workerJob = candidate.getPythonJobId() == null
-                    ? null
-                    : scrapeServiceClient.pollJobData(candidate.getPythonJobId());
-            if (applyWorkerTerminalResult(candidate, workerJob)) {
-                continue;
+        LocalDateTime reconcileBefore = LocalDateTime.now().minusSeconds(Math.max(5, reconcileIntervalSeconds));
+        List<SocialLocationJob> candidates =
+                inTransaction(() -> jobMapper.findProcessingForReconciliation(reconcileBefore, 25));
+        if (candidates == null) {
+            return;
+        }
+        for (SocialLocationJob candidate : candidates) {
+            try {
+                reconcileProcessingJob(candidate);
+            } catch (Exception e) {
+                // One unreachable worker or one unusable payload must not stop the other 24
+                // jobs from being reconciled on this tick.
+                log.warn("Could not reconcile social-location job {}: {}",
+                        candidate.getId(), e.getMessage(), e);
             }
+        }
+    }
 
+    private void reconcileProcessingJob(SocialLocationJob candidate) {
+        // Outside any transaction: pollJobData allows a 30s read timeout per job.
+        Map<String, Object> workerJob = candidate.getPythonJobId() == null
+                ? null
+                : scrapeServiceClient.pollJobData(candidate.getPythonJobId());
+        if (applyWorkerTerminalResult(candidate, workerJob)) {
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        runInTransaction(() -> {
             SocialLocationJob latest = jobMapper.findById(candidate.getId());
             if (latest == null || latest.getStatus() != SocialLocationJobStatus.PROCESSING) {
-                continue;
+                return;
             }
             latest.setLastReconciledAt(now);
             if (workerJob != null) {
@@ -312,7 +440,26 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                     || isTerminal(latest.getStatus()))) {
                 auditLifecycleRecovery(latest);
             }
+        });
+    }
+
+    private <T> T inTransaction(Supplier<T> work) {
+        return transactions().execute(status -> work.get());
+    }
+
+    private void runInTransaction(Runnable work) {
+        transactions().executeWithoutResult(status -> work.run());
+    }
+
+    private TransactionTemplate transactions() {
+        TransactionTemplate template = transactionTemplate;
+        if (template == null) {
+            // REQUIRED, never REQUIRES_NEW: these boundaries must open a connection, not add a
+            // second one on top of a transaction that is already holding row locks.
+            template = new TransactionTemplate(transactionManager);
+            transactionTemplate = template;
         }
+        return template;
     }
 
     @SuppressWarnings("unchecked")
@@ -431,9 +578,37 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         audit(userId, jobId, job.getSourceUrl(), "DELETED", null, null);
     }
 
+    /**
+     * The job row is written in its own short transaction; the projections that follow (video
+     * links, saved spots / itinerary, place import, notification) each run in their own.
+     *
+     * <p>They used to run inside this transaction. Because they live on other beans and are
+     * themselves {@code @Transactional}, an exception inside one marked the shared transaction
+     * rollback-only no matter how carefully it was caught here — PostgreSQL then rejected every
+     * later statement and the commit threw. When the worker poll reached this method from the
+     * 2-second dispatch tick, that rollback also undid the whole batch's claims.
+     */
     @Override
-    @Transactional
     public SocialLocationJobResponse handleCallback(SocialLocationJobCallbackRequest request) {
+        CallbackOutcome outcome = inTransaction(() -> applyCallback(request));
+        SocialLocationJob job = outcome.job();
+        if (outcome.alreadyTerminal()) {
+            return toResponse(job);
+        }
+        runCallbackProjections(job, outcome.result(), outcome.status());
+        log.info("Social location callback processed: job_id={} python_job_id={} status={}",
+                job.getId(), job.getPythonJobId(), job.getStatus());
+        return toResponse(job);
+    }
+
+    /** What the job row became, so the projections that follow need no second read. */
+    private record CallbackOutcome(SocialLocationJob job,
+                                   SocialLocationJobStatus status,
+                                   JsonNode result,
+                                   boolean alreadyTerminal) {
+    }
+
+    private CallbackOutcome applyCallback(SocialLocationJobCallbackRequest request) {
         SocialLocationJob job = request.getGorouteJobId() != null
                 ? jobMapper.findById(request.getGorouteJobId())
                 : null;
@@ -448,7 +623,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
 
         SocialLocationJobStatus status = parseStatus(request.getStatus());
         if (isTerminal(job.getStatus())) {
-            return toResponse(job);
+            return new CallbackOutcome(job, job.getStatus(), null, true);
         }
         job.setStatus(status);
         job.setPythonJobId(firstNonBlank(request.getPythonJobId(), job.getPythonJobId()));
@@ -479,12 +654,6 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         }
         job.setUpdatedAt(LocalDateTime.now());
         jobMapper.update(job);
-        try {
-            placeSocialVideoService.syncSocialJob(job);
-        } catch (Exception e) {
-            log.warn("Could not link resolved places to social video for job {}: {}",
-                    job.getId(), e.getMessage(), e);
-        }
         recordAiApiCall(job, request, status);
         if (status == SocialLocationJobStatus.REJECTED_TOPIC) {
             recordTopicViolation(job, request.getError());
@@ -493,36 +662,48 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                     job.getErrorCode(), Map.of(
                             "videoDurationSeconds", job.getVideoDurationSeconds() == null ? 0 : job.getVideoDurationSeconds(),
                             "maxDurationSeconds", job.getMaxDurationSeconds()));
-        } else if (status == SocialLocationJobStatus.COMPLETED) {
-            boolean itineraryStarted = false;
+        }
+        return new CallbackOutcome(job, status, callbackResult, false);
+    }
+
+    /** Each projection commits or fails on its own; none of them can undo the job row above. */
+    private void runCallbackProjections(SocialLocationJob job,
+                                        JsonNode callbackResult,
+                                        SocialLocationJobStatus status) {
+        try {
+            placeSocialVideoService.syncSocialJob(job);
+        } catch (Exception e) {
+            log.warn("Could not link resolved places to social video for job {}: {}",
+                    job.getId(), e.getMessage(), e);
+        }
+        if (status != SocialLocationJobStatus.COMPLETED) {
+            return;
+        }
+        boolean itineraryStarted = false;
+        try {
+            itineraryStarted = completionService.handleCompleted(job, callbackResult);
+        } catch (Exception e) {
+            log.warn("Could not persist completed social job {} side effects: {}",
+                    job.getId(), e.getMessage(), e);
+        }
+        try {
+            placeImportJobService.createFromSocialJobs(
+                    job.getUserId(),
+                    CreateSocialPlaceImportJobRequest.builder()
+                            .socialJobIds(List.of(job.getId()))
+                            .maxReviews(5)
+                            .build());
+        } catch (Exception e) {
+            log.warn("Could not queue automatic place import for social job {}: {}",
+                    job.getId(), e.getMessage(), e);
+        }
+        if (!itineraryStarted) {
             try {
-                itineraryStarted = completionService.handleCompleted(job, callbackResult);
+                notifyExtractionCompleted(job, callbackResult);
             } catch (Exception e) {
-                log.warn("Could not persist completed social job {} side effects: {}",
-                        job.getId(), e.getMessage(), e);
-            }
-            try {
-                placeImportJobService.createFromSocialJobs(
-                        job.getUserId(),
-                        CreateSocialPlaceImportJobRequest.builder()
-                                .socialJobIds(List.of(job.getId()))
-                                .maxReviews(5)
-                                .build());
-            } catch (Exception e) {
-                log.warn("Could not queue automatic place import for social job {}: {}",
-                        job.getId(), e.getMessage(), e);
-            }
-            if (!itineraryStarted) {
-                try {
-                    notifyExtractionCompleted(job, callbackResult);
-                } catch (Exception e) {
-                    log.warn("Could not notify completion for social job {}: {}", job.getId(), e.getMessage(), e);
-                }
+                log.warn("Could not notify completion for social job {}: {}", job.getId(), e.getMessage(), e);
             }
         }
-        log.info("Social location callback processed: job_id={} python_job_id={} status={}",
-                job.getId(), job.getPythonJobId(), job.getStatus());
-        return toResponse(job);
     }
 
     private void notifyExtractionCompleted(SocialLocationJob job, JsonNode result) {

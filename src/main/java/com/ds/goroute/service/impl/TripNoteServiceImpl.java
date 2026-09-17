@@ -71,6 +71,7 @@ public class TripNoteServiceImpl implements TripNoteService {
         List<TripNote> notes = tripNoteRepository.findByTripId(tripId);
 
         return notes.stream()
+                .filter(note -> isVisibleTo(note, userId))
                 .map(this::toTripNoteResponse)
                 .collect(Collectors.toList());
     }
@@ -80,12 +81,31 @@ public class TripNoteServiceImpl implements TripNoteService {
     public List<TripNoteResponse> getActivityNotes(UUID tripId, UUID activityId, UUID userId) {
         // Verify user is member of trip
         verifyTripMember(tripId, userId);
+        // Membership of this trip says nothing about an activity id from somewhere else;
+        // without this, any member of any trip could read any activity's notes.
+        verifyActivityBelongsToTrip(activityId, tripId);
 
         List<TripNote> notes = tripNoteRepository.findByActivityId(activityId);
 
         return notes.stream()
+                .filter(note -> isVisibleTo(note, userId))
                 .map(this::toTripNoteResponse)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * A note is for the whole trip unless its author marked it private. Rows written
+     * before {@code is_shared} existed have it null, and every other read path in this
+     * class already reads null as shared, so null stays visible to everyone.
+     */
+    private boolean isVisibleTo(TripNote note, UUID userId) {
+        if (!Boolean.FALSE.equals(note.getIsShared())) {
+            return true;
+        }
+        // Notes written before V019 have a null user_id: that migration added the column and
+        // dropped created_by without backfilling. There is no author to compare against, so
+        // an ownerless note stays visible rather than throwing.
+        return note.getUserId() != null && note.getUserId().equals(userId);
     }
 
     @Override

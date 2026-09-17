@@ -26,6 +26,9 @@ public class TripDestination {
     private LocalDate startDate;
     private LocalDate endDate;
     private Boolean isPrimary;
+    /** Curated tourist area (location_images) this row belongs to; null until auto-map resolves one. */
+    private UUID locationImageId;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

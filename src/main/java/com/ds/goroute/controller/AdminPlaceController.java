@@ -10,8 +10,6 @@ import com.ds.goroute.service.FoodService;
 import com.ds.goroute.service.PlaceAttributeCatalog;
 import com.ds.goroute.service.PlaceService;
 import com.ds.goroute.type.PlaceReviewRefreshRerunMode;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.CacheControl;
@@ -37,7 +35,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/v1/api/admin/places")
 @RequiredArgsConstructor
-@Tag(name = "Admin Places", description = "Administrative place maintenance APIs")
 public class AdminPlaceController extends BaseController {
 
     private final AdminPlaceReviewRefreshService adminPlaceReviewRefreshService;
@@ -50,7 +47,6 @@ public class AdminPlaceController extends BaseController {
      */
     @GetMapping("/attribute-schema")
     @PreAuthorize("@adminAuthorization.can(authentication,'places','get')")
-    @Operation(summary = "Get the complete schema v1 place attribute catalog")
     public ResponseEntity attributeSchema(
             @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch) {
         String etag = "\"" + PlaceAttributeCatalog.version() + "\"";
@@ -66,7 +62,6 @@ public class AdminPlaceController extends BaseController {
 
     @GetMapping
     @PreAuthorize("@adminAuthorization.can(authentication,'places','get')")
-    @Operation(summary = "List places with complete admin attributes")
     public ResponseEntity listPlaces(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) java.util.List<String> placeGroups,
@@ -77,14 +72,12 @@ public class AdminPlaceController extends BaseController {
 
     @GetMapping("/{placeId}")
     @PreAuthorize("@adminAuthorization.can(authentication,'places','get')")
-    @Operation(summary = "Get a place with complete admin attributes")
     public ResponseEntity getPlace(@PathVariable UUID placeId) {
         return ResponseEntity.ok(ofSucceeded(placeService.getAdminPlaceById(placeId)));
     }
 
     @PutMapping("/{placeId}")
     @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
-    @Operation(summary = "Update a place from the admin console")
     public ResponseEntity updatePlace(@PathVariable UUID placeId, @Valid @RequestBody UpdatePlaceRequest request) {
         placeService.updatePlace(placeId, request);
         return ResponseEntity.ok(ofSucceeded(placeService.getAdminPlaceById(placeId)));
@@ -92,7 +85,6 @@ public class AdminPlaceController extends BaseController {
 
     @PostMapping("/import")
     @PreAuthorize("@adminAuthorization.can(authentication,'places','create')")
-    @Operation(summary = "Import one place from the admin console")
     public ResponseEntity importPlace(@Valid @RequestBody ImportPlaceRequest request) {
         var imported = placeService.importPlace(request);
         return ResponseEntity.ok(ofSucceeded(imported == null ? null : placeService.getAdminPlaceById(imported.getId())));
@@ -100,7 +92,6 @@ public class AdminPlaceController extends BaseController {
 
     @PostMapping("/import/batch")
     @PreAuthorize("@adminAuthorization.can(authentication,'places','create')")
-    @Operation(summary = "Import multiple places from the admin console")
     public ResponseEntity importPlaces(@Valid @RequestBody List<ImportPlaceRequest> requests) {
         var imported = placeService.importPlaces(requests);
         List<AdminPlaceResponse> result = imported.stream()
@@ -112,7 +103,6 @@ public class AdminPlaceController extends BaseController {
 
     @DeleteMapping("/{placeId}")
     @PreAuthorize("@adminAuthorization.can(authentication,'places','delete')")
-    @Operation(summary = "Delete a place from the admin console")
     public ResponseEntity deletePlace(@PathVariable UUID placeId) {
         placeService.deletePlace(placeId);
         return ResponseEntity.ok(ofSucceeded(null));
@@ -147,7 +137,6 @@ public class AdminPlaceController extends BaseController {
 
     @PostMapping("/{placeId}/refresh-reviews")
     @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
-    @Operation(summary = "Queue a one-place review refresh")
     public ResponseEntity refreshReviews(
             @PathVariable UUID placeId,
             @Valid @RequestBody(required = false) TriggerPlaceReviewRefreshRequest request) {
@@ -158,28 +147,24 @@ public class AdminPlaceController extends BaseController {
 
     @PostMapping("/refresh-reviews")
     @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
-    @Operation(summary = "Queue a sequential review refresh for every eligible ACTIVE place")
     public ResponseEntity refreshAllActiveReviews() {
         return ResponseEntity.ok(ofSucceeded(adminPlaceReviewRefreshService.triggerAllActive()));
     }
 
     @GetMapping("/refresh-reviews/{jobId}")
     @PreAuthorize("@adminAuthorization.can(authentication,'places','get')")
-    @Operation(summary = "Get review refresh progress and per-place results")
     public ResponseEntity getReviewRefreshStatus(@PathVariable UUID jobId) {
         return ResponseEntity.ok(ofSucceeded(adminPlaceReviewRefreshService.getStatus(jobId)));
     }
 
     @PostMapping("/refresh-reviews/{jobId}/cancel")
     @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
-    @Operation(summary = "Stop a running review refresh job after its current place")
     public ResponseEntity cancelReviewRefresh(@PathVariable UUID jobId) {
         return ResponseEntity.ok(ofSucceeded(adminPlaceReviewRefreshService.cancel(jobId)));
     }
 
     @PostMapping("/refresh-reviews/{jobId}/rerun/{mode}")
     @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
-    @Operation(summary = "Rerun all, failed, unexecuted, or failed and unexecuted places")
     public ResponseEntity rerunReviewRefresh(
             @PathVariable UUID jobId,
             @PathVariable PlaceReviewRefreshRerunMode mode) {

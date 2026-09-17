@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -49,6 +50,36 @@ public class GoongClient {
     @Value("${goong.key-cooldown-ms:300000}")
     private long keyCooldownMillis;
 
+    @Value("${goong.connect-timeout-ms:5000}")
+    private int connectTimeoutMillis;
+
+    @Value("${goong.read-timeout-ms:15000}")
+    private int readTimeoutMillis;
+
+    /**
+     * The auto-configured RestClient.Builder carries no timeouts, so a Goong host that
+     * accepted the connection and then went quiet held the request thread indefinitely,
+     * and the key failover below never ran because a hang is not an error response.
+     * Built once, where the old code called build() on every forwarded request.
+     */
+    private volatile RestClient restClient;
+
+    private RestClient restClient() {
+        RestClient existing = restClient;
+        if (existing != null) {
+            return existing;
+        }
+        synchronized (this) {
+            if (restClient == null) {
+                SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+                factory.setConnectTimeout(connectTimeoutMillis);
+                factory.setReadTimeout(readTimeoutMillis);
+                restClient = restClientBuilder.requestFactory(factory).build();
+            }
+            return restClient;
+        }
+    }
+
     /**
      * Forward a GET request to a Goong endpoint, injecting the server-side key.
      *
@@ -73,7 +104,7 @@ public class GoongClient {
             URI uri = buildUri(path, params, key);
 
             try {
-                ResponseEntity<String> response = restClientBuilder.build()
+                ResponseEntity<String> response = restClient()
                         .get()
                         .uri(uri)
                         .retrieve()

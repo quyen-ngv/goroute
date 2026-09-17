@@ -1,8 +1,6 @@
 package com.ds.goroute.controller;
 
 import com.ds.goroute.thirdparty.goong.GoongClient;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.LinkedMultiValueMap;
@@ -20,13 +18,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/v1/api/goong")
 @RequiredArgsConstructor
-@Tag(name = "Goong Proxy", description = "Server-side proxy for Goong Maps APIs")
 public class GoongController {
 
     private final GoongClient goongClient;
 
     @GetMapping("/autocomplete")
-    @Operation(summary = "Place autocomplete suggestions")
     public ResponseEntity<String> autocomplete(
             @RequestParam String input,
             @RequestParam(required = false) String location,
@@ -45,7 +41,6 @@ public class GoongController {
     }
 
     @GetMapping("/place-detail")
-    @Operation(summary = "Place details by place_id")
     public ResponseEntity<String> placeDetail(
             @RequestParam("place_id") String placeId,
             @RequestParam(required = false) String sessiontoken) {
@@ -56,7 +51,6 @@ public class GoongController {
     }
 
     @GetMapping("/geocode")
-    @Operation(summary = "Geocode by address, or reverse geocode by latlng")
     public ResponseEntity<String> geocode(
             @RequestParam(required = false) String address,
             @RequestParam(required = false) String latlng) {
@@ -67,7 +61,6 @@ public class GoongController {
     }
 
     @GetMapping("/distance-matrix")
-    @Operation(summary = "Distance and duration between origins and destinations")
     public ResponseEntity<String> distanceMatrix(
             @RequestParam String origins,
             @RequestParam String destinations,

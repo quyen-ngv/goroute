@@ -31,6 +31,14 @@ import static com.ds.goroute.constant.RequestKeyConstant.X_REQUEST_ID;
 @Slf4j
 public class CorsFilter implements Filter {
 
+    /**
+     * Hard ceiling on the non-multipart body this filter will hold in memory. Uploads go
+     * through the multipart branch and keep their own 50MB/100MB limits; what lands here
+     * is JSON, so 10MB is far above anything the app legitimately posts and far below
+     * what it takes to exhaust the heap.
+     */
+    private static final int MAX_BUFFERED_BODY_CHARS = ApiKeyVerifyRequestWrapper.DEFAULT_MAX_BODY_CHARS;
+
     private final MultipartResolver multipartResolver;
 
     public CorsFilter(MultipartResolver multipartResolver) {
@@ -74,12 +82,26 @@ public class CorsFilter implements Filter {
                 chain.doFilter(multipartRequest, response);
                 ThreadContext.clearAll();
             } else {
-                ApiKeyVerifyRequestWrapper requestWrapper = new ApiKeyVerifyRequestWrapper(request);
+                // This filter sits in front of Spring Security, so the caller may be
+                // anonymous. Refuse an oversized body on its declared length before
+                // reading a byte of it; a body that lies about its length (or declares
+                // none) is cut off by the wrapper's own ceiling below.
+                long declaredLength = request.getContentLengthLong();
+                if (declaredLength > MAX_BUFFERED_BODY_CHARS) {
+                    log.warn("Request body too large to buffer: {} bytes declared, limit {}",
+                            declaredLength, MAX_BUFFERED_BODY_CHARS);
+                    writeRequestTooLarge(response);
+                    ThreadContext.clearAll();
+                    return;
+                }
+
+                ApiKeyVerifyRequestWrapper requestWrapper =
+                        new ApiKeyVerifyRequestWrapper(request, MAX_BUFFERED_BODY_CHARS);
                 JSONParser parser = new JSONParser();
-                
+
                 String body = requestWrapper.getBody();
                 JSONObject dataRequest;
-                
+
                 // Check if body is empty or not valid JSON
                 if (ObjectUtils.isEmpty(body) || body.trim().isEmpty()) {
                     dataRequest = new JSONObject();
@@ -87,11 +109,14 @@ public class CorsFilter implements Filter {
                     try {
                         dataRequest = (JSONObject) parser.parse(body);
                     } catch (Exception parseEx) {
-                        log.warn("Failed to parse request body as JSON, using empty object. Body: {}", body);
+                        // Never the body itself: a failed login posts its password here.
+                        log.warn("Failed to parse request body as JSON, using empty object. "
+                                        + "Content-Type: {}, length: {}",
+                                request.getContentType(), body.length());
                         dataRequest = new JSONObject();
                     }
                 }
-                
+
                 requestId = requestWrapper.getHeader(X_REQUEST_ID);
                 if (requestId == null || requestId.isEmpty()) {
                     requestId = UUID.randomUUID().toString();
@@ -123,17 +148,26 @@ public class CorsFilter implements Filter {
             }
             String causeClassName = rootCause.getClass().getName();
             if (e instanceof org.springframework.web.multipart.MaxUploadSizeExceededException
+                    || rootCause instanceof ApiKeyVerifyRequestWrapper.BodyTooLargeException
                     || causeClassName.contains("SizeLimitExceededException")
                     || causeClassName.contains("MaxUploadSizeExceededException")) {
-                log.warn("Upload size limit exceeded: {}", e.getMessage(), e);
-                response.setStatus(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
-                response.setContentType("application/json;charset=UTF-8");
-                response.getWriter().write("{\"meta\":{\"code\":4131001,\"message\":\"File size exceeds the maximum allowed limit\"}}");
+                log.warn("Request size limit exceeded: {}", e.getMessage(), e);
+                writeRequestTooLarge(response);
             } else {
                 log.error(e.toString(), e);
                 response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
             }
             ThreadContext.clearAll();
         }
+    }
+
+    /**
+     * The app's existing "too large" answer, reused so an oversized JSON body looks the
+     * same to a client as an oversized upload.
+     */
+    private void writeRequestTooLarge(HttpServletResponse response) throws java.io.IOException {
+        response.setStatus(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write("{\"meta\":{\"code\":4131001,\"message\":\"File size exceeds the maximum allowed limit\"}}");
     }
 }

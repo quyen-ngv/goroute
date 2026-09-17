@@ -36,12 +36,14 @@ public class PartnerFinanceRepositoryImpl implements PartnerFinanceRepository {
         return mapper.stampActivityOrderCommission(orderId, commissionPercent, ruleVersion);
     }
 
-    @Override public List<BillableBookingRow> findHotelBillableCandidates(UUID organizationId, LocalDate periodStart, LocalDate periodEnd) {
-        return mapper.findHotelBillableCandidates(organizationId, periodStart, periodEnd);
+    @Override public List<BillableBookingRow> findHotelBillableCandidates(UUID organizationId, LocalDate periodStart,
+            LocalDate periodEnd, UUID excludeStatementId) {
+        return mapper.findHotelBillableCandidates(organizationId, periodStart, periodEnd, excludeStatementId);
     }
 
-    @Override public List<BillableBookingRow> findActivityBillableCandidates(UUID organizationId, LocalDate periodStart, LocalDate periodEnd) {
-        return mapper.findActivityBillableCandidates(organizationId, periodStart, periodEnd);
+    @Override public List<BillableBookingRow> findActivityBillableCandidates(UUID organizationId, LocalDate periodStart,
+            LocalDate periodEnd, UUID excludeStatementId) {
+        return mapper.findActivityBillableCandidates(organizationId, periodStart, periodEnd, excludeStatementId);
     }
 
     @Override public int insertStatement(PartnerStatement statement) { return mapper.insertStatement(statement); }
@@ -51,6 +53,14 @@ public class PartnerFinanceRepositoryImpl implements PartnerFinanceRepository {
     @Override public int updateStatementStatus(UUID statementId, String status, LocalDateTime issuedAt,
             LocalDateTime settledAt, String note, LocalDateTime updatedAt) {
         return mapper.updateStatementStatus(statementId, status, issuedAt, settledAt, note, updatedAt);
+    }
+
+    @Override public int settleStatement(UUID statementId, LocalDateTime settledAt, String note, LocalDateTime updatedAt) {
+        return mapper.settleStatement(statementId, settledAt, note, updatedAt);
+    }
+
+    @Override public boolean lockStatement(UUID statementId) {
+        return mapper.lockStatement(statementId) != null;
     }
 
     @Override public Optional<PartnerStatement> findStatementById(UUID statementId) {

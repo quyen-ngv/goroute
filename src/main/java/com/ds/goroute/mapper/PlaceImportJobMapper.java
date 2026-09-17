@@ -26,6 +26,7 @@ public interface PlaceImportJobMapper {
 
     List<PlaceImportJob> findAdminJobs(@Param("userId") UUID userId,
                                        @Param("status") String status,
+                                       @Param("sourceType") String sourceType,
                                        @Param("limit") int limit,
                                        @Param("offset") int offset);
 

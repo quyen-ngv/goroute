@@ -3,6 +3,7 @@ package com.ds.goroute.mapper;
 import com.ds.goroute.entity.CheckinCluster;
 import com.ds.goroute.entity.CheckinClusterDecision;
 import com.ds.goroute.entity.UserCheckin;
+import com.ds.goroute.entity.UserCheckinLocationHistory;
 import com.ds.goroute.entity.UserCheckinPhoto;
 import com.ds.goroute.entity.CheckinLikeCount;
 import org.apache.ibatis.annotations.Mapper;
@@ -30,10 +31,10 @@ public interface UserCheckinMapper {
     UserCheckin findByIdempotencyKey(@Param("userId") UUID userId,
                                      @Param("idempotencyKey") String idempotencyKey);
 
-    /** Public feed, newest first, keyed on the last item seen rather than a page number. */
-    List<UserCheckin> findFeed(@Param("before") LocalDateTime before,
-                               @Param("excludeUserId") UUID excludeUserId,
-                               @Param("limit") int limit);
+    /** Public feed: posts with photos first, newest first within each group. */
+    List<UserCheckin> findFeed(@Param("excludeUserId") UUID excludeUserId,
+                               @Param("limit") int limit,
+                               @Param("offset") int offset);
 
     List<UserCheckin> findByUser(@Param("userId") UUID userId,
                                  @Param("includePrivate") boolean includePrivate,
@@ -133,4 +134,33 @@ public interface UserCheckinMapper {
 
     /** Distinct provinces this user has a verified or unverified presence in. */
     List<String> findVisitedProvinceCodes(@Param("userId") UUID userId);
+
+    // --- admin console ----------------------------------------------------------------
+
+    List<UserCheckin> findAllForAdmin(@Param("search") String search,
+                                      @Param("userId") UUID userId,
+                                      @Param("hidden") Boolean hidden,
+                                      @Param("limit") int limit,
+                                      @Param("offset") int offset);
+
+    long countAllForAdmin(@Param("search") String search,
+                          @Param("userId") UUID userId,
+                          @Param("hidden") Boolean hidden);
+
+    /**
+     * Moves a check-in onto a catalogue place. The author's own name for the spot is left
+     * alone: the place card is rendered from the place, and overwriting their words would
+     * rewrite their memory rather than correct the catalogue link.
+     */
+    int assignPlace(@Param("id") UUID id,
+                    @Param("placeId") UUID placeId,
+                    @Param("locationKey") String locationKey,
+                    @Param("provinceCode") String provinceCode);
+
+    int insertLocationHistory(UserCheckinLocationHistory history);
+
+    List<UserCheckinLocationHistory> findLocationHistory(@Param("checkinId") UUID checkinId);
+
+    /** Which of these check-ins an operator has already moved, for the list badge. */
+    List<UUID> findReassignedCheckinIds(@Param("checkinIds") List<UUID> checkinIds);
 }

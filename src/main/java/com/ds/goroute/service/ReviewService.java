@@ -24,6 +24,13 @@ public interface ReviewService {
 
     void deleteReview(UUID userId, UUID reviewId);
 
+    /**
+     * One review on its own, for the detail screen a social notification opens.
+     * Every other read is scoped to a place, a booking or an author, none of which a
+     * "someone liked your review" payload names.
+     */
+    UserReviewResponse getReview(UUID reviewId, UUID currentUserId);
+
     List<UserReviewResponse> getPlaceReviews(UUID placeId, UUID currentUserId, int page, int size);
 
     List<UserReviewResponse> getActivityBookingReviews(UUID activityBookingId, UUID currentUserId, int page, int size);

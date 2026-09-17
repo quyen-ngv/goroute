@@ -32,6 +32,13 @@ public class UpsertActivityPackageRequest {
     private String description;
     @Pattern(regexp="[A-Z]{3}") private String currency="VND";
     @NotNull @DecimalMin("0") private BigDecimal basePrice;
+    /** Compare-at price shown struck through; must be above basePrice to be shown. */
+    @DecimalMin("0") private BigDecimal originalPrice;
+    /** Ticket packages with the same group render under one heading. */
+    @Size(max=200) private String packageGroup;
+    private com.ds.goroute.type.ActivityGroupType groupType;
+    private com.ds.goroute.type.ActivityDepartureType departureType;
+    @Valid private com.ds.goroute.dto.ActivityPackageDetails details;
     @NotNull @Min(1) private Integer minQuantity=1;
     @Min(1) private Integer maxQuantity;
     private ActivityInventoryType inventoryType = ActivityInventoryType.SLOT;

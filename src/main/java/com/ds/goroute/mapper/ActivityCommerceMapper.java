@@ -15,7 +15,8 @@ public interface ActivityCommerceMapper {
     MarketplaceActivityProduct findProduct(@Param("id") UUID id);
     MarketplaceActivityProduct findPublicProduct(@Param("id") UUID id);
     List<MarketplaceActivityProduct> findProductsByOrganization(@Param("organizationId") UUID organizationId);
-    List<MarketplaceActivityProduct> findProductsPublic(@Param("query") String query,@Param("limit")int limit,@Param("offset")int offset);
+    List<MarketplaceActivityProduct> findProductsPublic(@Param("query") String query,@Param("activityTypes") List<String> activityTypes,@Param("limit")int limit,@Param("offset")int offset);
+    List<MarketplaceActivityProduct> findSimilarProductsPublic(@Param("excludeId") UUID excludeId,@Param("activityTypes") List<String> activityTypes,@Param("lat") Double lat,@Param("lng") Double lng,@Param("limit") int limit);
     List<MarketplaceActivityProduct> findProductsAdmin(@Param("query")String query,@Param("status")String status,@Param("limit")int limit,@Param("offset")int offset);
     int insertPackage(ActivityPackage value); int updatePackage(ActivityPackage value); ActivityPackage findPackage(@Param("id")UUID id);
     List<ActivityPackage> findPackages(@Param("activityId")UUID activityId,@Param("includeDisabled")boolean includeDisabled);

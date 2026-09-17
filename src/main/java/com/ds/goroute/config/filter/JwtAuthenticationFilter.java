@@ -3,6 +3,7 @@ package com.ds.goroute.config.filter;
 import com.ds.goroute.config.ApiSecurityErrorResponseWriter;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.constant.RequestKeyConstant;
+import com.ds.goroute.entity.User;
 import com.ds.goroute.mapper.AdminMapper;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.utils.JwtUtils;
@@ -74,15 +75,28 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 // An earlier filter (API key, internal token) may already have decided
                 // who the caller is; that decision wins.
                 if (SecurityContextHolder.getContext().getAuthentication() == null) {
-                    boolean mustChangePassword = authenticate(request, userId);
-                    if (mustChangePassword && isPasswordChangeProtected(pathWithinApplication(request))) {
-                        ApiSecurityErrorResponseWriter.write(objectMapper, request, response,
-                                HttpServletResponse.SC_FORBIDDEN,
-                                ErrorConstant.PASSWORD_CHANGE_REQUIRED,
-                                "Password change required");
-                        return;
+                    AuthOutcome outcome = authenticate(request, userId);
+                    if (outcome == AuthOutcome.USER_NOT_FOUND) {
+                        // The token is well formed but names a user that has been deleted.
+                        // Leave the request anonymous, and take the identity attributes back
+                        // off it so nothing downstream acts on behalf of a gone account.
+                        // The chain is deliberately NOT run here: it runs once below, outside
+                        // the catch. Running it inside would let anything the chain throws be
+                        // swallowed by that catch and the whole chain run a second time.
+                        request.removeAttribute(RequestKeyConstant.USER_ID);
+                        request.removeAttribute(RequestKeyConstant.EMAIL);
+                        log.warn("JWT presented for a user that no longer exists: {}", userId);
+                    } else {
+                        boolean mustChangePassword = outcome == AuthOutcome.MUST_CHANGE_PASSWORD;
+                        if (mustChangePassword && isPasswordChangeProtected(pathWithinApplication(request))) {
+                            ApiSecurityErrorResponseWriter.write(objectMapper, request, response,
+                                    HttpServletResponse.SC_FORBIDDEN,
+                                    ErrorConstant.PASSWORD_CHANGE_REQUIRED,
+                                    "Password change required");
+                            return;
+                        }
+                        log.debug("JWT authenticated user: {} ({})", email, userId);
                     }
-                    log.debug("JWT authenticated user: {} ({})", email, userId);
                 }
             }
         } catch (Exception exception) {
@@ -94,15 +108,28 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
+    /** What a valid-looking token turned out to be worth. */
+    private enum AuthOutcome {
+        /** No live user row behind the token; nothing was authenticated. */
+        USER_NOT_FOUND,
+        AUTHENTICATED,
+        /** Authenticated, but the user still holds a temporary password. */
+        MUST_CHANGE_PASSWORD
+    }
+
     /**
-     * @return whether the user still holds a temporary password
+     * Grants authorities for the user the token names. A token whose user row is gone
+     * (deleted account) authenticates nothing — a signature alone is not an account.
      */
-    private boolean authenticate(HttpServletRequest request, UUID userId) {
+    private AuthOutcome authenticate(HttpServletRequest request, UUID userId) {
+        User user = userRepository.findById(userId).orElse(null);
+        if (user == null) {
+            return AuthOutcome.USER_NOT_FOUND;
+        }
+
         boolean admin = adminMapper.hasAnyRole(userId);
         boolean partner = adminMapper.isPartnerUser(userId);
-        boolean mustChangePassword = userRepository.findById(userId)
-                .map(user -> Boolean.TRUE.equals(user.getMustChangePassword()))
-                .orElse(false);
+        boolean mustChangePassword = Boolean.TRUE.equals(user.getMustChangePassword());
 
         var authorities = new ArrayList<SimpleGrantedAuthority>();
         authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
@@ -119,7 +146,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         var authToken = new UsernamePasswordAuthenticationToken(userId.toString(), null, authorities);
         authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
         SecurityContextHolder.getContext().setAuthentication(authToken);
-        return mustChangePassword;
+        return mustChangePassword ? AuthOutcome.MUST_CHANGE_PASSWORD : AuthOutcome.AUTHENTICATED;
     }
 
     private boolean isPasswordChangeProtected(String path) {

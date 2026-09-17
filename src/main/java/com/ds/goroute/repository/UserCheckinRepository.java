@@ -3,6 +3,7 @@ package com.ds.goroute.repository;
 import com.ds.goroute.entity.CheckinCluster;
 import com.ds.goroute.entity.CheckinClusterDecision;
 import com.ds.goroute.entity.UserCheckin;
+import com.ds.goroute.entity.UserCheckinLocationHistory;
 import com.ds.goroute.entity.UserCheckinPhoto;
 import com.ds.goroute.entity.CheckinLikeCount;
 
@@ -30,7 +31,7 @@ public interface UserCheckinRepository {
 
     Optional<UserCheckin> findByIdempotencyKey(UUID userId, String idempotencyKey);
 
-    List<UserCheckin> findFeed(LocalDateTime before, UUID excludeUserId, int limit);
+    List<UserCheckin> findFeed(UUID excludeUserId, int limit, int offset);
 
     List<UserCheckin> findByUser(UUID userId, boolean includePrivate, int limit, int offset);
 
@@ -102,4 +103,24 @@ public interface UserCheckinRepository {
     List<UserCheckin> findWithoutPassportEvent(int limit);
 
     List<String> findVisitedProvinceCodes(UUID userId);
+
+    // --- admin console ----------------------------------------------------------------
+
+    /**
+     * Every live check-in, newest first, for the admin console's own listing.
+     *
+     * @param hidden null for both, true for only the ones a takedown currently hides
+     */
+    List<UserCheckin> findAllForAdmin(String search, UUID userId, Boolean hidden, int limit, int offset);
+
+    long countAllForAdmin(String search, UUID userId, Boolean hidden);
+
+    /** Moves a check-in onto a catalogue place, keeping the author's own wording. */
+    int assignPlace(UUID id, UUID placeId, String locationKey, String provinceCode);
+
+    int insertLocationHistory(UserCheckinLocationHistory history);
+
+    List<UserCheckinLocationHistory> findLocationHistory(UUID checkinId);
+
+    List<UUID> findReassignedCheckinIds(List<UUID> checkinIds);
 }

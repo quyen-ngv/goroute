@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.MarketplaceCartMapper">
+
+    <resultMap id="CartItemMap" type="com.ds.goroute.entity.MarketplaceCartItem">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="itemType" column="item_type"/>
+        <result property="selectionHash" column="selection_hash"/>
+        <result property="hotelId" column="hotel_id"/>
+        <result property="roomTypeId" column="room_type_id"/>
+        <result property="ratePlanId" column="rate_plan_id"/>
+        <result property="checkInDate" column="check_in_date"/>
+        <result property="checkOutDate" column="check_out_date"/>
+        <result property="quantity" column="quantity"/>
+        <result property="adults" column="adults"/>
+        <result property="children" column="children"/>
+        <result property="activityId" column="activity_id"/>
+        <result property="packageId" column="package_id"/>
+        <result property="slotId" column="slot_id"/>
+        <result property="unitQuantities" column="unit_quantities"/>
+        <result property="specialRequests" column="special_requests"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="Columns">
+        id, user_id, item_type, selection_hash, hotel_id, room_type_id, rate_plan_id,
+        check_in_date, check_out_date, quantity, adults, children,
+        activity_id, package_id, slot_id, unit_quantities, special_requests, created_at, updated_at
+    </sql>
+
+    <!--
+      Re-adding a selection the guest already parked must not grow a second line. The unique
+      index on (user_id, selection_hash) turns that into an update of the mutable fields; the
+      row keeps its id and created_at so the cart order does not jump around.
+    -->
+    <insert id="upsertItem">
+        INSERT INTO marketplace_cart_items (
+            id, user_id, item_type, selection_hash, hotel_id, room_type_id, rate_plan_id,
+            check_in_date, check_out_date, quantity, adults, children,
+            activity_id, package_id, slot_id, unit_quantities, special_requests, created_at, updated_at
+        ) VALUES (
+            #{id}, #{userId}, #{itemType}, #{selectionHash}, #{hotelId}, #{roomTypeId}, #{ratePlanId},
+            #{checkInDate}, #{checkOutDate}, #{quantity}, #{adults}, #{children},
+            #{activityId}, #{packageId}, #{slotId}, #{unitQuantities}::jsonb, #{specialRequests},
+            #{createdAt}, #{updatedAt}
+        )
+        ON CONFLICT (user_id, selection_hash) DO UPDATE SET
+            special_requests = EXCLUDED.special_requests,
+            updated_at = EXCLUDED.updated_at
+    </insert>
+
+    <select id="findItem" resultMap="CartItemMap">
+        SELECT <include refid="Columns"/> FROM marketplace_cart_items
+        WHERE user_id = #{userId} AND id = #{id}
+    </select>
+
+    <select id="findItemBySelection" resultMap="CartItemMap">
+        SELECT <include refid="Columns"/> FROM marketplace_cart_items
+        WHERE user_id = #{userId} AND selection_hash = #{selectionHash}
+    </select>
+
+    <select id="findItemsByUser" resultMap="CartItemMap">
+        SELECT <include refid="Columns"/> FROM marketplace_cart_items
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="countItemsByUser" resultType="long">
+        SELECT COUNT(*) FROM marketplace_cart_items WHERE user_id = #{userId}
+    </select>
+
+    <delete id="deleteItem">
+        DELETE FROM marketplace_cart_items WHERE user_id = #{userId} AND id = #{id}
+    </delete>
+
+    <delete id="deleteItemsByUser">
+        DELETE FROM marketplace_cart_items WHERE user_id = #{userId}
+    </delete>
+</mapper>

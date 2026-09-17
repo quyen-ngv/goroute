@@ -46,3 +46,12 @@ places.csv
 failed.log
 results.log
 place_context/
+
+# Build/tooling leftovers and local data dumps (untracked 2026-09-16)
+places.json
+__pycache__/
+*.pyc
+.mvn/*.err
+.mvn/*.out
+/mvn
+.claude/worktrees/

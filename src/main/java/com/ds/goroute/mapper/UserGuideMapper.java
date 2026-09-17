@@ -30,4 +30,12 @@ public interface UserGuideMapper {
                                       @Param("offset") int offset);
 
     long countAll(@Param("status") String status, @Param("search") String search);
+
+    /** Tourist areas this guide covers. */
+    List<UUID> findLocationImageIds(@Param("userId") UUID userId);
+
+    int deleteLocationImages(@Param("userId") UUID userId);
+
+    int insertLocationImage(@Param("userId") UUID userId,
+                            @Param("locationImageId") UUID locationImageId);
 }

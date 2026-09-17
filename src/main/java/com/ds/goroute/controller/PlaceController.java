@@ -11,8 +11,6 @@ import com.ds.goroute.dto.response.FoodSummaryResponse;
 import com.ds.goroute.dto.response.FoodTagResponse;
 import com.ds.goroute.service.FoodService;
 import com.ds.goroute.service.PlaceService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
@@ -32,29 +30,24 @@ import java.util.UUID;
 @RequestMapping("/v1/api/places")
 @RequiredArgsConstructor
 @Slf4j
-@Tag(name = "Places", description = "Place management APIs")
 public class PlaceController extends BaseController {
 
     private final PlaceService placeService;
     private final FoodService foodService;
 
     @PostMapping("/import")
-    @Operation(summary = "Import place from Google Maps data",
-            description = "The optional attributes object stores schema v1 place suitability and experience metadata.")
     public ResponseEntity importPlace(@Valid @RequestBody ImportPlaceRequest request) {
         PlaceResponse response = placeService.importPlace(request);
         return ResponseEntity.ok(ofSucceeded(response));
     }
 
     @PostMapping("/import/batch")
-    @Operation(summary = "Import multiple places from Google Maps data")
     public ResponseEntity importPlaces(@Valid @RequestBody List<ImportPlaceRequest> requests) {
         List<PlaceResponse> responses = placeService.importPlaces(requests);
         return ResponseEntity.ok(ofSucceeded(responses));
     }
 
     @GetMapping
-    @Operation(summary = "List places, optionally filtered by keyword and place group")
     public ResponseEntity<BaseResponse<List<PlaceResponse>>> getAllPlaces(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) List<String> placeGroups,
@@ -65,9 +58,6 @@ public class PlaceController extends BaseController {
     }
 
     @GetMapping("/detail-refresh-candidates")
-    @Operation(summary = "List every place the detail-refresh worker may re-scrape",
-            description = "ACTIVE places only unless includeInactive is set. Not paginated: the worker "
-                    + "consumes the whole eligible set in one call, capped by maxPlaces.")
     public ResponseEntity<BaseResponse<Map<String, Object>>> detailRefreshCandidates(
             @RequestParam(required = false) UUID placeId,
             @RequestParam(defaultValue = "false") boolean includeInactive,
@@ -77,21 +67,18 @@ public class PlaceController extends BaseController {
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "Get place by ID")
     public ResponseEntity getPlaceById(@PathVariable UUID id) {
         PlaceResponse response = placeService.getPlaceById(id);
         return ResponseEntity.ok(ofSucceeded(response));
     }
 
     @GetMapping("/google/{placeId}")
-    @Operation(summary = "Get place by Google Place ID")
     public ResponseEntity getPlaceByGoogleId(@PathVariable String placeId) {
         PlaceResponse response = placeService.getPlaceByGoogleId(placeId);
         return ResponseEntity.ok(ofSucceeded(response));
     }
 
     @GetMapping("/search")
-    @Operation(summary = "Search places by location and filters")
     public ResponseEntity searchPlaces(
             @RequestParam(required = false) String keyword,
             @RequestParam @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
@@ -116,7 +103,6 @@ public class PlaceController extends BaseController {
     }
 
     @GetMapping("/{id}/reviews")
-    @Operation(summary = "Get reviews for a place with pagination")
     public ResponseEntity getPlaceReviews(
             @PathVariable UUID id,
             @RequestParam(defaultValue = "0") int page,
@@ -126,7 +112,6 @@ public class PlaceController extends BaseController {
     }
 
     @GetMapping("/{id}/foods")
-    @Operation(summary = "List foods linked to a place (via place_foods)")
     public ResponseEntity listFoodsForPlace(
             @PathVariable UUID id,
             @RequestParam String citySlug) {
@@ -135,50 +120,42 @@ public class PlaceController extends BaseController {
     }
 
     @GetMapping("/{id}/food-tags")
-    @Operation(summary = "List food tags linked to a place for admin")
     public ResponseEntity listFoodTagsForPlace(@PathVariable UUID id) {
         List<FoodTagResponse> items = foodService.adminListFoodTagsForPlace(id);
         return ResponseEntity.ok(ofSucceeded(items));
     }
 
     @PostMapping("/{id}/food-tags/{foodId}")
-    @Operation(summary = "Link a food tag to a place")
     public ResponseEntity linkFoodToPlace(@PathVariable UUID id, @PathVariable UUID foodId) {
         foodService.adminLinkFoodToPlace(id, foodId);
         return ResponseEntity.ok(ofSucceeded(null));
     }
 
     @DeleteMapping("/{id}/food-tags/{foodId}")
-    @Operation(summary = "Unlink a food tag from a place")
     public ResponseEntity unlinkFoodFromPlace(@PathVariable UUID id, @PathVariable UUID foodId) {
         foodService.adminUnlinkFoodFromPlace(id, foodId);
         return ResponseEntity.ok(ofSucceeded(null));
     }
 
     @PostMapping("/indexing/trigger")
-    @Operation(summary = "Trigger Lucene reindexing for places")
     public ResponseEntity triggerSearchReindex() {
         placeService.triggerSearchReindex();
         return ResponseEntity.ok(ofSucceeded(null));
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "Delete a place")
     public ResponseEntity deletePlace(@PathVariable UUID id) {
         placeService.deletePlace(id);
         return ResponseEntity.ok(ofSucceeded(null));
     }
 
     @PutMapping("/{id}")
-    @Operation(summary = "Update place information",
-            description = "The attributes field is replaced as a JSON object; omit it or send null to clear it.")
     public ResponseEntity updatePlace(@PathVariable UUID id, @Valid @RequestBody UpdatePlaceRequest request) {
         PlaceResponse response = placeService.updatePlace(id, request);
         return ResponseEntity.ok(ofSucceeded(response));
     }
 
     @PostMapping("/batch-update-images")
-    @Operation(summary = "Batch update place images (thumbnail & images)")
     public ResponseEntity batchUpdatePlaceImages(@Valid @RequestBody BatchUpdatePlaceImagesRequest request) {
         Map<String, Object> result = placeService.batchUpdatePlaceImages(request);
         return ResponseEntity.ok(ofSucceeded(result));

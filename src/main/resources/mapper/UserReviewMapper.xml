@@ -21,6 +21,9 @@
         <result property="priceRating" column="price_rating"/>
         <result property="ambianceRating" column="ambiance_rating"/>
         <result property="serviceRating" column="service_rating"/>
+        <result property="locationRating" column="location_rating"/>
+        <result property="cleanlinessRating" column="cleanliness_rating"/>
+        <result property="facilitiesRating" column="facilities_rating"/>
         <result property="text" column="text"/>
         <result property="photos" column="photos"/>
         <result property="weight" column="weight"/>
@@ -59,11 +62,13 @@
             id, user_id, place_id, activity_booking_id, trip_id, hotel_booking_id, activity_order_id,
             checkin_lat, checkin_lng, checkin_accuracy_m, location_verified,
             overall_rating, food_rating, price_rating, ambiance_rating, service_rating,
+            location_rating, cleanliness_rating, facilities_rating,
             text, photos, weight, helpful_votes, unhelpful_votes
         ) VALUES (
             #{id}, #{userId}, #{placeId}, #{activityBookingId}, #{tripId}, #{hotelBookingId}, #{activityOrderId},
             #{checkinLat}, #{checkinLng}, #{checkinAccuracy}, #{locationVerified},
             #{overallRating}, #{foodRating}, #{priceRating}, #{ambianceRating}, #{serviceRating},
+            #{locationRating}, #{cleanlinessRating}, #{facilitiesRating},
             #{text}, NULL, #{weight}, #{helpfulVotes}, #{unhelpfulVotes}
         )
     </insert>
@@ -75,6 +80,9 @@
             price_rating = #{priceRating},
             ambiance_rating = #{ambianceRating},
             service_rating = #{serviceRating},
+            location_rating = #{locationRating},
+            cleanliness_rating = #{cleanlinessRating},
+            facilities_rating = #{facilitiesRating},
             checkin_lat = #{checkinLat},
             checkin_lng = #{checkinLng},
             checkin_accuracy_m = #{checkinAccuracy},
@@ -157,6 +165,10 @@
         <include refid="ReviewSelect"/>
         WHERE (#{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER} IS NULL
             OR r.user_id != #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER})
+        AND NOT EXISTS (
+            SELECT 1 FROM content_takedowns t
+            WHERE t.content_type = 'REVIEW' AND t.content_id = r.id
+              AND t.restored_at IS NULL)
         AND (
             NULLIF(TRIM(COALESCE(r.text, '')), '') IS NOT NULL
             OR EXISTS (

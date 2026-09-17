@@ -194,6 +194,20 @@
         WHERE id = #{id} AND user_id = #{userId}
     </update>
 
+    <select id="findEventBySource" resultMap="eventMap">
+        SELECT * FROM passport_events WHERE source = #{source} AND source_id = #{sourceId}
+    </select>
+
+    <!-- The province is only ever filled in, never cleared: a catalogue row without a
+         province must not take away a stamp the author already has. -->
+    <update id="updateEventLocation">
+        UPDATE passport_events
+        SET place_id = #{placeId},
+            location_key = #{locationKey},
+            province_code = COALESCE(#{provinceCode}, province_code)
+        WHERE id = #{id}
+    </update>
+
     <!-- Activity check-ins recorded before the passport existed. Without them, somebody
          who has used the app for a year opens their passport and finds it empty. -->
     <select id="findLegacyActivityCheckins" resultType="java.util.LinkedHashMap">

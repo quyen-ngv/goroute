@@ -34,6 +34,14 @@ public interface HotelMarketplaceService {
     HotelBookingResponse partnerGetBooking(UUID actor, UUID bookingId);
     HotelBookingResponse partnerUpdateBookingStatus(UUID actor, UUID bookingId, UpdateHotelBookingStatusRequest request);
 
+    /**
+     * Prices a stay the guest has not booked yet, with the rules createBooking would apply.
+     * Never throws for an unbookable selection: it reports why, so a cart can show a stale line.
+     */
+    MarketplaceQuoteResponse quoteStay(UUID hotelId, UUID roomTypeId, UUID ratePlanId,
+                                       LocalDate checkIn, LocalDate checkOut,
+                                       int quantity, int adults, int children);
+
     HotelBookingResponse createBooking(UUID userId, CreateHotelBookingRequest request);
     List<HotelBookingResponse> listMyBookings(UUID userId, int page, int size);
     HotelBookingResponse getMyBooking(UUID userId, UUID bookingId);

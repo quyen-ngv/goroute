@@ -1,7 +1,9 @@
 package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.BaseResponse;
+import com.ds.goroute.dto.request.HotelOfferQuery;
 import com.ds.goroute.dto.request.HotelSearchQuery;
+import com.ds.goroute.service.HotelOfferService;
 import com.ds.goroute.dto.response.*;
 import com.ds.goroute.service.HotelMarketplaceService;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +17,13 @@ import java.util.UUID;
 @RestController @RequestMapping("/v1/api/public/hotels") @RequiredArgsConstructor
 public class PublicHotelController {
     private final HotelMarketplaceService service;
+    private final HotelOfferService offerService;
+    /** Every enabled room type with each rate priced for the stay: availability, promotion, taxes share and cancellation terms. */
+    @GetMapping("/{hotelId}/offers") public ResponseEntity<BaseResponse<List<HotelRoomOfferResponse>>> offers(@PathVariable UUID hotelId,
+            @RequestParam LocalDate checkIn,@RequestParam LocalDate checkOut,@RequestParam(defaultValue="1")int rooms,
+            @RequestParam(defaultValue="1")int adults,@RequestParam(defaultValue="0")int children){
+        HotelOfferQuery query=HotelOfferQuery.builder().checkIn(checkIn).checkOut(checkOut).rooms(rooms).adults(adults).children(children).build();
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(offerService.listOffers(hotelId,query)));}
     /** Availability-aware search: dates + party size only return hotels with a room type that fits and is open every night. */
     @GetMapping public ResponseEntity<BaseResponse<List<HotelProfileResponse>>> list(@RequestParam(required=false)String q,
             @RequestParam(required=false)String propertyType,@RequestParam(required=false)java.math.BigDecimal minPrice,@RequestParam(required=false)java.math.BigDecimal maxPrice,

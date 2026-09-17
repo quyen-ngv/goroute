@@ -18,6 +18,10 @@ public interface HotelMarketplaceRepository {
     int insertRoomType(RoomType room); int updateRoomType(RoomType room); Optional<RoomType> findRoomType(UUID id);
     List<RoomType> findRoomTypes(UUID hotelId,boolean includeDisabled);
     int insertRatePlan(RatePlan rate); int updateRatePlan(RatePlan rate); Optional<RatePlan> findRatePlan(UUID id);
+    /** The rate plan, locked exclusively: for closing it. */
+    Optional<RatePlan> findRatePlanForUpdate(UUID id);
+    /** The rate plan, held against a concurrent close: for booking against it. */
+    Optional<RatePlan> findRatePlanForBooking(UUID id);
     List<RatePlan> findRatePlans(UUID roomTypeId,boolean includeDisabled);
     int upsertRatePlanDailyRange(UUID ratePlanId, LocalDate start, LocalDate end, List<Integer> daysOfWeek,
                                  BigDecimal price, Boolean stopSell, Integer minStay, Integer maxStay,

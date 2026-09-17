@@ -1,6 +1,7 @@
 package com.ds.goroute.service;
 
 import com.ds.goroute.dto.request.CreateActivityPlaceImportJobRequest;
+import com.ds.goroute.dto.request.CreateAdminLinksPlaceImportJobRequest;
 import com.ds.goroute.dto.request.CreateManualPlaceImportJobRequest;
 import com.ds.goroute.dto.request.CreateSocialPlaceImportJobRequest;
 import com.ds.goroute.dto.response.PlaceImportJobResponse;
@@ -25,7 +26,9 @@ public interface PlaceImportJobService {
 
     PlaceImportJobResponse adminRunManualPlaceImport(CreateManualPlaceImportJobRequest request);
 
-    List<PlaceImportJobResponse> adminListJobs(UUID userId, String status, int page, int size);
+    PlaceImportJobResponse adminRunLinkImport(CreateAdminLinksPlaceImportJobRequest request);
+
+    List<PlaceImportJobResponse> adminListJobs(UUID userId, String status, String sourceType, int page, int size);
 
     PlaceImportJobResponse adminGetJob(UUID jobId);
 

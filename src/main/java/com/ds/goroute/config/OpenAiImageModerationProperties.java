@@ -20,4 +20,5 @@ public class OpenAiImageModerationProperties {
     private String url = "https://api.openai.com/v1/moderations";
 
     private String model = "omni-moderation-latest";
+
 }

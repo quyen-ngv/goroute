@@ -29,6 +29,10 @@ public class PartnerRegisterRequest {
     private OrganizationType organizationType = OrganizationType.BUSINESS;
     @NotBlank @Size(max = 100)
     private String timezone = "Asia/Ho_Chi_Minh";
-    @Size(max = 50)
+    /**
+     * Required: a self-serve sign-up proves nothing about who is behind it, so the one
+     * contact the platform can actually call back on before approving is not optional.
+     */
+    @NotBlank @Size(min = 8, max = 50) @Pattern(regexp = "[0-9 +().-]+")
     private String contactPhone;
 }

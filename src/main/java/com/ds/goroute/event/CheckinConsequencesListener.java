@@ -10,10 +10,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -26,6 +27,12 @@ import java.util.Optional;
  * that their photos and words were saved; a stamp or a handful of points arriving a few
  * seconds later is fine, and a failure here has to leave the check-in untouched rather
  * than roll it back.
+ *
+ * <p>Each consequence also gets a transaction of its own. Sharing one was what made the
+ * try/catch around each of them a promise the code could not keep: {@code recordCheckin} is
+ * itself transactional, so a stamp rule that threw marked the shared transaction rollback-only
+ * and took the points that had already been granted down with it at commit time — after the
+ * catch block had logged the failure as contained.
  */
 @Component
 @RequiredArgsConstructor
@@ -36,10 +43,10 @@ public class CheckinConsequencesListener {
     private final PassportService passportService;
     private final StarService pointWallet;
     private final CheckinRewardService rewardService;
+    private final PlatformTransactionManager transactionManager;
 
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onCheckinCreated(CheckinCreatedEvent event) {
         Optional<UserCheckin> stored = checkinRepository.findById(event.checkinId());
         if (stored.isEmpty()) {
@@ -47,20 +54,29 @@ public class CheckinConsequencesListener {
         }
         UserCheckin checkin = stored.get();
 
-        // Each consequence is attempted on its own. A failing reward must not cost the
-        // author their passport entry, and neither must cost them the check-in.
-        try {
-            passportService.recordCheckin(checkin);
-        } catch (RuntimeException exception) {
-            log.error("Could not record the passport event for check-in {}: {}",
-                    checkin.getId(), exception.getMessage(), exception);
-        }
+        // Each consequence is attempted on its own, in a transaction of its own. A failing
+        // reward must not cost the author their passport entry, and neither must cost them
+        // the check-in.
+        inOwnTransaction("passport event", checkin, () -> passportService.recordCheckin(checkin));
+        inOwnTransaction("reward", checkin, () -> grantReward(checkin));
+    }
 
+    /**
+     * Runs one consequence, alone, and lets nothing out.
+     *
+     * <p>A failure is logged with the check-in id rather than retried: every consequence in here
+     * is keyed on that check-in — the passport stamp on the visit, the ledger entry on
+     * {@code checkin:<id>} — so replaying the event, by hand or by a later pass, adds nothing the
+     * first attempt already did and costs nothing when it did not.
+     */
+    private void inOwnTransaction(String what, UserCheckin checkin, Runnable consequence) {
+        TransactionTemplate own = new TransactionTemplate(transactionManager);
+        own.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         try {
-            grantReward(checkin);
+            own.executeWithoutResult(status -> consequence.run());
         } catch (RuntimeException exception) {
-            log.error("Could not grant the check-in reward for {}: {}",
-                    checkin.getId(), exception.getMessage(), exception);
+            log.error("CHECKIN_CONSEQUENCE_FAILED {} for check-in {} (user {}): {}",
+                    what, checkin.getId(), checkin.getUserId(), exception.getMessage(), exception);
         }
     }
 

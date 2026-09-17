@@ -19,6 +19,14 @@ public interface ContentCommentMapper {
     List<ContentComment> findByTarget(@Param("contentType") String contentType,
                                       @Param("contentId") UUID contentId);
 
+    /**
+     * The number findByTarget was only ever loaded to produce. Same target predicate,
+     * plus the two visibility rules the caller applied in memory: not soft deleted and
+     * not under an unrestored takedown.
+     */
+    int countActiveByTarget(@Param("contentType") String contentType,
+                            @Param("contentId") UUID contentId);
+
     List<ContentComment> findPage(@Param("contentType") String contentType,
                                   @Param("contentId") UUID contentId,
                                   @Param("parentId") UUID parentId,
@@ -36,7 +44,4 @@ public interface ContentCommentMapper {
     int insertLike(@Param("commentId") UUID commentId, @Param("userId") UUID userId);
 
     int deleteLike(@Param("commentId") UUID commentId, @Param("userId") UUID userId);
-
-    int countActiveByTarget(@Param("contentType") String contentType,
-                            @Param("contentId") UUID contentId);
 }

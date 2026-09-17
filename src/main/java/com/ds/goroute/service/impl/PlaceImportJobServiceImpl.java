@@ -1,6 +1,7 @@
 package com.ds.goroute.service.impl;
 
 import com.ds.goroute.dto.request.CreateActivityPlaceImportJobRequest;
+import com.ds.goroute.dto.request.CreateAdminLinksPlaceImportJobRequest;
 import com.ds.goroute.dto.request.CreateManualPlaceImportJobRequest;
 import com.ds.goroute.dto.request.CreateSocialPlaceImportJobRequest;
 import com.ds.goroute.dto.response.PlaceImportJobItemResponse;
@@ -42,12 +43,15 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import com.ds.goroute.utils.PlaceImportCandidateKey;
 
 @Service
@@ -81,14 +85,14 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
     @Override
     public PlaceImportJobResponse createFromSocialJobs(UUID userId, CreateSocialPlaceImportJobRequest request) {
         PlaceImportJob job = createJob(userId, PlaceImportSourceType.SOCIAL_LOCATION, null, safeMaxReviews(request.getMaxReviews()), request);
-        placeImportJobExecutor.execute(() -> runSocialJob(job.getId(), userId, request));
+        startAfterCommit(() -> runSocialJob(job.getId(), userId, request));
         return toResponse(job, List.of());
     }
 
     @Override
     public PlaceImportJobResponse createFromActivities(UUID userId, CreateActivityPlaceImportJobRequest request) {
         PlaceImportJob job = createJob(userId, PlaceImportSourceType.ACTIVITY, request.getTripId(), DEFAULT_MAX_REVIEWS, request);
-        placeImportJobExecutor.execute(() -> runActivityJob(job.getId(), userId, request));
+        startAfterCommit(() -> runActivityJob(job.getId(), userId, request));
         return toResponse(job, List.of());
     }
 
@@ -174,12 +178,36 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
                 activity.getTripId(),
                 safeMaxReviews(request.getMaxReviews()),
                 request);
-        placeImportJobExecutor.execute(() -> runJob(job.getId(), List.of(candidate)));
+        startAfterCommit(() -> runJob(job.getId(), List.of(candidate)));
         return toResponse(job, List.of());
     }
 
     @Override
-    public List<PlaceImportJobResponse> adminListJobs(UUID userId, String status, int page, int size) {
+    public PlaceImportJobResponse adminRunLinkImport(CreateAdminLinksPlaceImportJobRequest request) {
+        // The same link pasted twice would scrape twice and import the second run as a duplicate,
+        // so the paste is de-duplicated before any item row exists.
+        List<String> urls = new ArrayList<>(new LinkedHashSet<>(request.getUrls().stream()
+                .map(this::trimToNull)
+                .filter(Objects::nonNull)
+                .toList()));
+        if (urls.isEmpty()) {
+            throw new IllegalArgumentException("At least one Google Maps URL is required");
+        }
+        String invalid = urls.stream().filter(url -> !isGoogleMapsPlaceUrl(url)).findFirst().orElse(null);
+        if (invalid != null) {
+            throw new IllegalArgumentException("Not a Google Maps place URL: " + invalid);
+        }
+        String visibilityStatus = "ACTIVE".equalsIgnoreCase(request.getVisibilityStatus()) ? "ACTIVE" : "INACTIVE";
+        List<Candidate> candidates = urls.stream()
+                .map(url -> Candidate.fromAdminLink(url, visibilityStatus))
+                .toList();
+        PlaceImportJob job = createJob(null, PlaceImportSourceType.ADMIN_LINKS, null, DEFAULT_MAX_REVIEWS, request);
+        startAfterCommit(() -> runJob(job.getId(), candidates));
+        return toResponse(job, List.of());
+    }
+
+    @Override
+    public List<PlaceImportJobResponse> adminListJobs(UUID userId, String status, String sourceType, int page, int size) {
         String normalizedStatus = null;
         if (status != null && !status.isBlank()) {
             try {
@@ -188,9 +216,17 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
                 throw new IllegalArgumentException("Invalid place import job status");
             }
         }
+        String normalizedSourceType = null;
+        if (sourceType != null && !sourceType.isBlank()) {
+            try {
+                normalizedSourceType = PlaceImportSourceType.valueOf(sourceType.trim().toUpperCase()).name();
+            } catch (Exception e) {
+                throw new IllegalArgumentException("Invalid place import source type");
+            }
+        }
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 100);
-        return jobMapper.findAdminJobs(userId, normalizedStatus, safeSize, safePage * safeSize)
+        return jobMapper.findAdminJobs(userId, normalizedStatus, normalizedSourceType, safeSize, safePage * safeSize)
                 .stream()
                 .map(job -> toResponse(job, null))
                 .toList();
@@ -292,7 +328,7 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
                 null,
                 safeMaxReviews(request.getMaxReviews()),
                 request);
-        placeImportJobExecutor.execute(() -> runJob(job.getId(), candidates));
+        startAfterCommit(() -> runJob(job.getId(), candidates));
     }
 
     private void scheduleActivityImportForAdmin(UUID userId, CreateActivityPlaceImportJobRequest request) {
@@ -306,7 +342,40 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
                 request.getTripId(),
                 DEFAULT_MAX_REVIEWS,
                 request);
-        placeImportJobExecutor.execute(() -> runJob(job.getId(), candidates));
+        startAfterCommit(() -> runJob(job.getId(), candidates));
+    }
+
+    /**
+     * Hands work to the import executor only once the row it needs is committed.
+     *
+     * <p>The worker thread starts by reading the job it was given
+     * ({@code runJob} -> {@code findJobById} -> {@code startJob}). When the caller is still
+     * inside its own transaction -- the social-location callback used to be, and any
+     * {@code @Transactional} caller still can be -- that row does not exist for any other
+     * connection yet, so the worker read null, threw, and the job sat QUEUED forever. Outside a
+     * transaction the insert is already committed and the work starts exactly as before; inside
+     * one it starts a moment later, on commit. If the caller rolls back, the job row is gone and
+     * the work correctly never runs.
+     */
+    private void startAfterCommit(Runnable work) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            placeImportJobExecutor.execute(work);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                // Anything thrown here propagates to the caller of the transactional method,
+                // which would answer a request whose data is already committed with a 500. The
+                // executor uses CallerRunsPolicy, so a saturated queue runs the job inline on
+                // this very thread and can throw.
+                try {
+                    placeImportJobExecutor.execute(work);
+                } catch (Exception ex) {
+                    log.error("Place import work failed after commit; the job stays queued for the watchdog", ex);
+                }
+            }
+        });
     }
 
     private void runJob(UUID jobId, List<Candidate> candidates) {
@@ -361,9 +430,9 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
                                     ? DEFAULT_MAX_REVIEWS
                                     : job.getMaxReviews())
                             .maxScrolls(100)
-                            .includeReviews(true)
+                            .includeReviews(candidate.includeReviews)
                             .headless(true)
-                            .visibilityStatus("INACTIVE")
+                            .visibilityStatus(candidate.visibilityStatus == null ? "INACTIVE" : candidate.visibilityStatus)
                             .importConfig(ScrapePlaceImportJobRequest.ImportConfig.builder()
                                     .enabled(true)
                                     .url(publicBaseUrl.replaceAll("/+$", "") + "/v1/api/places/import")
@@ -721,6 +790,7 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
 
     private PlaceImportApprovalStatus initialApprovalStatus(PlaceImportJob job) {
         return job.getSourceType() == PlaceImportSourceType.MANUAL
+                || job.getSourceType() == PlaceImportSourceType.ADMIN_LINKS
                 ? PlaceImportApprovalStatus.APPROVED
                 : PlaceImportApprovalStatus.PENDING;
     }
@@ -909,6 +979,30 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
         return List.of(requestedUserId);
     }
 
+    /**
+     * Mirrors the worker's own URL check (python_place_reviews_job/place_urls.py) so a bad paste
+     * is refused while the admin is still looking at it, instead of failing one item at a time
+     * inside a job that has already started.
+     */
+    private static boolean isGoogleMapsPlaceUrl(String url) {
+        String value = url.toLowerCase(java.util.Locale.ROOT);
+        String rest = value.startsWith("https://") ? value.substring(8)
+                : value.startsWith("http://") ? value.substring(7)
+                : null;
+        if (rest == null) {
+            return false;
+        }
+        if (rest.startsWith("www.")) {
+            rest = rest.substring(4);
+        }
+        boolean maps = rest.startsWith("google.com/maps")
+                || rest.startsWith("maps.google.com")
+                || rest.startsWith("goo.gl/maps")
+                || rest.startsWith("maps.app.goo.gl");
+        // A /maps/@lat,lng,zoom link is a viewport, not a place: the worker refuses it too.
+        return maps && !rest.contains("/maps/@");
+    }
+
     private String trimToNull(String value) {
         return isBlank(value) ? null : value.trim();
     }
@@ -927,6 +1021,10 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
         private String cid;
         private BigDecimal latitude;
         private BigDecimal longitude;
+        // Scrape options travel with the candidate rather than the job row: the job runs in this
+        // same process, and the table has no column for either.
+        private String visibilityStatus;
+        private boolean includeReviews = true;
 
         private static Candidate fromMapSearch(UUID socialJobId, JsonNode node) {
             Candidate candidate = new Candidate();
@@ -953,6 +1051,20 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
             candidate.searchQuery = String.join(" ",
                     List.of(activity.getName(), activity.getAddress() == null ? "" : activity.getAddress())).trim();
             candidate.requiresSearch = true;
+            return candidate;
+        }
+
+        /**
+         * A link pasted in the admin Places screen: no activity to map, no reviews. Review
+         * scraping is what makes an import slow, and a catalog link import only needs the place
+         * itself -- the dedicated review job fills reviews in later.
+         */
+        private static Candidate fromAdminLink(String url, String visibilityStatus) {
+            Candidate candidate = new Candidate();
+            candidate.url = url;
+            candidate.sourceOriginalUrl = url;
+            candidate.visibilityStatus = visibilityStatus;
+            candidate.includeReviews = false;
             return candidate;
         }
 

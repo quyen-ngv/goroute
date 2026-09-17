@@ -347,8 +347,8 @@ public class AwsService implements StorageService {
     }
 
     @Override
-    public List<String> listObjectKeys(String prefix) {
-        List<String> keys = new ArrayList<>();
+    public List<StorageService.StoredObject> listObjects(String prefix) {
+        List<StorageService.StoredObject> objects = new ArrayList<>();
         String continuationToken = null;
 
         do {
@@ -360,11 +360,12 @@ public class AwsService implements StorageService {
             }
 
             var response = s3Client.listObjectsV2(requestBuilder.build());
-            response.contents().forEach(object -> keys.add(object.key()));
+            response.contents().forEach(object ->
+                    objects.add(new StorageService.StoredObject(object.key(), object.lastModified())));
             continuationToken = response.nextContinuationToken();
         } while (continuationToken != null);
 
-        return keys;
+        return objects;
     }
 
     @Override

@@ -60,6 +60,9 @@ public class ActivityBooking {
     private String whatToExpect; // JSON array of {text, image}
     private String itinerary; // JSON array of {title, content, images[]}
 
+    /** Curated tourist area (location_images) this row belongs to; null until auto-map resolves one. */
+    private UUID locationImageId;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

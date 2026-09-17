@@ -3,8 +3,6 @@ package com.ds.goroute.controller;
 import com.ds.goroute.dto.request.*;
 import com.ds.goroute.dto.response.*;
 import com.ds.goroute.service.FoodService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -18,7 +16,6 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/v1/api/admin/foods")
 @RequiredArgsConstructor
-@Tag(name = "Admin Foods", description = "Food CMS")
 public class AdminFoodController extends BaseController {
 
     private final FoodService foodService;

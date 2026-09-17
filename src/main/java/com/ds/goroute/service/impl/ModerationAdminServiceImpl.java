@@ -295,9 +295,10 @@ public class ModerationAdminServiceImpl implements ModerationAdminService {
     }
 
     private void audit(UUID termId, String action, ModerationTerm before, ModerationTerm after, UUID actorId) {
+        // Columns are jsonb: an empty string would be rejected, so never pass one through.
         termRepository.insertAudit(termId, action,
-                before == null ? null : JsonUtils.toJson(before),
-                after == null ? null : JsonUtils.toJson(after),
+                before == null ? null : blankToNull(JsonUtils.toJson(before)),
+                after == null ? null : blankToNull(JsonUtils.toJson(after)),
                 actorId);
     }
 

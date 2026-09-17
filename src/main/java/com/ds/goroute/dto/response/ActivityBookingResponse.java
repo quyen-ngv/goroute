@@ -21,6 +21,8 @@ public class ActivityBookingResponse {
     private String description;
 
     // Location
+    /** Curated tourist area, from the auto-map job or an operator override. */
+    private UUID locationImageId;
     private String activityAddress;
     private String departingFrom;
     private List<String> destinations;

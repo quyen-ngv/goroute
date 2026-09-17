@@ -158,20 +158,32 @@
         SELECT <include refid="columns"/> FROM user_checkins
         WHERE visibility = 'PUBLIC'
           AND is_removed = FALSE
-          <if test="before != null">AND created_at &lt; #{before}</if>
           <if test="excludeUserId != null">AND user_id &lt;&gt; #{excludeUserId}</if>
           AND NOT EXISTS (
               SELECT 1 FROM content_takedowns t
               WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
                 AND t.restored_at IS NULL)
-        ORDER BY created_at DESC
-        LIMIT #{limit}
+        ORDER BY EXISTS (
+                     SELECT 1 FROM media_assets ma
+                     WHERE ma.entity_type = 'USER_CHECKIN'
+                       AND ma.entity_id = user_checkins.id
+                       AND (ma.asset_role IS NULL OR ma.asset_role = 'PHOTO')
+                       AND ma.deleted_at IS NULL) DESC,
+                 created_at DESC,
+                 id DESC
+        LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <select id="findByUser" resultMap="checkinMap">
         SELECT <include refid="columns"/> FROM user_checkins
         WHERE user_id = #{userId} AND is_removed = FALSE
         <if test="!includePrivate">AND visibility = 'PUBLIC'</if>
+        <if test="!includePrivate">
+            AND NOT EXISTS (
+                SELECT 1 FROM content_takedowns t
+                WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
+                  AND t.restored_at IS NULL)
+        </if>
         ORDER BY created_at DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
@@ -185,6 +197,10 @@
     <select id="findByPlace" resultMap="checkinMap">
         SELECT <include refid="columns"/> FROM user_checkins
         WHERE place_id = #{placeId} AND visibility = 'PUBLIC' AND is_removed = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns t
+              WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
+                AND t.restored_at IS NULL)
         ORDER BY created_at DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
@@ -211,6 +227,10 @@
     <select id="findByLocationKey" resultMap="checkinMap">
         SELECT <include refid="columns"/> FROM user_checkins
         WHERE location_key = #{locationKey} AND visibility = 'PUBLIC' AND is_removed = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns t
+              WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
+                AND t.restored_at IS NULL)
         ORDER BY created_at DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
@@ -469,5 +489,92 @@
     <select id="findVisitedProvinceCodes" resultType="java.lang.String">
         SELECT DISTINCT province_code FROM user_checkins
         WHERE user_id = #{userId} AND province_code IS NOT NULL AND is_removed = FALSE
+    </select>
+
+    <!-- Admin console: every live check-in, hidden or not. The hide badge is computed
+         from content_takedowns in the service layer, same as the app-facing feed. -->
+    <sql id="adminFilter">
+        FROM user_checkins
+        WHERE is_removed = FALSE
+        <if test="userId != null">AND user_id = #{userId}</if>
+        <if test="search != null and search != ''">
+            AND (location_name ILIKE CONCAT('%', #{search}, '%')
+                 OR custom_name ILIKE CONCAT('%', #{search}, '%')
+                 OR caption ILIKE CONCAT('%', #{search}, '%'))
+        </if>
+        <if test="hidden != null">
+            <choose>
+                <when test="hidden">
+                    AND EXISTS (
+                        SELECT 1 FROM content_takedowns t
+                        WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
+                          AND t.restored_at IS NULL)
+                </when>
+                <otherwise>
+                    AND NOT EXISTS (
+                        SELECT 1 FROM content_takedowns t
+                        WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
+                          AND t.restored_at IS NULL)
+                </otherwise>
+            </choose>
+        </if>
+    </sql>
+
+    <select id="findAllForAdmin" resultMap="checkinMap">
+        SELECT <include refid="columns"/>
+        <include refid="adminFilter"/>
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAllForAdmin" resultType="long">
+        SELECT COUNT(*)
+        <include refid="adminFilter"/>
+    </select>
+
+    <!-- The grouping key follows the place so the visit clusters with everything else that
+         happened there, and the province is taken from the catalogue row only when it has
+         one. A place with no province must not erase the province the author recorded. -->
+    <update id="assignPlace">
+        UPDATE user_checkins
+        SET place_id = #{placeId},
+            location_key = #{locationKey},
+            location_source = 'CATALOGUE_PLACE',
+            province_code = COALESCE(#{provinceCode}, province_code),
+            updated_at = NOW()
+        WHERE id = #{id} AND is_removed = FALSE
+    </update>
+
+    <resultMap id="locationHistoryMap" type="com.ds.goroute.entity.UserCheckinLocationHistory">
+        <id property="id" column="id"/>
+        <result property="checkinId" column="checkin_id"/>
+        <result property="previousPlaceId" column="previous_place_id"/>
+        <result property="newPlaceId" column="new_place_id"/>
+        <result property="previousLocation" column="previous_location"/>
+        <result property="reason" column="reason"/>
+        <result property="changedBy" column="changed_by"/>
+        <result property="changedAt" column="changed_at"/>
+    </resultMap>
+
+    <insert id="insertLocationHistory" parameterType="com.ds.goroute.entity.UserCheckinLocationHistory">
+        INSERT INTO user_checkin_location_history
+            (id, checkin_id, previous_place_id, new_place_id, previous_location, reason, changed_by, changed_at)
+        VALUES
+            (#{id}, #{checkinId}, #{previousPlaceId}, #{newPlaceId}, #{previousLocation}::jsonb,
+             #{reason}, #{changedBy}, #{changedAt})
+    </insert>
+
+    <select id="findLocationHistory" resultMap="locationHistoryMap">
+        SELECT id, checkin_id, previous_place_id, new_place_id, previous_location::text AS previous_location,
+               reason, changed_by, changed_at
+        FROM user_checkin_location_history
+        WHERE checkin_id = #{checkinId}
+        ORDER BY changed_at DESC
+    </select>
+
+    <select id="findReassignedCheckinIds" resultType="java.util.UUID">
+        SELECT DISTINCT checkin_id FROM user_checkin_location_history
+        WHERE checkin_id IN
+        <foreach collection="checkinIds" item="id" open="(" separator="," close=")">#{id}</foreach>
     </select>
 </mapper>

@@ -38,8 +38,10 @@ class BookingChangeRequestServiceImplTest {
     private final PartnerAuthorizationService authorization = mock(PartnerAuthorizationService.class);
     private final NotificationService notifications = mock(NotificationService.class);
     private final MarketplaceHistoryService history = mock(MarketplaceHistoryService.class);
+    private final org.springframework.transaction.PlatformTransactionManager transactions =
+            mock(org.springframework.transaction.PlatformTransactionManager.class);
     private final BookingChangeRequestServiceImpl service = new BookingChangeRequestServiceImpl(
-            mapper, hotels, activities, hotelService, activityService, authorization, notifications, history);
+            mapper, hotels, activities, hotelService, activityService, authorization, notifications, history, transactions);
 
     private HotelBooking booking(UUID userId, String status) {
         return HotelBooking.builder().id(UUID.randomUUID()).userId(userId).organizationId(UUID.randomUUID()).hotelId(UUID.randomUUID())

@@ -139,6 +139,9 @@
         <if test="status != null and status != ''">
             AND status = #{status}
         </if>
+        <if test="sourceType != null and sourceType != ''">
+            AND source_type = #{sourceType}
+        </if>
         ORDER BY created_at DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
@@ -220,7 +223,16 @@
 
     <select id="findStalledWorkerJobs" resultMap="PlaceImportJobResultMap">
         SELECT * FROM place_import_jobs
-        WHERE source_type IN ('NATIONWIDE', 'PLACE_DETAILS_REFRESH')
+        <!-- SOCIAL_LOCATION, ACTIVITY and MANUAL jobs are run by an in-process executor rather
+             than the scrape worker, so they stall in a different way: the thread never starts
+             (the process died between the insert commit and the executor run), or it dies before
+             it can finish the job. None of the three ever carries a job-level python_job_id — 
+             only their items do — so the watchdog closes them through its abandoned branch once
+             they have been silent long enough. A live job of any of these types touches
+             updated_at when it starts and again after every item, and the longest a live one can
+             stay quiet is a single item's worker poll (300 attempts, 2s apart: ~10 minutes),
+             well inside abandonAfter, so only a dead one qualifies. -->
+        WHERE source_type IN ('NATIONWIDE', 'PLACE_DETAILS_REFRESH', 'SOCIAL_LOCATION', 'ACTIVITY', 'MANUAL', 'ADMIN_LINKS')
           AND status IN ('QUEUED', 'PROCESSING')
           AND COALESCE(updated_at, created_at) &lt; #{silentSince}
         ORDER BY COALESCE(updated_at, created_at)

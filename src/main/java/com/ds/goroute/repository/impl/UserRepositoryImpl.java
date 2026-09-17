@@ -79,6 +79,21 @@ public class UserRepositoryImpl implements UserRepository {
     }
 
     @Override
+    public List<com.ds.goroute.dto.response.DiscoverUserResponse> findDiscoverUsers(UUID userId, int limit) {
+        return userMapper.selectDiscoverUsers(userId, limit);
+    }
+
+    @Override
+    public List<com.ds.goroute.dto.response.DiscoverUserResponse> findFollowerProfiles(UUID userId) {
+        return userMapper.selectFollowerProfiles(userId);
+    }
+
+    @Override
+    public List<com.ds.goroute.dto.response.DiscoverUserResponse> findFollowingProfiles(UUID userId) {
+        return userMapper.selectFollowingProfiles(userId);
+    }
+
+    @Override
     public void follow(UUID followerId, UUID followingId) {
         userMapper.insertFollow(followerId, followingId);
     }

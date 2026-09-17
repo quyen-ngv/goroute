@@ -104,6 +104,12 @@
           AND b.check_out_date &gt;= #{periodStart}
           AND b.check_out_date &lt;= #{periodEnd}
           AND b.booking_status IN ('COMPLETED','NO_SHOW','CANCELLED_BY_GUEST','CANCELLED_BY_HOST','CANCELLED_BY_PLATFORM')
+        <!-- Already billed on another statement. Without this a half-month statement followed by
+             the monthly one charges the same stay twice: the unique index is per statement. -->
+        <if test="excludeStatementId != null">
+          AND NOT EXISTS (SELECT 1 FROM partner_statement_lines l
+                           WHERE l.hotel_booking_id = b.id AND l.statement_id &lt;&gt; #{excludeStatementId})
+        </if>
         ORDER BY b.check_out_date, b.booking_code
     </select>
 
@@ -125,6 +131,10 @@
           AND s.starts_at::date &gt;= #{periodStart}
           AND s.starts_at::date &lt;= #{periodEnd}
           AND o.order_status IN ('COMPLETED','NO_SHOW','CANCELLED_BY_GUEST','CANCELLED_BY_HOST','CANCELLED_BY_PLATFORM')
+        <if test="excludeStatementId != null">
+          AND NOT EXISTS (SELECT 1 FROM partner_statement_lines l
+                           WHERE l.activity_order_id = o.id AND l.statement_id &lt;&gt; #{excludeStatementId})
+        </if>
         ORDER BY s.starts_at, o.order_code
     </select>
 
@@ -163,11 +173,37 @@
         WHERE id = #{id}
     </update>
 
+    <!-- The settle transition, guarded in the statement itself. The service checks the same three
+         things first so it can say which one failed; this is what makes the answer still true at
+         the moment of the write, when a dispute may have been opened in between. -->
+    <update id="settleStatement">
+        UPDATE partner_statements
+        SET status = 'SETTLED',
+            settled_at = #{settledAt},
+            <if test="note != null">note = #{note},</if>
+            data_version = data_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+          AND status &lt;&gt; 'SETTLED'
+          AND issued_at IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM partner_statement_lines l
+                           WHERE l.statement_id = #{id} AND l.dispute_status = 'OPEN')
+    </update>
+
     <sql id="StatementSelect">
         SELECT s.*, o.display_name AS organization_name
         FROM partner_statements s
         JOIN host_organizations o ON o.id = s.organization_id
     </sql>
+
+    <!-- Takes the statement's row lock for the rest of the transaction. Settling, disputing a line
+         and regenerating all read the statement and its lines and then write against what they
+         read; they take this first so they queue behind each other instead of overwriting each
+         other's answer. Everything that touches a statement takes it in this order, statement
+         before line, so two of them cannot deadlock. -->
+    <select id="lockStatement" resultType="java.util.UUID">
+        SELECT id FROM partner_statements WHERE id = #{id} FOR UPDATE
+    </select>
 
     <select id="findStatementById" resultMap="StatementMap">
         <include refid="StatementSelect"/> WHERE s.id = #{id}

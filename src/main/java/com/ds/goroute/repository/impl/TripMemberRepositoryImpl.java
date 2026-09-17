@@ -42,6 +42,14 @@ public class TripMemberRepositoryImpl implements TripMemberRepository {
     }
     
     @Override
+    public List<TripMember> findByTripIdsAndUserId(List<UUID> tripIds, UUID userId) {
+        if (tripIds == null || tripIds.isEmpty() || userId == null) {
+            return List.of();
+        }
+        return tripMemberMapper.selectByTripIdsAndUserId(tripIds, userId);
+    }
+
+    @Override
     public void updateById(TripMember member) {
         tripMemberMapper.updateById(member);
     }

@@ -48,6 +48,29 @@
         ORDER BY created_at ASC, id ASC
     </select>
 
+    <!--
+         Mirrors, in SQL, exactly what getActiveCommentCount used to compute in Java after
+         reading every row of the thread: findByTarget's predicate, minus soft deleted rows
+         (IS DISTINCT FROM TRUE rather than = FALSE, so the SQL stays faithful to the old
+         !Boolean.TRUE.equals check even if the column ever loses its NOT NULL), minus rows
+         under a takedown that has not been restored.
+         The takedown content type is the constant CONTENT_COMMENT the caller passed, not the
+         target's content type.
+    -->
+    <select id="countActiveByTarget" resultType="int">
+        SELECT COUNT(*)
+        FROM content_comments c
+        WHERE c.content_type = #{contentType}
+          AND c.content_id = #{contentId}
+          AND c.is_deleted IS DISTINCT FROM TRUE
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns td
+              WHERE td.content_type = 'CONTENT_COMMENT'
+                AND td.content_id = c.id
+                AND td.restored_at IS NULL
+          )
+    </select>
+
     <select id="findPage" resultMap="contentCommentMap">
         SELECT c.*,
                (SELECT COUNT(*) FROM content_comments reply
@@ -98,8 +121,4 @@
         WHERE comment_id = #{commentId} AND user_id = #{userId}
     </delete>
 
-    <select id="countActiveByTarget" resultType="int">
-        SELECT COUNT(*) FROM content_comments
-        WHERE content_type = #{contentType} AND content_id = #{contentId} AND is_deleted = FALSE
-    </select>
 </mapper>

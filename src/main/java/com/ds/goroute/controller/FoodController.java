@@ -5,8 +5,6 @@ import com.ds.goroute.dto.response.FoodDetailResponse;
 import com.ds.goroute.dto.response.FoodPlacePageResponse;
 import com.ds.goroute.dto.response.FoodSummaryResponse;
 import com.ds.goroute.service.FoodService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,13 +16,11 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/v1/api/foods")
 @RequiredArgsConstructor
-@Tag(name = "Foods", description = "Food discovery (public)")
 public class FoodController extends BaseController {
 
     private final FoodService foodService;
 
     @GetMapping
-    @Operation(summary = "List foods by city")
     public ResponseEntity listByCity(
             @RequestParam String citySlug,
             @RequestParam(defaultValue = "10") int limit,
@@ -34,7 +30,6 @@ public class FoodController extends BaseController {
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "Food detail for city")
     public ResponseEntity getDetail(
             @PathVariable UUID id,
             @RequestParam String citySlug) {
@@ -43,14 +38,12 @@ public class FoodController extends BaseController {
     }
 
     @GetMapping("/{id}/cities")
-    @Operation(summary = "Cities where this food is available")
     public ResponseEntity listCities(@PathVariable UUID id) {
         List<CitySlugOptionResponse> cities = foodService.listCitiesForFood(id);
         return ResponseEntity.ok(ofSucceeded(cities));
     }
 
     @GetMapping("/{id}/places")
-    @Operation(summary = "Places serving this food in city")
     public ResponseEntity listPlaces(
             @PathVariable UUID id,
             @RequestParam String citySlug,

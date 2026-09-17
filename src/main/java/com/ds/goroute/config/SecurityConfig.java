@@ -13,6 +13,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import com.ds.goroute.constant.ErrorConstant;
+import com.ds.goroute.exception.BusinessException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -111,7 +113,6 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health", "/actuator/health/readiness", "/actuator/info").permitAll()
                         .requestMatchers("/actuator/**").hasAuthority("ROLE_ADMIN")
                         .requestMatchers("/api/health").permitAll()
-                        .requestMatchers("/swagger-ui/**", "/api-docs/**", "/swagger-ui.html").permitAll()
                         // Static admin/share assets (PathPattern: ** must be last â€” no /**/*.css)
                         .requestMatchers(
                                 "/admin-*.html",
@@ -152,6 +153,35 @@ public class SecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(12);
+        return new LengthCheckedBCryptPasswordEncoder();
+    }
+
+    /**
+     * BCrypt has always ignored everything past the 72nd byte of a password. Spring
+     * Security 6.4.4 stopped ignoring it silently and throws from {@code encode} instead
+     * (CVE-2025-22228), which reaches the client as a 500 the first time somebody picks a
+     * long passphrase — 25 accented Vietnamese characters are already 75 bytes. Answer with
+     * the ordinary validation error instead.
+     *
+     * <p>Only {@code encode} is guarded. {@code matches} still accepts any length, so an
+     * account whose password was set before this change keeps logging in exactly as it did.
+     */
+    static final class LengthCheckedBCryptPasswordEncoder extends BCryptPasswordEncoder {
+
+        private static final int MAX_BYTES = 72;
+
+        LengthCheckedBCryptPasswordEncoder() {
+            super(12);
+        }
+
+        @Override
+        public String encode(CharSequence rawPassword) {
+            if (rawPassword != null
+                    && rawPassword.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_BYTES) {
+                throw new BusinessException(ErrorConstant.BAD_REQUEST,
+                        "Password must be at most " + MAX_BYTES + " bytes long");
+            }
+            return super.encode(rawPassword);
+        }
     }
 }
