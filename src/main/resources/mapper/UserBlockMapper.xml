@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.UserBlockMapper">
+
+    <resultMap id="UserBlockResultMap" type="com.ds.goroute.entity.UserBlock">
+        <id column="blocker_id" property="blockerId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <id column="blocked_id" property="blockedId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="reason" property="reason"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <!--
+      Blocking twice is not an error: the second press of a button whose first press was
+      lost to a flaky connection should leave one block, not a failure. The reason is
+      refreshed so a later, better explanation replaces an earlier blank one.
+    -->
+    <insert id="insert">
+        INSERT INTO user_blocks (blocker_id, blocked_id, reason, created_at)
+        VALUES (#{blockerId}, #{blockedId}, #{reason}, CURRENT_TIMESTAMP)
+        ON CONFLICT (blocker_id, blocked_id)
+        DO UPDATE SET reason = EXCLUDED.reason
+    </insert>
+
+    <delete id="delete">
+        DELETE FROM user_blocks
+        WHERE blocker_id = #{blockerId} AND blocked_id = #{blockedId}
+    </delete>
+
+    <select id="selectByBlocker" resultMap="UserBlockResultMap">
+        SELECT blocker_id, blocked_id, reason, created_at
+        FROM user_blocks
+        WHERE blocker_id = #{blockerId}
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="existsBetween" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM user_blocks
+            WHERE (blocker_id = #{first} AND blocked_id = #{second})
+               OR (blocker_id = #{second} AND blocked_id = #{first})
+        )
+    </select>
+
+    <select id="selectBlockedAmong" resultType="java.util.UUID">
+        SELECT DISTINCT CASE WHEN blocker_id = #{viewer} THEN blocked_id ELSE blocker_id END
+        FROM user_blocks
+        WHERE (
+            blocker_id = #{viewer} AND blocked_id IN
+            <foreach collection="candidates" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ) OR (
+            blocked_id = #{viewer} AND blocker_id IN
+            <foreach collection="candidates" item="id" open="(" separator="," close=")">#{id}</foreach>
+        )
+    </select>
+
+</mapper>

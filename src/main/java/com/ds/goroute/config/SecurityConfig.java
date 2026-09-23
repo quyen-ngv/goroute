@@ -95,6 +95,10 @@ public class SecurityConfig {
                         // so this exact method+path must be matched BEFORE the /v1/api/partner/** rule
                         // below, which would otherwise demand ROLE_PARTNER the caller cannot hold yet.
                         .requestMatchers(HttpMethod.POST, "/v1/api/partner/organizations").authenticated()
+                        // The listing wizard has the same shape of problem: it is where an ordinary
+                        // account becomes a partner, so requiring ROLE_PARTNER to reach it would lock
+                        // the only door that grants the role. Object-level checks live in the service.
+                        .requestMatchers("/v1/api/partner-onboarding/**").authenticated()
                         .requestMatchers("/v1/api/partner/**").hasAnyAuthority("ROLE_PARTNER", "ROLE_ADMIN")
                         .requestMatchers("/v1/api/internal/**").hasAuthority("ROLE_INTERNAL")
                         .requestMatchers("/v1/api/notifications/admin/**").hasAuthority("ROLE_ADMIN")
@@ -113,22 +117,15 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health", "/actuator/health/readiness", "/actuator/info").permitAll()
                         .requestMatchers("/actuator/**").hasAuthority("ROLE_ADMIN")
                         .requestMatchers("/api/health").permitAll()
-                        // Static admin/share assets (PathPattern: ** must be last â€” no /**/*.css)
+                        // The public Ondetour page is the only static asset left; the
+                        // admin consoles now live in the separate React app.
                         .requestMatchers(
-                                "/admin-*.html",
-                                "/admin-contributions.html",
-                                "/*.html",
-                                "/goroute-theme.css",
-                                "/goroute-admin-utils.js",
-                                "/goroute/admin-*.html",
-                                "/goroute/goroute-theme.css",
-                                "/goroute/goroute-admin-utils.js",
-                                "/*.css",
-                                "/*.js",
-                                "/goroute/*.css",
-                                "/goroute/*.js",
-                                "/css/**",
-                                "/js/**"
+                                "/ondetour.html",
+                                "/goroute/ondetour.html",
+                                "/ondetour",
+                                "/ondetour/*",
+                                "/goroute/ondetour",
+                                "/goroute/ondetour/*"
                         ).permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)

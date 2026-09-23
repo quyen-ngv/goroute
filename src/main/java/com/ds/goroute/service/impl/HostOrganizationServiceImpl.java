@@ -279,10 +279,10 @@ public class HostOrganizationServiceImpl implements HostOrganizationService {
         return toResponse(organization);
     }
 
-    @Override public List<HostOrganizationResponse> adminList(String query, String status, int page, int size) {
+    @Override public List<HostOrganizationResponse> adminList(String query, List<String> status, List<String> organizationType, List<String> verificationStatus, String sort, boolean descending, int page, int size) {
         int safeSize = Math.min(Math.max(size, 1), 200);
         int safePage = Math.max(page, 0);
-        return repository.findForAdmin(blankToNull(query), blankToNull(status), safeSize, safePage * safeSize)
+        return repository.findForAdmin(blankToNull(query), status, organizationType, verificationStatus, sort, descending, safeSize, safePage * safeSize)
                 .stream().map(HostOrganizationServiceImpl::toResponse).toList();
     }
 

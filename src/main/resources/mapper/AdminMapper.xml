@@ -61,6 +61,46 @@
               OR u.email ILIKE CONCAT('%', #{search}, '%')
               OR u.full_name ILIKE CONCAT('%', #{search}, '%'))
         </if>
+        <if test="accountStatus != null and accountStatus.size() > 0">
+            AND u.account_status IN
+            <foreach item="item" collection="accountStatus" open="(" separator="," close=")">#{item}</foreach>
+        </if>
+        <if test="provider != null and provider.size() > 0">
+            AND u.provider IN
+            <foreach item="item" collection="provider" open="(" separator="," close=")">#{item}</foreach>
+        </if>
+        <!-- Narrowing by role asks "who holds this role", not "whose role list happens to
+             contain this text", so it reads the join table instead of the aggregated string. -->
+        <if test="role != null and role.size() > 0">
+            AND EXISTS (SELECT 1 FROM admin_user_roles fur
+                        JOIN admin_roles fr ON fr.id = fur.role_id
+                        WHERE fur.user_id = u.id AND fr.code IN
+                        <foreach item="item" collection="role" open="(" separator="," close=")">#{item}</foreach>)
+        </if>
+    </sql>
+
+    <!--
+      The console names a sort column; only these names reach SQL, and each one resolves to a
+      literal ORDER BY here. `id` is always the tie-breaker so paging cannot repeat or skip a row
+      when many accounts share a status or a creation minute.
+    -->
+    <sql id="UserSortOrder">
+        ORDER BY
+        <choose>
+            <when test="sort == 'full_name'">u.full_name</when>
+            <when test="sort == 'username'">u.username</when>
+            <when test="sort == 'device_count'">device_count</when>
+            <when test="sort == 'trip_count'">trip_count</when>
+            <when test="sort == 'checkin_count'">checkin_count</when>
+            <when test="sort == 'review_count'">review_count</when>
+            <when test="sort == 'last_login_at'">u.last_login_at</when>
+            <otherwise>u.created_at</otherwise>
+        </choose>
+        <choose>
+            <when test="descending">DESC NULLS LAST</when>
+            <otherwise>ASC NULLS LAST</otherwise>
+        </choose>
+        , u.id DESC
     </sql>
 
     <!--
@@ -86,7 +126,7 @@
         LEFT JOIN admin_roles r ON r.id = ur.role_id
         <include refid="UserSearchWhere"/>
         GROUP BY u.id
-        ORDER BY u.created_at DESC
+        <include refid="UserSortOrder"/>
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
@@ -214,7 +254,28 @@
           AND (t.name ILIKE CONCAT('%', #{search}, '%')
             OR t.destination ILIKE CONCAT('%', #{search}, '%')
             OR u.username ILIKE CONCAT('%', #{search}, '%'))
-        ORDER BY t.created_at DESC
+        <if test="status != null and status.size() > 0">
+            AND t.status IN
+            <foreach item="item" collection="status" open="(" separator="," close=")">#{item}</foreach>
+        </if>
+        <if test="visibility != null and visibility.size() > 0">
+            AND t.visibility IN
+            <foreach item="item" collection="visibility" open="(" separator="," close=")">#{item}</foreach>
+        </if>
+        ORDER BY
+        <choose>
+            <when test="sort == 'name'">t.name</when>
+            <when test="sort == 'destination'">t.destination</when>
+            <when test="sort == 'username'">u.username</when>
+            <when test="sort == 'activity_count'">activity_count</when>
+            <when test="sort == 'member_count'">member_count</when>
+            <otherwise>t.created_at</otherwise>
+        </choose>
+        <choose>
+            <when test="descending">DESC NULLS LAST</when>
+            <otherwise>ASC NULLS LAST</otherwise>
+        </choose>
+        , t.id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 

@@ -21,7 +21,7 @@ public interface HostOrganizationRepository {
     List<UUID> findAllOrganizationIds();
     Optional<HostOrganization> findById(UUID id);
     List<HostOrganization> findForUser(UUID userId);
-    List<HostOrganization> findForAdmin(String query, String status, int limit, int offset);
+    List<HostOrganization> findForAdmin(String query, List<String> status, List<String> organizationType, List<String> verificationStatus, String sort, boolean descending, int limit, int offset);
     Optional<OrganizationMember> findMember(UUID organizationId, UUID userId);
     List<OrganizationMember> findMembers(UUID organizationId);
     int upsertMember(OrganizationMember member);

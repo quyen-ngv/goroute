@@ -44,7 +44,7 @@ public interface HostOrganizationService {
     HostOrganizationResponse adminUpdateCommission(UUID actorUserId, UUID organizationId,
                                                    UpdatePartnerCommissionRequest request);
 
-    List<HostOrganizationResponse> adminList(String query, String status, int page, int size);
+    List<HostOrganizationResponse> adminList(String query, List<String> status, List<String> organizationType, List<String> verificationStatus, String sort, boolean descending, int page, int size);
     HostOrganizationResponse adminGet(UUID organizationId);
     List<OrganizationMemberResponse> adminListMembers(UUID organizationId);
     List<OrganizationMemberScopeResponse> adminListMemberScopes(UUID organizationId,UUID memberUserId);

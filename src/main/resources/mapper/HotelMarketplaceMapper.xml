@@ -211,12 +211,27 @@
     <select id="findHotelsAdmin" resultMap="HotelMap">
         <include refid="HotelSelect"/>
         <where>
-            <if test="status != null and status != ''">AND h.status=#{status}</if>
+                        <if test="status != null and status.size() > 0">AND h.status IN<foreach item="item" collection="status" open="(" separator="," close=")">#{item}</foreach></if>
+            <if test="propertyType != null and propertyType.size() > 0">AND h.property_type IN<foreach item="item" collection="propertyType" open="(" separator="," close=")">#{item}</foreach></if>
+            <if test="locationImageIds != null and locationImageIds.size() > 0">AND h.location_image_id IN<foreach item="item" collection="locationImageIds" open="(" separator="," close=")">#{item}</foreach></if>
             <if test="query != null and query != ''">
                 AND (p.title ILIKE ('%' || REPLACE(REPLACE(REPLACE(#{query}, '\', '\\'), '%', '\%'), '_', '\_') || '%') ESCAPE '\' OR h.property_code ILIKE ('%' || REPLACE(REPLACE(REPLACE(#{query}, '\', '\\'), '%', '\%'), '_', '\_') || '%') ESCAPE '\')
             </if>
         </where>
-        ORDER BY h.created_at DESC LIMIT #{limit} OFFSET #{offset}
+        ORDER BY
+        <choose>
+            <when test="sort == 'placeTitle'">p.title</when>
+            <when test="sort == 'propertyCode'">h.property_code</when>
+            <when test="sort == 'starRating'">h.star_rating</when>
+            <when test="sort == 'updatedAt'">h.updated_at</when>
+            <otherwise>h.created_at</otherwise>
+        </choose>
+        <choose>
+            <when test="descending">DESC NULLS LAST</when>
+            <otherwise>ASC NULLS LAST</otherwise>
+        </choose>
+        , h.id DESC
+        LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <insert id="insertRoomType">
@@ -424,12 +439,31 @@
     <select id="findBookingsAdmin" resultMap="BookingMap">
         <include refid="BookingSelect"/>
         <where>
-            <if test="status != null and status != ''">AND b.booking_status=#{status}</if>
+                        <if test="status != null and status.size() > 0">AND b.booking_status IN<foreach item="item" collection="status" open="(" separator="," close=")">#{item}</foreach></if>
+            <if test="paymentStatus != null and paymentStatus.size() > 0">AND b.payment_status IN<foreach item="item" collection="paymentStatus" open="(" separator="," close=")">#{item}</foreach></if>
             <if test="query != null and query != ''">
                 AND (b.booking_code ILIKE ('%' || REPLACE(REPLACE(REPLACE(#{query}, '\', '\\'), '%', '\%'), '_', '\_') || '%') ESCAPE '\' OR p.title ILIKE ('%' || REPLACE(REPLACE(REPLACE(#{query}, '\', '\\'), '%', '\%'), '_', '\_') || '%') ESCAPE '\')
             </if>
         </where>
-        ORDER BY b.created_at DESC LIMIT #{limit} OFFSET #{offset}
+        ORDER BY
+        <choose>
+            <when test="sort == 'bookingCode'">b.booking_code</when>
+            <when test="sort == 'hotelName'">p.title</when>
+            <when test="sort == 'checkInDate'">b.check_in_date</when>
+            <when test="sort == 'checkOutDate'">b.check_out_date</when>
+            <when test="sort == 'adults'">b.adults</when>
+            <when test="sort == 'totalAmount'">b.total_amount</when>
+            <when test="sort == 'currency'">b.currency</when>
+            <when test="sort == 'bookingStatus'">b.booking_status</when>
+            <when test="sort == 'paymentStatus'">b.payment_status</when>
+            <otherwise>b.created_at</otherwise>
+        </choose>
+        <choose>
+            <when test="descending">DESC NULLS LAST</when>
+            <otherwise>ASC NULLS LAST</otherwise>
+        </choose>
+        , b.id DESC
+        LIMIT #{limit} OFFSET #{offset}
     </select>
     <update id="updateBookingStatus">
         UPDATE hotel_bookings SET booking_status=#{bookingStatus},payment_status=COALESCE(#{paymentStatus},payment_status),

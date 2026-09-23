@@ -130,6 +130,15 @@ public class UserCheckinController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(checkinService.byUser(viewerId, targetUserId, page, size)));
     }
 
+    /** For colouring the profile map: which wards the person has posted from. */
+    @GetMapping("/visited-wards")
+    public ResponseEntity<BaseResponse<List<com.ds.goroute.dto.response.VisitedWardResponse>>> visitedWards(
+            @RequestParam(required = false) UUID userId,
+            @CurrentUser UUID viewerId) {
+        return ResponseEntity.ok(ofSucceeded(
+                checkinService.visitedWards(viewerId, userId == null ? viewerId : userId)));
+    }
+
     @GetMapping("/places/{placeId}")
     public ResponseEntity<BaseResponse<List<UserCheckinResponse>>> byPlace(
             @PathVariable UUID placeId,

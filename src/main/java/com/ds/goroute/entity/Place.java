@@ -36,6 +36,14 @@ public class Place {
     private BigDecimal longitude;
     /** Optional per-place check-in verification radius; null falls back to global config. */
     private Integer verificationRadiusMeters;
+    /** Official ward the coordinates fall in (wards.code); written by point-in-polygon, never by imports. */
+    private String wardCode;
+    /**
+     * Drawn verification area as GeoJSON text, populated only by {@code findById}. Named
+     * so MyBatis auto-mapping never pours the raw geometry column into it. Written through
+     * its own statement: the generic update must not be able to erase a drawn area.
+     */
+    private String verificationGeometryGeoJson;
     private String plusCode;
     private String timezone;
     private String destinations; // JSON array

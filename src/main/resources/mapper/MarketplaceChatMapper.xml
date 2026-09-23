@@ -29,7 +29,7 @@
       instead of once per row of every page. -->
  <select id="findOrganizationChatHotelIds" resultType="java.util.UUID">SELECT DISTINCT hb.hotel_id FROM marketplace_conversations c JOIN hotel_bookings hb ON hb.id=c.hotel_booking_id WHERE c.organization_id=#{organizationId}</select>
  <select id="findOrganizationChatActivityBookingIds" resultType="java.util.UUID">SELECT DISTINCT ao.activity_booking_id FROM marketplace_conversations c JOIN activity_orders ao ON ao.id=c.activity_order_id WHERE c.organization_id=#{organizationId}</select>
- <select id="findAdmin" resultMap="ConversationMap"><include refid="ConversationSelect"/>,0::bigint AS unread_count FROM marketplace_conversations c LEFT JOIN host_organizations o ON o.id=c.organization_id LEFT JOIN hotel_bookings hb ON hb.id=c.hotel_booking_id LEFT JOIN activity_orders ao ON ao.id=c.activity_order_id<where><if test="status != null and status != ''"> AND c.status=#{status}</if><if test="query != null and query != ''"> AND (o.display_name ILIKE CONCAT('%',#{query},'%') OR hb.booking_code ILIKE CONCAT('%',#{query},'%') OR ao.order_code ILIKE CONCAT('%',#{query},'%'))</if></where> ORDER BY c.last_message_at DESC NULLS LAST,c.created_at DESC LIMIT #{limit} OFFSET #{offset}</select>
+ <select id="findAdmin" resultMap="ConversationMap"><include refid="ConversationSelect"/>,0::bigint AS unread_count FROM marketplace_conversations c LEFT JOIN host_organizations o ON o.id=c.organization_id LEFT JOIN hotel_bookings hb ON hb.id=c.hotel_booking_id LEFT JOIN activity_orders ao ON ao.id=c.activity_order_id<where><if test="status != null and status.size() > 0"> AND c.status IN<foreach item="item" collection="status" open="(" separator="," close=")">#{item}</foreach></if><if test="conversationType != null and conversationType.size() > 0"> AND c.conversation_type IN<foreach item="item" collection="conversationType" open="(" separator="," close=")">#{item}</foreach></if><if test="query != null and query != ''"> AND (o.display_name ILIKE CONCAT('%',#{query},'%') OR hb.booking_code ILIKE CONCAT('%',#{query},'%') OR ao.order_code ILIKE CONCAT('%',#{query},'%'))</if></where> ORDER BY <choose><when test="sort == 'organizationName'">o.display_name</when><when test="sort == 'bookingCode'">hb.booking_code</when><when test="sort == 'orderCode'">ao.order_code</when><when test="sort == 'createdAt'">c.created_at</when><otherwise>c.last_message_at</otherwise></choose> <choose><when test="descending">DESC NULLS LAST</when><otherwise>ASC NULLS LAST</otherwise></choose>,c.id DESC LIMIT #{limit} OFFSET #{offset}</select>
  <select id="canAccess" resultType="boolean">SELECT EXISTS(SELECT 1 FROM marketplace_conversations c LEFT JOIN marketplace_conversation_members cm ON cm.conversation_id=c.id AND cm.user_id=#{userId} AND cm.left_at IS NULL LEFT JOIN host_organizations o ON o.id=c.organization_id LEFT JOIN organization_members om ON om.organization_id=c.organization_id AND om.user_id=#{userId} AND om.member_status='ACTIVE' AND (om.valid_from IS NULL OR om.valid_from&lt;=NOW()) AND (om.valid_until IS NULL OR om.valid_until&gt;NOW()) WHERE c.id=#{conversationId} AND (cm.user_id IS NOT NULL OR o.owner_user_id=#{userId} OR om.user_id IS NOT NULL))</select>
  <select id="lockConversation" resultType="java.util.UUID">SELECT id FROM marketplace_conversations WHERE id=#{id} FOR UPDATE</select>
  <select id="nextSequence" resultType="long">SELECT COALESCE(MAX(sequence_no),0)+1 FROM marketplace_messages WHERE conversation_id=#{id}</select>
@@ -43,4 +43,50 @@
  <update id="softDeleteMessage">UPDATE marketplace_messages SET deleted_at=#{at} WHERE id=#{messageId} AND conversation_id=#{conversationId} AND deleted_at IS NULL</update>
  <select id="countUnreadForOrganization" resultType="long">SELECT COUNT(*) FROM marketplace_conversations c LEFT JOIN marketplace_conversation_members cm ON cm.conversation_id=c.id AND cm.user_id=#{viewerId} AND cm.left_at IS NULL LEFT JOIN marketplace_messages rm ON rm.id=cm.last_read_message_id WHERE c.organization_id=#{organizationId} AND c.status IN ('OPEN','PENDING') AND EXISTS(SELECT 1 FROM marketplace_messages um WHERE um.conversation_id=c.id AND um.deleted_at IS NULL AND um.sequence_no&gt;COALESCE(rm.sequence_no,0) AND um.sender_user_id IS DISTINCT FROM #{viewerId})</select>
  <select id="countOpenForOrganization" resultType="long">SELECT COUNT(*) FROM marketplace_conversations c WHERE c.organization_id=#{organizationId} AND c.status IN ('OPEN','PENDING')</select>
+
+    <resultMap id="ParticipantMap" type="com.ds.goroute.entity.MarketplaceConversationParticipant">
+        <result property="conversationId" column="conversation_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="fullName" column="full_name"/>
+        <result property="username" column="username"/>
+        <result property="avatarUrl" column="avatar_url"/>
+        <result property="memberRole" column="member_role"/>
+    </resultMap>
+
+    <!--
+      Exactly these people and nobody else: the first count proves the thread has no extra
+      member, the second that it has all of ours. Without both, a two-person chat would match
+      a group that happens to contain the pair.
+    -->
+    <select id="findDirectByMembers" resultMap="ConversationMap">
+        <include refid="ConversationSelect"/>,0::bigint AS unread_count
+        FROM marketplace_conversations c
+        LEFT JOIN host_organizations o ON o.id=c.organization_id
+        LEFT JOIN hotel_bookings hb ON hb.id=c.hotel_booking_id
+        LEFT JOIN activity_orders ao ON ao.id=c.activity_order_id
+        WHERE c.conversation_type='DIRECT'
+        <choose>
+            <when test="organizationId != null">AND c.organization_id = #{organizationId}</when>
+            <otherwise>AND c.organization_id IS NULL</otherwise>
+        </choose>
+        AND (SELECT COUNT(*) FROM marketplace_conversation_members m
+             WHERE m.conversation_id = c.id AND m.left_at IS NULL) = #{memberCount}
+        AND (SELECT COUNT(*) FROM marketplace_conversation_members m
+             WHERE m.conversation_id = c.id AND m.left_at IS NULL
+               AND m.user_id IN <foreach collection="userIds" item="userId" open="(" separator="," close=")">#{userId}</foreach>
+            ) = #{memberCount}
+        ORDER BY c.created_at, c.id
+        LIMIT 1
+    </select>
+
+    <select id="findParticipants" resultMap="ParticipantMap">
+        SELECT m.conversation_id, m.user_id, u.full_name, u.username, u.avatar_url, m.member_role
+        FROM marketplace_conversation_members m
+        JOIN users u ON u.id = m.user_id
+        WHERE m.left_at IS NULL
+          AND m.conversation_id IN <foreach collection="conversationIds" item="conversationId" open="(" separator="," close=")">#{conversationId}</foreach>
+        ORDER BY m.conversation_id, m.joined_at, m.user_id
+        LIMIT 500
+    </select>
+
 </mapper>

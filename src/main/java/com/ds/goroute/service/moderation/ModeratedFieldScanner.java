@@ -62,18 +62,44 @@ public final class ModeratedFieldScanner {
                 }
                 continue;
             }
-            if (value instanceof Collection<?> collection) {
-                for (Object element : collection) {
-                    if (element instanceof String text && annotation != null) {
-                        visitor.visit(annotation, label, text);
-                    } else if (element != null && isOwnType(element.getClass())) {
-                        walk(element, visitor, depth + 1, seen);
-                    }
-                }
+            if (value instanceof Collection<?> || value instanceof Map<?, ?>) {
+                visitContainer(annotation, label, value, visitor, depth, seen);
                 continue;
             }
             if (isOwnType(value.getClass())) {
                 walk(value, visitor, depth + 1, seen);
+            }
+        }
+    }
+
+    /**
+     * Lists and maps of free-form JSON, to whatever depth they nest.
+     *
+     * <p>A map matters because some requests are deliberately schemaless — the onboarding
+     * wizard stores a step's answers as a map so a new screen does not need a new DTO. Text
+     * typed by a partner is still text typed by a partner, so it goes through the same
+     * filter; without this the annotation on such a field would be quietly decorative.
+     */
+    private static void visitContainer(ModeratedText annotation, String label, Object container,
+                                       TextVisitor visitor, int depth, Set<Object> seen) {
+        if (depth > MAX_DEPTH) {
+            return;
+        }
+        Collection<?> values = container instanceof Map<?, ?> map
+                ? map.values()
+                : (Collection<?>) container;
+        for (Object element : values) {
+            if (element == null) {
+                continue;
+            }
+            if (element instanceof String text) {
+                if (annotation != null) {
+                    visitor.visit(annotation, label, text);
+                }
+            } else if (element instanceof Collection<?> || element instanceof Map<?, ?>) {
+                visitContainer(annotation, label, element, visitor, depth + 1, seen);
+            } else if (isOwnType(element.getClass())) {
+                walk(element, visitor, depth + 1, seen);
             }
         }
     }
@@ -95,6 +121,7 @@ public final class ModeratedFieldScanner {
                 }
                 if (field.isAnnotationPresent(ModeratedText.class)
                         || Collection.class.isAssignableFrom(field.getType())
+                        || Map.class.isAssignableFrom(field.getType())
                         || isOwnType(field.getType())) {
                     field.setAccessible(true);
                     fields.add(field);

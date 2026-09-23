@@ -2,6 +2,7 @@ package com.ds.goroute.entity;
 
 import com.ds.goroute.type.CheckinLocationSource;
 import com.ds.goroute.type.CheckinPhotoSource;
+import com.ds.goroute.type.CheckinVerificationScope;
 import com.ds.goroute.type.CheckinVerificationStatus;
 import com.ds.goroute.type.ContentVisibility;
 import lombok.AllArgsConstructor;
@@ -49,6 +50,8 @@ public class UserCheckin {
     private String district;
     private String province;
     private String provinceCode;
+    /** Official ward the point falls in (wards.code); resolved server-side, null outside every boundary. */
+    private String wardCode;
     private CheckinLocationSource locationSource;
 
     /** Rounded-coordinate grouping key; equal keys are treated as the same spot. */
@@ -65,6 +68,8 @@ public class UserCheckin {
     private CheckinPhotoSource photoSource;
     private ContentVisibility visibility;
     private CheckinVerificationStatus verificationStatus;
+    /** PLACE or WARD when verified, NONE otherwise. */
+    private CheckinVerificationScope verificationScope;
     private BigDecimal distanceMeters;
 
     private String idempotencyKey;
@@ -73,6 +78,13 @@ public class UserCheckin {
     private String rewardReason;
 
     private Boolean isRemoved;
+    /**
+     * The day of the visit, which the author can set when they post after getting home.
+     * {@link #createdAt} stays the moment the row was written: the reward window and the
+     * moderation queue count on it, and a date the author picks must not move either.
+     */
+    private LocalDateTime visitedAt;
+
     private LocalDateTime editedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

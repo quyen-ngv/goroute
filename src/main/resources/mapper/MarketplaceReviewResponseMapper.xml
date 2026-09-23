@@ -39,11 +39,42 @@
           LEFT JOIN hotel_profiles h ON h.place_id=r.place_id LEFT JOIN places p ON p.id=r.place_id
           LEFT JOIN activity_bookings a ON a.id=r.activity_booking_id
           LEFT JOIN marketplace_review_responses rr ON rr.review_id=r.id LEFT JOIN users res ON res.id=rr.responder_user_id
-        <if test="query != null and query != ''">
-          WHERE (p.title ILIKE CONCAT('%',#{query},'%')
-            OR a.title ILIKE CONCAT('%',#{query},'%') OR r.text ILIKE CONCAT('%',#{query},'%'))
-        </if>
-        ORDER BY r.created_at DESC LIMIT #{limit} OFFSET #{offset}
+        <where>
+          <if test="query != null and query != ''">
+            AND (p.title ILIKE CONCAT('%',#{query},'%')
+              OR a.title ILIKE CONCAT('%',#{query},'%') OR r.text ILIKE CONCAT('%',#{query},'%'))
+          </if>
+          <!-- "Chưa phản hồi" is the absence of a response row, not a status value on one. -->
+          <if test="responseStatus != null and responseStatus.size() > 0">
+            <choose>
+              <when test="responseStatus.size() == 1 and responseStatus.contains('NONE')">
+                AND rr.id IS NULL
+              </when>
+              <when test="responseStatus.contains('NONE')">
+                AND (rr.id IS NULL OR rr.status IN
+                  <foreach item="item" collection="responseStatus" open="(" separator="," close=")">#{item}</foreach>)
+              </when>
+              <otherwise>
+                AND rr.status IN
+                <foreach item="item" collection="responseStatus" open="(" separator="," close=")">#{item}</foreach>
+              </otherwise>
+            </choose>
+          </if>
+        </where>
+        ORDER BY
+        <choose>
+            <when test="sort == 'subjectName'">COALESCE(p.title,a.title)</when>
+            <when test="sort == 'reviewerName'">ru.full_name</when>
+            <when test="sort == 'overallRating'">r.overall_rating</when>
+            <when test="sort == 'responseUpdatedAt'">rr.updated_at</when>
+            <otherwise>r.created_at</otherwise>
+        </choose>
+        <choose>
+            <when test="descending">DESC NULLS LAST</when>
+            <otherwise>ASC NULLS LAST</otherwise>
+        </choose>
+        , r.id DESC
+        LIMIT #{limit} OFFSET #{offset}
     </select>
     <insert id="insertResponse">INSERT INTO marketplace_review_responses(id,review_id,organization_id,responder_user_id,response_text,status,data_version,created_at,updated_at)VALUES(#{id},#{reviewId},#{organizationId},#{actor},#{text},#{status},1,#{now},#{now})</insert>
     <update id="updateResponse">UPDATE marketplace_review_responses SET responder_user_id=#{actor},response_text=#{text},status=#{status},data_version=data_version+1,updated_at=#{now} WHERE review_id=#{reviewId} AND organization_id=#{organizationId} AND data_version=#{expectedVersion}</update>

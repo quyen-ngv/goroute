@@ -27,6 +27,7 @@ import com.ds.goroute.repository.FoodRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.PlaceReviewRepository;
 import com.ds.goroute.repository.PlaceSourceRepository;
+import com.ds.goroute.service.LocationAreaService;
 import com.ds.goroute.service.PlaceReviewService;
 import com.ds.goroute.service.PlaceAttributeCatalog;
 import com.ds.goroute.service.PlaceSearchIndexService;
@@ -38,6 +39,7 @@ import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.StorageService;
 import com.ds.goroute.type.PlaceVisibilityStatus;
 import com.ds.goroute.utils.FoodNameResolver;
+import com.ds.goroute.utils.AdminListSort;
 import com.ds.goroute.utils.GeoDistance;
 import com.ds.goroute.utils.JsonUtils;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -71,6 +73,65 @@ public class PlaceServiceImpl implements PlaceService {
     /** Hard ceiling on one detail-refresh sweep, matching CreatePlaceDetailRefreshJobRequest.maxPlaces. */
     private static final int DETAIL_REFRESH_CANDIDATE_LIMIT = 10000;
 
+    /**
+     * A drawn verification area larger than this is almost certainly a mis-click that
+     * traced a district rather than a lake or a quarter. Hạ Long Bay is ~1,500 km², but
+     * a bay is not one place to check in at; the largest real case (Hoàn Kiếm, an old
+     * quarter, a national park entrance) is well under this.
+     */
+    private static final double MAX_VERIFICATION_AREA_KM2 = 50d;
+
+    /**
+     * Null means "not sent": the existing area stays. A JSON null clears it. Anything else
+     * must be a valid Polygon/MultiPolygon as PostGIS judges it, within the size ceiling.
+     */
+    private void applyVerificationGeometry(Place place, JsonNode geometry) {
+        if (geometry == null) {
+            return;
+        }
+        if (geometry.isNull()) {
+            placeRepository.updateVerificationGeometry(place.getId(), null);
+            place.setVerificationGeometryGeoJson(null);
+            return;
+        }
+        String geoJson = geometry.toString();
+        PlaceRepository.GeometryValidation validation;
+        try {
+            validation = placeRepository.validateGeometry(geoJson);
+        } catch (org.springframework.dao.DataAccessException exception) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "verificationGeometry is not a GeoJSON geometry PostGIS can read");
+        }
+        if (!validation.valid()) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "verificationGeometry is not a valid polygon: " + validation.reason());
+        }
+        String type = validation.geometryType() == null ? "" : validation.geometryType().toUpperCase();
+        if (!type.equals("POLYGON") && !type.equals("MULTIPOLYGON")) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "verificationGeometry must be a Polygon or MultiPolygon, not " + validation.geometryType());
+        }
+        if (validation.areaKm2() > MAX_VERIFICATION_AREA_KM2) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, String.format(
+                    "verificationGeometry covers %.1f km²; the limit is %.0f km²",
+                    validation.areaKm2(), MAX_VERIFICATION_AREA_KM2));
+        }
+        placeRepository.updateVerificationGeometry(place.getId(), geoJson);
+        place.setVerificationGeometryGeoJson(geoJson);
+    }
+
+    private JsonNode parseGeoJson(String geoJson) {
+        if (geoJson == null || geoJson.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readTree(geoJson);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+            log.warn("Stored verification geometry is not JSON: {}", exception.getMessage());
+            return null;
+        }
+    }
+
     private final PlaceRepository placeRepository;
     private final PlaceSourceRepository placeSourceRepository;
     private final PlaceReviewRepository placeReviewRepository;
@@ -84,6 +145,8 @@ public class PlaceServiceImpl implements PlaceService {
     private final StorageService storageService;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final LocationAreaService locationAreaService;
+    private final com.ds.goroute.service.GeoService geoService;
 
     private static final Integer maxReview = 50;
     @CacheEvict(cacheNames = "placeSearch", cacheManager = "searchCacheManager", allEntries = true)
@@ -158,6 +221,10 @@ public class PlaceServiceImpl implements PlaceService {
             // Create new place
             Place place = buildPlaceFromRequest(request);
             placeRepository.insert(place);
+            // Ward first: the tourist-area resolver prefers a ward match over a radius.
+            geoService.assignPlaceWard(place.getId());
+            // New rows only: a re-import keeps whatever area the place already has.
+            locationAreaService.assignNewPlace(place.getId());
             syncGoogleSource(place.getId(), request);
             placeTranslationService.syncTranslations(place, request.getTranslations());
             placeSearchIndexService.indexPlace(place);
@@ -227,7 +294,7 @@ public class PlaceServiceImpl implements PlaceService {
         /* Same filter as the console list: a picker that cannot search is a picker that only
          * ever offers the newest page of the catalogue. */
         return placeRepository
-                .findFilteredPage(blankToNull(search), normalizedPlaceGroups(placeGroups), safeSize, safePage * safeSize)
+                .findFilteredPage(blankToNull(search), normalizedPlaceGroups(placeGroups), null, null, null, null, true, safeSize, safePage * safeSize)
                 .stream()
                 .map(this::toPlaceResponse)
                 .collect(Collectors.toList());
@@ -265,22 +332,29 @@ public class PlaceServiceImpl implements PlaceService {
 
     @Override
     @Transactional(readOnly = true)
-    public AdminPlacePageResponse getAdminPlaces(String search, List<String> placeGroups, int page, int size) {
+    public AdminPlacePageResponse getAdminPlaces(String search, List<String> placeGroups, List<String> visibilityStatus,
+                                                 List<String> trustLevel, List<UUID> locationImageIds,
+                                                 String sort, boolean descending, int page, int size) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 100);
         String normalizedSearch = blankToNull(search);
         List<String> normalizedGroups = normalizedPlaceGroups(placeGroups);
+        List<String> normalizedVisibility = AdminListSort.codes(visibilityStatus);
+        List<String> normalizedTrust = AdminListSort.codes(trustLevel);
+        List<UUID> normalizedAreas = AdminListSort.ids(locationImageIds);
         List<AdminPlaceResponse> items = placeRepository
-                .findFilteredPage(normalizedSearch, normalizedGroups, safeSize, safePage * safeSize).stream()
+                .findFilteredPage(normalizedSearch, normalizedGroups, normalizedVisibility, normalizedTrust, normalizedAreas,
+                        sort, descending, safeSize, safePage * safeSize).stream()
                 .map(this::toAdminPlaceResponse)
                 .collect(Collectors.toList());
         return AdminPlacePageResponse.builder()
                 .items(items)
-                .total(placeRepository.countFiltered(normalizedSearch, normalizedGroups))
+                .total(placeRepository.countFiltered(normalizedSearch, normalizedGroups, normalizedVisibility, normalizedTrust, normalizedAreas))
                 .page(safePage)
                 .size(safeSize)
                 .build();
     }
+
 
     @Override
     @Transactional(readOnly = true)
@@ -557,6 +631,15 @@ public class PlaceServiceImpl implements PlaceService {
         deleteRemovedPlaceImages(oldImageUrls, newImageUrls);
 
         placeRepository.update(place);
+        applyVerificationGeometry(place, request.getVerificationGeometry());
+        if (request.getWardCode() != null) {
+            String wardCode = request.getWardCode().isBlank() ? null : request.getWardCode().trim();
+            placeRepository.updateWardCode(place.getId(), wardCode);
+            place.setWardCode(wardCode);
+        } else if (place.getWardCode() == null) {
+            placeRepository.assignWard(place.getId());
+            place.setWardCode(placeRepository.findById(place.getId()).map(Place::getWardCode).orElse(null));
+        }
         placeTranslationService.syncTranslations(place, request.getTranslations());
         placeSearchIndexService.indexPlace(place);
         if (previousVisibility != PlaceVisibilityStatus.ACTIVE
@@ -984,6 +1067,9 @@ public class PlaceServiceImpl implements PlaceService {
                 .latitude(place.getLatitude())
                 .longitude(place.getLongitude())
                 .verificationRadiusMeters(place.getVerificationRadiusMeters())
+                .verificationGeometry(parseGeoJson(place.getVerificationGeometryGeoJson()))
+                .wardCode(place.getWardCode())
+                .provinceCode(place.getProvinceCode())
                 .phone(place.getPhone())
                 .website(place.getWebsite())
                 .googleMapsLink(place.getGoogleMapsLink())

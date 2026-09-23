@@ -116,6 +116,20 @@ public class ErrorConstant {
     public static final int REWARD_OUT_OF_STOCK = 4001002;
     public static final int REWARD_NOT_REDEEMABLE = 4001003;
 
+    /**
+     * Partner onboarding (epic 15). The incomplete code carries the step and field that is
+     * missing in its message, so the wizard can send the partner back to the right screen
+     * instead of showing a generic validation failure on the review page.
+     */
+    public static final int ONBOARDING_INCOMPLETE = 4001201;
+    public static final int ONBOARDING_STEP_UNKNOWN = 4001202;
+
+    /**
+     * Marketplace chat (epic 11). Direct conversations can be switched off centrally, and a
+     * block is a deliberate refusal rather than a missing conversation.
+     */
+    public static final int CHAT_DIRECT_DISABLED = 4001301;
+
     public static final int SYSTEM_CONFIGURATION_NOT_FOUND = 4004208;
 
     public static final int HTTP_CONNECTION_ERROR  = 4009000;
@@ -140,6 +154,9 @@ public class ErrorConstant {
      */
     public static final int FORBIDDEN_ERROR = 4030001;
 
+    /** One of the two people has blocked the other, so the message is refused rather than delivered. */
+    public static final int CHAT_USER_BLOCKED = 4030003;
+
     /** The caller must change a temporary password before using the partner or admin portal. */
     public static final int PASSWORD_CHANGE_REQUIRED = 4031002;
 
@@ -151,6 +168,8 @@ public class ErrorConstant {
     public static final int PLACE_NOT_FOUND = 4040002;
     public static final int REVIEW_NOT_FOUND = 4040003;
     public static final int USER_NOT_FOUND = 4040004;
+    /** Also answers a draft that belongs to someone else: a guessed id must not confirm it exists. */
+    public static final int ONBOARDING_DRAFT_NOT_FOUND = 4040005;
     
     /**
      * Write the error code prefixed with 409 below
@@ -158,6 +177,11 @@ public class ErrorConstant {
      */
     public static final int REVIEW_ALREADY_EXISTS = 4090001;
     public static final int ALREADY_PROCESSED = 4090002;
+
+    /** Partner onboarding (epic 15). */
+    public static final int ONBOARDING_ALREADY_SUBMITTED = 4090003;
+    public static final int ONBOARDING_ORGANIZATION_REQUIRED = 4090004;
+    public static final int ONBOARDING_TOO_MANY_DRAFTS = 4090005;
  
     /**
      * Write the error code prefixed with 500 below

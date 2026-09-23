@@ -87,9 +87,16 @@ public class PublicTripController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(trips));
     }
     
-    @GetMapping(value = "/share/{tripId}", produces = MediaType.TEXT_HTML_VALUE)
-    public ResponseEntity<String> getSharePage(@PathVariable String tripId) throws IOException {
-        ClassPathResource resource = new ClassPathResource("static/share-trip.html");
+    /**
+     * The Ondetour web page. One file backs both the public-trip list and a
+     * single trip; the browser decides which to render from the path, so every
+     * route here returns the same HTML. /share/{tripId} is the legacy link
+     * shape and stays mapped so links already shared keep resolving.
+     */
+    @GetMapping(value = {"/share/{tripId}", "/ondetour", "/ondetour/{tripId}"},
+            produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> getSharePage() throws IOException {
+        ClassPathResource resource = new ClassPathResource("static/ondetour.html");
         String html = StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
         return ResponseEntity.ok(html);
     }

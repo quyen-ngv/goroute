@@ -2,6 +2,7 @@ package com.ds.goroute.dto.response;
 
 import com.ds.goroute.type.CheckinLocationSource;
 import com.ds.goroute.type.CheckinPhotoSource;
+import com.ds.goroute.type.CheckinVerificationScope;
 import com.ds.goroute.type.CheckinVerificationStatus;
 import com.ds.goroute.type.ContentVisibility;
 import lombok.Builder;
@@ -55,6 +56,13 @@ public class UserCheckinResponse {
      */
     private BigDecimal placeAdjustedRating;
 
+    /**
+     * Where the place is, as opposed to {@link #latitude}/{@link #longitude}, which is where
+     * the phone was. A profile map pins a catalogue check-in at the place.
+     */
+    private BigDecimal placeLatitude;
+    private BigDecimal placeLongitude;
+
     private String caption;
 
     private Integer overallRating;
@@ -71,6 +79,8 @@ public class UserCheckinResponse {
      * something verified that is not costs the badge its meaning everywhere it appears.
      */
     private CheckinVerificationStatus verificationStatus;
+    private CheckinVerificationScope verificationScope;
+    private String wardCode;
     private BigDecimal distanceMeters;
 
     private Integer rewardPoints;
@@ -87,6 +97,13 @@ public class UserCheckinResponse {
     private java.util.List<String> rewardReasonCodes;
 
     private boolean edited;
+
+    /**
+     * The day of the visit. This is the date a history, a profile and a place timeline show;
+     * {@link #createdAt} remains the moment the check-in was posted.
+     */
+    private LocalDateTime visitedAt;
+
     private LocalDateTime createdAt;
 
     private List<CheckinPhotoResponse> photos;

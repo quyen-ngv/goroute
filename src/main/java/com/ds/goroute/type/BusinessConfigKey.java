@@ -62,6 +62,12 @@ public enum BusinessConfigKey {
     CHECKIN_REWARD_CAMERA_MULTIPLIER("CHECKIN", "REWARD_CAMERA_MULTIPLIER", 1.0d, 0d, 5d),
     CHECKIN_REWARD_GALLERY_MULTIPLIER("CHECKIN", "REWARD_GALLERY_MULTIPLIER", 0.4d, 0d, 5d),
     CHECKIN_REWARD_UNVERIFIED_MULTIPLIER("CHECKIN", "REWARD_UNVERIFIED_MULTIPLIER", 0.5d, 0d, 5d),
+    /**
+     * Applied when the location was proven only at ward level. Sits between the camera
+     * and unverified multipliers on purpose: being somewhere in a ward is easier to
+     * achieve than being at the place, and paying both the same would empty the PLACE badge.
+     */
+    CHECKIN_REWARD_WARD_VERIFIED_MULTIPLIER("CHECKIN", "REWARD_WARD_VERIFIED_MULTIPLIER", 0.7d, 0d, 5d),
     CHECKIN_REWARD_DAILY_CAP("CHECKIN", "REWARD_DAILY_CAP", 50, 0, 5000),
     CHECKIN_CLUSTER_MIN_USERS("CHECKIN", "CLUSTER_MIN_USERS", 3, 1, 100),
     CHECKIN_CLUSTER_MIN_CHECKINS("CHECKIN", "CLUSTER_MIN_CHECKINS", 5, 1, 500),
@@ -69,7 +75,8 @@ public enum BusinessConfigKey {
     // --- Epic 04: passport -----------------------------------------------------------
     PASSPORT_ENABLED("PASSPORT", "PASSPORT_ENABLED", true),
     PASSPORT_PROVINCE_COVERAGE_THRESHOLD("PASSPORT", "PROVINCE_COVERAGE_THRESHOLD", 95, 0, 100),
-    PASSPORT_TOTAL_PROVINCES("PASSPORT", "TOTAL_PROVINCES", 63, 1, 200),
+    /** 34 since the 2025 merger (NQ 202/2025/QH15); the geo backfill moves the seeded 63 to it. */
+    PASSPORT_TOTAL_PROVINCES("PASSPORT", "TOTAL_PROVINCES", 34, 1, 200),
     PASSPORT_LOCATION_PLACE_RADIUS_KM("PASSPORT", "LOCATION_PLACE_RADIUS_KM", 5.0d, 0.1d, 50.0d),
 
     // --- Epic 08: shared point wallet ------------------------------------------------
@@ -108,6 +115,35 @@ public enum BusinessConfigKey {
     MARKETPLACE_COMMISSION_RULE_VERSION("MARKETPLACE", "COMMISSION_RULE_VERSION", "2026.09"),
     /** Days after a statement is issued during which a partner may still dispute one of its lines. */
     MARKETPLACE_STATEMENT_DISPUTE_WINDOW_DAYS("MARKETPLACE", "STATEMENT_DISPUTE_WINDOW_DAYS", 14, 1, 90),
+
+    // --- Epic 15: partner onboarding ------------------------------------------------
+    /**
+     * Whether the listing wizard is offered at all. Reported to both clients through
+     * {@code GET /partner-onboarding/me}, so turning it off hides the entry point without a
+     * release. Existing drafts stay readable; only starting a new one is refused.
+     */
+    PARTNER_ONBOARDING_ENABLED("PARTNER_ONBOARDING", "ENABLED", false),
+    /** Unfinished drafts one account may hold. Keeps an abandoned-draft loop from filling the table. */
+    PARTNER_ONBOARDING_MAX_DRAFTS("PARTNER_ONBOARDING", "MAX_ACTIVE_DRAFTS", 5, 1, 20),
+    /**
+     * How far ahead the wizard generates departure slots for an experience or a service. Long
+     * enough to be sellable on day one, short enough that a mistake is not 700 rows to undo.
+     */
+    PARTNER_ONBOARDING_SLOT_HORIZON_DAYS("PARTNER_ONBOARDING", "SLOT_HORIZON_DAYS", 60, 7, 180),
+    /** How far ahead the weekend uplift chosen in the wizard is written onto the rate calendar. */
+    PARTNER_ONBOARDING_WEEKEND_HORIZON_DAYS("PARTNER_ONBOARDING", "WEEKEND_HORIZON_DAYS", 365, 30, 730),
+    /** Whether the partner workspace is offered inside the mobile app. */
+    PARTNER_APP_ENABLED("PARTNER_APP", "ENABLED", false),
+
+    // --- Epic 11: marketplace chat ---------------------------------------------------
+    /**
+     * Person-to-person conversations. Off is the emergency brake; booking chat is unaffected.
+     *
+     * <p>How often a conversation may notify is deliberately not a key: message notifications
+     * reuse the same thirty-minute unread window that groups likes and comments, so the product
+     * has one answer to "how often will this buzz" rather than one per feature.
+     */
+    CHAT_DIRECT_ENABLED("CHAT", "DIRECT_ENABLED", true),
 
     // --- Media upload & compression -------------------------------------------------
     /**

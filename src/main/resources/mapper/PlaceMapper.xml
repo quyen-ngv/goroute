@@ -19,6 +19,8 @@
         <result property="latitude" column="latitude"/>
         <result property="longitude" column="longitude"/>
         <result property="verificationRadiusMeters" column="verification_radius_meters"/>
+        <result property="wardCode" column="ward_code"/>
+        <result property="verificationGeometryGeoJson" column="verification_geometry_geojson"/>
         <result property="plusCode" column="plus_code"/>
         <result property="timezone" column="timezone"/>
         <result property="phone" column="phone"/>
@@ -95,6 +97,51 @@
         )
     </insert>
 
+    <!-- Geometry and ward are deliberately outside the generic update: most Place objects
+         reaching it were loaded by list queries that never carry the GeoJSON, and an
+         import must not be able to erase an operator's drawn area or a resolved ward. -->
+    <update id="updateVerificationGeometry">
+        UPDATE places
+        SET verification_geometry = ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(#{geoJson,jdbcType=VARCHAR}), 4326)),
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateWardCode">
+        UPDATE places SET ward_code = #{wardCode,jdbcType=VARCHAR},
+            province_code = COALESCE((SELECT province_code FROM wards WHERE code = #{wardCode,jdbcType=VARCHAR}), province_code),
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="assignWard">
+        UPDATE places p
+        SET ward_code = w.code, province_code = w.province_code
+        FROM wards w
+        WHERE p.id = #{id}
+          AND p.latitude IS NOT NULL AND p.longitude IS NOT NULL
+          AND w.is_active = TRUE
+          AND ST_Covers(w.geom, ST_SetSRID(ST_MakePoint(p.longitude::float8, p.latitude::float8), 4326))
+    </update>
+
+    <!-- Null when the place has no drawn area, so the caller falls back to the radius.
+         The fix's own error counts as inside: geography distance, metres. -->
+    <select id="isWithinVerificationGeometry" resultType="java.lang.Boolean">
+        SELECT ST_Covers(verification_geometry, pt)
+               OR ST_DWithin(verification_geometry::geography, pt::geography, #{accuracyMeters}::float8)
+        FROM places,
+             LATERAL (SELECT ST_SetSRID(ST_MakePoint(#{longitude}::float8, #{latitude}::float8), 4326) AS pt) point
+        WHERE id = #{id} AND verification_geometry IS NOT NULL
+    </select>
+
+    <select id="validateGeometry" resultType="java.util.LinkedHashMap">
+        SELECT ST_IsValid(g) AS valid,
+               ST_IsValidReason(g) AS reason,
+               ST_Area(g::geography) / 1000000.0 AS area_km2,
+               GeometryType(g) AS geometry_type
+        FROM (SELECT ST_SetSRID(ST_GeomFromGeoJSON(#{geoJson}), 4326) AS g) s
+    </select>
+
     <update id="update" parameterType="com.ds.goroute.entity.Place">
         UPDATE places SET
             title = #{title},
@@ -167,7 +214,8 @@
     </update>
 
     <select id="findById" resultMap="PlaceResultMap">
-        SELECT * FROM places WHERE id = #{id}
+        SELECT *, ST_AsGeoJSON(verification_geometry, 6) AS verification_geometry_geojson
+        FROM places WHERE id = #{id}
     </select>
 
     <select id="findByPlaceId" resultMap="PlaceResultMap">
@@ -244,13 +292,44 @@
                     #{placeGroup}
                 </foreach>
             </if>
+            <if test="visibilityStatus != null and visibilityStatus.size() > 0">
+                AND visibility_status IN
+                <foreach item="item" collection="visibilityStatus" open="(" separator="," close=")">#{item}</foreach>
+            </if>
+            <!-- Trust is only set once the review-scoring job has run, so an unscored place is
+                 deliberately absent from every trust band rather than lumped into one. -->
+            <if test="trustLevel != null and trustLevel.size() > 0">
+                AND trust_level IN
+                <foreach item="item" collection="trustLevel" open="(" separator="," close=")">#{item}</foreach>
+            </if>
+            <if test="locationImageIds != null and locationImageIds.size() > 0">
+                AND location_image_id IN
+                <foreach item="item" collection="locationImageIds" open="(" separator="," close=")">#{item}</foreach>
+            </if>
         </where>
     </sql>
 
+    <!--
+      The console names a sort column; only the names on the endpoint's whitelist arrive here, and
+      each resolves to a literal ORDER BY. `id` stays the tie-breaker so paging cannot repeat a row.
+    -->
     <select id="findFilteredPage" resultMap="PlaceResultMap">
         SELECT * FROM places
         <include refid="PlaceFilterWhere"/>
-        ORDER BY created_at DESC, id DESC
+        ORDER BY
+        <choose>
+            <when test="sort == 'title'">title</when>
+            <when test="sort == 'address'">address</when>
+            <when test="sort == 'reviewRating'">review_rating</when>
+            <when test="sort == 'reviewCount'">review_count</when>
+            <when test="sort == 'lastScrapedAt'">last_scraped_at</when>
+            <otherwise>created_at</otherwise>
+        </choose>
+        <choose>
+            <when test="descending">DESC NULLS LAST</when>
+            <otherwise>ASC NULLS LAST</otherwise>
+        </choose>
+        , id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 

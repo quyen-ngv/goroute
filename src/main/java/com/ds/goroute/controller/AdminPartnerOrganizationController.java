@@ -55,13 +55,23 @@ public class AdminPartnerOrganizationController {
                 service.adminProvision(actor(authentication), request)));
     }
 
+    /** Columns this list may be ordered by; anything else falls back to its natural order. */
+    private static final java.util.Set<String> ORGANIZATION_SORT_FIELDS = java.util.Set.of(
+            "displayName", "legalName", "updatedAt", "createdAt");
+
     @GetMapping
     @PreAuthorize("@adminAuthorization.can(authentication,'partner-organizations','get')")
     public ResponseEntity<BaseResponse<List<HostOrganizationResponse>>> list(
             @RequestParam(required = false) String q, @RequestParam(required = false) String search,
-            @RequestParam(required = false) String status,
+            @RequestParam(required = false) List<String> status,
+            @RequestParam(required = false) List<String> organizationType,
+            @RequestParam(required = false) List<String> verificationStatus,
+            @RequestParam(required = false) String sort, @RequestParam(required = false) String direction,
             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "50") int size) {
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminList(q != null ? q : search, status, page, size)));
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminList(q != null ? q : search, com.ds.goroute.utils.AdminListSort.codes(status),
+                com.ds.goroute.utils.AdminListSort.codes(organizationType), com.ds.goroute.utils.AdminListSort.codes(verificationStatus),
+                com.ds.goroute.utils.AdminListSort.field(sort, ORGANIZATION_SORT_FIELDS),
+                com.ds.goroute.utils.AdminListSort.descending(direction), page, size)));
     }
 
     /** Organizations awaiting a verification decision, oldest submission first. Literal path: must not be swallowed by /{organizationId}. */

@@ -13,6 +13,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,6 +34,9 @@ public class UpdateExpenseRequest {
     @Size(max = 500, message = "Description cannot exceed 500 characters")
     @ModeratedText(contentType = ModeratedContentType.EXPENSE, visibility = ModerationVisibility.GROUP)
     private String description;
+
+    /** Null leaves the stored date alone, like every other field on this request. */
+    private LocalDateTime expenseDate;
 
     private UUID activityId;
 

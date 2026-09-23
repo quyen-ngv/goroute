@@ -17,6 +17,7 @@
         <result column="paid_by_guest_member_id" property="paidByGuestMemberId" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="receipt_url" property="receiptUrl" jdbcType="VARCHAR"/>
         <result column="photo_urls" property="photoUrls" jdbcType="ARRAY" typeHandler="org.apache.ibatis.type.ArrayTypeHandler"/>
+        <result column="expense_date" property="expenseDate" jdbcType="TIMESTAMP"/>
         <result column="created_by" property="createdBy" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
         <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
@@ -24,13 +25,14 @@
 
     <insert id="insert" parameterType="com.ds.goroute.entity.Expense">
         INSERT INTO expenses (id, trip_id, activity_id, amount, currency, exchange_rate, amount_in_trip_currency,
-                             category, description, paid_by, paid_by_guest_name, paid_by_guest_member_id, created_by, created_at, updated_at)
+                             category, description, paid_by, paid_by_guest_name, paid_by_guest_member_id, expense_date, created_by, created_at, updated_at)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
                 #{activityId,javaType=java.util.UUID,jdbcType=OTHER}, #{amount}, #{currency}, #{exchangeRate},
                 #{amountInTripCurrency},
                 #{category},
                 #{description},
                 #{paidBy,javaType=java.util.UUID,jdbcType=OTHER}, #{paidByGuestName}, #{paidByGuestMemberId,javaType=java.util.UUID,jdbcType=OTHER},
+                COALESCE(#{expenseDate,jdbcType=TIMESTAMP}, NOW()),
                 #{createdBy,javaType=java.util.UUID,jdbcType=OTHER}, NOW(), NOW())
     </insert>
 
@@ -40,7 +42,7 @@
 
     <select id="selectByTripId" parameterType="java.util.UUID" resultMap="ExpenseResultMap">
         SELECT * FROM expenses WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
-        ORDER BY created_at DESC
+        ORDER BY expense_date DESC, created_at DESC
     </select>
 
     <update id="updateById" parameterType="com.ds.goroute.entity.Expense">
@@ -54,6 +56,7 @@
             paid_by = #{paidBy,javaType=java.util.UUID,jdbcType=OTHER},
             paid_by_guest_name = #{paidByGuestName},
             paid_by_guest_member_id = #{paidByGuestMemberId,javaType=java.util.UUID,jdbcType=OTHER},
+            expense_date = COALESCE(#{expenseDate,jdbcType=TIMESTAMP}, expense_date),
             updated_at = NOW()
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </update>
@@ -64,12 +67,12 @@
 
     <select id="selectByActivityId" parameterType="java.util.UUID" resultMap="ExpenseResultMap">
         SELECT * FROM expenses WHERE activity_id = #{activityId,javaType=java.util.UUID,jdbcType=OTHER}
-        ORDER BY created_at DESC
+        ORDER BY expense_date DESC, created_at DESC
     </select>
 
     <select id="selectByPaidBy" parameterType="java.util.UUID" resultMap="ExpenseResultMap">
         SELECT * FROM expenses WHERE paid_by = #{paidBy,javaType=java.util.UUID,jdbcType=OTHER}
-        ORDER BY created_at DESC
+        ORDER BY expense_date DESC, created_at DESC
     </select>
 
     <select id="countByPaidByGuestMemberId" parameterType="java.util.UUID" resultType="int">

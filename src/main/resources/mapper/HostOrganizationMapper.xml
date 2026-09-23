@@ -145,9 +145,22 @@
                 AND (legal_name ILIKE CONCAT('%', #{query}, '%')
                      OR display_name ILIKE CONCAT('%', #{query}, '%'))
             </if>
-            <if test="status != null and status != ''">AND operational_status = #{status}</if>
+            <if test="status != null and status.size() > 0">AND operational_status IN<foreach item="item" collection="status" open="(" separator="," close=")">#{item}</foreach></if>
+            <if test="organizationType != null and organizationType.size() > 0">AND organization_type IN<foreach item="item" collection="organizationType" open="(" separator="," close=")">#{item}</foreach></if>
+            <if test="verificationStatus != null and verificationStatus.size() > 0">AND verification_status IN<foreach item="item" collection="verificationStatus" open="(" separator="," close=")">#{item}</foreach></if>
         </where>
-        ORDER BY created_at DESC
+        ORDER BY
+        <choose>
+            <when test="sort == 'displayName'">display_name</when>
+            <when test="sort == 'legalName'">legal_name</when>
+            <when test="sort == 'updatedAt'">updated_at</when>
+            <otherwise>created_at</otherwise>
+        </choose>
+        <choose>
+            <when test="descending">DESC NULLS LAST</when>
+            <otherwise>ASC NULLS LAST</otherwise>
+        </choose>
+        , id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 

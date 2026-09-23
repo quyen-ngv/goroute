@@ -66,7 +66,9 @@ public interface PassportMapper {
     int updateEventLocation(@Param("id") UUID id,
                             @Param("placeId") UUID placeId,
                             @Param("locationKey") String locationKey,
-                            @Param("provinceCode") String provinceCode);
+                            @Param("provinceCode") String provinceCode,
+                            @Param("wardCode") String wardCode,
+                            @Param("isVerified") Boolean isVerified);
 
     /** Activity check-ins that predate the passport and still need to be brought in. */
     List<Map<String, Object>> findLegacyActivityCheckins(@Param("limit") int limit);

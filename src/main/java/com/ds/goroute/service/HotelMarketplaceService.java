@@ -18,6 +18,8 @@ public interface HotelMarketplaceService {
                                                 Integer adults, Integer children);
 
     List<HotelProfileResponse> partnerListHotels(UUID actor, UUID organizationId);
+    /** One property the caller may read, by id; a property of another organization answers 404. */
+    HotelProfileResponse partnerGetHotel(UUID actor, UUID hotelId);
     HotelProfileResponse partnerCreateHotel(UUID actor, UpsertHotelRequest request);
     HotelProfileResponse partnerUpdateHotel(UUID actor, UUID hotelId, UpsertHotelRequest request);
     List<RoomTypeResponse> partnerListRooms(UUID actor, UUID hotelId);
@@ -66,14 +68,14 @@ public interface HotelMarketplaceService {
     /** Expires one held booking in its own transaction and releases its inventory. Returns false when it was already handled. */
     boolean expirePendingBooking(UUID bookingId, java.time.LocalDateTime now);
 
-    List<HotelProfileResponse> adminListHotels(String query, String status, int page, int size);
+    List<HotelProfileResponse> adminListHotels(String query, List<String> status, List<String> propertyType, List<UUID> locationImageIds, String sort, boolean descending, int page, int size);
     HotelProfileResponse adminGetHotel(UUID hotelId);
     List<RoomTypeResponse> adminListRooms(UUID hotelId);
     List<RatePlanResponse> adminListRates(UUID roomId);
     List<RoomInventoryResponse> adminGetInventory(UUID roomId, LocalDate start, LocalDate end);
     List<RatePlanDailyRateResponse> adminGetRateCalendar(UUID ratePlanId, LocalDate start, LocalDate end);
     HotelProfileResponse adminUpdateHotelStatus(UUID actor, UUID hotelId, MarketplacePublicationStatus status, String reason, Long expectedVersion);
-    List<HotelBookingResponse> adminListBookings(String query, String status, int page, int size);
+    List<HotelBookingResponse> adminListBookings(String query, List<String> status, List<String> paymentStatus, String sort, boolean descending, int page, int size);
     HotelBookingResponse adminGetBooking(UUID bookingId);
     HotelBookingResponse adminUpdateBookingStatus(UUID actor, UUID bookingId, UpdateHotelBookingStatusRequest request);
     HotelProfileResponse adminCreateHotel(UUID actor, UpsertHotelRequest request);

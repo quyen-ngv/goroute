@@ -24,6 +24,7 @@ import com.ds.goroute.service.PassportService;
 import com.ds.goroute.service.ReviewScoringService;
 import com.ds.goroute.service.ReviewService;
 import com.ds.goroute.service.checkin.CheckinReviewConverter;
+import com.ds.goroute.service.checkin.CheckinVerifier;
 import com.ds.goroute.service.checkin.LocationKeyFactory;
 import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.NotificationType;
@@ -64,6 +65,7 @@ public class CheckinAdminServiceImpl implements CheckinAdminService {
     private final ReviewScoringService scoringService;
     private final LocationKeyFactory locationKeyFactory;
     private final PassportService passportService;
+    private final CheckinVerifier verifier;
 
     @Override
     @Transactional(readOnly = true)
@@ -135,6 +137,11 @@ public class CheckinAdminServiceImpl implements CheckinAdminService {
         if (place.getProvinceCode() != null) {
             checkin.setProvinceCode(place.getProvinceCode());
         }
+        // The verdict was reached against no place, so it is re-run against this one. A
+        // camera check-in taken inside the radius earns the badge it would have had if
+        // the author had found the place themselves; a gallery one stays unverified.
+        verifier.apply(checkin, place);
+        checkinRepository.updateVerification(checkin);
 
         moveRating(checkin, previousPlaceId, previousReviewId);
         // The province a check-in resolves to usually changes the moment it gains a place,
@@ -315,6 +322,11 @@ public class CheckinAdminServiceImpl implements CheckinAdminService {
                             .locationSource(checkin.getLocationSource())
                             .locationKey(checkin.getLocationKey())
                             .locationReassigned(reassignedIds.contains(checkin.getId()))
+                            .verificationStatus(checkin.getVerificationStatus())
+                            .verificationScope(checkin.getVerificationScope())
+                            .distanceMeters(checkin.getDistanceMeters())
+                            .accuracyMeters(checkin.getAccuracyMeters())
+                            .wardCode(checkin.getWardCode())
                             .caption(checkin.getCaption())
                             .photoUrls(photosByCheckin.getOrDefault(checkin.getId(), List.of()))
                             .overallRating(checkin.getOverallRating())

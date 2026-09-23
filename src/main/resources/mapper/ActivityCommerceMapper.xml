@@ -150,9 +150,23 @@
   </select>
   <select id="findProductsAdmin" resultMap="ProductMap">
     <include refid="ProductSelect"/> WHERE a.host_organization_id IS NOT NULL
-    <if test="status != null and status != ''">AND a.product_status=#{status}</if>
+    <if test="status != null and status.size() > 0">AND a.product_status IN<foreach item="item" collection="status" open="(" separator="," close=")">#{item}</foreach></if>
+    <if test="locationImageIds != null and locationImageIds.size() > 0">AND a.location_image_id IN<foreach item="item" collection="locationImageIds" open="(" separator="," close=")">#{item}</foreach></if>
     <if test="query != null and query != ''">AND a.title ILIKE CONCAT('%',#{query},'%')</if>
-    ORDER BY a.created_at DESC LIMIT #{limit} OFFSET #{offset}
+    ORDER BY
+    <choose>
+        <when test="sort == 'title'">a.title</when>
+        <when test="sort == 'placeTitle'">p.title</when>
+        <when test="sort == 'priceAmount'">a.price_amount</when>
+        <when test="sort == 'updatedAt'">a.updated_at</when>
+        <otherwise>a.created_at</otherwise>
+    </choose>
+    <choose>
+        <when test="descending">DESC NULLS LAST</when>
+        <otherwise>ASC NULLS LAST</otherwise>
+    </choose>
+    , a.id DESC
+    LIMIT #{limit} OFFSET #{offset}
   </select>
 
   <insert id="insertPackage">INSERT INTO activity_packages (id,activity_booking_id,code,name,description,currency,base_price,original_price,package_group,group_type,departure_type,details,min_quantity,max_quantity,inventory_type,units,included_items,excluded_items,required_information,confirmation_type,voucher_type,validity_days,attributes,cancellation_policy,status,data_version,created_by,updated_by,created_at,updated_at) VALUES (#{id},#{activityBookingId},#{code},#{name},#{description},#{currency},#{basePrice},#{originalPrice},#{packageGroup},#{groupType},#{departureType},#{details}::jsonb,#{minQuantity},#{maxQuantity},#{inventoryType},#{units}::jsonb,#{includedItems}::jsonb,#{excludedItems}::jsonb,#{requiredInformation}::jsonb,#{confirmationType},#{voucherType},#{validityDays},#{attributes}::jsonb,#{cancellationPolicy}::jsonb,#{status},#{dataVersion},#{createdBy},#{updatedBy},#{createdAt},#{updatedAt})</insert>
@@ -195,12 +209,28 @@
   <select id="findOrdersAdmin" resultMap="OrderMap">
     <include refid="OrderSelect"/>
     <where>
-      <if test="status != null and status != ''">AND o.order_status=#{status}</if>
+      <if test="status != null and status.size() > 0">AND o.order_status IN<foreach item="item" collection="status" open="(" separator="," close=")">#{item}</foreach></if>
+      <if test="paymentStatus != null and paymentStatus.size() > 0">AND o.payment_status IN<foreach item="item" collection="paymentStatus" open="(" separator="," close=")">#{item}</foreach></if>
       <if test="query != null and query != ''">
         AND (o.order_code ILIKE CONCAT('%',#{query},'%') OR a.title ILIKE CONCAT('%',#{query},'%'))
       </if>
     </where>
-    ORDER BY o.created_at DESC LIMIT #{limit} OFFSET #{offset}
+    ORDER BY
+    <choose>
+        <when test="sort == 'orderCode'">o.order_code</when>
+        <when test="sort == 'activityTitle'">a.title</when>
+        <when test="sort == 'totalAmount'">o.total_amount</when>
+        <when test="sort == 'currency'">o.currency</when>
+        <when test="sort == 'orderStatus'">o.order_status</when>
+        <when test="sort == 'paymentStatus'">o.payment_status</when>
+        <otherwise>o.created_at</otherwise>
+    </choose>
+    <choose>
+        <when test="descending">DESC NULLS LAST</when>
+        <otherwise>ASC NULLS LAST</otherwise>
+    </choose>
+    , o.id DESC
+    LIMIT #{limit} OFFSET #{offset}
   </select>
   <update id="updateOrderStatus">UPDATE activity_orders SET order_status=#{status},guest_charged=COALESCE(#{guestCharged},guest_charged),data_version=data_version+1,updated_by=#{actor},updated_at=#{now} WHERE id=#{id} AND data_version=#{expectedVersion}</update>
   <update id="expireOrderHold">UPDATE activity_orders SET order_status='EXPIRED',data_version=data_version+1,updated_by=#{actor},updated_at=#{now} WHERE id=#{id} AND order_status='PENDING_PARTNER_CONFIRMATION' AND data_version=#{expectedVersion} AND hold_expires_at&lt;=#{now}</update>

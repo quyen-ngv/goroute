@@ -41,6 +41,16 @@ public class UpdatePlaceRequest {
     @Max(value = 5000, message = "Verification radius must be at most 5000 meters")
     private Integer verificationRadiusMeters;
 
+    /**
+     * Drawn verification area as a GeoJSON Polygon/MultiPolygon, or null to clear it.
+     * When present it replaces the radius for verification. Validated server-side by
+     * PostGIS (must be valid and at most {@code MAX_VERIFICATION_AREA_KM2}).
+     */
+    private JsonNode verificationGeometry;
+
+    /** Official ward code; null keeps the resolved value, blank clears it. */
+    private String wardCode;
+
     private String plusCode;
     private String timezone;
 

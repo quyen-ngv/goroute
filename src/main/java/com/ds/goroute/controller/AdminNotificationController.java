@@ -71,12 +71,20 @@ public class AdminNotificationController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(adminNotificationService.searchRecipients(search, page, size)));
     }
 
+    /** Columns a sent-history row may be ordered by; anything else falls back to newest batch first. */
+    private static final java.util.Set<String> HISTORY_SORT_FIELDS =
+            java.util.Set.of("title", "sentAt", "recipientCount", "readCount");
+
     @GetMapping("/history")
     @PreAuthorize("@adminAuthorization.can(authentication,'notifications','get')")
     public ResponseEntity<BaseResponse<PageResponse<AdminNotificationHistoryResponse>>> history(
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) String sort,
+            @RequestParam(required = false) String direction,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size) {
-        return ResponseEntity.ok(ofSucceeded(adminNotificationService.history(search, page, size)));
+        return ResponseEntity.ok(ofSucceeded(adminNotificationService.history(search,
+                com.ds.goroute.utils.AdminListSort.field(sort, HISTORY_SORT_FIELDS),
+                com.ds.goroute.utils.AdminListSort.descending(direction), page, size)));
     }
 }

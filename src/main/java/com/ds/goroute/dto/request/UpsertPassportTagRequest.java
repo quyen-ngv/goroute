@@ -30,6 +30,13 @@ public class UpsertPassportTagRequest {
     @Size(max = 5000)
     private String description;
 
+    /** English copy; optional, the Vietnamese text is served when it is blank. */
+    @Size(max = 200)
+    private String nameEn;
+
+    @Size(max = 5000)
+    private String descriptionEn;
+
     @Size(max = 1000)
     private String imageUrl;
 

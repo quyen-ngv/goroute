@@ -30,6 +30,8 @@ public class Expense {
     private UUID paidByGuestMemberId; // Reference to trip_members.id for guest payer
     private String receiptUrl;
     private String[] photoUrls;
+    /** The day the money was spent, which is not always the day the row was written. */
+    private LocalDateTime expenseDate;
     private UUID createdBy;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

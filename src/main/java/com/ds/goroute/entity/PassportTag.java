@@ -19,9 +19,13 @@ public class PassportTag {
     /** Joined only on read models; never persisted in passport_tags itself. */
     private String passportCode;
     private String passportName;
+    private String passportNameEn;
     private String code;
     private String name;
     private String description;
+    /** English copy; blank falls back to the Vietnamese name/description. */
+    private String nameEn;
+    private String descriptionEn;
     private String imageUrl;
     /** SPECIFIC_PLACES, PASSPORT_LOCATIONS, or legacy PASSPORT_PROVINCES. */
     private String qualificationMode;

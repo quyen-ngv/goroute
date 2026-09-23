@@ -90,14 +90,22 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        // Reverse-proxy prefix: /goroute/goroute-theme.css -> classpath:/static/goroute-theme.css
+        // Reverse-proxy prefix: /goroute/ondetour.html -> classpath:/static/ondetour.html
         registry.addResourceHandler("/goroute/**")
                 .addResourceLocations("classpath:/static/");
     }
 
     @Override
     public void addViewControllers(ViewControllerRegistry registry) {
-        registry.addViewController("/share/{tripId}").setViewName("forward:/share-trip.html");
-        registry.addViewController("/goroute/share/{tripId}").setViewName("forward:/share-trip.html");
+        // One page serves both the public-trip list and a single trip. The
+        // browser reads the trip id off the path, so every route below forwards
+        // to the same file. /share/{tripId} is the legacy link shape and must
+        // keep working for links already out in the wild.
+        registry.addViewController("/share/{tripId}").setViewName("forward:/ondetour.html");
+        registry.addViewController("/goroute/share/{tripId}").setViewName("forward:/ondetour.html");
+        registry.addViewController("/ondetour").setViewName("forward:/ondetour.html");
+        registry.addViewController("/ondetour/{tripId}").setViewName("forward:/ondetour.html");
+        registry.addViewController("/goroute/ondetour").setViewName("forward:/ondetour.html");
+        registry.addViewController("/goroute/ondetour/{tripId}").setViewName("forward:/ondetour.html");
     }
 }

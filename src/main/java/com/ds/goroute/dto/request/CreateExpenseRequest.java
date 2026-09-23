@@ -13,6 +13,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,6 +34,12 @@ public class CreateExpenseRequest {
 
     @ModeratedText(contentType = ModeratedContentType.EXPENSE, visibility = ModerationVisibility.GROUP)
     private String description;
+    /**
+     * When the money was spent. Absent means now, which is what a client that has not
+     * shipped the date picker yet sends, and what most in-the-moment entries mean anyway.
+     */
+    private LocalDateTime expenseDate;
+
     private UUID activityId;
     private UUID paidBy;
     private String paidByGuestName; // Treat as both username and fullName

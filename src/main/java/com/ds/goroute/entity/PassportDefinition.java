@@ -19,6 +19,9 @@ public class PassportDefinition {
     private String code;
     private String name;
     private String description;
+    /** English copy; blank falls back to the Vietnamese name/description. */
+    private String nameEn;
+    private String descriptionEn;
     private String coverImageUrl;
     private Boolean isActive;
     private Integer displayOrder;

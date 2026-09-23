@@ -87,8 +87,10 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     }
 
     @Override
-    public List<Place> findFilteredPage(String search, List<String> placeGroups, int limit, int offset) {
-        return placeMapper.findFilteredPage(search, placeGroups, limit, offset);
+    public List<Place> findFilteredPage(String search, List<String> placeGroups, List<String> visibilityStatus,
+                                        List<String> trustLevel, List<UUID> locationImageIds,
+                                        String sort, boolean descending, int limit, int offset) {
+        return placeMapper.findFilteredPage(search, placeGroups, visibilityStatus, trustLevel, locationImageIds, sort, descending, limit, offset);
     }
 
     @Override
@@ -98,8 +100,9 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     }
 
     @Override
-    public long countFiltered(String search, List<String> placeGroups) {
-        return placeMapper.countFiltered(search, placeGroups);
+    public long countFiltered(String search, List<String> placeGroups, List<String> visibilityStatus,
+                              List<String> trustLevel, List<UUID> locationImageIds) {
+        return placeMapper.countFiltered(search, placeGroups, visibilityStatus, trustLevel, locationImageIds);
     }
 
     @Override
@@ -137,5 +140,37 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     @Override
     public void delete(UUID id) {
         placeMapper.delete(id);
+    }
+
+    @Override
+    public void updateVerificationGeometry(UUID id, String geoJson) {
+        placeMapper.updateVerificationGeometry(id, geoJson);
+    }
+
+    @Override
+    public void updateWardCode(UUID id, String wardCode) {
+        placeMapper.updateWardCode(id, wardCode);
+    }
+
+    @Override
+    public int assignWard(UUID id) {
+        return placeMapper.assignWard(id);
+    }
+
+    @Override
+    public Boolean isWithinVerificationGeometry(UUID id, BigDecimal latitude, BigDecimal longitude,
+                                                BigDecimal accuracyMeters) {
+        return placeMapper.isWithinVerificationGeometry(id, latitude, longitude, accuracyMeters);
+    }
+
+    @Override
+    public GeometryValidation validateGeometry(String geoJson) {
+        java.util.Map<String, Object> row = placeMapper.validateGeometry(geoJson);
+        Object area = row.get("area_km2");
+        return new GeometryValidation(
+                Boolean.TRUE.equals(row.get("valid")),
+                row.get("reason") == null ? null : row.get("reason").toString(),
+                area instanceof Number number ? number.doubleValue() : 0d,
+                row.get("geometry_type") == null ? null : row.get("geometry_type").toString());
     }
 }

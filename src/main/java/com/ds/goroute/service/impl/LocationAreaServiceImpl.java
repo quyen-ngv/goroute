@@ -141,6 +141,21 @@ public class LocationAreaServiceImpl implements LocationAreaService {
         return assigned;
     }
 
+    @Override
+    @Transactional
+    public void assignNewPlace(UUID placeId) {
+        if (locationAreaMapper.assignPlaceByCoordinates(placeId) > 0) {
+            return;
+        }
+        LocationAreaCandidateRow candidate =
+                locationAreaMapper.findUnmappedById(LocationAreaTarget.PLACE, placeId);
+        if (candidate == null) {
+            return;
+        }
+        LocationAreaMatcher.matchByText(locationImageRepository.findAll(), List.of(safe(candidate.getMatchText())))
+                .ifPresent(area -> locationAreaMapper.assignArea(LocationAreaTarget.PLACE, placeId, area.getId()));
+    }
+
     private String safe(String value) {
         return value == null ? "" : value;
     }

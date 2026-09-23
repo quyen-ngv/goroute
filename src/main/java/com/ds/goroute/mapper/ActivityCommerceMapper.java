@@ -17,7 +17,7 @@ public interface ActivityCommerceMapper {
     List<MarketplaceActivityProduct> findProductsByOrganization(@Param("organizationId") UUID organizationId);
     List<MarketplaceActivityProduct> findProductsPublic(@Param("query") String query,@Param("activityTypes") List<String> activityTypes,@Param("limit")int limit,@Param("offset")int offset);
     List<MarketplaceActivityProduct> findSimilarProductsPublic(@Param("excludeId") UUID excludeId,@Param("activityTypes") List<String> activityTypes,@Param("lat") Double lat,@Param("lng") Double lng,@Param("limit") int limit);
-    List<MarketplaceActivityProduct> findProductsAdmin(@Param("query")String query,@Param("status")String status,@Param("limit")int limit,@Param("offset")int offset);
+    List<MarketplaceActivityProduct> findProductsAdmin(@Param("query")String query,@Param("status")List<String> status,@Param("locationImageIds")List<UUID> locationImageIds,@Param("sort")String sort,@Param("descending")boolean descending,@Param("limit")int limit,@Param("offset")int offset);
     int insertPackage(ActivityPackage value); int updatePackage(ActivityPackage value); ActivityPackage findPackage(@Param("id")UUID id);
     List<ActivityPackage> findPackages(@Param("activityId")UUID activityId,@Param("includeDisabled")boolean includeDisabled);
     int insertSlot(ActivitySlot value); int updateSlot(ActivitySlot value); ActivitySlot findSlot(@Param("id")UUID id);
@@ -38,7 +38,7 @@ public interface ActivityCommerceMapper {
     int assignVoucher(@Param("id")UUID id,@Param("voucherCode")String voucherCode,@Param("now")LocalDateTime now);
     int markRedeemed(@Param("id")UUID id,@Param("actor")UUID actor,@Param("now")LocalDateTime now);
     int voidVoucher(@Param("id")UUID id,@Param("now")LocalDateTime now);
-    List<ActivityOrder> findOrdersAdmin(@Param("query")String query,@Param("status")String status,@Param("limit")int limit,@Param("offset")int offset);
+    List<ActivityOrder> findOrdersAdmin(@Param("query")String query,@Param("status")List<String> status,@Param("paymentStatus")List<String> paymentStatus,@Param("sort")String sort,@Param("descending")boolean descending,@Param("limit")int limit,@Param("offset")int offset);
     int updateOrderStatus(@Param("id")UUID id,@Param("expectedVersion")long expectedVersion,@Param("status")String status,@Param("guestCharged")Boolean guestCharged,
                           @Param("actor")UUID actor,@Param("now")LocalDateTime now);
     long countOrdersByOrganization(@Param("organizationId")UUID organizationId,@Param("status")String status);

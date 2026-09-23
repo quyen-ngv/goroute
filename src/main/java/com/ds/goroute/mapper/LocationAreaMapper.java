@@ -23,6 +23,9 @@ public interface LocationAreaMapper {
      */
     int assignByCoordinates(@Param("target") LocationAreaTarget target);
 
+    /** Coordinate pass for a single place that has no area yet. Returns 1 if it was filled. */
+    int assignPlaceByCoordinates(@Param("id") UUID id);
+
     /** Copies the area of the linked Place onto hotels that have none. */
     int assignHotelsFromPlace();
 
@@ -35,6 +38,10 @@ public interface LocationAreaMapper {
      */
     List<LocationAreaCandidateRow> findUnmapped(@Param("target") LocationAreaTarget target,
                                                 @Param("limit") int limit);
+
+    /** The same candidate text as {@link #findUnmapped}, for one row; null once it has an area. */
+    LocationAreaCandidateRow findUnmappedById(@Param("target") LocationAreaTarget target,
+                                              @Param("id") UUID id);
 
     int assignArea(@Param("target") LocationAreaTarget target,
                    @Param("id") UUID id,

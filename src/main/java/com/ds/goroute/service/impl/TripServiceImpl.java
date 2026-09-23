@@ -1404,7 +1404,8 @@ public class TripServiceImpl implements TripService {
                         .splitCount(splitCount)
                         .photoUrls(MediaAssetResponseMapper.toUrls(expensePhotoResponses))
                         .photoUrlsV2(expensePhotoResponses)
-                        .createdAt(e.getCreatedAt())
+                        // A shared trip shows the day of the spend, not the day it was typed in.
+                        .createdAt(e.getExpenseDate() != null ? e.getExpenseDate() : e.getCreatedAt())
                         .build();
 
                 if (e.getActivityId() != null) {

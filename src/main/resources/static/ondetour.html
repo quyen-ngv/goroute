@@ -88,7 +88,7 @@
             background: linear-gradient(180deg, rgba(20,14,10,0) 25%, rgba(20,14,10,.72) 100%);
         }
         .hero-brand {
-            position: absolute; top: max(16px, env(safe-area-inset-top)); left: 16px;
+            position: absolute; top: max(16px, env(safe-area-inset-top)); right: 16px;
             display: inline-flex; align-items: center; gap: 6px;
             padding: 7px 14px 7px 10px; border-radius: var(--radius-pill);
             background: rgba(255,255,255,.22); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
@@ -389,6 +389,146 @@
         .image-viewer-counter { position: absolute; bottom: -34px; left: 0; right: 0; text-align: center; color: rgba(255,255,255,.7); font-size: 12.5px; }
         body.image-viewer-open { overflow: hidden; }
 
+        /* ---------- explore list ---------- */
+        .explore-head {
+            position: relative; padding: calc(env(safe-area-inset-top) + 26px) 20px 22px;
+            background: linear-gradient(160deg, #FDEBF1 0%, var(--cream) 70%);
+            border-bottom: 1px solid var(--line);
+        }
+        .explore-brand {
+            display: inline-flex; align-items: center; gap: 6px; color: var(--pink-dark);
+            font-weight: 700; font-size: 13px; letter-spacing: .06em; text-transform: uppercase;
+        }
+        .explore-title { margin-top: 10px; font-size: 27px; line-height: 1.15; font-weight: 600; }
+        .explore-sub { margin-top: 6px; font-size: 14px; color: var(--ink-soft); max-width: 460px; }
+        .explore-search { margin-top: 16px; position: relative; max-width: 460px; }
+        .explore-search input {
+            width: 100%; padding: 12px 40px; font: inherit; font-size: 14.5px;
+            color: var(--ink); background: var(--paper); border: 1px solid var(--line);
+            border-radius: var(--radius-pill); box-shadow: var(--shadow-sm); -webkit-appearance: none;
+        }
+        .explore-search input::placeholder { color: var(--ink-faint); }
+        .explore-search input:focus { outline: none; border-color: var(--pink-pale); box-shadow: 0 0 0 3px var(--pink-mist); }
+        .explore-search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--ink-faint); pointer-events: none; }
+        .explore-search-clear {
+            position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+            width: 26px; height: 26px; border-radius: 50%; display: none;
+            align-items: center; justify-content: center; color: var(--ink-soft); background: var(--cream-deep);
+        }
+        .explore-search-clear--on { display: flex; }
+
+        .explore-shell { max-width: 1040px; margin: 0 auto; padding: 20px 16px 48px; }
+        .explore-count { font-size: 12.5px; color: var(--ink-faint); letter-spacing: .04em; text-transform: uppercase; font-weight: 600; }
+        .trip-grid { display: grid; gap: 16px; margin-top: 12px; grid-template-columns: 1fr; }
+
+        .trip-card {
+            display: flex; flex-direction: column; width: 100%; text-align: left; background: var(--paper);
+            border: 1px solid var(--line); border-radius: var(--radius-l); overflow: hidden;
+            box-shadow: var(--shadow-sm); transition: transform .18s ease, box-shadow .18s ease;
+        }
+        .trip-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+        .trip-card:active { transform: translateY(0); }
+        .trip-card-media { position: relative; aspect-ratio: 16 / 9; background: var(--cream-deep); flex-shrink: 0; }
+        .trip-card-media img { width: 100%; height: 100%; object-fit: cover; }
+        .trip-card-media-empty { width: 100%; height: 100%; background: linear-gradient(140deg, var(--pink-mist), var(--cream-deep)); }
+        .trip-card-scrim { position: absolute; inset: 0; background: linear-gradient(to top, rgba(28,20,14,.68) 0%, rgba(28,20,14,.05) 55%); }
+        .trip-card-media-text { position: absolute; left: 14px; right: 14px; bottom: 12px; color: #fff; }
+        .trip-card-title { font-size: 19px; font-weight: 600; line-height: 1.2; text-shadow: 0 1px 8px rgba(0,0,0,.35); }
+        .trip-card-dates { display: block; margin-top: 3px; font-size: 12.5px; opacity: .88; font-family: var(--font-body); }
+        .trip-card-badge {
+            position: absolute; top: 12px; left: 12px; display: inline-flex; align-items: center; gap: 5px;
+            padding: 5px 10px; border-radius: var(--radius-pill); background: rgba(255,255,255,.92);
+            color: var(--pink-dark); font-size: 11.5px; font-weight: 700; letter-spacing: .03em;
+        }
+        .trip-card-body { padding: 13px 15px 15px; flex: 1; display: flex; flex-direction: column; }
+        .trip-card-route {
+            display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-soft);
+            overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+        }
+        .trip-card-route svg { flex-shrink: 0; }
+        .trip-card-desc {
+            margin-top: 8px; font-size: 13.5px; color: var(--ink-soft); line-height: 1.45;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        }
+        .trip-card-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+        .trip-card-pill {
+            display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px;
+            border-radius: var(--radius-pill); background: var(--cream); color: var(--ink-soft);
+            font-size: 11.5px; font-weight: 600;
+        }
+        .trip-card-foot {
+            display: flex; align-items: center; gap: 8px; margin-top: auto;
+            padding-top: 11px; border-top: 1px solid var(--line);
+        }
+        .trip-card-owner { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; }
+        .trip-card-owner img, .trip-card-owner-fallback {
+            width: 24px; height: 24px; border-radius: 50%; object-fit: cover; flex-shrink: 0;
+        }
+        .trip-card-owner-fallback {
+            display: flex; align-items: center; justify-content: center; background: var(--pink-mist);
+            color: var(--pink-dark); font-size: 11px; font-weight: 700;
+        }
+        .trip-card-owner-name {
+            font-size: 12.5px; color: var(--ink); font-weight: 600;
+            overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+        }
+        .trip-card-stats { display: flex; gap: 10px; font-size: 11.5px; color: var(--ink-faint); font-weight: 600; flex-shrink: 0; }
+        .trip-card-stats span { display: inline-flex; align-items: center; gap: 3px; }
+
+        .trip-skeleton { border-radius: var(--radius-l); overflow: hidden; border: 1px solid var(--line); background: var(--paper); }
+        .trip-skeleton-media { aspect-ratio: 16 / 9; }
+        .trip-skeleton-body { padding: 14px 15px 16px; display: grid; gap: 9px; }
+        .trip-skeleton-line { height: 11px; border-radius: 6px; }
+        .trip-skeleton-media, .trip-skeleton-line {
+            background: linear-gradient(90deg, var(--cream-deep) 25%, #F6EFE5 37%, var(--cream-deep) 63%);
+            background-size: 400% 100%; animation: shimmer 1.3s ease infinite;
+        }
+        @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+
+        .explore-empty { text-align: center; padding: 56px 20px; color: var(--ink-soft); }
+        .explore-empty h3 { font-size: 19px; color: var(--ink); margin-bottom: 6px; }
+        .explore-empty p { font-size: 14px; max-width: 300px; margin: 0 auto; }
+        .explore-more { display: flex; justify-content: center; margin-top: 24px; }
+        .explore-more button {
+            padding: 11px 26px; border-radius: var(--radius-pill); background: var(--paper);
+            border: 1px solid var(--line); color: var(--ink); font-size: 14px; font-weight: 600;
+            box-shadow: var(--shadow-sm);
+        }
+        .explore-more button:disabled { opacity: .55; }
+
+        .hero-back {
+            position: absolute; top: max(14px, calc(env(safe-area-inset-top) + 6px)); left: 14px; z-index: 3;
+            display: inline-flex; align-items: center; gap: 5px; padding: 7px 13px 7px 9px;
+            border-radius: var(--radius-pill); background: rgba(255,255,255,.92); color: var(--ink);
+            font-size: 12.5px; font-weight: 600; box-shadow: var(--shadow-sm);
+        }
+
+        /* ---------- memory captions ---------- */
+        .memory-list { display: grid; gap: 9px; margin-top: 10px; }
+        .memory-note {
+            display: flex; gap: 9px; padding: 10px 11px; border-radius: var(--radius-m);
+            background: var(--cream); border: 1px solid var(--line);
+        }
+        .memory-note-thumb { width: 42px; height: 42px; border-radius: 10px; object-fit: cover; flex-shrink: 0; }
+        .memory-note-body { min-width: 0; flex: 1; }
+        .memory-note-caption { font-size: 13px; color: var(--ink); line-height: 1.45; }
+        .memory-note-desc { margin-top: 3px; font-size: 12.5px; color: var(--ink-soft); line-height: 1.45; }
+        .memory-note-by { margin-top: 5px; font-size: 11.5px; color: var(--ink-faint); font-weight: 600; }
+        .image-viewer-caption {
+            position: absolute; bottom: -56px; left: 12px; right: 12px; text-align: center;
+            color: rgba(255,255,255,.88); font-size: 13px; line-height: 1.4;
+        }
+        .image-viewer-caption span { display: block; color: rgba(255,255,255,.6); font-size: 11.5px; margin-top: 2px; }
+
+        @media (min-width: 640px) {
+            .trip-grid { grid-template-columns: repeat(2, 1fr); }
+            .explore-head { padding: 34px 24px 26px; }
+            .explore-title { font-size: 32px; }
+        }
+        @media (min-width: 1000px) {
+            .trip-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+
         /* ---------- desktop / wide ---------- */
         @media (min-width: 720px) {
             .hero { border-radius: 0 0 28px 28px; }
@@ -424,12 +564,18 @@
         <button type="button" id="viewer-next" class="image-viewer-nav image-viewer-nav--next" aria-label="Next image" onclick="viewerGo(1)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
+        <p id="viewer-caption" class="image-viewer-caption"></p>
         <span id="viewer-counter" class="image-viewer-counter"></span>
     </div>
 </div>
 
 <script>
-    const API_BASE_URL = 'https://onestudy.id.vn/goroute';
+    // Served by the backend itself, so the API lives at the same origin. The
+    // reverse proxy mounts the app under /goroute, which the path reveals.
+    // The literal is the fallback for opening this file outside the server.
+    const API_BASE_URL = window.location.protocol.startsWith('http')
+        ? window.location.origin + (window.location.pathname.startsWith('/goroute/') ? '/goroute' : '')
+        : 'https://onestudy.id.vn/goroute';
     const APP_STORE_URL = 'https://apps.apple.com/us/app/ondetour/id6775022752';
     const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const REDUCE_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -444,6 +590,7 @@
     const ICON_EXPENSE = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M12 12h.01"/></svg>';
     const ICON_NOTES = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>';
     const ICON_ZOOM = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>';
+    const ICON_SEARCH = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
     const ICON_CLOSE_SM = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
     const ICON_CHEV_L = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>';
     const ICON_CHEV_R = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>';
@@ -474,10 +621,288 @@
 
     function encodeImagesAttr(images) { return escapeHtml(JSON.stringify(images)); }
 
-    function getTripIdFromUrl() {
-        const pathParts = window.location.pathname.split('/');
-        return pathParts[pathParts.length - 1].replace('.html', '');
+    /* ============ routing ============ */
+    /*
+     * One file, two views. The path decides which:
+     *   /ondetour            -> the public trip list
+     *   /ondetour/{tripId}   -> one trip
+     *   /share/{tripId}      -> one trip (legacy link shape, still in the wild)
+     * A reverse proxy may prefix all of these with /goroute, so every internal
+     * link is built from the prefix the page was actually served under rather
+     * than a hardcoded root.
+     */
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    function getPathPrefix() {
+        return window.location.pathname.startsWith('/goroute/') ? '/goroute' : '';
     }
+
+    function getRoute() {
+        const parts = window.location.pathname.split('/').filter(Boolean);
+        const last = parts.length ? parts[parts.length - 1].replace(/\.html$/, '') : '';
+        if (UUID_RE.test(last)) return { view: 'trip', tripId: last };
+        return { view: 'list' };
+    }
+
+    function listUrl() { return `${getPathPrefix()}/ondetour`; }
+    function tripUrl(tripId) { return `${getPathPrefix()}/ondetour/${tripId}`; }
+
+    function goToTrip(tripId) {
+        window.history.pushState({ view: 'trip', tripId }, '', tripUrl(tripId));
+        renderRoute();
+    }
+
+    function goToList() {
+        window.history.pushState({ view: 'list' }, '', listUrl());
+        renderRoute();
+    }
+
+    function resetPage() {
+        document.body.classList.remove('has-sticky-bar', 'image-viewer-open');
+        document.getElementById('error').style.display = 'none';
+        const content = document.getElementById('content');
+        content.style.display = 'none';
+        content.innerHTML = '';
+        window.scrollTo(0, 0);
+    }
+
+    function showError(title, message) {
+        document.getElementById('loading').style.display = 'none';
+        const errorEl = document.getElementById('error');
+        errorEl.querySelector('h2').textContent = title;
+        errorEl.querySelector('p').textContent = message;
+        errorEl.style.display = 'flex';
+    }
+
+    /* ============ explore list ============ */
+    /*
+     * The search endpoint requires latitude/longitude even when allPublic=true,
+     * where they only break ties in the sort. Vietnam's centre is the default so
+     * the list is never empty for a visitor who has not shared their location.
+     */
+    const DEFAULT_LAT = 16.0544;
+    const DEFAULT_LNG = 108.2022;
+    const PAGE_SIZE = 12;
+
+    let listState = { page: 0, keyword: '', trips: [], loading: false, exhausted: false, token: 0 };
+    let searchDebounce = null;
+
+    function renderListShell() {
+        const content = document.getElementById('content');
+        content.innerHTML = `
+            <header class="explore-head">
+                <span class="explore-brand">${ICON_PIN_LOGO}<span>Ondetour</span></span>
+                <h1 class="explore-title">Trips people actually took</h1>
+                <p class="explore-sub">Real itineraries shared by travellers — day by day, stop by stop, with the photos they brought home.</p>
+                <div class="explore-search">
+                    <span class="explore-search-icon">${ICON_SEARCH}</span>
+                    <input type="search" id="explore-search-input" placeholder="Search a place, a trip, a vibe…"
+                        autocomplete="off" aria-label="Search public trips" value="${escapeHtml(listState.keyword)}">
+                    <button type="button" class="explore-search-clear${listState.keyword ? ' explore-search-clear--on' : ''}"
+                        id="explore-search-clear" aria-label="Clear search" onclick="clearSearch()">${ICON_CLOSE_SM}</button>
+                </div>
+            </header>
+            <main class="explore-shell">
+                <div id="explore-status" class="explore-count"></div>
+                <div class="trip-grid" id="trip-grid"></div>
+                <div class="explore-more" id="explore-more"></div>
+                ${renderAppBanner()}
+            </main>
+        `;
+        content.style.display = 'block';
+
+        const input = document.getElementById('explore-search-input');
+        input.addEventListener('input', () => {
+            document.getElementById('explore-search-clear')
+                .classList.toggle('explore-search-clear--on', input.value.length > 0);
+            clearTimeout(searchDebounce);
+            searchDebounce = setTimeout(() => applySearch(input.value.trim()), 350);
+        });
+    }
+
+    function clearSearch() {
+        const input = document.getElementById('explore-search-input');
+        if (input) { input.value = ''; input.focus(); }
+        const clear = document.getElementById('explore-search-clear');
+        if (clear) clear.classList.remove('explore-search-clear--on');
+        clearTimeout(searchDebounce);
+        applySearch('');
+    }
+
+    function applySearch(keyword) {
+        if (keyword === listState.keyword) return;
+        listState = { page: 0, keyword, trips: [], loading: false, exhausted: false, token: listState.token + 1 };
+        document.getElementById('trip-grid').innerHTML = '';
+        loadTrips();
+    }
+
+    function renderSkeletons(count) {
+        return Array.from({ length: count }, () => `
+            <div class="trip-skeleton">
+                <div class="trip-skeleton-media"></div>
+                <div class="trip-skeleton-body">
+                    <div class="trip-skeleton-line" style="width: 70%"></div>
+                    <div class="trip-skeleton-line" style="width: 45%"></div>
+                    <div class="trip-skeleton-line" style="width: 88%"></div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function getTripTitle(trip) {
+        if (trip.destination && trip.startDate) {
+            return `${trip.destination} ${parseLocalDate(trip.startDate).getFullYear()}`;
+        }
+        return trip.destination || trip.name || 'Untitled trip';
+    }
+
+    function renderTripCard(trip) {
+        const title = getTripTitle(trip);
+        const dayCount = (trip.startDate && trip.endDate) ? getDayCount(trip.startDate, trip.endDate) : 0;
+        const nights = getNightCount(dayCount);
+        const dates = (trip.startDate && trip.endDate) ? formatDateRange(trip.startDate, trip.endDate) : '';
+        const memoryCount = (trip.memoryImageUrlsV2 && trip.memoryImageUrlsV2.length)
+            || (trip.memoryImageUrls && trip.memoryImageUrls.length) || 0;
+
+        const pills = [];
+        if (dayCount) pills.push(`📅 ${dayCount} day${dayCount !== 1 ? 's' : ''} · ${nights} night${nights !== 1 ? 's' : ''}`);
+        if (trip.totalActivities) pills.push(`🧭 ${trip.totalActivities} stop${trip.totalActivities !== 1 ? 's' : ''}`);
+        if (trip.totalMembers) pills.push(`👥 ${trip.totalMembers} traveller${trip.totalMembers !== 1 ? 's' : ''}`);
+        if (memoryCount) pills.push(`📸 ${memoryCount} memor${memoryCount !== 1 ? 'ies' : 'y'}`);
+
+        const ownerInitial = (trip.ownerName || '?').trim().charAt(0).toUpperCase();
+
+        return `
+            <button type="button" class="trip-card reveal" onclick="goToTrip('${escapeHtml(trip.id)}')"
+                aria-label="Open ${escapeHtml(title)}">
+                <div class="trip-card-media">
+                    ${trip.coverImageUrl
+                        ? `<img src="${escapeHtml(trip.coverImageUrl)}" alt="" loading="lazy">`
+                        : `<div class="trip-card-media-empty"></div>`}
+                    <div class="trip-card-scrim"></div>
+                    ${memoryCount ? `<span class="trip-card-badge">📸 ${memoryCount}</span>` : ''}
+                    <div class="trip-card-media-text">
+                        <span class="trip-card-title">${escapeHtml(title)}</span>
+                        ${dates ? `<span class="trip-card-dates">${escapeHtml(dates)}</span>` : ''}
+                    </div>
+                </div>
+                <div class="trip-card-body">
+                    ${trip.routeSummary ? `<span class="trip-card-route">${ICON_PIN}<span>${escapeHtml(trip.routeSummary)}</span></span>` : ''}
+                    ${trip.description ? `<p class="trip-card-desc">${escapeHtml(trip.description)}</p>` : ''}
+                    ${pills.length ? `<div class="trip-card-meta">${pills.map(p => `<span class="trip-card-pill">${escapeHtml(p)}</span>`).join('')}</div>` : ''}
+                    <div class="trip-card-foot">
+                        <span class="trip-card-owner">
+                            ${trip.ownerAvatarUrl
+                                ? `<img src="${escapeHtml(trip.ownerAvatarUrl)}" alt="" loading="lazy">`
+                                : `<span class="trip-card-owner-fallback">${escapeHtml(ownerInitial)}</span>`}
+                            <span class="trip-card-owner-name">${escapeHtml(trip.ownerName || 'A traveller')}</span>
+                        </span>
+                        <span class="trip-card-stats">
+                            ${trip.viewCount ? `<span>👁 ${trip.viewCount}</span>` : ''}
+                            ${trip.helpfulVotes ? `<span>❤ ${trip.helpfulVotes}</span>` : ''}
+                        </span>
+                    </div>
+                </div>
+            </button>
+        `;
+    }
+
+    function renderListStatus() {
+        const status = document.getElementById('explore-status');
+        if (!status) return;
+        const n = listState.trips.length;
+        if (!n) { status.textContent = ''; return; }
+        status.textContent = listState.keyword
+            ? `${n} trip${n !== 1 ? 's' : ''} matching “${listState.keyword}”`
+            : `${n} public trip${n !== 1 ? 's' : ''}`;
+    }
+
+    function renderLoadMore() {
+        const more = document.getElementById('explore-more');
+        if (!more) return;
+        if (listState.exhausted || !listState.trips.length) { more.innerHTML = ''; return; }
+        more.innerHTML = `<button type="button" onclick="loadTrips()"${listState.loading ? ' disabled' : ''}>${listState.loading ? 'Loading…' : 'Load more trips'}</button>`;
+    }
+
+    async function loadTrips() {
+        if (listState.loading || listState.exhausted) return;
+        const token = listState.token;
+        listState.loading = true;
+        renderLoadMore();
+
+        const grid = document.getElementById('trip-grid');
+        const isFirstPage = listState.page === 0;
+        if (isFirstPage) grid.innerHTML = renderSkeletons(6);
+
+        const params = new URLSearchParams({
+            allPublic: 'true',
+            excludeUserTrips: 'false',
+            preferImages: 'true',
+            latitude: String(DEFAULT_LAT),
+            longitude: String(DEFAULT_LNG),
+            page: String(listState.page),
+            size: String(PAGE_SIZE)
+        });
+        if (listState.keyword) params.set('keyword', listState.keyword);
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/v1/api/public/trips/search?${params}`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const body = await response.json();
+            // A stale page from a search the visitor has already replaced.
+            if (token !== listState.token) return;
+
+            const batch = Array.isArray(body.data) ? body.data : [];
+            if (isFirstPage) grid.innerHTML = '';
+            listState.trips = listState.trips.concat(batch);
+            listState.page += 1;
+            listState.exhausted = batch.length < PAGE_SIZE;
+            listState.loading = false;
+
+            if (!listState.trips.length) {
+                grid.innerHTML = '';
+                document.getElementById('explore-more').innerHTML = '';
+                grid.insertAdjacentHTML('afterend', `
+                    <div class="explore-empty" id="explore-empty">
+                        <h3>Nothing here yet</h3>
+                        <p>${listState.keyword ? 'No public trip matches that search. Try a different place or word.' : 'No trips have been shared publicly yet. Check back soon.'}</p>
+                    </div>
+                `);
+            } else {
+                const empty = document.getElementById('explore-empty');
+                if (empty) empty.remove();
+                grid.insertAdjacentHTML('beforeend', batch.map(renderTripCard).join(''));
+            }
+
+            renderListStatus();
+            renderLoadMore();
+            initReveal();
+        } catch (error) {
+            console.error('Error loading public trips:', error);
+            if (token !== listState.token) return;
+            listState.loading = false;
+            if (isFirstPage) {
+                grid.innerHTML = '';
+                grid.insertAdjacentHTML('afterend', `
+                    <div class="explore-empty" id="explore-empty">
+                        <h3>Could not load trips</h3>
+                        <p>Something went wrong reaching Ondetour. Check your connection and try again.</p>
+                    </div>
+                `);
+            }
+            renderLoadMore();
+        }
+    }
+
+    async function loadList() {
+        resetPage();
+        document.getElementById('loading').style.display = 'none';
+        document.title = 'Explore public trips | Ondetour';
+        listState = { page: 0, keyword: listState.keyword, trips: [], loading: false, exhausted: false, token: listState.token + 1 };
+        renderListShell();
+        await loadTrips();
+    }
+
 
     function parseLocalDate(dateStr) {
         const [y, m, d] = dateStr.split('-').map(Number);
@@ -559,23 +984,87 @@
         return map[(category || '').toLowerCase()] || { icon: '📍', cls: 'cat-default' };
     }
 
-    function getActivityImages(activity) {
-        const images = [];
-        if (activity.memoryImageUrls && activity.memoryImageUrls.length > 0) images.push(...activity.memoryImageUrls);
-        else if (activity.photoUrl) images.push(activity.photoUrl);
-        return images;
+    /*
+     * A memory is a photo plus what the traveller wrote about it. The backend
+     * sends memoryImageUrlsV2 (rich) alongside the legacy memoryImageUrls
+     * (plain strings); prefer the rich list and fall back so older payloads and
+     * activities that only carry a stock photo still render.
+     */
+    function toMemory(entry) {
+        if (typeof entry === 'string') return { url: entry };
+        if (!entry || !entry.url) return null;
+        return {
+            url: entry.url,
+            title: entry.title || '',
+            description: entry.description || '',
+            uploaderName: entry.uploaderName || '',
+            uploaderAvatarUrl: entry.uploaderAvatarUrl || '',
+            takenAt: entry.takenAt || '',
+            locationName: entry.locationName || ''
+        };
     }
+
+    function getMemories(source) {
+        if (!source) return [];
+        const rich = (source.memoryImageUrlsV2 || []).map(toMemory).filter(Boolean);
+        if (rich.length) return rich;
+        const plain = (source.memoryImageUrls || []).map(toMemory).filter(Boolean);
+        if (plain.length) return plain;
+        return source.photoUrl ? [{ url: source.photoUrl }] : [];
+    }
+
+    function formatMemoryDate(value) {
+        if (!value) return '';
+        const date = new Date(value);
+        if (isNaN(date.getTime())) return '';
+        return date.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    function memoryByline(memory) {
+        const parts = [];
+        if (memory.uploaderName) parts.push(memory.uploaderName);
+        const when = formatMemoryDate(memory.takenAt);
+        if (when) parts.push(when);
+        if (memory.locationName) parts.push(memory.locationName);
+        return parts.join(' · ');
+    }
+
+    function hasMemoryStory(memory) {
+        return Boolean(memory.title || memory.description || memory.uploaderName || memory.takenAt);
+    }
+
+    /** Captions shown under the carousel, for the photos that carry a story. */
+    function renderMemoryNotes(memories) {
+        const told = memories.filter(hasMemoryStory);
+        if (!told.length) return '';
+        return `
+            <div class="memory-list">
+                ${told.map((m, i) => {
+                    const byline = memoryByline(m);
+                    return `
+                        <div class="memory-note">
+                            <img class="memory-note-thumb" src="${escapeHtml(m.url)}" alt="" loading="lazy">
+                            <div class="memory-note-body">
+                                ${m.title ? `<p class="memory-note-caption">${escapeHtml(m.title)}</p>` : ''}
+                                ${m.description ? `<p class="memory-note-desc">${escapeHtml(m.description)}</p>` : ''}
+                                ${byline ? `<p class="memory-note-by">${escapeHtml(byline)}</p>` : ''}
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
 
     function hasLocation(activity) { return (activity.lat && activity.lng) || activity.address; }
 
-    // NOTE: field names for receipt images / split-count aren't confirmed against the backend yet —
-    // this checks a few likely candidates. Tell me the real field names and I'll lock these down.
+    // PublicExpenseResponse carries photoUrlsV2 (rich) and photoUrls (plain).
     function getExpenseImages(e) {
-        return e.imageUrls || e.images || e.receiptUrls || e.receiptImages || e.photoUrls || [];
+        const rich = (e.photoUrlsV2 || []).map(m => m && m.url).filter(Boolean);
+        return rich.length ? rich : (e.photoUrls || []);
     }
-    function getExpenseSplitCount(e) {
-        return e.splitCount ?? e.peopleCount ?? e.numPeople ?? e.splitBetween ?? e.paxCount ?? null;
-    }
+    function getExpenseSplitCount(e) { return e.splitCount ?? null; }
 
     function cleanAddress(address) {
         if (!address) return '';
@@ -611,20 +1100,30 @@
     }
 
     /* ============ image viewer (lightbox) ============ */
-    function openImageViewer(images, index) {
+    function openImageViewer(images, index, metas) {
         if (!images || !images.length) return;
-        viewerState = { images, index: Math.max(0, Math.min(index, images.length - 1)) };
+        viewerState = {
+            images,
+            metas: metas || [],
+            index: Math.max(0, Math.min(index, images.length - 1))
+        };
         updateImageViewer();
         const viewer = document.getElementById('image-viewer');
         viewer.classList.add('image-viewer--open');
         viewer.setAttribute('aria-hidden', 'false');
         document.body.classList.add('image-viewer-open');
     }
-    function openImageViewerFromEl(el) { openImageViewer(JSON.parse(el.dataset.images), Number(el.dataset.index || 0)); }
+    function readMetas(el) {
+        if (!el.dataset.metas) return [];
+        try { return JSON.parse(el.dataset.metas); } catch (e) { return []; }
+    }
+    function openImageViewerFromEl(el) {
+        openImageViewer(JSON.parse(el.dataset.images), Number(el.dataset.index || 0), readMetas(el));
+    }
     function openImageViewerFromCarousel(carouselId) {
         const el = document.getElementById(carouselId);
         if (!el || el.dataset.dragging === '1') return; // swallow the click that follows a swipe
-        openImageViewer(JSON.parse(el.dataset.images), Number(el.dataset.index || 0));
+        openImageViewer(JSON.parse(el.dataset.images), Number(el.dataset.index || 0), readMetas(el));
     }
     function closeImageViewer() {
         const viewer = document.getElementById('image-viewer');
@@ -640,7 +1139,7 @@
         updateImageViewer();
     }
     function updateImageViewer() {
-        const { images, index } = viewerState;
+        const { images, metas, index } = viewerState;
         document.getElementById('viewer-image').src = images[index];
         const counter = document.getElementById('viewer-counter');
         const showNav = images.length > 1;
@@ -648,6 +1147,15 @@
         counter.style.display = showNav ? '' : 'none';
         document.getElementById('viewer-prev').style.display = showNav ? '' : 'none';
         document.getElementById('viewer-next').style.display = showNav ? '' : 'none';
+
+        const caption = document.getElementById('viewer-caption');
+        const memory = (metas || [])[index];
+        if (memory && (memory.title || memory.description || memoryByline(memory))) {
+            const byline = memoryByline(memory);
+            caption.innerHTML = `${escapeHtml(memory.title || memory.description || '')}${byline ? `<span>${escapeHtml(byline)}</span>` : ''}`;
+        } else {
+            caption.innerHTML = '';
+        }
     }
     document.addEventListener('keydown', (e) => {
         const viewer = document.getElementById('image-viewer');
@@ -658,12 +1166,13 @@
     });
 
     /* ============ media (single image / carousel) ============ */
-    function renderMedia(images, id) {
+    function renderMedia(images, id, metas) {
         if (!images.length) return '';
         const imagesAttr = encodeImagesAttr(images);
+        const metasAttr = metas && metas.length ? ` data-metas="${encodeImagesAttr(metas)}"` : '';
         if (images.length === 1) {
             return `
-                <button type="button" class="media-single" data-images="${imagesAttr}" data-index="0"
+                <button type="button" class="media-single" data-images="${imagesAttr}"${metasAttr} data-index="0"
                     onclick="openImageViewerFromEl(this)" aria-label="View image">
                     <img src="${escapeHtml(images[0])}" alt="" loading="lazy">
                     <span class="media-zoom" aria-hidden="true">${ICON_ZOOM}</span>
@@ -672,7 +1181,7 @@
         }
         const carouselId = `carousel-${id}`;
         return `
-            <div class="carousel" id="${carouselId}" data-images="${imagesAttr}" data-index="0">
+            <div class="carousel" id="${carouselId}" data-images="${imagesAttr}"${metasAttr} data-index="0">
                 <div class="carousel-track">
                     ${images.map((url, i) => `
                         <button type="button" class="carousel-slide" aria-label="View image ${i + 1}"
@@ -765,14 +1274,15 @@
         `;
     }
 
-    function renderActivityThumbs(images) {
+    function renderActivityThumbs(images, metas) {
         if (!images.length) return '';
         const visible = images.slice(0, 4);
         const imagesAttr = encodeImagesAttr(images);
+        const metasAttr = metas && metas.length ? ` data-metas="${encodeImagesAttr(metas)}"` : '';
         return `
             <div class="activity-thumbs" aria-label="${images.length} photo${images.length !== 1 ? 's' : ''}">
                 ${visible.map((url, i) => `
-                    <button type="button" class="activity-thumb" data-images="${imagesAttr}" data-index="${i}" onclick="openImageViewerFromEl(this)" aria-label="View image ${i + 1}">
+                    <button type="button" class="activity-thumb" data-images="${imagesAttr}"${metasAttr} data-index="${i}" onclick="openImageViewerFromEl(this)" aria-label="View image ${i + 1}">
                         <img src="${escapeHtml(url)}" alt="" loading="lazy">
                         ${i === visible.length - 1 && images.length > visible.length ? `<span class="activity-thumb-more">+${images.length - visible.length}</span>` : ''}
                     </button>
@@ -829,7 +1339,8 @@
 
     /* ============ activity card ============ */
     function renderActivityCard(activity) {
-        const images = getActivityImages(activity);
+        const memories = getMemories(activity);
+        const images = memories.map(m => m.url);
         const categoryLabel = getCategoryLabel(activity.category);
         const { icon, cls } = getCategoryIcon(activity.category);
         const address = cleanAddress(activity.address);
@@ -863,14 +1374,14 @@
                     ${address ? `<span class="activity-address">${ICON_PIN}<span>${escapeHtml(address)}</span></span>` : ''}
                     ${(hasImages || expenseSummary || mapsBtn || expandBtn) ? `
                         <div class="activity-compact-row">
-                            ${renderActivityThumbs(images)}
+                            ${renderActivityThumbs(images, memories)}
                             ${expenseSummary ? `<span class="activity-cost-chip">${ICON_EXPENSE}<span>${expenseSummary}</span></span>` : ''}
                             ${(mapsBtn || expandBtn) ? `<span class="activity-actions">${mapsBtn}${expandBtn}</span>` : ''}
                         </div>
                     ` : ''}
                     ${hasDetails ? `
                         <div class="activity-more" id="${cardId}-details" hidden>
-                            ${hasImages ? `<div class="activity-media">${renderMedia(images, activity.id || cardId)}</div>` : ''}
+                            ${hasImages ? `<div class="activity-media">${renderMedia(images, activity.id || cardId, memories)}</div>${renderMemoryNotes(memories)}` : ''}
                             ${renderExpenses(activity.expenses, tripData.currency)}
                             ${renderNotes(activity.notes)}
                         </div>
@@ -920,6 +1431,9 @@
                     ? `<img class="hero-img" src="${escapeHtml(trip.coverImageUrl)}" alt="">`
                     : `<div class="hero-img hero-img--placeholder"></div>`}
                 <div class="hero-scrim"></div>
+                <button type="button" class="hero-back" onclick="goToList()" aria-label="Back to all trips">
+                    ${ICON_CHEV_L}<span>All trips</span>
+                </button>
                 <div class="hero-brand">${ICON_PIN_LOGO}<span>Ondetour</span></div>
                 <div class="hero-content">
                     <h1 class="hero-title">${escapeHtml(tripTitle)}</h1>
@@ -948,9 +1462,10 @@
     }
 
     function renderStatsStrip(trip, dayCount, nights) {
+        const activityCount = (trip.activities || []).length || trip.totalActivities || 0;
         const stats = [
             { icon: '📅', value: `${dayCount} day${dayCount !== 1 ? 's' : ''} · ${nights} night${nights !== 1 ? 's' : ''}`, label: 'Duration' },
-            { icon: '🧭', value: `${trip.activities.length}`, label: `Activit${trip.activities.length !== 1 ? 'ies' : 'y'}` }
+            { icon: '🧭', value: `${activityCount}`, label: `Activit${activityCount !== 1 ? 'ies' : 'y'}` }
         ];
         if (trip.totalMembers) stats.push({ icon: '👥', value: `${trip.totalMembers}`, label: `Member${trip.totalMembers !== 1 ? 's' : ''}` });
         return `
@@ -1104,7 +1619,7 @@
     function renderTrip(trip) {
         tripData = trip;
         const content = document.getElementById('content');
-        const activitiesByDay = groupActivitiesByDay(trip.activities);
+        const activitiesByDay = groupActivitiesByDay(trip.activities || []);
         const dayNumbers = getDayNumbers(trip.startDate, trip.endDate);
         const dayCount = getDayCount(trip.startDate, trip.endDate);
         const nights = getNightCount(dayCount);
@@ -1142,8 +1657,10 @@
     }
 
     /* ============ fetch ============ */
-    async function loadTrip() {
-        const tripId = getTripIdFromUrl();
+    async function loadTrip(tripId) {
+        resetPage();
+        document.getElementById('loading').style.display = 'flex';
+        document.title = 'Loading trip… | Ondetour';
         try {
             const response = await fetch(`${API_BASE_URL}/v1/api/public/trips/${tripId}`);
             if (!response.ok) throw new Error('Trip not found');
@@ -1156,12 +1673,19 @@
             }
         } catch (error) {
             console.error('Error loading trip:', error);
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('error').style.display = 'flex';
+            showError('Trip not found', 'This link may have expired, or the trip is no longer shared.');
         }
     }
 
-    loadTrip();
+    /* ============ bootstrap ============ */
+    function renderRoute() {
+        const route = getRoute();
+        if (route.view === 'trip') loadTrip(route.tripId);
+        else loadList();
+    }
+
+    window.addEventListener('popstate', renderRoute);
+    renderRoute();
 </script>
 </body>
 

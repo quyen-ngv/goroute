@@ -23,6 +23,9 @@ public class PassportStampRule {
     private Integer version;
     private String name;
     private String description;
+    /** English copy; blank falls back to the Vietnamese name/description. */
+    private String nameEn;
+    private String descriptionEn;
     private String conditionType;
     private Integer threshold;
     private String icon;

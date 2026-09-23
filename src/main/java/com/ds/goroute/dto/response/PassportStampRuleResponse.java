@@ -13,6 +13,9 @@ public class PassportStampRuleResponse {
     private int version;
     private String name;
     private String description;
+    /** Raw English copy for the operator catalogue; null on traveller-facing reads, which are already localized. */
+    private String nameEn;
+    private String descriptionEn;
     private String conditionType;
     private int threshold;
     private String icon;

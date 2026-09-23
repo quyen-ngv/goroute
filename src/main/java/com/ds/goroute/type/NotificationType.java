@@ -103,6 +103,11 @@ public enum NotificationType {
     MARKETPLACE_CHANGE_ANSWERED,
     // Stay / visit completed; invite the guest to review.
     MARKETPLACE_REVIEW_INVITE,
+    /**
+     * A new message in a marketplace conversation. Coalesced per conversation while the
+     * previous one is still unread, so a lively exchange is not one notification per line.
+     */
+    MARKETPLACE_MESSAGE,
     // Partner organization verification decided by an operator; sent to the owner.
     PARTNER_VERIFICATION_DECIDED,
     // A partner submitted verification documents; sent to operators (optional).

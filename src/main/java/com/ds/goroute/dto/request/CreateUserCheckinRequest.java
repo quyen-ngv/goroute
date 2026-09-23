@@ -91,6 +91,14 @@ public class CreateUserCheckinRequest {
     @ModeratedText(contentType = ModeratedContentType.CHECKIN, visibility = ModerationVisibility.PUBLIC)
     private String caption;
 
+    /**
+     * The day of the visit, for someone posting after they got home. Absent means now.
+     *
+     * <p>It never stands in for GPS: a check-in composed days later is still measured
+     * against where the phone is now, so it lands UNVERIFIED like any other distant one.
+     */
+    private LocalDateTime visitedAt;
+
     /** Optional. A check-in without a rating is a perfectly ordinary check-in. */
     @Min(1)
     @Max(5)

@@ -18,6 +18,9 @@ public class PassportReward {
     private String code;
     private String name;
     private String description;
+    /** English copy; blank falls back to the Vietnamese name/description. */
+    private String nameEn;
+    private String descriptionEn;
     private Integer pointsCost;
     private String requiredStampCode;
     private Integer totalQuantity;

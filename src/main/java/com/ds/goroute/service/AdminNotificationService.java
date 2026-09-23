@@ -19,5 +19,5 @@ public interface AdminNotificationService {
     /** The picker behind "send to these people": matches username, full name and e-mail. */
     PageResponse<AdminNotificationRecipientResponse> searchRecipients(String search, int page, int size);
 
-    PageResponse<AdminNotificationHistoryResponse> history(String search, int page, int size);
+    PageResponse<AdminNotificationHistoryResponse> history(String search, String sort, boolean descending, int page, int size);
 }

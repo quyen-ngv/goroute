@@ -23,7 +23,7 @@ public class HotelMarketplaceRepositoryImpl implements HotelMarketplaceRepositor
     @Override public List<HotelProfile> findHotelsPublic(String q,String t,BigDecimal min,BigDecimal max,LocalDate in,LocalDate out,int rooms,int adults,int children,int l,int o){return mapper.findHotelsPublic(q,t,min,max,in,out,rooms,adults,children,l,o);}
     @Override public int updateBookingStay(UUID id,long v,LocalDate in,LocalDate out,int a,int c,BigDecimal sub,BigDecimal total,String snap,UUID actor,LocalDateTime now){return mapper.updateBookingStay(id,v,in,out,a,c,sub,total,snap,actor,now);}
     @Override public int updateBookingItemStay(UUID id,int a,int c,BigDecimal unit,BigDecimal total){return mapper.updateBookingItemStay(id,a,c,unit,total);}
-    @Override public List<HotelProfile> findHotelsAdmin(String q,String s,int l,int o){return mapper.findHotelsAdmin(q,s,l,o);}
+    @Override public List<HotelProfile> findHotelsAdmin(String q,List<String> s,List<String> type,List<UUID> areas,String sort,boolean desc,int l,int o){return mapper.findHotelsAdmin(q,s,type,areas,sort,desc,l,o);}
     @Override public int insertRoomType(RoomType v){return mapper.insertRoomType(v);} @Override public int updateRoomType(RoomType v){return mapper.updateRoomType(v);}
     @Override public Optional<RoomType> findRoomType(UUID id){return Optional.ofNullable(mapper.findRoomTypeById(id));}
     @Override public List<RoomType> findRoomTypes(UUID id,boolean x){return mapper.findRoomTypesByHotel(id,x);}
@@ -51,7 +51,7 @@ public class HotelMarketplaceRepositoryImpl implements HotelMarketplaceRepositor
     @Override public List<HotelBooking> findBookingsByUser(UUID u,int l,int o){return mapper.findBookingsByUser(u,l,o);}
     @Override public List<HotelBooking> findBookingsByOrganization(UUID o,String s,List<UUID> h,int l,int off){return mapper.findBookingsByOrganization(o,s,h,l,off);}
     @Override public long countBookingsByOrganizationFiltered(UUID o,String s,List<UUID> h){return mapper.countBookingsByOrganizationFiltered(o,s,h);}
-    @Override public List<HotelBooking> findBookingsAdmin(String q,String s,int l,int o){return mapper.findBookingsAdmin(q,s,l,o);}
+    @Override public List<HotelBooking> findBookingsAdmin(String q,List<String> s,List<String> pay,String sort,boolean desc,int l,int o){return mapper.findBookingsAdmin(q,s,pay,sort,desc,l,o);}
     @Override public int updateBookingStatus(UUID id,long v,String s,String p,String r,Boolean g,LocalDateTime c,UUID a,LocalDateTime n){return mapper.updateBookingStatus(id,v,s,p,r,c,g,a,n);}
     @Override public long countBookingsByOrganization(UUID o,String s){return mapper.countBookingsByOrganization(o,s);}
     @Override public long countArrivals(UUID o,LocalDate d){return mapper.countArrivals(o,d);}

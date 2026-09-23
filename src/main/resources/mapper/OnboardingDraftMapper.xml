@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.partneronboarding.persistence.OnboardingDraftMapper">
+
+    <resultMap id="DraftMap" type="com.ds.goroute.partneronboarding.domain.OnboardingDraft">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="organizationId" column="organization_id"/>
+        <result property="listingKind" column="listing_kind"/>
+        <result property="status" column="status"/>
+        <result property="currentStep" column="current_step"/>
+        <result property="completedSteps" column="completed_steps"/>
+        <result property="data" column="data"/>
+        <result property="resultHotelId" column="result_hotel_id"/>
+        <result property="resultActivityId" column="result_activity_id"/>
+        <result property="submittedAt" column="submitted_at"/>
+        <result property="dataVersion" column="data_version"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <!-- `data` and `completed_steps` are JSONB; the driver needs the cast to accept a String. -->
+    <sql id="Columns">
+        id, user_id, organization_id, listing_kind, status, current_step,
+        completed_steps, data, result_hotel_id, result_activity_id,
+        submitted_at, data_version, created_at, updated_at
+    </sql>
+
+    <insert id="insert">
+        INSERT INTO partner_onboarding_drafts (
+            id, user_id, organization_id, listing_kind, status, current_step,
+            completed_steps, data, data_version, created_at, updated_at
+        ) VALUES (
+            #{id}, #{userId}, #{organizationId}, #{listingKind}, #{status}, #{currentStep},
+            #{completedSteps}::jsonb, #{data}::jsonb, #{dataVersion}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <select id="findById" resultMap="DraftMap">
+        SELECT <include refid="Columns"/>
+        FROM partner_onboarding_drafts
+        WHERE id = #{id}
+    </select>
+
+    <select id="findByUser" resultMap="DraftMap">
+        SELECT <include refid="Columns"/>
+        FROM partner_onboarding_drafts
+        <where>
+            user_id = #{userId}
+            <if test="status != null">AND status = #{status}</if>
+        </where>
+        ORDER BY updated_at DESC, id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countByUser" resultType="long">
+        SELECT COUNT(*)
+        FROM partner_onboarding_drafts
+        <where>
+            user_id = #{userId}
+            <if test="status != null">AND status = #{status}</if>
+        </where>
+    </select>
+
+    <update id="updateStep">
+        UPDATE partner_onboarding_drafts
+        SET current_step = #{currentStep},
+            completed_steps = #{completedSteps}::jsonb,
+            data = #{data}::jsonb,
+            data_version = data_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{id} AND data_version = #{expectedVersion} AND status = 'DRAFT'
+    </update>
+
+    <update id="updateOrganization">
+        UPDATE partner_onboarding_drafts
+        SET organization_id = #{organizationId},
+            data_version = data_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{id} AND data_version = #{expectedVersion} AND status = 'DRAFT'
+    </update>
+
+    <update id="updateStatus">
+        UPDATE partner_onboarding_drafts
+        SET status = #{status},
+            result_hotel_id = #{resultHotelId},
+            result_activity_id = #{resultActivityId},
+            submitted_at = #{submittedAt},
+            data_version = data_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{id} AND data_version = #{expectedVersion} AND status = 'DRAFT'
+    </update>
+
+</mapper>

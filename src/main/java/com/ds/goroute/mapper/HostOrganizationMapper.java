@@ -28,7 +28,11 @@ public interface HostOrganizationMapper {
     HostOrganization findOrganizationById(@Param("id") UUID id);
     List<HostOrganization> findOrganizationsForUser(@Param("userId") UUID userId);
     List<HostOrganization> findOrganizationsAdmin(@Param("query") String query,
-                                                  @Param("status") String status,
+                                                  @Param("status") List<String> status,
+                                                  @Param("organizationType") List<String> organizationType,
+                                                  @Param("verificationStatus") List<String> verificationStatus,
+                                                  @Param("sort") String sort,
+                                                  @Param("descending") boolean descending,
                                                   @Param("limit") int limit,
                                                   @Param("offset") int offset);
     OrganizationMember findMember(@Param("organizationId") UUID organizationId,

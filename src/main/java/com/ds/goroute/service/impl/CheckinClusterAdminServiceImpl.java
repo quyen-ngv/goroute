@@ -55,6 +55,8 @@ public class CheckinClusterAdminServiceImpl implements CheckinClusterAdminServic
     private final ReviewScoringService scoringService;
     private final NotificationService notificationService;
     private final BusinessConfigService config;
+    private final com.ds.goroute.service.GeoService geoService;
+    private final com.ds.goroute.service.checkin.CheckinVerifier verifier;
 
     @Override
     @Transactional(readOnly = true)
@@ -99,6 +101,7 @@ public class CheckinClusterAdminServiceImpl implements CheckinClusterAdminServic
                 .updatedAt(LocalDateTime.now())
                 .build();
         placeRepository.insert(place);
+        geoService.assignPlaceWard(place.getId());
 
         attachClusterToPlace(locationKey, place.getId());
         recordDecision(locationKey, CheckinClusterDecisionStatus.PROMOTED, place.getId(),
@@ -157,6 +160,7 @@ public class CheckinClusterAdminServiceImpl implements CheckinClusterAdminServic
      */
     private void attachClusterToPlace(String locationKey, UUID placeId) {
         checkinRepository.attachPlaceToCluster(locationKey, placeId);
+        reverifyAgainstPlace(locationKey, placeId);
 
         for (UserCheckin rated : checkinRepository.findLatestRatedPerUserForLocationKey(locationKey)) {
             List<String> photoUrls = checkinRepository.findPhotos(rated.getId()).stream()
@@ -167,6 +171,30 @@ public class CheckinClusterAdminServiceImpl implements CheckinClusterAdminServic
             notifyRatingIsNowPublic(rated, placeId);
         }
         scoringService.recalculatePlaceScores(placeId);
+    }
+
+    /**
+     * Promoting a cluster gives every check-in in it a place, so every one of them is
+     * judged again against that place.
+     *
+     * <p>Without this they would keep the verdict they were given when there was nothing
+     * to measure against -- a camera photo taken inside the new place's radius would stay
+     * ward-level or unverified for ever, which is the same defect the single-check-in
+     * reassignment had. A gallery photo still ends up unverified; the rules are unchanged,
+     * only the place they are applied to is new.
+     */
+    private void reverifyAgainstPlace(String locationKey, UUID placeId) {
+        Place place = placeRepository.findById(placeId).orElse(null);
+        if (place == null) {
+            return;
+        }
+        List<UserCheckin> attached = checkinRepository.findByLocationKeyAndPlace(locationKey, placeId);
+        for (UserCheckin checkin : attached) {
+            verifier.apply(checkin, place);
+            checkinRepository.updateVerification(checkin);
+        }
+        log.info("Re-verified {} check-in(s) of cluster {} against place {}",
+                attached.size(), locationKey, placeId);
     }
 
     /**

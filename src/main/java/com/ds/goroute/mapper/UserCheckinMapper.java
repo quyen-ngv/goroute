@@ -20,6 +20,11 @@ public interface UserCheckinMapper {
 
     int update(UserCheckin checkin);
 
+    int updateVerification(UserCheckin checkin);
+
+    List<com.ds.goroute.dto.response.VisitedWardResponse> findVisitedWards(@Param("userId") UUID userId,
+                                                                           @Param("includePrivate") boolean includePrivate);
+
     UserCheckin findById(@Param("id") UUID id);
 
     /** Resolves a repeated submit of the same composition back to the row it created. */
@@ -67,6 +72,9 @@ public interface UserCheckinMapper {
      * most recent opinion is the one that becomes the review.
      */
     List<UserCheckin> findLatestRatedPerUserForLocationKey(@Param("locationKey") String locationKey);
+
+    List<UserCheckin> findByLocationKeyAndPlace(@Param("locationKey") String locationKey,
+                                                @Param("placeId") UUID placeId);
 
     int markRemoved(@Param("id") UUID id, @Param("userId") UUID userId);
 

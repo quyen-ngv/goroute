@@ -153,7 +153,8 @@
                e.description AS expense_description, es.amount, e.currency, es.user_id AS counterpart_user_id,
                es.guest_member_id AS counterpart_guest_member_id,
                COALESCE(split_user.full_name, split_user.username, split_member.guest_name, es.guest_name, 'Guest') AS counterpart_display_name,
-               split_user.avatar_url AS counterpart_avatar_url, e.created_at
+               split_user.avatar_url AS counterpart_avatar_url,
+               COALESCE(e.expense_date, e.created_at) AS created_at
         FROM accessible_expenses e
         INNER JOIN trips t ON t.id = e.trip_id
         INNER JOIN expense_splits es ON es.expense_id = e.id
@@ -163,7 +164,7 @@
           AND e.paid_by_guest_member_id IS NULL
           AND es.is_settled = FALSE
           AND es.user_id IS DISTINCT FROM #{userId,javaType=java.util.UUID,jdbcType=OTHER}
-        ORDER BY e.created_at DESC, es.id DESC
+        ORDER BY COALESCE(e.expense_date, e.created_at) DESC, es.id DESC
         LIMIT #{limit}
     </select>
 
@@ -174,7 +175,8 @@
                CASE WHEN e.paid_by_guest_member_id IS NULL THEN e.paid_by ELSE NULL END AS counterpart_user_id,
                e.paid_by_guest_member_id AS counterpart_guest_member_id,
                COALESCE(paid_user.full_name, paid_user.username, payer_member.guest_name, e.paid_by_guest_name, 'Guest') AS counterpart_display_name,
-               paid_user.avatar_url AS counterpart_avatar_url, e.created_at
+               paid_user.avatar_url AS counterpart_avatar_url,
+               COALESCE(e.expense_date, e.created_at) AS created_at
         FROM accessible_expenses e
         INNER JOIN trips t ON t.id = e.trip_id
         INNER JOIN expense_splits es ON es.expense_id = e.id
@@ -183,14 +185,14 @@
         WHERE es.user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
           AND es.is_settled = FALSE
           AND e.paid_by IS DISTINCT FROM #{userId,javaType=java.util.UUID,jdbcType=OTHER}
-        ORDER BY e.created_at DESC, es.id DESC
+        ORDER BY COALESCE(e.expense_date, e.created_at) DESC, es.id DESC
         LIMIT #{limit}
     </select>
 
     <select id="selectExpenses" resultMap="ExpenseRowMap">
         WITH accessible_expenses AS (<include refid="AccessibleExpenses"/>),
         paged_expenses AS (
-            SELECT * FROM accessible_expenses ORDER BY created_at DESC, id DESC
+            SELECT * FROM accessible_expenses ORDER BY COALESCE(expense_date, created_at) DESC, id DESC
             LIMIT #{limit} OFFSET #{offset}
         )
         SELECT e.id AS expense_id, e.trip_id, t.name AS trip_name, e.amount, e.currency, e.category,
@@ -198,7 +200,8 @@
                CASE WHEN e.paid_by_guest_member_id IS NULL THEN e.paid_by ELSE NULL END AS paid_by_user_id,
                e.paid_by_guest_member_id, e.paid_by_guest_name,
                COALESCE(paid_user.full_name, paid_user.username, payer_member.guest_name, e.paid_by_guest_name, 'Guest') AS paid_by_display_name,
-               paid_user.avatar_url AS paid_by_avatar_url, e.created_at,
+               paid_user.avatar_url AS paid_by_avatar_url,
+               COALESCE(e.expense_date, e.created_at) AS created_at,
                es.id AS split_id, es.user_id AS split_user_id, es.guest_member_id AS split_guest_member_id,
                es.guest_name AS split_guest_name,
                COALESCE(split_user.full_name, split_user.username, split_member.guest_name, es.guest_name, 'Guest') AS split_display_name,
@@ -211,7 +214,7 @@
         LEFT JOIN expense_splits es ON es.expense_id = e.id
         LEFT JOIN users split_user ON split_user.id = es.user_id
         LEFT JOIN trip_members split_member ON split_member.id = es.guest_member_id
-        ORDER BY e.created_at DESC, e.id DESC, es.id
+        ORDER BY COALESCE(e.expense_date, e.created_at) DESC, e.id DESC, es.id
     </select>
 
     <select id="countExpenses" resultType="long">

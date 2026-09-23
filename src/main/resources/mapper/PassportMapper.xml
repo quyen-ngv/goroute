@@ -27,6 +27,7 @@
         <result property="latitude" column="latitude"/>
         <result property="longitude" column="longitude"/>
         <result property="provinceCode" column="province_code"/>
+        <result property="wardCode" column="ward_code"/>
         <result property="occurredAt" column="occurred_at"/>
         <result property="isVerified" column="is_verified"/>
         <result property="isHidden" column="is_hidden"/>
@@ -38,6 +39,8 @@
         <id property="version" column="version"/>
         <result property="name" column="name"/>
         <result property="description" column="description"/>
+        <result property="nameEn" column="name_en"/>
+        <result property="descriptionEn" column="description_en"/>
         <result property="conditionType" column="condition_type"/>
         <result property="threshold" column="threshold"/>
         <result property="icon" column="icon"/>
@@ -51,6 +54,8 @@
         <result property="code" column="code"/>
         <result property="name" column="name"/>
         <result property="description" column="description"/>
+        <result property="nameEn" column="name_en"/>
+        <result property="descriptionEn" column="description_en"/>
         <result property="pointsCost" column="points_cost"/>
         <result property="requiredStampCode" column="required_stamp_code"/>
         <result property="totalQuantity" column="total_quantity"/>
@@ -75,6 +80,8 @@
         <result property="code" column="code"/>
         <result property="name" column="name"/>
         <result property="description" column="description"/>
+        <result property="nameEn" column="name_en"/>
+        <result property="descriptionEn" column="description_en"/>
         <result property="coverImageUrl" column="cover_image_url"/>
         <result property="isActive" column="is_active"/>
         <result property="displayOrder" column="display_order"/>
@@ -87,9 +94,12 @@
         <result property="passportId" column="passport_id"/>
         <result property="passportCode" column="passport_code"/>
         <result property="passportName" column="passport_name"/>
+        <result property="passportNameEn" column="passport_name_en"/>
         <result property="code" column="code"/>
         <result property="name" column="name"/>
         <result property="description" column="description"/>
+        <result property="nameEn" column="name_en"/>
+        <result property="descriptionEn" column="description_en"/>
         <result property="imageUrl" column="image_url"/>
         <result property="qualificationMode" column="qualification_mode"/>
         <result property="requiredCheckinCount" column="required_checkin_count"/>
@@ -163,10 +173,10 @@
     <insert id="insertEvent" parameterType="com.ds.goroute.entity.PassportEvent">
         INSERT INTO passport_events
             (id, user_id, source, source_id, place_id, checkin_id, location_key, location_name,
-             latitude, longitude, province_code, occurred_at, is_verified, is_hidden, created_at)
+             latitude, longitude, province_code, ward_code, occurred_at, is_verified, is_hidden, created_at)
         VALUES
             (#{id}, #{userId}, #{source}, #{sourceId}, #{placeId}, #{checkinId}, #{locationKey},
-             #{locationName}, #{latitude}, #{longitude}, #{provinceCode}, #{occurredAt}, #{isVerified}, #{isHidden}, #{createdAt})
+             #{locationName}, #{latitude}, #{longitude}, #{provinceCode}, #{wardCode}, #{occurredAt}, #{isVerified}, #{isHidden}, #{createdAt})
         ON CONFLICT (source, source_id) DO NOTHING
     </insert>
 
@@ -204,7 +214,9 @@
         UPDATE passport_events
         SET place_id = #{placeId},
             location_key = #{locationKey},
-            province_code = COALESCE(#{provinceCode}, province_code)
+            province_code = COALESCE(#{provinceCode}, province_code),
+            ward_code = COALESCE(#{wardCode}, ward_code),
+            is_verified = COALESCE(#{isVerified}, is_verified)
         WHERE id = #{id}
     </update>
 
@@ -295,6 +307,7 @@
         ), event_points AS (
             SELECT e.id,
                    e.user_id,
+                   COALESCE(e.ward_code, p.ward_code) AS ward_code,
                    COALESCE(e.latitude, p.latitude) AS latitude,
                    COALESCE(e.longitude, p.longitude) AS longitude
             FROM passport_events e
@@ -312,13 +325,19 @@
         FROM anchors a
         LEFT JOIN event_points e
           ON e.user_id = #{userId}
-         AND e.latitude IS NOT NULL
-         AND e.longitude IS NOT NULL
-         AND 6371 * acos(LEAST(1, GREATEST(-1,
-               cos(radians(a.latitude)) * cos(radians(e.latitude)) *
-               cos(radians(e.longitude) - radians(a.longitude)) +
-               sin(radians(a.latitude)) * sin(radians(e.latitude))
-             ))) &lt;= #{radiusKm}
+         AND (
+              -- An area defined by wards counts a visit in any of them, whatever the distance.
+              (e.ward_code IS NOT NULL AND EXISTS (
+                  SELECT 1 FROM location_image_wards liw
+                  WHERE liw.location_image_id = a.id AND liw.ward_code = e.ward_code))
+              OR (
+                  e.latitude IS NOT NULL
+                  AND e.longitude IS NOT NULL
+                  AND 6371 * acos(LEAST(1, GREATEST(-1,
+                        cos(radians(a.latitude)) * cos(radians(e.latitude)) *
+                        cos(radians(e.longitude) - radians(a.longitude)) +
+                        sin(radians(a.latitude)) * sin(radians(e.latitude))
+                      ))) &lt;= #{radiusKm}))
         GROUP BY a.id, a.full_address, a.image_url, a.latitude, a.longitude
         ORDER BY a.full_address, a.id
     </select>
@@ -339,15 +358,16 @@
 
     <insert id="insertStampRule" parameterType="com.ds.goroute.entity.PassportStampRule">
         INSERT INTO passport_stamp_rules
-            (code, version, name, description, condition_type, threshold, icon, reward_points, is_active, created_at)
+            (code, version, name, description, name_en, description_en, condition_type, threshold, icon, reward_points, is_active, created_at)
         VALUES
-            (#{code}, #{version}, #{name}, #{description}, #{conditionType}, #{threshold}, #{icon},
+            (#{code}, #{version}, #{name}, #{description}, #{nameEn}, #{descriptionEn}, #{conditionType}, #{threshold}, #{icon},
              #{rewardPoints}, #{isActive}, #{createdAt})
     </insert>
 
     <update id="updateStampRule" parameterType="com.ds.goroute.entity.PassportStampRule">
         UPDATE passport_stamp_rules
-        SET name = #{name}, description = #{description}, condition_type = #{conditionType},
+        SET name = #{name}, description = #{description}, name_en = #{nameEn}, description_en = #{descriptionEn},
+            condition_type = #{conditionType},
             threshold = #{threshold}, icon = #{icon}, reward_points = #{rewardPoints}, is_active = #{isActive}
         WHERE code = #{code} AND version = #{version}
     </update>
@@ -440,7 +460,7 @@
     </select>
 
     <select id="findPassportTagsForPlace" resultMap="tagMap">
-        SELECT DISTINCT t.*, d.code AS passport_code, d.name AS passport_name,
+        SELECT DISTINCT t.*, d.code AS passport_code, d.name AS passport_name, d.name_en AS passport_name_en,
                upt.awarded_at, upt.triggering_event_id
         FROM passport_tags t
         JOIN passport_definitions d ON d.id = t.passport_id AND d.is_active = TRUE
@@ -618,7 +638,7 @@
     </insert>
 
     <select id="findEarnedTagsByUser" resultMap="tagMap">
-        SELECT t.*, d.code AS passport_code, d.name AS passport_name,
+        SELECT t.*, d.code AS passport_code, d.name AS passport_name, d.name_en AS passport_name_en,
                upt.awarded_at, upt.triggering_event_id
         FROM user_passport_tags upt
         JOIN passport_tags t ON t.id = upt.passport_tag_id
@@ -641,15 +661,17 @@
 
     <insert id="insertPassportDefinition" parameterType="com.ds.goroute.entity.PassportDefinition">
         INSERT INTO passport_definitions
-            (id, code, name, description, cover_image_url, is_active, display_order, created_at, updated_at)
+            (id, code, name, description, name_en, description_en, cover_image_url, is_active, display_order,
+             created_at, updated_at)
         VALUES
-            (#{id}, #{code}, #{name}, #{description}, #{coverImageUrl}, #{isActive}, #{displayOrder},
+            (#{id}, #{code}, #{name}, #{description}, #{nameEn}, #{descriptionEn}, #{coverImageUrl}, #{isActive}, #{displayOrder},
              #{createdAt}, #{updatedAt})
     </insert>
 
     <update id="updatePassportDefinition" parameterType="com.ds.goroute.entity.PassportDefinition">
         UPDATE passport_definitions
         SET code = #{code}, name = #{name}, description = #{description},
+            name_en = #{nameEn}, description_en = #{descriptionEn},
             cover_image_url = #{coverImageUrl}, is_active = #{isActive},
             display_order = #{displayOrder}, updated_at = #{updatedAt}
         WHERE id = #{id}
@@ -710,7 +732,7 @@
     </insert>
 
     <select id="findPassportTags" resultMap="tagMap">
-        SELECT t.*, d.code AS passport_code, d.name AS passport_name
+        SELECT t.*, d.code AS passport_code, d.name AS passport_name, d.name_en AS passport_name_en
         FROM passport_tags t
         JOIN passport_definitions d ON d.id = t.passport_id
         <if test="!includeInactive">WHERE t.is_active = TRUE</if>
@@ -718,17 +740,17 @@
     </select>
 
     <select id="findPassportTag" resultMap="tagMap">
-        SELECT t.*, d.code AS passport_code, d.name AS passport_name
+        SELECT t.*, d.code AS passport_code, d.name AS passport_name, d.name_en AS passport_name_en
         FROM passport_tags t JOIN passport_definitions d ON d.id = t.passport_id
         WHERE t.id = #{id}
     </select>
 
     <insert id="insertPassportTag" parameterType="com.ds.goroute.entity.PassportTag">
         INSERT INTO passport_tags
-            (id, passport_id, code, name, description, image_url,
+            (id, passport_id, code, name, description, name_en, description_en, image_url,
              qualification_mode, required_checkin_count, is_active, display_order, created_at, updated_at)
         VALUES
-            (#{id}, #{passportId}, #{code}, #{name}, #{description}, #{imageUrl},
+            (#{id}, #{passportId}, #{code}, #{name}, #{description}, #{nameEn}, #{descriptionEn}, #{imageUrl},
              #{qualificationMode}, #{requiredCheckinCount}, #{isActive}, #{displayOrder},
              #{createdAt}, #{updatedAt})
     </insert>
@@ -736,6 +758,7 @@
     <update id="updatePassportTag" parameterType="com.ds.goroute.entity.PassportTag">
         UPDATE passport_tags
         SET passport_id = #{passportId}, code = #{code}, name = #{name}, description = #{description},
+            name_en = #{nameEn}, description_en = #{descriptionEn},
             image_url = #{imageUrl}, qualification_mode = #{qualificationMode}, province_code = NULL,
             required_checkin_count = #{requiredCheckinCount},
             is_active = #{isActive}, display_order = #{displayOrder}, updated_at = #{updatedAt}
@@ -774,16 +797,17 @@
 
     <insert id="insertPassportReward" parameterType="com.ds.goroute.entity.PassportReward">
         INSERT INTO passport_rewards
-            (id, code, name, description, points_cost, required_stamp_code, total_quantity,
+            (id, code, name, description, name_en, description_en, points_cost, required_stamp_code, total_quantity,
              issued_quantity, valid_days, is_active, created_at, updated_at)
         VALUES
-            (#{id}, #{code}, #{name}, #{description}, #{pointsCost}, #{requiredStampCode}, #{totalQuantity},
+            (#{id}, #{code}, #{name}, #{description}, #{nameEn}, #{descriptionEn}, #{pointsCost}, #{requiredStampCode}, #{totalQuantity},
              0, #{validDays}, #{isActive}, #{createdAt}, #{updatedAt})
     </insert>
 
     <update id="updatePassportReward" parameterType="com.ds.goroute.entity.PassportReward">
         UPDATE passport_rewards
-        SET code = #{code}, name = #{name}, description = #{description}, points_cost = #{pointsCost},
+        SET code = #{code}, name = #{name}, description = #{description}, name_en = #{nameEn},
+            description_en = #{descriptionEn}, points_cost = #{pointsCost},
             required_stamp_code = #{requiredStampCode}, total_quantity = #{totalQuantity},
             valid_days = #{validDays}, is_active = #{isActive}, updated_at = #{updatedAt}
         WHERE id = #{id}

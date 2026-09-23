@@ -66,6 +66,7 @@ class ModeratedFieldCoverageTest {
 
             // Reporting and preview paths: filtering these would filter the complaint.
             Map.entry("ReportContentRequest.note", "The reporter describes the violation; filtering it would silence the report"),
+            Map.entry("BlockUserRequest.reason", "The blocker's own note about why; filtering it would filter the complaint"),
             Map.entry("ModerationPreviewRequest.text", "This IS the filter being asked for its opinion"),
 
             // Bulk import from external sources. Blocking mid-import would abort a batch of

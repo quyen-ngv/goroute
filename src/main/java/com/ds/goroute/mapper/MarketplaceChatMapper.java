@@ -4,7 +4,7 @@ import com.ds.goroute.entity.*;import org.apache.ibatis.annotations.*;import jav
 public interface MarketplaceChatMapper {
  int insertConversation(MarketplaceConversation v);int insertMember(@Param("conversationId")UUID c,@Param("userId")UUID u,@Param("role")String r,@Param("joinedAt")LocalDateTime j);
  MarketplaceConversation findConversation(@Param("id")UUID id,@Param("viewerId")UUID viewerId);MarketplaceConversation findByHotelBooking(@Param("id")UUID id,@Param("viewerId")UUID viewerId);MarketplaceConversation findByActivityOrder(@Param("id")UUID id,@Param("viewerId")UUID viewerId);
- List<MarketplaceConversation> findForUser(@Param("userId")UUID userId,@Param("limit")int limit,@Param("offset")int offset);List<MarketplaceConversation> findForOrganization(@Param("organizationId")UUID org,@Param("viewerId")UUID viewerId,@Param("status")String status,@Param("limit")int limit,@Param("offset")int offset);List<MarketplaceConversation> findAdmin(@Param("query")String query,@Param("status")String status,@Param("limit")int limit,@Param("offset")int offset);
+ List<MarketplaceConversation> findForUser(@Param("userId")UUID userId,@Param("limit")int limit,@Param("offset")int offset);List<MarketplaceConversation> findForOrganization(@Param("organizationId")UUID org,@Param("viewerId")UUID viewerId,@Param("status")String status,@Param("limit")int limit,@Param("offset")int offset);List<MarketplaceConversation> findAdmin(@Param("query")String query,@Param("status")List<String> status,@Param("conversationType")List<String> conversationType,@Param("sort")String sort,@Param("descending")boolean descending,@Param("limit")int limit,@Param("offset")int offset);
  List<MarketplaceConversation> findForOrganizationAccessible(@Param("organizationId")UUID org,@Param("viewerId")UUID viewerId,@Param("status")String status,@Param("hotelIds")List<UUID> hotelIds,@Param("activityBookingIds")List<UUID> activityBookingIds,@Param("limit")int limit,@Param("offset")int offset);
  List<UUID> findOrganizationChatHotelIds(@Param("organizationId")UUID org);List<UUID> findOrganizationChatActivityBookingIds(@Param("organizationId")UUID org);
  boolean canAccess(@Param("conversationId")UUID c,@Param("userId")UUID u);UUID lockConversation(@Param("id")UUID id);long nextSequence(@Param("id")UUID id);
@@ -15,4 +15,13 @@ public interface MarketplaceChatMapper {
  int softDeleteMessage(@Param("conversationId")UUID conversationId,@Param("messageId")UUID messageId,@Param("at")LocalDateTime at);
  long countUnreadForOrganization(@Param("organizationId")UUID organizationId,@Param("viewerId")UUID viewerId);
  long countOpenForOrganization(@Param("organizationId")UUID organizationId);
+ /**
+  * A direct conversation whose active members are exactly {@code userIds}, under the same
+  * organization (or none). Used to reuse the existing thread instead of opening a new one
+  * every time someone taps Message.
+  */
+ MarketplaceConversation findDirectByMembers(@Param("userIds")java.util.List<UUID> userIds,@Param("memberCount")int memberCount,@Param("organizationId")UUID organizationId);
+
+ /** Members of a conversation with their display profile, joined order. */
+ java.util.List<MarketplaceConversationParticipant> findParticipants(@Param("conversationIds")java.util.List<UUID> conversationIds);
 }

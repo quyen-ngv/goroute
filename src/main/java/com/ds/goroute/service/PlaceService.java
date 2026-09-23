@@ -48,7 +48,9 @@ public interface PlaceService {
      */
     Map<String, Object> getDetailRefreshCandidates(UUID placeId, boolean includeInactive, Integer maxPlaces);
 
-    AdminPlacePageResponse getAdminPlaces(String search, List<String> placeGroups, int page, int size);
+    AdminPlacePageResponse getAdminPlaces(String search, List<String> placeGroups, List<String> visibilityStatus,
+                                          List<String> trustLevel, List<java.util.UUID> locationImageIds,
+                                          String sort, boolean descending, int page, int size);
 
     AdminPlaceResponse getAdminPlaceById(UUID id);
 

@@ -31,6 +31,12 @@ public class PartnerHotelController {
     private final BookingChangeRequestService changeRequests;
     @GetMapping public ResponseEntity<BaseResponse<List<HotelProfileResponse>>> hotels(Authentication a,@RequestParam UUID organizationId){return ResponseEntity.ok(BaseResponse.ofSucceeded(service.partnerListHotels(user(a),organizationId)));}
     @PostMapping public ResponseEntity<BaseResponse<HotelProfileResponse>> create(Authentication a,@Valid @RequestBody UpsertHotelRequest r){return ResponseEntity.status(HttpStatus.CREATED).body(BaseResponse.ofSucceeded(service.partnerCreateHotel(user(a),r)));}
+    /**
+     * One property by id. A deep link — a push notification, a bookmarked workspace tab, the
+     * app opening a listing it has never listed — has an id and nothing else; without this it
+     * had to fetch every property of the organization and search it client-side.
+     */
+    @GetMapping("/{hotelId}") public ResponseEntity<BaseResponse<HotelProfileResponse>> hotel(Authentication a,@PathVariable UUID hotelId){return ResponseEntity.ok(BaseResponse.ofSucceeded(service.partnerGetHotel(user(a),hotelId)));}
     @PutMapping("/{hotelId}") public ResponseEntity<BaseResponse<HotelProfileResponse>> update(Authentication a,@PathVariable UUID hotelId,@Valid @RequestBody UpsertHotelRequest r){return ResponseEntity.ok(BaseResponse.ofSucceeded(service.partnerUpdateHotel(user(a),hotelId,r)));}
     /**
      * Hotel media goes through the shared upload door (MOD-05). The hand-written type and

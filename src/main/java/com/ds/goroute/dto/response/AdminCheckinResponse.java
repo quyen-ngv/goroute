@@ -1,6 +1,8 @@
 package com.ds.goroute.dto.response;
 
 import com.ds.goroute.type.CheckinLocationSource;
+import com.ds.goroute.type.CheckinVerificationScope;
+import com.ds.goroute.type.CheckinVerificationStatus;
 import com.ds.goroute.type.ContentVisibility;
 import lombok.Builder;
 import lombok.Data;
@@ -43,6 +45,12 @@ public class AdminCheckinResponse {
 
     /** True when an operator has already moved this check-in at least once. */
     private boolean locationReassigned;
+
+    private CheckinVerificationStatus verificationStatus;
+    private CheckinVerificationScope verificationScope;
+    private BigDecimal distanceMeters;
+    private BigDecimal accuracyMeters;
+    private String wardCode;
 
     private String caption;
     private List<String> photoUrls;

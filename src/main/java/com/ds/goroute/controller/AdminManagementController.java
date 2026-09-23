@@ -10,6 +10,7 @@ import com.ds.goroute.mapper.AdminMapper;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.type.AuthProvider;
 import com.ds.goroute.service.UserAccountService;
+import com.ds.goroute.utils.AdminListSort;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -27,16 +28,28 @@ public class AdminManagementController {
     private final PasswordEncoder encoder;
     private final UserAccountService userAccountService;
 
+    /** Columns the console may order the account list by; anything else falls back to newest first. */
+    private static final Set<String> USER_SORT_FIELDS = Set.of(
+            "full_name", "username", "device_count", "trip_count", "checkin_count",
+            "review_count", "last_login_at", "created_at");
+
     @GetMapping("/users")
     @PreAuthorize("@adminAuthorization.can(authentication,'users','get')")
     public BaseResponse<PageResponse<Map<String,Object>>> users(@RequestParam(defaultValue="") String search,
+                                                                @RequestParam(required=false) List<String> accountStatus,
+                                                                @RequestParam(required=false) List<String> provider,
+                                                                @RequestParam(required=false) List<String> role,
+                                                                @RequestParam(required=false) String sort,
+                                                                @RequestParam(required=false) String direction,
                                                                 @RequestParam(defaultValue="0") int page,
                                                                 @RequestParam(defaultValue="20") int size) {
         int safeSize = Math.min(Math.max(size, 1), 100);
         int safePage = Math.max(page, 0);
+        String sortField = AdminListSort.field(sort, USER_SORT_FIELDS);
         return BaseResponse.ofSucceeded(PageResponse.of(
-                adminMapper.findUsers(search, safeSize, safePage * safeSize),
-                adminMapper.countUsers(search),
+                adminMapper.findUsers(search, accountStatus, provider, role, sortField,
+                        AdminListSort.descending(direction), safeSize, safePage * safeSize),
+                adminMapper.countUsers(search, accountStatus, provider, role),
                 safePage,
                 safeSize));
     }

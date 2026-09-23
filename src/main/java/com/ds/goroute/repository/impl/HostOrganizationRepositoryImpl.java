@@ -32,8 +32,8 @@ public class HostOrganizationRepositoryImpl implements HostOrganizationRepositor
     @Override public List<UUID> findAllOrganizationIds() { return mapper.findAllOrganizationIds(); }
     @Override public Optional<HostOrganization> findById(UUID id) { return Optional.ofNullable(mapper.findOrganizationById(id)); }
     @Override public List<HostOrganization> findForUser(UUID userId) { return mapper.findOrganizationsForUser(userId); }
-    @Override public List<HostOrganization> findForAdmin(String query, String status, int limit, int offset) {
-        return mapper.findOrganizationsAdmin(query, status, limit, offset);
+    @Override public List<HostOrganization> findForAdmin(String query, List<String> status, List<String> organizationType, List<String> verificationStatus, String sort, boolean descending, int limit, int offset) {
+        return mapper.findOrganizationsAdmin(query, status, organizationType, verificationStatus, sort, descending, limit, offset);
     }
     @Override public Optional<OrganizationMember> findMember(UUID organizationId, UUID userId) {
         return Optional.ofNullable(mapper.findMember(organizationId, userId));

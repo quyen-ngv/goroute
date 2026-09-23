@@ -88,6 +88,11 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     }
 
     @Override
+    public List<UserCheckin> findByLocationKeyAndPlace(String locationKey, UUID placeId) {
+        return mapper.findByLocationKeyAndPlace(locationKey, placeId);
+    }
+
+    @Override
     public List<UserCheckin> findLatestRatedPerUserForLocationKey(String locationKey) {
         return mapper.findLatestRatedPerUserForLocationKey(locationKey);
     }
@@ -247,5 +252,15 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     @Override
     public List<UUID> findReassignedCheckinIds(List<UUID> checkinIds) {
         return checkinIds == null || checkinIds.isEmpty() ? List.of() : mapper.findReassignedCheckinIds(checkinIds);
+    }
+
+    @Override
+    public int updateVerification(UserCheckin checkin) {
+        return mapper.updateVerification(checkin);
+    }
+
+    @Override
+    public List<com.ds.goroute.dto.response.VisitedWardResponse> findVisitedWards(UUID userId, boolean includePrivate) {
+        return mapper.findVisitedWards(userId, includePrivate);
     }
 }

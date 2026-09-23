@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.GeoMapper">
+
+    <resultMap id="provinceMap" type="com.ds.goroute.dto.response.GeoProvinceResponse">
+        <id property="code" column="code"/>
+        <result property="name" column="name"/>
+        <result property="nameEn" column="name_en"/>
+        <result property="fullName" column="full_name"/>
+        <result property="region" column="region"/>
+        <result property="latitude" column="latitude"/>
+        <result property="longitude" column="longitude"/>
+        <result property="areaKm2" column="area_km2"/>
+        <result property="wardCount" column="ward_count"/>
+        <result property="minLatitude" column="min_lat"/>
+        <result property="minLongitude" column="min_lng"/>
+        <result property="maxLatitude" column="max_lat"/>
+        <result property="maxLongitude" column="max_lng"/>
+        <result property="hasBoundary" column="has_boundary"/>
+    </resultMap>
+
+    <select id="findProvinces" resultMap="provinceMap">
+        SELECT p.code, p.name, p.name_en, p.full_name, p.region, p.latitude, p.longitude, p.area_km2,
+               (SELECT COUNT(*) FROM wards w WHERE w.province_code = p.code AND w.is_active = TRUE) AS ward_count,
+               ST_YMin(p.bbox) AS min_lat, ST_XMin(p.bbox) AS min_lng,
+               ST_YMax(p.bbox) AS max_lat, ST_XMax(p.bbox) AS max_lng,
+               (p.geom IS NOT NULL) AS has_boundary
+        FROM provinces p
+        WHERE p.is_active = TRUE
+        ORDER BY p.code
+    </select>
+
+    <select id="provincesDisplayGeoJson" resultType="java.lang.String">
+        SELECT json_build_object(
+                   'type', 'FeatureCollection',
+                   'features', json_agg(json_build_object(
+                       'type', 'Feature',
+                       'id', p.code,
+                       'properties', json_build_object('code', p.code, 'name', p.name, 'nameEn', p.name_en),
+                       'geometry', ST_AsGeoJSON(p.geom_display, 4)::json)
+                       ORDER BY p.code))::text
+        FROM provinces p
+        WHERE p.is_active = TRUE AND p.geom_display IS NOT NULL
+        HAVING COUNT(*) > 0
+    </select>
+
+    <select id="findLatestDataset" resultType="com.ds.goroute.dto.response.GeoDatasetResponse">
+        SELECT version, decree, generated_at AS generatedAt, imported_at AS importedAt,
+               backfilled_at AS backfilledAt, province_count AS provinceCount, ward_count AS wardCount
+        FROM geo_dataset_versions
+        ORDER BY imported_at DESC
+        LIMIT 1
+    </select>
+
+    <update id="markBackfilled">
+        UPDATE geo_dataset_versions SET backfilled_at = now() WHERE version = #{version}
+    </update>
+
+    <!-- ===================== province remap 63 -> 34 ===================== -->
+
+    <!-- A code is retired when the remap sends it elsewhere AND nothing in the new
+         dataset reuses it. (Yên Bái's 15 became the new Lào Cai's code; that row is
+         updated by the dataset upsert, not retired.) -->
+    <sql id="retiredCodes">
+        SELECT r.old_code FROM province_code_remap r
+        WHERE r.new_code &lt;&gt; r.old_code
+          AND r.old_code NOT IN (SELECT new_code FROM province_code_remap)
+    </sql>
+
+    <select id="findRetiredProvinces" resultType="java.util.LinkedHashMap">
+        SELECT p.code, p.name, p.aliases::text AS aliases, r.new_code
+        FROM provinces p
+        JOIN province_code_remap r ON r.old_code = p.code
+        WHERE p.code IN (<include refid="retiredCodes"/>)
+        ORDER BY p.code
+    </select>
+
+    <!-- Union, deduplicated: the merged province keeps recognising "ha giang" in free text. -->
+    <update id="mergeProvinceAliases">
+        UPDATE provinces
+        SET aliases = (SELECT COALESCE(jsonb_agg(DISTINCT alias), '[]'::jsonb)
+                       FROM jsonb_array_elements(COALESCE(aliases, '[]'::jsonb) || #{aliases}::jsonb) alias)
+        WHERE code = #{code}
+    </update>
+
+    <insert id="remapPassportDefinitionProvincesInsert">
+        INSERT INTO passport_definition_provinces (passport_id, province_code)
+        SELECT d.passport_id, r.new_code
+        FROM passport_definition_provinces d
+        JOIN province_code_remap r ON r.old_code = d.province_code
+        WHERE d.province_code IN (<include refid="retiredCodes"/>)
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <delete id="remapPassportDefinitionProvincesDelete">
+        DELETE FROM passport_definition_provinces
+        WHERE province_code IN (<include refid="retiredCodes"/>)
+    </delete>
+
+    <insert id="remapPassportProvinceWishesInsert">
+        INSERT INTO passport_province_wishes (user_id, province_code)
+        SELECT w.user_id, r.new_code
+        FROM passport_province_wishes w
+        JOIN province_code_remap r ON r.old_code = w.province_code
+        WHERE w.province_code IN (<include refid="retiredCodes"/>)
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <delete id="remapPassportProvinceWishesDelete">
+        DELETE FROM passport_province_wishes
+        WHERE province_code IN (<include refid="retiredCodes"/>)
+    </delete>
+
+    <update id="remapPassportEventsProvince">
+        UPDATE passport_events e SET province_code = r.new_code
+        FROM province_code_remap r
+        WHERE r.old_code = e.province_code AND e.province_code IN (<include refid="retiredCodes"/>)
+    </update>
+
+    <update id="remapPlacesProvince">
+        UPDATE places p SET province_code = r.new_code
+        FROM province_code_remap r
+        WHERE r.old_code = p.province_code AND p.province_code IN (<include refid="retiredCodes"/>)
+    </update>
+
+    <update id="remapCheckinsProvince">
+        UPDATE user_checkins c SET province_code = r.new_code
+        FROM province_code_remap r
+        WHERE r.old_code = c.province_code AND c.province_code IN (<include refid="retiredCodes"/>)
+    </update>
+
+    <update id="remapLocationImagesProvince">
+        UPDATE location_images li SET province_code = r.new_code
+        FROM province_code_remap r
+        WHERE r.old_code = li.province_code AND li.province_code IN (<include refid="retiredCodes"/>)
+    </update>
+
+    <delete id="deleteRetiredProvinces">
+        DELETE FROM provinces WHERE code IN (<include refid="retiredCodes"/>)
+    </delete>
+
+    <!-- Only the stale literal is touched; an operator who set something else on purpose keeps it. -->
+    <update id="updateTotalProvincesConfig">
+        UPDATE config SET value = #{total}::text
+        WHERE label = 'PASSPORT' AND key = 'TOTAL_PROVINCES' AND value = '63'
+    </update>
+
+    <!-- ===================== ward assignment ===================== -->
+
+    <sql id="placePoint">ST_SetSRID(ST_MakePoint(p.longitude::float8, p.latitude::float8), 4326)</sql>
+
+    <!-- Also the first thing that ever writes places.province_code. -->
+    <update id="backfillPlacesWard">
+        UPDATE places p
+        SET ward_code = w.code, province_code = w.province_code
+        FROM wards w
+        WHERE p.latitude IS NOT NULL AND p.longitude IS NOT NULL
+          AND (p.ward_code IS NULL OR #{force})
+          AND w.is_active = TRUE
+          AND ST_Covers(w.geom, <include refid="placePoint"/>)
+    </update>
+
+    <update id="backfillCheckinsWard">
+        UPDATE user_checkins p
+        SET ward_code = w.code, province_code = w.province_code
+        FROM wards w
+        WHERE p.latitude IS NOT NULL AND p.longitude IS NOT NULL
+          AND (p.ward_code IS NULL OR #{force})
+          AND w.is_active = TRUE
+          AND ST_Covers(w.geom, <include refid="placePoint"/>)
+    </update>
+
+    <update id="backfillPassportEventsWardFromCheckins">
+        UPDATE passport_events e
+        SET ward_code = c.ward_code,
+            province_code = COALESCE(c.province_code, e.province_code)
+        FROM user_checkins c
+        WHERE c.id = e.checkin_id
+          AND c.ward_code IS NOT NULL
+          AND e.ward_code IS DISTINCT FROM c.ward_code
+    </update>
+
+    <!-- Events with no check-in behind them (legacy activity check-ins) carry their own point. -->
+    <update id="backfillPassportEventsWardFromPoint">
+        UPDATE passport_events p
+        SET ward_code = w.code, province_code = w.province_code
+        FROM wards w
+        WHERE p.checkin_id IS NULL AND p.ward_code IS NULL
+          AND p.latitude IS NOT NULL AND p.longitude IS NOT NULL
+          AND w.is_active = TRUE
+          AND ST_Covers(w.geom, <include refid="placePoint"/>)
+    </update>
+
+    <!--
+      Tours, tickets and partner products. search_lat/search_lng is the point the product
+      was filed at, which for a scraped city tour is a city anchor: the province it yields
+      is reliable, the ward only as precise as that point. Stored anyway so a caller can
+      decide which half to trust; double precision here, unlike the NUMERIC elsewhere.
+    -->
+    <update id="backfillActivityBookingsWard">
+        UPDATE activity_bookings a
+        SET ward_code = w.code, province_code = w.province_code
+        FROM wards w
+        WHERE a.search_lat IS NOT NULL AND a.search_lng IS NOT NULL
+          AND (a.ward_code IS NULL OR #{force})
+          AND w.is_active = TRUE
+          AND ST_Covers(w.geom, ST_SetSRID(ST_MakePoint(a.search_lng, a.search_lat), 4326))
+    </update>
+
+    <!-- Hotels inherit from their Place, the same way they inherit the tourist area. -->
+    <update id="backfillHotelsWardFromPlace">
+        UPDATE hotel_profiles hp
+        SET ward_code = p.ward_code, province_code = p.province_code
+        FROM places p
+        WHERE p.id = hp.place_id
+          AND p.ward_code IS NOT NULL
+          AND (hp.ward_code IS NULL OR #{force})
+    </update>
+
+    <update id="backfillTripsWard">
+        UPDATE trips t
+        SET ward_code = w.code, province_code = w.province_code
+        FROM wards w
+        WHERE t.destination_lat IS NOT NULL AND t.destination_lng IS NOT NULL
+          AND (t.ward_code IS NULL OR #{force})
+          AND w.is_active = TRUE
+          AND ST_Covers(w.geom, ST_SetSRID(ST_MakePoint(t.destination_lng::float8, t.destination_lat::float8), 4326))
+    </update>
+
+    <update id="backfillTripDestinationsWard">
+        UPDATE trip_destinations d
+        SET ward_code = w.code, province_code = w.province_code
+        FROM wards w
+        WHERE d.lat IS NOT NULL AND d.lng IS NOT NULL
+          AND (d.ward_code IS NULL OR #{force})
+          AND w.is_active = TRUE
+          AND ST_Covers(w.geom, ST_SetSRID(ST_MakePoint(d.lng::float8, d.lat::float8), 4326))
+    </update>
+
+    <select id="countPlacesWithoutWard" resultType="long">
+        SELECT COUNT(*) FROM places WHERE ward_code IS NULL AND latitude IS NOT NULL AND longitude IS NOT NULL
+    </select>
+
+    <select id="countCheckinsWithoutWard" resultType="long">
+        SELECT COUNT(*) FROM user_checkins WHERE ward_code IS NULL AND is_removed = FALSE
+    </select>
+</mapper>

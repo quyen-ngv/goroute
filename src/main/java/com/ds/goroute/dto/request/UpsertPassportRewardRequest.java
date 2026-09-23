@@ -22,6 +22,13 @@ public class UpsertPassportRewardRequest {
     @Size(max = 5000)
     private String description;
 
+    /** English copy; optional, the Vietnamese text is served when it is blank. */
+    @Size(max = 200)
+    private String nameEn;
+
+    @Size(max = 5000)
+    private String descriptionEn;
+
     @Min(0)
     @Max(1000000)
     private Integer pointsCost = 0;

@@ -88,6 +88,21 @@ public class LocalCacheConfig {
         return cacheManager;
     }
 
+    /**
+     * Boundary GeoJSON per province (a few hundred KB each) and the province outlines.
+     * Long-lived because the shapes change once per decree; evicted by the geo backfill.
+     */
+    @Bean("geoCacheManager")
+    public CacheManager geoCacheManager() {
+        CaffeineCacheManager cacheManager = new CaffeineCacheManager("geoJson");
+        cacheManager.setCaffeine(
+            Caffeine.newBuilder()
+                .expireAfterWrite(24, TimeUnit.HOURS)
+                .maximumSize(64)
+        );
+        return cacheManager;
+    }
+
     @Bean("customKeyGenerator")
     public KeyGenerator keyGenerator() {
         return new CustomKeyGenerator();

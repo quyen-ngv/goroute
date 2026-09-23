@@ -44,4 +44,7 @@ public class CreateLocationImageRequest {
     @DecimalMin(value = "0.1", message = "Coverage radius must be greater than 0")
     @DecimalMax(value = "500", message = "Coverage radius must not exceed 500 km")
     private BigDecimal coverageRadiusKm;
+
+    /** Official ward codes making up the area; a place in any of them belongs here before any radius is consulted. */
+    private List<String> wardCodes;
 }

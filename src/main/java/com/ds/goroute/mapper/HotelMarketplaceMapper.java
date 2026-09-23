@@ -27,7 +27,10 @@ public interface HotelMarketplaceMapper {
                           @Param("snapshot") String snapshot, @Param("actor") UUID actor, @Param("now") LocalDateTime now);
     int updateBookingItemStay(@Param("id") UUID id, @Param("adults") int adults, @Param("children") int children,
                               @Param("unitPrice") java.math.BigDecimal unitPrice, @Param("totalPrice") java.math.BigDecimal totalPrice);
-    List<HotelProfile> findHotelsAdmin(@Param("query") String query, @Param("status") String status,
+    List<HotelProfile> findHotelsAdmin(@Param("query") String query, @Param("status") List<String> status,
+                                       @Param("propertyType") List<String> propertyType,
+                                       @Param("locationImageIds") List<UUID> locationImageIds,
+                                       @Param("sort") String sort, @Param("descending") boolean descending,
                                        @Param("limit") int limit, @Param("offset") int offset);
 
     int insertRoomType(RoomType roomType);
@@ -102,7 +105,9 @@ public interface HotelMarketplaceMapper {
                                                   @Param("limit") int limit, @Param("offset") int offset);
     long countBookingsByOrganizationFiltered(@Param("organizationId") UUID organizationId,
                                              @Param("status") String status, @Param("hotelIds") List<UUID> hotelIds);
-    List<HotelBooking> findBookingsAdmin(@Param("query") String query, @Param("status") String status,
+    List<HotelBooking> findBookingsAdmin(@Param("query") String query, @Param("status") List<String> status,
+                                         @Param("paymentStatus") List<String> paymentStatus,
+                                         @Param("sort") String sort, @Param("descending") boolean descending,
                                          @Param("limit") int limit, @Param("offset") int offset);
     int updateBookingStatus(@Param("id") UUID id, @Param("expectedVersion") long expectedVersion,
                             @Param("bookingStatus") String bookingStatus, @Param("paymentStatus") String paymentStatus,

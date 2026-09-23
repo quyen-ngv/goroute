@@ -34,6 +34,8 @@ public class PassportEvent {
     private BigDecimal latitude;
     private BigDecimal longitude;
     private String provinceCode;
+    /** Ward of the underlying check-in, so tourist areas defined by wards can count the visit. */
+    private String wardCode;
     private LocalDateTime occurredAt;
     private Boolean isVerified;
     /** Hidden from other people, still part of the author's own history. */

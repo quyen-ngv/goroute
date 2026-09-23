@@ -28,7 +28,8 @@
     </select>
 
     <!--
-      goroute_nearest_location_image (V163) returns the nearest area whose own
+      goroute_location_image_for_point (V170) prefers an area that lists the point's ward,
+      then falls back to goroute_nearest_location_image (V163): the nearest area whose own
       coverage_radius_km reaches the point, so overlapping areas resolve to the closer
       anchor instead of whichever row the planner happened to read first.
     -->
@@ -36,37 +37,47 @@
         <choose>
             <when test="target.name() == 'PLACE'">
                 UPDATE places
-                SET location_image_id = goroute_nearest_location_image(latitude, longitude)
+                SET location_image_id = goroute_location_image_for_point(latitude, longitude)
                 WHERE location_image_id IS NULL
                   AND latitude IS NOT NULL AND longitude IS NOT NULL
-                  AND goroute_nearest_location_image(latitude, longitude) IS NOT NULL
+                  AND goroute_location_image_for_point(latitude, longitude) IS NOT NULL
             </when>
             <when test="target.name() == 'TRIP'">
                 UPDATE trips
-                SET location_image_id = goroute_nearest_location_image(destination_lat, destination_lng)
+                SET location_image_id = goroute_location_image_for_point(destination_lat, destination_lng)
                 WHERE location_image_id IS NULL
                   AND destination_lat IS NOT NULL AND destination_lng IS NOT NULL
-                  AND goroute_nearest_location_image(destination_lat, destination_lng) IS NOT NULL
+                  AND goroute_location_image_for_point(destination_lat, destination_lng) IS NOT NULL
             </when>
             <when test="target.name() == 'TRIP_DESTINATION'">
                 UPDATE trip_destinations
-                SET location_image_id = goroute_nearest_location_image(lat, lng)
+                SET location_image_id = goroute_location_image_for_point(lat, lng)
                 WHERE location_image_id IS NULL
                   AND lat IS NOT NULL AND lng IS NOT NULL
-                  AND goroute_nearest_location_image(lat, lng) IS NOT NULL
+                  AND goroute_location_image_for_point(lat, lng) IS NOT NULL
             </when>
             <when test="target.name() == 'ACTIVITY'">
                 UPDATE activity_bookings
-                SET location_image_id = goroute_nearest_location_image(search_lat::NUMERIC, search_lng::NUMERIC)
+                SET location_image_id = goroute_location_image_for_point(search_lat::NUMERIC, search_lng::NUMERIC)
                 WHERE location_image_id IS NULL
                   AND search_lat IS NOT NULL AND search_lng IS NOT NULL
-                  AND goroute_nearest_location_image(search_lat::NUMERIC, search_lng::NUMERIC) IS NOT NULL
+                  AND goroute_location_image_for_point(search_lat::NUMERIC, search_lng::NUMERIC) IS NOT NULL
             </when>
             <otherwise>
                 <!-- FOOD_CITY_SCORE and HOTEL have no coordinates of their own. -->
                 UPDATE <include refid="TargetTable"/> SET location_image_id = location_image_id WHERE FALSE
             </otherwise>
         </choose>
+    </update>
+
+    <!-- One freshly imported place; same resolver and IS NULL guard as the bulk pass. -->
+    <update id="assignPlaceByCoordinates">
+        UPDATE places
+        SET location_image_id = goroute_location_image_for_point(latitude, longitude)
+        WHERE id = #{id}
+          AND location_image_id IS NULL
+          AND latitude IS NOT NULL AND longitude IS NOT NULL
+          AND goroute_location_image_for_point(latitude, longitude) IS NOT NULL
     </update>
 
     <update id="assignHotelsFromPlace">
@@ -97,7 +108,7 @@
       Each target projects whatever address/destination text it has into one column, so
       the name fallback in LocationAreaMatcher has a single shape to search.
     -->
-    <select id="findUnmapped" resultType="com.ds.goroute.dto.LocationAreaCandidateRow">
+    <sql id="UnmappedProjection">
         <choose>
             <when test="target.name() == 'PLACE'">
                 <!-- Address and destinations only. A business name such as 'Quan Banh Tam Co Hue'
@@ -130,9 +141,19 @@
                 SELECT id, NULL AS match_text FROM hotel_profiles
             </otherwise>
         </choose>
+    </sql>
+
+    <select id="findUnmapped" resultType="com.ds.goroute.dto.LocationAreaCandidateRow">
+        <include refid="UnmappedProjection"/>
         WHERE location_image_id IS NULL
         ORDER BY id
         LIMIT #{limit}
+    </select>
+
+    <select id="findUnmappedById" resultType="com.ds.goroute.dto.LocationAreaCandidateRow">
+        <include refid="UnmappedProjection"/>
+        WHERE location_image_id IS NULL
+          AND id = #{id}
     </select>
 
     <update id="assignArea">

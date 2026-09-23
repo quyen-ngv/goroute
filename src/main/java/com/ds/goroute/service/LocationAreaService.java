@@ -20,6 +20,13 @@ public interface LocationAreaService {
     LocationAreaAutoMapResponse autoMap(boolean dryRun);
 
     /**
+     * Resolves the area of one newly created place right away, with the same coordinate
+     * then name rules as {@link #autoMap}, so it does not wait for the hourly job. Leaves a
+     * place that already has an area untouched.
+     */
+    void assignNewPlace(UUID placeId);
+
+    /**
      * Sets the tourist area of a single row by hand, overriding whatever the auto-map job
      * resolved. This is the only write path an operator has: every entity's own update
      * endpoint leaves {@code location_image_id} alone, so a partner edit or a re-import can

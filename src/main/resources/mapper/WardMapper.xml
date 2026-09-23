@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.WardMapper">
+
+    <resultMap id="wardMap" type="com.ds.goroute.entity.Ward">
+        <id property="code" column="code"/>
+        <result property="provinceCode" column="province_code"/>
+        <result property="name" column="name"/>
+        <result property="nameEn" column="name_en"/>
+        <result property="fullName" column="full_name"/>
+        <result property="fullNameEn" column="full_name_en"/>
+        <result property="codeName" column="code_name"/>
+        <result property="unitType" column="unit_type"/>
+        <result property="postalCode" column="postal_code"/>
+        <result property="areaKm2" column="area_km2"/>
+        <result property="datasetVersion" column="dataset_version"/>
+        <result property="isActive" column="is_active"/>
+        <result property="provinceName" column="province_name"/>
+    </resultMap>
+
+    <!-- Never SELECT * here: geom and geom_display are large and useless in Java. -->
+    <sql id="columns">
+        w.code, w.province_code, w.name, w.name_en, w.full_name, w.full_name_en, w.code_name,
+        w.unit_type, w.postal_code, w.area_km2, w.dataset_version, w.is_active,
+        p.name AS province_name
+    </sql>
+
+    <sql id="point">
+        ST_SetSRID(ST_MakePoint(#{longitude}::float8, #{latitude}::float8), 4326)
+    </sql>
+
+    <!-- Smallest first: if two boundaries overlap at a seam, the smaller unit is the
+         more specific answer. -->
+    <select id="findCovering" resultMap="wardMap">
+        SELECT <include refid="columns"/>
+        FROM wards w
+        JOIN provinces p ON p.code = w.province_code
+        WHERE w.is_active = TRUE
+          AND ST_Covers(w.geom, <include refid="point"/>)
+        ORDER BY w.area_km2 NULLS LAST
+        LIMIT 1
+    </select>
+
+    <select id="findByCode" resultMap="wardMap">
+        SELECT <include refid="columns"/>
+        FROM wards w
+        JOIN provinces p ON p.code = w.province_code
+        WHERE w.code = #{code}
+    </select>
+
+    <select id="findByCodes" resultMap="wardMap">
+        SELECT <include refid="columns"/>
+        FROM wards w
+        JOIN provinces p ON p.code = w.province_code
+        WHERE w.code IN
+        <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+        ORDER BY p.code, w.name
+    </select>
+
+    <select id="findByProvince" resultMap="wardMap">
+        SELECT <include refid="columns"/>
+        FROM wards w
+        JOIN provinces p ON p.code = w.province_code
+        WHERE w.province_code = #{provinceCode} AND w.is_active = TRUE
+        ORDER BY w.unit_type, w.name
+    </select>
+
+    <select id="countActive" resultType="long">
+        SELECT COUNT(*) FROM wards WHERE is_active = TRUE
+    </select>
+
+    <!-- Feature ids are the ward codes so the client can address a polygon without
+         reading its properties. 5 decimals (~1 m) is plenty for a 30 m simplified shape. -->
+    <select id="displayGeoJsonByProvince" resultType="java.lang.String">
+        SELECT json_build_object(
+                   'type', 'FeatureCollection',
+                   'features', json_agg(json_build_object(
+                       'type', 'Feature',
+                       'id', w.code,
+                       'properties', json_build_object(
+                           'code', w.code,
+                           'name', w.name,
+                           'fullName', w.full_name,
+                           'unitType', w.unit_type,
+                           'provinceCode', w.province_code),
+                       'geometry', ST_AsGeoJSON(w.geom_display, 5)::json)
+                       ORDER BY w.code))::text
+        FROM wards w
+        WHERE w.province_code = #{provinceCode} AND w.is_active = TRUE
+        HAVING COUNT(*) > 0
+    </select>
+</mapper>

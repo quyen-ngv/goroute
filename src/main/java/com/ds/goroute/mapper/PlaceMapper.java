@@ -40,6 +40,11 @@ public interface PlaceMapper {
 
     List<Place> findFilteredPage(@Param("search") String search,
                               @Param("placeGroups") List<String> placeGroups,
+                              @Param("visibilityStatus") List<String> visibilityStatus,
+                              @Param("trustLevel") List<String> trustLevel,
+                              @Param("locationImageIds") List<UUID> locationImageIds,
+                              @Param("sort") String sort,
+                              @Param("descending") boolean descending,
                               @Param("limit") int limit,
                               @Param("offset") int offset);
 
@@ -49,7 +54,10 @@ public interface PlaceMapper {
             @Param("limit") int limit);
 
     long countFiltered(@Param("search") String search,
-                    @Param("placeGroups") List<String> placeGroups);
+                    @Param("placeGroups") List<String> placeGroups,
+                    @Param("visibilityStatus") List<String> visibilityStatus,
+                    @Param("trustLevel") List<String> trustLevel,
+                    @Param("locationImageIds") List<UUID> locationImageIds);
 
     List<Place> findByIds(@Param("ids") List<UUID> ids);
 
@@ -69,4 +77,17 @@ public interface PlaceMapper {
                                             @Param("limit") int limit);
 
     void delete(@Param("id") UUID id);
+
+    int updateVerificationGeometry(@Param("id") UUID id, @Param("geoJson") String geoJson);
+
+    int updateWardCode(@Param("id") UUID id, @Param("wardCode") String wardCode);
+
+    int assignWard(@Param("id") UUID id);
+
+    Boolean isWithinVerificationGeometry(@Param("id") UUID id,
+                                         @Param("latitude") BigDecimal latitude,
+                                         @Param("longitude") BigDecimal longitude,
+                                         @Param("accuracyMeters") BigDecimal accuracyMeters);
+
+    java.util.Map<String, Object> validateGeometry(@Param("geoJson") String geoJson);
 }

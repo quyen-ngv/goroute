@@ -41,6 +41,8 @@ public interface AdminNotificationMapper {
     long countSearchRecipients(@Param("search") String search);
 
     List<AdminNotificationHistoryResponse> findHistory(@Param("search") String search,
+                                                      @Param("sort") String sort,
+                                                      @Param("descending") boolean descending,
                                                        @Param("limit") int limit,
                                                        @Param("offset") int offset);
 

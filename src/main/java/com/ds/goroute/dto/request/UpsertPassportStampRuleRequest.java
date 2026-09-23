@@ -27,6 +27,13 @@ public class UpsertPassportStampRuleRequest {
     @Size(max = 5000)
     private String description;
 
+    /** English copy; optional, the Vietnamese text is served when it is blank. */
+    @Size(max = 200)
+    private String nameEn;
+
+    @Size(max = 5000)
+    private String descriptionEn;
+
     @NotBlank
     @Pattern(regexp = "FIRST_CHECKIN|CHECKIN_COUNT|DISTINCT_PLACE_COUNT|DISTINCT_PROVINCE_COUNT|VERIFIED_CHECKIN_COUNT")
     private String conditionType;

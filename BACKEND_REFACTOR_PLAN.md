@@ -1,3 +1,8 @@
+> SUPERSEDED 2026-09-18 by [BACKEND_REFACTOR_PLAN_2026-09.md](BACKEND_REFACTOR_PLAN_2026-09.md).
+> Phase 0 below is complete and verified. Several unchecked boxes are stale: the @CurrentUser
+> resolver and all six Phase 2 typed @ConfigurationProperties groups already ship. See
+> docs/audit-2026-09/01-architecture.md for the item-by-item reconciliation.
+
 # GoRoute backend refactor plan
 
 ## Baseline audit (2026-08-23)

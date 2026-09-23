@@ -36,6 +36,7 @@ import com.ds.goroute.service.StarService;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.CheckinVerificationStatus;
 import com.ds.goroute.utils.JsonUtils;
+import com.ds.goroute.utils.PassportTextResolver;
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -84,7 +85,9 @@ public class PassportServiceImpl implements PassportService {
             return;
         }
         passportMapper.updateEventLocation(existing.getId(), checkin.getPlaceId(),
-                checkin.getLocationKey(), resolveProvinceCode(checkin));
+                checkin.getLocationKey(), resolveProvinceCode(checkin), checkin.getWardCode(),
+                checkin.getVerificationStatus() == null ? null
+                        : checkin.getVerificationStatus() == CheckinVerificationStatus.VERIFIED);
 
         PassportEvent updated = passportMapper.findEventBySource(SOURCE_USER_CHECKIN, checkin.getId());
         evaluateStamps(checkin.getUserId(), updated.getId());
@@ -112,6 +115,7 @@ public class PassportServiceImpl implements PassportService {
                 // official aliases. An uncertain free-text location gets no province
                 // rather than a misleading city proof tag.
                 .provinceCode(resolveProvinceCode(checkin))
+                .wardCode(checkin.getWardCode())
                 .occurredAt(checkin.getCreatedAt())
                 .isVerified(checkin.getVerificationStatus() == CheckinVerificationStatus.VERIFIED)
                 .isHidden(false)
@@ -223,7 +227,7 @@ public class PassportServiceImpl implements PassportService {
                         ? progressTowardsNextStamps(rules, earned, counters, visitedProvinces)
                         : List.of())
                 .earnedTags(passportMapper.findEarnedTagsByUser(userId).stream()
-                        .map(this::toTagResponse)
+                        .map(this::toLocalizedTagResponse)
                         .toList())
                 .firstEventAt(asDateTime(counters.get("first_event_at")))
                 .lastEventAt(asDateTime(counters.get("last_event_at")))
@@ -505,6 +509,8 @@ public class PassportServiceImpl implements PassportService {
                 .code(normalizeCode(request.getCode()))
                 .name(request.getName().trim())
                 .description(blankToNull(request.getDescription()))
+                .nameEn(blankToNull(request.getNameEn()))
+                .descriptionEn(blankToNull(request.getDescriptionEn()))
                 .coverImageUrl(blankToNull(request.getCoverImageUrl()))
                 .isActive(request.getIsActive() == null || request.getIsActive())
                 .displayOrder(defaultInt(request.getDisplayOrder(), 0))
@@ -534,6 +540,8 @@ public class PassportServiceImpl implements PassportService {
         existing.setCode(normalizeCode(request.getCode()));
         existing.setName(request.getName().trim());
         existing.setDescription(blankToNull(request.getDescription()));
+        existing.setNameEn(blankToNull(request.getNameEn()));
+        existing.setDescriptionEn(blankToNull(request.getDescriptionEn()));
         existing.setCoverImageUrl(blankToNull(request.getCoverImageUrl()));
         existing.setIsActive(request.getIsActive() == null || request.getIsActive());
         existing.setDisplayOrder(defaultInt(request.getDisplayOrder(), 0));
@@ -575,7 +583,7 @@ public class PassportServiceImpl implements PassportService {
         return PlacePassportTagsResponse.builder()
                 .tags(passportMapper.findPassportTagsForPlace(userId, placeId,
                                 config.getDecimal(BusinessConfigKey.PASSPORT_LOCATION_PLACE_RADIUS_KM)).stream()
-                        .map(this::toTagResponse)
+                        .map(this::toLocalizedTagResponse)
                         .toList())
                 .checkinCount((int) passportMapper.countUserCheckinsAtPlace(userId, placeId))
                 .build();
@@ -597,6 +605,8 @@ public class PassportServiceImpl implements PassportService {
                 .version(defaultInt(request.getVersion(), 1))
                 .name(request.getName().trim())
                 .description(blankToNull(request.getDescription()))
+                .nameEn(blankToNull(request.getNameEn()))
+                .descriptionEn(blankToNull(request.getDescriptionEn()))
                 .conditionType(request.getConditionType().trim().toUpperCase())
                 .threshold(defaultInt(request.getThreshold(), 1))
                 .icon(blankToNull(request.getIcon()))
@@ -618,6 +628,8 @@ public class PassportServiceImpl implements PassportService {
         }
         existing.setName(request.getName().trim());
         existing.setDescription(blankToNull(request.getDescription()));
+        existing.setNameEn(blankToNull(request.getNameEn()));
+        existing.setDescriptionEn(blankToNull(request.getDescriptionEn()));
         existing.setConditionType(request.getConditionType().trim().toUpperCase());
         existing.setThreshold(defaultInt(request.getThreshold(), 1));
         existing.setIcon(blankToNull(request.getIcon()));
@@ -644,6 +656,8 @@ public class PassportServiceImpl implements PassportService {
                 .code(normalizeCode(request.getCode()))
                 .name(request.getName().trim())
                 .description(blankToNull(request.getDescription()))
+                .nameEn(blankToNull(request.getNameEn()))
+                .descriptionEn(blankToNull(request.getDescriptionEn()))
                 .pointsCost(defaultInt(request.getPointsCost(), 0))
                 .requiredStampCode(blankToNull(request.getRequiredStampCode()))
                 .totalQuantity(request.getTotalQuantity())
@@ -672,6 +686,8 @@ public class PassportServiceImpl implements PassportService {
         existing.setCode(normalizeCode(request.getCode()));
         existing.setName(request.getName().trim());
         existing.setDescription(blankToNull(request.getDescription()));
+        existing.setNameEn(blankToNull(request.getNameEn()));
+        existing.setDescriptionEn(blankToNull(request.getDescriptionEn()));
         existing.setPointsCost(defaultInt(request.getPointsCost(), 0));
         existing.setRequiredStampCode(blankToNull(request.getRequiredStampCode()));
         existing.setTotalQuantity(totalQuantity);
@@ -694,6 +710,8 @@ public class PassportServiceImpl implements PassportService {
                 .code(normalizeCode(request.getCode()))
                 .name(request.getName().trim())
                 .description(blankToNull(request.getDescription()))
+                .nameEn(blankToNull(request.getNameEn()))
+                .descriptionEn(blankToNull(request.getDescriptionEn()))
                 .imageUrl(blankToNull(request.getImageUrl()))
                 .qualificationMode(resolveTagQualificationMode(request, placeIds))
                 .requiredCheckinCount(defaultInt(request.getRequiredCheckinCount(), 1))
@@ -718,6 +736,8 @@ public class PassportServiceImpl implements PassportService {
         existing.setCode(normalizeCode(request.getCode()));
         existing.setName(request.getName().trim());
         existing.setDescription(blankToNull(request.getDescription()));
+        existing.setNameEn(blankToNull(request.getNameEn()));
+        existing.setDescriptionEn(blankToNull(request.getDescriptionEn()));
         existing.setImageUrl(blankToNull(request.getImageUrl()));
         existing.setQualificationMode(resolveTagQualificationMode(request, distinctIds(request.getPlaceIds())));
         existing.setRequiredCheckinCount(defaultInt(request.getRequiredCheckinCount(), 1));
@@ -818,6 +838,8 @@ public class PassportServiceImpl implements PassportService {
                 .code(definition.getCode())
                 .name(definition.getName())
                 .description(definition.getDescription())
+                .nameEn(definition.getNameEn())
+                .descriptionEn(definition.getDescriptionEn())
                 .coverImageUrl(definition.getCoverImageUrl())
                 .isActive(Boolean.TRUE.equals(definition.getIsActive()))
                 .displayOrder(defaultInt(definition.getDisplayOrder(), 0))
@@ -841,6 +863,8 @@ public class PassportServiceImpl implements PassportService {
                 .code(tag.getCode())
                 .name(tag.getName())
                 .description(tag.getDescription())
+                .nameEn(tag.getNameEn())
+                .descriptionEn(tag.getDescriptionEn())
                 .imageUrl(tag.getImageUrl())
                 .qualificationMode(tag.getQualificationMode())
                 .requiredCheckinCount(defaultInt(tag.getRequiredCheckinCount(), 1))
@@ -852,6 +876,17 @@ public class PassportServiceImpl implements PassportService {
                 .createdAt(tag.getCreatedAt())
                 .updatedAt(tag.getUpdatedAt())
                 .build();
+    }
+
+    /** Traveller-facing tag: text in the request language, without the raw English copy. */
+    private PassportTagResponse toLocalizedTagResponse(PassportTag tag) {
+        PassportTagResponse response = toTagResponse(tag);
+        response.setName(PassportTextResolver.resolve(tag.getName(), tag.getNameEn()));
+        response.setDescription(PassportTextResolver.resolve(tag.getDescription(), tag.getDescriptionEn()));
+        response.setPassportName(PassportTextResolver.resolve(tag.getPassportName(), tag.getPassportNameEn()));
+        response.setNameEn(null);
+        response.setDescriptionEn(null);
+        return response;
     }
 
     private List<UUID> validateLocationImageIds(Collection<UUID> values) {
@@ -964,8 +999,8 @@ public class PassportServiceImpl implements PassportService {
                 .filter(rule -> !earned.contains(rule.getCode() + ":" + rule.getVersion()))
                 .map(rule -> PassportStampProgressResponse.builder()
                         .code(rule.getCode())
-                        .name(rule.getName())
-                        .description(rule.getDescription())
+                        .name(PassportTextResolver.resolve(rule.getName(), rule.getNameEn()))
+                        .description(PassportTextResolver.resolve(rule.getDescription(), rule.getDescriptionEn()))
                         .icon(rule.getIcon())
                         .current(currentValue(rule, counters, visitedProvinces))
                         .threshold(rule.getThreshold() == null ? 1 : rule.getThreshold())
@@ -1017,8 +1052,9 @@ public class PassportServiceImpl implements PassportService {
         return PassportStampResponse.builder()
                 .code(stamp.getRuleCode())
                 .version(stamp.getRuleVersion())
-                .name(rule == null ? stamp.getRuleCode() : rule.getName())
-                .description(rule == null ? null : rule.getDescription())
+                .name(rule == null ? stamp.getRuleCode() : PassportTextResolver.resolve(rule.getName(), rule.getNameEn()))
+                .description(rule == null ? null
+                        : PassportTextResolver.resolve(rule.getDescription(), rule.getDescriptionEn()))
                 .icon(rule == null ? null : rule.getIcon())
                 .awardedAt(stamp.getAwardedAt())
                 .triggeringEventId(stamp.getTriggeringEventId())
@@ -1035,6 +1071,8 @@ public class PassportServiceImpl implements PassportService {
                 .version(defaultInt(rule.getVersion(), 1))
                 .name(rule.getName())
                 .description(rule.getDescription())
+                .nameEn(rule.getNameEn())
+                .descriptionEn(rule.getDescriptionEn())
                 .conditionType(rule.getConditionType())
                 .threshold(defaultInt(rule.getThreshold(), 1))
                 .icon(rule.getIcon())
@@ -1050,6 +1088,8 @@ public class PassportServiceImpl implements PassportService {
                 .code(reward.getCode())
                 .name(reward.getName())
                 .description(reward.getDescription())
+                .nameEn(reward.getNameEn())
+                .descriptionEn(reward.getDescriptionEn())
                 .pointsCost(defaultInt(reward.getPointsCost(), 0))
                 .requiredStampCode(reward.getRequiredStampCode())
                 .totalQuantity(reward.getTotalQuantity())

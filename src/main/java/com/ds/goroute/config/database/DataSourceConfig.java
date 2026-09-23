@@ -1,6 +1,7 @@
 package com.ds.goroute.config.database;
 
 import com.zaxxer.hikari.HikariDataSource;
+import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.flywaydb.core.Flyway;
 import org.mybatis.spring.SqlSessionFactoryBean;
@@ -25,7 +26,16 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Configuration
-@MapperScan(basePackages = "com.ds.goroute.mapper", sqlSessionFactoryRef = "sqlSessionFactory")
+// The second package is the partner-onboarding feature module, which keeps its own mapper
+// next to the code that uses it rather than in the shared mapper package.
+//
+// annotationClass is not decoration: without it MyBatis registers *every* interface in
+// these packages as a mapper, so a plain port interface sitting beside its mapper (as
+// OnboardingDraftRepository does) becomes a second bean of its own type and the context
+// refuses to start. Every mapper in both packages carries @Mapper already.
+@MapperScan(basePackages = {"com.ds.goroute.mapper", "com.ds.goroute.partneronboarding.persistence"},
+        annotationClass = Mapper.class,
+        sqlSessionFactoryRef = "sqlSessionFactory")
 public class DataSourceConfig {
 
     /**

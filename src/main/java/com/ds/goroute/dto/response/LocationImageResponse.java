@@ -30,6 +30,7 @@ public class LocationImageResponse {
 
     /** Radius in km within which a place/tour/hotel counts as part of this area. */
     private BigDecimal coverageRadiusKm;
+    private List<String> wardCodes;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     /**

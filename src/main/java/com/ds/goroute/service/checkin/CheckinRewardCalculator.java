@@ -3,6 +3,7 @@ package com.ds.goroute.service.checkin;
 import com.ds.goroute.entity.UserCheckin;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.type.BusinessConfigKey;
+import com.ds.goroute.type.CheckinVerificationScope;
 import com.ds.goroute.type.CheckinVerificationStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -37,6 +38,7 @@ public class CheckinRewardCalculator {
     public static final String REASON_PHOTO_CAMERA = "PHOTO_CAMERA";
     public static final String REASON_PHOTO_GALLERY = "PHOTO_GALLERY";
     public static final String REASON_LOCATION_UNVERIFIED = "LOCATION_UNVERIFIED";
+    public static final String REASON_LOCATION_WARD_ONLY = "LOCATION_WARD_ONLY";
     public static final String REASON_DAILY_CAP = "DAILY_CAP";
 
     /** Separator for the stored reason column, chosen because no code contains it. */
@@ -77,6 +79,10 @@ public class CheckinRewardCalculator {
         if (checkin.getVerificationStatus() != CheckinVerificationStatus.VERIFIED) {
             multiplier *= config.getDecimal(BusinessConfigKey.CHECKIN_REWARD_UNVERIFIED_MULTIPLIER);
             reasons.add(REASON_LOCATION_UNVERIFIED);
+        } else if (checkin.getVerificationScope() == CheckinVerificationScope.WARD) {
+            // Proven to be somewhere in the ward, not at the place: real, but easier.
+            multiplier *= config.getDecimal(BusinessConfigKey.CHECKIN_REWARD_WARD_VERIFIED_MULTIPLIER);
+            reasons.add(REASON_LOCATION_WARD_ONLY);
         }
 
         int points = (int) Math.floor(base * multiplier);

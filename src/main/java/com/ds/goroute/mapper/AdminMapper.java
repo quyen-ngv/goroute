@@ -27,10 +27,18 @@ public interface AdminMapper {
                          @Param("resourceId") UUID resourceId);
 
     List<Map<String, Object>> findUsers(@Param("search") String search,
+                                        @Param("accountStatus") List<String> accountStatus,
+                                        @Param("provider") List<String> provider,
+                                        @Param("role") List<String> role,
+                                        @Param("sort") String sort,
+                                        @Param("descending") boolean descending,
                                         @Param("limit") int limit,
                                         @Param("offset") int offset);
 
-    long countUsers(@Param("search") String search);
+    long countUsers(@Param("search") String search,
+                    @Param("accountStatus") List<String> accountStatus,
+                    @Param("provider") List<String> provider,
+                    @Param("role") List<String> role);
 
     List<Map<String, Object>> findRoles();
 
@@ -56,6 +64,10 @@ public interface AdminMapper {
     int softDeleteMedia(@Param("id") UUID id);
 
     List<Map<String, Object>> findPlans(@Param("search") String search,
+                                        @Param("status") List<String> status,
+                                        @Param("visibility") List<String> visibility,
+                                        @Param("sort") String sort,
+                                        @Param("descending") boolean descending,
                                         @Param("limit") int limit,
                                         @Param("offset") int offset);
 

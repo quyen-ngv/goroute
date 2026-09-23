@@ -29,11 +29,14 @@
         <result property="photoSource" column="photo_source"/>
         <result property="visibility" column="visibility"/>
         <result property="verificationStatus" column="verification_status"/>
+        <result property="verificationScope" column="verification_scope"/>
+        <result property="wardCode" column="ward_code"/>
         <result property="distanceMeters" column="distance_meters"/>
         <result property="idempotencyKey" column="idempotency_key"/>
         <result property="rewardPoints" column="reward_points"/>
         <result property="rewardReason" column="reward_reason"/>
         <result property="isRemoved" column="is_removed"/>
+        <result property="visitedAt" column="visited_at"/>
         <result property="editedAt" column="edited_at"/>
         <result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
@@ -87,8 +90,9 @@
         latitude, longitude, accuracy_meters, ward, district, province, province_code,
         location_source, location_key, caption, overall_rating, food_rating, price_rating,
         ambiance_rating, service_rating, photo_source, visibility, verification_status,
+        verification_scope, ward_code,
         distance_meters, idempotency_key, reward_points, reward_reason, is_removed,
-        edited_at, created_at, updated_at
+        visited_at, edited_at, created_at, updated_at
     </sql>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.UserCheckin">
@@ -97,15 +101,78 @@
              latitude, longitude, accuracy_meters, ward, district, province, province_code,
              location_source, location_key, caption, overall_rating, food_rating, price_rating,
              ambiance_rating, service_rating, photo_source, visibility, verification_status,
-             distance_meters, idempotency_key, is_removed, created_at, updated_at)
+             verification_scope, ward_code,
+             distance_meters, idempotency_key, is_removed, visited_at, created_at, updated_at)
         VALUES
             (#{id}, #{userId}, #{tripId}, #{activityId}, #{placeId}, #{reviewId}, #{locationName},
              #{customName}, #{latitude}, #{longitude}, #{accuracyMeters}, #{ward}, #{district},
              #{province}, #{provinceCode}, #{locationSource}, #{locationKey}, #{caption},
              #{overallRating}, #{foodRating}, #{priceRating}, #{ambianceRating}, #{serviceRating},
-             #{photoSource}, #{visibility}, #{verificationStatus}, #{distanceMeters},
-             #{idempotencyKey}, FALSE, #{createdAt}, #{updatedAt})
+             #{photoSource}, #{visibility}, #{verificationStatus},
+             COALESCE(#{verificationScope}, 'NONE'), #{wardCode}, #{distanceMeters},
+             #{idempotencyKey}, FALSE, COALESCE(#{visitedAt}, #{createdAt}), #{createdAt}, #{updatedAt})
     </insert>
+
+    <!-- Re-verification after an operator attaches a place: the verdict, the distance
+         and the ward are the only things that move; everything the author wrote stays. -->
+    <update id="updateVerification" parameterType="com.ds.goroute.entity.UserCheckin">
+        UPDATE user_checkins
+        SET verification_status = #{verificationStatus},
+            verification_scope = COALESCE(#{verificationScope}, 'NONE'),
+            ward_code = #{wardCode},
+            ward = #{ward},
+            province = #{province},
+            province_code = #{provinceCode},
+            distance_meters = #{distanceMeters},
+            updated_at = NOW()
+        WHERE id = #{id} AND is_removed = FALSE
+    </update>
+
+    <!-- Wards under the pins on this person's profile map, so the tint sits where the
+         pin is. A check-in at a catalogue place is pinned at the place and colours the
+         place's ward; a gallery photo posted from home must not colour home. A private
+         check-in colours the owner's own map only. A reviewed place is a pin too (the
+         review flow predates check-ins, and an older pin has no check-in behind it), so
+         its ward is coloured, skipping reviews a live check-in already carries. -->
+    <select id="findVisitedWards" resultType="com.ds.goroute.dto.response.VisitedWardResponse">
+        SELECT v.ward_code AS wardCode,
+               w.province_code AS provinceCode,
+               w.full_name AS wardName,
+               p.name AS provinceName,
+               SUM(v.visit_count)::int AS checkinCount,
+               SUM(v.verified_count)::int AS verifiedCount,
+               MAX(v.last_visit_at) AS lastCheckinAt
+        FROM (
+            SELECT COALESCE(cp.ward_code, c.ward_code) AS ward_code,
+                   COUNT(*) AS visit_count,
+                   COUNT(*) FILTER (WHERE c.verification_status = 'VERIFIED') AS verified_count,
+                   MAX(c.visited_at) AS last_visit_at
+            FROM user_checkins c
+            LEFT JOIN places cp ON cp.id = c.place_id
+            WHERE c.user_id = #{userId}
+              AND c.is_removed = FALSE
+              AND COALESCE(cp.ward_code, c.ward_code) IS NOT NULL
+              <if test="!includePrivate">AND c.visibility = 'PUBLIC'</if>
+            GROUP BY COALESCE(cp.ward_code, c.ward_code)
+            UNION ALL
+            SELECT rp.ward_code,
+                   COUNT(*),
+                   0,
+                   MAX(r.created_at)
+            FROM user_reviews r
+            JOIN places rp ON rp.id = r.place_id
+            WHERE r.user_id = #{userId}
+              AND rp.ward_code IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM user_checkins lc
+                  WHERE lc.review_id = r.id AND lc.is_removed = FALSE)
+            GROUP BY rp.ward_code
+        ) v
+        JOIN wards w ON w.code = v.ward_code
+        JOIN provinces p ON p.code = w.province_code
+        GROUP BY v.ward_code, w.province_code, w.full_name, p.name
+        ORDER BY MAX(v.last_visit_at) DESC
+    </select>
 
     <!-- The place is deliberately absent: changing where a check-in happened would mean
          recomputing two place averages and rewriting a passport event, so the flow is
@@ -121,6 +188,7 @@
             service_rating = #{serviceRating},
             visibility = #{visibility},
             review_id = #{reviewId},
+            visited_at = COALESCE(#{visitedAt}, visited_at),
             edited_at = #{editedAt},
             updated_at = #{updatedAt}
         WHERE id = #{id} AND user_id = #{userId} AND is_removed = FALSE
@@ -184,7 +252,8 @@
                 WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
                   AND t.restored_at IS NULL)
         </if>
-        ORDER BY created_at DESC
+        <!-- A history reads by when the person was there, not by when they got round to posting. -->
+        ORDER BY visited_at DESC, created_at DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
@@ -201,7 +270,7 @@
               SELECT 1 FROM content_takedowns t
               WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
                 AND t.restored_at IS NULL)
-        ORDER BY created_at DESC
+        ORDER BY visited_at DESC, created_at DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
@@ -231,7 +300,7 @@
               SELECT 1 FROM content_takedowns t
               WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
                 AND t.restored_at IS NULL)
-        ORDER BY created_at DESC
+        ORDER BY visited_at DESC, created_at DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
@@ -279,6 +348,20 @@
         SET place_id = #{placeId}, updated_at = NOW()
         WHERE location_key = #{locationKey} AND place_id IS NULL
     </update>
+
+    <!--
+      The check-ins a cluster promotion just attached a place to, so their verification can
+      be recomputed against it. A takedown is deliberately not filtered out: hiding a post
+      does not change where its author was standing, and un-hiding it later must not reveal
+      a badge computed against no place. Bounded because this runs inside one admin
+      transaction; a cluster this large is a data problem worth noticing in the log.
+    -->
+    <select id="findByLocationKeyAndPlace" resultMap="checkinMap">
+        SELECT <include refid="columns"/> FROM user_checkins
+        WHERE location_key = #{locationKey} AND place_id = #{placeId} AND is_removed = FALSE
+        ORDER BY created_at
+        LIMIT 1000
+    </select>
 
     <update id="attachReview">
         UPDATE user_checkins SET review_id = #{reviewId}, updated_at = NOW() WHERE id = #{id}

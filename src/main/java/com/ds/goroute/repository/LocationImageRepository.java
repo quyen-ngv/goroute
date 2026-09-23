@@ -13,4 +13,11 @@ public interface LocationImageRepository {
     void insert(LocationImage locationImage);
     void update(LocationImage locationImage);
     void deleteById(UUID id);
+
+    List<String> findWardCodes(UUID locationImageId);
+
+    /** Every link at once, keyed by area, for list screens. */
+    java.util.Map<UUID, List<String>> findAllWardCodes();
+
+    void replaceWardCodes(UUID locationImageId, java.util.Collection<String> wardCodes);
 }

@@ -85,4 +85,7 @@ public interface UserCheckinService {
 
     /** Everything at one uncatalogued spot, so its name is still tappable in the feed. */
     List<UserCheckinResponse> byLocationKey(String locationKey, int page, int size);
+
+    /** Wards this person has checked in at; private check-ins count only for the owner. */
+    List<com.ds.goroute.dto.response.VisitedWardResponse> visitedWards(UUID viewerId, UUID userId);
 }

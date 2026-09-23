@@ -114,6 +114,7 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .paidBy(paidBy)
                 .paidByGuestName(paidByGuestName)
                 .paidByGuestMemberId(paidByGuestMemberId)
+                .expenseDate(resolveExpenseDate(request.getExpenseDate()))
                 .createdBy(userId)
                 .build();
 
@@ -319,6 +320,9 @@ public class ExpenseServiceImpl implements ExpenseService {
         }
         if (request.getDescription() != null) {
             expense.setDescription(request.getDescription());
+        }
+        if (request.getExpenseDate() != null) {
+            expense.setExpenseDate(resolveExpenseDate(request.getExpenseDate()));
         }
         if (request.getActivityId() != null) {
             expense.setActivityId(request.getActivityId());
@@ -810,8 +814,27 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .splits(splitResponses)
                 .photoUrls(expensePhotoUrls(expense, photoResponses))
                 .photoUrlsV2(photoResponses)
+                .expenseDate(expense.getExpenseDate() != null ? expense.getExpenseDate() : expense.getCreatedAt())
                 .createdAt(expense.getCreatedAt())
                 .build();
+    }
+
+    /**
+     * The date the client asked for, or now when it sent none.
+     *
+     * <p>A day of slack absorbs a phone whose clock or time zone is ahead of the server's;
+     * anything past that is not a date anyone spent money on, and letting it through would
+     * park the row at the top of every list forever.
+     */
+    private LocalDateTime resolveExpenseDate(LocalDateTime requested) {
+        if (requested == null) {
+            return LocalDateTime.now();
+        }
+        if (requested.isAfter(LocalDateTime.now().plusDays(1))) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "Expense date cannot be in the future");
+        }
+        return requested;
     }
 
     private List<String> expensePhotoUrls(Expense expense, List<MemoryImageResponse> photos) {

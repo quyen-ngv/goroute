@@ -11,6 +11,7 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -39,6 +40,9 @@ public class UpdateUserCheckinRequest {
     @Min(1) @Max(5) private Integer priceRating;
     @Min(1) @Max(5) private Integer ambianceRating;
     @Min(1) @Max(5) private Integer serviceRating;
+
+    /** Correcting the day of the visit. Null leaves the stored one alone. */
+    private LocalDateTime visitedAt;
 
     /**
      * A check-in is a photo-backed visit, so editing replaces the ordered photo set as

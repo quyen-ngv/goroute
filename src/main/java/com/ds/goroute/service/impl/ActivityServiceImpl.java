@@ -481,6 +481,7 @@ public class ActivityServiceImpl implements ActivityService {
                 .splits(splitResponses)
                 .photoUrls(photoUrlsList)
                 .photoUrlsV2(photoResponses)
+                .expenseDate(expense.getExpenseDate() != null ? expense.getExpenseDate() : expense.getCreatedAt())
                 .createdAt(expense.getCreatedAt())
                 .build();
     }

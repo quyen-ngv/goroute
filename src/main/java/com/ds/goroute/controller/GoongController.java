@@ -53,10 +53,15 @@ public class GoongController {
     @GetMapping("/geocode")
     public ResponseEntity<String> geocode(
             @RequestParam(required = false) String address,
-            @RequestParam(required = false) String latlng) {
+            @RequestParam(required = false) String latlng,
+            @RequestParam(required = false) Integer limit) {
         MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
         if (address != null) params.add("address", address);
         if (latlng != null) params.add("latlng", latlng);
+        // Undocumented on Goong's side but honoured: without it reverse geocoding
+        // answers with a single result, which is not enough for the check-in picker
+        // to offer a choice of nearby places. Goong caps the value at five.
+        if (limit != null) params.add("limit", String.valueOf(limit));
         return goongClient.forward("/Geocode", params);
     }
 

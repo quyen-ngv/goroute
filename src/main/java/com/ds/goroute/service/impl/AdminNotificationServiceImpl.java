@@ -107,12 +107,12 @@ public class AdminNotificationServiceImpl implements AdminNotificationService {
     }
 
     @Override
-    public PageResponse<AdminNotificationHistoryResponse> history(String search, int page, int size) {
+    public PageResponse<AdminNotificationHistoryResponse> history(String search, String sort, boolean descending, int page, int size) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
         String keyword = blankToNull(search);
         return PageResponse.of(
-                adminNotificationMapper.findHistory(keyword, safeSize, safePage * safeSize),
+                adminNotificationMapper.findHistory(keyword, sort, descending, safeSize, safePage * safeSize),
                 adminNotificationMapper.countHistory(keyword),
                 safePage,
                 safeSize);

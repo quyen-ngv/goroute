@@ -132,6 +132,14 @@ public class HotelMarketplaceServiceImpl implements HotelMarketplaceService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public HotelProfileResponse partnerGetHotel(UUID actor, UUID hotelId) {
+        HotelProfile hotel = hotelRequired(hotelId);
+        authorizationService.requireResourcePermission(hotel.getOrganizationId(), actor, "HOTEL", hotelId, "HOTEL_READ");
+        return hotelResponse(hotel);
+    }
+
+    @Override
     @Transactional
     public HotelProfileResponse partnerCreateHotel(UUID actor, UpsertHotelRequest request) {
         HostOrganization org = authorizationService.requirePermission(request.getOrganizationId(), actor, "HOTEL_WRITE");
@@ -515,14 +523,14 @@ public class HotelMarketplaceServiceImpl implements HotelMarketplaceService {
     @Override public HotelBookingResponse partnerGetBooking(UUID actor,UUID bookingId){HotelBooking b=bookingRequired(bookingId);authorizationService.requireResourcePermission(b.getOrganizationId(),actor,"HOTEL",b.getHotelId(),"BOOKING_READ");return bookingResponse(b);}
     @Override @Transactional public HotelBookingResponse partnerUpdateBookingStatus(UUID actor,UUID bookingId,UpdateHotelBookingStatusRequest request){HotelBooking b=bookingRequired(bookingId);authorizationService.requireResourcePermission(b.getOrganizationId(),actor,"HOTEL",b.getHotelId(),"BOOKING_WRITE");requireOperatorTarget(request.getBookingStatus(),false);return transitionBooking(b,request.getBookingStatus(),request.getReason(),request.getExpectedVersion(),request.getGuestCharged(),actor,"USER");}
 
-    @Override public List<HotelProfileResponse> adminListHotels(String q,String status,int page,int size){PageRange r=pageRange(page,size);return repository.findHotelsAdmin(blankToNull(q),blankToNull(status),r.limit(),r.offset()).stream().map(this::hotelResponse).toList();}
+    @Override public List<HotelProfileResponse> adminListHotels(String q,List<String> status,List<String> propertyType,List<UUID> areas,String sort,boolean descending,int page,int size){PageRange r=pageRange(page,size);return repository.findHotelsAdmin(blankToNull(q),status,propertyType,areas,sort,descending,r.limit(),r.offset()).stream().map(this::hotelResponse).toList();}
     @Override public HotelProfileResponse adminGetHotel(UUID hotelId){return hotelResponse(hotelRequired(hotelId));}
     @Override public List<RoomTypeResponse> adminListRooms(UUID hotelId){hotelRequired(hotelId);return repository.findRoomTypes(hotelId,true).stream().map(this::roomResponse).toList();}
     @Override public List<RatePlanResponse> adminListRates(UUID roomId){roomRequired(roomId);return repository.findRatePlans(roomId,true).stream().map(this::rateResponse).toList();}
     @Override public List<RoomInventoryResponse> adminGetInventory(UUID roomId,LocalDate start,LocalDate end){roomRequired(roomId);validateRange(start,end,730);return repository.findInventory(roomId,start,end).stream().map(this::inventoryResponse).toList();}
     @Override public List<RatePlanDailyRateResponse> adminGetRateCalendar(UUID ratePlanId,LocalDate start,LocalDate end){RatePlan rate=rateRequired(ratePlanId);validateRange(start,end,730);return rateCalendarResponses(rate,start,end);}
     @Override @Transactional public HotelProfileResponse adminUpdateHotelStatus(UUID actor,UUID hotelId,MarketplacePublicationStatus status,String reason,Long expectedVersion){HotelProfile h=hotelRequired(hotelId);h.setStatus(status.name());h.setDisabledReason(status == MarketplacePublicationStatus.ENABLED?null:blankToNull(reason));h.setDataVersion(requiredVersion(expectedVersion));h.setUpdatedAt(LocalDateTime.now());h.setUpdatedBy(actor);optimistic(repository.updateHotel(h),"Hotel");h.setDataVersion(h.getDataVersion()+1);historyService.record(h.getOrganizationId(),"HOTEL",h.getId(),"ADMIN_STATUS_CHANGED",h,List.of("status"),actor,"ADMIN",reason);return hotelResponse(repository.findHotel(hotelId).orElse(h));}
-    @Override public List<HotelBookingResponse> adminListBookings(String q,String status,int page,int size){PageRange r=pageRange(page,size);return repository.findBookingsAdmin(blankToNull(q),blankToNull(status),r.limit(),r.offset()).stream().map(this::bookingResponse).toList();}
+    @Override public List<HotelBookingResponse> adminListBookings(String q,List<String> status,List<String> paymentStatus,String sort,boolean descending,int page,int size){PageRange r=pageRange(page,size);return repository.findBookingsAdmin(blankToNull(q),status,paymentStatus,sort,descending,r.limit(),r.offset()).stream().map(this::bookingResponse).toList();}
     @Override public HotelBookingResponse adminGetBooking(UUID bookingId){return bookingResponse(bookingRequired(bookingId));}
     @Override @Transactional public HotelBookingResponse adminUpdateBookingStatus(UUID actor,UUID bookingId,UpdateHotelBookingStatusRequest request){requireOperatorTarget(request.getBookingStatus(),true);return transitionBooking(bookingRequired(bookingId),request.getBookingStatus(),request.getReason(),request.getExpectedVersion(),request.getGuestCharged(),actor,"ADMIN");}
     @Override @Transactional public HotelProfileResponse adminCreateHotel(UUID actor,UpsertHotelRequest request){return partnerCreateHotel(actor,request);}

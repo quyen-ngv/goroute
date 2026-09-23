@@ -10,6 +10,7 @@ import com.ds.goroute.service.FoodService;
 import com.ds.goroute.service.PlaceAttributeCatalog;
 import com.ds.goroute.service.PlaceService;
 import com.ds.goroute.type.PlaceReviewRefreshRerunMode;
+import com.ds.goroute.utils.AdminListSort;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.CacheControl;
@@ -60,14 +61,25 @@ public class AdminPlaceController extends BaseController {
                 .body(ofSucceeded(PlaceAttributeCatalog.definitions()));
     }
 
+    /** Columns the console may order the catalogue by; anything else falls back to newest first. */
+    private static final java.util.Set<String> PLACE_SORT_FIELDS = java.util.Set.of(
+            "title", "address", "reviewRating", "reviewCount", "lastScrapedAt", "createdAt");
+
     @GetMapping
     @PreAuthorize("@adminAuthorization.can(authentication,'places','get')")
     public ResponseEntity listPlaces(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) java.util.List<String> placeGroups,
+            @RequestParam(required = false) java.util.List<String> visibilityStatus,
+            @RequestParam(required = false) java.util.List<String> trustLevel,
+            @RequestParam(required = false) java.util.List<UUID> locationImageId,
+            @RequestParam(required = false) String sort,
+            @RequestParam(required = false) String direction,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        return ResponseEntity.ok(ofSucceeded(placeService.getAdminPlaces(search, placeGroups, page, size)));
+        return ResponseEntity.ok(ofSucceeded(placeService.getAdminPlaces(search, placeGroups, visibilityStatus,
+                trustLevel, locationImageId, AdminListSort.field(sort, PLACE_SORT_FIELDS),
+                AdminListSort.descending(direction), page, size)));
     }
 
     @GetMapping("/{placeId}")

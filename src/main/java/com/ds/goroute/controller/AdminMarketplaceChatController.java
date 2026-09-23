@@ -22,13 +22,23 @@ import java.util.UUID;
 public class AdminMarketplaceChatController {
     private final MarketplaceChatService service;
 
+    /** Columns this list may be ordered by; anything else falls back to its natural order. */
+    private static final java.util.Set<String> CONVERSATION_SORT_FIELDS = java.util.Set.of(
+            "organizationName", "bookingCode", "orderCode", "lastMessageAt", "createdAt");
+
     @GetMapping
     @PreAuthorize("@adminAuthorization.can(authentication,'marketplace-conversations','get')")
     public ResponseEntity<BaseResponse<List<MarketplaceConversationResponse>>> list(
             @RequestParam(required=false) String q,@RequestParam(required=false) String search,
-            @RequestParam(required=false) String status,@RequestParam(defaultValue="0") int page,
+            @RequestParam(required=false) java.util.List<String> status,
+            @RequestParam(required=false) java.util.List<String> conversationType,
+            @RequestParam(required=false) String sort,@RequestParam(required=false) String direction,
+            @RequestParam(defaultValue="0") int page,
             @RequestParam(defaultValue="50") int size){
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminList(q!=null?q:search,status,page,size)));
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminList(q!=null?q:search,com.ds.goroute.utils.AdminListSort.codes(status),
+                com.ds.goroute.utils.AdminListSort.codes(conversationType),
+                com.ds.goroute.utils.AdminListSort.field(sort,CONVERSATION_SORT_FIELDS),
+                com.ds.goroute.utils.AdminListSort.descending(direction),page,size)));
     }
 
     @GetMapping("/{id}/messages")

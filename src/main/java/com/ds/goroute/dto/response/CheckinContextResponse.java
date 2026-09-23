@@ -46,9 +46,20 @@ public class CheckinContextResponse {
     private boolean placeSpecificRadius;
     /** Optional preview calculated from the coordinates supplied to the context endpoint. */
     private Double distanceMeters;
+    /** Inside the place's drawn area or radius. Kept under its old name for the app. */
     private Boolean withinVerificationRadius;
+    /** True when the place has a drawn area, so the radius figure above is not the rule. */
+    private boolean placeHasGeometry;
     private Boolean gpsAccuracyAcceptable;
     private int maxAccuracyMeters;
+
+    /** The official ward the supplied point falls in, when a point was supplied. */
+    private String wardCode;
+    private String wardName;
+    private String provinceCode;
+    private String provinceName;
+    /** What a camera check-in from this point would earn: PLACE, WARD or NONE. */
+    private com.ds.goroute.type.CheckinVerificationScope verificationScopePreview;
 
     private boolean guideScreenEnabled;
     private int guideScreenMaxViews;

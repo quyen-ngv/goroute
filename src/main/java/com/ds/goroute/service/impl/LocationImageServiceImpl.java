@@ -87,9 +87,11 @@ public class LocationImageServiceImpl implements LocationImageService {
     @Transactional(readOnly = true)
     public List<LocationImageResponse> getAllLocationImages(boolean includeWeather) {
         List<LocationImage> locationImages = locationImageRepository.findAll();
+        // One query for every area's wards rather than one per row.
+        Map<UUID, List<String>> wardsByArea = locationImageRepository.findAllWardCodes();
         if (!includeWeather) {
             return locationImages.stream()
-                .map(this::mapToResponse)
+                .map(locationImage -> withWards(mapToResponse(locationImage), wardsByArea))
                 .collect(Collectors.toList());
         }
 
@@ -97,7 +99,8 @@ public class LocationImageServiceImpl implements LocationImageService {
         // Weather is cached per grid cell, so repeats across the list collapse into one call.
         List<CompletableFuture<LocationImageResponse>> pending = locationImages.stream()
             .map(locationImage -> CompletableFuture.supplyAsync(
-                () -> mapToResponse(locationImage, cityWeatherService.findWeatherQuietly(locationImage)),
+                () -> withWards(mapToResponse(locationImage, cityWeatherService.findWeatherQuietly(locationImage)),
+                        wardsByArea),
                 applicationTaskExecutor))
             .toList();
 
@@ -117,9 +120,16 @@ public class LocationImageServiceImpl implements LocationImageService {
     public LocationImageResponse getLocationImage(UUID id, boolean includeWeather) {
         LocationImage locationImage = locationImageRepository.findById(id)
             .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Location image not found"));
-        return includeWeather
+        LocationImageResponse response = includeWeather
             ? mapToResponse(locationImage, cityWeatherService.findWeatherQuietly(locationImage))
             : mapToResponse(locationImage);
+        response.setWardCodes(locationImageRepository.findWardCodes(id));
+        return response;
+    }
+
+    private LocationImageResponse withWards(LocationImageResponse response, Map<UUID, List<String>> wardsByArea) {
+        response.setWardCodes(wardsByArea.getOrDefault(response.getId(), List.of()));
+        return response;
     }
 
     @Override
@@ -145,9 +155,14 @@ public class LocationImageServiceImpl implements LocationImageService {
         CitySlugResolver.resolveFromDestination(request.getFullAddress())
                 .ifPresent(city -> locationImage.setCitySlug(city.getSlug()));
         locationImageRepository.insert(locationImage);
+        if (request.getWardCodes() != null) {
+            locationImageRepository.replaceWardCodes(locationImage.getId(), request.getWardCodes());
+        }
 
         log.info("Location image created: {}", locationImage.getId());
-        return mapToResponse(locationImage);
+        LocationImageResponse response = mapToResponse(locationImage);
+        response.setWardCodes(locationImageRepository.findWardCodes(locationImage.getId()));
+        return response;
     }
 
     @Override
@@ -192,9 +207,14 @@ public class LocationImageServiceImpl implements LocationImageService {
         locationImage.setUpdatedAt(LocalDateTime.now());
         locationImage.normalizeAddress();
         locationImageRepository.update(locationImage);
+        if (request.getWardCodes() != null) {
+            locationImageRepository.replaceWardCodes(id, request.getWardCodes());
+        }
 
         log.info("Location image updated: {}", id);
-        return mapToResponse(locationImage);
+        LocationImageResponse response = mapToResponse(locationImage);
+        response.setWardCodes(locationImageRepository.findWardCodes(id));
+        return response;
     }
 
     @Override

@@ -38,4 +38,7 @@ public class UpdateLocationImageRequest {
     @DecimalMin(value = "0.1", message = "Coverage radius must be greater than 0")
     @DecimalMax(value = "500", message = "Coverage radius must not exceed 500 km")
     private BigDecimal coverageRadiusKm;
+
+    /** Null keeps the current wards; an empty list clears them. */
+    private List<String> wardCodes;
 }

@@ -35,5 +35,12 @@ public class ExpenseResponse {
 
     /** The same receipts, with title, description, capture date and location. */
     private List<MemoryImageResponse> photoUrlsV2;
+
+    /**
+     * When the money was spent. This is the date the app shows and sorts by; {@link #createdAt}
+     * stays what it always was, the moment the row was written.
+     */
+    private LocalDateTime expenseDate;
+
     private LocalDateTime createdAt;
 }

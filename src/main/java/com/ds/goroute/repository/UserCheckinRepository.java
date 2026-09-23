@@ -49,6 +49,9 @@ public interface UserCheckinRepository {
 
     List<UserCheckin> findLatestRatedPerUserForLocationKey(String locationKey);
 
+    /** Check-ins of one cluster now pointing at a place, for recomputing their verification. */
+    List<UserCheckin> findByLocationKeyAndPlace(String locationKey, UUID placeId);
+
     int markRemoved(UUID id, UUID userId);
 
     /** Soft-deleted check-ins that still own photo rows, bounded for background cleanup. */
@@ -123,4 +126,9 @@ public interface UserCheckinRepository {
     List<UserCheckinLocationHistory> findLocationHistory(UUID checkinId);
 
     List<UUID> findReassignedCheckinIds(List<UUID> checkinIds);
+
+    /** Rewrites only the verification verdict, distance and ward of an existing row. */
+    int updateVerification(UserCheckin checkin);
+
+    List<com.ds.goroute.dto.response.VisitedWardResponse> findVisitedWards(UUID userId, boolean includePrivate);
 }

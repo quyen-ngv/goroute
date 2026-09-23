@@ -32,6 +32,11 @@ public class PlaceResponse {
     private BigDecimal latitude;
     private BigDecimal longitude;
     private Integer verificationRadiusMeters;
+    /** GeoJSON geometry of the drawn verification area; only populated on single-place reads. */
+    private JsonNode verificationGeometry;
+    private String wardCode;
+    /** Province the ward belongs to; only populated since the geo backfill fills the column. */
+    private String provinceCode;
     private String phone;
     private String website;
     private String googleMapsLink;

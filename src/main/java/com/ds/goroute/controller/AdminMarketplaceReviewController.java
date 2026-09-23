@@ -20,12 +20,20 @@ import java.util.UUID;
 public class AdminMarketplaceReviewController {
     private final MarketplaceReviewResponseService service;
 
+    /** Columns this list may be ordered by; anything else falls back to its natural order. */
+    private static final java.util.Set<String> REVIEW_SORT_FIELDS = java.util.Set.of(
+            "subjectName", "reviewerName", "overallRating", "responseUpdatedAt", "createdAt");
+
     @GetMapping
     @PreAuthorize("@adminAuthorization.can(authentication,'marketplace-reviews','get')")
     public ResponseEntity<BaseResponse<List<MarketplaceReviewViewResponse>>> list(
             @RequestParam(required=false) String q,@RequestParam(required=false) String search,
+            @RequestParam(required=false) java.util.List<String> responseStatus,
+            @RequestParam(required=false) String sort,@RequestParam(required=false) String direction,
             @RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="50") int size){
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminList(q!=null?q:search,page,size)));
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminList(q!=null?q:search,com.ds.goroute.utils.AdminListSort.codes(responseStatus),
+                com.ds.goroute.utils.AdminListSort.field(sort,REVIEW_SORT_FIELDS),
+                com.ds.goroute.utils.AdminListSort.descending(direction),page,size)));
     }
 
     @PutMapping("/{reviewId}/response")

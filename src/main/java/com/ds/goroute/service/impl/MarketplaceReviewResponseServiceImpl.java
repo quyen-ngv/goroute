@@ -71,9 +71,9 @@ public class MarketplaceReviewResponseServiceImpl implements MarketplaceReviewRe
     }
 
     @Override
-    public List<MarketplaceReviewViewResponse> adminList(String query, int page, int size) {
+    public List<MarketplaceReviewViewResponse> adminList(String query, java.util.List<String> responseStatus, String sort, boolean descending, int page, int size) {
         Page request = page(page, size);
-        return repository.findAdmin(clean(query), request.limit, request.offset).stream()
+        return repository.findAdmin(clean(query), responseStatus, sort, descending, request.limit, request.offset).stream()
                 .map(this::response)
                 .toList();
     }

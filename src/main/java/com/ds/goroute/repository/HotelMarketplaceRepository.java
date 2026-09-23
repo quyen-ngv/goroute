@@ -14,7 +14,7 @@ public interface HotelMarketplaceRepository {
     List<HotelProfile> findHotelsByOrganization(UUID organizationId); List<HotelProfile> findHotelsPublic(String query,String propertyType,java.math.BigDecimal minPrice,java.math.BigDecimal maxPrice,LocalDate checkIn,LocalDate checkOut,int rooms,int adults,int children,int limit,int offset);
     int updateBookingStay(UUID id,long expectedVersion,LocalDate checkIn,LocalDate checkOut,int adults,int children,java.math.BigDecimal subtotal,java.math.BigDecimal total,String snapshot,UUID actor,LocalDateTime now);
     int updateBookingItemStay(UUID id,int adults,int children,java.math.BigDecimal unitPrice,java.math.BigDecimal totalPrice);
-    List<HotelProfile> findHotelsAdmin(String query,String status,int limit,int offset);
+    List<HotelProfile> findHotelsAdmin(String query,List<String> status,List<String> propertyType,List<UUID> locationImageIds,String sort,boolean descending,int limit,int offset);
     int insertRoomType(RoomType room); int updateRoomType(RoomType room); Optional<RoomType> findRoomType(UUID id);
     List<RoomType> findRoomTypes(UUID hotelId,boolean includeDisabled);
     int insertRatePlan(RatePlan rate); int updateRatePlan(RatePlan rate); Optional<RatePlan> findRatePlan(UUID id);
@@ -42,7 +42,7 @@ public interface HotelMarketplaceRepository {
     List<HotelBookingItem> findBookingItems(UUID bookingId); List<HotelBooking> findBookingsByUser(UUID userId,int limit,int offset);
     List<HotelBooking> findBookingsByOrganization(UUID organizationId,String status,List<UUID> hotelIds,int limit,int offset);
     long countBookingsByOrganizationFiltered(UUID organizationId,String status,List<UUID> hotelIds);
-    List<HotelBooking> findBookingsAdmin(String query,String status,int limit,int offset);
+    List<HotelBooking> findBookingsAdmin(String query,List<String> status,List<String> paymentStatus,String sort,boolean descending,int limit,int offset);
     int updateBookingStatus(UUID id,long expectedVersion,String bookingStatus,String paymentStatus,String reason,Boolean guestCharged,
                             LocalDateTime cancelledAt,UUID actor,LocalDateTime now);
     long countBookingsByOrganization(UUID organizationId,String status); long countArrivals(UUID organizationId,LocalDate day);

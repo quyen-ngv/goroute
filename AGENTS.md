@@ -165,7 +165,8 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `CHECKIN` | `CLUSTER_MIN_USERS` / `CLUSTER_MIN_CHECKINS` | count | safe fallback 3 / 5 | private/admin |
 | `PASSPORT` | `PASSPORT_ENABLED` | boolean | safe fallback true | public |
 | `PASSPORT` | `PROVINCE_COVERAGE_THRESHOLD` | percent, 0..100 | safe fallback 95 | private/admin |
-| `PASSPORT` | `TOTAL_PROVINCES` | count, 1..200 | safe fallback 63 | public |
+| `CHECKIN` | `REWARD_WARD_VERIFIED_MULTIPLIER` | multiplier, 0..5 | safe fallback 0.7 | public |
+| `PASSPORT` | `TOTAL_PROVINCES` | count, 1..200 | safe fallback 34 | public |
 | `POINTS` | `EXPIRY_DAYS` | days, 0..3650 (0 = never) | safe fallback 0 | public |
 | `GUIDE` | `GUIDE_ENABLED` | boolean | safe fallback false | public |
 | `GUIDE` | `PLATFORM_FEE_PERCENT` | percent, 0..100 | safe fallback 20 | public |

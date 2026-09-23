@@ -22,13 +22,22 @@ import java.util.UUID;
 public class AdminActivityCommerceController {
     private final ActivityCommerceService service;
 
+    /** Columns this list may be ordered by; anything else falls back to its natural order. */
+    private static final java.util.Set<String> PRODUCT_SORT_FIELDS = java.util.Set.of(
+            "title", "placeTitle", "priceAmount", "updatedAt", "createdAt");
+
     @GetMapping
     @PreAuthorize("@adminAuthorization.can(authentication,'marketplace-activities','get')")
     public ResponseEntity<BaseResponse<List<MarketplaceActivityResponse>>> products(
             @RequestParam(required=false) String q, @RequestParam(required=false) String search,
-            @RequestParam(required=false) String status,
+            @RequestParam(required=false) java.util.List<String> status,
+            @RequestParam(required=false) java.util.List<UUID> locationImageId,
+            @RequestParam(required=false) String sort, @RequestParam(required=false) String direction,
             @RequestParam(defaultValue="0") int page, @RequestParam(defaultValue="50") int size) {
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminProducts(q!=null?q:search,status,page,size)));
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminProducts(q!=null?q:search,
+                com.ds.goroute.utils.AdminListSort.codes(status), com.ds.goroute.utils.AdminListSort.ids(locationImageId),
+                com.ds.goroute.utils.AdminListSort.field(sort,PRODUCT_SORT_FIELDS),
+                com.ds.goroute.utils.AdminListSort.descending(direction),page,size)));
     }
 
     @PostMapping
@@ -104,13 +113,22 @@ public class AdminActivityCommerceController {
                 actor(authentication),id,status,reason,expectedVersion)));
     }
 
+    /** Columns this list may be ordered by; anything else falls back to its natural order. */
+    private static final java.util.Set<String> ORDER_SORT_FIELDS = java.util.Set.of(
+            "orderCode", "activityTitle", "totalAmount", "createdAt");
+
     @GetMapping("/orders")
     @PreAuthorize("@adminAuthorization.can(authentication,'marketplace-activities','get')")
     public ResponseEntity<BaseResponse<List<ActivityOrderResponse>>> orders(
             @RequestParam(required=false) String q, @RequestParam(required=false) String search,
-            @RequestParam(required=false) String status,
+            @RequestParam(required=false) java.util.List<String> status,
+            @RequestParam(required=false) java.util.List<String> paymentStatus,
+            @RequestParam(required=false) String sort, @RequestParam(required=false) String direction,
             @RequestParam(defaultValue="0") int page, @RequestParam(defaultValue="50") int size) {
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminOrders(q!=null?q:search,status,page,size)));
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.adminOrders(q!=null?q:search,
+                com.ds.goroute.utils.AdminListSort.codes(status), com.ds.goroute.utils.AdminListSort.codes(paymentStatus),
+                com.ds.goroute.utils.AdminListSort.field(sort,ORDER_SORT_FIELDS),
+                com.ds.goroute.utils.AdminListSort.descending(direction),page,size)));
     }
 
     @GetMapping("/orders/{id}")

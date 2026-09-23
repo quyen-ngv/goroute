@@ -15,6 +15,7 @@ import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.entity.UserCheckin;
 import com.ds.goroute.entity.UserCheckinPhoto;
+import com.ds.goroute.entity.Ward;
 import com.ds.goroute.entity.CheckinLikeCount;
 import com.ds.goroute.entity.UserReview;
 import com.ds.goroute.entity.MediaAsset;
@@ -37,6 +38,9 @@ import com.ds.goroute.service.ReviewService;
 import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.checkin.CheckinRewardCalculator;
 import com.ds.goroute.service.checkin.CheckinRewardService;
+import com.ds.goroute.service.checkin.CheckinVerifier;
+import com.ds.goroute.dto.response.VisitedWardResponse;
+import com.ds.goroute.type.CheckinVerificationScope;
 import com.ds.goroute.service.UserCheckinService;
 import com.ds.goroute.service.checkin.LocationKeyFactory;
 import com.ds.goroute.service.notification.NotificationHelper;
@@ -103,6 +107,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     private final ActivityRepository activityRepository;
     private final CheckinRepository activityVisitRepository;
     private final NotificationHelper notificationHelper;
+    private final CheckinVerifier verifier;
 
     @Override
     @Transactional(readOnly = true)
@@ -127,17 +132,11 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 : checkinRepository.countByUserAndLocationKey(userId, cluster);
         int previousVisits = (int) Math.min(Integer.MAX_VALUE, previousVisitCount);
 
-        int globalRadius = config.getInt(BusinessConfigKey.CHECKIN_VERIFY_RADIUS_METERS);
-        int effectiveRadius = effectiveVerificationRadius(place.orElse(null), globalRadius);
-        Double distanceMeters = place.map(found -> GeoDistance.betweenOrNull(
-                latitude, longitude, found.getLatitude(), found.getLongitude())).orElse(null);
-        Boolean withinVerificationRadius = distanceMeters == null
-                ? null
-                : distanceMeters <= effectiveRadius;
+        // The same assessment the verdict will be reached with, so the hint on screen
+        // never disagrees with the badge the check-in gets a moment later.
+        CheckinVerifier.Assessment assessment = verifier.assess(place.orElse(null), latitude, longitude, accuracyMeters);
         int maxAccuracyMeters = config.getInt(BusinessConfigKey.CHECKIN_MAX_ACCURACY_METERS);
-        Boolean gpsAccuracyAcceptable = accuracyMeters == null
-                ? null
-                : accuracyMeters.doubleValue() <= maxAccuracyMeters;
+        boolean pointSupplied = latitude != null && longitude != null;
 
         return CheckinContextResponse.builder()
                 .checkinEnabled(config.getBoolean(BusinessConfigKey.CHECKIN_ENABLED))
@@ -155,14 +154,20 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .galleryAllowed(isGalleryAllowed(userId))
                 .maxPhotos(config.getInt(BusinessConfigKey.CHECKIN_MAX_PHOTOS))
                 .maxCaptionLength(config.getInt(BusinessConfigKey.CHECKIN_MAX_CAPTION_LENGTH))
-                .verifyRadiusMeters(effectiveRadius)
+                .verifyRadiusMeters(assessment.effectiveRadiusMeters())
                 .placeSpecificRadius(place.map(Place::getVerificationRadiusMeters)
                         .map(value -> value >= 20)
                         .orElse(false))
-                .distanceMeters(distanceMeters)
-                .withinVerificationRadius(withinVerificationRadius)
-                .gpsAccuracyAcceptable(gpsAccuracyAcceptable)
+                .distanceMeters(assessment.distanceMeters())
+                .withinVerificationRadius(assessment.withinPlaceArea())
+                .placeHasGeometry(assessment.placeHasGeometry())
+                .gpsAccuracyAcceptable(assessment.accuracyAcceptable())
                 .maxAccuracyMeters(maxAccuracyMeters)
+                .wardCode(assessment.ward().map(Ward::getCode).orElse(null))
+                .wardName(assessment.ward().map(Ward::getFullName).orElse(null))
+                .provinceCode(assessment.ward().map(Ward::getProvinceCode).orElse(null))
+                .provinceName(assessment.ward().map(Ward::getProvinceName).orElse(null))
+                .verificationScopePreview(pointSupplied ? assessment.scopeIfLiveCapture() : null)
                 .guideScreenEnabled(config.getBoolean(BusinessConfigKey.CHECKIN_GUIDE_SCREEN_ENABLED))
                 .guideScreenMaxViews(config.getInt(BusinessConfigKey.CHECKIN_GUIDE_SCREEN_MAX_VIEWS))
                 .cameraRewardMultiplier(config.getDecimal(BusinessConfigKey.CHECKIN_REWARD_CAMERA_MULTIPLIER))
@@ -235,11 +240,12 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .visibility(ContentVisibility.PUBLIC)
                 .idempotencyKey(request.getIdempotencyKey())
                 .isRemoved(false)
+                .visitedAt(resolveVisitedAt(request.getVisitedAt(), now))
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
 
-        applyVerification(checkin, place);
+        verifier.apply(checkin, place);
         checkinRepository.insert(checkin);
         storePhotos(checkin.getId(), photos, now);
 
@@ -355,6 +361,9 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         checkin.setServiceRating(request.getServiceRating());
         checkin.setPhotoSource(photoSource);
         checkin.setVisibility(ContentVisibility.PUBLIC);
+        if (request.getVisitedAt() != null) {
+            checkin.setVisitedAt(resolveVisitedAt(request.getVisitedAt(), LocalDateTime.now()));
+        }
         checkin.setEditedAt(LocalDateTime.now());
         checkin.setUpdatedAt(LocalDateTime.now());
 
@@ -527,53 +536,15 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 locationKey, boundedSize(size), boundedPage(page) * boundedSize(size)), Set.of(), null);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<VisitedWardResponse> visitedWards(UUID viewerId, UUID userId) {
+        return checkinRepository.findVisitedWards(userId, userId.equals(viewerId));
+    }
+
     // --- rules -----------------------------------------------------------------------
-
-    /**
-     * Verification is computed here and nowhere else, from the three things the server can
-     * actually check: whether the photo was taken through the in-app camera, how good the
-     * fix was, and how far the author was from the place.
-     *
-     * <p>A gallery photo is never automatically verified. There is no way to know where or
-     * when it was taken, and saying otherwise would make the badge meaningless everywhere.
-     */
-    private void applyVerification(UserCheckin checkin, Place place) {
-        Double distance = place == null ? null : GeoDistance.betweenOrNull(
-                checkin.getLatitude(), checkin.getLongitude(),
-                place.getLatitude(), place.getLongitude());
-        if (distance != null) {
-            checkin.setDistanceMeters(BigDecimal.valueOf(distance));
-        }
-
-        if (!checkin.getPhotoSource().isLiveCapture()) {
-            checkin.setVerificationStatus(CheckinVerificationStatus.UNVERIFIED);
-            return;
-        }
-        // A raw map/reverse-geocoded point has no catalogue boundary to compare against.
-        // Camera + GPS accuracy alone proves where the phone was, not that it was at a
-        // particular Place. Province-wide Passport tags may still count this event, but
-        // the trust badge must remain unverified until the point is linked to a Place.
-        if (place == null) {
-            checkin.setVerificationStatus(CheckinVerificationStatus.UNVERIFIED);
-            return;
-        }
-        int maxAccuracy = config.getInt(BusinessConfigKey.CHECKIN_MAX_ACCURACY_METERS);
-        if (checkin.getAccuracyMeters() == null || checkin.getAccuracyMeters().doubleValue() > maxAccuracy) {
-            checkin.setVerificationStatus(CheckinVerificationStatus.UNVERIFIED);
-            return;
-        }
-        int radius = effectiveVerificationRadius(place,
-                config.getInt(BusinessConfigKey.CHECKIN_VERIFY_RADIUS_METERS));
-        boolean withinRadius = distance != null && distance <= radius;
-        checkin.setVerificationStatus(withinRadius
-                ? CheckinVerificationStatus.VERIFIED
-                : CheckinVerificationStatus.UNVERIFIED);
-    }
-
-    private int effectiveVerificationRadius(Place place, int globalRadius) {
-        Integer configured = place == null ? null : place.getVerificationRadiusMeters();
-        return configured != null && configured >= 20 ? configured : globalRadius;
-    }
+    // Location verification lives in CheckinVerifier, shared with the operator flow that
+    // attaches a place to an existing check-in.
 
     /**
      * Creates the author's review of the place, or updates the one they already had.
@@ -623,7 +594,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .checkinLat(checkin.getLatitude())
                 .checkinLng(checkin.getLongitude())
                 .checkinAccuracy(checkin.getAccuracyMeters())
-                .locationVerified(checkin.getVerificationStatus() == CheckinVerificationStatus.VERIFIED)
+                .locationVerified(checkin.getVerificationScope() == CheckinVerificationScope.PLACE)
                 .weight(BigDecimal.ONE)
                 .helpfulVotes(0)
                 .unhelpfulVotes(0)
@@ -833,6 +804,8 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .placeReviewCount(place == null ? null : place.getReviewCount())
                 .placeReviewRating(place == null ? null : place.getReviewRating())
                 .placeAdjustedRating(place == null ? null : place.getAdjustedRating())
+                .placeLatitude(place == null ? null : place.getLatitude())
+                .placeLongitude(place == null ? null : place.getLongitude())
                 .caption(checkin.getCaption())
                 .overallRating(checkin.getOverallRating())
                 .foodRating(checkin.getFoodRating())
@@ -842,11 +815,14 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .photoSource(checkin.getPhotoSource())
                 .visibility(checkin.getVisibility())
                 .verificationStatus(checkin.getVerificationStatus())
+                .verificationScope(checkin.getVerificationScope())
+                .wardCode(checkin.getWardCode())
                 .distanceMeters(checkin.getDistanceMeters())
                 .rewardPoints(checkin.getRewardPoints())
                 .rewardReason(checkin.getRewardReason())
                 .rewardReasonCodes(CheckinRewardCalculator.parseReasonCodes(checkin.getRewardReason()))
                 .edited(checkin.getEditedAt() != null)
+                .visitedAt(checkin.getVisitedAt() != null ? checkin.getVisitedAt() : checkin.getCreatedAt())
                 .createdAt(checkin.getCreatedAt())
                 .linkedToReview(checkin.getReviewId() != null)
                 .latestReview(latestReview)
@@ -908,5 +884,28 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    /**
+     * The visit date the author asked for, or now when they sent none.
+     *
+     * <p>A day of slack forward absorbs a phone running ahead of the server; beyond that it
+     * is not a day anybody has been anywhere yet. Ten years back is the other end: a check-in
+     * older than the product is a typo or a probe, and either way it would sit at the bottom
+     * of a history nobody can scroll to.
+     */
+    private LocalDateTime resolveVisitedAt(LocalDateTime requested, LocalDateTime now) {
+        if (requested == null) {
+            return now;
+        }
+        if (requested.isAfter(now.plusDays(1))) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "A visit date cannot be in the future");
+        }
+        if (requested.isBefore(now.minusYears(10))) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "A visit date cannot be more than 10 years ago");
+        }
+        return requested;
     }
 }
