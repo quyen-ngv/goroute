@@ -115,6 +115,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     private final CheckinRepository activityVisitRepository;
     private final NotificationHelper notificationHelper;
     private final CheckinVerifier verifier;
+    private final com.ds.goroute.quest.service.QuestPlayService questPlayService;
 
     @Override
     @Transactional(readOnly = true)
@@ -229,6 +230,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .province(blankToNull(request.getProvince()))
                 .provinceCode(blankToNull(request.getProvinceCode()))
                 .locationSource(request.getLocationSource())
+                .questRunId(request.getQuestRunId())
                 // A catalogued place keys on the place, so everyone who checks in there
                 // lands in one cluster whichever door they were standing at.
                 .locationKey(place != null
@@ -255,6 +257,13 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         verifier.apply(checkin, place);
         checkinRepository.insert(checkin);
         storePhotos(checkin.getId(), photos, now);
+
+        // A check-in made to satisfy a quest checkpoint is linked back to the run (D13); the
+        // checkpoint then counts as passed. Best-effort so a quest hiccup never fails the check-in.
+        if (request.getQuestRunId() != null) {
+            questPlayService.attachCheckin(request.getQuestRunId(), request.getQuestCheckpointId(),
+                    userId, checkin.getId());
+        }
 
         // The rating half of the rule. A catalogued place gets a real review now; an
         // uncatalogued one keeps the score on the check-in until the cluster is promoted,

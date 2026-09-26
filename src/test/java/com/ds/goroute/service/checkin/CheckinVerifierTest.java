@@ -188,6 +188,44 @@ class CheckinVerifierTest {
                 .isEqualTo(CheckinVerificationScope.NONE);
     }
 
+    @Test
+    @DisplayName("a map-pinned target inside the radius reaches PLACE without a places row")
+    void mapPinnedTargetInsideRadiusIsPlace() {
+        VerificationTarget target = VerificationTarget.forCoordinates(LAKE_LAT, LAKE_LNG, 40);
+
+        // Standing on the pin: distance ~0, well inside the 40 m radius.
+        CheckinVerifier.Assessment assessment = verifier.assess(target, LAKE_LAT, LAKE_LNG, new BigDecimal("15"));
+
+        assertThat(assessment.withinPlaceArea()).isTrue();
+        assertThat(assessment.placeHasGeometry()).isFalse();
+        assertThat(assessment.effectiveRadiusMeters()).isEqualTo(40);
+        assertThat(assessment.scopeIfLiveCapture()).isEqualTo(CheckinVerificationScope.PLACE);
+    }
+
+    @Test
+    @DisplayName("a map-pinned target that misses the radius is NONE, never WARD (ward fallback off)")
+    void mapPinnedTargetOutsideRadiusNeverEscalatesToWard() {
+        VerificationTarget target = VerificationTarget.forCoordinates(LAKE_LAT, LAKE_LNG, 40);
+
+        CheckinVerifier.Assessment assessment = verifier.assess(target, FAR_LAT, LAKE_LNG, new BigDecimal("15"));
+
+        assertThat(assessment.withinPlaceArea()).isFalse();
+        assertThat(assessment.ward()).isEmpty();
+        assertThat(assessment.scopeIfLiveCapture()).isEqualTo(CheckinVerificationScope.NONE);
+    }
+
+    @Test
+    @DisplayName("a map-pinned target uses its own radius, not the place radius or check-in config")
+    void mapPinnedTargetUsesOwnRadius() {
+        // 40 m would miss FAR_LAT (~1240 m north); a 2000 m target radius reaches it.
+        assertThat(verifier.assess(VerificationTarget.forCoordinates(LAKE_LAT, LAKE_LNG, 40),
+                FAR_LAT, LAKE_LNG, new BigDecimal("15")).scopeIfLiveCapture())
+                .isEqualTo(CheckinVerificationScope.NONE);
+        assertThat(verifier.assess(VerificationTarget.forCoordinates(LAKE_LAT, LAKE_LNG, 2000),
+                FAR_LAT, LAKE_LNG, new BigDecimal("15")).scopeIfLiveCapture())
+                .isEqualTo(CheckinVerificationScope.PLACE);
+    }
+
     private static UserCheckin camera(BigDecimal latitude, BigDecimal longitude, String accuracy) {
         return UserCheckin.builder()
                 .id(UUID.randomUUID())

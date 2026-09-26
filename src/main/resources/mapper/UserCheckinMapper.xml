@@ -101,7 +101,7 @@
              latitude, longitude, accuracy_meters, ward, district, province, province_code,
              location_source, location_key, caption, overall_rating, food_rating, price_rating,
              ambiance_rating, service_rating, photo_source, visibility, verification_status,
-             verification_scope, ward_code,
+             verification_scope, ward_code, quest_run_id,
              distance_meters, idempotency_key, is_removed, visited_at, created_at, updated_at)
         VALUES
             (#{id}, #{userId}, #{tripId}, #{activityId}, #{placeId}, #{reviewId}, #{locationName},
@@ -109,7 +109,7 @@
              #{province}, #{provinceCode}, #{locationSource}, #{locationKey}, #{caption},
              #{overallRating}, #{foodRating}, #{priceRating}, #{ambianceRating}, #{serviceRating},
              #{photoSource}, #{visibility}, #{verificationStatus},
-             COALESCE(#{verificationScope}, 'NONE'), #{wardCode}, #{distanceMeters},
+             COALESCE(#{verificationScope}, 'NONE'), #{wardCode}, #{questRunId}, #{distanceMeters},
              #{idempotencyKey}, FALSE, COALESCE(#{visitedAt}, #{createdAt}), #{createdAt}, #{updatedAt})
     </insert>
 

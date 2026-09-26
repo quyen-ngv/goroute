@@ -1,0 +1,545 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.quest.persistence.QuestMapper">
+
+    <!-- ================= creator profile ================= -->
+    <resultMap id="CreatorMap" type="com.ds.goroute.quest.domain.QuestCreatorProfile">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="organizationId" column="organization_id"/>
+        <result property="status" column="status"/>
+        <result property="termsAcceptedAt" column="terms_accepted_at"/>
+        <result property="termsVersion" column="terms_version"/>
+        <result property="qualityScore" column="quality_score"/>
+        <result property="lastSubmittedAt" column="last_submitted_at"/>
+        <result property="deniedStreak" column="denied_streak"/>
+        <result property="blockedUntil" column="blocked_until"/>
+        <result property="dataVersion" column="data_version"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="CreatorColumns">
+        id, user_id, organization_id, status, terms_accepted_at, terms_version,
+        quality_score, last_submitted_at, denied_streak, blocked_until, data_version, created_at, updated_at
+    </sql>
+
+    <select id="findCreatorByUser" resultMap="CreatorMap">
+        SELECT <include refid="CreatorColumns"/> FROM quest_creators WHERE user_id = #{userId}
+    </select>
+
+    <select id="findCreatorById" resultMap="CreatorMap">
+        SELECT <include refid="CreatorColumns"/> FROM quest_creators WHERE id = #{id}
+    </select>
+
+    <insert id="insertCreator">
+        INSERT INTO quest_creators (
+            id, user_id, organization_id, status, terms_accepted_at, terms_version,
+            quality_score, denied_streak, data_version, created_at, updated_at
+        ) VALUES (
+            #{id}, #{userId}, #{organizationId}, #{status}, #{termsAcceptedAt}, #{termsVersion},
+            #{qualityScore}, COALESCE(#{deniedStreak}, 0), #{dataVersion}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <update id="updateCreatorTerms">
+        UPDATE quest_creators
+        SET terms_accepted_at = #{termsAcceptedAt},
+            terms_version = #{termsVersion},
+            data_version = data_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{id} AND data_version = #{expectedVersion}
+    </update>
+
+    <update id="updateCreatorSubmission">
+        UPDATE quest_creators SET last_submitted_at = #{lastSubmittedAt}, updated_at = #{lastSubmittedAt}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateCreatorDenied">
+        UPDATE quest_creators
+        SET denied_streak = #{deniedStreak}, blocked_until = #{blockedUntil}, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="resetCreatorDenied">
+        UPDATE quest_creators SET denied_streak = 0, blocked_until = NULL, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateCreatorStatus">
+        UPDATE quest_creators SET status = #{status}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <!-- ================= quest root ================= -->
+    <resultMap id="QuestMap" type="com.ds.goroute.quest.domain.Quest">
+        <id property="id" column="id"/>
+        <result property="creatorId" column="creator_id"/>
+        <result property="origin" column="origin"/>
+        <result property="status" column="status"/>
+        <result property="publishedVersionId" column="published_version_id"/>
+        <result property="draftVersionId" column="draft_version_id"/>
+        <result property="pendingChangeReview" column="pending_change_review"/>
+        <result property="translationGroupId" column="translation_group_id"/>
+        <result property="pausedBy" column="paused_by"/>
+        <result property="selfApproved" column="self_approved"/>
+        <result property="dataVersion" column="data_version"/>
+        <result property="deleted" column="is_deleted"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="QuestColumns">
+        id, creator_id, origin, status, published_version_id, draft_version_id,
+        pending_change_review, translation_group_id, paused_by, self_approved,
+        data_version, is_deleted, created_at, updated_at
+    </sql>
+
+    <insert id="insertQuest">
+        INSERT INTO quests (
+            id, creator_id, origin, status, published_version_id, draft_version_id,
+            pending_change_review, translation_group_id, paused_by, self_approved,
+            data_version, is_deleted, created_at, updated_at
+        ) VALUES (
+            #{id}, #{creatorId}, #{origin}, #{status}, #{publishedVersionId}, #{draftVersionId},
+            #{pendingChangeReview}, #{translationGroupId}, #{pausedBy}, #{selfApproved},
+            #{dataVersion}, #{deleted}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <select id="findQuestById" resultMap="QuestMap">
+        SELECT <include refid="QuestColumns"/> FROM quests WHERE id = #{id} AND is_deleted = FALSE
+    </select>
+
+    <select id="findQuestsByCreator" resultMap="QuestMap">
+        SELECT <include refid="QuestColumns"/>
+        FROM quests
+        <where>
+            creator_id = #{creatorId} AND is_deleted = FALSE
+            <if test="status != null">AND status = #{status}</if>
+        </where>
+        ORDER BY updated_at DESC, id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countQuestsByCreator" resultType="long">
+        SELECT COUNT(*) FROM quests
+        <where>
+            creator_id = #{creatorId} AND is_deleted = FALSE
+            <if test="status != null">AND status = #{status}</if>
+        </where>
+    </select>
+
+    <select id="countQuestsByCreatorAndStatuses" resultType="long">
+        SELECT COUNT(*) FROM quests
+        WHERE creator_id = #{creatorId} AND is_deleted = FALSE
+        AND status IN
+        <foreach collection="statuses" item="s" open="(" separator="," close=")">#{s}</foreach>
+    </select>
+
+    <update id="updateDraftPointer">
+        UPDATE quests
+        SET draft_version_id = #{draftVersionId},
+            data_version = data_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{id} AND data_version = #{expectedVersion} AND is_deleted = FALSE
+    </update>
+
+    <update id="updateStatus">
+        UPDATE quests
+        SET status = #{status},
+            paused_by = #{pausedBy},
+            data_version = data_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{id} AND data_version = #{expectedVersion} AND is_deleted = FALSE
+    </update>
+
+    <update id="updatePublish">
+        UPDATE quests
+        SET status = 'PUBLISHED',
+            published_version_id = #{publishedVersionId},
+            pending_change_review = FALSE,
+            self_approved = #{selfApproved},
+            data_version = data_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{id} AND data_version = #{expectedVersion} AND is_deleted = FALSE
+    </update>
+
+    <!-- ================= review queue + audit ================= -->
+    <select id="findForReview" resultMap="QuestMap">
+        SELECT <include refid="QuestColumns"/>
+        FROM quests
+        WHERE is_deleted = FALSE AND status IN
+        <foreach collection="statuses" item="s" open="(" separator="," close=")">#{s}</foreach>
+        ORDER BY updated_at ASC, id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countForReview" resultType="long">
+        SELECT COUNT(*) FROM quests
+        WHERE is_deleted = FALSE AND status IN
+        <foreach collection="statuses" item="s" open="(" separator="," close=")">#{s}</foreach>
+    </select>
+
+    <resultMap id="ReviewDecisionMap" type="com.ds.goroute.quest.domain.QuestReviewDecisionRow">
+        <id property="id" column="id"/>
+        <result property="questId" column="quest_id"/>
+        <result property="questVersionId" column="quest_version_id"/>
+        <result property="reviewerUserId" column="reviewer_user_id"/>
+        <result property="decision" column="decision"/>
+        <result property="reason" column="reason"/>
+        <result property="checklist" column="checklist"/>
+        <result property="selfApproved" column="self_approved"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insertReviewDecision">
+        INSERT INTO quest_review_decisions (
+            id, quest_id, quest_version_id, reviewer_user_id, decision, reason, checklist,
+            self_approved, created_at
+        ) VALUES (
+            #{id}, #{questId}, #{questVersionId}, #{reviewerUserId}, #{decision}, #{reason},
+            #{checklist}::jsonb, #{selfApproved}, #{createdAt}
+        )
+    </insert>
+
+    <select id="findDecisionsByQuest" resultMap="ReviewDecisionMap">
+        SELECT id, quest_id, quest_version_id, reviewer_user_id, decision, reason, checklist,
+               self_approved, created_at
+        FROM quest_review_decisions WHERE quest_id = #{questId} ORDER BY created_at DESC
+    </select>
+
+    <resultMap id="ReviewCommentMap" type="com.ds.goroute.quest.domain.QuestReviewComment">
+        <id property="id" column="id"/>
+        <result property="questId" column="quest_id"/>
+        <result property="questVersionId" column="quest_version_id"/>
+        <result property="checkpointId" column="checkpoint_id"/>
+        <result property="reviewerUserId" column="reviewer_user_id"/>
+        <result property="comment" column="comment"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insertReviewComment">
+        INSERT INTO quest_review_comments (
+            id, quest_id, quest_version_id, checkpoint_id, reviewer_user_id, comment, created_at
+        ) VALUES (
+            #{id}, #{questId}, #{questVersionId}, #{checkpointId}, #{reviewerUserId}, #{comment}, #{createdAt}
+        )
+    </insert>
+
+    <select id="findCommentsByQuest" resultMap="ReviewCommentMap">
+        SELECT id, quest_id, quest_version_id, checkpoint_id, reviewer_user_id, comment, created_at
+        FROM quest_review_comments WHERE quest_id = #{questId} ORDER BY created_at
+    </select>
+
+    <!-- ================= discovery (public gate, §6.3) ================= -->
+    <!-- The five-condition public gate, in ONE place so every discovery query includes the same
+         predicate instead of copying it (the mistake §6.3 calls out in marketplace). It gates
+         discovery only; it never checks a place's status, so a dead POI cannot hide a quest. -->
+    <sql id="publicQuestGate">
+        q.status = 'PUBLISHED'
+        AND q.is_deleted = FALSE
+        AND q.published_version_id IS NOT NULL
+        AND c.status = 'ACTIVE'
+        AND (c.organization_id IS NULL
+             OR (o.operational_status = 'ENABLED' AND o.verification_status = 'VERIFIED'))
+    </sql>
+
+    <resultMap id="ListItemMap" type="com.ds.goroute.quest.domain.QuestListItem">
+        <id property="questId" column="quest_id"/>
+        <result property="origin" column="origin"/>
+        <result property="publishedVersionId" column="published_version_id"/>
+        <result property="title" column="title"/>
+        <result property="summary" column="summary"/>
+        <result property="description" column="description"/>
+        <result property="coverMediaId" column="cover_media_id"/>
+        <result property="difficulty" column="difficulty"/>
+        <result property="estimatedMinutes" column="estimated_minutes"/>
+        <result property="distanceMeters" column="distance_meters"/>
+        <result property="priceStars" column="price_stars"/>
+        <result property="rewardStars" column="reward_stars"/>
+        <result property="provinceCode" column="province_code"/>
+        <result property="wardCode" column="ward_code"/>
+        <result property="safetyNotes" column="safety_notes"/>
+        <result property="contentLanguage" column="content_language"/>
+        <result property="amenityTags" column="amenity_tags"/>
+        <result property="playableMonths" column="playable_months"/>
+        <result property="runExpiryHours" column="run_expiry_hours"/>
+        <result property="checkpointCount" column="checkpoint_count"/>
+        <result property="requiredCheckinCount" column="required_checkin_count"/>
+    </resultMap>
+
+    <sql id="publicQuestProjection">
+        SELECT q.id AS quest_id, q.origin AS origin, q.published_version_id AS published_version_id,
+               v.title, v.summary, v.description, v.cover_media_id, v.difficulty, v.estimated_minutes,
+               v.distance_meters, v.price_stars, v.reward_stars, v.province_code, v.ward_code,
+               v.safety_notes, v.content_language, v.amenity_tags, v.playable_months, v.run_expiry_hours,
+               (SELECT COUNT(*) FROM quest_checkpoints cp WHERE cp.quest_version_id = v.id) AS checkpoint_count,
+               (SELECT COUNT(*) FROM quest_checkpoints cp
+                    WHERE cp.quest_version_id = v.id AND cp.requires_checkin) AS required_checkin_count
+        FROM quests q
+        JOIN quest_creators c ON c.id = q.creator_id
+        LEFT JOIN host_organizations o ON o.id = c.organization_id
+        JOIN quest_versions v ON v.id = q.published_version_id
+    </sql>
+
+    <select id="findPublicQuests" resultMap="ListItemMap">
+        <include refid="publicQuestProjection"/>
+        WHERE <include refid="publicQuestGate"/>
+        <if test="provinceCode != null">AND v.province_code = #{provinceCode}</if>
+        <if test="language != null">AND v.content_language = #{language}</if>
+        ORDER BY q.updated_at DESC, q.id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countPublicQuests" resultType="long">
+        SELECT COUNT(*)
+        FROM quests q
+        JOIN quest_creators c ON c.id = q.creator_id
+        LEFT JOIN host_organizations o ON o.id = c.organization_id
+        WHERE <include refid="publicQuestGate"/>
+        <if test="provinceCode != null">AND EXISTS (SELECT 1 FROM quest_versions v
+            WHERE v.id = q.published_version_id AND v.province_code = #{provinceCode})</if>
+        <if test="language != null">AND EXISTS (SELECT 1 FROM quest_versions v
+            WHERE v.id = q.published_version_id AND v.content_language = #{language})</if>
+    </select>
+
+    <select id="findPublicQuestDetail" resultMap="ListItemMap">
+        <include refid="publicQuestProjection"/>
+        WHERE q.id = #{id} AND <include refid="publicQuestGate"/>
+    </select>
+
+    <!-- ================= versions ================= -->
+    <resultMap id="VersionMap" type="com.ds.goroute.quest.domain.QuestVersion">
+        <id property="id" column="id"/>
+        <result property="questId" column="quest_id"/>
+        <result property="version" column="version"/>
+        <result property="contentRevision" column="content_revision"/>
+        <result property="changeKind" column="change_kind"/>
+        <result property="title" column="title"/>
+        <result property="summary" column="summary"/>
+        <result property="description" column="description"/>
+        <result property="coverMediaId" column="cover_media_id"/>
+        <result property="difficulty" column="difficulty"/>
+        <result property="estimatedMinutes" column="estimated_minutes"/>
+        <result property="distanceMeters" column="distance_meters"/>
+        <result property="amenityTags" column="amenity_tags"/>
+        <result property="safetyNotes" column="safety_notes"/>
+        <result property="provinceCode" column="province_code"/>
+        <result property="wardCode" column="ward_code"/>
+        <result property="contentLanguage" column="content_language"/>
+        <result property="priceStars" column="price_stars"/>
+        <result property="rewardStars" column="reward_stars"/>
+        <result property="playableMonths" column="playable_months"/>
+        <result property="playableHours" column="playable_hours"/>
+        <result property="runExpiryHours" column="run_expiry_hours"/>
+        <result property="createdBy" column="created_by"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <sql id="VersionColumns">
+        id, quest_id, version, content_revision, change_kind, title, summary, description,
+        cover_media_id, difficulty, estimated_minutes, distance_meters, amenity_tags,
+        safety_notes, province_code, ward_code, content_language, price_stars, reward_stars,
+        playable_months, playable_hours, run_expiry_hours, created_by, created_at
+    </sql>
+
+    <insert id="insertVersion">
+        INSERT INTO quest_versions (
+            id, quest_id, version, content_revision, change_kind, title, summary, description,
+            cover_media_id, difficulty, estimated_minutes, distance_meters, amenity_tags,
+            safety_notes, province_code, ward_code, content_language, price_stars, reward_stars,
+            playable_months, playable_hours, run_expiry_hours, created_by, created_at
+        ) VALUES (
+            #{id}, #{questId}, #{version}, #{contentRevision}, #{changeKind}, #{title}, #{summary},
+            #{description}, #{coverMediaId}, #{difficulty}, #{estimatedMinutes}, #{distanceMeters},
+            #{amenityTags}::jsonb, #{safetyNotes}, #{provinceCode}, #{wardCode}, #{contentLanguage},
+            #{priceStars}, #{rewardStars}, #{playableMonths}::jsonb, #{playableHours}::jsonb,
+            #{runExpiryHours}, #{createdBy}, #{createdAt}
+        )
+    </insert>
+
+    <select id="findVersionById" resultMap="VersionMap">
+        SELECT <include refid="VersionColumns"/> FROM quest_versions WHERE id = #{id}
+    </select>
+
+    <update id="updateVersionContent">
+        UPDATE quest_versions SET
+            change_kind = #{changeKind},
+            title = #{title},
+            summary = #{summary},
+            description = #{description},
+            cover_media_id = #{coverMediaId},
+            difficulty = #{difficulty},
+            estimated_minutes = #{estimatedMinutes},
+            distance_meters = #{distanceMeters},
+            amenity_tags = #{amenityTags}::jsonb,
+            safety_notes = #{safetyNotes},
+            province_code = #{provinceCode},
+            ward_code = #{wardCode},
+            content_language = #{contentLanguage},
+            price_stars = #{priceStars},
+            reward_stars = #{rewardStars},
+            playable_months = #{playableMonths}::jsonb,
+            playable_hours = #{playableHours}::jsonb,
+            run_expiry_hours = #{runExpiryHours}
+        WHERE id = #{id}
+    </update>
+
+    <!-- ================= checkpoints ================= -->
+    <resultMap id="CheckpointMap" type="com.ds.goroute.quest.domain.QuestCheckpoint">
+        <id property="id" column="id"/>
+        <result property="questVersionId" column="quest_version_id"/>
+        <result property="sortOrder" column="sort_order"/>
+        <result property="name" column="name"/>
+        <result property="latitude" column="latitude"/>
+        <result property="longitude" column="longitude"/>
+        <result property="radiusM" column="radius_m"/>
+        <result property="unlockGeometryWkt" column="unlock_geometry_wkt"/>
+        <result property="placeId" column="place_id"/>
+        <result property="locationKey" column="location_key"/>
+        <result property="story" column="story"/>
+        <result property="captureSource" column="capture_source"/>
+        <result property="captureAccuracyMeters" column="capture_accuracy_meters"/>
+        <result property="capturedAt" column="captured_at"/>
+        <result property="requiresCheckin" column="requires_checkin"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <select id="findCheckpointsByVersion" resultMap="CheckpointMap">
+        SELECT id, quest_version_id, sort_order, name, latitude, longitude, radius_m,
+               ST_AsText(unlock_geometry) AS unlock_geometry_wkt, place_id, location_key, story,
+               capture_source, capture_accuracy_meters, captured_at, requires_checkin, created_at
+        FROM quest_checkpoints
+        WHERE quest_version_id = #{versionId}
+        ORDER BY sort_order, id
+    </select>
+
+    <select id="countCheckpointsByVersion" resultType="int">
+        SELECT COUNT(*) FROM quest_checkpoints WHERE quest_version_id = #{versionId}
+    </select>
+
+    <insert id="insertCheckpoint">
+        INSERT INTO quest_checkpoints (
+            id, quest_version_id, sort_order, name, latitude, longitude, radius_m,
+            unlock_geometry, place_id, location_key, story, capture_source,
+            capture_accuracy_meters, captured_at, requires_checkin, created_at
+        ) VALUES (
+            #{id}, #{questVersionId}, #{sortOrder}, #{name}, #{latitude}, #{longitude}, #{radiusM},
+            CASE WHEN #{unlockGeometryWkt} IS NULL THEN NULL
+                 ELSE ST_Multi(ST_SetSRID(ST_GeomFromText(#{unlockGeometryWkt}), 4326)) END,
+            #{placeId}, #{locationKey}, #{story}, #{captureSource},
+            #{captureAccuracyMeters}, #{capturedAt}, #{requiresCheckin}, #{createdAt}
+        )
+    </insert>
+
+    <delete id="deleteCheckpointsByVersion">
+        DELETE FROM quest_checkpoints WHERE quest_version_id = #{versionId}
+    </delete>
+
+    <!-- ================= questions ================= -->
+    <resultMap id="QuestionMap" type="com.ds.goroute.quest.domain.QuestQuestion">
+        <id property="id" column="id"/>
+        <result property="checkpointId" column="checkpoint_id"/>
+        <result property="sortOrder" column="sort_order"/>
+        <result property="required" column="is_required"/>
+        <result property="bonus" column="is_bonus"/>
+        <result property="type" column="type"/>
+        <result property="prompt" column="prompt"/>
+        <result property="imageMediaId" column="image_media_id"/>
+        <result property="answerPlain" column="answer_plain"/>
+        <result property="answerVariants" column="answer_variants"/>
+        <result property="numberTolerance" column="number_tolerance"/>
+        <result property="hintTier1" column="hint_tier1"/>
+        <result property="hintTier2" column="hint_tier2"/>
+        <result property="hintTier3" column="hint_tier3"/>
+        <result property="bonusStars" column="bonus_stars"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <select id="findQuestionsByCheckpointIds" resultMap="QuestionMap">
+        SELECT id, checkpoint_id, sort_order, is_required, is_bonus, type, prompt, image_media_id,
+               answer_plain, answer_variants, number_tolerance, hint_tier1, hint_tier2, hint_tier3,
+               bonus_stars, created_at
+        FROM quest_questions
+        WHERE checkpoint_id IN
+        <foreach collection="checkpointIds" item="cid" open="(" separator="," close=")">#{cid}</foreach>
+        ORDER BY checkpoint_id, sort_order, id
+    </select>
+
+    <insert id="insertQuestion">
+        INSERT INTO quest_questions (
+            id, checkpoint_id, sort_order, is_required, is_bonus, type, prompt, image_media_id,
+            answer_plain, answer_variants, number_tolerance, hint_tier1, hint_tier2, hint_tier3,
+            bonus_stars, created_at
+        ) VALUES (
+            #{id}, #{checkpointId}, #{sortOrder}, #{required}, #{bonus}, #{type}, #{prompt},
+            #{imageMediaId}, #{answerPlain}, #{answerVariants}::jsonb, #{numberTolerance},
+            #{hintTier1}, #{hintTier2}, #{hintTier3}, #{bonusStars}, #{createdAt}
+        )
+    </insert>
+
+    <delete id="deleteQuestionsByVersion">
+        DELETE FROM quest_questions
+        WHERE checkpoint_id IN (SELECT id FROM quest_checkpoints WHERE quest_version_id = #{versionId})
+    </delete>
+
+    <!-- ================= choices ================= -->
+    <resultMap id="ChoiceMap" type="com.ds.goroute.quest.domain.QuestQuestionChoice">
+        <id property="id" column="id"/>
+        <result property="questionId" column="question_id"/>
+        <result property="sortOrder" column="sort_order"/>
+        <result property="content" column="content"/>
+        <result property="correct" column="is_correct"/>
+    </resultMap>
+
+    <select id="findChoicesByQuestionIds" resultMap="ChoiceMap">
+        SELECT id, question_id, sort_order, content, is_correct
+        FROM quest_question_choices
+        WHERE question_id IN
+        <foreach collection="questionIds" item="qid" open="(" separator="," close=")">#{qid}</foreach>
+        ORDER BY question_id, sort_order, id
+    </select>
+
+    <insert id="insertChoice">
+        INSERT INTO quest_question_choices (id, question_id, sort_order, content, is_correct)
+        VALUES (#{id}, #{questionId}, #{sortOrder}, #{content}, #{correct})
+    </insert>
+
+    <delete id="deleteChoicesByVersion">
+        DELETE FROM quest_question_choices
+        WHERE question_id IN (
+            SELECT q.id FROM quest_questions q
+            JOIN quest_checkpoints c ON c.id = q.checkpoint_id
+            WHERE c.quest_version_id = #{versionId}
+        )
+    </delete>
+
+    <!-- ================= creator notes ================= -->
+    <resultMap id="NoteMap" type="com.ds.goroute.quest.domain.QuestCreatorNote">
+        <id property="id" column="id"/>
+        <result property="checkpointId" column="checkpoint_id"/>
+        <result property="note" column="note"/>
+        <result property="createdBy" column="created_by"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <select id="findNotesByCheckpointIds" resultMap="NoteMap">
+        SELECT id, checkpoint_id, note, created_by, created_at
+        FROM quest_creator_notes
+        WHERE checkpoint_id IN
+        <foreach collection="checkpointIds" item="cid" open="(" separator="," close=")">#{cid}</foreach>
+        ORDER BY checkpoint_id, created_at
+    </select>
+
+    <insert id="insertNote">
+        INSERT INTO quest_creator_notes (id, checkpoint_id, note, created_by, created_at)
+        VALUES (#{id}, #{checkpointId}, #{note}, #{createdBy}, #{createdAt})
+    </insert>
+
+    <delete id="deleteNotesByVersion">
+        DELETE FROM quest_creator_notes
+        WHERE checkpoint_id IN (SELECT id FROM quest_checkpoints WHERE quest_version_id = #{versionId})
+    </delete>
+
+</mapper>

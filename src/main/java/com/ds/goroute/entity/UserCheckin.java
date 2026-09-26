@@ -54,6 +54,9 @@ public class UserCheckin {
     private String wardCode;
     private CheckinLocationSource locationSource;
 
+    /** Set when this check-in was made at a quest checkpoint the player was required to check in at (D13). */
+    private UUID questRunId;
+
     /** Rounded-coordinate grouping key; equal keys are treated as the same spot. */
     private String locationKey;
 

@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.quest.persistence.QuestRunMapper">
+
+    <!-- ================= run ================= -->
+    <resultMap id="RunMap" type="com.ds.goroute.quest.domain.QuestRun">
+        <id property="id" column="id"/>
+        <result property="questId" column="quest_id"/>
+        <result property="questVersionId" column="quest_version_id"/>
+        <result property="ownerUserId" column="owner_user_id"/>
+        <result property="tripId" column="trip_id"/>
+        <result property="status" column="status"/>
+        <result property="startedAt" column="started_at"/>
+        <result property="lastActivityAt" column="last_activity_at"/>
+        <result property="expiresAt" column="expires_at"/>
+        <result property="completedAt" column="completed_at"/>
+        <result property="rankScore" column="rank_score"/>
+        <result property="dataVersion" column="data_version"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <sql id="RunColumns">
+        id, quest_id, quest_version_id, owner_user_id, trip_id, status, started_at,
+        last_activity_at, expires_at, completed_at, rank_score, data_version, created_at
+    </sql>
+
+    <insert id="insertRun">
+        INSERT INTO quest_runs (
+            id, quest_id, quest_version_id, owner_user_id, trip_id, status, started_at,
+            last_activity_at, expires_at, completed_at, rank_score, data_version, created_at
+        ) VALUES (
+            #{id}, #{questId}, #{questVersionId}, #{ownerUserId}, #{tripId}, #{status}, #{startedAt},
+            #{lastActivityAt}, #{expiresAt}, #{completedAt}, #{rankScore}, #{dataVersion}, #{createdAt}
+        )
+    </insert>
+
+    <select id="findRunById" resultMap="RunMap">
+        SELECT <include refid="RunColumns"/> FROM quest_runs WHERE id = #{id}
+    </select>
+
+    <select id="findOpenRun" resultMap="RunMap">
+        SELECT <include refid="RunColumns"/> FROM quest_runs
+        WHERE quest_id = #{questId} AND owner_user_id = #{ownerUserId} AND status = 'IN_PROGRESS'
+    </select>
+
+    <update id="updateRunStatus">
+        UPDATE quest_runs
+        SET status = #{status},
+            completed_at = #{completedAt},
+            last_activity_at = #{lastActivityAt},
+            data_version = data_version + 1
+        WHERE id = #{id} AND data_version = #{expectedVersion}
+    </update>
+
+    <update id="touchRun">
+        UPDATE quest_runs SET last_activity_at = #{lastActivityAt} WHERE id = #{id}
+    </update>
+
+    <select id="countCompletedRunsForVersion" resultType="int">
+        SELECT COUNT(*) FROM quest_runs
+        WHERE quest_id = #{questId} AND quest_version_id = #{versionId} AND status = 'COMPLETED'
+    </select>
+
+    <select id="countRunsByStatusSince" resultType="int">
+        SELECT COUNT(*) FROM quest_runs
+        WHERE quest_id = #{questId} AND status = #{status} AND started_at >= #{since}
+    </select>
+
+    <!-- ================= members ================= -->
+    <resultMap id="MemberMap" type="com.ds.goroute.quest.domain.QuestRunMember">
+        <id property="id" column="id"/>
+        <result property="runId" column="run_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="joinedAt" column="joined_at"/>
+        <result property="leftAt" column="left_at"/>
+        <result property="verification" column="verification"/>
+        <result property="presenceCheckpoints" column="presence_checkpoints"/>
+        <result property="rewarded" column="rewarded"/>
+    </resultMap>
+
+    <sql id="MemberColumns">
+        id, run_id, user_id, joined_at, left_at, verification, presence_checkpoints, rewarded
+    </sql>
+
+    <insert id="insertMember">
+        INSERT INTO quest_run_members (
+            id, run_id, user_id, joined_at, left_at, verification, presence_checkpoints, rewarded
+        ) VALUES (
+            #{id}, #{runId}, #{userId}, #{joinedAt}, #{leftAt}, #{verification},
+            #{presenceCheckpoints}, #{rewarded}
+        )
+    </insert>
+
+    <select id="findMemberByRunAndUser" resultMap="MemberMap">
+        SELECT <include refid="MemberColumns"/> FROM quest_run_members
+        WHERE run_id = #{runId} AND user_id = #{userId}
+    </select>
+
+    <select id="findMembersByRun" resultMap="MemberMap">
+        SELECT <include refid="MemberColumns"/> FROM quest_run_members WHERE run_id = #{runId} ORDER BY joined_at
+    </select>
+
+    <update id="markMemberRewarded">
+        UPDATE quest_run_members SET rewarded = TRUE WHERE id = #{id}
+    </update>
+
+    <update id="updateMemberVerification">
+        UPDATE quest_run_members
+        SET verification = #{verification}, presence_checkpoints = #{presenceCheckpoints}
+        WHERE id = #{id}
+    </update>
+
+    <!-- ================= run checkpoints ================= -->
+    <resultMap id="RunCheckpointMap" type="com.ds.goroute.quest.domain.QuestRunCheckpoint">
+        <id property="id" column="id"/>
+        <result property="runId" column="run_id"/>
+        <result property="memberId" column="member_id"/>
+        <result property="checkpointId" column="checkpoint_id"/>
+        <result property="gpsOverride" column="gps_override"/>
+        <result property="distanceMeters" column="distance_meters"/>
+        <result property="accuracyMeters" column="accuracy_meters"/>
+        <result property="stableStreak" column="stable_streak"/>
+        <result property="lastSampleAt" column="last_sample_at"/>
+        <result property="lastSampleLat" column="last_sample_lat"/>
+        <result property="lastSampleLng" column="last_sample_lng"/>
+        <result property="lastSampleId" column="last_sample_id"/>
+        <result property="unlockedAt" column="unlocked_at"/>
+        <result property="checkinId" column="checkin_id"/>
+        <result property="checkinState" column="checkin_state"/>
+        <result property="dataVersion" column="data_version"/>
+    </resultMap>
+
+    <sql id="RunCheckpointColumns">
+        id, run_id, member_id, checkpoint_id, gps_override, distance_meters, accuracy_meters,
+        stable_streak, last_sample_at, last_sample_lat, last_sample_lng, last_sample_id,
+        unlocked_at, checkin_id, checkin_state, data_version
+    </sql>
+
+    <insert id="insertRunCheckpoint">
+        INSERT INTO quest_run_checkpoints (
+            id, run_id, member_id, checkpoint_id, gps_override, distance_meters, accuracy_meters,
+            stable_streak, last_sample_at, last_sample_lat, last_sample_lng, last_sample_id,
+            unlocked_at, checkin_id, checkin_state, data_version
+        ) VALUES (
+            #{id}, #{runId}, #{memberId}, #{checkpointId}, #{gpsOverride}, #{distanceMeters},
+            #{accuracyMeters}, #{stableStreak}, #{lastSampleAt}, #{lastSampleLat}, #{lastSampleLng},
+            #{lastSampleId}, #{unlockedAt}, #{checkinId}, #{checkinState}, #{dataVersion}
+        )
+    </insert>
+
+    <select id="findRunCheckpoint" resultMap="RunCheckpointMap">
+        SELECT <include refid="RunCheckpointColumns"/> FROM quest_run_checkpoints
+        WHERE member_id = #{memberId} AND checkpoint_id = #{checkpointId}
+    </select>
+
+    <select id="findRunCheckpointsByMember" resultMap="RunCheckpointMap">
+        SELECT <include refid="RunCheckpointColumns"/> FROM quest_run_checkpoints
+        WHERE member_id = #{memberId}
+    </select>
+
+    <update id="updateRunCheckpointSample">
+        UPDATE quest_run_checkpoints SET
+            gps_override = #{gpsOverride},
+            distance_meters = #{distanceMeters},
+            accuracy_meters = #{accuracyMeters},
+            stable_streak = #{stableStreak},
+            last_sample_at = #{lastSampleAt},
+            last_sample_lat = #{lastSampleLat},
+            last_sample_lng = #{lastSampleLng},
+            last_sample_id = #{lastSampleId},
+            unlocked_at = #{unlockedAt},
+            data_version = data_version + 1
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateRunCheckpointCheckin">
+        UPDATE quest_run_checkpoints
+        SET checkin_id = #{checkinId}, checkin_state = #{checkinState}, data_version = data_version + 1
+        WHERE id = #{id}
+    </update>
+
+    <!-- ================= run questions ================= -->
+    <resultMap id="RunQuestionMap" type="com.ds.goroute.quest.domain.QuestRunQuestion">
+        <id property="id" column="id"/>
+        <result property="runId" column="run_id"/>
+        <result property="memberId" column="member_id"/>
+        <result property="questionId" column="question_id"/>
+        <result property="guessCount" column="guess_count"/>
+        <result property="hintTierBought" column="hint_tier_bought"/>
+        <result property="revealed" column="revealed"/>
+        <result property="skipped" column="skipped"/>
+        <result property="correct" column="correct"/>
+        <result property="answeredAt" column="answered_at"/>
+    </resultMap>
+
+    <sql id="RunQuestionColumns">
+        id, run_id, member_id, question_id, guess_count, hint_tier_bought, revealed, skipped,
+        correct, answered_at
+    </sql>
+
+    <insert id="insertRunQuestion">
+        INSERT INTO quest_run_questions (
+            id, run_id, member_id, question_id, guess_count, hint_tier_bought, revealed, skipped,
+            correct, answered_at
+        ) VALUES (
+            #{id}, #{runId}, #{memberId}, #{questionId}, #{guessCount}, #{hintTierBought},
+            #{revealed}, #{skipped}, #{correct}, #{answeredAt}
+        )
+    </insert>
+
+    <select id="findRunQuestion" resultMap="RunQuestionMap">
+        SELECT <include refid="RunQuestionColumns"/> FROM quest_run_questions
+        WHERE member_id = #{memberId} AND question_id = #{questionId}
+    </select>
+
+    <select id="findRunQuestionsByMember" resultMap="RunQuestionMap">
+        SELECT <include refid="RunQuestionColumns"/> FROM quest_run_questions WHERE member_id = #{memberId}
+    </select>
+
+    <update id="updateRunQuestion">
+        UPDATE quest_run_questions SET
+            guess_count = #{guessCount},
+            hint_tier_bought = #{hintTierBought},
+            revealed = #{revealed},
+            skipped = #{skipped},
+            correct = #{correct},
+            answered_at = #{answeredAt}
+        WHERE id = #{id}
+    </update>
+
+    <!-- ================= entitlements ================= -->
+    <resultMap id="EntitlementMap" type="com.ds.goroute.quest.domain.QuestEntitlement">
+        <id property="id" column="id"/>
+        <result property="questId" column="quest_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="fundingSource" column="funding_source"/>
+        <result property="sourceReference" column="source_reference"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insertEntitlement">
+        INSERT INTO quest_entitlements (id, quest_id, user_id, funding_source, source_reference, created_at)
+        VALUES (#{id}, #{questId}, #{userId}, #{fundingSource}, #{sourceReference}, #{createdAt})
+    </insert>
+
+    <select id="findEntitlement" resultMap="EntitlementMap">
+        SELECT id, quest_id, user_id, funding_source, source_reference, created_at
+        FROM quest_entitlements WHERE quest_id = #{questId} AND user_id = #{userId}
+    </select>
+
+    <!-- ================= location samples ================= -->
+    <insert id="insertLocationSample">
+        INSERT INTO quest_location_samples (
+            id, run_id, member_id, checkpoint_id, latitude, longitude, accuracy_meters, captured_at, created_at
+        ) VALUES (
+            #{id}, #{runId}, #{memberId}, #{checkpointId}, #{latitude}, #{longitude},
+            #{accuracyMeters}, #{capturedAt}, #{createdAt}
+        )
+    </insert>
+
+</mapper>
