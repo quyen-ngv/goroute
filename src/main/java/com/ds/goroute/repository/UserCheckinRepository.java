@@ -39,6 +39,14 @@ public interface UserCheckinRepository {
 
     List<UserCheckin> findByPlace(UUID placeId, int limit, int offset);
 
+    /**
+     * Public check-ins written during one trip, oldest first.
+     *
+     * <p>Feeds the shared-trip page, which is readable without signing in, so the
+     * visibility filter is in the query rather than left to the caller.
+     */
+    List<UserCheckin> findByTrip(UUID tripId, int limit);
+
     long countByUserAndPlace(UUID userId, UUID placeId);
 
     List<UserCheckin> findLatestRatedPerUserForPlace(UUID placeId);

@@ -62,4 +62,68 @@ class MarketplaceMapperXmlTest {
             assertTrue(statement.contains("closed_to_departure=COALESCE(#{closedToDeparture},room_inventory_daily.closed_to_departure)"));
         }
     }
+
+    @Test
+    void chatMapperDeclaresTheStatementsTheChatScreenNeeds() throws Exception {
+        Configuration configuration = new Configuration();
+        configuration.getTypeHandlerRegistry().register(UUID.class, UUIDTypeHandler.class);
+        try (InputStream input = Resources.getResourceAsStream("mapper/MarketplaceChatMapper.xml")) {
+            new XMLMapperBuilder(input, configuration, "mapper/MarketplaceChatMapper.xml",
+                    configuration.getSqlFragments()).parse();
+        }
+        for (String statement : List.of("findByTrip", "findNotifiableMemberIds", "findActiveMemberIds",
+                "markMemberLeft", "updateMuted", "updatePinnedMessage", "countUnreadConversationsForUser",
+                "findLatestMessages", "searchMessages", "softDeleteOwnMessage", "updateMessageContent",
+                "insertReaction", "deleteReaction", "findReactions")) {
+            assertTrue(configuration.hasStatement("com.ds.goroute.mapper.MarketplaceChatMapper." + statement),
+                    "missing statement " + statement);
+        }
+    }
+
+    /**
+     * The privacy rule, in the query rather than only in the service: an operator list that
+     * gains a filter or a sort must not be able to produce a trip group or a person-to-person
+     * thread by accident.
+     */
+    @Test
+    void theOperatorConversationListExcludesPrivateThreadsInSql() throws Exception {
+        String xml = chatMapperXml();
+        int start = xml.indexOf("<select id=\"findAdmin\"");
+        String statement = xml.substring(start, xml.indexOf("</select>", start));
+
+        assertTrue(statement.contains("c.conversation_type &lt;&gt; 'TRIP'"));
+        assertTrue(statement.contains("NOT (c.conversation_type='DIRECT' AND c.organization_id IS NULL)"));
+    }
+
+    @Test
+    void chatWritesCarryTheNewColumns() throws Exception {
+        String xml = chatMapperXml();
+        int conversation = xml.indexOf("<insert id=\"insertConversation\">");
+        assertTrue(xml.substring(conversation, xml.indexOf("</insert>", conversation)).contains("trip_id"));
+
+        int message = xml.indexOf("<insert id=\"insertMessage\">");
+        assertTrue(xml.substring(message, xml.indexOf("</insert>", message)).contains("reply_to_message_id"));
+    }
+
+    /** A retired trip keeps its transcript but leaves the inbox. */
+    @Test
+    void theInboxHidesArchivedThreads() throws Exception {
+        String xml = chatMapperXml();
+        int start = xml.indexOf("<select id=\"findForUser\"");
+        assertTrue(xml.substring(start, xml.indexOf("</select>", start)).contains("c.status &lt;&gt; 'ARCHIVED'"));
+    }
+
+    /** Read markers only ever move forward, so an old screen cannot un-read a thread. */
+    @Test
+    void theReadMarkerNeverMovesBackwards() throws Exception {
+        String xml = chatMapperXml();
+        int start = xml.indexOf("<update id=\"markRead\">");
+        assertTrue(xml.substring(start, xml.indexOf("</update>", start)).contains("&gt;COALESCE((SELECT sequence_no"));
+    }
+
+    private String chatMapperXml() throws Exception {
+        try (InputStream input = Resources.getResourceAsStream("mapper/MarketplaceChatMapper.xml")) {
+            return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
 }

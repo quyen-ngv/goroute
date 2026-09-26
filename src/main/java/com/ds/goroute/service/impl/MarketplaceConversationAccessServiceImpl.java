@@ -16,11 +16,19 @@ public class MarketplaceConversationAccessServiceImpl implements MarketplaceConv
     private final HotelMarketplaceRepository hotelRepository;
     private final ActivityCommerceRepository activityRepository;
     private final PartnerAuthorizationService authorizationService;
+    private final com.ds.goroute.repository.TripMemberRepository tripMembers;
 
     @Override
     public void requireAccess(UUID conversationId,UUID userId){
         MarketplaceConversation conversation=chatRepository.find(conversationId,userId)
                 .orElseThrow(()->new BusinessException(ErrorConstant.NOT_FOUND,"Conversation not found"));
+        if(conversation.getTripId()!=null){
+            boolean member=userId!=null&&tripMembers.findByTripIdAndUserId(conversation.getTripId(),userId)
+                    .filter(m->m.getStatus()==com.ds.goroute.type.MemberStatus.ACCEPTED)
+                    .isPresent();
+            if(!member)throw forbidden();
+            return;
+        }
         if(conversation.getOrganizationId()==null){
             if(!chatRepository.canAccess(conversationId,userId))throw forbidden();
             return;

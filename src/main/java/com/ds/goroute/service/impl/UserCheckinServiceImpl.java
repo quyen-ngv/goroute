@@ -80,6 +80,13 @@ import java.util.stream.Collectors;
 public class UserCheckinServiceImpl implements UserCheckinService {
 
     private static final int MAX_PAGE_SIZE = 50;
+
+    /**
+     * Ceiling on the check-ins one shared trip carries. The page is public and renders
+     * every one of them at once, so a trip somebody checked into hundreds of times must
+     * not decide how much work a stranger's request is.
+     */
+    private static final int MAX_TRIP_CHECKINS = 200;
     private static final String PRO_TIER = "PRO";
 
     /** How close to a stop of the itinerary counts as having been there. */
@@ -527,6 +534,12 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .map(UserCheckin::getId)
                 .collect(Collectors.toSet());
         return toResponses(checkins, latestReviewCheckinIds, null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserCheckinResponse> byTrip(UUID viewerId, UUID tripId) {
+        return toResponses(checkinRepository.findByTrip(tripId, MAX_TRIP_CHECKINS), Set.of(), viewerId);
     }
 
     @Override

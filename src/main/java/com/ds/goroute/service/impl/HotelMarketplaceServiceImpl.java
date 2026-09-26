@@ -173,6 +173,13 @@ public class HotelMarketplaceServiceImpl implements HotelMarketplaceService {
         return hotelResponse(repository.findHotel(hotel.getId()).orElse(hotel));
     }
 
+    /**
+     * Changes a property's own fields. A hotel has <em>no title of its own</em> — the name a guest
+     * reads is {@code places.title}, which {@code HotelProfileResponse} echoes back as
+     * {@code placeTitle}. Sending {@code placeTitle} in this request therefore changes nothing and
+     * still returns 200, which is exactly how the app's "change listing title" screen spent a
+     * release saving into the void. Rename through {@code PUT /partner/places/{placeId}}.
+     */
     @Override
     @Transactional
     public HotelProfileResponse partnerUpdateHotel(UUID actor, UUID hotelId, UpsertHotelRequest request) {

@@ -108,6 +108,7 @@ public enum NotificationType {
      * previous one is still unread, so a lively exchange is not one notification per line.
      */
     MARKETPLACE_MESSAGE,
+    CHAT_MENTION,
     // Partner organization verification decided by an operator; sent to the owner.
     PARTNER_VERIFICATION_DECIDED,
     // A partner submitted verification documents; sent to operators (optional).

@@ -12,6 +12,13 @@ public enum ModerationVisibility {
     GROUP,
     /** One-to-one chat. */
     DIRECT,
+    /**
+     * Chat messages of every kind: the trip group, person-to-person and partner threads.
+     *
+     * <p>Separate from {@link #DIRECT} because chat is the one tier that must never park a
+     * copy of what was said in the review queue; see {@code ModerationStrictness}.
+     */
+    CHAT,
     /** Personal notes and drafts. */
     PRIVATE
 }

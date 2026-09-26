@@ -83,6 +83,14 @@ public interface UserCheckinService {
 
     List<UserCheckinResponse> byPlace(UUID placeId, int page, int size);
 
+    /**
+     * Every public check-in written during one trip, oldest first.
+     *
+     * <p>The shared-trip page draws these under the stops they belong to, which is why
+     * they arrive as one list rather than a page: an itinerary is read whole.
+     */
+    List<UserCheckinResponse> byTrip(UUID viewerId, UUID tripId);
+
     /** Everything at one uncatalogued spot, so its name is still tappable in the feed. */
     List<UserCheckinResponse> byLocationKey(String locationKey, int page, int size);
 

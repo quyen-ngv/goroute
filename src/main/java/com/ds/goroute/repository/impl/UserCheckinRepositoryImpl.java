@@ -68,6 +68,11 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     }
 
     @Override
+    public List<UserCheckin> findByTrip(UUID tripId, int limit) {
+        return mapper.findByTrip(tripId, limit);
+    }
+
+    @Override
     public long countByUserAndPlace(UUID userId, UUID placeId) {
         return mapper.countByUserAndPlace(userId, placeId);
     }

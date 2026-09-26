@@ -37,4 +37,13 @@ public class PublicActivityResponse {
     private List<UserReviewResponse> memberReviews;
     private List<PublicExpenseResponse> expenses;
     private List<PublicNoteResponse> notes;
+
+    /**
+     * Public check-ins written at this stop, oldest first.
+     *
+     * <p>A check-in is the written-up version of a stop — photos, a caption, a rating —
+     * so the shared trip shows the post itself rather than re-deriving a photo strip
+     * from the copies that landed in the trip gallery.
+     */
+    private List<UserCheckinResponse> checkins;
 }

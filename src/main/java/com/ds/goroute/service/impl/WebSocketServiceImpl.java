@@ -58,4 +58,24 @@ public class WebSocketServiceImpl implements WebSocketService {
         messagingTemplate.convertAndSend("/topic/marketplace/conversations/" + conversationId, event);
         log.info("WebSocket event broadcasted: {} to marketplace conversation: {}", eventType, conversationId);
     }
+
+    @Override
+    public void broadcastToUser(UUID userId, String eventType, Map<String, Object> data, UUID actorId) {
+        if (userId == null) return;
+        User actor = actorId == null ? null : userMapper.selectById(actorId);
+        WebSocketEvent event = WebSocketEvent.builder()
+                .type(eventType)
+                .data(data)
+                .actor(WebSocketEvent.Actor.builder()
+                        .id(actorId)
+                        .fullName(actor != null ? actor.getFullName() : "System")
+                        .avatarUrl(actor != null ? actor.getAvatarUrl() : null)
+                        .build())
+                .timestamp(LocalDateTime.now())
+                .build();
+        messagingTemplate.convertAndSend("/topic/users/" + userId + "/chat", event);
+        // Debug, not info: this fires once per member per message, and an inbox
+        // ping is not worth a line in the production log.
+        log.debug("WebSocket event broadcasted: {} to user: {}", eventType, userId);
+    }
 }

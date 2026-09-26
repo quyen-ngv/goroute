@@ -34,6 +34,8 @@ import java.util.List;
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private static final String MARKETPLACE_TOPIC = "/topic/marketplace/conversations/";
     private static final String TRIP_TOPIC = "/topic/trips/";
+    private static final String USER_TOPIC_PREFIX = "/topic/users/";
+    private static final String USER_TOPIC_SUFFIX = "/chat";
     private final MarketplaceConversationAccessService marketplaceConversationAccessService;
     private final TripAccessGuard tripAccessGuard;
     private final JwtUtils jwtUtils;
@@ -82,6 +84,15 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 }
                 if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())
                         && accessor.getDestination() != null
+                        && accessor.getDestination().startsWith(USER_TOPIC_PREFIX)) {
+                    UUID userId = requireUserId(accessor);
+                    UUID owner = parseUserDestination(accessor.getDestination());
+                    if (owner == null || !owner.equals(userId)) {
+                        throw new AccessDeniedException("You can only follow your own inbox");
+                    }
+                }
+                if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())
+                        && accessor.getDestination() != null
                         && accessor.getDestination().startsWith(TRIP_TOPIC)) {
                     UUID userId = requireUserId(accessor);
                     try {
@@ -112,6 +123,25 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                         && !StompCommand.MESSAGE.equals(accessor.getCommand())) {
                     return message;
                 }
+                if (isUserDestination(accessor.getDestination())) {
+                    UUID owner = parseUserDestination(accessor.getDestination());
+                    UUID subscriber = resolveOutboundUserId(accessor);
+                    return owner != null && owner.equals(subscriber) ? message : null;
+                }
+                if (isConversationDestination(accessor.getDestination())) {
+                    UUID conversationId = parseConversationDestination(accessor.getDestination());
+                    UUID subscriber = resolveOutboundUserId(accessor);
+                    if (conversationId == null || subscriber == null) {
+                        return null;
+                    }
+                    try {
+                        marketplaceConversationAccessService.requireAccess(conversationId, subscriber);
+                        return message;
+                    } catch (RuntimeException exception) {
+                        // Membership changed after SUBSCRIBE; the thread is no longer theirs.
+                        return null;
+                    }
+                }
                 if (!isTripDestination(accessor.getDestination())) {
                     return message;
                 }
@@ -133,6 +163,37 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 }
             }
         });
+    }
+
+    private boolean isUserDestination(String destination) {
+        return destination != null
+                && destination.startsWith(USER_TOPIC_PREFIX)
+                && destination.endsWith(USER_TOPIC_SUFFIX);
+    }
+
+    /** The owner named by {@code /topic/users/<id>/chat}, or null when it is not one. */
+    private UUID parseUserDestination(String destination) {
+        if (!isUserDestination(destination)) return null;
+        String id = destination.substring(
+                USER_TOPIC_PREFIX.length(),
+                destination.length() - USER_TOPIC_SUFFIX.length());
+        try {
+            return UUID.fromString(id);
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private boolean isConversationDestination(String destination) {
+        return destination != null && destination.startsWith(MARKETPLACE_TOPIC);
+    }
+
+    private UUID parseConversationDestination(String destination) {
+        try {
+            return UUID.fromString(destination.substring(MARKETPLACE_TOPIC.length()));
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
     }
 
     private Message<?> authenticate(Message<?> message, StompHeaderAccessor accessor) {

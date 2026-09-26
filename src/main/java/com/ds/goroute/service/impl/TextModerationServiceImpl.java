@@ -9,6 +9,7 @@ import com.ds.goroute.service.moderation.ModerationTermIndex;
 import com.ds.goroute.service.moderation.ModerationVerdict;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.ModerationAction;
 import com.ds.goroute.type.ModerationLayer;
 import com.ds.goroute.type.ModerationStrictness;
 import com.ds.goroute.type.ModerationVisibility;
@@ -64,7 +65,16 @@ public class TextModerationServiceImpl implements TextModerationService {
         ModerationVerdict verdict = snapshot().evaluate(text);
         // Outside the fully strict tier a block becomes a flag, except for the groups
         // where even brief exposure is real damage (policy section 2).
-        return strictness == ModerationStrictness.FULL ? verdict : verdict.downgradeUnlessSevere();
+        if (!strictness.keepsBlocks()) {
+            verdict = verdict.downgradeUnlessSevere();
+        }
+        // A tier that may not park content for a human has nothing to do with a flag but
+        // store a copy of it, so the flag is dropped rather than raised. Private chat is
+        // refused outright or left alone; it is never quietly filed.
+        if (!strictness.recordsFlags() && verdict.action() == ModerationAction.FLAG) {
+            return ModerationVerdict.allowed();
+        }
+        return verdict;
     }
 
     @Override
@@ -82,6 +92,7 @@ public class TextModerationServiceImpl implements TextModerationService {
             case PUBLIC -> BusinessConfigKey.MODERATION_STRICTNESS_PUBLIC;
             case GROUP -> BusinessConfigKey.MODERATION_STRICTNESS_GROUP;
             case DIRECT -> BusinessConfigKey.MODERATION_STRICTNESS_DIRECT;
+            case CHAT -> BusinessConfigKey.MODERATION_STRICTNESS_CHAT;
             case PRIVATE -> BusinessConfigKey.MODERATION_STRICTNESS_PRIVATE;
         };
         return config.getEnum(key, ModerationStrictness.class);
@@ -114,7 +125,10 @@ public class TextModerationServiceImpl implements TextModerationService {
                     .decision(verdict.action())
                     .category(verdict.category())
                     .matchedTermId(verdict.matchedTermId())
-                    .matchedText(truncate(verdict.matchedText()))
+                    // The term that fired is a metric; the sentence it fired on is the
+                    // user's message. For tiers that may not keep content, the metric is
+                    // kept and the sentence is not.
+                    .matchedText(strictnessFor(visibility).recordsFlags() ? truncate(verdict.matchedText()) : null)
                     .policyVersion(config.getText(BusinessConfigKey.MODERATION_POLICY_VERSION))
                     .createdAt(LocalDateTime.now())
                     .build());

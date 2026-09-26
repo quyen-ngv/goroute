@@ -36,6 +36,8 @@ public record ImageUploadRequest(UUID userId,
         public static final String USER_UPLOAD = "user-upload";
         /** Ordinary users: profile pictures, shown on every review, comment and feed row. */
         public static final String USER_AVATAR = "user-avatar";
+        /** Ordinary users: photos sent into a conversation. */
+        public static final String CHAT_ATTACHMENT = "chat-attachment";
         /** Ordinary users: check-in photos. */
         public static final String CHECKIN_PHOTO = "checkin-photo";
         /** Partner staff: hotel media. */

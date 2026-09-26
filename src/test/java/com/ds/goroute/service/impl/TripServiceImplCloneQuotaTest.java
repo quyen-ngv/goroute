@@ -26,6 +26,7 @@ import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.service.StarService;
 import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.TripRealtimePublisher;
+import com.ds.goroute.service.UserCheckinService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.type.TripVisibility;
@@ -70,6 +71,7 @@ class TripServiceImplCloneQuotaTest {
                 // Cloning has its own access rule -- the trip has to be public, or the cloner has
                 // to already be in it -- so it never reaches the editor guard.
                 mock(TripAccessGuard.class),
+                mock(com.ds.goroute.service.TripChatService.class),
                 tripMemberRepository,
                 mock(UserRepository.class),
                 mock(ActivityRepository.class),
@@ -91,6 +93,7 @@ class TripServiceImplCloneQuotaTest {
                 mock(TripRealtimePublisher.class),
                 mock(TripDestinationRepository.class),
                 mock(SocialNotificationService.class),
+                mock(UserCheckinService.class),
                 Runnable::run);
     }
 

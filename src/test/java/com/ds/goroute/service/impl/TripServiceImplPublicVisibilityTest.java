@@ -24,6 +24,7 @@ import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.service.StarService;
 import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.TripRealtimePublisher;
+import com.ds.goroute.service.UserCheckinService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.type.MemberStatus;
@@ -60,6 +61,7 @@ class TripServiceImplPublicVisibilityTest {
                 mock(TripRepository.class),
                 // getPublicTrip answers for anonymous readers and never consults the guard.
                 mock(TripAccessGuard.class),
+                mock(com.ds.goroute.service.TripChatService.class),
                 tripMemberRepository,
                 mock(UserRepository.class),
                 mock(ActivityRepository.class),
@@ -81,6 +83,7 @@ class TripServiceImplPublicVisibilityTest {
                 mock(TripRealtimePublisher.class),
                 mock(TripDestinationRepository.class),
                 mock(SocialNotificationService.class),
+                mock(UserCheckinService.class),
                 // Same-thread executor: the fire-and-forget view counter has to have run
                 // by the time the assertions look at it.
                 Runnable::run);

@@ -274,6 +274,21 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
+    <!-- Every public check-in written during one trip, oldest first.
+         The shared-trip page reads these back into its itinerary, so the order is the
+         order the days happened in rather than the feed order. Private check-ins stay
+         out: linking one to a trip is not a decision to publish it. -->
+    <select id="findByTrip" resultMap="checkinMap">
+        SELECT <include refid="columns"/> FROM user_checkins
+        WHERE trip_id = #{tripId} AND visibility = 'PUBLIC' AND is_removed = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns t
+              WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
+                AND t.restored_at IS NULL)
+        ORDER BY visited_at ASC, created_at ASC
+        LIMIT #{limit}
+    </select>
+
     <select id="countByUserAndPlace" resultType="long">
         SELECT COUNT(*)
         FROM user_checkins

@@ -65,6 +65,17 @@ public class PartnerActivityCommerceController {
         return ResponseEntity.status(HttpStatus.CREATED).body(BaseResponse.ofSucceeded(service.partnerCreate(user(authentication), request)));
     }
 
+    /**
+     * One product by id. The counterpart of {@code GET /partner/hotels/{hotelId}}, and the only
+     * way a caller holding an id alone can open a listing: the list endpoint needs an
+     * organisation, which a deep link does not carry.
+     */
+    @GetMapping("/{id}")
+    public ResponseEntity<BaseResponse<MarketplaceActivityResponse>> activity(Authentication authentication,
+                                                                              @PathVariable UUID id) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(service.partnerGet(user(authentication), id)));
+    }
+
     @PutMapping("/{id}")
     public ResponseEntity<BaseResponse<MarketplaceActivityResponse>> update(Authentication authentication,
                                                                               @PathVariable UUID id,

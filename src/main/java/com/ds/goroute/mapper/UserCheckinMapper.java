@@ -52,6 +52,9 @@ public interface UserCheckinMapper {
                                   @Param("limit") int limit,
                                   @Param("offset") int offset);
 
+    /** Public check-ins written during one trip, oldest first. */
+    List<UserCheckin> findByTrip(@Param("tripId") UUID tripId, @Param("limit") int limit);
+
     long countByUserAndPlace(@Param("userId") UUID userId,
                              @Param("placeId") UUID placeId);
 

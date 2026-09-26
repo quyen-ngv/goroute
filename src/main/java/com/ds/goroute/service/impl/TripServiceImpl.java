@@ -17,6 +17,7 @@ import com.ds.goroute.service.ExchangeRateService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.service.TripAccessGuard;
+import com.ds.goroute.service.UserCheckinService;
 import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.service.StarService;
@@ -49,6 +50,7 @@ public class TripServiceImpl implements TripService {
 
     private final TripRepository tripRepository;
     private final TripAccessGuard tripAccessGuard;
+    private final com.ds.goroute.service.TripChatService tripChatService;
     private final TripMemberRepository tripMemberRepository;
     private final UserRepository userRepository;
     private final ActivityRepository activityRepository;
@@ -70,6 +72,7 @@ public class TripServiceImpl implements TripService {
     private final TripRealtimePublisher tripRealtimePublisher;
     private final TripDestinationRepository tripDestinationRepository;
     private final SocialNotificationService socialNotificationService;
+    private final UserCheckinService userCheckinService;
     private final Executor applicationTaskExecutor;
 
     private List<TripDestination> buildDestinationsForTrip(
@@ -304,6 +307,7 @@ public class TripServiceImpl implements TripService {
                 .build();
         tripMemberRepository.insert(owner);
 
+        tripChatService.onTripCreated(trip.getId());
         log.info("Trip created: {} by user: {}", trip.getId(), userId);
         return mapToTripResponse(trip, userId);
     }
@@ -492,6 +496,7 @@ public class TripServiceImpl implements TripService {
                 TripRealtimeEventType.TRIP_DELETED, tripId, tripId, userId);
         
         tripRepository.deleteById(tripId);
+        tripChatService.onTripDeleted(tripId);
         log.info("Trip deleted: {}", tripId);
 
         notificationHelper.emitTripDeleted(trip, userId);
@@ -633,6 +638,7 @@ public class TripServiceImpl implements TripService {
         member.setStatus(MemberStatus.ACCEPTED);
         member.setJoinedAt(LocalDateTime.now());
         tripMemberRepository.updateById(member);
+        tripChatService.onMembershipChanged(tripId);
         log.info("Member accepted invite: {} - {}", tripId, userId);
         starService.grant(trip.getOwnerId(), 1, "INVITE_ACCEPTED",
                 "invite:" + trip.getOwnerId() + ":" + userId,
@@ -741,6 +747,7 @@ public class TripServiceImpl implements TripService {
         }
 
         tripMemberRepository.deleteById(memberId);
+        tripChatService.onMembershipChanged(tripId);
         log.info("Member removed from trip: {} - {}", tripId, memberId);
 
         if (member.getUserId() != null) {
@@ -1322,6 +1329,7 @@ public class TripServiceImpl implements TripService {
 
         tripMemberRepository.deleteById(guestMemberId);
 
+        tripChatService.onMembershipChanged(tripId);
         log.info("Guest member linked: trip={}, guest={} -> user={}, updated {} expense splits",
                 tripId, guestMemberId, targetUserId, guestSplits.size());
 
@@ -1440,6 +1448,23 @@ public class TripServiceImpl implements TripService {
             }
         }
 
+        // Check-ins made during the trip, split into the ones that belong to a stop and the
+        // ones that do not. A check-in pointing at an activity that is no longer on the trip
+        // is treated as trip-level rather than dropped: the visit still happened.
+        Set<UUID> activityIds = activities.stream()
+                .map(com.ds.goroute.entity.Activity::getId)
+                .collect(Collectors.toSet());
+        Map<UUID, List<UserCheckinResponse>> checkinsByActivity = new java.util.HashMap<>();
+        List<UserCheckinResponse> tripLevelCheckins = new java.util.ArrayList<>();
+        for (UserCheckinResponse checkin : userCheckinService.byTrip(viewerId, tripId)) {
+            if (checkin.getActivityId() != null && activityIds.contains(checkin.getActivityId())) {
+                checkinsByActivity.computeIfAbsent(checkin.getActivityId(), k -> new java.util.ArrayList<>())
+                        .add(checkin);
+            } else {
+                tripLevelCheckins.add(checkin);
+            }
+        }
+
         // Build activity responses with nested expenses and notes
         List<PublicActivityResponse> activityResponses = activities.stream()
                 .map(a -> {
@@ -1471,6 +1496,7 @@ public class TripServiceImpl implements TripService {
                             .memberReviews(memberReviews == null || memberReviews.isEmpty() ? null : memberReviews)
                             .expenses(expensesByActivity.getOrDefault(a.getId(), null))
                             .notes(notesByActivity.getOrDefault(a.getId(), null))
+                            .checkins(checkinsByActivity.getOrDefault(a.getId(), null))
                             .build();
                 })
                 .collect(Collectors.toList());
@@ -1502,6 +1528,7 @@ public class TripServiceImpl implements TripService {
                 .activities(activityResponses)
                 .expenses(tripLevelExpenses.isEmpty() ? null : tripLevelExpenses)
                 .notes(tripLevelNotes.isEmpty() ? null : tripLevelNotes)
+                .checkins(tripLevelCheckins.isEmpty() ? null : tripLevelCheckins)
                 .viewCount(trip.getViewCount())
                 .copyCount(trip.getCopyCount())
                 .helpfulVotes(trip.getHelpfulVotes() != null ? trip.getHelpfulVotes() : 0)
@@ -1669,6 +1696,7 @@ public class TripServiceImpl implements TripService {
 
             tripMemberRepository.insert(member);
         }
+        tripChatService.onMembershipChanged(trip.getId());
         log.info("User joined trip by code: tripId={}, userId={}, code={}", trip.getId(), userId, code);
 
         notificationHelper.emitGeneric(trip.getId(), userId, NotificationType.MEMBER_JOIN_REQUESTED,
@@ -1722,6 +1750,7 @@ public class TripServiceImpl implements TripService {
         member.setStatus(MemberStatus.ACCEPTED);
         member.setJoinedAt(LocalDateTime.now());
         tripMemberRepository.updateById(member);
+        tripChatService.onMembershipChanged(tripId);
         log.info("Member accepted: tripId={}, memberId={}, acceptedBy={}", tripId, memberId, userId);
 
         notificationHelper.emitGeneric(tripId, userId, NotificationType.MEMBER_ACCESS_GRANTED,
@@ -1757,6 +1786,7 @@ public class TripServiceImpl implements TripService {
         // Update status to LEFT instead of deleting
         member.setStatus(MemberStatus.LEFT);
         tripMemberRepository.updateById(member);
+        tripChatService.onMembershipChanged(tripId);
         log.info("Member left trip: tripId={}, userId={}", tripId, userId);
 
         notificationHelper.emitMemberLeft(member, trip, userId);
@@ -1849,6 +1879,7 @@ public class TripServiceImpl implements TripService {
                 .joinedAt(LocalDateTime.now())
                 .build();
         tripMemberRepository.insert(owner);
+        tripChatService.onTripCreated(newTrip.getId());
 
         // 7. Increment copy count of original trip
         try {

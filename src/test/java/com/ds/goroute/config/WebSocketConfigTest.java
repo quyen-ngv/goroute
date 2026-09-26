@@ -111,13 +111,92 @@ class WebSocketConfigTest {
     }
 
     @Test
-    void keepsMarketplaceMessagesOutsideTripAuthorization() {
+    void deliversAConversationMessageToAMemberWhoStillHasAccess() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+
+        assertThat(outboundInterceptor().preSend(conversationMessage(conversationId, userId), channel))
+                .isNotNull();
+        verify(marketplaceAccess).requireAccess(conversationId, userId);
+    }
+
+    /**
+     * The privacy rule that the subscribe-time check cannot keep on its own: somebody removed
+     * from a trip, or blocked, holds an open subscription until they close the app.
+     */
+    @Test
+    void rejectsAConversationMessageForSomebodyRemovedAfterSubscription() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        doThrow(new AccessDeniedException("no longer a member"))
+                .when(marketplaceAccess).requireAccess(conversationId, userId);
+
+        assertThat(outboundInterceptor().preSend(conversationMessage(conversationId, userId), channel)).isNull();
+    }
+
+    /** No resolvable subscriber means no way to check, which fails closed. */
+    @Test
+    void rejectsAConversationMessageWithNoIdentifiableSubscriber() {
         ChannelInterceptor interceptor = outboundInterceptor();
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.MESSAGE);
         accessor.setDestination("/topic/marketplace/conversations/" + UUID.randomUUID());
         Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
 
-        assertThat(interceptor.preSend(message, channel)).isSameAs(message);
+        assertThat(interceptor.preSend(message, channel)).isNull();
+    }
+
+    @Test
+    void letsSomebodyFollowTheirOwnInbox() {
+        UUID userId = UUID.randomUUID();
+
+        inboundInterceptor().preSend(
+                subscribeToDestinationAs("/topic/users/" + userId + "/chat", userId), channel);
+    }
+
+    @Test
+    void refusesToLetAnybodyFollowSomebodyElseInbox() {
+        UUID me = UUID.randomUUID();
+        UUID somebodyElse = UUID.randomUUID();
+
+        assertThatThrownBy(() -> inboundInterceptor().preSend(
+                subscribeToDestinationAs("/topic/users/" + somebodyElse + "/chat", me), channel))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void deliversAnInboxEventToItsOwner() {
+        UUID userId = UUID.randomUUID();
+
+        assertThat(outboundInterceptor().preSend(inboxMessage(userId, userId), channel)).isNotNull();
+    }
+
+    @Test
+    void neverDeliversAnInboxEventToAnybodyElse() {
+        UUID owner = UUID.randomUUID();
+        UUID eavesdropper = UUID.randomUUID();
+
+        assertThat(outboundInterceptor().preSend(inboxMessage(owner, eavesdropper), channel)).isNull();
+    }
+
+    private Message<?> inboxMessage(UUID owner, UUID subscriber) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.MESSAGE);
+        accessor.setDestination("/topic/users/" + owner + "/chat");
+        accessor.setUser(new UsernamePasswordAuthenticationToken(subscriber.toString(), null));
+        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
+    private Message<?> subscribeToDestinationAs(String destination, UUID userId) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setDestination(destination);
+        accessor.setUser(new UsernamePasswordAuthenticationToken(userId.toString(), null));
+        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
+    private Message<?> conversationMessage(UUID conversationId, UUID userId) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.MESSAGE);
+        accessor.setDestination("/topic/marketplace/conversations/" + conversationId);
+        accessor.setUser(new UsernamePasswordAuthenticationToken(userId.toString(), null));
+        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
     }
 
     private ChannelInterceptor inboundInterceptor() {

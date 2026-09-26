@@ -27,6 +27,7 @@ import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.service.StarService;
 import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.TripRealtimePublisher;
+import com.ds.goroute.service.UserCheckinService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.type.MemberRole;
@@ -68,6 +69,7 @@ class TripServiceImplCollaborationTest {
                 mock(StarService.class),
                 tripRepository,
                 mock(TripAccessGuard.class),
+                mock(com.ds.goroute.service.TripChatService.class),
                 tripMemberRepository,
                 userRepository,
                 activityRepository,
@@ -89,6 +91,7 @@ class TripServiceImplCollaborationTest {
                 mock(TripRealtimePublisher.class),
                 tripDestinationRepository,
                 mock(SocialNotificationService.class),
+                mock(UserCheckinService.class),
                 Runnable::run);
     }
 

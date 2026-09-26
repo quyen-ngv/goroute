@@ -36,6 +36,15 @@ public class PublicTripResponse {
     private List<PublicActivityResponse> activities;
     private List<PublicExpenseResponse> expenses;
     private List<PublicNoteResponse> notes;
+
+    /**
+     * Public check-ins made during the trip that hang off no particular stop.
+     *
+     * <p>The ones that do belong to a stop travel on {@link PublicActivityResponse}
+     * instead, so a reader never meets the same post twice on one page.
+     */
+    private List<UserCheckinResponse> checkins;
+
     private Integer viewCount;
     private Integer copyCount;
     private Integer helpfulVotes;
