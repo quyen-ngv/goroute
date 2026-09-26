@@ -33,7 +33,8 @@ import java.util.Map;
 // these packages as a mapper, so a plain port interface sitting beside its mapper (as
 // OnboardingDraftRepository does) becomes a second bean of its own type and the context
 // refuses to start. Every mapper in both packages carries @Mapper already.
-@MapperScan(basePackages = {"com.ds.goroute.mapper", "com.ds.goroute.partneronboarding.persistence"},
+@MapperScan(basePackages = {"com.ds.goroute.mapper", "com.ds.goroute.partneronboarding.persistence",
+        "com.ds.goroute.quest.persistence"},
         annotationClass = Mapper.class,
         sqlSessionFactoryRef = "sqlSessionFactory")
 public class DataSourceConfig {
