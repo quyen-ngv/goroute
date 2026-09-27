@@ -298,6 +298,16 @@ public class QuestRepositoryImpl implements QuestRepository {
     }
 
     @Override
+    public List<com.ds.goroute.quest.domain.QuestArObjectAsset> findArObjectAssetsForCreator(UUID userId) {
+        return mapper.findArObjectAssetsForCreator(userId);
+    }
+
+    @Override
+    public int countArObjectAssetsByOwner(UUID userId) {
+        return mapper.countArObjectAssetsByOwner(userId);
+    }
+
+    @Override
     public int countCheckpointsUsingArObjectAsset(UUID id) {
         return mapper.countCheckpointsUsingArObjectAsset(id);
     }

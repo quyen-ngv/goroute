@@ -15,7 +15,9 @@ import software.amazon.awssdk.services.polly.PollyClient;
 import software.amazon.awssdk.services.polly.model.*;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetUrlRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import java.io.IOException;
@@ -245,6 +247,23 @@ public class AwsService implements StorageService {
     }
 
     private record DownloadedRemoteFile(Path path, String contentType) {
+    }
+
+    @Override
+    public String urlFor(String key) {
+        return getCloudfrontUrl(key);
+    }
+
+    @Override
+    public byte[] readObject(String key) {
+        try {
+            return s3Client.getObjectAsBytes(GetObjectRequest.builder()
+                    .bucket(awsProperties.getS3BucketName())
+                    .key(key)
+                    .build()).asByteArray();
+        } catch (NoSuchKeyException e) {
+            return null;
+        }
     }
 
     private String getCloudfrontUrl(String fileName) {

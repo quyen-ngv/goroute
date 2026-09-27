@@ -10,8 +10,9 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
- * A 3D object in the AR library (§3.15). The console uploads it; creators only pick it. The GLB is
- * the source and what Android shows; iOS shows the USDZ made from it.
+ * A 3D object for AR checkpoints (§3.15). The console's shared library, or one a creator uploaded
+ * for their own quests ({@link #ownerUserId} set). The GLB is the source and what Android shows;
+ * iOS shows the USDZ made from it.
  */
 @Data
 @Builder
@@ -36,6 +37,8 @@ public class QuestArObjectAsset {
     private String tags;
     private boolean active;
     private UUID createdBy;
+    /** The creator this object is private to; null for the console's shared library. */
+    private UUID ownerUserId;
     private Long dataVersion;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

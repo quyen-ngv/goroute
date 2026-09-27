@@ -8,9 +8,12 @@ import com.ds.goroute.quest.dto.QuestArObjectFileResponse;
 import com.ds.goroute.quest.dto.QuestArObjectView;
 import com.ds.goroute.quest.dto.SaveQuestArObjectAssetRequest;
 import com.ds.goroute.quest.persistence.QuestRepository;
+import com.ds.goroute.quest.dto.SaveCreatorArObjectRequest;
+import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.StorageService;
 import com.ds.goroute.service.marketplace.MarketplaceJson;
+import com.ds.goroute.type.BusinessConfigKey;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,8 +31,8 @@ import java.util.UUID;
 import java.util.stream.Stream;
 
 /**
- * The AR object library (§3.15): the console uploads and edits 3D objects here, creators only list
- * them. Every GLB is inspected against the asset spec before it is stored, and again when an
+ * The AR object library (§3.15): the console uploads and edits the shared 3D objects here, and a
+ * creator may upload their own, private to their quests. Every GLB is inspected against the asset spec before it is stored, and again when an
  * object is saved, so the clips and triangle count on the row always describe the file it points
  * to.
  */
@@ -47,6 +50,8 @@ public class QuestArObjectLibraryService {
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate;
     private final ImageStorageCleanupService cleanup;
+    private final QuestCreatorGate creatorGate;
+    private final BusinessConfigService config;
 
     /** This library's entry in {@link ImageStorageCleanupService}. */
     static final String STORAGE_ENTITY = "QUEST_AR_ASSET";
@@ -65,8 +70,12 @@ public class QuestArObjectLibraryService {
 
     /** Checks and stores one file. A GLB that breaks the spec is not stored: the reply lists why. */
     public QuestArObjectFileResponse upload(UUID adminUserId, FileKind kind, MultipartFile file) {
+        return upload("quest-ar/", kind, file);
+    }
+
+    private QuestArObjectFileResponse upload(String folder, FileKind kind, MultipartFile file) {
         byte[] bytes = read(file, kind == FileKind.THUMBNAIL ? MAX_THUMBNAIL_BYTES : MAX_MODEL_BYTES);
-        String prefix = "quest-ar/" + UUID.randomUUID();
+        String prefix = folder + UUID.randomUUID();
         return switch (kind) {
             case GLB -> {
                 ArModelInspector.Inspection inspection = ArModelInspector.inspectGlb(bytes, objectMapper);
@@ -99,6 +108,132 @@ public class QuestArObjectLibraryService {
             }
         };
     }
+
+    // --- A creator's own objects ---------------------------------------------------------------
+
+    /** What a creator may place: the active shared library, then their own uploads first. */
+    @Transactional(readOnly = true)
+    public List<QuestArObjectAssetResponse> listForCreator(UUID userId) {
+        return repository.findArObjectAssetsForCreator(userId).stream().map(this::view).toList();
+    }
+
+    /**
+     * A creator's file, checked like the console's and stored in their own folder. Nothing is
+     * stored for a creator who may not add AR objects or has no room left.
+     */
+    public QuestArObjectFileResponse uploadForCreator(UUID userId, FileKind kind, MultipartFile file) {
+        creatorGate.requireArCreationOpen(userId);
+        requireCreatorRoom(userId);
+        return upload(creatorFolder(userId), kind, file);
+    }
+
+    /**
+     * Saves a creator's object from files they uploaded. The files are named by the URLs the upload
+     * returned, but only files in the creator's own folder count, and they are read back from the
+     * bucket by key -- never fetched from a URL a client sent -- and inspected again, so the row
+     * describes exactly what is stored.
+     */
+    @Transactional
+    public QuestArObjectAssetResponse createForCreator(UUID userId, SaveCreatorArObjectRequest request) {
+        creatorGate.requireArCreationOpen(userId);
+        requireCreatorRoom(userId);
+        String folder = creatorFolder(userId);
+
+        String glbKey = ownKey(request.glbUrl(), folder, "GLB", ".glb");
+        byte[] glb = readStored(glbKey, "GLB", MAX_MODEL_BYTES);
+        ArModelInspector.Inspection inspection = ArModelInspector.inspectGlb(glb, objectMapper);
+        if (!inspection.usable()) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "The GLB does not meet the AR asset spec: " + String.join("; ", inspection.errors()));
+        }
+        String usdzKey = blankToNull(request.usdzUrl()) == null ? null
+                : ownKey(request.usdzUrl(), folder, "USDZ", ".usdz");
+        Long usdzBytes = null;
+        if (usdzKey != null) {
+            byte[] usdz = readStored(usdzKey, "USDZ", MAX_MODEL_BYTES);
+            if (!ArModelInspector.isUsdz(usdz)) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "The USDZ file is not a USDZ");
+            }
+            usdzBytes = (long) usdz.length;
+        }
+        String thumbnailKey = blankToNull(request.thumbnailUrl()) == null ? null
+                : ownKey(request.thumbnailUrl(), folder, "thumbnail", null);
+        if (thumbnailKey != null && imageType(readStored(thumbnailKey, "thumbnail", MAX_THUMBNAIL_BYTES)) == null) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "A thumbnail must be PNG, JPEG or WEBP");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        QuestArObjectAsset asset = QuestArObjectAsset.builder()
+                .id(UUID.randomUUID())
+                .name(request.name().trim())
+                .description(blankToNull(request.description()))
+                .glbUrl(storage.urlFor(glbKey))
+                .glbBytes((long) glb.length)
+                .usdzUrl(usdzKey == null ? null : storage.urlFor(usdzKey))
+                .usdzBytes(usdzBytes)
+                .thumbnailUrl(thumbnailKey == null ? null : storage.urlFor(thumbnailKey))
+                .heightM(request.heightM())
+                .clips(json.write(clips(inspection.clips())))
+                .triangles(inspection.triangles())
+                .canWander(inspection.canWander())
+                .tags("[]")
+                .active(true)
+                .createdBy(userId)
+                .ownerUserId(userId)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        repository.insertArObjectAsset(asset);
+        return get(asset.getId());
+    }
+
+    /** Deletes one of the creator's own objects and its files; refused while a checkpoint places it. */
+    @Transactional
+    public void deleteForCreator(UUID userId, UUID id) {
+        QuestArObjectAsset asset = require(id);
+        if (!userId.equals(asset.getOwnerUserId())) {
+            // The shared library and other creators' objects are not this creator's to delete.
+            throw new BusinessException(ErrorConstant.NOT_FOUND, "AR object not found");
+        }
+        delete(id, null);
+    }
+
+    static String creatorFolder(UUID userId) {
+        return "quest-ar/u/" + userId + "/";
+    }
+
+    private void requireCreatorRoom(UUID userId) {
+        int max = config.getInt(BusinessConfigKey.QUEST_AR_CREATOR_MAX_OBJECTS);
+        if (repository.countArObjectAssetsByOwner(userId) >= max) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "You can keep up to " + max + " 3D objects. Delete one you no longer use first.");
+        }
+    }
+
+    /** The storage key of a file in {@code folder}; anything else is refused. */
+    private String ownKey(String url, String folder, String what, String extension) {
+        String key = url == null ? null : storage.extractObjectKey(url.trim());
+        if (key == null || !key.startsWith(folder) || key.contains("..")
+                || (extension != null && !key.endsWith(extension))) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "The " + what + " must be a file you uploaded here");
+        }
+        return key;
+    }
+
+    private byte[] readStored(String key, String what, long max) {
+        byte[] bytes = storage.readObject(key);
+        if (bytes == null || bytes.length == 0) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "The " + what + " was not found; upload it again");
+        }
+        if (bytes.length > max) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "The " + what + " is too large");
+        }
+        return bytes;
+    }
+
+    // --- The console's library ------------------------------------------------------------------
 
     @Transactional
     public QuestArObjectAssetResponse create(UUID adminUserId, SaveQuestArObjectAssetRequest request) {
@@ -199,7 +334,7 @@ public class QuestArObjectLibraryService {
                 .toList();
         return new QuestArObjectAssetResponse(a.getId(), a.getName(), a.getDescription(), a.getGlbUrl(),
                 a.getGlbBytes(), a.getUsdzUrl(), a.getUsdzBytes(), a.getThumbnailUrl(), a.getHeightM(), clips,
-                a.getTriangles(), a.isCanWander(), json.readList(a.getTags(), String.class), a.isActive(),
+                a.getTriangles(), a.isCanWander(), json.readList(a.getTags(), String.class), a.isActive(), a.getOwnerUserId(),
                 a.getDataVersion() == null ? 0 : a.getDataVersion(), a.getUpdatedAt());
     }
 

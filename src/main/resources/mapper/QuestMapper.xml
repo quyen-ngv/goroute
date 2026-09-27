@@ -692,6 +692,7 @@
         <result property="tags" column="tags"/>
         <result property="active" column="is_active"/>
         <result property="createdBy" column="created_by"/>
+        <result property="ownerUserId" column="owner_user_id"/>
         <result property="dataVersion" column="data_version"/>
         <result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
@@ -700,13 +701,24 @@
     <sql id="ArObjectAssetColumns">
         id, name, description, glb_url, glb_bytes, usdz_url, usdz_bytes, thumbnail_url, height_m,
         clips::text AS clips, triangles, can_wander, tags::text AS tags, is_active, created_by,
-        data_version, created_at, updated_at
+        owner_user_id, data_version, created_at, updated_at
     </sql>
 
     <select id="findArObjectAssets" resultMap="ArObjectAssetMap">
         SELECT <include refid="ArObjectAssetColumns"/> FROM quest_ar_object_assets
         <if test="activeOnly">WHERE is_active = TRUE</if>
         ORDER BY name, id
+    </select>
+
+    <!-- What a creator may place: the active shared library and their own active uploads. -->
+    <select id="findArObjectAssetsForCreator" resultMap="ArObjectAssetMap">
+        SELECT <include refid="ArObjectAssetColumns"/> FROM quest_ar_object_assets
+        WHERE is_active = TRUE AND (owner_user_id IS NULL OR owner_user_id = #{userId})
+        ORDER BY (owner_user_id IS NULL), name, id
+    </select>
+
+    <select id="countArObjectAssetsByOwner" resultType="int">
+        SELECT COUNT(*) FROM quest_ar_object_assets WHERE owner_user_id = #{userId}
     </select>
 
     <select id="findArObjectAssetById" resultMap="ArObjectAssetMap">
@@ -722,11 +734,13 @@
     <insert id="insertArObjectAsset">
         INSERT INTO quest_ar_object_assets (
             id, name, description, glb_url, glb_bytes, usdz_url, usdz_bytes, thumbnail_url, height_m,
-            clips, triangles, can_wander, tags, is_active, created_by, data_version, created_at, updated_at
+            clips, triangles, can_wander, tags, is_active, created_by, owner_user_id, data_version,
+            created_at, updated_at
         ) VALUES (
             #{id}, #{name}, #{description}, #{glbUrl}, #{glbBytes}, #{usdzUrl}, #{usdzBytes}, #{thumbnailUrl},
             #{heightM}, COALESCE(CAST(#{clips} AS TEXT), '[]')::jsonb, #{triangles}, #{canWander},
-            COALESCE(CAST(#{tags} AS TEXT), '[]')::jsonb, #{active}, #{createdBy}, 1, #{createdAt}, #{updatedAt}
+            COALESCE(CAST(#{tags} AS TEXT), '[]')::jsonb, #{active}, #{createdBy}, #{ownerUserId}, 1,
+            #{createdAt}, #{updatedAt}
         )
     </insert>
 

@@ -388,6 +388,8 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
         if (object.assetId() != null) {
             com.ds.goroute.quest.domain.QuestArObjectAsset asset = repository.findArObjectAsset(object.assetId())
                     .filter(com.ds.goroute.quest.domain.QuestArObjectAsset::isActive)
+                    // A creator's own upload is theirs alone to place; the shared library is anyone's.
+                    .filter(a -> a.getOwnerUserId() == null || a.getOwnerUserId().equals(gate.actorUserId()))
                     .orElseThrow(() -> new BusinessException(ErrorConstant.INVALID_PARAMETERS,
                             where + " uses an AR object that is not in the library"));
             if (com.ds.goroute.type.QuestArBehavior.WANDER.name().equals(object.behavior()) && !asset.isCanWander()) {

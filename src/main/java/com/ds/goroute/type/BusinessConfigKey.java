@@ -235,7 +235,9 @@ public enum BusinessConfigKey {
     // §3.15 AR objects. Creating one is open to beta testers only until AR_ENABLED is thrown;
     // playing one is open to everyone. The interact radius is how near the object a tap counts.
     QUEST_AR_ENABLED("QUEST", "AR_ENABLED", false),
-    QUEST_AR_INTERACT_RADIUS_METERS("QUEST", "AR_INTERACT_RADIUS_METERS", 40, 10, 150);
+    QUEST_AR_INTERACT_RADIUS_METERS("QUEST", "AR_INTERACT_RADIUS_METERS", 40, 10, 150),
+    // How many 3D objects one creator may upload for their own quests (each up to ~20 MB stored).
+    QUEST_AR_CREATOR_MAX_OBJECTS("QUEST", "AR_CREATOR_MAX_OBJECTS", 20, 0, 200);
 
     /** Value shapes the configuration layer knows how to validate. */
     public enum ValueType {

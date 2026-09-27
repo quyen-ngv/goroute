@@ -5,7 +5,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
-/** One 3D object in the AR library (§3.15), as the console and the builder list it. */
+/**
+ * One 3D object (§3.15), as the console and the builder list it. {@code ownerUserId} is set on an
+ * object a creator uploaded for their own quests, null on the shared library.
+ */
 public record QuestArObjectAssetResponse(
         UUID id,
         String name,
@@ -21,6 +24,7 @@ public record QuestArObjectAssetResponse(
         boolean canWander,
         List<String> tags,
         boolean active,
+        UUID ownerUserId,
         long dataVersion,
         LocalDateTime updatedAt) {
 }

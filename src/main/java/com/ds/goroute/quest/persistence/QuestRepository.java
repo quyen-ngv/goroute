@@ -113,6 +113,11 @@ public interface QuestRepository {
 
     Optional<com.ds.goroute.quest.domain.QuestArObjectAsset> findArObjectAsset(UUID id);
 
+    /** The active shared library plus this creator's own active uploads, theirs first. */
+    List<com.ds.goroute.quest.domain.QuestArObjectAsset> findArObjectAssetsForCreator(UUID userId);
+
+    int countArObjectAssetsByOwner(UUID userId);
+
     /** By id; ids not found are simply absent from the map. */
     Map<UUID, com.ds.goroute.quest.domain.QuestArObjectAsset> findArObjectAssets(java.util.Collection<UUID> ids);
 
