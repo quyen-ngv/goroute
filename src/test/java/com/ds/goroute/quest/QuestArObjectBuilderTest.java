@@ -64,6 +64,7 @@ class QuestArObjectBuilderTest {
     private final UUID assetId = UUID.randomUUID();
     private final List<QuestCheckpoint> stored = new ArrayList<>();
     private boolean assetCanWander = true;
+    private UUID assetOwner = null;
 
     @BeforeEach
     void setUp() {
@@ -78,7 +79,7 @@ class QuestArObjectBuilderTest {
         when(repository.loadVersionGraph(versionId)).thenAnswer(inv -> Optional.of(QuestVersion.builder()
                 .id(versionId).amenityTags("[]").cityImageIds("[]").checkpoints(List.copyOf(stored)).build()));
         when(repository.findArObjectAsset(assetId)).thenAnswer(inv -> Optional.of(QuestArObjectAsset.builder()
-                .id(assetId).name("Scroll").active(true).canWander(assetCanWander).build()));
+                .id(assetId).name("Scroll").active(true).canWander(assetCanWander).ownerUserId(assetOwner).build()));
         when(repository.findNotesByCheckpoints(any())).thenReturn(List.of());
     }
 
@@ -153,6 +154,17 @@ class QuestArObjectBuilderTest {
         moved.setLatitude(new BigDecimal("21.0290"));
         assertThatThrownBy(() -> service.saveDraft(questId, owner, request(moved)))
                 .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    @DisplayName("a creator's own upload is theirs alone to place")
+    void privateAssets() {
+        assetOwner = owner;
+        service.saveDraft(questId, owner, request(input("FIXED")));
+
+        assetOwner = UUID.randomUUID();
+        assertThatThrownBy(() -> service.saveDraft(questId, owner, request(input("FIXED"))))
+                .isInstanceOf(BusinessException.class).hasMessageContaining("not in the library");
     }
 
     @Test

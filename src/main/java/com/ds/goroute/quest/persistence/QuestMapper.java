@@ -156,6 +156,10 @@ public interface QuestMapper {
 
     com.ds.goroute.quest.domain.QuestArObjectAsset findArObjectAssetById(@Param("id") UUID id);
 
+    List<com.ds.goroute.quest.domain.QuestArObjectAsset> findArObjectAssetsForCreator(@Param("userId") UUID userId);
+
+    int countArObjectAssetsByOwner(@Param("userId") UUID userId);
+
     List<com.ds.goroute.quest.domain.QuestArObjectAsset> findArObjectAssetsByIds(@Param("ids") List<UUID> ids);
 
     void insertArObjectAsset(com.ds.goroute.quest.domain.QuestArObjectAsset asset);

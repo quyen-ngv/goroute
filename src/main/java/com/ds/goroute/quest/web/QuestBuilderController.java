@@ -41,10 +41,36 @@ public class QuestBuilderController {
     private final QuestBuilderService builderService;
     private final com.ds.goroute.quest.service.QuestArObjectLibraryService arLibrary;
 
-    /** The AR objects a creator may place (§3.15): the active part of the library. */
+    /** The AR objects a creator may place (§3.15): their own uploads, then the shared library. */
     @GetMapping("/ar-objects")
-    public ResponseEntity<BaseResponse<java.util.List<com.ds.goroute.quest.dto.QuestArObjectAssetResponse>>> arObjects() {
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(arLibrary.list(true)));
+    public ResponseEntity<BaseResponse<java.util.List<com.ds.goroute.quest.dto.QuestArObjectAssetResponse>>> arObjects(
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(arLibrary.listForCreator(userId)));
+    }
+
+    /** Uploads one file of a creator's own object: {@code kind} is GLB, USDZ or THUMBNAIL. */
+    @PostMapping(value = "/ar-objects/files", consumes = "multipart/form-data")
+    public ResponseEntity<BaseResponse<com.ds.goroute.quest.dto.QuestArObjectFileResponse>> uploadArFile(
+            @CurrentUser UUID userId,
+            @RequestParam com.ds.goroute.quest.service.QuestArObjectLibraryService.FileKind kind,
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(arLibrary.uploadForCreator(userId, kind, file)));
+    }
+
+    @PostMapping("/ar-objects")
+    public ResponseEntity<BaseResponse<com.ds.goroute.quest.dto.QuestArObjectAssetResponse>> createArObject(
+            @CurrentUser UUID userId,
+            @jakarta.validation.Valid @RequestBody com.ds.goroute.quest.dto.SaveCreatorArObjectRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(BaseResponse.ofSucceeded(arLibrary.createForCreator(userId, request)));
+    }
+
+    @DeleteMapping("/ar-objects/{id}")
+    public ResponseEntity<BaseResponse<Void>> deleteArObject(
+            @CurrentUser UUID userId,
+            @PathVariable UUID id) {
+        arLibrary.deleteForCreator(userId, id);
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(null));
     }
 
     @PostMapping("/quests")

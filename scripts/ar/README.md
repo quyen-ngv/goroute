@@ -1,8 +1,13 @@
 # AR object asset spec (§3.15)
 
 An **AR object** is a 3D model a player finds in AR and taps to clear a checkpoint: a turtle, a
-sealed scroll, a lantern. The console keeps a library of them; creators only pick from it. This
-page is what a model must be to go into that library.
+sealed scroll, a lantern. The console keeps a shared library of them, and a beta creator can
+upload their own from the app (private to their quests; `QUEST.AR_CREATOR_MAX_OBJECTS`, default 20,
+per creator). Both go through the same checks. This page is what a model must be to pass them.
+
+A creator uploads from the app with `POST /v1/api/quest-builder/ar-objects/files?kind=GLB|USDZ|THUMBNAIL`
+then `POST /v1/api/quest-builder/ar-objects`; files land under `quest-ar/u/<userId>/` and the server
+reads them back from the bucket by key (it never fetches a URL a client sent).
 
 ## Files per object
 

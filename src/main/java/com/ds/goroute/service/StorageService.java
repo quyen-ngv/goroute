@@ -16,6 +16,10 @@ public interface StorageService {
     void copyObjectKeys(List<String> keys, String targetPrefix);
     void deleteObjectKeys(List<String> keys);
     String extractObjectKey(String fileUrl);
+    /** The public URL an object stored under {@code key} is served from. */
+    String urlFor(String key);
+    /** An object's bytes, read from the bucket by key; null when there is no such object. */
+    byte[] readObject(String key);
 
     /** One stored object: where it lives and when it was last written. */
     record StoredObject(String key, Instant lastModified) {

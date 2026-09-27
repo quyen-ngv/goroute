@@ -10,9 +10,9 @@ import java.time.Duration;
 
 /**
  * Frees the space AR library files (§3.15) take once nothing uses them: a GLB, USDZ or thumbnail
- * uploaded on the console but never saved on an object. Replaced and deleted objects' files are
- * removed when that happens; this catches the rest. Only the console writes under
- * {@code quest-ar/}, and it saves within the same sitting, so two days is a safe margin.
+ * uploaded on the console or by a creator in the app but never saved on an object. Replaced and
+ * deleted objects' files are removed when that happens; this catches the rest. Both writers of
+ * {@code quest-ar/} save the object right after uploading its files, so two days is a safe margin.
  * Single-instance (no Redis lock), daily by default.
  */
 @Slf4j
