@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.ServletRequestBindingException;
@@ -23,6 +24,7 @@ import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
 
@@ -141,6 +143,18 @@ public class CommonExceptionHandler {
         return response(ErrorConstant.FILE_TOO_LARGE,
                 "File size exceeds the maximum allowed limit", null,
                 HttpStatus.PAYLOAD_TOO_LARGE);
+    }
+
+    /** No controller maps the path. A client asking for a route this build lacks, not a server fault. */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<BaseResponse<?>> handleNoResource(NoResourceFoundException exception) {
+        log.warn("No route for {} {}", httpServletRequest.getMethod(), httpServletRequest.getRequestURI());
+        return response(ErrorConstant.NOT_FOUND, "Not found", null, HttpStatus.NOT_FOUND);
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<BaseResponse<?>> handleMethodNotSupported(HttpRequestMethodNotSupportedException exception) {
+        return response(ErrorConstant.BAD_REQUEST, "Method not allowed", null, HttpStatus.METHOD_NOT_ALLOWED);
     }
 
     @ExceptionHandler(Exception.class)
