@@ -18,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.client.RestTemplate;
 
 import java.nio.ByteBuffer;
@@ -68,6 +69,7 @@ class QuestArObjectLibraryServiceTest {
         when(repository.updateArObjectAsset(any(), anyLong())).thenReturn(true);
         when(repository.deleteArObjectAsset(eq(id), anyLong())).thenReturn(true);
         when(config.getInt(BusinessConfigKey.QUEST_AR_CREATOR_MAX_OBJECTS)).thenReturn(20);
+        when(config.getInt(BusinessConfigKey.QUEST_AR_MAX_MODEL_MB)).thenReturn(50);
         when(storage.extractObjectKey(anyString()))
                 .thenAnswer(call -> call.<String>getArgument(0).replace("https://cdn/", ""));
         when(storage.urlFor(anyString())).thenAnswer(call -> "https://cdn/" + call.getArgument(0));
@@ -119,6 +121,18 @@ class QuestArObjectLibraryServiceTest {
                     .isInstanceOf(BusinessException.class).hasMessageContaining("you uploaded here");
         }
         verify(storage, never()).readObject(anyString());
+    }
+
+    @Test
+    @DisplayName("the model size limit is the config's AR_MAX_MODEL_MB")
+    void sizeLimitFromConfig() {
+        when(config.getInt(BusinessConfigKey.QUEST_AR_MAX_MODEL_MB)).thenReturn(1);
+        MockMultipartFile big = new MockMultipartFile("file", "big.glb", "model/gltf-binary",
+                new byte[1024 * 1024 + 1]);
+
+        assertThatThrownBy(() -> library.upload(creator, QuestArObjectLibraryService.FileKind.GLB, big))
+                .isInstanceOf(BusinessException.class).hasMessageContaining("larger than 1 MB");
+        verify(storage, never()).uploadFile(anyString(), any(), anyString(), anyLong());
     }
 
     @Test
