@@ -5,6 +5,8 @@ import com.ds.goroute.entity.PassportEvent;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.PassportMapper;
 import com.ds.goroute.quest.domain.Quest;
+import com.ds.goroute.quest.domain.QuestArObject;
+import com.ds.goroute.quest.domain.QuestArObjectAsset;
 import com.ds.goroute.entity.StarTransaction;
 import com.ds.goroute.quest.domain.QuestCheckpoint;
 import com.ds.goroute.quest.domain.QuestCheckpointClue;
@@ -22,6 +24,9 @@ import com.ds.goroute.quest.domain.QuestRunStopVisit;
 import com.ds.goroute.quest.domain.QuestVersion;
 import com.ds.goroute.quest.dto.QuestAnswerRequest;
 import com.ds.goroute.quest.dto.QuestAnswerResponse;
+import com.ds.goroute.quest.dto.QuestArObjectView;
+import com.ds.goroute.quest.dto.QuestArTapRequest;
+import com.ds.goroute.quest.dto.QuestArTapResponse;
 import com.ds.goroute.quest.dto.QuestArrivalResponse;
 import com.ds.goroute.quest.dto.QuestLocalRunRequest;
 import com.ds.goroute.quest.dto.QuestLocalRunResponse;
@@ -40,6 +45,7 @@ import com.ds.goroute.service.checkin.CheckinVerifier;
 import com.ds.goroute.service.checkin.VerificationTarget;
 import com.ds.goroute.service.marketplace.MarketplaceJson;
 import com.ds.goroute.type.BusinessConfigKey;
+import com.ds.goroute.type.QuestArBehavior;
 import com.ds.goroute.type.QuestClueKind;
 import com.ds.goroute.type.QuestCompletionMode;
 import com.ds.goroute.type.QuestQuestionType;
@@ -91,6 +97,15 @@ public class QuestPlayService {
 
     @Transactional
     public QuestRunResponse startRun(UUID userId, UUID questId, UUID tripId) {
+        return startRun(userId, questId, tripId, false);
+    }
+
+    /**
+     * @param arSupported whether the calling app can show AR objects (§3.15); an app that cannot
+     *     plays an AR_OBJECT checkpoint as ARRIVE.
+     */
+    @Transactional
+    public QuestRunResponse startRun(UUID userId, UUID questId, UUID tripId, boolean arSupported) {
         Quest quest = questRepository.findQuestById(questId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Quest not found"));
         if (quest.questStatus() != QuestStatus.PUBLISHED || quest.getPublishedVersionId() == null) {
@@ -98,6 +113,7 @@ public class QuestPlayService {
         }
         QuestRun open = runRepository.findOpenRun(questId, userId).orElse(null);
         if (open != null) {
+            noteArSupport(open, userId, arSupported);
             return runState(userId, open);
         }
         QuestVersion version = questRepository.loadVersionGraph(quest.getPublishedVersionId())
@@ -128,6 +144,7 @@ public class QuestPlayService {
                 .verification("UNVERIFIED")
                 .presenceCheckpoints(0)
                 .rewarded(false)
+                .arSupported(arSupported)
                 .build());
         return runState(userId, run);
     }
@@ -137,11 +154,35 @@ public class QuestPlayService {
         return runState(userId, requireRun(runId));
     }
 
+    /** As {@link #getRun(UUID, UUID)}, first recording that the member's app can now show AR. */
+    @Transactional
+    public QuestRunResponse getRun(UUID userId, UUID runId, boolean arSupported) {
+        QuestRun run = requireRun(runId);
+        noteArSupport(run, userId, arSupported);
+        return runState(userId, run);
+    }
+
+    /** Switches AR on for the member once their app says it can show it; never switches it off. */
+    private void noteArSupport(QuestRun run, UUID userId, boolean arSupported) {
+        if (!arSupported) {
+            return;
+        }
+        runRepository.findMember(run.getId(), userId)
+                .filter(member -> !member.isArSupported())
+                .ifPresent(member -> runRepository.markMemberArSupported(member.getId()));
+    }
+
     /** Join a run as a group member (§3.13), capped at GROUP_MAX_PLAYERS. Idempotent per user. */
     @Transactional
     public QuestRunResponse joinRun(UUID userId, UUID runId) {
+        return joinRun(userId, runId, false);
+    }
+
+    @Transactional
+    public QuestRunResponse joinRun(UUID userId, UUID runId, boolean arSupported) {
         QuestRun run = requireActiveRun(runId);
         if (runRepository.findMember(runId, userId).isPresent()) {
+            noteArSupport(run, userId, arSupported);
             return runState(userId, run);
         }
         int max = config.getInt(BusinessConfigKey.QUEST_GROUP_MAX_PLAYERS);
@@ -150,7 +191,8 @@ public class QuestPlayService {
         }
         runRepository.insertMember(QuestRunMember.builder()
                 .id(UUID.randomUUID()).runId(runId).userId(userId).joinedAt(LocalDateTime.now())
-                .verification("UNVERIFIED").presenceCheckpoints(0).rewarded(false).build());
+                .verification("UNVERIFIED").presenceCheckpoints(0).rewarded(false).arSupported(arSupported)
+                .build());
         return runState(userId, run);
     }
 
@@ -276,6 +318,12 @@ public class QuestPlayService {
      */
     @Transactional(readOnly = true)
     public QuestPackResponse pack(UUID userId, UUID questId) {
+        return pack(userId, questId, false);
+    }
+
+    /** @param arSupported whether the calling app can show AR objects; otherwise AR_OBJECT is ARRIVE. */
+    @Transactional(readOnly = true)
+    public QuestPackResponse pack(UUID userId, UUID questId, boolean arSupported) {
         Quest quest = questRepository.findQuestById(questId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Quest not found"));
         if (quest.questStatus() != QuestStatus.PUBLISHED || quest.getPublishedVersionId() == null) {
@@ -292,9 +340,11 @@ public class QuestPlayService {
                 config.getInt(BusinessConfigKey.QUEST_UNLOCK_RADIUS_METERS),
                 config.getInt(BusinessConfigKey.CHECKIN_MAX_ACCURACY_METERS),
                 config.getInt(BusinessConfigKey.QUEST_MAX_GUESS_ATTEMPTS),
-                config.getInt(BusinessConfigKey.QUEST_PROXIMITY_MIN_INTERVAL_SECONDS));
+                config.getInt(BusinessConfigKey.QUEST_PROXIMITY_MIN_INTERVAL_SECONDS),
+                config.getInt(BusinessConfigKey.QUEST_AR_INTERACT_RADIUS_METERS));
+        ArContext ar = arContext(version, arSupported);
         List<QuestPackResponse.Checkpoint> checkpoints = version.getCheckpoints().stream()
-                .map(cp -> packCheckpoint(cp, creator))
+                .map(cp -> packCheckpoint(cp, creator, ar))
                 .toList();
         return new QuestPackResponse(questId, version.getId(), intOf(version.getVersion()),
                 intOf(version.getContentRevision()), version.getTitle(), version.getSummary(), version.getCoverUrl(),
@@ -302,13 +352,13 @@ public class QuestPlayService {
                 settings, checkpoints);
     }
 
-    private QuestPackResponse.Checkpoint packCheckpoint(QuestCheckpoint cp, boolean creator) {
+    private QuestPackResponse.Checkpoint packCheckpoint(QuestCheckpoint cp, boolean creator, ArContext ar) {
         return new QuestPackResponse.Checkpoint(
                 cp.getId(), intOf(cp.getSortOrder()), cp.getName(), cp.getCategory(),
                 cp.getLatitude(), cp.getLongitude(), cp.getRadiusM(), cp.isRequiresCheckin(),
                 json.readList(cp.getImageUrls(), String.class), cp.find().name(),
                 cp.getSearchCenterLat(), cp.getSearchCenterLng(), cp.getSearchRadiusM(), cp.isHotColdEnabled(),
-                cp.completion().name(), cp.getMinStops(), cp.getStory(), cp.getStoryAudioUrl(),
+                effectiveMode(cp, ar.supported()).name(), cp.getMinStops(), cp.getStory(), cp.getStoryAudioUrl(),
                 cp.getStoryAudioSeconds(),
                 cp.getClues().stream().map(c -> new QuestPackResponse.Clue(intOf(c.getTier()), c.getKind(),
                         creator ? 0 : intOf(c.getCostStars()), c.getText(), c.getImageUrl())).toList(),
@@ -322,7 +372,8 @@ public class QuestPlayService {
                         q.getImageMediaId(), q.getAnswerPlain(), json.readList(q.getAnswerVariants(), String.class),
                         q.getNumberTolerance(), q.getHintTier1(), q.getHintTier2(), q.getHintTier3(),
                         q.getChoices().stream().map(c -> new QuestPackResponse.Choice(c.getId(),
-                                intOf(c.getSortOrder()), c.getContent(), c.isCorrect())).toList())).toList());
+                                intOf(c.getSortOrder()), c.getContent(), c.isCorrect())).toList())).toList(),
+                arObjectView(cp, ar, true));
     }
 
     /**
@@ -335,6 +386,13 @@ public class QuestPlayService {
      */
     @Transactional
     public QuestLocalRunResponse syncLocalRun(UUID userId, UUID questId, QuestLocalRunRequest request) {
+        return syncLocalRun(userId, questId, request, false);
+    }
+
+    /** @param arSupported whether the app that played it could show AR; if not, AR_OBJECT was ARRIVE. */
+    @Transactional
+    public QuestLocalRunResponse syncLocalRun(UUID userId, UUID questId, QuestLocalRunRequest request,
+                                              boolean arSupported) {
         QuestRun existing = runRepository.findRunByClientId(userId, request.clientRunId()).orElse(null);
         if (existing != null) {
             return localRunSummary(userId, existing, 0);
@@ -358,7 +416,8 @@ public class QuestPlayService {
         runRepository.insertRun(run);
         QuestRunMember member = QuestRunMember.builder()
                 .id(UUID.randomUUID()).runId(run.getId()).userId(userId).joinedAt(run.getStartedAt())
-                .verification("UNVERIFIED").presenceCheckpoints(0).rewarded(false).build();
+                .verification("UNVERIFIED").presenceCheckpoints(0).rewarded(false).arSupported(arSupported)
+                .build();
         runRepository.insertMember(member);
 
         int maxAccuracy = config.getInt(BusinessConfigKey.CHECKIN_MAX_ACCURACY_METERS);
@@ -386,6 +445,18 @@ public class QuestPlayService {
                 // The phone cannot post a check-in offline; arriving in person stands in for it.
                 runRepository.findRunCheckpoint(member.getId(), cp.getId()).ifPresent(rc ->
                         runRepository.updateRunCheckpointCheckin(rc.getId(), null, "WAIVED"));
+            }
+        }
+
+        if (arSupported) {
+            int interact = config.getInt(BusinessConfigKey.QUEST_AR_INTERACT_RADIUS_METERS);
+            for (QuestLocalRunRequest.ArTap tap : nonNull(request.arTaps())) {
+                QuestCheckpoint cp = findCheckpoint(version, tap.checkpointId());
+                if (cp == null || cp.completion() != QuestCompletionMode.AR_OBJECT) {
+                    continue;
+                }
+                recordArTap(run, member, cp, tap.latitude(), tap.longitude(), tap.accuracyMeters(),
+                        tap.anchorMode(), tap.tappedAt() == null ? now : tap.tappedAt(), interact, maxAccuracy);
             }
         }
 
@@ -497,6 +568,131 @@ public class QuestPlayService {
 
     private static <T> List<T> nonNull(List<T> list) {
         return list == null ? List.of() : list;
+    }
+
+    // --- AR objects (§3.15) --------------------------------------------------------------
+
+    /**
+     * The member tapped the current checkpoint's AR object. It counts when the phone was within
+     * reach of the object: the interact radius (plus the zone of a wandering one), with the fix's
+     * own accuracy as slack. An accepted tap is also proof of presence, so it unlocks the checkpoint
+     * if the arrival samples had not yet. The first accepted tap wins; a second changes nothing.
+     */
+    @Transactional
+    public QuestArTapResponse tapArObject(UUID userId, UUID runId, UUID checkpointId, QuestArTapRequest request) {
+        QuestRun run = requireActiveRun(runId);
+        QuestRunMember member = requireMember(run, userId);
+        if (!member.isArSupported()) {
+            // The app sending a tap can show AR, whatever it said when the run started.
+            runRepository.markMemberArSupported(member.getId());
+            member.setArSupported(true);
+        }
+        QuestVersion version = snapshot(run);
+        QuestCheckpoint cp = requireCurrent(version, member, checkpointId,
+                "The AR object is only for the checkpoint you are on");
+        if (cp.completion() != QuestCompletionMode.AR_OBJECT) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "This checkpoint has no AR object");
+        }
+        boolean accepted = recordArTap(run, member, cp, request.latitude(), request.longitude(),
+                request.accuracyMeters(), request.anchorMode(), LocalDateTime.now(),
+                config.getInt(BusinessConfigKey.QUEST_AR_INTERACT_RADIUS_METERS),
+                config.getInt(BusinessConfigKey.CHECKIN_MAX_ACCURACY_METERS));
+        if (accepted) {
+            runRepository.touchRun(runId, LocalDateTime.now());
+        }
+        boolean cleared = accepted && isCheckpointCleared(cp, progressOf(member));
+        return new QuestArTapResponse(accepted, cleared, runState(userId, run));
+    }
+
+    /** Records the tap when it lands within reach; false (and nothing written) when it does not. */
+    private boolean recordArTap(QuestRun run, QuestRunMember member, QuestCheckpoint cp, BigDecimal latitude,
+                                BigDecimal longitude, BigDecimal accuracy, String anchorMode, LocalDateTime at,
+                                int interactRadius, int maxAccuracy) {
+        QuestArObject object = arObjectOf(cp);
+        if (object == null || object.latitude() == null || object.longitude() == null) {
+            return false;
+        }
+        int reach = interactRadius + (QuestArBehavior.WANDER.name().equals(object.behavior())
+                ? intOf(object.wanderRadiusM()) : 0);
+        Double distance = GeoDistance.betweenOrNull(latitude, longitude, object.latitude(), object.longitude());
+        if (!within(distance, reach, accuracy, maxAccuracy)) {
+            return false;
+        }
+        QuestRunCheckpoint rc = runRepository.findRunCheckpoint(member.getId(), cp.getId())
+                .orElseGet(() -> newRunCheckpoint(run, member, cp));
+        if (rc.getArTappedAt() != null) {
+            return true;
+        }
+        rc.setArTappedAt(at);
+        rc.setArTapLat(latitude);
+        rc.setArTapLng(longitude);
+        rc.setArTapAccuracy(accuracy);
+        rc.setArAnchorMode(arAnchorMode(anchorMode));
+        rc.setUnlockedAt(at);
+        runRepository.updateRunCheckpointArTap(rc);
+        return true;
+    }
+
+    private static String arAnchorMode(String value) {
+        return value != null && Set.of("APPROX", "IMAGE", "FALLBACK").contains(value) ? value : null;
+    }
+
+    private QuestArObject arObjectOf(QuestCheckpoint cp) {
+        return cp.getArObject() == null ? null : json.read(cp.getArObject(), QuestArObject.class, null);
+    }
+
+    /** AR_OBJECT plays as ARRIVE for a member whose app cannot show AR (§3.15). */
+    private static QuestCompletionMode effectiveMode(QuestCheckpoint cp, boolean arSupported) {
+        QuestCompletionMode mode = cp.completion();
+        return mode == QuestCompletionMode.AR_OBJECT && !arSupported ? QuestCompletionMode.ARRIVE : mode;
+    }
+
+    /** The AR library assets a version uses, looked up once, and whether the app can show them. */
+    private record ArContext(boolean supported, Map<UUID, QuestArObjectAsset> assets, int interactRadiusM) {
+    }
+
+    private ArContext arContext(QuestVersion version, boolean supported) {
+        if (!supported) {
+            return new ArContext(false, Map.of(), 0);
+        }
+        List<UUID> assetIds = version.getCheckpoints().stream()
+                .filter(cp -> cp.completion() == QuestCompletionMode.AR_OBJECT)
+                .map(this::arObjectOf)
+                .filter(java.util.Objects::nonNull)
+                .map(QuestArObject::assetId)
+                .toList();
+        return new ArContext(true, questRepository.findArObjectAssets(assetIds),
+                config.getInt(BusinessConfigKey.QUEST_AR_INTERACT_RADIUS_METERS));
+    }
+
+    /**
+     * The object as the app shows it, or null when the checkpoint has none, the app cannot show AR,
+     * or its asset is gone. {@code reveal} adds what the player learns on tapping.
+     */
+    private QuestArObjectView arObjectView(QuestCheckpoint cp, ArContext ar, boolean reveal) {
+        if (!ar.supported() || cp.completion() != QuestCompletionMode.AR_OBJECT) {
+            return null;
+        }
+        QuestArObject o = arObjectOf(cp);
+        QuestArObjectAsset asset = o == null || o.assetId() == null ? null : ar.assets().get(o.assetId());
+        if (asset == null) {
+            return null;
+        }
+        List<QuestArObjectView.Clip> clips = json.readMaps(asset.getClips()).stream()
+                .map(clip -> new QuestArObjectView.Clip(String.valueOf(clip.get("name")),
+                        clip.get("seconds") instanceof Number n ? n.doubleValue() : 0))
+                .toList();
+        List<QuestArObjectView.Marker> markers = o.markersOrEmpty().stream()
+                .map(m -> new QuestArObjectView.Marker(m.imageUrl(), m.widthM(),
+                        m.offset() == null ? null : m.offset().x(), m.offset() == null ? null : m.offset().y(),
+                        m.offset() == null ? null : m.offset().z(), m.yawDeg()))
+                .toList();
+        return new QuestArObjectView(asset.getId(), asset.getName(), asset.getGlbUrl(), asset.getUsdzUrl(),
+                asset.getThumbnailUrl(), asset.getHeightM(), clips, asset.isCanWander(), o.behavior(),
+                o.anchorMode(), o.latitude(), o.longitude(), o.headingDeg(), intOf(o.spawnRadiusM()),
+                o.wanderRadiusM(), ar.interactRadiusM(), o.scale(), markers, o.title(),
+                reveal ? o.description() : null, reveal ? o.imageUrlsOrEmpty() : List.of(),
+                reveal ? o.audioUrl() : null, reveal ? o.audioSeconds() : null);
     }
 
     // --- dynamic checkpoints (§3.14) ----------------------------------------------------
@@ -726,6 +922,7 @@ public class QuestPlayService {
         boolean creator = userId.equals(creatorUserId(run.getQuestId()));
 
         List<QuestCheckpoint> checkpoints = version.getCheckpoints();
+        ArContext ar = arContext(version, p.arSupported());
         List<QuestRunResponse.ClearedCheckpointView> cleared = new ArrayList<>();
         QuestRunResponse.CurrentCheckpointView current = null;
         List<QuestRunResponse.UpcomingCheckpointView> upcoming = new ArrayList<>();
@@ -738,12 +935,13 @@ public class QuestPlayService {
                         json.readList(cp.getImageUrls(), String.class),
                         cp.getStoryAudioUrl(), cp.getStoryAudioSeconds(), stopViews(cp, p)));
             } else if (current == null) {
-                current = currentView(run, cp, p, creator);
+                current = currentView(run, cp, p, creator, ar);
             } else {
                 // Checkpoints after the current one: public facts only, no coordinates ahead.
                 upcoming.add(new QuestRunResponse.UpcomingCheckpointView(
                         cp.getId(), intOf(cp.getSortOrder()), cp.getName(), cp.getCategory(),
-                        cp.find().name(), cp.completion().name(), cp.getMinStops(), preview(cp)));
+                        cp.find().name(), effectiveMode(cp, p.arSupported()).name(), cp.getMinStops(),
+                        preview(cp)));
             }
         }
         boolean completed = current == null;
@@ -766,7 +964,7 @@ public class QuestPlayService {
     }
 
     private QuestRunResponse.CurrentCheckpointView currentView(QuestRun run, QuestCheckpoint cp, MemberProgress p,
-                                                               boolean creator) {
+                                                               boolean creator, ArContext ar) {
         QuestRunCheckpoint rc = p.progress().get(cp.getId());
         boolean unlocked = rc != null && rc.isUnlocked();
         boolean area = cp.isArea();
@@ -804,13 +1002,15 @@ public class QuestPlayService {
                 rc == null ? 0 : intOf(rc.getStableStreak()),
                 json.readList(cp.getImageUrls(), String.class), questions,
                 cp.find().name(), searchArea, area && cp.isHotColdEnabled(),
-                cp.completion().name(), cp.getMinStops(),
+                effectiveMode(cp, p.arSupported()).name(), cp.getMinStops(),
                 unlocked ? cp.getStory() : null,
                 unlocked ? cp.getStoryAudioUrl() : null,
                 unlocked ? cp.getStoryAudioSeconds() : null,
                 clues,
                 unlocked ? stopViews(cp, p) : List.of(),
-                stopsCounted(cp, p), revealed, preview(cp));
+                stopsCounted(cp, p), revealed, preview(cp),
+                arObjectView(cp, ar, rc != null && rc.getArTappedAt() != null),
+                rc != null && rc.getArTappedAt() != null);
     }
 
     private List<QuestRunResponse.StopView> stopViews(QuestCheckpoint cp, MemberProgress p) {
@@ -865,7 +1065,9 @@ public class QuestPlayService {
             Map<UUID, QuestRunQuestion> answers,
             Map<UUID, QuestRunCheckpoint> progress,
             Map<UUID, QuestRunStopVisit> visitsByStop,
-            Map<UUID, Set<Integer>> cluesByCheckpoint) {
+            Map<UUID, Set<Integer>> cluesByCheckpoint,
+            /** Whether the member's app shows AR objects; if not, AR_OBJECT plays as ARRIVE (§3.15). */
+            boolean arSupported) {
 
         Set<Integer> cluesBought(UUID checkpointId) {
             return cluesByCheckpoint.getOrDefault(checkpointId, Set.of());
@@ -882,7 +1084,7 @@ public class QuestPlayService {
         Map<UUID, Set<Integer>> clues = runRepository.findRunClues(member.getId()).stream()
                 .collect(Collectors.groupingBy(QuestRunClue::getCheckpointId,
                         Collectors.mapping(c -> intOf(c.getTier()), Collectors.toSet())));
-        return new MemberProgress(answers, progress, visits, clues);
+        return new MemberProgress(answers, progress, visits, clues, member.isArSupported());
     }
 
     private boolean allCheckpointsCleared(QuestVersion version, QuestRunMember member) {
@@ -910,6 +1112,8 @@ public class QuestPlayService {
      *   <li>ARRIVE: nothing more — a guide-only checkpoint;</li>
      *   <li>STOPS: at least {@code min_stops} storytelling points heard by GPS, plus any required
      *       question or check-in the creator also set.</li>
+     *   <li>AR_OBJECT: the AR object tapped within reach, plus any required question or check-in
+     *       (§3.15); ARRIVE for a member whose app cannot show AR.</li>
      * </ul>
      */
     private boolean isCheckpointCleared(QuestCheckpoint cp, MemberProgress p) {
@@ -917,7 +1121,7 @@ public class QuestPlayService {
         if (rc == null || !rc.isUnlocked()) {
             return false;
         }
-        QuestCompletionMode mode = cp.completion();
+        QuestCompletionMode mode = effectiveMode(cp, p.arSupported());
         if (mode == QuestCompletionMode.ARRIVE) {
             return true;
         }
@@ -932,6 +1136,9 @@ public class QuestPlayService {
         if (mode == QuestCompletionMode.STOPS) {
             int min = cp.getMinStops() == null ? 1 : cp.getMinStops();
             return questionsDone && checkinDone && stopsCounted(cp, p) >= min;
+        }
+        if (mode == QuestCompletionMode.AR_OBJECT) {
+            return questionsDone && checkinDone && rc.getArTappedAt() != null;
         }
         return questionsDone && checkinDone;
     }

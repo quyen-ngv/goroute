@@ -91,6 +91,48 @@ public class SaveQuestDraftRequest {
         private List<ClueInput> clues = new ArrayList<>();
         /** Storytelling points inside this checkpoint (§3.14.2). */
         private List<StopInput> stops = new ArrayList<>();
+        /** AR_OBJECT only (§3.15): the object to find. Ignored for any other completion mode. */
+        private ArObjectInput arObject;
+    }
+
+    /** §3.15. The same shape as {@link com.ds.goroute.quest.domain.QuestArObject}, as sent by a client. */
+    @Data
+    public static class ArObjectInput {
+        private UUID assetId;
+        /** FIXED (default) or WANDER. */
+        private String behavior;
+        /** APPROX (default) or IMAGE. */
+        private String anchorMode;
+        private BigDecimal latitude;
+        private BigDecimal longitude;
+        private Integer headingDeg;
+        private Integer spawnRadiusM;
+        private Integer wanderRadiusM;
+        private BigDecimal scale;
+        private List<MarkerInput> markers = new ArrayList<>();
+        @ModeratedText(contentType = ModeratedContentType.QUEST_CHECKPOINT, label = "arObject.title")
+        private String title;
+        @ModeratedText(contentType = ModeratedContentType.QUEST_CHECKPOINT, label = "arObject.description")
+        private String description;
+        private List<String> imageUrls = new ArrayList<>();
+        private String audioUrl;
+        private Integer audioSeconds;
+    }
+
+    /** A landmark photo; {@code offset} is where the object stands in the landmark's frame, in metres. */
+    @Data
+    public static class MarkerInput {
+        private String imageUrl;
+        private BigDecimal widthM;
+        private Vec3Input offset;
+        private BigDecimal yawDeg;
+    }
+
+    @Data
+    public static class Vec3Input {
+        private BigDecimal x;
+        private BigDecimal y;
+        private BigDecimal z;
     }
 
     @Data

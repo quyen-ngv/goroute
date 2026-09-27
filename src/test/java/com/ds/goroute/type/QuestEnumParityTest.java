@@ -104,4 +104,30 @@ class QuestEnumParityTest {
     void questReviewDecisions() {
         assertThat(tsList(readConsole(), "QUEST_REVIEW_DECISIONS")).isEqualTo(names(QuestReviewDecision.values()));
     }
+
+    @Test
+    @DisplayName("QUEST_FIND_MODES matches QuestFindMode")
+    void questFindModes() {
+        assertThat(tsList(readConsole(), "QUEST_FIND_MODES")).isEqualTo(names(QuestFindMode.values()));
+    }
+
+    @Test
+    @DisplayName("QUEST_COMPLETION_MODES matches QuestCompletionMode")
+    void questCompletionModes() {
+        assertThat(tsList(readConsole(), "QUEST_COMPLETION_MODES")).isEqualTo(names(QuestCompletionMode.values()));
+    }
+
+    @Test
+    @DisplayName("QUEST_CLUE_KINDS matches QuestClueKind")
+    void questClueKinds() {
+        assertThat(tsList(readConsole(), "QUEST_CLUE_KINDS")).isEqualTo(names(QuestClueKind.values()));
+    }
+
+    @Test
+    @DisplayName("QUEST_AR_BEHAVIORS and QUEST_AR_ANCHOR_MODES match the AR object enums (§3.15)")
+    void questArEnums() {
+        String console = readConsole();
+        assertThat(tsList(console, "QUEST_AR_BEHAVIORS")).isEqualTo(names(QuestArBehavior.values()));
+        assertThat(tsList(console, "QUEST_AR_ANCHOR_MODES")).isEqualTo(names(QuestArAnchorMode.values()));
+    }
 }

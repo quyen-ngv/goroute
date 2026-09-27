@@ -9,6 +9,8 @@ import com.ds.goroute.quest.domain.QuestQuestionChoice;
 import com.ds.goroute.quest.domain.QuestVersion;
 import com.ds.goroute.quest.service.QuestDraftValidator;
 import com.ds.goroute.service.BusinessConfigService;
+import com.ds.goroute.service.marketplace.MarketplaceJson;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ds.goroute.type.BusinessConfigKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,7 +41,7 @@ class QuestDraftValidatorTest {
 
     @BeforeEach
     void setUp() {
-        validator = new QuestDraftValidator(config);
+        validator = new QuestDraftValidator(config, new MarketplaceJson(new ObjectMapper()));
         when(config.getInt(BusinessConfigKey.QUEST_PRICE_MAX_STARS)).thenReturn(200);
         when(config.getInt(BusinessConfigKey.QUEST_MIN_CHECKPOINTS)).thenReturn(2);
         when(config.getInt(BusinessConfigKey.QUEST_MAX_CHECKPOINTS)).thenReturn(15);
@@ -82,6 +84,36 @@ class QuestDraftValidatorTest {
         assertThatThrownBy(() -> validator.validateForSubmit(version(checkpoint(true, textQuestion()), withTask)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("guide-only");
+    }
+
+    @Test
+    @DisplayName("§3.15 AR_OBJECT: needs its object, an asset, a landmark when image-anchored, and no search area")
+    void arObjectRules() {
+        QuestCheckpoint missing = checkpoint(true);
+        missing.setCompletionMode("AR_OBJECT");
+        assertThatThrownBy(() -> validator.validateForSubmit(version(checkpoint(true, textQuestion()), missing)))
+                .isInstanceOf(BusinessException.class).hasMessageContaining("needs its AR object");
+
+        QuestCheckpoint cp = checkpoint(true);
+        cp.setCompletionMode("AR_OBJECT");
+        cp.setFindMode("AREA");
+        cp.setSearchRadiusM(200);
+        cp.setArObject("{\"behavior\":\"FIXED\",\"anchorMode\":\"IMAGE\",\"latitude\":21.0500,"
+                + "\"longitude\":105.8524,\"spawnRadiusM\":150,\"markers\":[]}");
+        assertThatThrownBy(() -> validator.validateForSubmit(version(checkpoint(true, textQuestion()), cp)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("cannot be hidden in a search area")
+                .hasMessageContaining("chosen from the library")
+                .hasMessageContaining("more than 1000 m away")
+                .hasMessageContaining("no landmark photo");
+
+        QuestCheckpoint good = checkpoint(true);
+        good.setCompletionMode("AR_OBJECT");
+        good.setArObject("{\"assetId\":\"" + UUID.randomUUID() + "\",\"behavior\":\"FIXED\","
+                + "\"anchorMode\":\"APPROX\",\"latitude\":21.0289,\"longitude\":105.8524,\"spawnRadiusM\":150}");
+        assertThatCode(() -> validator.validateForSubmit(version(checkpoint(true, textQuestion()), good)))
+                .as("an AR object is a task in itself: no question or check-in needed")
+                .doesNotThrowAnyException();
     }
 
     @Test

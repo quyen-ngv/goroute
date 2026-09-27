@@ -39,6 +39,13 @@ import java.util.UUID;
 public class QuestBuilderController {
 
     private final QuestBuilderService builderService;
+    private final com.ds.goroute.quest.service.QuestArObjectLibraryService arLibrary;
+
+    /** The AR objects a creator may place (§3.15): the active part of the library. */
+    @GetMapping("/ar-objects")
+    public ResponseEntity<BaseResponse<java.util.List<com.ds.goroute.quest.dto.QuestArObjectAssetResponse>>> arObjects() {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(arLibrary.list(true)));
+    }
 
     @PostMapping("/quests")
     public ResponseEntity<BaseResponse<QuestDraftResponse>> create(

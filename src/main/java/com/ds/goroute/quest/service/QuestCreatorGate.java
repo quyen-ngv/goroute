@@ -42,6 +42,20 @@ public class QuestCreatorGate {
         }
     }
 
+    /**
+     * Whether the user may add or change an AR object (§3.15): open once AR_ENABLED is thrown, and to
+     * beta testers before that. Playing one is never gated.
+     */
+    public boolean isArCreationOpen(UUID userId) {
+        return config.getBoolean(BusinessConfigKey.QUEST_AR_ENABLED) || betaAccess.isBetaUser(userId);
+    }
+
+    public void requireArCreationOpen(UUID userId) {
+        if (!isArCreationOpen(userId)) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "AR objects are not open to you yet");
+        }
+    }
+
     /** Everything that must hold before a creator may submit a quest for review. */
     public void requireCanSubmit(QuestCreatorProfile creator) {
         requireCreationOpen(creator.getUserId());

@@ -26,7 +26,8 @@ public record QuestLocalRunRequest(
         @Valid @Size(max = 200) List<Arrival> arrivals,
         @Valid @Size(max = 2000) List<Answer> answers,
         @Valid @Size(max = 500) List<Clue> clues,
-        @Valid @Size(max = 2000) List<StopVisit> stopVisits) {
+        @Valid @Size(max = 2000) List<StopVisit> stopVisits,
+        @Valid @Size(max = 200) List<ArTap> arTaps) {
 
     public record Arrival(@NotNull UUID checkpointId, BigDecimal latitude, BigDecimal longitude,
                           BigDecimal accuracyMeters, LocalDateTime arrivedAt) {
@@ -38,6 +39,11 @@ public record QuestLocalRunRequest(
     }
 
     public record Clue(@NotNull UUID checkpointId, int tier, LocalDateTime boughtAt) {
+    }
+
+    /** An AR object tapped (§3.15): where the phone was, and how the object was anchored. */
+    public record ArTap(@NotNull UUID checkpointId, BigDecimal latitude, BigDecimal longitude,
+                        BigDecimal accuracyMeters, @Size(max = 10) String anchorMode, LocalDateTime tappedAt) {
     }
 
     public record StopVisit(@NotNull UUID stopId, BigDecimal latitude, BigDecimal longitude,

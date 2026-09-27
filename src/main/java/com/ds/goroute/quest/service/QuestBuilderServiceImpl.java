@@ -126,9 +126,11 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Quest has no editable version");
         }
         Map<UUID, List<QuestCreatorNote>> notes = notesByCheckpoint(version);
+        // The console shows AR objects read-only (§3.15): it round-trips them, never edits them.
+        boolean arAllowed = !admin && creatorGate.isArCreationOpen(actorUserId);
         return QuestDraftResponse.of(quest, version, notes, json.readList(version.getAmenityTags(), String.class),
                 json.readList(version.getCityImageIds(), String.class),
-                raw -> json.readList(raw, String.class));
+                raw -> json.readList(raw, String.class), this::readArObject, arAllowed);
     }
 
     @Override
@@ -157,8 +159,9 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
         applyScalars(version, request);
         repository.updateVersionContent(version);
 
+        ArGate ar = arGate(actorUserId, versionId);
         repository.clearVersionContent(versionId);
-        insertGraph(questId, versionId, actorUserId, request, now);
+        insertGraph(questId, versionId, actorUserId, request, now, ar);
 
         return getDraft(questId, actorUserId, false);
     }
@@ -188,7 +191,7 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
                 .build();
         applyScalars(next, request);
         repository.insertVersion(next);
-        insertGraph(quest.getId(), versionId, actorUserId, request, now);
+        insertGraph(quest.getId(), versionId, actorUserId, request, now, arGate(actorUserId, live.getId()));
         // Live content must stay submittable: the new version replaces what players get at once.
         validator.validateForSubmit(repository.loadVersionGraph(versionId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Edited version missing")));
@@ -338,8 +341,65 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
         version.setRunExpiryHours(request.getRunExpiryHours());
     }
 
+    /**
+     * Who may write AR objects in this save (§3.15). An object identical to one already in the
+     * version being replaced passes without the gate: the console, and a creator who lost beta
+     * access, send objects back unchanged and must still be able to save the rest of the quest.
+     */
+    private record ArGate(UUID actorUserId, java.util.Set<String> kept) {
+    }
+
+    private ArGate arGate(UUID actorUserId, UUID previousVersionId) {
+        java.util.Set<String> kept = new java.util.HashSet<>();
+        repository.loadVersionGraph(previousVersionId).ifPresent(previous -> previous.getCheckpoints().stream()
+                .filter(cp -> cp.completion() == QuestCompletionMode.AR_OBJECT)
+                .forEach(cp -> kept.add(arKey(cp.getArObject() == null ? null : readArObject(cp.getArObject())))));
+        return new ArGate(actorUserId, kept);
+    }
+
+    private String arKey(com.ds.goroute.quest.domain.QuestArObject object) {
+        return object == null ? "null" : json.write(QuestArObjects.normalize(object));
+    }
+
+    private com.ds.goroute.quest.domain.QuestArObject readArObject(String raw) {
+        return json.read(raw, com.ds.goroute.quest.domain.QuestArObject.class, null);
+    }
+
+    /**
+     * The AR object of an AR_OBJECT checkpoint as JSON, or null for any other mode. A new or changed
+     * object needs the AR gate, an existing active asset, and a {@code walk} clip to wander.
+     */
+    private String arObject(SaveQuestDraftRequest.CheckpointInput input, QuestCompletionMode mode, int position,
+                            ArGate gate) {
+        if (mode != QuestCompletionMode.AR_OBJECT) {
+            return null;
+        }
+        String where = "Checkpoint " + position;
+        com.ds.goroute.quest.domain.QuestArObject object = input.getArObject() == null ? null
+                : QuestArObjects.fromInput(input.getArObject(), where);
+        String key = arKey(object);
+        if (gate.kept().contains(key)) {
+            return object == null ? null : key;
+        }
+        creatorGate.requireArCreationOpen(gate.actorUserId());
+        if (object == null) {
+            return null;
+        }
+        if (object.assetId() != null) {
+            com.ds.goroute.quest.domain.QuestArObjectAsset asset = repository.findArObjectAsset(object.assetId())
+                    .filter(com.ds.goroute.quest.domain.QuestArObjectAsset::isActive)
+                    .orElseThrow(() -> new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                            where + " uses an AR object that is not in the library"));
+            if (com.ds.goroute.type.QuestArBehavior.WANDER.name().equals(object.behavior()) && !asset.isCanWander()) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                        where + ": this AR object cannot move; choose one that can, or make it stand still");
+            }
+        }
+        return key;
+    }
+
     private void insertGraph(UUID questId, UUID versionId, UUID actorUserId, SaveQuestDraftRequest request,
-                             LocalDateTime now) {
+                             LocalDateTime now, ArGate arGate) {
         List<SaveQuestDraftRequest.CheckpointInput> checkpoints =
                 request.getCheckpoints() == null ? List.of() : request.getCheckpoints();
         for (int i = 0; i < checkpoints.size(); i++) {
@@ -377,6 +437,7 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
                     .minStops(completionMode == QuestCompletionMode.STOPS ? input.getMinStops() : null)
                     .storyAudioUrl(storyAudioUrl)
                     .storyAudioSeconds(storyAudioUrl == null ? null : input.getStoryAudioSeconds())
+                    .arObject(arObject(input, completionMode, position, arGate))
                     .createdAt(now)
                     .build();
             repository.insertCheckpoint(checkpoint);

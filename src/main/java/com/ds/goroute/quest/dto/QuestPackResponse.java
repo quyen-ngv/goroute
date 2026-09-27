@@ -29,7 +29,9 @@ public record QuestPackResponse(
 
     /** The server's play rules, so the phone decides exactly as the server would. */
     public record Settings(int arrivalStableSamples, int arrivalClientIntervalSeconds, int defaultUnlockRadiusM,
-                           int maxAccuracyM, int maxGuesses, int proximityMinIntervalSeconds) {
+                           int maxAccuracyM, int maxGuesses, int proximityMinIntervalSeconds,
+                           /** §3.15: how near an AR object a tap counts. */
+                           int arInteractRadiusM) {
     }
 
     public record Checkpoint(
@@ -54,7 +56,12 @@ public record QuestPackResponse(
             Integer storyAudioSeconds,
             List<Clue> clues,
             List<Stop> stops,
-            List<Question> questions) {
+            List<Question> questions,
+            /**
+             * AR_OBJECT only (§3.15). An app that did not say it can show AR gets the checkpoint as
+             * ARRIVE and no object, so an older app plays it instead of getting stuck.
+             */
+            QuestArObjectView arObject) {
     }
 
     public record Clue(int tier, String kind, int costStars, String text, String imageUrl) {

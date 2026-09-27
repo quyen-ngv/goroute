@@ -4,6 +4,8 @@ import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.quest.dto.QuestAnswerRequest;
 import com.ds.goroute.quest.dto.QuestAnswerResponse;
+import com.ds.goroute.quest.dto.QuestArTapRequest;
+import com.ds.goroute.quest.dto.QuestArTapResponse;
 import com.ds.goroute.quest.dto.QuestArrivalResponse;
 import com.ds.goroute.quest.dto.QuestEntitlementResponse;
 import com.ds.goroute.quest.dto.QuestLocalRunRequest;
@@ -29,6 +31,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
@@ -39,6 +42,9 @@ import java.util.UUID;
  *
  * <p>Local-first play is the exception, by design: {@code /pack} hands an entitled player the whole
  * quest to play on the phone, and {@code /local-runs} takes the finished run back and replays it.
+ *
+ * <p>The app says what it can play in {@link QuestClientCapabilities#HEADER}. Without {@code ar_object}
+ * an AR_OBJECT checkpoint (§3.15) is served and graded as ARRIVE, so an older app is never stuck.
  */
 @RestController
 @Validated
@@ -52,17 +58,20 @@ public class QuestPlayController {
     public ResponseEntity<BaseResponse<QuestRunResponse>> start(
             @CurrentUser UUID userId,
             @PathVariable UUID questId,
-            @org.springframework.web.bind.annotation.RequestParam(required = false) UUID tripId) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(BaseResponse.ofSucceeded(playService.startRun(userId, questId, tripId)));
+            @org.springframework.web.bind.annotation.RequestParam(required = false) UUID tripId,
+            @RequestHeader(value = QuestClientCapabilities.HEADER, required = false) String capabilities) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(BaseResponse.ofSucceeded(
+                playService.startRun(userId, questId, tripId, QuestClientCapabilities.arObjects(capabilities))));
     }
 
     /** The whole quest, answers included, for playing on the phone. Entitled players only. */
     @GetMapping("/v1/api/quests/{questId}/pack")
     public ResponseEntity<BaseResponse<QuestPackResponse>> pack(
             @CurrentUser UUID userId,
-            @PathVariable UUID questId) {
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(playService.pack(userId, questId)));
+            @PathVariable UUID questId,
+            @RequestHeader(value = QuestClientCapabilities.HEADER, required = false) String capabilities) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(
+                playService.pack(userId, questId, QuestClientCapabilities.arObjects(capabilities))));
     }
 
     /** A run played on the phone, uploaded to be replayed and rewarded. Idempotent per client run id. */
@@ -70,23 +79,29 @@ public class QuestPlayController {
     public ResponseEntity<BaseResponse<QuestLocalRunResponse>> syncLocalRun(
             @CurrentUser UUID userId,
             @PathVariable UUID questId,
-            @Valid @RequestBody QuestLocalRunRequest request) {
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(playService.syncLocalRun(userId, questId, request)));
+            @Valid @RequestBody QuestLocalRunRequest request,
+            @RequestHeader(value = QuestClientCapabilities.HEADER, required = false) String capabilities) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(playService.syncLocalRun(
+                userId, questId, request, QuestClientCapabilities.arObjects(capabilities))));
     }
 
     /** Join an existing run as a group member (§3.13). */
     @PostMapping("/v1/api/quest-runs/{runId}/join")
     public ResponseEntity<BaseResponse<QuestRunResponse>> join(
             @CurrentUser UUID userId,
-            @PathVariable UUID runId) {
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(playService.joinRun(userId, runId)));
+            @PathVariable UUID runId,
+            @RequestHeader(value = QuestClientCapabilities.HEADER, required = false) String capabilities) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(
+                playService.joinRun(userId, runId, QuestClientCapabilities.arObjects(capabilities))));
     }
 
     @GetMapping("/v1/api/quest-runs/{runId}")
     public ResponseEntity<BaseResponse<QuestRunResponse>> get(
             @CurrentUser UUID userId,
-            @PathVariable UUID runId) {
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(playService.getRun(userId, runId)));
+            @PathVariable UUID runId,
+            @RequestHeader(value = QuestClientCapabilities.HEADER, required = false) String capabilities) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(
+                playService.getRun(userId, runId, QuestClientCapabilities.arObjects(capabilities))));
     }
 
     @PostMapping("/v1/api/quest-runs/{runId}/samples")
@@ -133,6 +148,17 @@ public class QuestPlayController {
             @Valid @RequestBody QuestProximityRequest request) {
         return ResponseEntity.ok(BaseResponse.ofSucceeded(
                 playService.proximity(userId, runId, checkpointId, request)));
+    }
+
+    /** The current checkpoint's AR object was tapped (§3.15). Counts only within reach of it. */
+    @PostMapping("/v1/api/quest-runs/{runId}/checkpoints/{checkpointId}/ar-tap")
+    public ResponseEntity<BaseResponse<QuestArTapResponse>> tapArObject(
+            @CurrentUser UUID userId,
+            @PathVariable UUID runId,
+            @PathVariable UUID checkpointId,
+            @Valid @RequestBody QuestArTapRequest request) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(
+                playService.tapArObject(userId, runId, checkpointId, request)));
     }
 
     /** A storytelling point was heard (§3.14.2). Idempotent; only a GPS visit inside it counts. */

@@ -150,4 +150,16 @@ public interface QuestMapper {
     void insertStop(QuestCheckpointStop stop);
 
     int deleteStopsByVersion(@Param("versionId") UUID versionId);
+
+    // --- AR object library (§3.15) ------------------------------------------------------
+    List<com.ds.goroute.quest.domain.QuestArObjectAsset> findArObjectAssets(@Param("activeOnly") boolean activeOnly);
+
+    com.ds.goroute.quest.domain.QuestArObjectAsset findArObjectAssetById(@Param("id") UUID id);
+
+    List<com.ds.goroute.quest.domain.QuestArObjectAsset> findArObjectAssetsByIds(@Param("ids") List<UUID> ids);
+
+    void insertArObjectAsset(com.ds.goroute.quest.domain.QuestArObjectAsset asset);
+
+    int updateArObjectAsset(@Param("asset") com.ds.goroute.quest.domain.QuestArObjectAsset asset,
+                            @Param("expectedVersion") long expectedVersion);
 }

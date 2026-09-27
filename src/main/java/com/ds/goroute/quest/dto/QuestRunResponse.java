@@ -89,7 +89,11 @@ public record QuestRunResponse(
             /** True once the REVEAL clue was bought. */
             boolean assisted,
             /** What waits here, shown before arrival. */
-            CheckpointPreview preview) {
+            CheckpointPreview preview,
+            /** AR_OBJECT only (§3.15), and only for an app that can show AR; null otherwise. */
+            QuestArObjectView arObject,
+            /** True once this member tapped the AR object. */
+            boolean arTapped) {
     }
 
     public record SearchAreaView(BigDecimal latitude, BigDecimal longitude, int radiusM) {
