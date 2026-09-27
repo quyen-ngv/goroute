@@ -183,6 +183,22 @@ class QuestArObjectBuilderTest {
     }
 
     @Test
+    @DisplayName("a landmark photographed but not placed yet is kept in the draft, without an offset")
+    void unplacedLandmarkSaves() {
+        SaveQuestDraftRequest.ArObjectInput landmark = input("FIXED");
+        landmark.setAnchorMode("IMAGE");
+        SaveQuestDraftRequest.MarkerInput marker = new SaveQuestDraftRequest.MarkerInput();
+        marker.setImageUrl("https://cdn/stele.png");
+        landmark.setMarkers(List.of(marker));
+
+        service.saveDraft(questId, owner, request(landmark));
+
+        QuestArObject saved = json.read(savedCheckpoint().getArObject(), QuestArObject.class, null);
+        assertThat(saved.markers()).hasSize(1);
+        assertThat(saved.markers().get(0).placed()).isFalse();
+    }
+
+    @Test
     @DisplayName("the draft tells the app whether it may edit AR objects; the console never may")
     void draftFlag() {
         when(creatorGate.isArCreationOpen(owner)).thenReturn(true);

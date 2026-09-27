@@ -40,8 +40,13 @@ public record QuestArObject(
         String audioUrl,
         Integer audioSeconds) {
 
+    /** A landmark; {@code offset} is null until the creator has placed the object at it. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Marker(String imageUrl, BigDecimal widthM, Vec3 offset, BigDecimal yawDeg) {
+
+        public boolean placed() {
+            return offset != null && offset.x() != null && offset.y() != null && offset.z() != null;
+        }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

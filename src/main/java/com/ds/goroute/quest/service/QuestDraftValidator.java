@@ -202,8 +202,9 @@ public class QuestDraftValidator {
                 errors.add(where + ": its AR object is more than " + limits.stopMaxDistanceM() + " m away");
             }
         }
-        if (QuestArAnchorMode.IMAGE.name().equals(object.anchorMode()) && object.markersOrEmpty().isEmpty()) {
-            errors.add(where + " anchors its AR object to a landmark but has no landmark photo");
+        if (QuestArAnchorMode.IMAGE.name().equals(object.anchorMode())
+                && object.markersOrEmpty().stream().noneMatch(QuestArObject.Marker::placed)) {
+            errors.add(where + " anchors its AR object to a landmark but has not placed it at one");
         }
         if (object.audioSeconds() != null && object.audioSeconds() > limits.audioMaxSeconds()) {
             errors.add(where + " has an AR object recording longer than " + limits.audioMaxSeconds() + " seconds");

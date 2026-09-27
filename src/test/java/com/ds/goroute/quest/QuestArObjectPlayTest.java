@@ -253,6 +253,11 @@ class QuestArObjectPlayTest {
         assertThat(near.accepted()).isTrue();
         assertThat(near.cleared()).isTrue();
         assertThat(near.run().completed()).isTrue();
+        assertThat(near.object().description())
+                .as("the run has moved on, so the tap itself carries what the object reveals")
+                .isEqualTo("Sealed in 1802.");
+        assertThat(near.object().audioUrl()).isEqualTo("https://cdn/scroll.m4a");
+        assertThat(far.object()).isNull();
         assertThat(checkpoints.get(0).isUnlocked()).as("the tap is proof of presence").isTrue();
     }
 
