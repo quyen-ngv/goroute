@@ -29,6 +29,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -129,6 +130,35 @@ class FileUploadServiceImplTest {
         service.uploadVideo(UUID.randomUUID(), video);
 
         verify(storageService).uploadFile(anyString(), any(), eq("video/mp4"), eq(12L));
+    }
+
+    @Test
+    void uploadsAnM4aRecordingByItsBytesEvenWhenSentAsOctetStream() {
+        byte[] m4a = {0, 0, 0, 0x20, 'f', 't', 'y', 'p', 'M', '4', 'A', ' '};
+        MockMultipartFile audio = new MockMultipartFile("file", "story.m4a", "application/octet-stream", m4a);
+        when(storageService.uploadFile(any(), any(), eq("audio/mp4"), eq((long) m4a.length)))
+                .thenReturn("https://cdn.example/story.m4a");
+
+        assertThat(service.uploadAudio(UUID.randomUUID(), audio)).isEqualTo("https://cdn.example/story.m4a");
+    }
+
+    @Test
+    void rejectsAudioThatIsNotM4aAacOrMp3BeforeWritingObject() {
+        MockMultipartFile disguised = new MockMultipartFile("file", "story.mp3", "audio/mpeg", JPEG);
+
+        assertThatThrownBy(() -> service.uploadAudio(UUID.randomUUID(), disguised))
+                .isInstanceOf(BusinessException.class);
+        verify(storageService, never()).uploadFile(any(), any(), any(), anyLong());
+    }
+
+    @Test
+    void recognisesMp3AndAdtsAacHeaders() {
+        assertThat(FileUploadServiceImpl.detectAudio(new byte[] {'I', 'D', '3', 4})).isNotNull();
+        assertThat(FileUploadServiceImpl.detectAudio(new byte[] {(byte) 0xFF, (byte) 0xFB, 0, 0}).contentType())
+                .isEqualTo("audio/mpeg");
+        assertThat(FileUploadServiceImpl.detectAudio(new byte[] {(byte) 0xFF, (byte) 0xF1, 0, 0}).contentType())
+                .isEqualTo("audio/aac");
+        assertThat(FileUploadServiceImpl.detectAudio(new byte[] {'R', 'I', 'F', 'F'})).isNull();
     }
 
     @Test

@@ -5,21 +5,30 @@ import com.ds.goroute.entity.PassportEvent;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.PassportMapper;
 import com.ds.goroute.quest.domain.Quest;
+import com.ds.goroute.entity.StarTransaction;
 import com.ds.goroute.quest.domain.QuestCheckpoint;
+import com.ds.goroute.quest.domain.QuestCheckpointClue;
+import com.ds.goroute.quest.domain.QuestCheckpointStop;
 import com.ds.goroute.quest.domain.QuestCreatorProfile;
 import com.ds.goroute.quest.domain.QuestEntitlement;
 import com.ds.goroute.quest.domain.QuestLocationSample;
 import com.ds.goroute.quest.domain.QuestQuestion;
 import com.ds.goroute.quest.domain.QuestRun;
 import com.ds.goroute.quest.domain.QuestRunCheckpoint;
+import com.ds.goroute.quest.domain.QuestRunClue;
 import com.ds.goroute.quest.domain.QuestRunMember;
 import com.ds.goroute.quest.domain.QuestRunQuestion;
+import com.ds.goroute.quest.domain.QuestRunStopVisit;
 import com.ds.goroute.quest.domain.QuestVersion;
 import com.ds.goroute.quest.dto.QuestAnswerRequest;
 import com.ds.goroute.quest.dto.QuestAnswerResponse;
 import com.ds.goroute.quest.dto.QuestArrivalResponse;
+import com.ds.goroute.quest.dto.QuestProximityRequest;
+import com.ds.goroute.quest.dto.QuestProximityResponse;
 import com.ds.goroute.quest.dto.QuestRunResponse;
 import com.ds.goroute.quest.dto.QuestSampleRequest;
+import com.ds.goroute.quest.dto.QuestStopVisitRequest;
+import com.ds.goroute.quest.dto.QuestStopVisitResponse;
 import com.ds.goroute.quest.persistence.QuestRepository;
 import com.ds.goroute.quest.persistence.QuestRunRepository;
 import com.ds.goroute.service.BusinessConfigService;
@@ -28,9 +37,12 @@ import com.ds.goroute.service.checkin.CheckinVerifier;
 import com.ds.goroute.service.checkin.VerificationTarget;
 import com.ds.goroute.service.marketplace.MarketplaceJson;
 import com.ds.goroute.type.BusinessConfigKey;
+import com.ds.goroute.type.QuestClueKind;
+import com.ds.goroute.type.QuestCompletionMode;
 import com.ds.goroute.type.QuestQuestionType;
 import com.ds.goroute.type.QuestRunStatus;
 import com.ds.goroute.type.QuestStatus;
+import com.ds.goroute.utils.GeoDistance;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -42,6 +54,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -64,6 +77,14 @@ public class QuestPlayService {
     private final StarService starService;
     private final PassportMapper passportMapper;
     private final MarketplaceJson json;
+    private final QuestEconomyService economyService;
+
+    /** Hot/cold bands (§3.14.1), in metres from the real spot. */
+    static final int HOT_WITHIN_M = 25;
+    static final int WARM_WITHIN_M = 60;
+    static final int COOL_WITHIN_M = 150;
+    /** A move smaller than this since the last question is SAME, not CLOSER/FARTHER. */
+    static final double TREND_DEADBAND_M = 5;
 
     @Transactional
     public QuestRunResponse startRun(UUID userId, UUID questId, UUID tripId) {
@@ -150,10 +171,7 @@ public class QuestPlayService {
                 .createdAt(now).build());
 
         int requiredStreak = config.getInt(BusinessConfigKey.QUEST_ARRIVAL_STABLE_SAMPLES);
-        int radius = checkpoint.getRadiusM() != null ? checkpoint.getRadiusM()
-                : config.getInt(BusinessConfigKey.QUEST_UNLOCK_RADIUS_METERS);
-        VerificationTarget target = VerificationTarget.forCoordinates(
-                checkpoint.getLatitude(), checkpoint.getLongitude(), radius);
+        VerificationTarget target = unlockTarget(checkpoint);
         CheckinVerifier.Assessment assessment = checkinVerifier.assess(
                 target, request.latitude(), request.longitude(), request.accuracyMeters());
 
@@ -247,6 +265,172 @@ public class QuestPlayService {
         return getRun(userId, runId);
     }
 
+    // --- dynamic checkpoints (§3.14) ----------------------------------------------------
+
+    /**
+     * Buys one tier of the current AREA checkpoint's finding-clue ladder (§3.14.1). Tiers are bought
+     * in order; buying one already owned changes nothing. The Stars key carries the user, so in a
+     * group each member pays for their own clue (the QUEST_HINT trap of §3.5). The creator playing
+     * their own quest gets clues free and earns nothing from them.
+     */
+    @Transactional
+    public QuestRunResponse buyClue(UUID userId, UUID runId, UUID checkpointId, int tier) {
+        QuestRun run = requireActiveRun(runId);
+        QuestRunMember member = requireMember(run, userId);
+        QuestVersion version = snapshot(run);
+        QuestCheckpoint cp = requireCurrent(version, member, checkpointId, "Clues are only for the checkpoint you are on");
+        if (!cp.isArea()) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "This checkpoint has no finding clues");
+        }
+        QuestCheckpointClue clue = cp.getClues().stream()
+                .filter(c -> intOf(c.getTier()) == tier).findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Clue not found"));
+        Set<Integer> bought = progressOf(member).cluesBought(cp.getId());
+        if (bought.contains(tier)) {
+            return runState(userId, run);
+        }
+        if (tier > 1 && !bought.contains(tier - 1)) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Get the earlier clues first");
+        }
+
+        boolean creator = userId.equals(creatorUserId(run.getQuestId()));
+        int cost = creator ? 0 : intOf(clue.getCostStars());
+        UUID transactionId = null;
+        if (cost > 0) {
+            StarTransaction spent = starService.spend(userId, cost, "QUEST_CLUE",
+                    "quest_clue:" + runId + ":" + cp.getId() + ":" + tier + ":" + userId, "Quest finding clue");
+            transactionId = spent == null ? null : spent.getId();
+        }
+        LocalDateTime now = LocalDateTime.now();
+        boolean inserted = runRepository.insertRunClue(QuestRunClue.builder()
+                .id(UUID.randomUUID()).runId(runId).memberId(member.getId()).checkpointId(cp.getId())
+                .tier(tier).starsSpent(cost).starTransactionId(transactionId).boughtAt(now).build());
+        if (inserted && cost > 0) {
+            economyService.creditClueSale(run.getQuestId(), runId, userId, cost,
+                    "clue:" + runId + ":" + cp.getId() + ":" + tier + ":" + userId);
+        }
+        runRepository.touchRun(runId, now);
+        return runState(userId, run);
+    }
+
+    /**
+     * Hot/cold for the current AREA checkpoint (§3.14.1): the band of the player's distance to the
+     * real spot and whether they moved closer, never the distance itself. A question inside
+     * PROXIMITY_MIN_INTERVAL_SECONDS gets the previous answer again. Allowed after unlocking too:
+     * the player may still be looking for the object.
+     */
+    @Transactional
+    public QuestProximityResponse proximity(UUID userId, UUID runId, UUID checkpointId,
+                                            QuestProximityRequest request) {
+        QuestRun run = requireActiveRun(runId);
+        QuestRunMember member = requireMember(run, userId);
+        QuestVersion version = snapshot(run);
+        QuestCheckpoint cp = requireCurrent(version, member, checkpointId,
+                "Hot/cold is only for the checkpoint you are on");
+        if (!cp.isArea() || !cp.isHotColdEnabled()) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Hot/cold is not available here");
+        }
+        QuestRunCheckpoint rc = runRepository.findRunCheckpoint(member.getId(), cp.getId())
+                .orElseGet(() -> newRunCheckpoint(run, member, cp));
+        LocalDateTime now = LocalDateTime.now();
+        int interval = config.getInt(BusinessConfigKey.QUEST_PROXIMITY_MIN_INTERVAL_SECONDS);
+        if (rc.getProximityBand() != null && rc.getLastProximityAt() != null
+                && rc.getLastProximityAt().plusSeconds(interval).isAfter(now)) {
+            return new QuestProximityResponse(rc.getProximityBand(), rc.getProximityTrend());
+        }
+        Double distance = GeoDistance.betweenOrNull(request.latitude(), request.longitude(),
+                cp.getLatitude(), cp.getLongitude());
+        if (distance == null) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "A position is needed");
+        }
+        String band = proximityBand(distance);
+        String trend = proximityTrend(rc.getLastProximityM() == null ? null : rc.getLastProximityM().doubleValue(),
+                distance);
+        rc.setLastProximityM(BigDecimal.valueOf(distance).setScale(2, java.math.RoundingMode.HALF_UP));
+        rc.setLastProximityAt(now);
+        rc.setProximityBand(band);
+        rc.setProximityTrend(trend);
+        runRepository.updateRunCheckpointProximity(rc);
+        runRepository.touchRun(runId, now);
+        return new QuestProximityResponse(band, trend);
+    }
+
+    public static String proximityBand(double distanceM) {
+        if (distanceM <= HOT_WITHIN_M) {
+            return "HOT";
+        }
+        if (distanceM <= WARM_WITHIN_M) {
+            return "WARM";
+        }
+        return distanceM <= COOL_WITHIN_M ? "COOL" : "COLD";
+    }
+
+    /** Null on the first question; SAME for a move under {@link #TREND_DEADBAND_M}. */
+    public static String proximityTrend(Double previousM, double currentM) {
+        if (previousM == null) {
+            return null;
+        }
+        double delta = currentM - previousM;
+        if (Math.abs(delta) < TREND_DEADBAND_M) {
+            return "SAME";
+        }
+        return delta < 0 ? "CLOSER" : "FARTHER";
+    }
+
+    /**
+     * Records that the member heard a storytelling point (§3.14.2). Only a point of a checkpoint the
+     * member has unlocked. Idempotent per point. With a position inside the point's radius it is a
+     * GPS visit and counts toward STOPS; a bare tap is kept but never counts, since it can be done
+     * from home.
+     */
+    @Transactional
+    public QuestStopVisitResponse visitStop(UUID userId, UUID runId, UUID stopId, QuestStopVisitRequest request) {
+        QuestRun run = requireActiveRun(runId);
+        QuestRunMember member = requireMember(run, userId);
+        QuestVersion version = snapshot(run);
+        QuestCheckpoint cp = version.getCheckpoints().stream()
+                .filter(c -> c.getStops().stream().anyMatch(stop -> stop.getId().equals(stopId)))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Storytelling point not found"));
+        QuestCheckpointStop stop = cp.getStops().stream()
+                .filter(candidate -> candidate.getId().equals(stopId)).findFirst().orElseThrow();
+        QuestRunCheckpoint rc = runRepository.findRunCheckpoint(member.getId(), cp.getId()).orElse(null);
+        if (rc == null || !rc.isUnlocked()) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Arrive at the checkpoint first");
+        }
+
+        boolean gps = request != null && request.latitude() != null && request.longitude() != null;
+        boolean counts = false;
+        if (gps) {
+            CheckinVerifier.Assessment assessment = checkinVerifier.assess(
+                    VerificationTarget.forCoordinates(stop.getLatitude(), stop.getLongitude(), intOf(stop.getRadiusM())),
+                    request.latitude(), request.longitude(), request.accuracyMeters());
+            counts = Boolean.TRUE.equals(assessment.withinPlaceArea())
+                    && !Boolean.FALSE.equals(assessment.accuracyAcceptable());
+        }
+        LocalDateTime now = LocalDateTime.now();
+        runRepository.upsertRunStopVisit(QuestRunStopVisit.builder()
+                .id(UUID.randomUUID()).runId(runId).memberId(member.getId()).checkpointId(cp.getId())
+                .stopId(stopId).via(gps ? "GPS" : "TAP").countsTowardCompletion(counts).visitedAt(now).build());
+        runRepository.touchRun(runId, now);
+
+        MemberProgress p = progressOf(member);
+        QuestRunStopVisit visit = p.visitsByStop().get(stopId);
+        return new QuestStopVisitResponse(true, visit != null && visit.isCountsTowardCompletion(),
+                stopsCounted(cp, p));
+    }
+
+    /** The checkpoint, when it is the member's current one; otherwise a refusal naming why. */
+    private QuestCheckpoint requireCurrent(QuestVersion version, QuestRunMember member, UUID checkpointId,
+                                           String message) {
+        QuestCheckpoint cp = checkpoint(version, checkpointId);
+        QuestCheckpoint current = currentCheckpoint(version, progressOf(member));
+        if (current == null || !current.getId().equals(cp.getId())) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, message);
+        }
+        return cp;
+    }
+
     // --- rewards -----------------------------------------------------------------------
 
     /**
@@ -304,47 +488,95 @@ public class QuestPlayService {
     private QuestRunResponse runState(UUID userId, QuestRun run) {
         QuestRunMember member = requireMember(run, userId);
         QuestVersion version = snapshot(run);
-        Map<UUID, QuestRunQuestion> answers = runRepository.findRunQuestions(member.getId()).stream()
-                .collect(Collectors.toMap(QuestRunQuestion::getQuestionId, Function.identity()));
-        Map<UUID, QuestRunCheckpoint> progress = runRepository.findRunCheckpoints(member.getId()).stream()
-                .collect(Collectors.toMap(QuestRunCheckpoint::getCheckpointId, Function.identity()));
+        MemberProgress p = progressOf(member);
+        boolean creator = userId.equals(creatorUserId(run.getQuestId()));
 
         List<QuestCheckpoint> checkpoints = version.getCheckpoints();
         List<QuestRunResponse.ClearedCheckpointView> cleared = new ArrayList<>();
         QuestRunResponse.CurrentCheckpointView current = null;
         int clearedCount = 0;
         for (QuestCheckpoint cp : checkpoints) {
-            if (isCheckpointCleared(cp, answers, progress.get(cp.getId()))) {
+            if (isCheckpointCleared(cp, p)) {
                 clearedCount++;
                 cleared.add(new QuestRunResponse.ClearedCheckpointView(
                         cp.getId(), intOf(cp.getSortOrder()), cp.getName(), cp.getCategory(), cp.getStory(),
-                        json.readList(cp.getImageUrls(), String.class)));
+                        json.readList(cp.getImageUrls(), String.class),
+                        cp.getStoryAudioUrl(), cp.getStoryAudioSeconds(), stopViews(cp, p)));
             } else if (current == null) {
-                current = currentView(run, cp, answers, progress.get(cp.getId()));
+                current = currentView(run, cp, p, creator);
             }
             // Checkpoints after the current one are intentionally omitted: no coordinates ahead.
         }
         boolean completed = current == null;
         return new QuestRunResponse(run.getId(), run.getQuestId(), run.getStatus(),
                 clearedCount, checkpoints.size(), completed, cleared, current,
-                config.getInt(BusinessConfigKey.QUEST_ARRIVAL_CLIENT_INTERVAL_SECONDS));
+                config.getInt(BusinessConfigKey.QUEST_ARRIVAL_CLIENT_INTERVAL_SECONDS),
+                version.getContentLanguage());
     }
 
-    private QuestRunResponse.CurrentCheckpointView currentView(QuestRun run, QuestCheckpoint cp,
-                                                               Map<UUID, QuestRunQuestion> answers,
-                                                               QuestRunCheckpoint rc) {
+    private QuestRunResponse.CurrentCheckpointView currentView(QuestRun run, QuestCheckpoint cp, MemberProgress p,
+                                                               boolean creator) {
+        QuestRunCheckpoint rc = p.progress().get(cp.getId());
         boolean unlocked = rc != null && rc.isUnlocked();
-        // The puzzle only opens on arrival (§3.8): before that, coordinates to navigate, no questions.
-        List<QuestRunResponse.RunQuestionView> questions = unlocked
-                ? cp.getQuestions().stream().map(q -> questionView(run, q, answers.get(q.getId()))).toList()
+        boolean area = cp.isArea();
+        Set<Integer> bought = p.cluesBought(cp.getId());
+        boolean revealed = area && cp.getClues().stream()
+                .anyMatch(c -> QuestClueKind.REVEAL.name().equals(c.getKind()) && bought.contains(intOf(c.getTier())));
+        // AREA hides the real spot until the REVEAL clue is bought (§3.14.1): the check stays on the server.
+        boolean showSpot = !area || revealed;
+
+        // PIN: the puzzle opens on arrival (§3.8). AREA: the task says what to look for, so it shows
+        // at once; an answer is still refused until the checkpoint is unlocked.
+        List<QuestRunResponse.RunQuestionView> questions = unlocked || area
+                ? cp.getQuestions().stream().map(q -> questionView(run, q, p.answers().get(q.getId()))).toList()
                 : List.of();
         boolean checkinDone = rc != null && (rc.getCheckinId() != null || "WAIVED".equals(rc.getCheckinState()));
+
+        QuestRunResponse.SearchAreaView searchArea = area && cp.getSearchCenterLat() != null
+                && cp.getSearchCenterLng() != null && cp.getSearchRadiusM() != null
+                ? new QuestRunResponse.SearchAreaView(cp.getSearchCenterLat(), cp.getSearchCenterLng(),
+                        cp.getSearchRadiusM())
+                : null;
+        List<QuestRunResponse.ClueView> clues = area
+                ? cp.getClues().stream().map(c -> {
+                    boolean owned = bought.contains(intOf(c.getTier()));
+                    return new QuestRunResponse.ClueView(intOf(c.getTier()), c.getKind(),
+                            creator ? 0 : intOf(c.getCostStars()), owned,
+                            owned ? c.getText() : null, owned ? c.getImageUrl() : null);
+                }).toList()
+                : List.of();
+
         return new QuestRunResponse.CurrentCheckpointView(
                 cp.getId(), intOf(cp.getSortOrder()), cp.getName(), cp.getCategory(),
-                cp.getLatitude(), cp.getLongitude(),
-                cp.getRadiusM(), cp.isRequiresCheckin(), checkinDone, unlocked,
+                showSpot ? cp.getLatitude() : null, showSpot ? cp.getLongitude() : null,
+                showSpot ? cp.getRadiusM() : null, cp.isRequiresCheckin(), checkinDone, unlocked,
                 rc == null ? 0 : intOf(rc.getStableStreak()),
-                json.readList(cp.getImageUrls(), String.class), questions);
+                json.readList(cp.getImageUrls(), String.class), questions,
+                cp.find().name(), searchArea, area && cp.isHotColdEnabled(),
+                cp.completion().name(), cp.getMinStops(),
+                unlocked ? cp.getStory() : null,
+                unlocked ? cp.getStoryAudioUrl() : null,
+                unlocked ? cp.getStoryAudioSeconds() : null,
+                clues,
+                unlocked ? stopViews(cp, p) : List.of(),
+                stopsCounted(cp, p), revealed);
+    }
+
+    private List<QuestRunResponse.StopView> stopViews(QuestCheckpoint cp, MemberProgress p) {
+        return cp.getStops().stream().map(stop -> {
+            QuestRunStopVisit visit = p.visitsByStop().get(stop.getId());
+            return new QuestRunResponse.StopView(stop.getId(), intOf(stop.getSortOrder()), stop.getName(),
+                    stop.getCategory(), stop.getLatitude(), stop.getLongitude(), intOf(stop.getRadiusM()),
+                    stop.getStory(), json.readList(stop.getImageUrls(), String.class), stop.getAudioUrl(),
+                    stop.getAudioSeconds(), visit != null, visit != null && visit.isCountsTowardCompletion());
+        }).toList();
+    }
+
+    private static int stopsCounted(QuestCheckpoint cp, MemberProgress p) {
+        return (int) cp.getStops().stream()
+                .map(stop -> p.visitsByStop().get(stop.getId()))
+                .filter(visit -> visit != null && visit.isCountsTowardCompletion())
+                .count();
     }
 
     private QuestRunResponse.RunQuestionView questionView(QuestRun run, QuestQuestion q, QuestRunQuestion rq) {
@@ -377,32 +609,95 @@ public class QuestPlayService {
 
     // --- gates -------------------------------------------------------------------------
 
-    private boolean allCheckpointsCleared(QuestVersion version, QuestRunMember member) {
+    /** Everything one member has done in a run, loaded once per request. */
+    private record MemberProgress(
+            Map<UUID, QuestRunQuestion> answers,
+            Map<UUID, QuestRunCheckpoint> progress,
+            Map<UUID, QuestRunStopVisit> visitsByStop,
+            Map<UUID, Set<Integer>> cluesByCheckpoint) {
+
+        Set<Integer> cluesBought(UUID checkpointId) {
+            return cluesByCheckpoint.getOrDefault(checkpointId, Set.of());
+        }
+    }
+
+    private MemberProgress progressOf(QuestRunMember member) {
         Map<UUID, QuestRunQuestion> answers = runRepository.findRunQuestions(member.getId()).stream()
                 .collect(Collectors.toMap(QuestRunQuestion::getQuestionId, Function.identity()));
         Map<UUID, QuestRunCheckpoint> progress = runRepository.findRunCheckpoints(member.getId()).stream()
                 .collect(Collectors.toMap(QuestRunCheckpoint::getCheckpointId, Function.identity()));
-        return version.getCheckpoints().stream()
-                .allMatch(cp -> isCheckpointCleared(cp, answers, progress.get(cp.getId())));
+        Map<UUID, QuestRunStopVisit> visits = runRepository.findRunStopVisits(member.getId()).stream()
+                .collect(Collectors.toMap(QuestRunStopVisit::getStopId, Function.identity(), (a, b) -> a));
+        Map<UUID, Set<Integer>> clues = runRepository.findRunClues(member.getId()).stream()
+                .collect(Collectors.groupingBy(QuestRunClue::getCheckpointId,
+                        Collectors.mapping(c -> intOf(c.getTier()), Collectors.toSet())));
+        return new MemberProgress(answers, progress, visits, clues);
+    }
+
+    private boolean allCheckpointsCleared(QuestVersion version, QuestRunMember member) {
+        MemberProgress p = progressOf(member);
+        return version.getCheckpoints().stream().allMatch(cp -> isCheckpointCleared(cp, p));
     }
 
     private boolean checkpointCleared(QuestCheckpoint cp, QuestRunMember member) {
-        Map<UUID, QuestRunQuestion> answers = runRepository.findRunQuestions(member.getId()).stream()
-                .collect(Collectors.toMap(QuestRunQuestion::getQuestionId, Function.identity()));
-        return isCheckpointCleared(cp, answers, runRepository.findRunCheckpoint(member.getId(), cp.getId()).orElse(null));
+        return isCheckpointCleared(cp, progressOf(member));
     }
 
-    /** The advance gate (§3.12): every required, non-bonus question correct, and the check-in done. */
-    private boolean isCheckpointCleared(QuestCheckpoint cp, Map<UUID, QuestRunQuestion> answers, QuestRunCheckpoint rc) {
+    /** The member's first checkpoint not yet cleared, in route order; null when all are. */
+    private QuestCheckpoint currentCheckpoint(QuestVersion version, MemberProgress p) {
+        return version.getCheckpoints().stream()
+                .filter(cp -> !isCheckpointCleared(cp, p))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * The advance gate (§3.12, §3.14). In every mode the checkpoint must first be unlocked (ISSUES
+     * B32: this used not to be required). Then:
+     * <ul>
+     *   <li>TASK: every required, non-bonus question correct, and the required check-in done;</li>
+     *   <li>ARRIVE: nothing more — a guide-only checkpoint;</li>
+     *   <li>STOPS: at least {@code min_stops} storytelling points heard by GPS, plus any required
+     *       question or check-in the creator also set.</li>
+     * </ul>
+     */
+    private boolean isCheckpointCleared(QuestCheckpoint cp, MemberProgress p) {
+        QuestRunCheckpoint rc = p.progress().get(cp.getId());
+        if (rc == null || !rc.isUnlocked()) {
+            return false;
+        }
+        QuestCompletionMode mode = cp.completion();
+        if (mode == QuestCompletionMode.ARRIVE) {
+            return true;
+        }
         boolean questionsDone = cp.getQuestions().stream()
                 .filter(q -> q.isRequired() && !q.isBonus())
                 .allMatch(q -> {
-                    QuestRunQuestion rq = answers.get(q.getId());
+                    QuestRunQuestion rq = p.answers().get(q.getId());
                     return rq != null && rq.isCorrect();
                 });
         boolean checkinDone = !cp.isRequiresCheckin()
-                || (rc != null && (rc.getCheckinId() != null || "WAIVED".equals(rc.getCheckinState())));
+                || rc.getCheckinId() != null || "WAIVED".equals(rc.getCheckinState());
+        if (mode == QuestCompletionMode.STOPS) {
+            int min = cp.getMinStops() == null ? 1 : cp.getMinStops();
+            return questionsDone && checkinDone && stopsCounted(cp, p) >= min;
+        }
         return questionsDone && checkinDone;
+    }
+
+    /**
+     * Where a sample must land to unlock: the checkpoint's own circle for PIN; the search circle
+     * for AREA (§3.14.1), falling back to the spot if a legacy row has no centre.
+     */
+    private VerificationTarget unlockTarget(QuestCheckpoint cp) {
+        if (cp.isArea() && cp.getSearchCenterLat() != null && cp.getSearchCenterLng() != null
+                && cp.getSearchRadiusM() != null) {
+            return VerificationTarget.forCoordinates(cp.getSearchCenterLat(), cp.getSearchCenterLng(),
+                    cp.getSearchRadiusM());
+        }
+        int radius = cp.getRadiusM() != null ? cp.getRadiusM()
+                : config.getInt(BusinessConfigKey.QUEST_UNLOCK_RADIUS_METERS);
+        return VerificationTarget.forCoordinates(cp.getLatitude(), cp.getLongitude(), radius);
     }
 
     // --- grading -----------------------------------------------------------------------

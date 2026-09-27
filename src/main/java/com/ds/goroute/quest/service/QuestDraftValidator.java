@@ -3,11 +3,16 @@ package com.ds.goroute.quest.service;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.quest.domain.QuestCheckpoint;
+import com.ds.goroute.quest.domain.QuestCheckpointClue;
+import com.ds.goroute.quest.domain.QuestCheckpointStop;
 import com.ds.goroute.quest.domain.QuestQuestion;
 import com.ds.goroute.quest.domain.QuestVersion;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.type.BusinessConfigKey;
+import com.ds.goroute.type.QuestClueKind;
+import com.ds.goroute.type.QuestCompletionMode;
 import com.ds.goroute.type.QuestQuestionType;
+import com.ds.goroute.utils.GeoDistance;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -19,7 +24,9 @@ import java.util.List;
  * Enforces the structural rules a reviewer should never have to catch by hand:
  *
  * <ul>
- *   <li>every checkpoint has a job to do — a required question or a required check-in (D21);</li>
+ *   <li>every TASK checkpoint has a job to do — a required question or a required check-in (D21);</li>
+ *   <li>an ARRIVE checkpoint has something to take in, a STOPS one a reachable target, an AREA one
+ *       a search circle and a well-formed clue ladder (§3.14);</li>
  *   <li>questions are well-formed for their type;</li>
  *   <li>counts stay inside the configured ceilings, and the price inside PRICE_MAX_STARS.</li>
  * </ul>
@@ -27,6 +34,13 @@ import java.util.List;
 @Component
 @RequiredArgsConstructor
 public class QuestDraftValidator {
+
+    /** §3.14.4: the AREA search circle, and a storytelling point's listening radius. */
+    static final int MIN_SEARCH_RADIUS_M = 50;
+    static final int MAX_SEARCH_RADIUS_M = 1000;
+    static final int MIN_STOP_RADIUS_M = 10;
+    static final int MAX_STOP_RADIUS_M = 100;
+    static final int MAX_CLUES = 3;
 
     private final BusinessConfigService config;
 
@@ -57,8 +71,15 @@ public class QuestDraftValidator {
         int minOptions = config.getInt(BusinessConfigKey.QUEST_CHOICE_MIN_OPTIONS);
         int maxOptions = config.getInt(BusinessConfigKey.QUEST_CHOICE_MAX_OPTIONS);
 
+        DynamicLimits dynamic = new DynamicLimits(
+                config.getInt(BusinessConfigKey.QUEST_UNLOCK_RADIUS_METERS),
+                config.getInt(BusinessConfigKey.QUEST_CLUE_MAX_STARS),
+                config.getInt(BusinessConfigKey.QUEST_MAX_STOPS_PER_CHECKPOINT),
+                config.getInt(BusinessConfigKey.QUEST_STOP_MAX_DISTANCE_M),
+                config.getInt(BusinessConfigKey.QUEST_AUDIO_MAX_SECONDS));
         for (int i = 0; i < checkpoints.size(); i++) {
             validateCheckpoint(checkpoints.get(i), i + 1, maxQuestions, maxBonus, minOptions, maxOptions, errors);
+            validateDynamic(checkpoints.get(i), "Checkpoint " + (i + 1), dynamic, errors);
         }
 
         if (!errors.isEmpty()) {
@@ -84,12 +105,133 @@ public class QuestDraftValidator {
         if (bonus > maxBonus) {
             errors.add(where + " has more than " + maxBonus + " bonus questions");
         }
-        // D21: a required question OR a required check-in — at least one.
-        if (requiredNonBonus == 0 && !cp.isRequiresCheckin()) {
+        // D21: a required question OR a required check-in — at least one. Only a TASK checkpoint;
+        // ARRIVE and STOPS have their own rules (§3.14, validateDynamic).
+        if (cp.completion() == QuestCompletionMode.TASK && requiredNonBonus == 0 && !cp.isRequiresCheckin()) {
             errors.add(where + " needs a required question or a required check-in");
         }
         for (QuestQuestion q : questions) {
             validateQuestion(q, where, minOptions, maxOptions, errors);
+        }
+    }
+
+    /** Ceilings for §3.14: clue prices, storytelling points and recordings. */
+    private record DynamicLimits(int defaultUnlockRadius, int clueMaxStars, int maxStops,
+                                 int stopMaxDistanceM, int audioMaxSeconds) {
+    }
+
+    /**
+     * §3.14.4: the find mode (AREA search circle and clue ladder), the completion mode (ARRIVE has
+     * something to take in and nothing to do; STOPS asks for a reachable number of points), the
+     * storytelling points themselves, and every recording's length.
+     */
+    private void validateDynamic(QuestCheckpoint cp, String where, DynamicLimits limits, List<String> errors) {
+        if (cp.isArea()) {
+            int unlock = cp.getRadiusM() != null ? cp.getRadiusM() : limits.defaultUnlockRadius();
+            Integer search = cp.getSearchRadiusM();
+            if (search == null || search < MIN_SEARCH_RADIUS_M || search > MAX_SEARCH_RADIUS_M) {
+                errors.add(where + " needs a search area of " + MIN_SEARCH_RADIUS_M + "–" + MAX_SEARCH_RADIUS_M + " m");
+            } else if (search <= unlock) {
+                errors.add(where + " needs a search area larger than its unlock radius");
+            }
+            validateClues(cp.getClues(), where, limits.clueMaxStars(), errors);
+        }
+
+        long required = cp.getQuestions().stream().filter(q -> q.isRequired() && !q.isBonus()).count();
+        List<QuestCheckpointStop> stops = cp.getStops();
+        switch (cp.completion()) {
+            case ARRIVE -> {
+                if (required > 0 || cp.isRequiresCheckin()) {
+                    errors.add(where + " is guide-only: it cannot have a required question or check-in");
+                }
+                boolean hasContent = !isBlank(cp.getStory()) || !isBlank(cp.getStoryAudioUrl()) || !stops.isEmpty();
+                if (!hasContent) {
+                    errors.add(where + " is guide-only and needs a story, a recording or a storytelling point");
+                }
+            }
+            case STOPS -> {
+                Integer min = cp.getMinStops();
+                if (min == null || min < 1 || min > stops.size()) {
+                    errors.add(where + " must ask for 1 to " + stops.size() + " storytelling points");
+                }
+            }
+            case TASK -> {
+                // D21, checked in validateCheckpoint.
+            }
+        }
+
+        if (stops.size() > limits.maxStops()) {
+            errors.add(where + " has more than " + limits.maxStops() + " storytelling points");
+        }
+        for (int k = 0; k < stops.size(); k++) {
+            validateStop(cp, stops.get(k), where + " storytelling point " + (k + 1), limits, errors);
+        }
+        if (cp.getStoryAudioSeconds() != null && cp.getStoryAudioSeconds() > limits.audioMaxSeconds()) {
+            errors.add(where + " has a story recording longer than " + limits.audioMaxSeconds() + " seconds");
+        }
+    }
+
+    private void validateClues(List<QuestCheckpointClue> clues, String where, int clueMaxStars, List<String> errors) {
+        if (clues.size() > MAX_CLUES) {
+            errors.add(where + " has more than " + MAX_CLUES + " clues");
+        }
+        for (int t = 0; t < clues.size(); t++) {
+            QuestCheckpointClue clue = clues.get(t);
+            String at = where + " clue " + (t + 1);
+            if (clue.getTier() == null || clue.getTier() != t + 1) {
+                errors.add(at + " is out of order");
+            }
+            int cost = clue.getCostStars() == null ? 0 : clue.getCostStars();
+            if (cost < 0 || cost > clueMaxStars) {
+                errors.add(at + " must cost 0 to " + clueMaxStars + " Stars");
+            }
+            QuestClueKind kind;
+            try {
+                kind = QuestClueKind.valueOf(clue.getKind());
+            } catch (RuntimeException ex) {
+                errors.add(at + " has an unknown kind");
+                continue;
+            }
+            switch (kind) {
+                case TEXT -> {
+                    if (isBlank(clue.getText())) {
+                        errors.add(at + " needs its text");
+                    }
+                }
+                case PHOTO -> {
+                    if (isBlank(clue.getImageUrl())) {
+                        errors.add(at + " needs its photo");
+                    }
+                }
+                case REVEAL -> {
+                    if (t != clues.size() - 1) {
+                        errors.add(at + ": the pin reveal must be the last clue");
+                    }
+                }
+            }
+        }
+    }
+
+    private void validateStop(QuestCheckpoint cp, QuestCheckpointStop stop, String where, DynamicLimits limits,
+                              List<String> errors) {
+        if (isBlank(stop.getName())) {
+            errors.add(where + " needs a name");
+        }
+        if (stop.getLatitude() == null || stop.getLongitude() == null) {
+            errors.add(where + " has no location");
+            return;
+        }
+        int radius = stop.getRadiusM() == null ? 0 : stop.getRadiusM();
+        if (radius < MIN_STOP_RADIUS_M || radius > MAX_STOP_RADIUS_M) {
+            errors.add(where + " needs a radius of " + MIN_STOP_RADIUS_M + "–" + MAX_STOP_RADIUS_M + " m");
+        }
+        Double distance = GeoDistance.betweenOrNull(cp.getLatitude(), cp.getLongitude(),
+                stop.getLatitude(), stop.getLongitude());
+        if (distance != null && distance > limits.stopMaxDistanceM()) {
+            errors.add(where + " is more than " + limits.stopMaxDistanceM() + " m from its checkpoint");
+        }
+        if (stop.getAudioSeconds() != null && stop.getAudioSeconds() > limits.audioMaxSeconds()) {
+            errors.add(where + " has a recording longer than " + limits.audioMaxSeconds() + " seconds");
         }
     }
 

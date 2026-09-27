@@ -6,14 +6,22 @@ import com.ds.goroute.quest.dto.QuestAnswerRequest;
 import com.ds.goroute.quest.dto.QuestAnswerResponse;
 import com.ds.goroute.quest.dto.QuestArrivalResponse;
 import com.ds.goroute.quest.dto.QuestEntitlementResponse;
+import com.ds.goroute.quest.dto.QuestProximityRequest;
+import com.ds.goroute.quest.dto.QuestProximityResponse;
 import com.ds.goroute.quest.dto.QuestRunResponse;
 import com.ds.goroute.quest.dto.QuestSampleRequest;
+import com.ds.goroute.quest.dto.QuestStopVisitRequest;
+import com.ds.goroute.quest.dto.QuestStopVisitResponse;
 import com.ds.goroute.quest.dto.QuestTipRequest;
 import com.ds.goroute.quest.service.QuestEconomyService;
 import com.ds.goroute.quest.service.QuestPlayService;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,6 +35,7 @@ import java.util.UUID;
  * return an answer, a correct-choice flag, or a checkpoint's coordinates beyond the current one.
  */
 @RestController
+@Validated
 @RequiredArgsConstructor
 public class QuestPlayController {
 
@@ -80,6 +89,37 @@ public class QuestPlayController {
             @CurrentUser UUID userId,
             @PathVariable UUID runId) {
         return ResponseEntity.ok(BaseResponse.ofSucceeded(playService.complete(userId, runId)));
+    }
+
+    /** Buy one tier of the current AREA checkpoint's finding clues (§3.14.1). Idempotent. */
+    @PostMapping("/v1/api/quest-runs/{runId}/checkpoints/{checkpointId}/clues/{tier}/buy")
+    public ResponseEntity<BaseResponse<QuestRunResponse>> buyClue(
+            @CurrentUser UUID userId,
+            @PathVariable UUID runId,
+            @PathVariable UUID checkpointId,
+            @PathVariable @Min(1) @Max(3) int tier) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(playService.buyClue(userId, runId, checkpointId, tier)));
+    }
+
+    /** Hot/cold: a band and a trend against the real spot, never a distance (§3.14.1). */
+    @PostMapping("/v1/api/quest-runs/{runId}/checkpoints/{checkpointId}/proximity")
+    public ResponseEntity<BaseResponse<QuestProximityResponse>> proximity(
+            @CurrentUser UUID userId,
+            @PathVariable UUID runId,
+            @PathVariable UUID checkpointId,
+            @Valid @RequestBody QuestProximityRequest request) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(
+                playService.proximity(userId, runId, checkpointId, request)));
+    }
+
+    /** A storytelling point was heard (§3.14.2). Idempotent; only a GPS visit inside it counts. */
+    @PostMapping("/v1/api/quest-runs/{runId}/stops/{stopId}/visit")
+    public ResponseEntity<BaseResponse<QuestStopVisitResponse>> visitStop(
+            @CurrentUser UUID userId,
+            @PathVariable UUID runId,
+            @PathVariable UUID stopId,
+            @RequestBody(required = false) QuestStopVisitRequest request) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(playService.visitStop(userId, runId, stopId, request)));
     }
 
     @PostMapping("/v1/api/quests/{questId}/unlock")

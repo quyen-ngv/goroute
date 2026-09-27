@@ -2,6 +2,8 @@ package com.ds.goroute.quest.persistence;
 
 import com.ds.goroute.quest.domain.Quest;
 import com.ds.goroute.quest.domain.QuestCheckpoint;
+import com.ds.goroute.quest.domain.QuestCheckpointClue;
+import com.ds.goroute.quest.domain.QuestCheckpointStop;
 import com.ds.goroute.quest.domain.QuestCreatorNote;
 import com.ds.goroute.quest.domain.QuestCreatorProfile;
 import com.ds.goroute.quest.domain.QuestQuestion;
@@ -148,6 +150,11 @@ public class QuestRepositoryImpl implements QuestRepository {
     }
 
     @Override
+    public boolean clearPendingChangeReview(UUID id, LocalDateTime updatedAt) {
+        return mapper.clearPendingChangeReview(id, updatedAt) == 1;
+    }
+
+    @Override
     public void insertReviewDecision(com.ds.goroute.quest.domain.QuestReviewDecisionRow decision) {
         mapper.insertReviewDecision(decision);
     }
@@ -199,7 +206,15 @@ public class QuestRepositoryImpl implements QuestRepository {
         }
         Map<UUID, List<QuestQuestion>> questionsByCheckpoint = questions.stream()
                 .collect(Collectors.groupingBy(QuestQuestion::getCheckpointId));
-        checkpoints.forEach(c -> c.setQuestions(questionsByCheckpoint.getOrDefault(c.getId(), List.of())));
+        Map<UUID, List<QuestCheckpointClue>> cluesByCheckpoint = mapper.findCluesByCheckpointIds(checkpointIds)
+                .stream().collect(Collectors.groupingBy(QuestCheckpointClue::getCheckpointId));
+        Map<UUID, List<QuestCheckpointStop>> stopsByCheckpoint = mapper.findStopsByCheckpointIds(checkpointIds)
+                .stream().collect(Collectors.groupingBy(QuestCheckpointStop::getCheckpointId));
+        checkpoints.forEach(c -> {
+            c.setQuestions(questionsByCheckpoint.getOrDefault(c.getId(), List.of()));
+            c.setClues(cluesByCheckpoint.getOrDefault(c.getId(), List.of()));
+            c.setStops(stopsByCheckpoint.getOrDefault(c.getId(), List.of()));
+        });
         return Optional.of(version);
     }
 
@@ -242,9 +257,21 @@ public class QuestRepositoryImpl implements QuestRepository {
     }
 
     @Override
+    public void insertClue(QuestCheckpointClue clue) {
+        mapper.insertClue(clue);
+    }
+
+    @Override
+    public void insertStop(QuestCheckpointStop stop) {
+        mapper.insertStop(stop);
+    }
+
+    @Override
     public void clearVersionContent(UUID versionId) {
         // Deepest table first: no physical FKs to cascade for us.
         mapper.deleteChoicesByVersion(versionId);
+        mapper.deleteCluesByVersion(versionId);
+        mapper.deleteStopsByVersion(versionId);
         mapper.deleteQuestionsByVersion(versionId);
         mapper.deleteNotesByVersion(versionId);
         mapper.deleteCheckpointsByVersion(versionId);

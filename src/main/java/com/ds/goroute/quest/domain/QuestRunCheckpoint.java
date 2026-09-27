@@ -32,6 +32,11 @@ public class QuestRunCheckpoint {
     private UUID checkinId;
     private String checkinState;
     private Long dataVersion;
+    /** Hot/cold (§3.14.1): last distance to the real spot. Server-only, never sent to the app. */
+    private BigDecimal lastProximityM;
+    private LocalDateTime lastProximityAt;
+    private String proximityBand;
+    private String proximityTrend;
 
     public boolean isUnlocked() {
         return unlockedAt != null;

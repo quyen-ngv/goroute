@@ -128,6 +128,16 @@ public class QuestAdminController {
                 reviewService.decide(questId, userId, superAdmin, request)));
     }
 
+    /**
+     * "Đã xem" (§3.14.3): a reviewer looked at a live edit and clears its pending_change_review
+     * flag. The full post-review queue with accept/revert is §3.10 (ISSUES B30).
+     */
+    @PostMapping("/{questId}/ack-live-edit")
+    @PreAuthorize("@adminAuthorization.can(authentication,'quests','review')")
+    public ResponseEntity<BaseResponse<QuestReviewResultResponse>> ackLiveEdit(@PathVariable UUID questId) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(reviewService.acknowledgeLiveEdit(questId)));
+    }
+
     @GetMapping("/{questId}/review")
     @PreAuthorize("@adminAuthorization.can(authentication,'quests','review')")
     public ResponseEntity<BaseResponse<Map<String, Object>>> reviewHistory(@PathVariable UUID questId) {

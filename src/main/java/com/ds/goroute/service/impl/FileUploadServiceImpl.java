@@ -48,6 +48,9 @@ import java.util.concurrent.Executor;
 @Slf4j
 public class FileUploadServiceImpl implements FileUploadService {
 
+    /** A quest story recording (§3.14.3): five minutes of speech is well under this. */
+    static final long MAX_AUDIO_BYTES = 10L * 1024 * 1024;
+
     private final StorageService storageService;
     private final RestTemplate restTemplate;
     private final FileUploadProperties uploadProperties;
@@ -189,6 +192,66 @@ public class FileUploadServiceImpl implements FileUploadService {
         } catch (IOException exception) {
             throw new IllegalStateException("Could not read uploaded video", exception);
         }
+    }
+
+    @Override
+    public String uploadAudio(UUID userId, MultipartFile file) {
+        ValidatedAudio audio = validateAudio(file);
+        String objectKey = "quest-audio/" + userId + "/" + UUID.randomUUID() + audio.extension();
+        try (InputStream inputStream = file.getInputStream()) {
+            return storageService.uploadFile(objectKey, inputStream, audio.contentType(), file.getSize());
+        } catch (IOException exception) {
+            throw new IllegalStateException("Could not read uploaded audio", exception);
+        }
+    }
+
+    /**
+     * Phones send a recording as {@code application/octet-stream} as often as with its real type, so
+     * the type is read from the bytes: an MP4/M4A container, an ADTS AAC stream, or an MP3 (ID3 tag
+     * or frame sync). A declared type, when present, must be an audio one.
+     */
+    private ValidatedAudio validateAudio(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw invalid("Audio is empty");
+        }
+        if (file.getSize() > MAX_AUDIO_BYTES) {
+            throw invalid("Audio exceeds the maximum allowed size of 10MB");
+        }
+        String declared = file.getContentType() == null ? "" : file.getContentType().toLowerCase(Locale.ROOT);
+        if (!declared.isEmpty() && !declared.startsWith("audio/") && !"application/octet-stream".equals(declared)) {
+            throw invalid("Only M4A, AAC and MP3 recordings are allowed");
+        }
+        byte[] header;
+        try (InputStream inputStream = file.getInputStream()) {
+            header = inputStream.readNBytes(12);
+        } catch (IOException exception) {
+            throw new IllegalStateException("Could not read uploaded audio", exception);
+        }
+        ValidatedAudio audio = detectAudio(header);
+        if (audio == null) {
+            throw invalid("Only M4A, AAC and MP3 recordings are allowed");
+        }
+        return audio;
+    }
+
+    static ValidatedAudio detectAudio(byte[] bytes) {
+        if (bytes.length >= 8 && bytes[4] == 'f' && bytes[5] == 't' && bytes[6] == 'y' && bytes[7] == 'p') {
+            return new ValidatedAudio("audio/mp4", ".m4a");
+        }
+        if (bytes.length >= 3 && bytes[0] == 'I' && bytes[1] == 'D' && bytes[2] == '3') {
+            return new ValidatedAudio("audio/mpeg", ".mp3");
+        }
+        if (bytes.length >= 2 && (bytes[0] & 0xFF) == 0xFF) {
+            int second = bytes[1] & 0xFF;
+            // ADTS: 12 sync bits then layer 00; MPEG audio frames: 11 sync bits and a non-zero layer.
+            if ((second & 0xF6) == 0xF0) {
+                return new ValidatedAudio("audio/aac", ".aac");
+            }
+            if ((second & 0xE0) == 0xE0 && (second & 0x06) != 0) {
+                return new ValidatedAudio("audio/mpeg", ".mp3");
+            }
+        }
+        return null;
     }
 
     /**
@@ -430,5 +493,8 @@ public class FileUploadServiceImpl implements FileUploadService {
     }
 
     private record ValidatedVideo(String contentType, String extension) {
+    }
+
+    record ValidatedAudio(String contentType, String extension) {
     }
 }

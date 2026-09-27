@@ -41,6 +41,9 @@ public class QuestReviewService {
     private static final List<String> QUEUE_STATUSES =
             List.of(QuestStatus.PENDING.name(), QuestStatus.IN_REVIEW.name(), QuestStatus.FIELD_TEST.name());
 
+    /** The checklist key the console sets once every recording in the quest has been played. */
+    static final String AUDIO_HEARD_CHECK = "audioListened";
+
     private final QuestRepository repository;
     private final QuestCreatorGate creatorGate;
     private final MarketplaceJson json;
@@ -85,6 +88,9 @@ public class QuestReviewService {
         QuestCreatorProfile creator = repository.findCreatorById(quest.getCreatorId())
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Quest creator missing"));
         boolean selfApproved = resolveSelfApproval(quest, creator, reviewerUserId, isSuperAdmin);
+        if (decision == QuestReviewDecision.PUBLISHED) {
+            requireAudioHeard(quest, request.checklist());
+        }
 
         long expected = request.expectedVersion() != null ? request.expectedVersion() : quest.getDataVersion();
         UUID reviewedVersionId = quest.getDraftVersionId();
@@ -135,6 +141,42 @@ public class QuestReviewService {
         return repository.findCommentsByQuest(questId);
     }
 
+    /**
+     * Clears the post-review flag of a live edit once a reviewer has looked at it (§3.14.3). There
+     * is no filter for audio, so this is the person's "I listened" for a recording that went out
+     * with an edit.
+     */
+    @Transactional
+    public QuestReviewResultResponse acknowledgeLiveEdit(UUID questId) {
+        Quest quest = requireQuest(questId);
+        if (!quest.isPendingChangeReview()) {
+            throw new BusinessException(ErrorConstant.ALREADY_PROCESSED, "This quest has no edit waiting to be seen");
+        }
+        if (!repository.clearPendingChangeReview(questId, LocalDateTime.now())) {
+            throw conflict(questId);
+        }
+        return new QuestReviewResultResponse(questId, quest.getStatus(), false);
+    }
+
+    /**
+     * No machine filters audio (§3.14.3): a quest with any recording is published only when the
+     * reviewer confirms, in the checklist, that they listened to every one. The console ticks this
+     * only once each clip has been played.
+     */
+    private void requireAudioHeard(Quest quest, Map<String, Object> checklist) {
+        QuestVersion version = repository.loadVersionGraph(quest.getDraftVersionId()).orElse(null);
+        if (version == null) {
+            return;
+        }
+        boolean hasAudio = version.getCheckpoints().stream().anyMatch(cp ->
+                cp.getStoryAudioUrl() != null
+                        || cp.getStops().stream().anyMatch(stop -> stop.getAudioUrl() != null));
+        if (hasAudio && (checklist == null || !Boolean.TRUE.equals(checklist.get(AUDIO_HEARD_CHECK)))) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "Listen to every recording before publishing");
+        }
+    }
+
     // --- helpers -----------------------------------------------------------------------
 
     /** Suspend or reactivate a creator (§3.2). A SUSPENDED creator's quests fall out of discovery
@@ -178,7 +220,7 @@ public class QuestReviewService {
                 : repository.findVersionById(quest.getDraftVersionId()).map(QuestVersion::getTitle).orElse(null);
         return new QuestReviewQueueItem(quest.getId(), quest.getOrigin(), quest.getStatus(), title,
                 quest.getCreatorId(), quest.getDataVersion() == null ? 0 : quest.getDataVersion(),
-                quest.getUpdatedAt());
+                quest.getUpdatedAt(), quest.isPendingChangeReview());
     }
 
     private Quest requireQuest(UUID questId) {

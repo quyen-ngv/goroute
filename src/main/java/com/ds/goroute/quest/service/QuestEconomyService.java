@@ -94,6 +94,26 @@ public class QuestEconomyService {
         creditCreator(creator.getId(), questId, request.getRunId(), userId, "TIP", net, "tip:" + tipId);
     }
 
+    /**
+     * Books the creator's share of a finding clue a player bought (§3.14.1), through the same
+     * pending-earnings path as a sale. Idempotent on {@code reference}.
+     */
+    @Transactional
+    public void creditClueSale(UUID questId, UUID runId, UUID buyerUserId, int price, String reference) {
+        if (price <= 0) {
+            return;
+        }
+        Quest quest = questRepository.findQuestById(questId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Quest not found"));
+        QuestCreatorProfile creator = questRepository.findCreatorById(quest.getCreatorId())
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Quest creator missing"));
+        if (creator.getUserId().equals(buyerUserId)) {
+            return;
+        }
+        int sharePct = config.getInt(BusinessConfigKey.QUEST_CREATOR_REVENUE_SHARE_PCT);
+        creditCreator(creator.getId(), questId, runId, buyerUserId, "CLUE", price * sharePct / 100, reference);
+    }
+
     // --- helpers -----------------------------------------------------------------------
 
     private void creditCreator(UUID creatorId, UUID questId, UUID runId, UUID fromUserId,

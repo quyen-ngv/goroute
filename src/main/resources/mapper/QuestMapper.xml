@@ -188,20 +188,36 @@
     </update>
 
     <!-- ================= review queue + audit ================= -->
+    <!-- The queue: quests waiting for a decision, plus live quests whose edit went out without one
+         (D18: pending_change_review) so a reviewer can look at it after the fact. -->
+    <sql id="reviewQueuePredicate">
+        is_deleted = FALSE AND (status IN
+        <foreach collection="statuses" item="s" open="(" separator="," close=")">#{s}</foreach>
+        OR (status = 'PUBLISHED' AND pending_change_review = TRUE))
+    </sql>
+
     <select id="findForReview" resultMap="QuestMap">
         SELECT <include refid="QuestColumns"/>
         FROM quests
-        WHERE is_deleted = FALSE AND status IN
-        <foreach collection="statuses" item="s" open="(" separator="," close=")">#{s}</foreach>
+        WHERE <include refid="reviewQueuePredicate"/>
         ORDER BY updated_at ASC, id
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <select id="countForReview" resultType="long">
         SELECT COUNT(*) FROM quests
-        WHERE is_deleted = FALSE AND status IN
-        <foreach collection="statuses" item="s" open="(" separator="," close=")">#{s}</foreach>
+        WHERE <include refid="reviewQueuePredicate"/>
     </select>
+
+    <!-- A reviewer looked at a live edit ("Đã xem", §3.14.3): clear the flag. The full post-review
+         queue with accept/revert (§3.10) is still to come. -->
+    <update id="clearPendingChangeReview">
+        UPDATE quests
+        SET pending_change_review = FALSE,
+            data_version = data_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{id} AND pending_change_review = TRUE AND is_deleted = FALSE
+    </update>
 
     <resultMap id="ReviewDecisionMap" type="com.ds.goroute.quest.domain.QuestReviewDecisionRow">
         <id property="id" column="id"/>
@@ -432,13 +448,24 @@
         <result property="capturedAt" column="captured_at"/>
         <result property="requiresCheckin" column="requires_checkin"/>
         <result property="imageUrls" column="image_urls"/>
+        <result property="findMode" column="find_mode"/>
+        <result property="searchRadiusM" column="search_radius_m"/>
+        <result property="searchCenterLat" column="search_center_lat"/>
+        <result property="searchCenterLng" column="search_center_lng"/>
+        <result property="hotColdEnabled" column="hot_cold_enabled"/>
+        <result property="completionMode" column="completion_mode"/>
+        <result property="minStops" column="min_stops"/>
+        <result property="storyAudioUrl" column="story_audio_url"/>
+        <result property="storyAudioSeconds" column="story_audio_seconds"/>
         <result property="createdAt" column="created_at"/>
     </resultMap>
 
     <select id="findCheckpointsByVersion" resultMap="CheckpointMap">
         SELECT id, quest_version_id, sort_order, name, category, latitude, longitude, radius_m,
                ST_AsText(unlock_geometry) AS unlock_geometry_wkt, place_id, location_key, story,
-               capture_source, capture_accuracy_meters, captured_at, requires_checkin, image_urls, created_at
+               capture_source, capture_accuracy_meters, captured_at, requires_checkin, image_urls,
+               find_mode, search_radius_m, search_center_lat, search_center_lng, hot_cold_enabled,
+               completion_mode, min_stops, story_audio_url, story_audio_seconds, created_at
         FROM quest_checkpoints
         WHERE quest_version_id = #{versionId}
         ORDER BY sort_order, id
@@ -452,7 +479,9 @@
         INSERT INTO quest_checkpoints (
             id, quest_version_id, sort_order, name, category, latitude, longitude, radius_m,
             unlock_geometry, place_id, location_key, story, capture_source,
-            capture_accuracy_meters, captured_at, requires_checkin, image_urls, created_at
+            capture_accuracy_meters, captured_at, requires_checkin, image_urls,
+            find_mode, search_radius_m, search_center_lat, search_center_lng, hot_cold_enabled,
+            completion_mode, min_stops, story_audio_url, story_audio_seconds, created_at
         ) VALUES (
             #{id}, #{questVersionId}, #{sortOrder}, #{name}, #{category}, #{latitude}, #{longitude}, #{radiusM},
             <!-- Cast: with a null WKT Postgres cannot infer the parameter type inside CASE. -->
@@ -460,7 +489,10 @@
                  ELSE ST_Multi(ST_SetSRID(ST_GeomFromText(CAST(#{unlockGeometryWkt} AS TEXT)), 4326)) END,
             #{placeId}, #{locationKey}, #{story}, #{captureSource},
             #{captureAccuracyMeters}, #{capturedAt}, #{requiresCheckin},
-            COALESCE(CAST(#{imageUrls} AS TEXT), '[]')::jsonb, #{createdAt}
+            COALESCE(CAST(#{imageUrls} AS TEXT), '[]')::jsonb,
+            COALESCE(CAST(#{findMode} AS TEXT), 'PIN'), #{searchRadiusM}, #{searchCenterLat}, #{searchCenterLng},
+            #{hotColdEnabled}, COALESCE(CAST(#{completionMode} AS TEXT), 'TASK'), #{minStops},
+            #{storyAudioUrl}, #{storyAudioSeconds}, #{createdAt}
         )
     </insert>
 
@@ -570,6 +602,79 @@
 
     <delete id="deleteNotesByVersion">
         DELETE FROM quest_creator_notes
+        WHERE checkpoint_id IN (SELECT id FROM quest_checkpoints WHERE quest_version_id = #{versionId})
+    </delete>
+
+    <!-- ================= finding clues (§3.14.1) ================= -->
+    <resultMap id="ClueMap" type="com.ds.goroute.quest.domain.QuestCheckpointClue">
+        <id property="id" column="id"/>
+        <result property="checkpointId" column="checkpoint_id"/>
+        <result property="tier" column="tier"/>
+        <result property="kind" column="kind"/>
+        <result property="text" column="text"/>
+        <result property="imageUrl" column="image_url"/>
+        <result property="costStars" column="cost_stars"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <select id="findCluesByCheckpointIds" resultMap="ClueMap">
+        SELECT id, checkpoint_id, tier, kind, text, image_url, cost_stars, created_at
+        FROM quest_checkpoint_clues
+        WHERE checkpoint_id IN
+        <foreach collection="checkpointIds" item="cid" open="(" separator="," close=")">#{cid}</foreach>
+        ORDER BY checkpoint_id, tier
+    </select>
+
+    <insert id="insertClue">
+        INSERT INTO quest_checkpoint_clues (id, checkpoint_id, tier, kind, text, image_url, cost_stars, created_at)
+        VALUES (#{id}, #{checkpointId}, #{tier}, #{kind}, #{text}, #{imageUrl}, #{costStars}, #{createdAt})
+    </insert>
+
+    <delete id="deleteCluesByVersion">
+        DELETE FROM quest_checkpoint_clues
+        WHERE checkpoint_id IN (SELECT id FROM quest_checkpoints WHERE quest_version_id = #{versionId})
+    </delete>
+
+    <!-- ================= storytelling points (§3.14.2) ================= -->
+    <resultMap id="StopMap" type="com.ds.goroute.quest.domain.QuestCheckpointStop">
+        <id property="id" column="id"/>
+        <result property="checkpointId" column="checkpoint_id"/>
+        <result property="sortOrder" column="sort_order"/>
+        <result property="name" column="name"/>
+        <result property="category" column="category"/>
+        <result property="latitude" column="latitude"/>
+        <result property="longitude" column="longitude"/>
+        <result property="radiusM" column="radius_m"/>
+        <result property="story" column="story"/>
+        <result property="imageUrls" column="image_urls"/>
+        <result property="audioUrl" column="audio_url"/>
+        <result property="audioSeconds" column="audio_seconds"/>
+        <result property="placeId" column="place_id"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <select id="findStopsByCheckpointIds" resultMap="StopMap">
+        SELECT id, checkpoint_id, sort_order, name, category, latitude, longitude, radius_m, story,
+               image_urls, audio_url, audio_seconds, place_id, created_at
+        FROM quest_checkpoint_stops
+        WHERE checkpoint_id IN
+        <foreach collection="checkpointIds" item="cid" open="(" separator="," close=")">#{cid}</foreach>
+        ORDER BY checkpoint_id, sort_order, id
+    </select>
+
+    <insert id="insertStop">
+        INSERT INTO quest_checkpoint_stops (
+            id, checkpoint_id, sort_order, name, category, latitude, longitude, radius_m, story,
+            image_urls, audio_url, audio_seconds, place_id, created_at
+        ) VALUES (
+            #{id}, #{checkpointId}, #{sortOrder}, #{name}, #{category}, #{latitude}, #{longitude},
+            #{radiusM}, #{story}, COALESCE(CAST(#{imageUrls} AS TEXT), '[]')::jsonb, #{audioUrl},
+            #{audioSeconds}, #{placeId}, #{createdAt}
+        )
+    </insert>
+
+    <delete id="deleteStopsByVersion">
+        DELETE FROM quest_checkpoint_stops
         WHERE checkpoint_id IN (SELECT id FROM quest_checkpoints WHERE quest_version_id = #{versionId})
     </delete>
 

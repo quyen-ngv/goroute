@@ -129,12 +129,17 @@
         <result property="checkinId" column="checkin_id"/>
         <result property="checkinState" column="checkin_state"/>
         <result property="dataVersion" column="data_version"/>
+        <result property="lastProximityM" column="last_proximity_m"/>
+        <result property="lastProximityAt" column="last_proximity_at"/>
+        <result property="proximityBand" column="proximity_band"/>
+        <result property="proximityTrend" column="proximity_trend"/>
     </resultMap>
 
     <sql id="RunCheckpointColumns">
         id, run_id, member_id, checkpoint_id, gps_override, distance_meters, accuracy_meters,
         stable_streak, last_sample_at, last_sample_lat, last_sample_lng, last_sample_id,
-        unlocked_at, checkin_id, checkin_state, data_version
+        unlocked_at, checkin_id, checkin_state, data_version,
+        last_proximity_m, last_proximity_at, proximity_band, proximity_trend
     </sql>
 
     <insert id="insertRunCheckpoint">
@@ -177,6 +182,17 @@
     <update id="updateRunCheckpointCheckin">
         UPDATE quest_run_checkpoints
         SET checkin_id = #{checkinId}, checkin_state = #{checkinState}, data_version = data_version + 1
+        WHERE id = #{id}
+    </update>
+
+    <!-- Hot/cold (§3.14.1): the distance stays on the server; only band and trend go out. -->
+    <update id="updateRunCheckpointProximity">
+        UPDATE quest_run_checkpoints SET
+            last_proximity_m = #{lastProximityM},
+            last_proximity_at = #{lastProximityAt},
+            proximity_band = #{proximityBand},
+            proximity_trend = #{proximityTrend},
+            data_version = data_version + 1
         WHERE id = #{id}
     </update>
 
@@ -258,5 +274,65 @@
             #{accuracyMeters}, #{capturedAt}, #{createdAt}
         )
     </insert>
+
+    <!-- ================= finding clues bought (§3.14.1) ================= -->
+    <resultMap id="RunClueMap" type="com.ds.goroute.quest.domain.QuestRunClue">
+        <id property="id" column="id"/>
+        <result property="runId" column="run_id"/>
+        <result property="memberId" column="member_id"/>
+        <result property="checkpointId" column="checkpoint_id"/>
+        <result property="tier" column="tier"/>
+        <result property="starsSpent" column="stars_spent"/>
+        <result property="starTransactionId" column="star_transaction_id"/>
+        <result property="boughtAt" column="bought_at"/>
+    </resultMap>
+
+    <!-- Idempotent: a repeated purchase of the same tier inserts nothing (returns 0). -->
+    <insert id="insertRunClue">
+        INSERT INTO quest_run_clues (
+            id, run_id, member_id, checkpoint_id, tier, stars_spent, star_transaction_id, bought_at
+        ) VALUES (
+            #{id}, #{runId}, #{memberId}, #{checkpointId}, #{tier}, #{starsSpent}, #{starTransactionId}, #{boughtAt}
+        )
+        ON CONFLICT (member_id, checkpoint_id, tier) DO NOTHING
+    </insert>
+
+    <select id="findRunCluesByMember" resultMap="RunClueMap">
+        SELECT id, run_id, member_id, checkpoint_id, tier, stars_spent, star_transaction_id, bought_at
+        FROM quest_run_clues WHERE member_id = #{memberId}
+        ORDER BY checkpoint_id, tier
+    </select>
+
+    <!-- ================= storytelling points heard (§3.14.2) ================= -->
+    <resultMap id="RunStopVisitMap" type="com.ds.goroute.quest.domain.QuestRunStopVisit">
+        <id property="id" column="id"/>
+        <result property="runId" column="run_id"/>
+        <result property="memberId" column="member_id"/>
+        <result property="checkpointId" column="checkpoint_id"/>
+        <result property="stopId" column="stop_id"/>
+        <result property="via" column="via"/>
+        <result property="countsTowardCompletion" column="counts_toward_completion"/>
+        <result property="visitedAt" column="visited_at"/>
+    </resultMap>
+
+    <!-- Idempotent per (member, stop). A counting GPS visit after a TAP upgrades the row; nothing
+         ever downgrades one that already counts. -->
+    <insert id="upsertRunStopVisit">
+        INSERT INTO quest_run_stop_visits (
+            id, run_id, member_id, checkpoint_id, stop_id, via, counts_toward_completion, visited_at
+        ) VALUES (
+            #{id}, #{runId}, #{memberId}, #{checkpointId}, #{stopId}, #{via}, #{countsTowardCompletion}, #{visitedAt}
+        )
+        ON CONFLICT (member_id, stop_id) DO UPDATE SET
+            via = CASE WHEN EXCLUDED.counts_toward_completion AND NOT quest_run_stop_visits.counts_toward_completion
+                       THEN EXCLUDED.via ELSE quest_run_stop_visits.via END,
+            counts_toward_completion = quest_run_stop_visits.counts_toward_completion
+                                       OR EXCLUDED.counts_toward_completion
+    </insert>
+
+    <select id="findRunStopVisitsByMember" resultMap="RunStopVisitMap">
+        SELECT id, run_id, member_id, checkpoint_id, stop_id, via, counts_toward_completion, visited_at
+        FROM quest_run_stop_visits WHERE member_id = #{memberId}
+    </select>
 
 </mapper>

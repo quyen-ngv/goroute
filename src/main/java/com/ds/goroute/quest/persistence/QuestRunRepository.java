@@ -4,8 +4,10 @@ import com.ds.goroute.quest.domain.QuestEntitlement;
 import com.ds.goroute.quest.domain.QuestLocationSample;
 import com.ds.goroute.quest.domain.QuestRun;
 import com.ds.goroute.quest.domain.QuestRunCheckpoint;
+import com.ds.goroute.quest.domain.QuestRunClue;
 import com.ds.goroute.quest.domain.QuestRunMember;
 import com.ds.goroute.quest.domain.QuestRunQuestion;
+import com.ds.goroute.quest.domain.QuestRunStopVisit;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
@@ -115,5 +117,26 @@ public class QuestRunRepository {
 
     public void insertLocationSample(QuestLocationSample sample) {
         mapper.insertLocationSample(sample);
+    }
+
+    public void updateRunCheckpointProximity(QuestRunCheckpoint checkpoint) {
+        mapper.updateRunCheckpointProximity(checkpoint);
+    }
+
+    /** False when this member already owned the tier (nothing inserted). */
+    public boolean insertRunClue(QuestRunClue clue) {
+        return mapper.insertRunClue(clue) == 1;
+    }
+
+    public List<QuestRunClue> findRunClues(UUID memberId) {
+        return mapper.findRunCluesByMember(memberId);
+    }
+
+    public void upsertRunStopVisit(QuestRunStopVisit visit) {
+        mapper.upsertRunStopVisit(visit);
+    }
+
+    public List<QuestRunStopVisit> findRunStopVisits(UUID memberId) {
+        return mapper.findRunStopVisitsByMember(memberId);
     }
 }

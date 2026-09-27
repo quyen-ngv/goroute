@@ -4,8 +4,10 @@ import com.ds.goroute.quest.domain.QuestEntitlement;
 import com.ds.goroute.quest.domain.QuestLocationSample;
 import com.ds.goroute.quest.domain.QuestRun;
 import com.ds.goroute.quest.domain.QuestRunCheckpoint;
+import com.ds.goroute.quest.domain.QuestRunClue;
 import com.ds.goroute.quest.domain.QuestRunMember;
 import com.ds.goroute.quest.domain.QuestRunQuestion;
+import com.ds.goroute.quest.domain.QuestRunStopVisit;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -57,6 +59,8 @@ public interface QuestRunMapper {
 
     int updateRunCheckpointSample(QuestRunCheckpoint checkpoint);
 
+    int updateRunCheckpointProximity(QuestRunCheckpoint checkpoint);
+
     int updateRunCheckpointCheckin(@Param("id") UUID id, @Param("checkinId") UUID checkinId,
                                    @Param("checkinState") String checkinState);
 
@@ -76,4 +80,13 @@ public interface QuestRunMapper {
 
     // --- location samples --------------------------------------------------------------
     void insertLocationSample(QuestLocationSample sample);
+
+    // --- finding clues bought and storytelling points heard (§3.14) ---------------------
+    int insertRunClue(QuestRunClue clue);
+
+    List<QuestRunClue> findRunCluesByMember(@Param("memberId") UUID memberId);
+
+    int upsertRunStopVisit(QuestRunStopVisit visit);
+
+    List<QuestRunStopVisit> findRunStopVisitsByMember(@Param("memberId") UUID memberId);
 }

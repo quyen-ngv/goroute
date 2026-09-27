@@ -39,4 +39,11 @@ public interface FileUploadService {
 
     /** Operator upload through a fixed storage prefix, for curated (non-user) video assets. */
     String uploadVideo(String objectPrefix, MultipartFile file);
+
+    /**
+     * A creator's voice recording for a quest story (§3.14.3): m4a, aac or mp3, at most 10 MB,
+     * recognised by its bytes rather than its declared type. There is no automatic audio filter;
+     * a reviewer listens to each clip before a quest is published.
+     */
+    String uploadAudio(UUID userId, MultipartFile file);
 }
