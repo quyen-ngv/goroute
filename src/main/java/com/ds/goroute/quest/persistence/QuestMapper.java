@@ -2,6 +2,8 @@ package com.ds.goroute.quest.persistence;
 
 import com.ds.goroute.quest.domain.Quest;
 import com.ds.goroute.quest.domain.QuestCheckpoint;
+import com.ds.goroute.quest.domain.QuestCheckpointClue;
+import com.ds.goroute.quest.domain.QuestCheckpointStop;
 import com.ds.goroute.quest.domain.QuestCreatorNote;
 import com.ds.goroute.quest.domain.QuestCreatorProfile;
 import com.ds.goroute.quest.domain.QuestQuestion;
@@ -81,6 +83,8 @@ public interface QuestMapper {
 
     long countForReview(@Param("statuses") List<String> statuses);
 
+    int clearPendingChangeReview(@Param("id") UUID id, @Param("updatedAt") LocalDateTime updatedAt);
+
     void insertReviewDecision(com.ds.goroute.quest.domain.QuestReviewDecisionRow decision);
 
     void insertReviewComment(com.ds.goroute.quest.domain.QuestReviewComment comment);
@@ -133,4 +137,17 @@ public interface QuestMapper {
     int deleteNotesByVersion(@Param("versionId") UUID versionId);
 
     int deleteCheckpointsByVersion(@Param("versionId") UUID versionId);
+
+    // --- finding clues and storytelling points (§3.14) ---------------------------------
+    List<QuestCheckpointClue> findCluesByCheckpointIds(@Param("checkpointIds") List<UUID> checkpointIds);
+
+    void insertClue(QuestCheckpointClue clue);
+
+    int deleteCluesByVersion(@Param("versionId") UUID versionId);
+
+    List<QuestCheckpointStop> findStopsByCheckpointIds(@Param("checkpointIds") List<UUID> checkpointIds);
+
+    void insertStop(QuestCheckpointStop stop);
+
+    int deleteStopsByVersion(@Param("versionId") UUID versionId);
 }

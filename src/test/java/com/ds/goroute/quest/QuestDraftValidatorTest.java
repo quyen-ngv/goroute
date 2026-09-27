@@ -2,6 +2,8 @@ package com.ds.goroute.quest;
 
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.quest.domain.QuestCheckpoint;
+import com.ds.goroute.quest.domain.QuestCheckpointClue;
+import com.ds.goroute.quest.domain.QuestCheckpointStop;
 import com.ds.goroute.quest.domain.QuestQuestion;
 import com.ds.goroute.quest.domain.QuestQuestionChoice;
 import com.ds.goroute.quest.domain.QuestVersion;
@@ -45,6 +47,101 @@ class QuestDraftValidatorTest {
         when(config.getInt(BusinessConfigKey.QUEST_MAX_BONUS_QUESTIONS)).thenReturn(2);
         when(config.getInt(BusinessConfigKey.QUEST_CHOICE_MIN_OPTIONS)).thenReturn(3);
         when(config.getInt(BusinessConfigKey.QUEST_CHOICE_MAX_OPTIONS)).thenReturn(5);
+        when(config.getInt(BusinessConfigKey.QUEST_UNLOCK_RADIUS_METERS)).thenReturn(40);
+        when(config.getInt(BusinessConfigKey.QUEST_CLUE_MAX_STARS)).thenReturn(50);
+        when(config.getInt(BusinessConfigKey.QUEST_MAX_STOPS_PER_CHECKPOINT)).thenReturn(20);
+        when(config.getInt(BusinessConfigKey.QUEST_STOP_MAX_DISTANCE_M)).thenReturn(1000);
+        when(config.getInt(BusinessConfigKey.QUEST_AUDIO_MAX_SECONDS)).thenReturn(300);
+    }
+
+    // --- §3.14 dynamic checkpoints --------------------------------------------------
+
+    @Test
+    @DisplayName("§3.14 ARRIVE: a guide-only checkpoint with a story passes without any task")
+    void arriveWithStoryPasses() {
+        QuestCheckpoint guide = checkpoint(true);
+        guide.setCompletionMode("ARRIVE");
+        guide.setStory("Built in 1865 by the guild of silversmiths.");
+        QuestVersion version = version(checkpoint(true, textQuestion()), guide);
+
+        assertThatCode(() -> validator.validateForSubmit(version)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("§3.14 ARRIVE: nothing to take in, or a required task, is rejected")
+    void arriveRules() {
+        QuestCheckpoint empty = checkpoint(true);
+        empty.setCompletionMode("ARRIVE");
+        assertThatThrownBy(() -> validator.validateForSubmit(version(checkpoint(true, textQuestion()), empty)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("needs a story, a recording or a storytelling point");
+
+        QuestCheckpoint withTask = checkpoint(true, textQuestion());
+        withTask.setCompletionMode("ARRIVE");
+        withTask.setStory("A story");
+        assertThatThrownBy(() -> validator.validateForSubmit(version(checkpoint(true, textQuestion()), withTask)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("guide-only");
+    }
+
+    @Test
+    @DisplayName("§3.14 STOPS: min stops must be 1 to the number of points")
+    void stopsMinRange() {
+        QuestCheckpoint cp = checkpoint(true);
+        cp.setCompletionMode("STOPS");
+        cp.setMinStops(2);
+        cp.setStops(List.of(stop("Bridge", "21.0290", "105.8525", 30)));
+
+        assertThatThrownBy(() -> validator.validateForSubmit(version(checkpoint(true, textQuestion()), cp)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("must ask for 1 to 1 storytelling points");
+
+        cp.setMinStops(1);
+        assertThatCode(() -> validator.validateForSubmit(version(checkpoint(true, textQuestion()), cp)))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("§3.14 storytelling point: radius 10–100 m, within the distance limit, audio length capped")
+    void stopRules() {
+        QuestCheckpoint cp = checkpoint(true, textQuestion());
+        QuestCheckpointStop far = stop("Far away", "21.0500", "105.8524", 30);
+        QuestCheckpointStop wide = stop("Too wide", "21.0289", "105.8524", 150);
+        QuestCheckpointStop longAudio = stop("Long", "21.0289", "105.8524", 30);
+        longAudio.setAudioUrl("https://cdn.example/a.m4a");
+        longAudio.setAudioSeconds(301);
+        cp.setStops(List.of(far, wide, longAudio));
+
+        assertThatThrownBy(() -> validator.validateForSubmit(version(checkpoint(true, textQuestion()), cp)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("more than 1000 m from its checkpoint")
+                .hasMessageContaining("radius of 10–100 m")
+                .hasMessageContaining("longer than 300 seconds");
+    }
+
+    @Test
+    @DisplayName("§3.14 AREA: search radius must exceed the unlock radius; REVEAL must be the last clue")
+    void areaRules() {
+        QuestCheckpoint cp = checkpoint(true, textQuestion());
+        cp.setFindMode("AREA");
+        cp.setRadiusM(60);
+        cp.setSearchRadiusM(60);
+        cp.setClues(List.of(
+                QuestCheckpointClue.builder().tier(1).kind("REVEAL").costStars(0).build(),
+                QuestCheckpointClue.builder().tier(2).kind("TEXT").text("Near the well").costStars(60).build()));
+
+        assertThatThrownBy(() -> validator.validateForSubmit(version(checkpoint(true, textQuestion()), cp)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("larger than its unlock radius")
+                .hasMessageContaining("pin reveal must be the last clue")
+                .hasMessageContaining("must cost 0 to 50 Stars");
+
+        cp.setSearchRadiusM(200);
+        cp.setClues(List.of(
+                QuestCheckpointClue.builder().tier(1).kind("TEXT").text("Near the well").costStars(5).build(),
+                QuestCheckpointClue.builder().tier(2).kind("REVEAL").costStars(20).build()));
+        assertThatCode(() -> validator.validateForSubmit(version(checkpoint(true, textQuestion()), cp)))
+                .doesNotThrowAnyException();
     }
 
     @Test
@@ -157,6 +254,12 @@ class QuestDraftValidatorTest {
                 .requiresCheckin(false)
                 .questions(new ArrayList<>(List.of(questions)))
                 .build();
+    }
+
+    private static QuestCheckpointStop stop(String name, String lat, String lng, int radius) {
+        return QuestCheckpointStop.builder()
+                .id(UUID.randomUUID()).name(name).latitude(new BigDecimal(lat)).longitude(new BigDecimal(lng))
+                .radiusM(radius).build();
     }
 
     private static QuestQuestion textQuestion() {

@@ -11,5 +11,7 @@ public record QuestReviewQueueItem(
         String title,
         UUID creatorId,
         long dataVersion,
-        LocalDateTime updatedAt) {
+        LocalDateTime updatedAt,
+        /** A live edit went out without review (D18) and waits to be looked at. */
+        boolean pendingChangeReview) {
 }

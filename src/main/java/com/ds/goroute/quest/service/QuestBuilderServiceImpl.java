@@ -5,6 +5,8 @@ import com.ds.goroute.dto.response.PageResponse;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.quest.domain.Quest;
 import com.ds.goroute.quest.domain.QuestCheckpoint;
+import com.ds.goroute.quest.domain.QuestCheckpointClue;
+import com.ds.goroute.quest.domain.QuestCheckpointStop;
 import com.ds.goroute.quest.domain.QuestCreatorNote;
 import com.ds.goroute.quest.domain.QuestCreatorProfile;
 import com.ds.goroute.quest.domain.QuestQuestion;
@@ -16,6 +18,9 @@ import com.ds.goroute.quest.dto.QuestSummaryResponse;
 import com.ds.goroute.quest.dto.SaveQuestDraftRequest;
 import com.ds.goroute.quest.persistence.QuestRepository;
 import com.ds.goroute.service.marketplace.MarketplaceJson;
+import com.ds.goroute.type.QuestClueKind;
+import com.ds.goroute.type.QuestCompletionMode;
+import com.ds.goroute.type.QuestFindMode;
 import com.ds.goroute.type.QuestOrigin;
 import com.ds.goroute.type.QuestStatus;
 import lombok.RequiredArgsConstructor;
@@ -40,6 +45,14 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
     /** The trip activity categories a checkpoint may carry (the app's ActivityCategoryPickerGrid). */
     static final java.util.Set<String> CHECKPOINT_CATEGORIES = java.util.Set.of(
             "restaurant", "hotel", "beach", "attraction", "shopping", "spiritual", "nature", "entertainment");
+    /** Finding clues per AREA checkpoint (§3.14.1); the tier column only holds 1–3. */
+    static final int MAX_CLUES = 3;
+    /**
+     * Storytelling points a save accepts at all. The configured MAX_STOPS_PER_CHECKPOINT is checked
+     * on submit; this only keeps a draft from growing without bound (the key's own ceiling).
+     */
+    static final int MAX_STOPS_HARD_CAP = 50;
+    static final int DEFAULT_STOP_RADIUS_M = 30;
 
     private final QuestRepository repository;
     private final QuestDraftValidator validator;
@@ -145,7 +158,7 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
         repository.updateVersionContent(version);
 
         repository.clearVersionContent(versionId);
-        insertGraph(versionId, actorUserId, request, now);
+        insertGraph(questId, versionId, actorUserId, request, now);
 
         return getDraft(questId, actorUserId, false);
     }
@@ -175,7 +188,7 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
                 .build();
         applyScalars(next, request);
         repository.insertVersion(next);
-        insertGraph(versionId, actorUserId, request, now);
+        insertGraph(quest.getId(), versionId, actorUserId, request, now);
         // Live content must stay submittable: the new version replaces what players get at once.
         validator.validateForSubmit(repository.loadVersionGraph(versionId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Edited version missing")));
@@ -325,12 +338,19 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
         version.setRunExpiryHours(request.getRunExpiryHours());
     }
 
-    private void insertGraph(UUID versionId, UUID actorUserId, SaveQuestDraftRequest request, LocalDateTime now) {
+    private void insertGraph(UUID questId, UUID versionId, UUID actorUserId, SaveQuestDraftRequest request,
+                             LocalDateTime now) {
         List<SaveQuestDraftRequest.CheckpointInput> checkpoints =
                 request.getCheckpoints() == null ? List.of() : request.getCheckpoints();
         for (int i = 0; i < checkpoints.size(); i++) {
             SaveQuestDraftRequest.CheckpointInput input = checkpoints.get(i);
+            int position = i + 1;
             UUID checkpointId = UUID.randomUUID();
+            QuestFindMode findMode = findMode(input, position);
+            boolean area = findMode == QuestFindMode.AREA;
+            QuestCompletionMode completionMode = completionMode(input, position);
+            QuestSearchArea.Center center = area ? searchCenter(questId, input) : null;
+            String storyAudioUrl = audioUrl(input.getStoryAudioUrl(), "Checkpoint " + position);
             QuestCheckpoint checkpoint = QuestCheckpoint.builder()
                     .id(checkpointId)
                     .questVersionId(versionId)
@@ -347,13 +367,168 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
                     .capturedAt(input.getCapturedAt())
                     .requiresCheckin(input.isRequiresCheckin())
                     .imageUrls(json.write(checkpointImages(input, i + 1)))
+                    .findMode(findMode.name())
+                    // A PIN checkpoint keeps no search settings, whatever the client sent.
+                    .searchRadiusM(area ? input.getSearchRadiusM() : null)
+                    .searchCenterLat(center == null ? null : center.latitude())
+                    .searchCenterLng(center == null ? null : center.longitude())
+                    .hotColdEnabled(area && input.isHotColdEnabled())
+                    .completionMode(completionMode.name())
+                    .minStops(completionMode == QuestCompletionMode.STOPS ? input.getMinStops() : null)
+                    .storyAudioUrl(storyAudioUrl)
+                    .storyAudioSeconds(storyAudioUrl == null ? null : input.getStoryAudioSeconds())
                     .createdAt(now)
                     .build();
             repository.insertCheckpoint(checkpoint);
 
             insertQuestions(checkpointId, input, now);
             insertNotes(checkpointId, actorUserId, input, now);
+            if (area) {
+                insertClues(checkpointId, input, position, now);
+            }
+            insertStops(checkpointId, input, position, now);
         }
+    }
+
+    private QuestFindMode findMode(SaveQuestDraftRequest.CheckpointInput input, int position) {
+        String value = input.getFindMode();
+        if (value == null || value.isBlank()) {
+            return QuestFindMode.PIN;
+        }
+        try {
+            return QuestFindMode.valueOf(value);
+        } catch (IllegalArgumentException ex) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "Checkpoint " + position + " has an unknown find mode");
+        }
+    }
+
+    private QuestCompletionMode completionMode(SaveQuestDraftRequest.CheckpointInput input, int position) {
+        String value = input.getCompletionMode();
+        if (value == null || value.isBlank()) {
+            return QuestCompletionMode.TASK;
+        }
+        try {
+            return QuestCompletionMode.valueOf(value);
+        } catch (IllegalArgumentException ex) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "Checkpoint " + position + " has an unknown completion mode");
+        }
+    }
+
+    /**
+     * The search circle's centre, or null while the checkpoint has no spot or search radius yet (a
+     * draft may be saved half-done; submit rejects it then). Seeded, so it moves only when the spot
+     * or a radius does.
+     */
+    private QuestSearchArea.Center searchCenter(UUID questId, SaveQuestDraftRequest.CheckpointInput input) {
+        Integer search = input.getSearchRadiusM();
+        if (input.getLatitude() == null || input.getLongitude() == null || search == null) {
+            return null;
+        }
+        int unlock = input.getRadiusM() == null ? 0 : input.getRadiusM();
+        return QuestSearchArea.center(questId, input.getLatitude(), input.getLongitude(), unlock, search);
+    }
+
+    private void insertClues(UUID checkpointId, SaveQuestDraftRequest.CheckpointInput input, int position,
+                             LocalDateTime now) {
+        List<SaveQuestDraftRequest.ClueInput> clues = input.getClues() == null ? List.of() : input.getClues();
+        if (clues.size() > MAX_CLUES) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "Checkpoint " + position + " has more than " + MAX_CLUES + " clues");
+        }
+        for (int t = 0; t < clues.size(); t++) {
+            SaveQuestDraftRequest.ClueInput clue = clues.get(t);
+            QuestClueKind kind;
+            try {
+                kind = QuestClueKind.valueOf(clue.getKind());
+            } catch (RuntimeException ex) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                        "Checkpoint " + position + " has a clue of unknown kind");
+            }
+            String where = "Checkpoint " + position + " clue " + (t + 1);
+            // Tiers are the position in the ladder: the client's numbering is not trusted.
+            repository.insertClue(QuestCheckpointClue.builder()
+                    .id(UUID.randomUUID())
+                    .checkpointId(checkpointId)
+                    .tier(t + 1)
+                    .kind(kind.name())
+                    .text(blankToNull(clue.getText()))
+                    .imageUrl(kind == QuestClueKind.PHOTO ? httpUrl(clue.getImageUrl(), where) : null)
+                    .costStars(clue.getCostStars() == null ? 0 : Math.max(0, clue.getCostStars()))
+                    .createdAt(now)
+                    .build());
+        }
+    }
+
+    private void insertStops(UUID checkpointId, SaveQuestDraftRequest.CheckpointInput input, int position,
+                             LocalDateTime now) {
+        List<SaveQuestDraftRequest.StopInput> stops = input.getStops() == null ? List.of() : input.getStops();
+        if (stops.size() > MAX_STOPS_HARD_CAP) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "Checkpoint " + position + " has too many storytelling points");
+        }
+        for (int k = 0; k < stops.size(); k++) {
+            SaveQuestDraftRequest.StopInput stop = stops.get(k);
+            String where = "Checkpoint " + position + " storytelling point " + (k + 1);
+            if (stop.getLatitude() == null || stop.getLongitude() == null) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, where + " has no location");
+            }
+            String category = stop.getCategory();
+            if (category != null && !category.isBlank() && !CHECKPOINT_CATEGORIES.contains(category)) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, where + " has an unknown category");
+            }
+            String audio = audioUrl(stop.getAudioUrl(), where);
+            List<String> images = imageUrls(stop.getImageUrls(), where);
+            repository.insertStop(QuestCheckpointStop.builder()
+                    .id(UUID.randomUUID())
+                    .checkpointId(checkpointId)
+                    .sortOrder(k)
+                    .name(stop.getName())
+                    .category(category == null || category.isBlank() ? null : category)
+                    .latitude(stop.getLatitude())
+                    .longitude(stop.getLongitude())
+                    .radiusM(stop.getRadiusM() == null ? DEFAULT_STOP_RADIUS_M : stop.getRadiusM())
+                    .story(stop.getStory())
+                    .imageUrls(json.write(images))
+                    .audioUrl(audio)
+                    .audioSeconds(audio == null ? null : stop.getAudioSeconds())
+                    .placeId(stop.getPlaceId())
+                    .createdAt(now)
+                    .build());
+        }
+    }
+
+    /** Photo URLs with blanks dropped; more than {@link #MAX_CHECKPOINT_IMAGES} or a non-URL is refused. */
+    private List<String> imageUrls(List<String> raw, String where) {
+        List<String> urls = raw == null ? List.of() : raw.stream()
+                .filter(url -> url != null && !url.isBlank())
+                .map(String::trim)
+                .toList();
+        if (urls.size() > MAX_CHECKPOINT_IMAGES) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    where + " has more than " + MAX_CHECKPOINT_IMAGES + " photos");
+        }
+        urls.forEach(url -> httpUrl(url, where));
+        return urls;
+    }
+
+    /** A recording URL, or null when none was given; anything but http(s) is refused. */
+    private String audioUrl(String raw, String where) {
+        String url = blankToNull(raw);
+        return url == null ? null : httpUrl(url, where);
+    }
+
+    private String httpUrl(String raw, String where) {
+        String url = raw == null ? "" : raw.trim();
+        if (!url.startsWith("https://") && !url.startsWith("http://")) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, where + " has a link that is not a URL");
+        }
+        return url;
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private String checkpointCategory(SaveQuestDraftRequest.CheckpointInput input, int position) {
@@ -370,21 +545,7 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
 
     /** The checkpoint's photo URLs, blanks dropped; more than {@link #MAX_CHECKPOINT_IMAGES} is refused. */
     private List<String> checkpointImages(SaveQuestDraftRequest.CheckpointInput input, int position) {
-        List<String> urls = input.getImageUrls() == null ? List.of() : input.getImageUrls().stream()
-                .filter(url -> url != null && !url.isBlank())
-                .map(String::trim)
-                .toList();
-        if (urls.size() > MAX_CHECKPOINT_IMAGES) {
-            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
-                    "Checkpoint " + position + " has more than " + MAX_CHECKPOINT_IMAGES + " photos");
-        }
-        for (String url : urls) {
-            if (!url.startsWith("https://") && !url.startsWith("http://")) {
-                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
-                        "Checkpoint " + position + " has a photo that is not a URL");
-            }
-        }
-        return urls;
+        return imageUrls(input.getImageUrls(), "Checkpoint " + position);
     }
 
     private void insertQuestions(UUID checkpointId, SaveQuestDraftRequest.CheckpointInput input, LocalDateTime now) {

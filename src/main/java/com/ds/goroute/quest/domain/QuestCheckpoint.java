@@ -1,6 +1,8 @@
 package com.ds.goroute.quest.domain;
 
 import com.ds.goroute.type.QuestCaptureSource;
+import com.ds.goroute.type.QuestCompletionMode;
+import com.ds.goroute.type.QuestFindMode;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -43,12 +45,43 @@ public class QuestCheckpoint {
     private boolean requiresCheckin;
     /** JSON array of photo URLs that help a player find the spot (V187); "[]" when none. */
     private String imageUrls;
+    /** PIN or AREA (§3.14.1); see {@link QuestFindMode}. */
+    private String findMode;
+    /** AREA only: radius of the search circle, 50–1000 m and larger than {@code radiusM}. */
+    private Integer searchRadiusM;
+    /** AREA only: centre of the search circle, offset from the real spot, computed on save. */
+    private BigDecimal searchCenterLat;
+    private BigDecimal searchCenterLng;
+    private boolean hotColdEnabled;
+    /** TASK, ARRIVE or STOPS (§3.14); see {@link QuestCompletionMode}. */
+    private String completionMode;
+    private Integer minStops;
+    private String storyAudioUrl;
+    private Integer storyAudioSeconds;
     private LocalDateTime createdAt;
 
     @Builder.Default
     private List<QuestQuestion> questions = new ArrayList<>();
 
+    @Builder.Default
+    private List<QuestCheckpointClue> clues = new ArrayList<>();
+
+    @Builder.Default
+    private List<QuestCheckpointStop> stops = new ArrayList<>();
+
     public QuestCaptureSource capture() {
         return QuestCaptureSource.valueOf(captureSource);
+    }
+
+    public QuestFindMode find() {
+        return QuestFindMode.of(findMode);
+    }
+
+    public QuestCompletionMode completion() {
+        return QuestCompletionMode.of(completionMode);
+    }
+
+    public boolean isArea() {
+        return find() == QuestFindMode.AREA;
     }
 }

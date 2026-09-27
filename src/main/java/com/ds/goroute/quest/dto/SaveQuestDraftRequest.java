@@ -74,6 +74,53 @@ public class SaveQuestDraftRequest {
 
         @ModeratedText(contentType = ModeratedContentType.QUEST_CHECKPOINT, label = "checkpoint.note")
         private List<String> notes = new ArrayList<>();
+
+        /** PIN (default) or AREA, §3.14.1. */
+        private String findMode;
+        /** AREA only: 50–1000 m, larger than {@code radiusM}. The centre is computed by the server. */
+        private Integer searchRadiusM;
+        private boolean hotColdEnabled;
+        /** TASK (default), ARRIVE or STOPS, §3.14. */
+        private String completionMode;
+        /** STOPS only: 1 to the number of storytelling points. */
+        private Integer minStops;
+        /** The creator's recording of {@code story}, a URL from the audio upload endpoint. */
+        private String storyAudioUrl;
+        private Integer storyAudioSeconds;
+        /** AREA only: finding clues, tier 1 first; at most three, REVEAL last. */
+        private List<ClueInput> clues = new ArrayList<>();
+        /** Storytelling points inside this checkpoint (§3.14.2). */
+        private List<StopInput> stops = new ArrayList<>();
+    }
+
+    @Data
+    public static class ClueInput {
+        private Integer tier;
+        /** TEXT, PHOTO or REVEAL. */
+        private String kind;
+        @ModeratedText(contentType = ModeratedContentType.QUEST_CHECKPOINT, label = "clue.text")
+        private String text;
+        private String imageUrl;
+        private Integer costStars;
+    }
+
+    @Data
+    public static class StopInput {
+        /** Accepted for the console's round trip but not reused: every saved version mints new ids. */
+        private UUID stopId;
+        private Integer sortOrder;
+        @ModeratedText(contentType = ModeratedContentType.QUEST_CHECKPOINT, label = "stop.name")
+        private String name;
+        private String category;
+        private BigDecimal latitude;
+        private BigDecimal longitude;
+        private Integer radiusM;
+        @ModeratedText(contentType = ModeratedContentType.QUEST_CHECKPOINT, label = "stop.story")
+        private String story;
+        private List<String> imageUrls = new ArrayList<>();
+        private String audioUrl;
+        private Integer audioSeconds;
+        private UUID placeId;
     }
 
     @Data

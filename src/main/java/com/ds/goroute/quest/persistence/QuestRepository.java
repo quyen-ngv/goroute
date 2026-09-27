@@ -2,6 +2,8 @@ package com.ds.goroute.quest.persistence;
 
 import com.ds.goroute.quest.domain.Quest;
 import com.ds.goroute.quest.domain.QuestCheckpoint;
+import com.ds.goroute.quest.domain.QuestCheckpointClue;
+import com.ds.goroute.quest.domain.QuestCheckpointStop;
 import com.ds.goroute.quest.domain.QuestCreatorNote;
 import com.ds.goroute.quest.domain.QuestCreatorProfile;
 import com.ds.goroute.quest.domain.QuestQuestion;
@@ -58,6 +60,9 @@ public interface QuestRepository {
 
     long countForReview(List<String> statuses);
 
+    /** Clears the post-review flag of a live edit (D18); false when it was not set. */
+    boolean clearPendingChangeReview(UUID id, LocalDateTime updatedAt);
+
     void insertReviewDecision(com.ds.goroute.quest.domain.QuestReviewDecisionRow decision);
 
     void insertReviewComment(com.ds.goroute.quest.domain.QuestReviewComment comment);
@@ -77,7 +82,10 @@ public interface QuestRepository {
 
     Optional<QuestVersion> findVersionById(UUID id);
 
-    /** The version plus its checkpoints, each with its questions, each with its choices. */
+    /**
+     * The version plus its checkpoints, each with its questions (each with its choices), finding
+     * clues and storytelling points.
+     */
     Optional<QuestVersion> loadVersionGraph(UUID versionId);
 
     List<QuestCreatorNote> findNotesByCheckpoints(List<UUID> checkpointIds);
@@ -93,6 +101,10 @@ public interface QuestRepository {
     void insertChoice(com.ds.goroute.quest.domain.QuestQuestionChoice choice);
 
     void insertNote(QuestCreatorNote note);
+
+    void insertClue(QuestCheckpointClue clue);
+
+    void insertStop(QuestCheckpointStop stop);
 
     /** Wipes the whole content graph of a version, deepest table first. */
     void clearVersionContent(UUID versionId);

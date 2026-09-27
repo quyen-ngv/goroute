@@ -68,7 +68,37 @@ public record QuestDraftResponse(
             boolean requiresCheckin,
             List<String> imageUrls,
             List<QuestionView> questions,
-            List<String> notes) {
+            List<String> notes,
+            String findMode,
+            Integer searchRadiusM,
+            /** Centre of the AREA search circle, for the creator and reviewer only. */
+            BigDecimal searchCenterLatitude,
+            BigDecimal searchCenterLongitude,
+            boolean hotColdEnabled,
+            String completionMode,
+            Integer minStops,
+            String storyAudioUrl,
+            Integer storyAudioSeconds,
+            List<ClueView> clues,
+            List<StopView> stops) {
+    }
+
+    public record ClueView(int tier, String kind, String text, String imageUrl, int costStars) {
+    }
+
+    public record StopView(
+            UUID stopId,
+            int sortOrder,
+            String name,
+            String category,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            int radiusM,
+            String story,
+            List<String> imageUrls,
+            String audioUrl,
+            Integer audioSeconds,
+            UUID placeId) {
     }
 
     public record QuestionView(
@@ -97,7 +127,7 @@ public record QuestDraftResponse(
                                         Function<String, List<String>> readStrings) {
         List<CheckpointView> checkpoints = version.getCheckpoints().stream()
                 .map(cp -> checkpointView(cp, notesByCheckpoint.getOrDefault(cp.getId(), List.of()),
-                        readStrings.apply(cp.getImageUrls())))
+                        readStrings))
                 .toList();
         VersionView versionView = new VersionView(
                 version.getId(), n(version.getVersion()), n(version.getContentRevision()),
@@ -113,15 +143,26 @@ public record QuestDraftResponse(
     }
 
     private static CheckpointView checkpointView(QuestCheckpoint cp, List<QuestCreatorNote> notes,
-                                                 List<String> imageUrls) {
+                                                 Function<String, List<String>> readStrings) {
         List<QuestionView> questions = cp.getQuestions().stream()
                 .map(QuestDraftResponse::questionView)
+                .toList();
+        List<ClueView> clues = cp.getClues().stream()
+                .map(c -> new ClueView(n(c.getTier()), c.getKind(), c.getText(), c.getImageUrl(), n(c.getCostStars())))
+                .toList();
+        List<StopView> stops = cp.getStops().stream()
+                .map(s -> new StopView(s.getId(), n(s.getSortOrder()), s.getName(), s.getCategory(),
+                        s.getLatitude(), s.getLongitude(), n(s.getRadiusM()), s.getStory(),
+                        readStrings.apply(s.getImageUrls()), s.getAudioUrl(), s.getAudioSeconds(), s.getPlaceId()))
                 .toList();
         return new CheckpointView(cp.getId(), n(cp.getSortOrder()), cp.getName(), cp.getCategory(),
                 cp.getLatitude(),
                 cp.getLongitude(), cp.getRadiusM(), cp.getPlaceId(), cp.getStory(), cp.getCaptureSource(),
-                cp.isRequiresCheckin(), imageUrls, questions,
-                notes.stream().map(QuestCreatorNote::getNote).toList());
+                cp.isRequiresCheckin(), readStrings.apply(cp.getImageUrls()), questions,
+                notes.stream().map(QuestCreatorNote::getNote).toList(),
+                cp.find().name(), cp.getSearchRadiusM(), cp.getSearchCenterLat(), cp.getSearchCenterLng(),
+                cp.isHotColdEnabled(), cp.completion().name(), cp.getMinStops(),
+                cp.getStoryAudioUrl(), cp.getStoryAudioSeconds(), clues, stops);
     }
 
     private static QuestionView questionView(QuestQuestion q) {

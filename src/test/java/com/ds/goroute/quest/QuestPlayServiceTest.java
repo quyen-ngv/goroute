@@ -17,6 +17,7 @@ import com.ds.goroute.quest.dto.QuestArrivalResponse;
 import com.ds.goroute.quest.persistence.QuestRepository;
 import com.ds.goroute.quest.persistence.QuestRunRepository;
 import com.ds.goroute.quest.service.QuestAnswerGrader;
+import com.ds.goroute.quest.service.QuestEconomyService;
 import com.ds.goroute.quest.service.QuestPlayService;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.StarService;
@@ -60,6 +61,7 @@ class QuestPlayServiceTest {
     @Mock private BusinessConfigService config;
     @Mock private StarService starService;
     @Mock private PassportMapper passportMapper;
+    @Mock private QuestEconomyService economyService;
 
     private QuestPlayService service;
 
@@ -78,7 +80,8 @@ class QuestPlayServiceTest {
     @BeforeEach
     void setUp() {
         service = new QuestPlayService(questRepository, runRepository, checkinVerifier,
-                new QuestAnswerGrader(), config, starService, passportMapper, new MarketplaceJson(new ObjectMapper()));
+                new QuestAnswerGrader(), config, starService, passportMapper, new MarketplaceJson(new ObjectMapper()),
+                economyService);
 
         when(config.getInt(BusinessConfigKey.QUEST_ARRIVAL_STABLE_SAMPLES)).thenReturn(1);
         when(config.getInt(BusinessConfigKey.QUEST_UNLOCK_RADIUS_METERS)).thenReturn(40);

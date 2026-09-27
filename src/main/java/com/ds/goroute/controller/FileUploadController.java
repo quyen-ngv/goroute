@@ -30,6 +30,14 @@ public class FileUploadController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(fileUploadService.uploadImage(userId, file)));
     }
 
+    /** A quest creator's voice recording (§3.14.3): m4a, aac or mp3, at most 10 MB. */
+    @PostMapping("/upload-audio")
+    public ResponseEntity<BaseResponse<String>> uploadAudio(
+            @RequestParam("file") MultipartFile file,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(fileUploadService.uploadAudio(userId, file)));
+    }
+
     /**
      * Each image reports its own outcome, so a photo rejected for its content does not
      * fail the rest of the batch and the app can show that one photo differently from a
