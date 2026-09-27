@@ -103,6 +103,16 @@ public class QuestRepositoryImpl implements QuestRepository {
     }
 
     @Override
+    public boolean publishEdit(UUID id, long expectedVersion, UUID versionId, LocalDateTime updatedAt) {
+        return mapper.publishEdit(id, expectedVersion, versionId, updatedAt) == 1;
+    }
+
+    @Override
+    public boolean softDeleteQuest(UUID id, long expectedVersion, LocalDateTime updatedAt) {
+        return mapper.softDeleteQuest(id, expectedVersion, updatedAt) == 1;
+    }
+
+    @Override
     public List<com.ds.goroute.quest.domain.QuestListItem> findPublicQuests(String provinceCode, String language,
                                                                             int limit, int offset) {
         return mapper.findPublicQuests(provinceCode, language, limit, offset);

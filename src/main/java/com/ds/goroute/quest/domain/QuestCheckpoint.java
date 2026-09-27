@@ -27,6 +27,8 @@ public class QuestCheckpoint {
     private UUID questVersionId;
     private Integer sortOrder;
     private String name;
+    /** Trip activity category id (V188); null when the creator set none. */
+    private String category;
     private BigDecimal latitude;
     private BigDecimal longitude;
     private Integer radiusM;
@@ -39,6 +41,8 @@ public class QuestCheckpoint {
     private BigDecimal captureAccuracyMeters;
     private LocalDateTime capturedAt;
     private boolean requiresCheckin;
+    /** JSON array of photo URLs that help a player find the spot (V187); "[]" when none. */
+    private String imageUrls;
     private LocalDateTime createdAt;
 
     @Builder.Default

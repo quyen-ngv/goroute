@@ -28,5 +28,11 @@ public interface QuestBuilderService {
      */
     QuestDraftResponse submit(UUID questId, UUID actorUserId, Long expectedVersion, boolean enforceCreatorGate);
 
+    /**
+     * Soft-deletes the creator's own quest. Only a quest that never went live can go: DRAFT or
+     * DENIED. Anything under review or published has to be withdrawn by an operator.
+     */
+    void delete(UUID questId, UUID actorUserId, Long expectedVersion);
+
     PageResponse<QuestSummaryResponse> listMine(UUID actorUserId, String status, int page, int size);
 }

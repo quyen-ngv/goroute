@@ -32,11 +32,14 @@ public class QuestVersion {
     private String summary;
     private String description;
     private UUID coverMediaId;
+    private String coverUrl;
     private Integer difficulty;
     private Integer estimatedMinutes;
     private Integer distanceMeters;
     /** JSON array of amenity tag codes. */
     private String amenityTags;
+    /** JSON array of location_images ids this quest is tagged to (the cities it belongs to). */
+    private String cityImageIds;
     private String safetyNotes;
     private String provinceCode;
     private String wardCode;

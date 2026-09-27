@@ -121,6 +121,14 @@ class MarketplaceMapperXmlTest {
         assertTrue(xml.substring(start, xml.indexOf("</update>", start)).contains("&gt;COALESCE((SELECT sequence_no"));
     }
 
+    /** The single-conversation read carries every other member's read floor, for "Seen". */
+    @Test
+    void theConversationReadReportsHowFarOthersHaveRead() throws Exception {
+        String xml = chatMapperXml();
+        int start = xml.indexOf("<select id=\"findConversation\"");
+        assertTrue(xml.substring(start, xml.indexOf("</select>", start)).contains("AS others_read_seq"));
+    }
+
     private String chatMapperXml() throws Exception {
         try (InputStream input = Resources.getResourceAsStream("mapper/MarketplaceChatMapper.xml")) {
             return new String(input.readAllBytes(), StandardCharsets.UTF_8);

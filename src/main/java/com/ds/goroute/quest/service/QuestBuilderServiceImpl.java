@@ -35,6 +35,11 @@ import java.util.stream.Collectors;
 public class QuestBuilderServiceImpl implements QuestBuilderService {
 
     private static final int MAX_PAGE_SIZE = 50;
+    /** Photos per checkpoint; mirrored by the app's QuestBuilderLimits.maxCheckpointImages. */
+    static final int MAX_CHECKPOINT_IMAGES = 10;
+    /** The trip activity categories a checkpoint may carry (the app's ActivityCategoryPickerGrid). */
+    static final java.util.Set<String> CHECKPOINT_CATEGORIES = java.util.Set.of(
+            "restaurant", "hotel", "beach", "attraction", "shopping", "spiritual", "nature", "entertainment");
 
     private final QuestRepository repository;
     private final QuestDraftValidator validator;
@@ -82,6 +87,7 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
                 .contentRevision(0)
                 .changeKind("MATERIAL")
                 .amenityTags(json.write(List.of()))
+                .cityImageIds(json.write(List.of()))
                 .contentLanguage(language)
                 .priceStars(0)
                 .rewardStars(0)
@@ -107,7 +113,9 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Quest has no editable version");
         }
         Map<UUID, List<QuestCreatorNote>> notes = notesByCheckpoint(version);
-        return QuestDraftResponse.of(quest, version, notes, json.readList(version.getAmenityTags(), String.class));
+        return QuestDraftResponse.of(quest, version, notes, json.readList(version.getAmenityTags(), String.class),
+                json.readList(version.getCityImageIds(), String.class),
+                raw -> json.readList(raw, String.class));
     }
 
     @Override
@@ -115,9 +123,15 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
     public QuestDraftResponse saveDraft(UUID questId, UUID actorUserId, SaveQuestDraftRequest request) {
         Quest quest = requireQuest(questId);
         requireOwner(quest, actorUserId);
-        requireCreatorEditable(quest);
+        if (quest.questStatus() != QuestStatus.PUBLISHED) {
+            requireCreatorEditable(quest);
+        }
         long expected = request.getExpectedVersion() > 0 ? request.getExpectedVersion() : quest.getDataVersion();
         LocalDateTime now = LocalDateTime.now();
+
+        if (quest.questStatus() == QuestStatus.PUBLISHED) {
+            return saveLiveEdit(quest, actorUserId, request, expected, now);
+        }
 
         // One guarded write both verifies the version and normalises DENIED → DRAFT (§3.1).
         if (!repository.updateStatus(questId, expected, QuestStatus.DRAFT.name(), null, now)) {
@@ -134,6 +148,42 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
         insertGraph(versionId, actorUserId, request, now);
 
         return getDraft(questId, actorUserId, false);
+    }
+
+    /**
+     * D18 / §3.10: an edit to a live quest never rewrites the version players are running (their
+     * runs are pinned to it and reference its checkpoint ids). It becomes a new version that goes
+     * live at once; the quest stays PUBLISHED with {@code pending_change_review} set for the admin.
+     * The new version must pass the same checks as a submit.
+     *
+     * <p>Not built yet (ISSUES): the change log with old/new values, notifying open runs of a
+     * location change, the edits-per-window auto-pause and the admin accept/revert actions.
+     */
+    private QuestDraftResponse saveLiveEdit(Quest quest, UUID actorUserId, SaveQuestDraftRequest request,
+                                            long expected, LocalDateTime now) {
+        QuestVersion live = repository.findVersionById(quest.getPublishedVersionId())
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Published version missing"));
+        UUID versionId = UUID.randomUUID();
+        QuestVersion next = QuestVersion.builder()
+                .id(versionId)
+                .questId(quest.getId())
+                .version((live.getVersion() == null ? 1 : live.getVersion()) + 1)
+                .contentRevision(0)
+                .contentLanguage(live.getContentLanguage())
+                .createdBy(actorUserId)
+                .createdAt(now)
+                .build();
+        applyScalars(next, request);
+        repository.insertVersion(next);
+        insertGraph(versionId, actorUserId, request, now);
+        // Live content must stay submittable: the new version replaces what players get at once.
+        validator.validateForSubmit(repository.loadVersionGraph(versionId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Edited version missing")));
+
+        if (!repository.publishEdit(quest.getId(), expected, versionId, now)) {
+            throw conflict(quest.getId());
+        }
+        return getDraft(quest.getId(), actorUserId, false);
     }
 
     @Override
@@ -161,6 +211,18 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
             creatorGate.recordSubmission(creator);
         }
         return getDraft(questId, actorUserId, false);
+    }
+
+    @Override
+    @Transactional
+    public void delete(UUID questId, UUID actorUserId, Long expectedVersion) {
+        Quest quest = requireQuest(questId);
+        requireOwner(quest, actorUserId);
+        requireCreatorEditable(quest);
+        long expected = expectedVersion != null && expectedVersion > 0 ? expectedVersion : quest.getDataVersion();
+        if (!repository.softDeleteQuest(questId, expected, LocalDateTime.now())) {
+            throw conflict(questId);
+        }
     }
 
     @Override
@@ -245,10 +307,12 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
         version.setDescription(request.getDescription());
         version.setSafetyNotes(request.getSafetyNotes());
         version.setCoverMediaId(request.getCoverMediaId());
+        version.setCoverUrl(request.getCoverUrl());
         version.setDifficulty(request.getDifficulty());
         version.setEstimatedMinutes(request.getEstimatedMinutes());
         version.setDistanceMeters(request.getDistanceMeters());
         version.setAmenityTags(json.write(request.getAmenityTags() == null ? List.of() : request.getAmenityTags()));
+        version.setCityImageIds(json.write(request.getCityImageIds() == null ? List.of() : request.getCityImageIds()));
         version.setProvinceCode(request.getProvinceCode());
         version.setWardCode(request.getWardCode());
         if (request.getContentLanguage() != null && !request.getContentLanguage().isBlank()) {
@@ -272,6 +336,7 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
                     .questVersionId(versionId)
                     .sortOrder(i)
                     .name(input.getName())
+                    .category(checkpointCategory(input, i + 1))
                     .latitude(input.getLatitude())
                     .longitude(input.getLongitude())
                     .radiusM(input.getRadiusM())
@@ -281,6 +346,7 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
                     .captureAccuracyMeters(input.getCaptureAccuracyMeters())
                     .capturedAt(input.getCapturedAt())
                     .requiresCheckin(input.isRequiresCheckin())
+                    .imageUrls(json.write(checkpointImages(input, i + 1)))
                     .createdAt(now)
                     .build();
             repository.insertCheckpoint(checkpoint);
@@ -288,6 +354,37 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
             insertQuestions(checkpointId, input, now);
             insertNotes(checkpointId, actorUserId, input, now);
         }
+    }
+
+    private String checkpointCategory(SaveQuestDraftRequest.CheckpointInput input, int position) {
+        String category = input.getCategory();
+        if (category == null || category.isBlank()) {
+            return null;
+        }
+        if (!CHECKPOINT_CATEGORIES.contains(category)) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "Checkpoint " + position + " has an unknown category");
+        }
+        return category;
+    }
+
+    /** The checkpoint's photo URLs, blanks dropped; more than {@link #MAX_CHECKPOINT_IMAGES} is refused. */
+    private List<String> checkpointImages(SaveQuestDraftRequest.CheckpointInput input, int position) {
+        List<String> urls = input.getImageUrls() == null ? List.of() : input.getImageUrls().stream()
+                .filter(url -> url != null && !url.isBlank())
+                .map(String::trim)
+                .toList();
+        if (urls.size() > MAX_CHECKPOINT_IMAGES) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "Checkpoint " + position + " has more than " + MAX_CHECKPOINT_IMAGES + " photos");
+        }
+        for (String url : urls) {
+            if (!url.startsWith("https://") && !url.startsWith("http://")) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                        "Checkpoint " + position + " has a photo that is not a URL");
+            }
+        }
+        return urls;
     }
 
     private void insertQuestions(UUID checkpointId, SaveQuestDraftRequest.CheckpointInput input, LocalDateTime now) {
@@ -356,10 +453,11 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
 
     private QuestSummaryResponse toSummary(Quest quest) {
         UUID versionId = quest.getDraftVersionId() != null ? quest.getDraftVersionId() : quest.getPublishedVersionId();
-        String title = versionId == null ? null
-                : repository.findVersionById(versionId).map(QuestVersion::getTitle).orElse(null);
+        QuestVersion version = versionId == null ? null : repository.findVersionById(versionId).orElse(null);
+        String title = version == null ? null : version.getTitle();
+        String coverUrl = version == null ? null : version.getCoverUrl();
         int checkpoints = repository.countCheckpoints(versionId);
-        return new QuestSummaryResponse(quest.getId(), quest.getOrigin(), quest.getStatus(), title,
+        return new QuestSummaryResponse(quest.getId(), quest.getOrigin(), quest.getStatus(), title, coverUrl,
                 checkpoints, quest.getDataVersion() == null ? 0 : quest.getDataVersion(), quest.getUpdatedAt());
     }
 

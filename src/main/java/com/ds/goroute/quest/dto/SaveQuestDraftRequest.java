@@ -32,10 +32,13 @@ public class SaveQuestDraftRequest {
     private String safetyNotes;
 
     private UUID coverMediaId;
+    private String coverUrl;
     private Integer difficulty;
     private Integer estimatedMinutes;
     private Integer distanceMeters;
     private List<String> amenityTags = new ArrayList<>();
+    /** location_images ids the quest is tagged to (the cities), chosen first in the create flow. */
+    private List<String> cityImageIds = new ArrayList<>();
     private String provinceCode;
     private String wardCode;
     private String contentLanguage;
@@ -54,6 +57,9 @@ public class SaveQuestDraftRequest {
         @ModeratedText(contentType = ModeratedContentType.QUEST_CHECKPOINT, label = "checkpoint.story")
         private String story;
 
+        /** Trip activity category id; see QuestBuilderServiceImpl.CHECKPOINT_CATEGORIES. */
+        private String category;
+
         private BigDecimal latitude;
         private BigDecimal longitude;
         private Integer radiusM;
@@ -62,6 +68,8 @@ public class SaveQuestDraftRequest {
         private BigDecimal captureAccuracyMeters;
         private LocalDateTime capturedAt;
         private boolean requiresCheckin;
+        /** Photos that help a player find the spot, as URLs from the shared upload endpoint. */
+        private List<String> imageUrls = new ArrayList<>();
         private List<QuestionInput> questions = new ArrayList<>();
 
         @ModeratedText(contentType = ModeratedContentType.QUEST_CHECKPOINT, label = "checkpoint.note")

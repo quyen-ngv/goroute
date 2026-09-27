@@ -17,6 +17,7 @@ public record QuestPublicDetailResponse(
         String summary,
         String description,
         UUID coverMediaId,
+        String coverUrl,
         Integer difficulty,
         Integer estimatedMinutes,
         Integer distanceMeters,

@@ -154,6 +154,28 @@
         WHERE id = #{id} AND data_version = #{expectedVersion} AND is_deleted = FALSE
     </update>
 
+    <!-- Soft delete, guarded by the version like every other quest write. -->
+    <update id="softDeleteQuest">
+        UPDATE quests
+        SET is_deleted = TRUE,
+            data_version = data_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{id} AND data_version = #{expectedVersion} AND is_deleted = FALSE
+    </update>
+
+    <!-- D18: an edit to a live quest is a new version that goes live at once, flagged for
+         post-review. Status stays PUBLISHED; guarded by the version like every other write. -->
+    <update id="publishEdit">
+        UPDATE quests
+        SET published_version_id = #{versionId},
+            draft_version_id = #{versionId},
+            pending_change_review = TRUE,
+            data_version = data_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{id} AND data_version = #{expectedVersion} AND status = 'PUBLISHED'
+          AND is_deleted = FALSE
+    </update>
+
     <update id="updatePublish">
         UPDATE quests
         SET status = 'PUBLISHED',
@@ -253,6 +275,7 @@
         <result property="summary" column="summary"/>
         <result property="description" column="description"/>
         <result property="coverMediaId" column="cover_media_id"/>
+        <result property="coverUrl" column="cover_url"/>
         <result property="difficulty" column="difficulty"/>
         <result property="estimatedMinutes" column="estimated_minutes"/>
         <result property="distanceMeters" column="distance_meters"/>
@@ -271,7 +294,7 @@
 
     <sql id="publicQuestProjection">
         SELECT q.id AS quest_id, q.origin AS origin, q.published_version_id AS published_version_id,
-               v.title, v.summary, v.description, v.cover_media_id, v.difficulty, v.estimated_minutes,
+               v.title, v.summary, v.description, v.cover_media_id, v.cover_url, v.difficulty, v.estimated_minutes,
                v.distance_meters, v.price_stars, v.reward_stars, v.province_code, v.ward_code,
                v.safety_notes, v.content_language, v.amenity_tags, v.playable_months, v.run_expiry_hours,
                (SELECT COUNT(*) FROM quest_checkpoints cp WHERE cp.quest_version_id = v.id) AS checkpoint_count,
@@ -320,10 +343,12 @@
         <result property="summary" column="summary"/>
         <result property="description" column="description"/>
         <result property="coverMediaId" column="cover_media_id"/>
+        <result property="coverUrl" column="cover_url"/>
         <result property="difficulty" column="difficulty"/>
         <result property="estimatedMinutes" column="estimated_minutes"/>
         <result property="distanceMeters" column="distance_meters"/>
         <result property="amenityTags" column="amenity_tags"/>
+        <result property="cityImageIds" column="city_image_ids"/>
         <result property="safetyNotes" column="safety_notes"/>
         <result property="provinceCode" column="province_code"/>
         <result property="wardCode" column="ward_code"/>
@@ -339,7 +364,7 @@
 
     <sql id="VersionColumns">
         id, quest_id, version, content_revision, change_kind, title, summary, description,
-        cover_media_id, difficulty, estimated_minutes, distance_meters, amenity_tags,
+        cover_media_id, cover_url, difficulty, estimated_minutes, distance_meters, amenity_tags, city_image_ids,
         safety_notes, province_code, ward_code, content_language, price_stars, reward_stars,
         playable_months, playable_hours, run_expiry_hours, created_by, created_at
     </sql>
@@ -347,14 +372,14 @@
     <insert id="insertVersion">
         INSERT INTO quest_versions (
             id, quest_id, version, content_revision, change_kind, title, summary, description,
-            cover_media_id, difficulty, estimated_minutes, distance_meters, amenity_tags,
+            cover_media_id, cover_url, difficulty, estimated_minutes, distance_meters, amenity_tags, city_image_ids,
             safety_notes, province_code, ward_code, content_language, price_stars, reward_stars,
             playable_months, playable_hours, run_expiry_hours, created_by, created_at
         ) VALUES (
             #{id}, #{questId}, #{version}, #{contentRevision}, #{changeKind}, #{title}, #{summary},
-            #{description}, #{coverMediaId}, #{difficulty}, #{estimatedMinutes}, #{distanceMeters},
-            #{amenityTags}::jsonb, #{safetyNotes}, #{provinceCode}, #{wardCode}, #{contentLanguage},
-            #{priceStars}, #{rewardStars}, #{playableMonths}::jsonb, #{playableHours}::jsonb,
+            #{description}, #{coverMediaId}, #{coverUrl}, #{difficulty}, #{estimatedMinutes}, #{distanceMeters},
+            #{amenityTags}::jsonb, #{cityImageIds}::jsonb, #{safetyNotes}, #{provinceCode}, #{wardCode},
+            #{contentLanguage}, #{priceStars}, #{rewardStars}, #{playableMonths}::jsonb, #{playableHours}::jsonb,
             #{runExpiryHours}, #{createdBy}, #{createdAt}
         )
     </insert>
@@ -370,10 +395,12 @@
             summary = #{summary},
             description = #{description},
             cover_media_id = #{coverMediaId},
+            cover_url = #{coverUrl},
             difficulty = #{difficulty},
             estimated_minutes = #{estimatedMinutes},
             distance_meters = #{distanceMeters},
             amenity_tags = #{amenityTags}::jsonb,
+            city_image_ids = #{cityImageIds}::jsonb,
             safety_notes = #{safetyNotes},
             province_code = #{provinceCode},
             ward_code = #{wardCode},
@@ -392,6 +419,7 @@
         <result property="questVersionId" column="quest_version_id"/>
         <result property="sortOrder" column="sort_order"/>
         <result property="name" column="name"/>
+        <result property="category" column="category"/>
         <result property="latitude" column="latitude"/>
         <result property="longitude" column="longitude"/>
         <result property="radiusM" column="radius_m"/>
@@ -403,13 +431,14 @@
         <result property="captureAccuracyMeters" column="capture_accuracy_meters"/>
         <result property="capturedAt" column="captured_at"/>
         <result property="requiresCheckin" column="requires_checkin"/>
+        <result property="imageUrls" column="image_urls"/>
         <result property="createdAt" column="created_at"/>
     </resultMap>
 
     <select id="findCheckpointsByVersion" resultMap="CheckpointMap">
-        SELECT id, quest_version_id, sort_order, name, latitude, longitude, radius_m,
+        SELECT id, quest_version_id, sort_order, name, category, latitude, longitude, radius_m,
                ST_AsText(unlock_geometry) AS unlock_geometry_wkt, place_id, location_key, story,
-               capture_source, capture_accuracy_meters, captured_at, requires_checkin, created_at
+               capture_source, capture_accuracy_meters, captured_at, requires_checkin, image_urls, created_at
         FROM quest_checkpoints
         WHERE quest_version_id = #{versionId}
         ORDER BY sort_order, id
@@ -421,15 +450,17 @@
 
     <insert id="insertCheckpoint">
         INSERT INTO quest_checkpoints (
-            id, quest_version_id, sort_order, name, latitude, longitude, radius_m,
+            id, quest_version_id, sort_order, name, category, latitude, longitude, radius_m,
             unlock_geometry, place_id, location_key, story, capture_source,
-            capture_accuracy_meters, captured_at, requires_checkin, created_at
+            capture_accuracy_meters, captured_at, requires_checkin, image_urls, created_at
         ) VALUES (
-            #{id}, #{questVersionId}, #{sortOrder}, #{name}, #{latitude}, #{longitude}, #{radiusM},
-            CASE WHEN #{unlockGeometryWkt} IS NULL THEN NULL
-                 ELSE ST_Multi(ST_SetSRID(ST_GeomFromText(#{unlockGeometryWkt}), 4326)) END,
+            #{id}, #{questVersionId}, #{sortOrder}, #{name}, #{category}, #{latitude}, #{longitude}, #{radiusM},
+            <!-- Cast: with a null WKT Postgres cannot infer the parameter type inside CASE. -->
+            CASE WHEN CAST(#{unlockGeometryWkt} AS TEXT) IS NULL THEN NULL
+                 ELSE ST_Multi(ST_SetSRID(ST_GeomFromText(CAST(#{unlockGeometryWkt} AS TEXT)), 4326)) END,
             #{placeId}, #{locationKey}, #{story}, #{captureSource},
-            #{captureAccuracyMeters}, #{capturedAt}, #{requiresCheckin}, #{createdAt}
+            #{captureAccuracyMeters}, #{capturedAt}, #{requiresCheckin},
+            COALESCE(CAST(#{imageUrls} AS TEXT), '[]')::jsonb, #{createdAt}
         )
     </insert>
 

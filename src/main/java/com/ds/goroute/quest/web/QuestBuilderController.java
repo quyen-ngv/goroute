@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -69,6 +70,15 @@ public class QuestBuilderController {
             @PathVariable UUID questId,
             @RequestBody SaveQuestDraftRequest request) {
         return ResponseEntity.ok(BaseResponse.ofSucceeded(builderService.saveDraft(questId, userId, request)));
+    }
+
+    @DeleteMapping("/quests/{questId}")
+    public ResponseEntity<BaseResponse<Void>> delete(
+            @CurrentUser UUID userId,
+            @PathVariable UUID questId,
+            @RequestParam(required = false) Long expectedVersion) {
+        builderService.delete(questId, userId, expectedVersion);
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(null));
     }
 
     @PostMapping("/quests/{questId}/submit")

@@ -123,4 +123,127 @@ class QuestBuilderServiceImplTest {
         verify(repository).updateStatus(eq(questId), anyLong(), eq("PENDING"), any(), any());
         verify(creatorGate).recordSubmission(any());
     }
+
+    @Test
+    @DisplayName("the owner can delete a draft, guarded by its version")
+    void ownerDeletesDraft() {
+        when(repository.findQuestById(questId)).thenReturn(Optional.of(draftQuest()));
+        when(repository.findCreatorById(creatorId)).thenReturn(Optional.of(creator(owner)));
+        when(repository.softDeleteQuest(eq(questId), eq(3L), any())).thenReturn(true);
+
+        service.delete(questId, owner, 3L);
+
+        verify(repository).softDeleteQuest(eq(questId), eq(3L), any());
+    }
+
+    @Test
+    @DisplayName("a quest under review cannot be deleted by its creator")
+    void pendingQuestCannotBeDeleted() {
+        Quest pending = draftQuest();
+        pending.setStatus(QuestStatus.PENDING.name());
+        when(repository.findQuestById(questId)).thenReturn(Optional.of(pending));
+        when(repository.findCreatorById(creatorId)).thenReturn(Optional.of(creator(owner)));
+
+        assertThatThrownBy(() -> service.delete(questId, owner, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("cannot be edited");
+        verify(repository, never()).softDeleteQuest(any(), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("deleting against a stale version is a conflict")
+    void staleDeleteIsConflict() {
+        when(repository.findQuestById(questId)).thenReturn(Optional.of(draftQuest()));
+        when(repository.findCreatorById(creatorId)).thenReturn(Optional.of(creator(owner)));
+        when(repository.softDeleteQuest(eq(questId), anyLong(), any())).thenReturn(false);
+
+        assertThatThrownBy(() -> service.delete(questId, owner, 2L))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    private SaveQuestDraftRequest requestWithImages(List<String> urls) {
+        SaveQuestDraftRequest.CheckpointInput checkpoint = new SaveQuestDraftRequest.CheckpointInput();
+        checkpoint.setName("Tháp Rùa");
+        checkpoint.setImageUrls(new java.util.ArrayList<>(urls));
+        SaveQuestDraftRequest request = new SaveQuestDraftRequest();
+        request.setExpectedVersion(3);
+        request.setCheckpoints(new java.util.ArrayList<>(List.of(checkpoint)));
+        return request;
+    }
+
+    private void stubEditableDraft() {
+        when(repository.findQuestById(questId)).thenReturn(Optional.of(draftQuest()));
+        when(repository.findCreatorById(creatorId)).thenReturn(Optional.of(creator(owner)));
+        when(repository.updateStatus(eq(questId), anyLong(), eq("DRAFT"), any(), any())).thenReturn(true);
+        when(repository.findVersionById(draftVersionId))
+                .thenReturn(Optional.of(QuestVersion.builder().id(draftVersionId).build()));
+        when(repository.loadVersionGraph(draftVersionId))
+                .thenReturn(Optional.of(QuestVersion.builder().id(draftVersionId).amenityTags("[]").build()));
+    }
+
+    @Test
+    @DisplayName("checkpoint photos are stored as a JSON array, blanks dropped")
+    void checkpointPhotosAreStored() {
+        stubEditableDraft();
+
+        service.saveDraft(questId, owner, requestWithImages(List.of("https://cdn/a.jpg", " ", "https://cdn/b.jpg")));
+
+        org.mockito.ArgumentCaptor<com.ds.goroute.quest.domain.QuestCheckpoint> saved =
+                org.mockito.ArgumentCaptor.forClass(com.ds.goroute.quest.domain.QuestCheckpoint.class);
+        verify(repository).insertCheckpoint(saved.capture());
+        org.assertj.core.api.Assertions.assertThat(saved.getValue().getImageUrls())
+                .isEqualTo("[\"https://cdn/a.jpg\",\"https://cdn/b.jpg\"]");
+    }
+
+    @Test
+    @DisplayName("more than ten photos on one checkpoint is refused (the save transaction rolls back)")
+    void tooManyCheckpointPhotosRefused() {
+        stubEditableDraft();
+        List<String> urls = java.util.stream.IntStream.range(0, 11).mapToObj(i -> "https://cdn/" + i + ".jpg").toList();
+
+        assertThatThrownBy(() -> service.saveDraft(questId, owner, requestWithImages(urls)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("more than 10 photos");
+        verify(repository, never()).insertCheckpoint(any());
+    }
+
+    @Test
+    @DisplayName("D18: saving a published quest writes a new live version and never rewrites the one players run")
+    void publishedSaveIsANewLiveVersion() {
+        UUID liveVersionId = UUID.randomUUID();
+        Quest live = draftQuest();
+        live.setStatus(QuestStatus.PUBLISHED.name());
+        live.setPublishedVersionId(liveVersionId);
+        live.setDraftVersionId(liveVersionId);
+        when(repository.findQuestById(questId)).thenReturn(Optional.of(live));
+        when(repository.findCreatorById(creatorId)).thenReturn(Optional.of(creator(owner)));
+        when(repository.findVersionById(liveVersionId))
+                .thenReturn(Optional.of(QuestVersion.builder().id(liveVersionId).version(2).contentLanguage("vi").build()));
+        when(repository.publishEdit(eq(questId), eq(3L), any(), any())).thenReturn(true);
+        when(repository.loadVersionGraph(any()))
+                .thenReturn(Optional.of(QuestVersion.builder().id(liveVersionId).amenityTags("[]").build()));
+
+        service.saveDraft(questId, owner, requestWithImages(List.of()));
+
+        org.mockito.ArgumentCaptor<QuestVersion> inserted = org.mockito.ArgumentCaptor.forClass(QuestVersion.class);
+        verify(repository).insertVersion(inserted.capture());
+        org.assertj.core.api.Assertions.assertThat(inserted.getValue().getVersion()).isEqualTo(3);
+        org.assertj.core.api.Assertions.assertThat(inserted.getValue().getId()).isNotEqualTo(liveVersionId);
+        verify(repository).publishEdit(eq(questId), eq(3L), eq(inserted.getValue().getId()), any());
+        verify(repository, never()).clearVersionContent(any());
+        verify(repository, never()).updateStatus(any(), anyLong(), any(), any(), any());
+        verify(validator).validateForSubmit(any());
+    }
+
+    @Test
+    @DisplayName("a checkpoint category outside the trip activity list is refused")
+    void unknownCheckpointCategoryRefused() {
+        stubEditableDraft();
+        SaveQuestDraftRequest request = requestWithImages(List.of());
+        request.getCheckpoints().get(0).setCategory("casino");
+
+        assertThatThrownBy(() -> service.saveDraft(questId, owner, request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("unknown category");
+    }
 }

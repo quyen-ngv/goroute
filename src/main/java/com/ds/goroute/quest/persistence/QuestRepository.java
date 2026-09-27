@@ -46,6 +46,11 @@ public interface QuestRepository {
 
     boolean updateStatus(UUID id, long expectedVersion, String status, String pausedBy, LocalDateTime updatedAt);
 
+    /** Points both published and draft at {@code versionId} and flags it for post-review (D18). */
+    boolean publishEdit(UUID id, long expectedVersion, UUID versionId, LocalDateTime updatedAt);
+
+    boolean softDeleteQuest(UUID id, long expectedVersion, LocalDateTime updatedAt);
+
     boolean updatePublish(UUID id, long expectedVersion, UUID publishedVersionId, boolean selfApproved,
                           LocalDateTime updatedAt);
 

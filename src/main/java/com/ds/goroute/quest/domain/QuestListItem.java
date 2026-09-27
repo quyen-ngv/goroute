@@ -25,6 +25,7 @@ public class QuestListItem {
     private String summary;
     private String description;
     private UUID coverMediaId;
+    private String coverUrl;
     private Integer difficulty;
     private Integer estimatedMinutes;
     private Integer distanceMeters;

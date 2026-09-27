@@ -317,7 +317,8 @@ public class QuestPlayService {
             if (isCheckpointCleared(cp, answers, progress.get(cp.getId()))) {
                 clearedCount++;
                 cleared.add(new QuestRunResponse.ClearedCheckpointView(
-                        cp.getId(), intOf(cp.getSortOrder()), cp.getName(), cp.getStory()));
+                        cp.getId(), intOf(cp.getSortOrder()), cp.getName(), cp.getCategory(), cp.getStory(),
+                        json.readList(cp.getImageUrls(), String.class)));
             } else if (current == null) {
                 current = currentView(run, cp, answers, progress.get(cp.getId()));
             }
@@ -339,9 +340,11 @@ public class QuestPlayService {
                 : List.of();
         boolean checkinDone = rc != null && (rc.getCheckinId() != null || "WAIVED".equals(rc.getCheckinState()));
         return new QuestRunResponse.CurrentCheckpointView(
-                cp.getId(), intOf(cp.getSortOrder()), cp.getName(), cp.getLatitude(), cp.getLongitude(),
+                cp.getId(), intOf(cp.getSortOrder()), cp.getName(), cp.getCategory(),
+                cp.getLatitude(), cp.getLongitude(),
                 cp.getRadiusM(), cp.isRequiresCheckin(), checkinDone, unlocked,
-                rc == null ? 0 : intOf(rc.getStableStreak()), questions);
+                rc == null ? 0 : intOf(rc.getStableStreak()),
+                json.readList(cp.getImageUrls(), String.class), questions);
     }
 
     private QuestRunResponse.RunQuestionView questionView(QuestRun run, QuestQuestion q, QuestRunQuestion rq) {
@@ -421,6 +424,14 @@ public class QuestPlayService {
     private void requireEntitled(Quest quest, QuestVersion version, UUID userId) {
         int price = version.getPriceStars() == null ? 0 : version.getPriceStars();
         if (price <= 0) {
+            return;
+        }
+        // The creator plays their own quest free, as QuestEconomyService.unlock already grants;
+        // without this they would have to "unlock" their own quest before a play test.
+        boolean isCreator = questRepository.findCreatorById(quest.getCreatorId())
+                .map(creator -> userId.equals(creator.getUserId()))
+                .orElse(false);
+        if (isCreator) {
             return;
         }
         if (runRepository.findEntitlement(quest.getId(), userId).isEmpty()) {

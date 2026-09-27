@@ -34,4 +34,8 @@ public class MarketplaceConversation {
 
     /** When the viewer's mute expires; {@code null} when they never muted it. */
     private LocalDateTime mutedUntil;
+
+    /** The lowest sequence every OTHER member has read up to: my last message is
+     * "seen" once this reaches it. Null when nobody else is in the thread. */
+    private Long othersReadSequence;
 }

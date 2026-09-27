@@ -79,14 +79,11 @@ class QuestDraftValidatorTest {
     }
 
     @Test
-    @DisplayName("§7.3: a checkpoint captured on a map, not in the field, blocks submission")
-    void mapCapturedCheckpointBlocksSubmit() {
-        QuestVersion version = version(checkpoint(true, textQuestion()), checkpoint(true, textQuestion()));
-        version.getCheckpoints().get(1).setCaptureSource("MAP");
+    @DisplayName("§7.3 (2026-09-27): a checkpoint pinned on a map may be submitted without an on-site capture")
+    void mapCapturedCheckpointMaySubmit() {
+        QuestVersion version = version(checkpoint(true, textQuestion()), checkpoint(false, textQuestion()));
 
-        assertThatThrownBy(() -> validator.validateForSubmit(version))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("captured in the field");
+        assertThatCode(() -> validator.validateForSubmit(version)).doesNotThrowAnyException();
     }
 
     @Test

@@ -13,6 +13,7 @@ public record QuestPublicSummaryResponse(
         String title,
         String summary,
         UUID coverMediaId,
+        String coverUrl,
         Integer difficulty,
         Integer estimatedMinutes,
         Integer distanceMeters,

@@ -22,13 +22,15 @@ public record QuestRunResponse(
         CurrentCheckpointView current,
         int arrivalClientIntervalSeconds) {
 
-    public record ClearedCheckpointView(UUID checkpointId, int sortOrder, String name, String story) {
+    public record ClearedCheckpointView(UUID checkpointId, int sortOrder, String name, String category,
+                                        String story, List<String> imageUrls) {
     }
 
     public record CurrentCheckpointView(
             UUID checkpointId,
             int sortOrder,
             String name,
+            String category,
             BigDecimal latitude,
             BigDecimal longitude,
             Integer radiusM,
@@ -36,6 +38,8 @@ public record QuestRunResponse(
             boolean checkinDone,
             boolean unlocked,
             int stableStreak,
+            /** The creator's photos of the spot, shown before arrival so the player can find it. */
+            List<String> imageUrls,
             List<RunQuestionView> questions) {
     }
 

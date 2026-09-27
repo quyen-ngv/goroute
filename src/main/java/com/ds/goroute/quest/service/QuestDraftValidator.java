@@ -7,7 +7,6 @@ import com.ds.goroute.quest.domain.QuestQuestion;
 import com.ds.goroute.quest.domain.QuestVersion;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.type.BusinessConfigKey;
-import com.ds.goroute.type.QuestCaptureSource;
 import com.ds.goroute.type.QuestQuestionType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -21,7 +20,6 @@ import java.util.List;
  *
  * <ul>
  *   <li>every checkpoint has a job to do — a required question or a required check-in (D21);</li>
- *   <li>every checkpoint's coordinates were recorded in the field, not pinned on a map (§7.3);</li>
  *   <li>questions are well-formed for their type;</li>
  *   <li>counts stay inside the configured ceilings, and the price inside PRICE_MAX_STARS.</li>
  * </ul>
@@ -74,10 +72,8 @@ public class QuestDraftValidator {
         if (cp.getLatitude() == null || cp.getLongitude() == null) {
             errors.add(where + " has no coordinates");
         }
-        // §7.3: coordinates must have been recorded on the spot.
-        if (cp.getCaptureSource() == null || QuestCaptureSource.valueOf(cp.getCaptureSource()) != QuestCaptureSource.FIELD) {
-            errors.add(where + " must be captured in the field before it can be submitted");
-        }
+        // Where the coordinates came from (GPS on site or a map pin) is recorded for the reviewer
+        // but no longer gates submission (§7.3, 2026-09-27).
 
         List<QuestQuestion> questions = cp.getQuestions();
         long requiredNonBonus = questions.stream().filter(q -> q.isRequired() && !q.isBonus()).count();

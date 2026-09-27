@@ -48,7 +48,7 @@ public class QuestDiscoveryService {
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Quest not found"));
         return new QuestPublicDetailResponse(
                 item.getQuestId(), item.getOrigin(), item.getTitle(), item.getSummary(), item.getDescription(),
-                item.getCoverMediaId(), item.getDifficulty(), item.getEstimatedMinutes(), item.getDistanceMeters(),
+                item.getCoverMediaId(), item.getCoverUrl(), item.getDifficulty(), item.getEstimatedMinutes(), item.getDistanceMeters(),
                 nz(item.getPriceStars()), nz(item.getRewardStars()), item.getProvinceCode(), item.getWardCode(),
                 item.getSafetyNotes(), json.readList(item.getAmenityTags(), String.class),
                 json.readList(item.getPlayableMonths(), Integer.class), item.getRunExpiryHours(),
@@ -60,7 +60,7 @@ public class QuestDiscoveryService {
     private QuestPublicSummaryResponse toSummary(QuestListItem item) {
         return new QuestPublicSummaryResponse(
                 item.getQuestId(), item.getOrigin(), item.getTitle(), item.getSummary(), item.getCoverMediaId(),
-                item.getDifficulty(), item.getEstimatedMinutes(), item.getDistanceMeters(),
+                item.getCoverUrl(), item.getDifficulty(), item.getEstimatedMinutes(), item.getDistanceMeters(),
                 nz(item.getPriceStars()), nz(item.getRewardStars()), item.getProvinceCode(), item.getWardCode(),
                 nz(item.getCheckpointCount()), json.readList(item.getAmenityTags(), String.class));
     }

@@ -64,6 +64,12 @@ public interface QuestMapper {
                      @Param("status") String status, @Param("pausedBy") String pausedBy,
                      @Param("updatedAt") LocalDateTime updatedAt);
 
+    int publishEdit(@Param("id") UUID id, @Param("expectedVersion") long expectedVersion,
+                    @Param("versionId") UUID versionId, @Param("updatedAt") LocalDateTime updatedAt);
+
+    int softDeleteQuest(@Param("id") UUID id, @Param("expectedVersion") long expectedVersion,
+                        @Param("updatedAt") LocalDateTime updatedAt);
+
     /** Publish: point at the reviewed version, clear the post-review flag, record self-approval. */
     int updatePublish(@Param("id") UUID id, @Param("expectedVersion") long expectedVersion,
                       @Param("publishedVersionId") UUID publishedVersionId,

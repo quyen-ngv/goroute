@@ -214,4 +214,37 @@ class QuestPlayServiceTest {
         verify(starService, never()).grant(any(), org.mockito.ArgumentMatchers.anyInt(), any(), any(), any());
         verify(passportMapper).insertEvent(any()); // still gets the passport stamp
     }
+
+    private void stubPaidQuest(UUID creatorUserId) {
+        com.ds.goroute.quest.domain.Quest quest = com.ds.goroute.quest.domain.Quest.builder()
+                .id(questId).creatorId(creatorId).status("PUBLISHED").publishedVersionId(versionId).build();
+        when(questRepository.findQuestById(questId)).thenReturn(Optional.of(quest));
+        when(runRepository.findOpenRun(questId, user)).thenReturn(Optional.empty());
+        QuestVersion paid = version(50);
+        paid.setPriceStars(30);
+        when(questRepository.loadVersionGraph(versionId)).thenReturn(Optional.of(paid));
+        when(questRepository.findCreatorById(creatorId)).thenReturn(Optional.of(
+                com.ds.goroute.quest.domain.QuestCreatorProfile.builder().id(creatorId).userId(creatorUserId).build()));
+        when(runRepository.findEntitlement(questId, user)).thenReturn(Optional.empty());
+    }
+
+    @Test
+    @DisplayName("the creator starts a run on their own paid quest without unlocking it")
+    void creatorPlaysOwnPaidQuestFree() {
+        stubPaidQuest(user);
+
+        // Reading the new run back is not stubbed here; what matters is that it was created.
+        org.assertj.core.api.Assertions.catchThrowable(() -> service.startRun(user, questId, null));
+        org.mockito.Mockito.verify(runRepository).insertRun(any());
+    }
+
+    @Test
+    @DisplayName("anyone else must unlock a paid quest before starting")
+    void otherUserMustUnlockPaidQuest() {
+        stubPaidQuest(UUID.randomUUID());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.startRun(user, questId, null))
+                .isInstanceOf(com.ds.goroute.exception.BusinessException.class)
+                .hasMessageContaining("Unlock this quest");
+    }
 }
