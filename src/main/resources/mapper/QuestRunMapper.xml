@@ -18,25 +18,32 @@
         <result property="rankScore" column="rank_score"/>
         <result property="dataVersion" column="data_version"/>
         <result property="createdAt" column="created_at"/>
+        <result property="clientRunId" column="client_run_id"/>
     </resultMap>
 
     <sql id="RunColumns">
         id, quest_id, quest_version_id, owner_user_id, trip_id, status, started_at,
-        last_activity_at, expires_at, completed_at, rank_score, data_version, created_at
+        last_activity_at, expires_at, completed_at, rank_score, data_version, created_at, client_run_id
     </sql>
 
     <insert id="insertRun">
         INSERT INTO quest_runs (
             id, quest_id, quest_version_id, owner_user_id, trip_id, status, started_at,
-            last_activity_at, expires_at, completed_at, rank_score, data_version, created_at
+            last_activity_at, expires_at, completed_at, rank_score, data_version, created_at, client_run_id
         ) VALUES (
             #{id}, #{questId}, #{questVersionId}, #{ownerUserId}, #{tripId}, #{status}, #{startedAt},
-            #{lastActivityAt}, #{expiresAt}, #{completedAt}, #{rankScore}, #{dataVersion}, #{createdAt}
+            #{lastActivityAt}, #{expiresAt}, #{completedAt}, #{rankScore}, #{dataVersion}, #{createdAt},
+            #{clientRunId}
         )
     </insert>
 
     <select id="findRunById" resultMap="RunMap">
         SELECT <include refid="RunColumns"/> FROM quest_runs WHERE id = #{id}
+    </select>
+
+    <select id="findRunByClientId" resultMap="RunMap">
+        SELECT <include refid="RunColumns"/> FROM quest_runs
+        WHERE owner_user_id = #{ownerUserId} AND client_run_id = #{clientRunId}
     </select>
 
     <select id="findOpenRun" resultMap="RunMap">

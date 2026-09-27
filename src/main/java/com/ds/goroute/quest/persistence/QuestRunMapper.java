@@ -24,6 +24,8 @@ public interface QuestRunMapper {
 
     QuestRun findRunById(@Param("id") UUID id);
 
+    QuestRun findRunByClientId(@Param("ownerUserId") UUID ownerUserId, @Param("clientRunId") String clientRunId);
+
     QuestRun findOpenRun(@Param("questId") UUID questId, @Param("ownerUserId") UUID ownerUserId);
 
     int updateRunStatus(@Param("id") UUID id, @Param("expectedVersion") long expectedVersion,

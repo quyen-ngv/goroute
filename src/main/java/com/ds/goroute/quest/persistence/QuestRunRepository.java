@@ -30,6 +30,10 @@ public class QuestRunRepository {
         return Optional.ofNullable(mapper.findRunById(id));
     }
 
+    public Optional<QuestRun> findRunByClientId(UUID ownerUserId, String clientRunId) {
+        return Optional.ofNullable(mapper.findRunByClientId(ownerUserId, clientRunId));
+    }
+
     public Optional<QuestRun> findOpenRun(UUID questId, UUID ownerUserId) {
         return Optional.ofNullable(mapper.findOpenRun(questId, ownerUserId));
     }

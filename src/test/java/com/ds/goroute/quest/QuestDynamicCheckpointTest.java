@@ -371,4 +371,72 @@ class QuestDynamicCheckpointTest {
             assertThat(service.getRun(user, runId).clearedCheckpoints()).isZero();
         }
     }
+
+    @Nested
+    @DisplayName("route preview")
+    class RoutePreview {
+
+        @Test
+        @DisplayName("the current checkpoint tells what waits there before arrival, without the content")
+        void currentPreview() {
+            QuestQuestion q = QuestQuestion.builder().id(UUID.randomUUID()).sortOrder(0).required(true)
+                    .bonus(false).type("TEXT").prompt("What year?").answerPlain("1865").choices(List.of()).build();
+            QuestCheckpointStop stop = QuestCheckpointStop.builder().id(stopId).sortOrder(0).name("Bridge")
+                    .latitude(SPOT_LAT).longitude(SPOT_LNG).radiusM(30).story("Red bridge").build();
+            QuestCheckpoint cp = QuestCheckpoint.builder().id(cpId).sortOrder(0).name("Gate")
+                    .latitude(SPOT_LAT).longitude(SPOT_LNG).radiusM(40).requiresCheckin(true)
+                    .story("Built in 1865.").storyAudioUrl("https://cdn/gate.m4a").storyAudioSeconds(42)
+                    .questions(List.of(q)).stops(List.of(stop)).build();
+            play(cp);
+
+            QuestRunResponse.CurrentCheckpointView current = service.getRun(user, runId).current();
+
+            assertThat(current.questions()).as("PIN questions open on arrival").isEmpty();
+            assertThat(current.story()).isNull();
+            assertThat(current.stops()).isEmpty();
+            QuestRunResponse.CheckpointPreview preview = current.preview();
+            assertThat(preview.questionCount()).isEqualTo(1);
+            assertThat(preview.requiredQuestionCount()).isEqualTo(1);
+            assertThat(preview.requiresCheckin()).isTrue();
+            assertThat(preview.stopCount()).isEqualTo(1);
+            assertThat(preview.hasStory()).isTrue();
+            assertThat(preview.hasStoryAudio()).isTrue();
+            assertThat(preview.storyAudioSeconds()).isEqualTo(42);
+        }
+
+        @Test
+        @DisplayName("checkpoints ahead are listed in order with public facts only")
+        void upcoming() {
+            UUID secondId = UUID.randomUUID();
+            UUID thirdId = UUID.randomUUID();
+            QuestCheckpoint first = QuestCheckpoint.builder().id(cpId).sortOrder(0).name("Gate")
+                    .latitude(SPOT_LAT).longitude(SPOT_LNG).radiusM(40).build();
+            QuestCheckpoint second = QuestCheckpoint.builder().id(secondId).sortOrder(1).name("Temple")
+                    .category("TEMPLE").latitude(SPOT_LAT).longitude(SPOT_LNG).radiusM(40)
+                    .completionMode("STOPS").minStops(2).build();
+            QuestCheckpoint third = QuestCheckpoint.builder().id(thirdId).sortOrder(2).name("Hidden stele")
+                    .latitude(SPOT_LAT).longitude(SPOT_LNG).radiusM(30).findMode("AREA").searchRadiusM(200)
+                    .story("Built in 1865.").build();
+            play(first, second, third);
+
+            QuestRunResponse run = service.getRun(user, runId);
+
+            assertThat(run.current().checkpointId()).isEqualTo(cpId);
+            assertThat(run.upcoming()).extracting(QuestRunResponse.UpcomingCheckpointView::checkpointId)
+                    .containsExactly(secondId, thirdId);
+            QuestRunResponse.UpcomingCheckpointView temple = run.upcoming().get(0);
+            assertThat(temple.name()).isEqualTo("Temple");
+            assertThat(temple.category()).isEqualTo("TEMPLE");
+            assertThat(temple.completionMode()).isEqualTo("STOPS");
+            assertThat(temple.minStops()).isEqualTo(2);
+            assertThat(run.upcoming().get(1).findMode()).isEqualTo("AREA");
+            assertThat(run.upcoming().get(1).preview().hasStory()).isTrue();
+
+            unlock(cpId);
+            assertThat(service.getRun(user, runId).upcoming())
+                    .as("a cleared checkpoint leaves the list; the next one becomes current")
+                    .extracting(QuestRunResponse.UpcomingCheckpointView::checkpointId)
+                    .containsExactly(thirdId);
+        }
+    }
 }

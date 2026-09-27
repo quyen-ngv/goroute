@@ -23,6 +23,9 @@ import com.ds.goroute.quest.domain.QuestVersion;
 import com.ds.goroute.quest.dto.QuestAnswerRequest;
 import com.ds.goroute.quest.dto.QuestAnswerResponse;
 import com.ds.goroute.quest.dto.QuestArrivalResponse;
+import com.ds.goroute.quest.dto.QuestLocalRunRequest;
+import com.ds.goroute.quest.dto.QuestLocalRunResponse;
+import com.ds.goroute.quest.dto.QuestPackResponse;
 import com.ds.goroute.quest.dto.QuestProximityRequest;
 import com.ds.goroute.quest.dto.QuestProximityResponse;
 import com.ds.goroute.quest.dto.QuestRunResponse;
@@ -265,6 +268,237 @@ public class QuestPlayService {
         return getRun(userId, runId);
     }
 
+    // --- local-first play ---------------------------------------------------------------
+
+    /**
+     * The whole published version, answers included, for playing on the phone. Only for a player
+     * who may start it (free, unlocked, or the creator): the same gate as {@link #startRun}.
+     */
+    @Transactional(readOnly = true)
+    public QuestPackResponse pack(UUID userId, UUID questId) {
+        Quest quest = questRepository.findQuestById(questId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Quest not found"));
+        if (quest.questStatus() != QuestStatus.PUBLISHED || quest.getPublishedVersionId() == null) {
+            throw new BusinessException(ErrorConstant.NOT_FOUND, "Quest not found");
+        }
+        QuestVersion version = questRepository.loadVersionGraph(quest.getPublishedVersionId())
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Quest content missing"));
+        requireEntitled(quest, version, userId);
+        boolean creator = userId.equals(creatorUserId(questId));
+
+        QuestPackResponse.Settings settings = new QuestPackResponse.Settings(
+                config.getInt(BusinessConfigKey.QUEST_ARRIVAL_STABLE_SAMPLES),
+                config.getInt(BusinessConfigKey.QUEST_ARRIVAL_CLIENT_INTERVAL_SECONDS),
+                config.getInt(BusinessConfigKey.QUEST_UNLOCK_RADIUS_METERS),
+                config.getInt(BusinessConfigKey.CHECKIN_MAX_ACCURACY_METERS),
+                config.getInt(BusinessConfigKey.QUEST_MAX_GUESS_ATTEMPTS),
+                config.getInt(BusinessConfigKey.QUEST_PROXIMITY_MIN_INTERVAL_SECONDS));
+        List<QuestPackResponse.Checkpoint> checkpoints = version.getCheckpoints().stream()
+                .map(cp -> packCheckpoint(cp, creator))
+                .toList();
+        return new QuestPackResponse(questId, version.getId(), intOf(version.getVersion()),
+                intOf(version.getContentRevision()), version.getTitle(), version.getSummary(), version.getCoverUrl(),
+                version.getContentLanguage(), intOf(version.getPriceStars()), intOf(version.getRewardStars()),
+                settings, checkpoints);
+    }
+
+    private QuestPackResponse.Checkpoint packCheckpoint(QuestCheckpoint cp, boolean creator) {
+        return new QuestPackResponse.Checkpoint(
+                cp.getId(), intOf(cp.getSortOrder()), cp.getName(), cp.getCategory(),
+                cp.getLatitude(), cp.getLongitude(), cp.getRadiusM(), cp.isRequiresCheckin(),
+                json.readList(cp.getImageUrls(), String.class), cp.find().name(),
+                cp.getSearchCenterLat(), cp.getSearchCenterLng(), cp.getSearchRadiusM(), cp.isHotColdEnabled(),
+                cp.completion().name(), cp.getMinStops(), cp.getStory(), cp.getStoryAudioUrl(),
+                cp.getStoryAudioSeconds(),
+                cp.getClues().stream().map(c -> new QuestPackResponse.Clue(intOf(c.getTier()), c.getKind(),
+                        creator ? 0 : intOf(c.getCostStars()), c.getText(), c.getImageUrl())).toList(),
+                cp.getStops().stream().map(stop -> new QuestPackResponse.Stop(stop.getId(),
+                        intOf(stop.getSortOrder()), stop.getName(), stop.getCategory(), stop.getLatitude(),
+                        stop.getLongitude(), intOf(stop.getRadiusM()), stop.getStory(),
+                        json.readList(stop.getImageUrls(), String.class), stop.getAudioUrl(),
+                        stop.getAudioSeconds())).toList(),
+                cp.getQuestions().stream().map(q -> new QuestPackResponse.Question(q.getId(),
+                        intOf(q.getSortOrder()), q.isRequired(), q.isBonus(), q.getType(), q.getPrompt(),
+                        q.getImageMediaId(), q.getAnswerPlain(), json.readList(q.getAnswerVariants(), String.class),
+                        q.getNumberTolerance(), q.getHintTier1(), q.getHintTier2(), q.getHintTier3(),
+                        q.getChoices().stream().map(c -> new QuestPackResponse.Choice(c.getId(),
+                                intOf(c.getSortOrder()), c.getContent(), c.isCorrect())).toList())).toList());
+    }
+
+    /**
+     * Records a run played on the phone (local-first play). The server replays it rather than
+     * trusting it: an arrival counts only when its position lands inside the unlock circle (with
+     * the fix's accuracy as slack, up to CHECKIN_MAX_ACCURACY_METERS), an answer only when it grades
+     * right here, a storytelling point only when heard inside its radius, and each clue is charged
+     * now. The run is COMPLETED and rewarded only when every checkpoint holds up; otherwise it is
+     * kept as ABANDONED. Idempotent on the phone's run id.
+     */
+    @Transactional
+    public QuestLocalRunResponse syncLocalRun(UUID userId, UUID questId, QuestLocalRunRequest request) {
+        QuestRun existing = runRepository.findRunByClientId(userId, request.clientRunId()).orElse(null);
+        if (existing != null) {
+            return localRunSummary(userId, existing, 0);
+        }
+        Quest quest = questRepository.findQuestById(questId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Quest not found"));
+        QuestVersion version = questRepository.loadVersionGraph(request.versionId())
+                .filter(v -> questId.equals(v.getQuestId()))
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Quest version not found"));
+        requireEntitled(quest, version, userId);
+
+        LocalDateTime now = LocalDateTime.now();
+        // Terminal from the start: the open-run index allows one IN_PROGRESS run per quest, and a
+        // replayed run is never played further on the server.
+        QuestRun run = QuestRun.builder()
+                .id(UUID.randomUUID()).questId(questId).questVersionId(version.getId()).ownerUserId(userId)
+                .status(QuestRunStatus.ABANDONED.name())
+                .startedAt(request.startedAt() == null ? now : request.startedAt())
+                .lastActivityAt(now).dataVersion(1L).createdAt(now).clientRunId(request.clientRunId())
+                .build();
+        runRepository.insertRun(run);
+        QuestRunMember member = QuestRunMember.builder()
+                .id(UUID.randomUUID()).runId(run.getId()).userId(userId).joinedAt(run.getStartedAt())
+                .verification("UNVERIFIED").presenceCheckpoints(0).rewarded(false).build();
+        runRepository.insertMember(member);
+
+        int maxAccuracy = config.getInt(BusinessConfigKey.CHECKIN_MAX_ACCURACY_METERS);
+        int required = config.getInt(BusinessConfigKey.QUEST_ARRIVAL_STABLE_SAMPLES);
+        for (QuestLocalRunRequest.Arrival arrival : nonNull(request.arrivals())) {
+            QuestCheckpoint cp = findCheckpoint(version, arrival.checkpointId());
+            if (cp == null || arrival.latitude() == null || arrival.longitude() == null
+                    || runRepository.findRunCheckpoint(member.getId(), cp.getId()).isPresent()) {
+                continue;
+            }
+            VerificationTarget target = unlockTarget(cp);
+            Double distance = GeoDistance.betweenOrNull(arrival.latitude(), arrival.longitude(),
+                    target.latitude(), target.longitude());
+            boolean inside = within(distance, target.effectiveRadiusMeters(), arrival.accuracyMeters(), maxAccuracy);
+            LocalDateTime at = arrival.arrivedAt() == null ? now : arrival.arrivedAt();
+            runRepository.insertRunCheckpoint(QuestRunCheckpoint.builder()
+                    .id(UUID.randomUUID()).runId(run.getId()).memberId(member.getId()).checkpointId(cp.getId())
+                    .gpsOverride(false).stableStreak(inside ? required : 0)
+                    .distanceMeters(distance == null ? null : BigDecimal.valueOf(distance)
+                            .setScale(2, java.math.RoundingMode.HALF_UP))
+                    .accuracyMeters(arrival.accuracyMeters()).lastSampleAt(at)
+                    .lastSampleLat(arrival.latitude()).lastSampleLng(arrival.longitude())
+                    .unlockedAt(inside ? at : null).dataVersion(1L).build());
+            if (inside && cp.isRequiresCheckin()) {
+                // The phone cannot post a check-in offline; arriving in person stands in for it.
+                runRepository.findRunCheckpoint(member.getId(), cp.getId()).ifPresent(rc ->
+                        runRepository.updateRunCheckpointCheckin(rc.getId(), null, "WAIVED"));
+            }
+        }
+
+        int maxGuesses = config.getInt(BusinessConfigKey.QUEST_MAX_GUESS_ATTEMPTS);
+        for (QuestLocalRunRequest.Answer answer : nonNull(request.answers())) {
+            QuestCheckpoint cp = version.getCheckpoints().stream()
+                    .filter(c -> c.getQuestions().stream().anyMatch(q -> q.getId().equals(answer.questionId())))
+                    .findFirst().orElse(null);
+            if (cp == null || runRepository.findRunQuestion(member.getId(), answer.questionId()).isPresent()) {
+                continue;
+            }
+            QuestQuestion question = cp.getQuestions().stream()
+                    .filter(q -> q.getId().equals(answer.questionId())).findFirst().orElseThrow();
+            int guesses = Math.clamp(answer.guessCount() == null ? 1 : answer.guessCount(), 1, maxGuesses);
+            boolean correct = grade(question, new QuestAnswerRequest(answer.text(), answer.choiceIds()));
+            QuestRunQuestion rq = newRunQuestion(run, member, question.getId());
+            rq.setGuessCount(guesses);
+            rq.setCorrect(correct);
+            rq.setAnsweredAt(correct ? now : null);
+            runRepository.updateRunQuestion(rq);
+        }
+
+        boolean creator = userId.equals(creatorUserId(questId));
+        int unpaid = 0;
+        for (QuestLocalRunRequest.Clue used : nonNull(request.clues())) {
+            QuestCheckpoint cp = findCheckpoint(version, used.checkpointId());
+            QuestCheckpointClue clue = cp == null ? null : cp.getClues().stream()
+                    .filter(c -> intOf(c.getTier()) == used.tier()).findFirst().orElse(null);
+            if (clue == null) {
+                continue;
+            }
+            int cost = creator ? 0 : intOf(clue.getCostStars());
+            UUID transactionId = null;
+            if (cost > 0) {
+                try {
+                    StarTransaction spent = starService.spend(userId, cost, "QUEST_CLUE",
+                            "quest_clue:" + run.getId() + ":" + cp.getId() + ":" + used.tier() + ":" + userId,
+                            "Quest finding clue");
+                    transactionId = spent == null ? null : spent.getId();
+                } catch (BusinessException notEnoughStars) {
+                    unpaid++;
+                    cost = 0;
+                }
+            }
+            boolean inserted = runRepository.insertRunClue(QuestRunClue.builder()
+                    .id(UUID.randomUUID()).runId(run.getId()).memberId(member.getId()).checkpointId(cp.getId())
+                    .tier(used.tier()).starsSpent(cost).starTransactionId(transactionId)
+                    .boughtAt(used.boughtAt() == null ? now : used.boughtAt()).build());
+            if (inserted && cost > 0) {
+                economyService.creditClueSale(questId, run.getId(), userId, cost,
+                        "clue:" + run.getId() + ":" + cp.getId() + ":" + used.tier() + ":" + userId);
+            }
+        }
+
+        for (QuestLocalRunRequest.StopVisit visit : nonNull(request.stopVisits())) {
+            QuestCheckpoint cp = version.getCheckpoints().stream()
+                    .filter(c -> c.getStops().stream().anyMatch(stop -> stop.getId().equals(visit.stopId())))
+                    .findFirst().orElse(null);
+            if (cp == null) {
+                continue;
+            }
+            QuestCheckpointStop stop = cp.getStops().stream()
+                    .filter(candidate -> candidate.getId().equals(visit.stopId())).findFirst().orElseThrow();
+            boolean gps = visit.latitude() != null && visit.longitude() != null;
+            boolean counts = gps && within(GeoDistance.betweenOrNull(visit.latitude(), visit.longitude(),
+                    stop.getLatitude(), stop.getLongitude()), intOf(stop.getRadiusM()), visit.accuracyMeters(),
+                    maxAccuracy);
+            runRepository.upsertRunStopVisit(QuestRunStopVisit.builder()
+                    .id(UUID.randomUUID()).runId(run.getId()).memberId(member.getId()).checkpointId(cp.getId())
+                    .stopId(stop.getId()).via(gps ? "GPS" : "TAP").countsTowardCompletion(counts)
+                    .visitedAt(visit.visitedAt() == null ? now : visit.visitedAt()).build());
+        }
+
+        if (request.completedAt() != null && allCheckpointsCleared(version, member)
+                && runRepository.updateRunStatus(run.getId(), run.getDataVersion(),
+                        QuestRunStatus.COMPLETED.name(), request.completedAt(), now)) {
+            if (unpaid == 0) {
+                grantCompletionRewards(run, version);
+            }
+        }
+        return localRunSummary(userId, runRepository.findRunById(run.getId()).orElse(run), unpaid);
+    }
+
+    private QuestLocalRunResponse localRunSummary(UUID userId, QuestRun run, int unpaid) {
+        QuestVersion version = snapshot(run);
+        QuestRunMember member = requireMember(run, userId);
+        MemberProgress p = progressOf(member);
+        int cleared = (int) version.getCheckpoints().stream().filter(cp -> isCheckpointCleared(cp, p)).count();
+        boolean completed = QuestRunStatus.COMPLETED.name().equals(run.getStatus());
+        boolean rewarded = runRepository.findMember(run.getId(), userId)
+                .map(QuestRunMember::isRewarded).orElse(false);
+        return new QuestLocalRunResponse(run.getId(), run.getStatus(), completed, rewarded, cleared,
+                version.getCheckpoints().size(), unpaid);
+    }
+
+    /** Inside the circle, with the fix's own accuracy (capped) as slack. */
+    private static boolean within(Double distance, int radius, BigDecimal accuracy, int maxAccuracy) {
+        if (distance == null) {
+            return false;
+        }
+        double slack = accuracy == null ? 0 : Math.min(Math.max(accuracy.doubleValue(), 0), maxAccuracy);
+        return distance <= radius + slack;
+    }
+
+    private static QuestCheckpoint findCheckpoint(QuestVersion version, UUID checkpointId) {
+        return version.getCheckpoints().stream()
+                .filter(cp -> cp.getId().equals(checkpointId)).findFirst().orElse(null);
+    }
+
+    private static <T> List<T> nonNull(List<T> list) {
+        return list == null ? List.of() : list;
+    }
+
     // --- dynamic checkpoints (§3.14) ----------------------------------------------------
 
     /**
@@ -494,6 +728,7 @@ public class QuestPlayService {
         List<QuestCheckpoint> checkpoints = version.getCheckpoints();
         List<QuestRunResponse.ClearedCheckpointView> cleared = new ArrayList<>();
         QuestRunResponse.CurrentCheckpointView current = null;
+        List<QuestRunResponse.UpcomingCheckpointView> upcoming = new ArrayList<>();
         int clearedCount = 0;
         for (QuestCheckpoint cp : checkpoints) {
             if (isCheckpointCleared(cp, p)) {
@@ -504,14 +739,30 @@ public class QuestPlayService {
                         cp.getStoryAudioUrl(), cp.getStoryAudioSeconds(), stopViews(cp, p)));
             } else if (current == null) {
                 current = currentView(run, cp, p, creator);
+            } else {
+                // Checkpoints after the current one: public facts only, no coordinates ahead.
+                upcoming.add(new QuestRunResponse.UpcomingCheckpointView(
+                        cp.getId(), intOf(cp.getSortOrder()), cp.getName(), cp.getCategory(),
+                        cp.find().name(), cp.completion().name(), cp.getMinStops(), preview(cp)));
             }
-            // Checkpoints after the current one are intentionally omitted: no coordinates ahead.
         }
         boolean completed = current == null;
         return new QuestRunResponse(run.getId(), run.getQuestId(), run.getStatus(),
                 clearedCount, checkpoints.size(), completed, cleared, current,
                 config.getInt(BusinessConfigKey.QUEST_ARRIVAL_CLIENT_INTERVAL_SECONDS),
-                version.getContentLanguage());
+                version.getContentLanguage(), upcoming);
+    }
+
+    /** What a checkpoint holds, as counts and flags: safe to show before the player gets there. */
+    private static QuestRunResponse.CheckpointPreview preview(QuestCheckpoint cp) {
+        String story = cp.getStory();
+        boolean audio = cp.getStoryAudioUrl() != null && !cp.getStoryAudioUrl().isBlank();
+        return new QuestRunResponse.CheckpointPreview(
+                cp.getQuestions().size(),
+                (int) cp.getQuestions().stream().filter(QuestQuestion::isRequired).count(),
+                cp.isRequiresCheckin(), cp.getStops().size(),
+                story != null && !story.isBlank(), audio,
+                audio ? cp.getStoryAudioSeconds() : null);
     }
 
     private QuestRunResponse.CurrentCheckpointView currentView(QuestRun run, QuestCheckpoint cp, MemberProgress p,
@@ -559,7 +810,7 @@ public class QuestPlayService {
                 unlocked ? cp.getStoryAudioSeconds() : null,
                 clues,
                 unlocked ? stopViews(cp, p) : List.of(),
-                stopsCounted(cp, p), revealed);
+                stopsCounted(cp, p), revealed, preview(cp));
     }
 
     private List<QuestRunResponse.StopView> stopViews(QuestCheckpoint cp, MemberProgress p) {
