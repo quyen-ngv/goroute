@@ -40,8 +40,6 @@ import java.util.stream.Stream;
 @RequiredArgsConstructor
 public class QuestArObjectLibraryService {
 
-    /** Above the spec's 5 MB target, which only warns; this is the hard ceiling. */
-    static final long MAX_MODEL_BYTES = 10L * 1024 * 1024;
     static final long MAX_THUMBNAIL_BYTES = 1024L * 1024;
 
     private final QuestRepository repository;
@@ -74,7 +72,7 @@ public class QuestArObjectLibraryService {
     }
 
     private QuestArObjectFileResponse upload(String folder, FileKind kind, MultipartFile file) {
-        byte[] bytes = read(file, kind == FileKind.THUMBNAIL ? MAX_THUMBNAIL_BYTES : MAX_MODEL_BYTES);
+        byte[] bytes = read(file, kind == FileKind.THUMBNAIL ? MAX_THUMBNAIL_BYTES : maxModelBytes());
         String prefix = folder + UUID.randomUUID();
         return switch (kind) {
             case GLB -> {
@@ -140,7 +138,7 @@ public class QuestArObjectLibraryService {
         String folder = creatorFolder(userId);
 
         String glbKey = ownKey(request.glbUrl(), folder, "GLB", ".glb");
-        byte[] glb = readStored(glbKey, "GLB", MAX_MODEL_BYTES);
+        byte[] glb = readStored(glbKey, "GLB", maxModelBytes());
         ArModelInspector.Inspection inspection = ArModelInspector.inspectGlb(glb, objectMapper);
         if (!inspection.usable()) {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
@@ -150,7 +148,7 @@ public class QuestArObjectLibraryService {
                 : ownKey(request.usdzUrl(), folder, "USDZ", ".usdz");
         Long usdzBytes = null;
         if (usdzKey != null) {
-            byte[] usdz = readStored(usdzKey, "USDZ", MAX_MODEL_BYTES);
+            byte[] usdz = readStored(usdzKey, "USDZ", maxModelBytes());
             if (!ArModelInspector.isUsdz(usdz)) {
                 throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "The USDZ file is not a USDZ");
             }
@@ -228,7 +226,8 @@ public class QuestArObjectLibraryService {
                     "The " + what + " was not found; upload it again");
         }
         if (bytes.length > max) {
-            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "The " + what + " is too large");
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "The " + what + " is larger than "
+                    + (max / 1024 / 1024 == 0 ? max / 1024 + " KB" : max / 1024 / 1024 + " MB"));
         }
         return bytes;
     }
@@ -361,10 +360,16 @@ public class QuestArObjectLibraryService {
         if (bytes == null || bytes.length == 0) {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Nothing was found at " + url);
         }
-        if (bytes.length > MAX_MODEL_BYTES) {
-            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "The file at " + url + " is over 10 MB");
+        if (bytes.length > maxModelBytes()) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "The file at " + url + " is over " + config.getInt(BusinessConfigKey.QUEST_AR_MAX_MODEL_MB) + " MB");
         }
         return bytes;
+    }
+
+    /** The largest GLB or USDZ taken: {@code QUEST.AR_MAX_MODEL_MB} in the config table (default 50). */
+    private long maxModelBytes() {
+        return config.getInt(BusinessConfigKey.QUEST_AR_MAX_MODEL_MB) * 1024L * 1024L;
     }
 
     private static byte[] read(MultipartFile file, long max) {

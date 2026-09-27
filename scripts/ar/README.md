@@ -30,8 +30,10 @@ The console refuses a GLB that breaks a hard rule below and says why; it warns a
 - **Materials:** 1–2 PBR metallic-roughness materials. Bake ambient occlusion into the base colour
   if you want contact shading; the app adds a soft ground shadow.
 - **Textures:** PNG or JPEG, power-of-two sides, **≤ 1024 px** (2048 at most).
-- **Size:** each file **≤ 5 MB** (warning above); **10 MB is the hard limit**. Players download it
-  with the quest, often on mobile data.
+- **Size:** each file **≤ 5 MB** (warning above); the hard limit is `QUEST.AR_MAX_MODEL_MB` in the
+  config table (default **50 MB**, 1–200). Players download it with the quest, often on mobile data.
+  Uploads that large also need the server's own limits raised: Spring
+  `spring.servlet.multipart.max-file-size` / `max-request-size` and nginx `client_max_body_size`.
 - **Skinned models:** at most **50 bones** in a skin.
 
 ## Animation (all optional)

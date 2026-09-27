@@ -237,7 +237,10 @@ public enum BusinessConfigKey {
     QUEST_AR_ENABLED("QUEST", "AR_ENABLED", false),
     QUEST_AR_INTERACT_RADIUS_METERS("QUEST", "AR_INTERACT_RADIUS_METERS", 40, 10, 150),
     // How many 3D objects one creator may upload for their own quests (each up to ~20 MB stored).
-    QUEST_AR_CREATOR_MAX_OBJECTS("QUEST", "AR_CREATOR_MAX_OBJECTS", 20, 0, 200);
+    QUEST_AR_CREATOR_MAX_OBJECTS("QUEST", "AR_CREATOR_MAX_OBJECTS", 20, 0, 200),
+    // The largest GLB or USDZ the server takes, in MB. Players download the model with the quest,
+    // so a large one costs every player that much data; the upload also warns above 5 MB.
+    QUEST_AR_MAX_MODEL_MB("QUEST", "AR_MAX_MODEL_MB", 50, 1, 200);
 
     /** Value shapes the configuration layer knows how to validate. */
     public enum ValueType {
