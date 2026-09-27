@@ -20,6 +20,14 @@ public class AdminAuthorization {
         } catch (Exception ignored) { return false; }
     }
 
+    /** Whether the caller holds the SUPER_ADMIN role — the one role that may self-approve a SYSTEM quest. */
+    public boolean isSuperAdmin(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) return false;
+        try {
+            return adminMapper.findRoleCodes(UUID.fromString(authentication.getName())).contains("SUPER_ADMIN");
+        } catch (Exception ignored) { return false; }
+    }
+
     public boolean owns(Authentication authentication, String resource, UUID resourceId) {
         if (authentication == null || resourceId == null) return false;
         try {

@@ -67,29 +67,48 @@ public class CheckinVerifier {
         }
     }
 
+    /** The check-in ladder: an existing signature that now delegates to the self-describing one. */
     public Assessment assess(Place place, BigDecimal latitude, BigDecimal longitude, BigDecimal accuracyMeters) {
+        return assess(VerificationTarget.forPlace(place, effectiveRadius(place)), latitude, longitude, accuracyMeters);
+    }
+
+    /**
+     * Decides the verdict for any {@link VerificationTarget}, place-backed or map-pinned.
+     *
+     * <p>The point is at the target when it falls inside the target's drawn area (if any) or,
+     * failing that, within the effective radius. The ward fallback only fires when the target
+     * allows it: a quest checkpoint turns it off so a point that misses the radius resolves to
+     * {@code NONE}, never {@code WARD} (§3.8).
+     */
+    public Assessment assess(VerificationTarget target, BigDecimal latitude, BigDecimal longitude,
+                             BigDecimal accuracyMeters) {
         int maxAccuracy = config.getInt(BusinessConfigKey.CHECKIN_MAX_ACCURACY_METERS);
         Boolean accuracyAcceptable = accuracyMeters == null ? null : accuracyMeters.doubleValue() <= maxAccuracy;
-        int radius = effectiveRadius(place);
-        Double distance = place == null ? null
-                : GeoDistance.betweenOrNull(latitude, longitude, place.getLatitude(), place.getLongitude());
+        int radius = target.effectiveRadiusMeters();
+        Double distance = target.hasCoordinates()
+                ? GeoDistance.betweenOrNull(latitude, longitude, target.latitude(), target.longitude())
+                : null;
 
-        Boolean withinPlace = null;
+        Boolean withinArea = null;
         boolean hasGeometry = false;
-        if (place != null && latitude != null && longitude != null) {
+        if (target.hasCoordinates() && latitude != null && longitude != null) {
             // The fix's own error is allowed as slack against a drawn edge: standing on the
             // lakeside path with a 15 m fix should not fail a polygon traced along the water.
-            Boolean insideGeometry = placeRepository.isWithinVerificationGeometry(
-                    place.getId(), latitude, longitude, accuracyMeters == null ? BigDecimal.ZERO : accuracyMeters);
+            Boolean insideGeometry = target.geometryPlaceId() == null ? null
+                    : placeRepository.isWithinVerificationGeometry(target.geometryPlaceId(), latitude, longitude,
+                            accuracyMeters == null ? BigDecimal.ZERO : accuracyMeters);
             if (insideGeometry != null) {
                 hasGeometry = true;
-                withinPlace = insideGeometry;
+                withinArea = insideGeometry;
             } else {
-                withinPlace = distance != null && distance <= radius;
+                withinArea = distance != null && distance <= radius;
             }
         }
-        return new Assessment(distance, withinPlace, hasGeometry, radius, accuracyAcceptable,
-                geoService.resolveWard(latitude, longitude));
+
+        Optional<Ward> ward = target.allowWardFallback()
+                ? geoService.resolveWard(latitude, longitude)
+                : Optional.empty();
+        return new Assessment(distance, withinArea, hasGeometry, radius, accuracyAcceptable, ward);
     }
 
     /** Writes the verdict, the distance and the resolved ward onto the check-in. */

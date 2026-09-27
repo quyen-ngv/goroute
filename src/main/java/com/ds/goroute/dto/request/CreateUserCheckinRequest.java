@@ -87,6 +87,10 @@ public class CreateUserCheckinRequest {
     @NotNull(message = "How the location was resolved is required")
     private CheckinLocationSource locationSource;
 
+    /** Set when this check-in is fulfilling a quest checkpoint's required check-in (D13). */
+    private UUID questRunId;
+    private UUID questCheckpointId;
+
     @Size(max = 5000)
     @ModeratedText(contentType = ModeratedContentType.CHECKIN, visibility = ModerationVisibility.PUBLIC)
     private String caption;

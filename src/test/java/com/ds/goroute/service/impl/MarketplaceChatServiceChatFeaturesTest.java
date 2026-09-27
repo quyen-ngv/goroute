@@ -392,6 +392,19 @@ class MarketplaceChatServiceChatFeaturesTest {
         }
     }
 
+    @Test
+    @DisplayName("reading tells the thread how far this person has now read, for Seen")
+    void markReadAnnouncesTheReadPosition() {
+        MarketplaceMessage message = MarketplaceMessage.builder()
+                .id(MESSAGE).conversationId(CONVERSATION).sequenceNo(9L).build();
+        when(repo.findMessage(MESSAGE)).thenReturn(Optional.of(message));
+
+        service.markRead(ME, CONVERSATION, MESSAGE);
+
+        verify(repo).markRead(CONVERSATION, ME, MESSAGE);
+        verify(webSocketService).broadcastToConversation(eq(CONVERSATION), eq("MESSAGE_READ"), any(), eq(ME));
+    }
+
     @Nested
     @DisplayName("muting")
     class Muting {

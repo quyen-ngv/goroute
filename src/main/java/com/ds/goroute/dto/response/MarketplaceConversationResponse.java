@@ -40,6 +40,10 @@ public class MarketplaceConversationResponse {
     private Long memberCount;
     private LocalDateTime mutedUntil;
 
+    /** The sequence every other member has read to; the client marks my last
+     * message "Seen" once it is at or below this. */
+    private Long othersReadUpToSequence;
+
     /** Enough of the last message to draw the inbox row. */
     private UUID lastMessageSenderId;
     private String lastMessageSenderName;

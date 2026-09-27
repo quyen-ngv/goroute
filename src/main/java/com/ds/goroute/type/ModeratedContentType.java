@@ -24,5 +24,9 @@ public enum ModeratedContentType {
     /** Partner-published catalogue text: hotels, rooms, rates, activities, packages. */
     PARTNER_LISTING,
     USER_PROFILE,
-    CHAT_MESSAGE
+    CHAT_MESSAGE,
+    /** Quest-level text a creator writes: title, summary, description, safety notes. */
+    QUEST,
+    /** Per-checkpoint text: names, stories, question prompts, hints. */
+    QUEST_CHECKPOINT
 }

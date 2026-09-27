@@ -19,5 +19,7 @@ public enum CheckinLocationSource {
     /** The user typed their own name for the spot. */
     USER_NAMED,
     /** Nothing could be resolved -- offline or the lookup failed. The check-in is still saved. */
-    COORDINATES_ONLY
+    COORDINATES_ONLY,
+    /** A quest checkpoint the player was required to check in at (D13). */
+    QUEST_CHECKPOINT
 }

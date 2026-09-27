@@ -58,7 +58,10 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
         return saved;
     }
 
- @Transactional public void markRead(UUID a,UUID id,UUID messageId){require(id,a);ensureConversationMember(id,a);MarketplaceMessage m=repo.findMessage(messageId).orElseThrow(()->notFound("Message not found"));if(!id.equals(m.getConversationId()))throw bad("Message does not belong to conversation");repo.markRead(id,a,messageId);}
+ @Transactional public void markRead(UUID a,UUID id,UUID messageId){require(id,a);ensureConversationMember(id,a);MarketplaceMessage m=repo.findMessage(messageId).orElseThrow(()->notFound("Message not found"));if(!id.equals(m.getConversationId()))throw bad("Message does not belong to conversation");repo.markRead(id,a,messageId);
+  // Tell the thread that this person has now read this far, so the sender's open
+  // screen can turn "Sent" into "Seen" without waiting for a reload.
+  broadcastAfterCommit(id,a,"MESSAGE_READ",Map.of("userId",a.toString(),"sequenceNo",m.getSequenceNo()));}
  /**
   * The access decision used to run in Java over an already paged result, so a scoped
   * employee saw short or empty pages and could not reach older conversations at all.
@@ -127,6 +130,7 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
                 .pinnedMessageId(c.getPinnedMessageId())
                 .memberCount(c.getMemberCount())
                 .mutedUntil(c.getMutedUntil())
+                .othersReadUpToSequence(c.getOthersReadSequence())
                 .lastMessageSenderId(c.getLastMessageSenderId())
                 .lastMessageSenderName(c.getLastMessageSenderName())
                 .lastMessageType(c.getLastMessageType())
