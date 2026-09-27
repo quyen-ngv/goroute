@@ -105,7 +105,7 @@ class QuestDraftValidatorTest {
                 .hasMessageContaining("cannot be hidden in a search area")
                 .hasMessageContaining("chosen from the library")
                 .hasMessageContaining("more than 1000 m away")
-                .hasMessageContaining("no landmark photo");
+                .hasMessageContaining("has not placed it at one");
 
         QuestCheckpoint good = checkpoint(true);
         good.setCompletionMode("AR_OBJECT");

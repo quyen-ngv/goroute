@@ -601,7 +601,8 @@ public class QuestPlayService {
             runRepository.touchRun(runId, LocalDateTime.now());
         }
         boolean cleared = accepted && isCheckpointCleared(cp, progressOf(member));
-        return new QuestArTapResponse(accepted, cleared, runState(userId, run));
+        QuestArObjectView revealed = accepted ? arObjectView(cp, arContext(version, true), true) : null;
+        return new QuestArTapResponse(accepted, cleared, runState(userId, run), revealed);
     }
 
     /** Records the tap when it lands within reach; false (and nothing written) when it does not. */
@@ -683,6 +684,7 @@ public class QuestPlayService {
                         clip.get("seconds") instanceof Number n ? n.doubleValue() : 0))
                 .toList();
         List<QuestArObjectView.Marker> markers = o.markersOrEmpty().stream()
+                .filter(QuestArObject.Marker::placed)
                 .map(m -> new QuestArObjectView.Marker(m.imageUrl(), m.widthM(),
                         m.offset() == null ? null : m.offset().x(), m.offset() == null ? null : m.offset().y(),
                         m.offset() == null ? null : m.offset().z(), m.yawDeg()))

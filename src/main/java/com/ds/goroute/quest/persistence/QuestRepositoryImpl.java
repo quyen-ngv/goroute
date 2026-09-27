@@ -298,6 +298,16 @@ public class QuestRepositoryImpl implements QuestRepository {
     }
 
     @Override
+    public int countCheckpointsUsingArObjectAsset(UUID id) {
+        return mapper.countCheckpointsUsingArObjectAsset(id);
+    }
+
+    @Override
+    public boolean deleteArObjectAsset(UUID id, long expectedVersion) {
+        return mapper.deleteArObjectAsset(id, expectedVersion) == 1;
+    }
+
+    @Override
     public void clearVersionContent(UUID versionId) {
         // Deepest table first: no physical FKs to cascade for us.
         mapper.deleteChoicesByVersion(versionId);

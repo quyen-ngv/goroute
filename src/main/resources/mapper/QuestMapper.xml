@@ -751,6 +751,17 @@
         WHERE id = #{asset.id} AND data_version = #{expectedVersion}
     </update>
 
+    <!-- Every checkpoint, of any version (a run in progress may still play an old one), that
+         places this object. -->
+    <select id="countCheckpointsUsingArObjectAsset" resultType="int">
+        SELECT COUNT(*) FROM quest_checkpoints
+        WHERE ar_object IS NOT NULL AND ar_object ->> 'assetId' = CAST(#{id} AS TEXT)
+    </select>
+
+    <delete id="deleteArObjectAsset">
+        DELETE FROM quest_ar_object_assets WHERE id = #{id} AND data_version = #{expectedVersion}
+    </delete>
+
     <delete id="deleteStopsByVersion">
         DELETE FROM quest_checkpoint_stops
         WHERE checkpoint_id IN (SELECT id FROM quest_checkpoints WHERE quest_version_id = #{versionId})

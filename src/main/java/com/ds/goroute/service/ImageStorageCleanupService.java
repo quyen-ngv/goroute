@@ -142,6 +142,32 @@ public class ImageStorageCleanupService {
         log.info("Deleted {} image objects for entity {} record {}", keys.size(), entity, id);
     }
 
+    /**
+     * The unattended sweep of one prefix: deletes objects under it that no table references and
+     * that are older than {@code minAge}, at most {@code limit} per call, with no backup copy --
+     * the point is to free the space. Only for a prefix whose writers are all listed in the
+     * specs, so that "unreferenced" really means "abandoned".
+     *
+     * @return the keys deleted
+     */
+    public List<String> deleteOrphansUnder(String prefix, Duration minAge, int limit) {
+        Set<String> referencedKeys = collectReferencedKeys(specs.keySet());
+        Instant newestDeletable = Instant.now().minus(minAge);
+        List<String> orphans = storageService.listObjects(prefix).stream()
+                .filter(object -> !referencedKeys.contains(object.key()))
+                // An unknown write time is treated as brand new, as in the manual sweep.
+                .filter(object -> object.lastModified() != null && !object.lastModified().isAfter(newestDeletable))
+                .map(StorageService.StoredObject::key)
+                .sorted()
+                .limit(Math.max(1, limit))
+                .toList();
+        if (!orphans.isEmpty()) {
+            storageService.deleteObjectKeys(orphans);
+            log.info("Deleted {} orphaned objects under {} (older than {} h)", orphans.size(), prefix, minAge.toHours());
+        }
+        return orphans;
+    }
+
     public OrphanImageCleanupResult cleanupOrphanedImages(
             Collection<String> entities,
             Collection<String> requestedPrefixes,
@@ -551,6 +577,31 @@ public class ImageStorageCleanupService {
                         "SELECT icon FROM passport_stamp_rules WHERE icon IS NOT NULL",
                         null,
                         "passport-catalog/"),
+                // Quest media (§3.13–3.15). Photos come through the generic upload door
+                // (expenses/<userId>/), voice clips through quest-audio/. Every version is
+                // kept -- a run in progress may still be playing an old one -- so every
+                // version's rows count. Checkpoints carry no single-UUID owner of their own
+                // media, so quests take part in the orphan sweep only.
+                spec("QUEST",
+                        """
+                        SELECT cover_url AS ref FROM quest_versions WHERE cover_url IS NOT NULL
+                        UNION ALL SELECT image_urls::text FROM quest_checkpoints WHERE image_urls <> '[]'::jsonb
+                        UNION ALL SELECT story_audio_url FROM quest_checkpoints WHERE story_audio_url IS NOT NULL
+                        UNION ALL SELECT ar_object::text FROM quest_checkpoints WHERE ar_object IS NOT NULL
+                        UNION ALL SELECT image_url FROM quest_checkpoint_clues WHERE image_url IS NOT NULL
+                        UNION ALL SELECT image_urls::text FROM quest_checkpoint_stops WHERE image_urls <> '[]'::jsonb
+                        UNION ALL SELECT audio_url FROM quest_checkpoint_stops WHERE audio_url IS NOT NULL
+                        """,
+                        null,
+                        "quest-audio/"),
+                // The AR object library's models and thumbnails. Two rows may name the same file
+                // (an object duplicated to try a new thumbnail), so a replaced or deleted file
+                // is kept while another row still uses it.
+                retaining("QUEST_AR_ASSET",
+                        "SELECT glb_url, usdz_url, thumbnail_url FROM quest_ar_object_assets",
+                        "SELECT glb_url, usdz_url, thumbnail_url FROM quest_ar_object_assets WHERE id = ?",
+                        "SELECT glb_url, usdz_url, thumbnail_url FROM quest_ar_object_assets WHERE id <> ?",
+                        "quest-ar/"),
                 spec("ROOM_TYPE",
                         "SELECT images FROM room_types WHERE images IS NOT NULL",
                         "SELECT images FROM room_types WHERE id = ? AND images IS NOT NULL",

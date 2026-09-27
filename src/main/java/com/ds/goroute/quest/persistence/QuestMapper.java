@@ -162,4 +162,8 @@ public interface QuestMapper {
 
     int updateArObjectAsset(@Param("asset") com.ds.goroute.quest.domain.QuestArObjectAsset asset,
                             @Param("expectedVersion") long expectedVersion);
+
+    int countCheckpointsUsingArObjectAsset(@Param("id") UUID id);
+
+    int deleteArObjectAsset(@Param("id") UUID id, @Param("expectedVersion") long expectedVersion);
 }

@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -73,5 +74,18 @@ public class QuestArObjectAdminController {
             @PathVariable UUID id,
             @Valid @RequestBody SaveQuestArObjectAssetRequest request) {
         return ResponseEntity.ok(BaseResponse.ofSucceeded(library.update(id, request)));
+    }
+
+    /**
+     * Deletes an object and its files from storage. Refused while any checkpoint places it;
+     * hide it ({@code active = false}) instead.
+     */
+    @DeleteMapping("/{id}")
+    @PreAuthorize("@adminAuthorization.can(authentication,'quests','update')")
+    public ResponseEntity<BaseResponse<Void>> delete(
+            @PathVariable UUID id,
+            @RequestParam(required = false) Long expectedVersion) {
+        library.delete(id, expectedVersion);
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(null));
     }
 }

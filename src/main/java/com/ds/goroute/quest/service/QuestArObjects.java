@@ -104,12 +104,16 @@ final class QuestArObjects {
         String at = where + " AR landmark";
         String url = httpUrl(m.getImageUrl(), at);
         BigDecimal width = m.getWidthM();
-        if (width == null || width.compareTo(MIN_MARKER_WIDTH_M) < 0 || width.compareTo(MAX_MARKER_WIDTH_M) > 0) {
+        // The width may be unknown until the object is placed (the camera measures it then).
+        if (width != null && (width.compareTo(MIN_MARKER_WIDTH_M) < 0 || width.compareTo(MAX_MARKER_WIDTH_M) > 0)) {
             throw invalid(at + " needs a width of " + MIN_MARKER_WIDTH_M + "–" + MAX_MARKER_WIDTH_M + " m");
         }
+        // A landmark photographed on site but not placed yet has no offset: a draft keeps it (the
+        // creator places the object later), play ignores it, and submit wants one that is placed.
         SaveQuestDraftRequest.Vec3Input o = m.getOffset();
-        if (o == null || o.getX() == null || o.getY() == null || o.getZ() == null) {
-            throw invalid(at + " has no position for the object");
+        boolean placed = o != null && o.getX() != null && o.getY() != null && o.getZ() != null;
+        if (!placed) {
+            return new QuestArObject.Marker(url, width, null, null);
         }
         for (BigDecimal axis : List.of(o.getX(), o.getY(), o.getZ())) {
             if (axis.abs().compareTo(MAX_MARKER_OFFSET_M) > 0) {
