@@ -6,6 +6,9 @@ import com.ds.goroute.quest.dto.QuestAnswerRequest;
 import com.ds.goroute.quest.dto.QuestAnswerResponse;
 import com.ds.goroute.quest.dto.QuestArrivalResponse;
 import com.ds.goroute.quest.dto.QuestEntitlementResponse;
+import com.ds.goroute.quest.dto.QuestLocalRunRequest;
+import com.ds.goroute.quest.dto.QuestLocalRunResponse;
+import com.ds.goroute.quest.dto.QuestPackResponse;
 import com.ds.goroute.quest.dto.QuestProximityRequest;
 import com.ds.goroute.quest.dto.QuestProximityResponse;
 import com.ds.goroute.quest.dto.QuestRunResponse;
@@ -31,8 +34,11 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.UUID;
 
 /**
- * Playing a quest (§6.4). The server decides arrival and grades answers; these endpoints never
+ * Playing a quest (§6.4). The run endpoints decide arrival and grade answers on the server and never
  * return an answer, a correct-choice flag, or a checkpoint's coordinates beyond the current one.
+ *
+ * <p>Local-first play is the exception, by design: {@code /pack} hands an entitled player the whole
+ * quest to play on the phone, and {@code /local-runs} takes the finished run back and replays it.
  */
 @RestController
 @Validated
@@ -49,6 +55,23 @@ public class QuestPlayController {
             @org.springframework.web.bind.annotation.RequestParam(required = false) UUID tripId) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(BaseResponse.ofSucceeded(playService.startRun(userId, questId, tripId)));
+    }
+
+    /** The whole quest, answers included, for playing on the phone. Entitled players only. */
+    @GetMapping("/v1/api/quests/{questId}/pack")
+    public ResponseEntity<BaseResponse<QuestPackResponse>> pack(
+            @CurrentUser UUID userId,
+            @PathVariable UUID questId) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(playService.pack(userId, questId)));
+    }
+
+    /** A run played on the phone, uploaded to be replayed and rewarded. Idempotent per client run id. */
+    @PostMapping("/v1/api/quests/{questId}/local-runs")
+    public ResponseEntity<BaseResponse<QuestLocalRunResponse>> syncLocalRun(
+            @CurrentUser UUID userId,
+            @PathVariable UUID questId,
+            @Valid @RequestBody QuestLocalRunRequest request) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(playService.syncLocalRun(userId, questId, request)));
     }
 
     /** Join an existing run as a group member (§3.13). */

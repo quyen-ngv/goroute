@@ -29,6 +29,8 @@ public class QuestRun {
     private Integer rankScore;
     private Long dataVersion;
     private LocalDateTime createdAt;
+    /** The phone's id for a run played locally and uploaded (null for a server-played run). */
+    private String clientRunId;
 
     public QuestRunStatus runStatus() {
         return QuestRunStatus.valueOf(status);

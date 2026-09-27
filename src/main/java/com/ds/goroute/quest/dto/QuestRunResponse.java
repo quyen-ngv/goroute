@@ -8,7 +8,8 @@ import java.util.UUID;
  * A run as the player sees it (§3.8, §3.14). Run-scoped and deliberately narrow: only the current
  * checkpoint carries coordinates and questions (an AREA checkpoint's only after its REVEAL clue is
  * bought; before that, only the offset search circle), cleared checkpoints carry their unlocked story,
- * and checkpoints still ahead are a count — never their coordinates. No question here carries an
+ * and checkpoints still ahead carry only their public facts ({@link UpcomingCheckpointView}) — never
+ * their coordinates, photos, questions or story. No question here carries an
  * answer, a correct-choice flag, or unbought hint text (rules 5.2/5.3). The offline buffer takes
  * only {@link #current}, one checkpoint ahead.
  */
@@ -23,7 +24,25 @@ public record QuestRunResponse(
         CurrentCheckpointView current,
         int arrivalClientIntervalSeconds,
         /** The version's content language: what the story is written and recorded in (§3.14.3). */
-        String language) {
+        String language,
+        /** The checkpoints after the current one, in order: public facts only, so the player sees the route. */
+        List<UpcomingCheckpointView> upcoming) {
+
+    /**
+     * What a checkpoint holds, told before the player gets there: how many questions, whether a
+     * check-in is needed, how many storytelling points, whether a story (and a recording) waits.
+     * Counts and flags only — never the prompts, the story or where anything is.
+     */
+    public record CheckpointPreview(int questionCount, int requiredQuestionCount, boolean requiresCheckin,
+                                    int stopCount, boolean hasStory, boolean hasStoryAudio,
+                                    Integer storyAudioSeconds) {
+    }
+
+    /** A checkpoint still ahead: its name, kind and what waits there. No coordinates, photos or content. */
+    public record UpcomingCheckpointView(UUID checkpointId, int sortOrder, String name, String category,
+                                         String findMode, String completionMode, Integer minStops,
+                                         CheckpointPreview preview) {
+    }
 
     public record ClearedCheckpointView(UUID checkpointId, int sortOrder, String name, String category,
                                         String story, List<String> imageUrls,
@@ -68,7 +87,9 @@ public record QuestRunResponse(
             /** Storytelling points heard by GPS inside their radius: what STOPS counts. */
             int stopsCounted,
             /** True once the REVEAL clue was bought. */
-            boolean assisted) {
+            boolean assisted,
+            /** What waits here, shown before arrival. */
+            CheckpointPreview preview) {
     }
 
     public record SearchAreaView(BigDecimal latitude, BigDecimal longitude, int radiusM) {

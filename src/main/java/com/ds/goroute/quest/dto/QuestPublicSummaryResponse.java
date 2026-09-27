@@ -22,5 +22,7 @@ public record QuestPublicSummaryResponse(
         String provinceCode,
         String wardCode,
         int checkpointCount,
-        List<String> amenityTags) {
+        List<String> amenityTags,
+        /** The one language the quest is written in (one quest, one language). */
+        String language) {
 }

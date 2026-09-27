@@ -54,7 +54,7 @@ public class QuestDiscoveryService {
                 json.readList(item.getPlayableMonths(), Integer.class), item.getRunExpiryHours(),
                 nz(item.getCheckpointCount()), nz(item.getRequiredCheckinCount()),
                 // D17: creators see who is playing; players are told so on the purchase and safety screens.
-                true);
+                true, item.getContentLanguage());
     }
 
     private QuestPublicSummaryResponse toSummary(QuestListItem item) {
@@ -62,7 +62,8 @@ public class QuestDiscoveryService {
                 item.getQuestId(), item.getOrigin(), item.getTitle(), item.getSummary(), item.getCoverMediaId(),
                 item.getCoverUrl(), item.getDifficulty(), item.getEstimatedMinutes(), item.getDistanceMeters(),
                 nz(item.getPriceStars()), nz(item.getRewardStars()), item.getProvinceCode(), item.getWardCode(),
-                nz(item.getCheckpointCount()), json.readList(item.getAmenityTags(), String.class));
+                nz(item.getCheckpointCount()), json.readList(item.getAmenityTags(), String.class),
+                item.getContentLanguage());
     }
 
     private static int nz(Integer value) {

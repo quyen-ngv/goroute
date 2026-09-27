@@ -31,5 +31,7 @@ public record QuestPublicDetailResponse(
         Integer runExpiryHours,
         int checkpointCount,
         int requiredCheckinCount,
-        boolean creatorSeesPlayers) {
+        boolean creatorSeesPlayers,
+        /** The one language the quest is written in (one quest, one language). */
+        String language) {
 }
