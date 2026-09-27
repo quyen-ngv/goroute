@@ -13,7 +13,7 @@ import java.util.Set;
 
 /**
  * Reads an uploaded 3D model far enough to check it against the AR asset spec (§3.15,
- * docs/AR_OBJECT_ASSET_SPEC.md) without a 3D library: the GLB's JSON chunk says everything that
+ * scripts/ar/README.md) without a 3D library: the GLB's JSON chunk says everything that
  * matters — compression extensions, external files, triangle count, skin size and the animation
  * clips with their lengths (a clip's length is the largest {@code max} of its samplers' input
  * accessors, which glTF requires to be present).

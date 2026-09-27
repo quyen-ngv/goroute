@@ -7,7 +7,7 @@ order the app expects (idle, walk, collect), each starting where the previous on
 cuts the timeline at the clip lengths the console read from the GLB, so this order and these
 lengths must match. Other clips are left off the timeline.
 
-See docs/AR_OBJECT_ASSET_SPEC.md.
+See scripts/ar/README.md.
 """
 
 import math
