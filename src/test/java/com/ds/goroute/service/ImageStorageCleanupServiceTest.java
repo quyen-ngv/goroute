@@ -120,6 +120,27 @@ class ImageStorageCleanupServiceTest {
         verify(storage).deleteObjectKeys(List.of("quest-ar/old.glb"));
     }
 
+    @Test
+    void theArSweepDeletesOnlyOldUnsavedUploadsWithoutABackup() {
+        when(storage.extractObjectKey(anyString()))
+                .thenAnswer(call -> call.<String>getArgument(0).replace("https://cdn/", ""));
+        when(mapper.selectRows(anyString(), any())).thenReturn(List.of());
+        when(mapper.selectRows(contains("FROM quest_ar_object_assets"), any()))
+                .thenReturn(urlRows("https://cdn/quest-ar/saved.glb"));
+        Instant old = Instant.now().minus(Duration.ofDays(5));
+        when(storage.listObjects("quest-ar/")).thenReturn(List.of(
+                new StorageService.StoredObject("quest-ar/saved.glb", old),
+                new StorageService.StoredObject("quest-ar/abandoned.glb", old),
+                new StorageService.StoredObject("quest-ar/uploading-now.glb", Instant.now()),
+                new StorageService.StoredObject("quest-ar/unknown-time.glb", null)));
+
+        var deleted = service.deleteOrphansUnder("quest-ar/", Duration.ofDays(2), 500);
+
+        assertThat(deleted).containsExactly("quest-ar/abandoned.glb");
+        verify(storage).deleteObjectKeys(List.of("quest-ar/abandoned.glb"));
+        verify(storage, never()).copyObjectKeys(any(), anyString());
+    }
+
     private static List<Map<String, Object>> urlRows(String... urls) {
         return java.util.Arrays.stream(urls)
                 .map(url -> Map.<String, Object>of("url", url))

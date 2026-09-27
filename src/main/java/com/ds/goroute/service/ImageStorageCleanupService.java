@@ -142,6 +142,32 @@ public class ImageStorageCleanupService {
         log.info("Deleted {} image objects for entity {} record {}", keys.size(), entity, id);
     }
 
+    /**
+     * The unattended sweep of one prefix: deletes objects under it that no table references and
+     * that are older than {@code minAge}, at most {@code limit} per call, with no backup copy --
+     * the point is to free the space. Only for a prefix whose writers are all listed in the
+     * specs, so that "unreferenced" really means "abandoned".
+     *
+     * @return the keys deleted
+     */
+    public List<String> deleteOrphansUnder(String prefix, Duration minAge, int limit) {
+        Set<String> referencedKeys = collectReferencedKeys(specs.keySet());
+        Instant newestDeletable = Instant.now().minus(minAge);
+        List<String> orphans = storageService.listObjects(prefix).stream()
+                .filter(object -> !referencedKeys.contains(object.key()))
+                // An unknown write time is treated as brand new, as in the manual sweep.
+                .filter(object -> object.lastModified() != null && !object.lastModified().isAfter(newestDeletable))
+                .map(StorageService.StoredObject::key)
+                .sorted()
+                .limit(Math.max(1, limit))
+                .toList();
+        if (!orphans.isEmpty()) {
+            storageService.deleteObjectKeys(orphans);
+            log.info("Deleted {} orphaned objects under {} (older than {} h)", orphans.size(), prefix, minAge.toHours());
+        }
+        return orphans;
+    }
+
     public OrphanImageCleanupResult cleanupOrphanedImages(
             Collection<String> entities,
             Collection<String> requestedPrefixes,
