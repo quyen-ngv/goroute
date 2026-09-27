@@ -53,11 +53,13 @@ public class QuestCheckpoint {
     private BigDecimal searchCenterLat;
     private BigDecimal searchCenterLng;
     private boolean hotColdEnabled;
-    /** TASK, ARRIVE or STOPS (§3.14); see {@link QuestCompletionMode}. */
+    /** TASK, ARRIVE, STOPS (§3.14) or AR_OBJECT (§3.15); see {@link QuestCompletionMode}. */
     private String completionMode;
     private Integer minStops;
     private String storyAudioUrl;
     private Integer storyAudioSeconds;
+    /** AR_OBJECT only: the object, as the JSON of {@link QuestArObject}; null otherwise. */
+    private String arObject;
     private LocalDateTime createdAt;
 
     @Builder.Default

@@ -231,7 +231,11 @@ public enum BusinessConfigKey {
     QUEST_MAX_STOPS_PER_CHECKPOINT("QUEST", "MAX_STOPS_PER_CHECKPOINT", 20, 1, 50),
     QUEST_STOP_MAX_DISTANCE_M("QUEST", "STOP_MAX_DISTANCE_M", 1000, 50, 5000),
     QUEST_PROXIMITY_MIN_INTERVAL_SECONDS("QUEST", "PROXIMITY_MIN_INTERVAL_SECONDS", 10, 1, 300),
-    QUEST_AUDIO_MAX_SECONDS("QUEST", "AUDIO_MAX_SECONDS", 300, 10, 1800);
+    QUEST_AUDIO_MAX_SECONDS("QUEST", "AUDIO_MAX_SECONDS", 300, 10, 1800),
+    // §3.15 AR objects. Creating one is open to beta testers only until AR_ENABLED is thrown;
+    // playing one is open to everyone. The interact radius is how near the object a tap counts.
+    QUEST_AR_ENABLED("QUEST", "AR_ENABLED", false),
+    QUEST_AR_INTERACT_RADIUS_METERS("QUEST", "AR_INTERACT_RADIUS_METERS", 40, 10, 150);
 
     /** Value shapes the configuration layer knows how to validate. */
     public enum ValueType {

@@ -188,7 +188,7 @@ class QuestLocalPlayTest {
                 List.of(new QuestLocalRunRequest.Arrival(cpId, lat, LNG, new BigDecimal("8"), LocalDateTime.now())),
                 List.of(new QuestLocalRunRequest.Answer(textQ, answer, null, 2),
                         new QuestLocalRunRequest.Answer(choiceQ, null, List.of(right), 1)),
-                used, List.of());
+                used, List.of(), List.of());
     }
 
     @Test

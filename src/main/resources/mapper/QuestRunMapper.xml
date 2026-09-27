@@ -84,18 +84,20 @@
         <result property="verification" column="verification"/>
         <result property="presenceCheckpoints" column="presence_checkpoints"/>
         <result property="rewarded" column="rewarded"/>
+        <result property="arSupported" column="ar_supported"/>
     </resultMap>
 
     <sql id="MemberColumns">
-        id, run_id, user_id, joined_at, left_at, verification, presence_checkpoints, rewarded
+        id, run_id, user_id, joined_at, left_at, verification, presence_checkpoints, rewarded, ar_supported
     </sql>
 
     <insert id="insertMember">
         INSERT INTO quest_run_members (
-            id, run_id, user_id, joined_at, left_at, verification, presence_checkpoints, rewarded
+            id, run_id, user_id, joined_at, left_at, verification, presence_checkpoints, rewarded,
+            ar_supported
         ) VALUES (
             #{id}, #{runId}, #{userId}, #{joinedAt}, #{leftAt}, #{verification},
-            #{presenceCheckpoints}, #{rewarded}
+            #{presenceCheckpoints}, #{rewarded}, #{arSupported}
         )
     </insert>
 
@@ -110,6 +112,11 @@
 
     <update id="markMemberRewarded">
         UPDATE quest_run_members SET rewarded = TRUE WHERE id = #{id}
+    </update>
+
+    <!-- Only ever switched on: an app that shows AR once can show it again. -->
+    <update id="markMemberArSupported">
+        UPDATE quest_run_members SET ar_supported = TRUE WHERE id = #{id} AND ar_supported = FALSE
     </update>
 
     <update id="updateMemberVerification">
@@ -140,13 +147,19 @@
         <result property="lastProximityAt" column="last_proximity_at"/>
         <result property="proximityBand" column="proximity_band"/>
         <result property="proximityTrend" column="proximity_trend"/>
+        <result property="arTappedAt" column="ar_tapped_at"/>
+        <result property="arTapLat" column="ar_tap_lat"/>
+        <result property="arTapLng" column="ar_tap_lng"/>
+        <result property="arTapAccuracy" column="ar_tap_accuracy"/>
+        <result property="arAnchorMode" column="ar_anchor_mode"/>
     </resultMap>
 
     <sql id="RunCheckpointColumns">
         id, run_id, member_id, checkpoint_id, gps_override, distance_meters, accuracy_meters,
         stable_streak, last_sample_at, last_sample_lat, last_sample_lng, last_sample_id,
         unlocked_at, checkin_id, checkin_state, data_version,
-        last_proximity_m, last_proximity_at, proximity_band, proximity_trend
+        last_proximity_m, last_proximity_at, proximity_band, proximity_trend,
+        ar_tapped_at, ar_tap_lat, ar_tap_lng, ar_tap_accuracy, ar_anchor_mode
     </sql>
 
     <insert id="insertRunCheckpoint">
@@ -190,6 +203,19 @@
         UPDATE quest_run_checkpoints
         SET checkin_id = #{checkinId}, checkin_state = #{checkinState}, data_version = data_version + 1
         WHERE id = #{id}
+    </update>
+
+    <!-- AR object (§3.15): the first accepted tap wins; the checkpoint unlocks with it if it had not. -->
+    <update id="updateRunCheckpointArTap">
+        UPDATE quest_run_checkpoints SET
+            ar_tapped_at = #{arTappedAt},
+            ar_tap_lat = #{arTapLat},
+            ar_tap_lng = #{arTapLng},
+            ar_tap_accuracy = #{arTapAccuracy},
+            ar_anchor_mode = #{arAnchorMode},
+            unlocked_at = COALESCE(unlocked_at, #{unlockedAt}),
+            data_version = data_version + 1
+        WHERE id = #{id} AND ar_tapped_at IS NULL
     </update>
 
     <!-- Hot/cold (§3.14.1): the distance stays on the server; only band and trend go out. -->

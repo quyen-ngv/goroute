@@ -63,6 +63,10 @@ public interface QuestRunMapper {
 
     int updateRunCheckpointProximity(QuestRunCheckpoint checkpoint);
 
+    int updateRunCheckpointArTap(QuestRunCheckpoint checkpoint);
+
+    int markMemberArSupported(@Param("id") UUID id);
+
     int updateRunCheckpointCheckin(@Param("id") UUID id, @Param("checkinId") UUID checkinId,
                                    @Param("checkinState") String checkinState);
 

@@ -23,4 +23,9 @@ public class QuestRunMember {
     private String verification;
     private Integer presenceCheckpoints;
     private boolean rewarded;
+    /**
+     * Whether this member's app can show AR objects (§3.15), from the capability header it sent
+     * when it joined. Without it an AR_OBJECT checkpoint plays as ARRIVE for this member.
+     */
+    private boolean arSupported;
 }

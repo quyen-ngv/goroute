@@ -11,6 +11,7 @@ import com.ds.goroute.quest.domain.QuestVersion;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -105,6 +106,20 @@ public interface QuestRepository {
     void insertClue(QuestCheckpointClue clue);
 
     void insertStop(QuestCheckpointStop stop);
+
+    // --- AR object library (§3.15) ------------------------------------------------------
+
+    List<com.ds.goroute.quest.domain.QuestArObjectAsset> findArObjectAssets(boolean activeOnly);
+
+    Optional<com.ds.goroute.quest.domain.QuestArObjectAsset> findArObjectAsset(UUID id);
+
+    /** By id; ids not found are simply absent from the map. */
+    Map<UUID, com.ds.goroute.quest.domain.QuestArObjectAsset> findArObjectAssets(java.util.Collection<UUID> ids);
+
+    void insertArObjectAsset(com.ds.goroute.quest.domain.QuestArObjectAsset asset);
+
+    /** False when the row moved on since {@code expectedVersion}. */
+    boolean updateArObjectAsset(com.ds.goroute.quest.domain.QuestArObjectAsset asset, long expectedVersion);
 
     /** Wipes the whole content graph of a version, deepest table first. */
     void clearVersionContent(UUID versionId);

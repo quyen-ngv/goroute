@@ -37,6 +37,12 @@ public class QuestRunCheckpoint {
     private LocalDateTime lastProximityAt;
     private String proximityBand;
     private String proximityTrend;
+    /** AR_OBJECT (§3.15): the tap that found the object, and how it was anchored on the phone. */
+    private LocalDateTime arTappedAt;
+    private BigDecimal arTapLat;
+    private BigDecimal arTapLng;
+    private BigDecimal arTapAccuracy;
+    private String arAnchorMode;
 
     public boolean isUnlocked() {
         return unlockedAt != null;

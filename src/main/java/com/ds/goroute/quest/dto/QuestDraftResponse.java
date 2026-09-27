@@ -1,6 +1,7 @@
 package com.ds.goroute.quest.dto;
 
 import com.ds.goroute.quest.domain.Quest;
+import com.ds.goroute.quest.domain.QuestArObject;
 import com.ds.goroute.quest.domain.QuestCheckpoint;
 import com.ds.goroute.quest.domain.QuestCreatorNote;
 import com.ds.goroute.quest.domain.QuestQuestion;
@@ -28,7 +29,12 @@ public record QuestDraftResponse(
         UUID draftVersionId,
         UUID publishedVersionId,
         boolean pendingChangeReview,
-        VersionView version) {
+        VersionView version,
+        /**
+         * Whether this viewer may add or change an AR object (§3.15): AR_ENABLED, or a beta tester.
+         * The console never may (it shows AR objects read-only) and gets false.
+         */
+        boolean arObjectsAllowed) {
 
     public record VersionView(
             UUID id,
@@ -80,7 +86,9 @@ public record QuestDraftResponse(
             String storyAudioUrl,
             Integer storyAudioSeconds,
             List<ClueView> clues,
-            List<StopView> stops) {
+            List<StopView> stops,
+            /** AR_OBJECT only (§3.15); null otherwise. Sent back unchanged by a client that cannot edit it. */
+            QuestArObject arObject) {
     }
 
     public record ClueView(int tier, String kind, String text, String imageUrl, int costStars) {
@@ -124,10 +132,12 @@ public record QuestDraftResponse(
     public static QuestDraftResponse of(Quest quest, QuestVersion version,
                                         Map<UUID, List<QuestCreatorNote>> notesByCheckpoint,
                                         List<String> amenityTags, List<String> cityImageIds,
-                                        Function<String, List<String>> readStrings) {
+                                        Function<String, List<String>> readStrings,
+                                        Function<String, QuestArObject> readArObject,
+                                        boolean arObjectsAllowed) {
         List<CheckpointView> checkpoints = version.getCheckpoints().stream()
                 .map(cp -> checkpointView(cp, notesByCheckpoint.getOrDefault(cp.getId(), List.of()),
-                        readStrings))
+                        readStrings, readArObject))
                 .toList();
         VersionView versionView = new VersionView(
                 version.getId(), n(version.getVersion()), n(version.getContentRevision()),
@@ -139,11 +149,12 @@ public record QuestDraftResponse(
         return new QuestDraftResponse(quest.getId(), quest.getCreatorId(), quest.getOrigin(),
                 quest.getStatus(), quest.getDataVersion() == null ? 0 : quest.getDataVersion(),
                 quest.getDraftVersionId(), quest.getPublishedVersionId(), quest.isPendingChangeReview(),
-                versionView);
+                versionView, arObjectsAllowed);
     }
 
     private static CheckpointView checkpointView(QuestCheckpoint cp, List<QuestCreatorNote> notes,
-                                                 Function<String, List<String>> readStrings) {
+                                                 Function<String, List<String>> readStrings,
+                                                 Function<String, QuestArObject> readArObject) {
         List<QuestionView> questions = cp.getQuestions().stream()
                 .map(QuestDraftResponse::questionView)
                 .toList();
@@ -162,7 +173,8 @@ public record QuestDraftResponse(
                 notes.stream().map(QuestCreatorNote::getNote).toList(),
                 cp.find().name(), cp.getSearchRadiusM(), cp.getSearchCenterLat(), cp.getSearchCenterLng(),
                 cp.isHotColdEnabled(), cp.completion().name(), cp.getMinStops(),
-                cp.getStoryAudioUrl(), cp.getStoryAudioSeconds(), clues, stops);
+                cp.getStoryAudioUrl(), cp.getStoryAudioSeconds(), clues, stops,
+                cp.getArObject() == null ? null : readArObject.apply(cp.getArObject()));
     }
 
     private static QuestionView questionView(QuestQuestion q) {

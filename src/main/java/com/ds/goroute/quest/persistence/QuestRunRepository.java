@@ -127,6 +127,15 @@ public class QuestRunRepository {
         mapper.updateRunCheckpointProximity(checkpoint);
     }
 
+    /** False when the object was already tapped (the first accepted tap wins). */
+    public boolean updateRunCheckpointArTap(QuestRunCheckpoint checkpoint) {
+        return mapper.updateRunCheckpointArTap(checkpoint) == 1;
+    }
+
+    public void markMemberArSupported(UUID memberId) {
+        mapper.markMemberArSupported(memberId);
+    }
+
     /** False when this member already owned the tier (nothing inserted). */
     public boolean insertRunClue(QuestRunClue clue) {
         return mapper.insertRunClue(clue) == 1;

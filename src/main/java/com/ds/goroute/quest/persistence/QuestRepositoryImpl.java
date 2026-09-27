@@ -267,6 +267,37 @@ public class QuestRepositoryImpl implements QuestRepository {
     }
 
     @Override
+    public List<com.ds.goroute.quest.domain.QuestArObjectAsset> findArObjectAssets(boolean activeOnly) {
+        return mapper.findArObjectAssets(activeOnly);
+    }
+
+    @Override
+    public Optional<com.ds.goroute.quest.domain.QuestArObjectAsset> findArObjectAsset(UUID id) {
+        return id == null ? Optional.empty() : Optional.ofNullable(mapper.findArObjectAssetById(id));
+    }
+
+    @Override
+    public Map<UUID, com.ds.goroute.quest.domain.QuestArObjectAsset> findArObjectAssets(
+            java.util.Collection<UUID> ids) {
+        List<UUID> wanted = ids == null ? List.of() : ids.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        if (wanted.isEmpty()) {
+            return Map.of();
+        }
+        return mapper.findArObjectAssetsByIds(wanted).stream()
+                .collect(Collectors.toMap(com.ds.goroute.quest.domain.QuestArObjectAsset::getId, a -> a));
+    }
+
+    @Override
+    public void insertArObjectAsset(com.ds.goroute.quest.domain.QuestArObjectAsset asset) {
+        mapper.insertArObjectAsset(asset);
+    }
+
+    @Override
+    public boolean updateArObjectAsset(com.ds.goroute.quest.domain.QuestArObjectAsset asset, long expectedVersion) {
+        return mapper.updateArObjectAsset(asset, expectedVersion) == 1;
+    }
+
+    @Override
     public void clearVersionContent(UUID versionId) {
         // Deepest table first: no physical FKs to cascade for us.
         mapper.deleteChoicesByVersion(versionId);

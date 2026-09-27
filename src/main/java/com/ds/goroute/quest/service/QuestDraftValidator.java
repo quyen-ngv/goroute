@@ -2,12 +2,15 @@ package com.ds.goroute.quest.service;
 
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.quest.domain.QuestArObject;
 import com.ds.goroute.quest.domain.QuestCheckpoint;
 import com.ds.goroute.quest.domain.QuestCheckpointClue;
 import com.ds.goroute.quest.domain.QuestCheckpointStop;
 import com.ds.goroute.quest.domain.QuestQuestion;
 import com.ds.goroute.quest.domain.QuestVersion;
 import com.ds.goroute.service.BusinessConfigService;
+import com.ds.goroute.service.marketplace.MarketplaceJson;
+import com.ds.goroute.type.QuestArAnchorMode;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.QuestClueKind;
 import com.ds.goroute.type.QuestCompletionMode;
@@ -26,7 +29,7 @@ import java.util.List;
  * <ul>
  *   <li>every TASK checkpoint has a job to do — a required question or a required check-in (D21);</li>
  *   <li>an ARRIVE checkpoint has something to take in, a STOPS one a reachable target, an AREA one
- *       a search circle and a well-formed clue ladder (§3.14);</li>
+ *       a search circle and a well-formed clue ladder (§3.14), an AR_OBJECT one its object (§3.15);</li>
  *   <li>questions are well-formed for their type;</li>
  *   <li>counts stay inside the configured ceilings, and the price inside PRICE_MAX_STARS.</li>
  * </ul>
@@ -43,6 +46,7 @@ public class QuestDraftValidator {
     static final int MAX_CLUES = 3;
 
     private final BusinessConfigService config;
+    private final MarketplaceJson json;
 
     public void validateForSubmit(QuestVersion version) {
         List<String> errors = new ArrayList<>();
@@ -155,6 +159,7 @@ public class QuestDraftValidator {
                     errors.add(where + " must ask for 1 to " + stops.size() + " storytelling points");
                 }
             }
+            case AR_OBJECT -> validateArObject(cp, where, limits, errors);
             case TASK -> {
                 // D21, checked in validateCheckpoint.
             }
@@ -168,6 +173,40 @@ public class QuestDraftValidator {
         }
         if (cp.getStoryAudioSeconds() != null && cp.getStoryAudioSeconds() > limits.audioMaxSeconds()) {
             errors.add(where + " has a story recording longer than " + limits.audioMaxSeconds() + " seconds");
+        }
+    }
+
+    /**
+     * §3.15: an AR_OBJECT checkpoint needs its object — an asset, where it stands, and for an IMAGE
+     * anchor at least one landmark. It is found by walking to it, so it is a PIN checkpoint, and it
+     * must stand within reach of the checkpoint (the same limit as a storytelling point).
+     */
+    private void validateArObject(QuestCheckpoint cp, String where, DynamicLimits limits, List<String> errors) {
+        if (cp.isArea()) {
+            errors.add(where + " finds an AR object, so its location cannot be hidden in a search area");
+        }
+        QuestArObject object = cp.getArObject() == null ? null : json.read(cp.getArObject(), QuestArObject.class, null);
+        if (object == null) {
+            errors.add(where + " needs its AR object");
+            return;
+        }
+        if (object.assetId() == null) {
+            errors.add(where + " needs a 3D object chosen from the library");
+        }
+        if (object.latitude() == null || object.longitude() == null) {
+            errors.add(where + " needs a place for its AR object");
+        } else {
+            Double distance = GeoDistance.betweenOrNull(cp.getLatitude(), cp.getLongitude(),
+                    object.latitude(), object.longitude());
+            if (distance != null && distance > limits.stopMaxDistanceM()) {
+                errors.add(where + ": its AR object is more than " + limits.stopMaxDistanceM() + " m away");
+            }
+        }
+        if (QuestArAnchorMode.IMAGE.name().equals(object.anchorMode()) && object.markersOrEmpty().isEmpty()) {
+            errors.add(where + " anchors its AR object to a landmark but has no landmark photo");
+        }
+        if (object.audioSeconds() != null && object.audioSeconds() > limits.audioMaxSeconds()) {
+            errors.add(where + " has an AR object recording longer than " + limits.audioMaxSeconds() + " seconds");
         }
     }
 
