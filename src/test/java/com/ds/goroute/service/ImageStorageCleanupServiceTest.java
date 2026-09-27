@@ -80,6 +80,46 @@ class ImageStorageCleanupServiceTest {
         verify(storage).deleteObjectKeys(List.of("dropped.webp"));
     }
 
+    @Test
+    void aQuestPhotoFromTheSharedUploadDoorIsNotAnOrphan() {
+        when(storage.extractObjectKey(anyString()))
+                .thenAnswer(call -> call.<String>getArgument(0).replace("https://cdn/", ""));
+        when(mapper.selectRows(anyString(), any())).thenReturn(List.of());
+        // Checkpoint photos and an AR landmark, both uploaded under expenses/<userId>/.
+        when(mapper.selectRows(contains("FROM quest_checkpoints"), any())).thenReturn(List.of(
+                Map.of("ref", "[\"https://cdn/expenses/u/door.webp\"]"),
+                Map.of("ref", "{\"markers\":[{\"imageUrl\":\"https://cdn/expenses/u/stele.png\"}]}")));
+        Instant old = Instant.now().minus(Duration.ofDays(40));
+        when(storage.listObjects("expenses/")).thenReturn(List.of(
+                new StorageService.StoredObject("expenses/u/door.webp", old),
+                new StorageService.StoredObject("expenses/u/stele.png", old),
+                new StorageService.StoredObject("expenses/u/abandoned.webp", old)));
+
+        var result = service.cleanupOrphanedImages(
+                List.of("EXPENSE"), List.of("expenses/"), true, 500, false, null);
+
+        assertThat(result.orphanKeys()).containsExactly("expenses/u/abandoned.webp");
+    }
+
+    @Test
+    void replacingAnArModelDeletesTheOldFileUnlessAnotherObjectUsesIt() {
+        UUID assetId = UUID.randomUUID();
+        when(storage.extractObjectKey(anyString()))
+                .thenAnswer(call -> call.<String>getArgument(0).replace("https://cdn/", ""));
+        when(mapper.selectRows(contains("WHERE id = ?"), eq(assetId))).thenReturn(List.of(Map.of(
+                "glb_url", "https://cdn/quest-ar/old.glb",
+                "usdz_url", "https://cdn/quest-ar/shared.usdz",
+                "thumbnail_url", "https://cdn/quest-ar/thumb.png")));
+        when(mapper.selectRows(contains("WHERE id <> ?"), eq(assetId)))
+                .thenReturn(urlRows("https://cdn/quest-ar/shared.usdz"));
+
+        var result = service.deleteImagesForEntityRecord("QUEST_AR_ASSET", assetId,
+                List.of("https://cdn/quest-ar/new.glb", "https://cdn/quest-ar/thumb.png"));
+
+        assertThat(result.deletedKeys()).containsExactly("quest-ar/old.glb");
+        verify(storage).deleteObjectKeys(List.of("quest-ar/old.glb"));
+    }
+
     private static List<Map<String, Object>> urlRows(String... urls) {
         return java.util.Arrays.stream(urls)
                 .map(url -> Map.<String, Object>of("url", url))

@@ -8,6 +8,7 @@ import com.ds.goroute.quest.dto.QuestArObjectFileResponse;
 import com.ds.goroute.quest.dto.QuestArObjectView;
 import com.ds.goroute.quest.dto.SaveQuestArObjectAssetRequest;
 import com.ds.goroute.quest.persistence.QuestRepository;
+import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.StorageService;
 import com.ds.goroute.service.marketplace.MarketplaceJson;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -22,7 +23,9 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 /**
  * The AR object library (§3.15): the console uploads and edits 3D objects here, creators only list
@@ -43,6 +46,10 @@ public class QuestArObjectLibraryService {
     private final MarketplaceJson json;
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate;
+    private final ImageStorageCleanupService cleanup;
+
+    /** This library's entry in {@link ImageStorageCleanupService}. */
+    static final String STORAGE_ENTITY = "QUEST_AR_ASSET";
 
     public enum FileKind { GLB, USDZ, THUMBNAIL }
 
@@ -112,11 +119,39 @@ public class QuestArObjectLibraryService {
         long expected = request.expectedVersion() != null && request.expectedVersion() > 0
                 ? request.expectedVersion() : asset.getDataVersion();
         apply(asset, request, LocalDateTime.now());
+        // Files the edit replaced or cleared leave storage once it commits (models run to
+        // megabytes each). The cleanup reads the old row, so it runs before the update rewrites it.
+        List<String> kept = Stream.of(asset.getGlbUrl(), asset.getUsdzUrl(), asset.getThumbnailUrl())
+                .filter(Objects::nonNull).toList();
+        cleanup.deleteImagesForEntityRecord(STORAGE_ENTITY, id, kept);
         if (!repository.updateArObjectAsset(asset, expected)) {
             throw new BusinessException(ErrorConstant.ALREADY_PROCESSED,
                     "This AR object was changed somewhere else. Reload it and try again.");
         }
         return get(id);
+    }
+
+    /**
+     * Removes an object from the library and its files from storage. An object placed on any
+     * checkpoint, of any version, stays: published quests and runs in progress still show it.
+     * Hiding it ({@code active = false}) takes it off the creators' list instead.
+     */
+    @Transactional
+    public void delete(UUID id, Long expectedVersion) {
+        QuestArObjectAsset asset = require(id);
+        int uses = repository.countCheckpointsUsingArObjectAsset(id);
+        if (uses > 0) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "This AR object is placed on " + uses + " checkpoint" + (uses == 1 ? "" : "s")
+                            + ". Hide it instead, so no new quest can pick it.");
+        }
+        long expected = expectedVersion != null && expectedVersion > 0 ? expectedVersion : asset.getDataVersion();
+        // Reads the row's files before it goes; the objects themselves are deleted after commit.
+        cleanup.deleteImagesForEntityRecord(STORAGE_ENTITY, id);
+        if (!repository.deleteArObjectAsset(id, expected)) {
+            throw new BusinessException(ErrorConstant.ALREADY_PROCESSED,
+                    "This AR object was changed somewhere else. Reload it and try again.");
+        }
     }
 
     /**

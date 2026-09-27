@@ -121,6 +121,12 @@ public interface QuestRepository {
     /** False when the row moved on since {@code expectedVersion}. */
     boolean updateArObjectAsset(com.ds.goroute.quest.domain.QuestArObjectAsset asset, long expectedVersion);
 
+    /** Checkpoints of any version, published or draft, that place this object. */
+    int countCheckpointsUsingArObjectAsset(UUID id);
+
+    /** False when the row moved on since {@code expectedVersion}. */
+    boolean deleteArObjectAsset(UUID id, long expectedVersion);
+
     /** Wipes the whole content graph of a version, deepest table first. */
     void clearVersionContent(UUID versionId);
 }
