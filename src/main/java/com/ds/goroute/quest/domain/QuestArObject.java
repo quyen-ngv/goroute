@@ -18,6 +18,10 @@ import java.util.UUID;
  * stands in the landmark's own frame. That frame is the same on ARKit and ARCore: x along the
  * image's width, z along its height (towards the bottom edge), y out of the image. The object stays
  * upright whatever the landmark's tilt; {@code yawDeg} turns it about the vertical.
+ *
+ * <p>{@code elevationM} lifts an APPROX object above the ground it stands over (a lantern hung in a
+ * tree, a bird on a roof); null or 0 keeps it on the ground. An IMAGE object's height is already
+ * in its landmark offsets.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record QuestArObject(
@@ -38,7 +42,8 @@ public record QuestArObject(
         String description,
         List<String> imageUrls,
         String audioUrl,
-        Integer audioSeconds) {
+        Integer audioSeconds,
+        BigDecimal elevationM) {
 
     /** A landmark; {@code offset} is null until the creator has placed the object at it. */
     @JsonIgnoreProperties(ignoreUnknown = true)

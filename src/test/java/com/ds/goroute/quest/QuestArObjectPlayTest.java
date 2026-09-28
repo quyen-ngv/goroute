@@ -150,7 +150,7 @@ class QuestArObjectPlayTest {
                         new QuestArObject.Vec3(new BigDecimal("0.5"), BigDecimal.ZERO, new BigDecimal("1.2")),
                         new BigDecimal("15"))),
                 "Imperial scroll", "Sealed in 1802.", List.of("https://cdn/scroll.jpg"),
-                "https://cdn/scroll.m4a", 42);
+                "https://cdn/scroll.m4a", 42, null);
         QuestCheckpoint cp = QuestCheckpoint.builder().id(cpId).sortOrder(0).name("Temple")
                 .latitude(CP_LAT).longitude(CP_LNG).radiusM(40).completionMode("AR_OBJECT")
                 .arObject(json.write(object)).questions(List.of()).build();

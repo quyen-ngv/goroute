@@ -304,6 +304,7 @@
         <result property="amenityTags" column="amenity_tags"/>
         <result property="playableMonths" column="playable_months"/>
         <result property="runExpiryHours" column="run_expiry_hours"/>
+        <result property="revealRoute" column="reveal_route"/>
         <result property="checkpointCount" column="checkpoint_count"/>
         <result property="requiredCheckinCount" column="required_checkin_count"/>
     </resultMap>
@@ -313,6 +314,7 @@
                v.title, v.summary, v.description, v.cover_media_id, v.cover_url, v.difficulty, v.estimated_minutes,
                v.distance_meters, v.price_stars, v.reward_stars, v.province_code, v.ward_code,
                v.safety_notes, v.content_language, v.amenity_tags, v.playable_months, v.run_expiry_hours,
+               v.reveal_route,
                (SELECT COUNT(*) FROM quest_checkpoints cp WHERE cp.quest_version_id = v.id) AS checkpoint_count,
                (SELECT COUNT(*) FROM quest_checkpoints cp
                     WHERE cp.quest_version_id = v.id AND cp.requires_checkin) AS required_checkin_count
@@ -374,6 +376,7 @@
         <result property="playableMonths" column="playable_months"/>
         <result property="playableHours" column="playable_hours"/>
         <result property="runExpiryHours" column="run_expiry_hours"/>
+        <result property="revealRoute" column="reveal_route"/>
         <result property="createdBy" column="created_by"/>
         <result property="createdAt" column="created_at"/>
     </resultMap>
@@ -382,7 +385,7 @@
         id, quest_id, version, content_revision, change_kind, title, summary, description,
         cover_media_id, cover_url, difficulty, estimated_minutes, distance_meters, amenity_tags, city_image_ids,
         safety_notes, province_code, ward_code, content_language, price_stars, reward_stars,
-        playable_months, playable_hours, run_expiry_hours, created_by, created_at
+        playable_months, playable_hours, run_expiry_hours, reveal_route, created_by, created_at
     </sql>
 
     <insert id="insertVersion">
@@ -390,13 +393,13 @@
             id, quest_id, version, content_revision, change_kind, title, summary, description,
             cover_media_id, cover_url, difficulty, estimated_minutes, distance_meters, amenity_tags, city_image_ids,
             safety_notes, province_code, ward_code, content_language, price_stars, reward_stars,
-            playable_months, playable_hours, run_expiry_hours, created_by, created_at
+            playable_months, playable_hours, run_expiry_hours, reveal_route, created_by, created_at
         ) VALUES (
             #{id}, #{questId}, #{version}, #{contentRevision}, #{changeKind}, #{title}, #{summary},
             #{description}, #{coverMediaId}, #{coverUrl}, #{difficulty}, #{estimatedMinutes}, #{distanceMeters},
             #{amenityTags}::jsonb, #{cityImageIds}::jsonb, #{safetyNotes}, #{provinceCode}, #{wardCode},
             #{contentLanguage}, #{priceStars}, #{rewardStars}, #{playableMonths}::jsonb, #{playableHours}::jsonb,
-            #{runExpiryHours}, #{createdBy}, #{createdAt}
+            #{runExpiryHours}, #{revealRoute}, #{createdBy}, #{createdAt}
         )
     </insert>
 
@@ -425,7 +428,8 @@
             reward_stars = #{rewardStars},
             playable_months = #{playableMonths}::jsonb,
             playable_hours = #{playableHours}::jsonb,
-            run_expiry_hours = #{runExpiryHours}
+            run_expiry_hours = #{runExpiryHours},
+            reveal_route = #{revealRoute}
         WHERE id = #{id}
     </update>
 

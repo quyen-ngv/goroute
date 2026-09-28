@@ -51,6 +51,9 @@ public class QuestVersion {
     /** JSON object of playable hour windows, or null for any time. */
     private String playableHours;
     private Integer runExpiryHours;
+    /** Show every checkpoint from the start (detail page and play map), or one at a time (§3.8). */
+    @Builder.Default
+    private boolean revealRoute = true;
     private UUID createdBy;
     private LocalDateTime createdAt;
 

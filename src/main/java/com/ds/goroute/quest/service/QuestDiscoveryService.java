@@ -3,6 +3,7 @@ package com.ds.goroute.quest.service;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.response.PageResponse;
 import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.quest.domain.QuestCheckpoint;
 import com.ds.goroute.quest.domain.QuestListItem;
 import com.ds.goroute.quest.dto.QuestPublicDetailResponse;
 import com.ds.goroute.quest.dto.QuestPublicSummaryResponse;
@@ -17,7 +18,8 @@ import java.util.UUID;
 
 /**
  * Public quest discovery (§6.3). Every query goes through the shared {@code publicQuestGate}, and
- * every response is a public shape that carries no coordinates, answers or hints (rules 5.2/5.3).
+ * every response is a public shape that carries no answers or hints (rules 5.2/5.3), and no
+ * coordinates except the route a creator chose to show on the detail page.
  */
 @Service
 @RequiredArgsConstructor
@@ -54,7 +56,30 @@ public class QuestDiscoveryService {
                 json.readList(item.getPlayableMonths(), Integer.class), item.getRunExpiryHours(),
                 nz(item.getCheckpointCount()), nz(item.getRequiredCheckinCount()),
                 // D17: creators see who is playing; players are told so on the purchase and safety screens.
-                true, item.getContentLanguage());
+                true, item.getContentLanguage(), item.isRevealRoute(), route(item));
+    }
+
+    /**
+     * The whole route, when the creator shows it: a PIN checkpoint at its spot, an AREA checkpoint
+     * at its offset search circle only (never the real spot). Empty when the route is kept hidden.
+     */
+    private List<QuestPublicDetailResponse.RouteStop> route(QuestListItem item) {
+        if (!item.isRevealRoute() || item.getPublishedVersionId() == null) {
+            return List.of();
+        }
+        return repository.loadVersionGraph(item.getPublishedVersionId())
+                .map(v -> v.getCheckpoints().stream().map(QuestDiscoveryService::routeStop).toList())
+                .orElse(List.of());
+    }
+
+    private static QuestPublicDetailResponse.RouteStop routeStop(QuestCheckpoint cp) {
+        boolean area = cp.isArea();
+        return new QuestPublicDetailResponse.RouteStop(
+                cp.getSortOrder() == null ? 0 : cp.getSortOrder(), cp.getName(), cp.getCategory(),
+                cp.find().name(),
+                area ? cp.getSearchCenterLat() : cp.getLatitude(),
+                area ? cp.getSearchCenterLng() : cp.getLongitude(),
+                area ? cp.getSearchRadiusM() : cp.getRadiusM());
     }
 
     private QuestPublicSummaryResponse toSummary(QuestListItem item) {

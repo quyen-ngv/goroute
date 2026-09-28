@@ -184,7 +184,7 @@ public enum BusinessConfigKey {
     QUEST_MAX_GUESS_ATTEMPTS("QUEST", "MAX_GUESS_ATTEMPTS", 5, 1, 20),
     QUEST_GROUP_MAX_PLAYERS("QUEST", "GROUP_MAX_PLAYERS", 6, 2, 20),
     QUEST_STALE_REVIEW_MONTHS("QUEST", "STALE_REVIEW_MONTHS", 6, 1, 36),
-    QUEST_ARRIVAL_STABLE_SAMPLES("QUEST", "ARRIVAL_STABLE_SAMPLES", 3, 1, 10),
+    QUEST_ARRIVAL_STABLE_SAMPLES("QUEST", "ARRIVAL_STABLE_SAMPLES", 1, 1, 10),
     QUEST_ARRIVAL_CLIENT_INTERVAL_SECONDS("QUEST", "ARRIVAL_CLIENT_INTERVAL_SECONDS", 5, 2, 120),
     QUEST_ARRIVAL_MIN_SAMPLE_GAP_SECONDS("QUEST", "ARRIVAL_MIN_SAMPLE_GAP_SECONDS", 3, 1, 60),
     QUEST_ARRIVAL_SAMPLE_MAX_AGE_SECONDS("QUEST", "ARRIVAL_SAMPLE_MAX_AGE_SECONDS", 60, 10, 600),
@@ -240,7 +240,10 @@ public enum BusinessConfigKey {
     QUEST_AR_CREATOR_MAX_OBJECTS("QUEST", "AR_CREATOR_MAX_OBJECTS", 20, 0, 200),
     // The largest GLB or USDZ the server takes, in MB. Players download the model with the quest,
     // so a large one costs every player that much data; the upload also warns above 5 MB.
-    QUEST_AR_MAX_MODEL_MB("QUEST", "AR_MAX_MODEL_MB", 50, 1, 200);
+    QUEST_AR_MAX_MODEL_MB("QUEST", "AR_MAX_MODEL_MB", 50, 1, 200),
+    // The most triangles a GLB may have. Detail beyond what the phone shows costs frame time, but
+    // the product favours fidelity; the upload warns above ArModelInspector.WARN_TRIANGLES.
+    QUEST_AR_MAX_TRIANGLES("QUEST", "AR_MAX_TRIANGLES", 1_000_000, 1_000, 5_000_000);
 
     /** Value shapes the configuration layer knows how to validate. */
     public enum ValueType {

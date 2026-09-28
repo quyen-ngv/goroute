@@ -13,6 +13,7 @@ import com.ds.goroute.quest.dto.QuestLocalRunResponse;
 import com.ds.goroute.quest.dto.QuestPackResponse;
 import com.ds.goroute.quest.dto.QuestProximityRequest;
 import com.ds.goroute.quest.dto.QuestProximityResponse;
+import com.ds.goroute.quest.dto.QuestRunHistoryItem;
 import com.ds.goroute.quest.dto.QuestRunResponse;
 import com.ds.goroute.quest.dto.QuestSampleRequest;
 import com.ds.goroute.quest.dto.QuestStopVisitRequest;
@@ -34,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -93,6 +95,15 @@ public class QuestPlayController {
             @RequestHeader(value = QuestClientCapabilities.HEADER, required = false) String capabilities) {
         return ResponseEntity.ok(BaseResponse.ofSucceeded(
                 playService.joinRun(userId, runId, QuestClientCapabilities.arObjects(capabilities))));
+    }
+
+    /** The player's play history, most recent first (runs played on the phone once uploaded). */
+    @GetMapping("/v1/api/me/quest-runs")
+    public ResponseEntity<BaseResponse<List<QuestRunHistoryItem>>> history(
+            @CurrentUser UUID userId,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "0") int page,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(playService.history(userId, page, size)));
     }
 
     @GetMapping("/v1/api/quest-runs/{runId}")

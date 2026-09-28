@@ -123,6 +123,8 @@ class QuestPlayServiceTest {
 
         assertThat(response.arrived()).isTrue();
         assertThat(response.stableStreak()).isEqualTo(1);
+        assertThat(response.run()).as("the run comes back with the verdict, no reload").isNotNull();
+        assertThat(response.run().runId()).isEqualTo(runId);
         verify(runRepository).updateRunCheckpointSample(any());
     }
 
@@ -139,6 +141,7 @@ class QuestPlayServiceTest {
 
         assertThat(response.arrived()).isFalse();
         assertThat(response.stableStreak()).isZero();
+        assertThat(response.run()).isNull();
     }
 
     @Test

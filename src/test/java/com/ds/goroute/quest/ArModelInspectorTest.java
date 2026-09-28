@@ -57,26 +57,54 @@ class ArModelInspectorTest {
     }
 
     @Test
-    @DisplayName("refuses compression, outside files, too many triangles and too many bones")
+    @DisplayName("refuses what the Android loader cannot read: outside files, WebP textures, too many triangles and bones")
     void refusesWhatPhonesCannotShow() {
         String json = """
-                {"extensionsRequired":["KHR_draco_mesh_compression"],
+                {"extensionsRequired":["EXT_texture_webp"],
                  "buffers":[{"uri":"model.bin","byteLength":10}],
                  "images":[{"uri":"texture.png"}],
-                 "accessors":[{"count":120000}],
+                 "accessors":[{"count":3300000}],
                  "meshes":[{"primitives":[{"indices":0}]}],
                  "skins":[{"joints":[%s]}]}
-                """.formatted("0,".repeat(60) + "0");
+                """.formatted("0,".repeat(300) + "0");
         ArModelInspector.Inspection inspection = ArModelInspector.inspectGlb(glb(json), mapper);
 
         assertThat(inspection.usable()).isFalse();
         assertThat(String.join("|", inspection.errors()))
-                .contains("KHR_draco_mesh_compression")
+                .contains("EXT_texture_webp")
                 .contains("outside buffer")
                 .contains("outside texture")
-                .contains("40000 triangles")
-                .contains("61 bones");
+                .contains("1100000 triangles; at most 1000000")
+                .contains("301 bones");
         assertThat(inspection.canWander()).isFalse();
+    }
+
+    @Test
+    @DisplayName("compressed meshes and KTX2 textures are allowed (Filament reads them); heavy ones only warn")
+    void compressionAllowed() {
+        String json = """
+                {"extensionsUsed":["KHR_draco_mesh_compression","KHR_texture_basisu"],
+                 "extensionsRequired":["KHR_draco_mesh_compression","KHR_texture_basisu"],
+                 "accessors":[{"count":900000}],
+                 "meshes":[{"primitives":[{"indices":0}]}]}
+                """;
+        ArModelInspector.Inspection inspection = ArModelInspector.inspectGlb(glb(json), mapper);
+
+        assertThat(inspection.usable()).isTrue();
+        assertThat(inspection.triangles()).isEqualTo(300000);
+        assertThat(String.join("|", inspection.warnings()))
+                .contains("300000 triangles")
+                .contains("Compressed mesh");
+    }
+
+    @Test
+    @DisplayName("the triangle ceiling is the one passed in (the config)")
+    void ceilingFromConfig() {
+        String json = """
+                {"accessors":[{"count":300}],"meshes":[{"primitives":[{"indices":0}]}]}
+                """;
+        assertThat(ArModelInspector.inspectGlb(glb(json), mapper, 50).errors())
+                .anyMatch(e -> e.contains("100 triangles; at most 50"));
     }
 
     @Test

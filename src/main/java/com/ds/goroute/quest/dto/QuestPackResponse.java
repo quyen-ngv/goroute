@@ -25,7 +25,9 @@ public record QuestPackResponse(
         int priceStars,
         int rewardStars,
         Settings settings,
-        List<Checkpoint> checkpoints) {
+        List<Checkpoint> checkpoints,
+        /** The creator shows every checkpoint from the start (the play map places them all). */
+        boolean revealRoute) {
 
     /** The server's play rules, so the phone decides exactly as the server would. */
     public record Settings(int arrivalStableSamples, int arrivalClientIntervalSeconds, int defaultUnlockRadiusM,

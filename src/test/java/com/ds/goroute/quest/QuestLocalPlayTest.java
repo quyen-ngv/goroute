@@ -144,7 +144,10 @@ class QuestLocalPlayTest {
                         && c.getCheckpointId().equals(inv.getArgument(1))).findFirst());
         org.mockito.Mockito.doAnswer(inv -> {
             checkpoints.stream().filter(c -> c.getId().equals(inv.getArgument(0)))
-                    .forEach(c -> c.setCheckinState(inv.getArgument(2)));
+                    .forEach(c -> {
+                        c.setCheckinId(inv.getArgument(1));
+                        c.setCheckinState(inv.getArgument(2));
+                    });
             return null;
         }).when(runRepository).updateRunCheckpointCheckin(any(), any(), any());
 
@@ -236,6 +239,49 @@ class QuestLocalPlayTest {
                 upload("local-1", LAT, "hanoi", List.of()));
         assertThat(again.runId()).isEqualTo(first.runId());
         assertThat(runs).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a check-in posted from the play screen is linked to the run when it is the player's own")
+    void syncLinksCheckin() {
+        UUID own = UUID.randomUUID();
+        UUID someoneElses = UUID.randomUUID();
+        when(runRepository.isOwnCheckin(own, user)).thenReturn(true);
+        when(runRepository.isOwnCheckin(someoneElses, user)).thenReturn(false);
+        QuestLocalRunRequest base = upload("local-checkin", LAT, "hanoi", List.of());
+
+        service.syncLocalRun(user, questId, new QuestLocalRunRequest(base.clientRunId(), base.versionId(),
+                base.startedAt(), base.completedAt(), base.arrivals(), base.answers(), base.clues(),
+                base.stopVisits(), base.arTaps(), List.of(new QuestLocalRunRequest.CheckinLink(cpId, own))));
+        assertThat(checkpoints.get(0).getCheckinId()).isEqualTo(own);
+        assertThat(checkpoints.get(0).getCheckinState()).isEqualTo("ACTIVE");
+
+        checkpoints.clear();
+        service.syncLocalRun(user, questId, new QuestLocalRunRequest("local-foreign", base.versionId(),
+                base.startedAt(), base.completedAt(), base.arrivals(), base.answers(), base.clues(),
+                base.stopVisits(), base.arTaps(), List.of(new QuestLocalRunRequest.CheckinLink(cpId, someoneElses))));
+        assertThat(checkpoints.get(0).getCheckinId()).as("another user's check-in is not linked").isNull();
+        assertThat(checkpoints.get(0).getCheckinState()).isEqualTo("WAIVED");
+    }
+
+    @Test
+    @DisplayName("the play history lists the player's runs with how far each got")
+    void history() {
+        QuestLocalRunResponse done = service.syncLocalRun(user, questId,
+                upload("local-history", LAT, "hanoi", List.of()));
+        when(runRepository.findRunsForMember(user, 20, 0)).thenReturn(List.copyOf(runs));
+
+        List<com.ds.goroute.quest.dto.QuestRunHistoryItem> history = service.history(user, 0, 20);
+
+        assertThat(history).hasSize(1);
+        com.ds.goroute.quest.dto.QuestRunHistoryItem item = history.get(0);
+        assertThat(item.runId()).isEqualTo(done.runId());
+        assertThat(item.title()).isEqualTo("Old Quarter");
+        assertThat(item.status()).isEqualTo("COMPLETED");
+        assertThat(item.clearedCheckpoints()).isEqualTo(1);
+        assertThat(item.totalCheckpoints()).isEqualTo(1);
+        assertThat(item.rewarded()).isTrue();
+        assertThat(item.clientRunId()).isEqualTo("local-history");
     }
 
     @Test

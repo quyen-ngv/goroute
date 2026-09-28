@@ -91,6 +91,16 @@ public class QuestRunRepository {
         mapper.updateRunCheckpointSample(checkpoint);
     }
 
+    /** The user's runs (owned or joined), most recent activity first. */
+    public List<QuestRun> findRunsForMember(UUID userId, int limit, int offset) {
+        return mapper.findRunsForMember(userId, limit, offset);
+    }
+
+    /** Whether [checkinId] is a live check-in posted by [userId]. */
+    public boolean isOwnCheckin(UUID checkinId, UUID userId) {
+        return checkinId != null && userId != null && mapper.countOwnCheckin(checkinId, userId) > 0;
+    }
+
     public void updateRunCheckpointCheckin(UUID id, UUID checkinId, String checkinState) {
         mapper.updateRunCheckpointCheckin(id, checkinId, checkinState);
     }

@@ -339,6 +339,8 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
         version.setPlayableMonths(request.getPlayableMonths() == null ? null : json.write(request.getPlayableMonths()));
         version.setPlayableHours(request.getPlayableHours() == null ? null : json.write(request.getPlayableHours()));
         version.setRunExpiryHours(request.getRunExpiryHours());
+        // Absent (an older app) keeps the default: the whole route is shown.
+        version.setRevealRoute(request.getRevealRoute() == null || request.getRevealRoute());
     }
 
     /**

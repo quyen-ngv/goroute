@@ -28,6 +28,7 @@ import com.ds.goroute.quest.dto.QuestArObjectView;
 import com.ds.goroute.quest.dto.QuestArTapRequest;
 import com.ds.goroute.quest.dto.QuestArTapResponse;
 import com.ds.goroute.quest.dto.QuestArrivalResponse;
+import com.ds.goroute.quest.dto.QuestRunHistoryItem;
 import com.ds.goroute.quest.dto.QuestLocalRunRequest;
 import com.ds.goroute.quest.dto.QuestLocalRunResponse;
 import com.ds.goroute.quest.dto.QuestPackResponse;
@@ -162,6 +163,33 @@ public class QuestPlayService {
         return runState(userId, run);
     }
 
+    /**
+     * The player's play history: their runs, most recent first, with how far each got. Runs played
+     * on the phone appear once uploaded. {@code size} is capped at 50.
+     */
+    @Transactional(readOnly = true)
+    public List<QuestRunHistoryItem> history(UUID userId, int page, int size) {
+        int limit = Math.max(1, Math.min(size, 50));
+        int offset = Math.max(0, page) * limit;
+        Map<UUID, QuestVersion> versions = new java.util.HashMap<>();
+        List<QuestRunHistoryItem> items = new ArrayList<>();
+        for (QuestRun run : runRepository.findRunsForMember(userId, limit, offset)) {
+            QuestRunMember member = runRepository.findMember(run.getId(), userId).orElse(null);
+            QuestVersion version = versions.computeIfAbsent(run.getQuestVersionId(),
+                    id -> questRepository.loadVersionGraph(id).orElse(null));
+            if (member == null || version == null) {
+                continue;
+            }
+            MemberProgress p = progressOf(member);
+            int cleared = (int) version.getCheckpoints().stream().filter(cp -> isCheckpointCleared(cp, p)).count();
+            items.add(new QuestRunHistoryItem(run.getId(), run.getQuestId(), version.getTitle(),
+                    version.getCoverUrl(), version.getContentLanguage(), run.getStatus(), run.getStartedAt(),
+                    run.getCompletedAt(), run.getLastActivityAt(), cleared, version.getCheckpoints().size(),
+                    member.isRewarded(), run.getClientRunId()));
+        }
+        return items;
+    }
+
     /** Switches AR on for the member once their app says it can show it; never switches it off. */
     private void noteArSupport(QuestRun run, UUID userId, boolean arSupported) {
         if (!arSupported) {
@@ -249,7 +277,8 @@ public class QuestPlayService {
         runRepository.touchRun(run.getId(), now);
 
         return new QuestArrivalResponse(arrived, streak, requiredStreak,
-                assessment.distanceMeters(), Boolean.TRUE.equals(assessment.accuracyAcceptable()));
+                assessment.distanceMeters(), Boolean.TRUE.equals(assessment.accuracyAcceptable()),
+                arrived ? runState(userId, run) : null);
     }
 
     @Transactional
@@ -349,7 +378,7 @@ public class QuestPlayService {
         return new QuestPackResponse(questId, version.getId(), intOf(version.getVersion()),
                 intOf(version.getContentRevision()), version.getTitle(), version.getSummary(), version.getCoverUrl(),
                 version.getContentLanguage(), intOf(version.getPriceStars()), intOf(version.getRewardStars()),
-                settings, checkpoints);
+                settings, checkpoints, version.isRevealRoute());
     }
 
     private QuestPackResponse.Checkpoint packCheckpoint(QuestCheckpoint cp, boolean creator, ArContext ar) {
@@ -446,6 +475,18 @@ public class QuestPlayService {
                 runRepository.findRunCheckpoint(member.getId(), cp.getId()).ifPresent(rc ->
                         runRepository.updateRunCheckpointCheckin(rc.getId(), null, "WAIVED"));
             }
+        }
+
+        // Check-ins posted from the play screen for checkpoints that ask for one: linked when the
+        // check-in is the player's own and the checkpoint was reached (the arrival above).
+        for (QuestLocalRunRequest.CheckinLink link : nonNull(request.checkins())) {
+            QuestCheckpoint cp = findCheckpoint(version, link.checkpointId());
+            if (cp == null || !cp.isRequiresCheckin() || !runRepository.isOwnCheckin(link.checkinId(), userId)) {
+                continue;
+            }
+            runRepository.findRunCheckpoint(member.getId(), cp.getId())
+                    .filter(QuestRunCheckpoint::isUnlocked)
+                    .ifPresent(rc -> runRepository.updateRunCheckpointCheckin(rc.getId(), link.checkinId(), "ACTIVE"));
         }
 
         if (arSupported) {
@@ -694,7 +735,7 @@ public class QuestPlayService {
                 o.anchorMode(), o.latitude(), o.longitude(), o.headingDeg(), intOf(o.spawnRadiusM()),
                 o.wanderRadiusM(), ar.interactRadiusM(), o.scale(), markers, o.title(),
                 reveal ? o.description() : null, reveal ? o.imageUrlsOrEmpty() : List.of(),
-                reveal ? o.audioUrl() : null, reveal ? o.audioSeconds() : null);
+                reveal ? o.audioUrl() : null, reveal ? o.audioSeconds() : null, o.elevationM());
     }
 
     // --- dynamic checkpoints (§3.14) ----------------------------------------------------
@@ -935,22 +976,29 @@ public class QuestPlayService {
                 cleared.add(new QuestRunResponse.ClearedCheckpointView(
                         cp.getId(), intOf(cp.getSortOrder()), cp.getName(), cp.getCategory(), cp.getStory(),
                         json.readList(cp.getImageUrls(), String.class),
-                        cp.getStoryAudioUrl(), cp.getStoryAudioSeconds(), stopViews(cp, p)));
+                        cp.getStoryAudioUrl(), cp.getStoryAudioSeconds(), stopViews(cp, p),
+                        cp.getLatitude(), cp.getLongitude(), effectiveMode(cp, p.arSupported()).name()));
             } else if (current == null) {
                 current = currentView(run, cp, p, creator, ar);
             } else {
-                // Checkpoints after the current one: public facts only, no coordinates ahead.
+                // Checkpoints after the current one: public facts, and their place only when the
+                // creator shows the whole route (an AREA by its search circle, never its spot).
+                boolean place = version.isRevealRoute();
+                boolean pin = place && !cp.isArea();
                 upcoming.add(new QuestRunResponse.UpcomingCheckpointView(
                         cp.getId(), intOf(cp.getSortOrder()), cp.getName(), cp.getCategory(),
                         cp.find().name(), effectiveMode(cp, p.arSupported()).name(), cp.getMinStops(),
-                        preview(cp)));
+                        preview(cp),
+                        pin ? cp.getLatitude() : null, pin ? cp.getLongitude() : null,
+                        pin ? cp.getRadiusM() : null,
+                        place && cp.isArea() ? searchArea(cp) : null));
             }
         }
         boolean completed = current == null;
         return new QuestRunResponse(run.getId(), run.getQuestId(), run.getStatus(),
                 clearedCount, checkpoints.size(), completed, cleared, current,
                 config.getInt(BusinessConfigKey.QUEST_ARRIVAL_CLIENT_INTERVAL_SECONDS),
-                version.getContentLanguage(), upcoming);
+                version.getContentLanguage(), upcoming, version.isRevealRoute());
     }
 
     /** What a checkpoint holds, as counts and flags: safe to show before the player gets there. */
@@ -983,11 +1031,7 @@ public class QuestPlayService {
                 : List.of();
         boolean checkinDone = rc != null && (rc.getCheckinId() != null || "WAIVED".equals(rc.getCheckinState()));
 
-        QuestRunResponse.SearchAreaView searchArea = area && cp.getSearchCenterLat() != null
-                && cp.getSearchCenterLng() != null && cp.getSearchRadiusM() != null
-                ? new QuestRunResponse.SearchAreaView(cp.getSearchCenterLat(), cp.getSearchCenterLng(),
-                        cp.getSearchRadiusM())
-                : null;
+        QuestRunResponse.SearchAreaView searchArea = area ? searchArea(cp) : null;
         List<QuestRunResponse.ClueView> clues = area
                 ? cp.getClues().stream().map(c -> {
                     boolean owned = bought.contains(intOf(c.getTier()));
@@ -1013,6 +1057,13 @@ public class QuestPlayService {
                 stopsCounted(cp, p), revealed, preview(cp),
                 arObjectView(cp, ar, rc != null && rc.getArTappedAt() != null),
                 rc != null && rc.getArTappedAt() != null);
+    }
+
+    private static QuestRunResponse.SearchAreaView searchArea(QuestCheckpoint cp) {
+        return cp.getSearchCenterLat() != null && cp.getSearchCenterLng() != null && cp.getSearchRadiusM() != null
+                ? new QuestRunResponse.SearchAreaView(cp.getSearchCenterLat(), cp.getSearchCenterLng(),
+                        cp.getSearchRadiusM())
+                : null;
     }
 
     private List<QuestRunResponse.StopView> stopViews(QuestCheckpoint cp, MemberProgress p) {

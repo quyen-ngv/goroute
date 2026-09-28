@@ -9,7 +9,7 @@ import java.util.UUID;
  * checkpoint carries coordinates and questions (an AREA checkpoint's only after its REVEAL clue is
  * bought; before that, only the offset search circle), cleared checkpoints carry their unlocked story,
  * and checkpoints still ahead carry only their public facts ({@link UpcomingCheckpointView}) — never
- * their coordinates, photos, questions or story. No question here carries an
+ * their photos, questions or story, and their place only when the creator shows the whole route. No question here carries an
  * answer, a correct-choice flag, or unbought hint text (rules 5.2/5.3). The offline buffer takes
  * only {@link #current}, one checkpoint ahead.
  */
@@ -26,7 +26,9 @@ public record QuestRunResponse(
         /** The version's content language: what the story is written and recorded in (§3.14.3). */
         String language,
         /** The checkpoints after the current one, in order: public facts only, so the player sees the route. */
-        List<UpcomingCheckpointView> upcoming) {
+        List<UpcomingCheckpointView> upcoming,
+        /** The creator shows the whole route: every upcoming checkpoint is placed on the map. */
+        boolean revealRoute) {
 
     /**
      * What a checkpoint holds, told before the player gets there: how many questions, whether a
@@ -38,17 +40,26 @@ public record QuestRunResponse(
                                     Integer storyAudioSeconds) {
     }
 
-    /** A checkpoint still ahead: its name, kind and what waits there. No coordinates, photos or content. */
+    /**
+     * A checkpoint still ahead: its name, kind and what waits there — never photos or content. Placed
+     * on the map only when the creator shows the whole route: a PIN at its spot, an AREA only by its
+     * offset search circle.
+     */
     public record UpcomingCheckpointView(UUID checkpointId, int sortOrder, String name, String category,
                                          String findMode, String completionMode, Integer minStops,
-                                         CheckpointPreview preview) {
+                                         CheckpointPreview preview,
+                                         BigDecimal latitude, BigDecimal longitude, Integer radiusM,
+                                         SearchAreaView searchArea) {
     }
 
     public record ClearedCheckpointView(UUID checkpointId, int sortOrder, String name, String category,
                                         String story, List<String> imageUrls,
                                         /** Kept so a cleared checkpoint can be heard again. */
                                         String storyAudioUrl, Integer storyAudioSeconds,
-                                        List<StopView> stops) {
+                                        List<StopView> stops,
+                                        /** No secret once cleared: the journey map shows it. */
+                                        BigDecimal latitude, BigDecimal longitude,
+                                        String completionMode) {
     }
 
     public record CurrentCheckpointView(

@@ -51,6 +51,15 @@
         WHERE quest_id = #{questId} AND owner_user_id = #{ownerUserId} AND status = 'IN_PROGRESS'
     </select>
 
+    <!-- Play history: every run the user is a member of, most recent activity first. -->
+    <select id="findRunsForMember" resultMap="RunMap">
+        SELECT <include refid="RunColumns"/> FROM quest_runs
+        WHERE EXISTS (SELECT 1 FROM quest_run_members m
+                      WHERE m.run_id = quest_runs.id AND m.user_id = #{userId})
+        ORDER BY COALESCE(last_activity_at, started_at) DESC, id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
     <update id="updateRunStatus">
         UPDATE quest_runs
         SET status = #{status},
@@ -198,6 +207,12 @@
             data_version = data_version + 1
         WHERE id = #{id}
     </update>
+
+    <!-- A check-in the caller posted and still has: the one a local run may link to a checkpoint. -->
+    <select id="countOwnCheckin" resultType="int">
+        SELECT COUNT(*) FROM user_checkins
+        WHERE id = #{checkinId} AND user_id = #{userId} AND is_removed = FALSE
+    </select>
 
     <update id="updateRunCheckpointCheckin">
         UPDATE quest_run_checkpoints

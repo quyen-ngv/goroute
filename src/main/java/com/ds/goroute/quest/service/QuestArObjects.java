@@ -34,6 +34,8 @@ final class QuestArObjects {
     static final BigDecimal MAX_MARKER_WIDTH_M = new BigDecimal("10");
     /** How far from its landmark an IMAGE object may stand; further, a small angle error shows. */
     static final BigDecimal MAX_MARKER_OFFSET_M = new BigDecimal("20");
+    /** How high above the ground an APPROX object may float. */
+    static final BigDecimal MAX_ELEVATION_M = new BigDecimal("50");
     static final int MAX_IMAGES = QuestBuilderServiceImpl.MAX_CHECKPOINT_IMAGES;
 
     private QuestArObjects() {
@@ -82,11 +84,19 @@ final class QuestArObjects {
         if (audio != null) {
             httpUrl(audio, where);
         }
+        BigDecimal elevation = in.getElevationM();
+        if (elevation != null && (elevation.signum() < 0 || elevation.compareTo(MAX_ELEVATION_M) > 0)) {
+            throw invalid(where + " has an AR object height outside 0–" + MAX_ELEVATION_M + " m");
+        }
+        if (elevation != null && elevation.signum() == 0) {
+            elevation = null;
+        }
 
         return normalize(new QuestArObject(in.getAssetId(), behavior.name(), anchor.name(),
                 in.getLatitude(), in.getLongitude(), heading, spawn, wander, scale, markers,
                 blankToNull(in.getTitle()), blankToNull(in.getDescription()), images, audio,
-                audio == null ? null : in.getAudioSeconds()));
+                audio == null ? null : in.getAudioSeconds(),
+                elevation == null ? null : elevation.setScale(2, java.math.RoundingMode.HALF_UP)));
     }
 
     /** Numbers stripped of trailing zeros, so a round trip through JSONB compares equal. */
@@ -97,7 +107,8 @@ final class QuestArObjects {
                         m.offset() == null ? null : new QuestArObject.Vec3(strip(m.offset().x()),
                                 strip(m.offset().y()), strip(m.offset().z())),
                         strip(m.yawDeg()))).toList(),
-                o.title(), o.description(), o.imageUrlsOrEmpty(), o.audioUrl(), o.audioSeconds());
+                o.title(), o.description(), o.imageUrlsOrEmpty(), o.audioUrl(), o.audioSeconds(),
+                strip(o.elevationM()));
     }
 
     private static QuestArObject.Marker marker(SaveQuestDraftRequest.MarkerInput m, String where) {
