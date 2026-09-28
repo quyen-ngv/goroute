@@ -22,16 +22,24 @@ import java.util.Set;
  */
 public final class ArModelInspector {
 
-    public static final int MAX_TRIANGLES = 30_000;
-    public static final int WARN_TRIANGLES = 20_000;
-    public static final int MAX_JOINTS = 50;
+    /** The default ceiling; the live one is the QUEST.AR_MAX_TRIANGLES config. */
+    public static final int MAX_TRIANGLES = 1_000_000;
+    /** Above this a mid-range phone may drop frames, more so with a skinned (animated) model. */
+    public static final int WARN_TRIANGLES = 150_000;
+    /** Filament's per-skin limit (CONFIG_MAX_BONE_COUNT); more makes the model fail to load. */
+    public static final int MAX_JOINTS = 256;
     public static final long WARN_BYTES = 5L * 1024 * 1024;
 
     private static final int GLB_MAGIC = 0x46546C67; // "glTF"
     private static final int CHUNK_JSON = 0x4E4F534A; // "JSON"
-    /** The phones' loaders read none of these, and a USDZ cannot be made from a file that uses them. */
-    private static final Set<String> UNSUPPORTED_EXTENSIONS = Set.of(
-            "KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_texture_basisu");
+    /**
+     * Texture formats the Android loader cannot decode: Filament's gltfio registers PNG, JPEG and
+     * KTX2 only. Mesh compression (Draco, meshopt), quantized attributes and KTX2/Basis textures are
+     * all read by Filament 1.56 and allowed (the GLB is only ever shown on Android; iOS gets the
+     * USDZ).
+     */
+    private static final Set<String> UNSUPPORTED_EXTENSIONS = Set.of("EXT_texture_webp", "EXT_texture_avif");
+    private static final Set<String> UNSUPPORTED_IMAGE_TYPES = Set.of("image/webp", "image/avif");
 
     private ArModelInspector() {
     }
@@ -53,6 +61,11 @@ public final class ArModelInspector {
     }
 
     public static Inspection inspectGlb(byte[] bytes, ObjectMapper mapper) {
+        return inspectGlb(bytes, mapper, MAX_TRIANGLES);
+    }
+
+    /** @param maxTriangles the ceiling in force (the QUEST.AR_MAX_TRIANGLES config). */
+    public static Inspection inspectGlb(byte[] bytes, ObjectMapper mapper, int maxTriangles) {
         List<String> errors = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
         if (bytes == null || bytes.length < 20) {
@@ -83,8 +96,22 @@ public final class ArModelInspector {
 
         for (JsonNode ext : gltf.path("extensionsRequired")) {
             if (UNSUPPORTED_EXTENSIONS.contains(ext.asText())) {
-                errors.add("Uses " + ext.asText() + "; export without mesh or texture compression");
+                errors.add("Uses " + ext.asText() + "; export textures as PNG, JPEG or KTX2");
             }
+        }
+        for (JsonNode image : gltf.path("images")) {
+            String uri = image.path("uri").asText("");
+            String type = image.path("mimeType").asText("");
+            if (UNSUPPORTED_IMAGE_TYPES.contains(type)
+                    || UNSUPPORTED_IMAGE_TYPES.stream().anyMatch(t -> uri.startsWith("data:" + t))) {
+                errors.add("Has a WebP/AVIF texture; export textures as PNG, JPEG or KTX2");
+                break;
+            }
+        }
+        java.util.Set<String> used = new java.util.HashSet<>();
+        gltf.path("extensionsUsed").forEach(ext -> used.add(ext.asText()));
+        if (used.contains("KHR_draco_mesh_compression") || used.contains("EXT_meshopt_compression")) {
+            warnings.add("Compressed mesh: a smaller download, but phones take a little longer to open it");
         }
         for (JsonNode node : gltf.path("buffers")) {
             if (isExternal(node.path("uri"))) {
@@ -115,10 +142,11 @@ public final class ArModelInspector {
                 };
             }
         }
-        if (triangles > MAX_TRIANGLES) {
-            errors.add(triangles + " triangles; at most " + MAX_TRIANGLES);
+        if (triangles > maxTriangles) {
+            errors.add(triangles + " triangles; at most " + maxTriangles);
         } else if (triangles > WARN_TRIANGLES) {
-            warnings.add(triangles + " triangles; " + WARN_TRIANGLES + " or fewer keeps older phones smooth");
+            warnings.add(triangles + " triangles; above " + WARN_TRIANGLES
+                    + " mid-range phones may stutter, more so when the model is animated");
         }
 
         int joints = 0;

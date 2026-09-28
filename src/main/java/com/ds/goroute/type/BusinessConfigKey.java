@@ -240,7 +240,10 @@ public enum BusinessConfigKey {
     QUEST_AR_CREATOR_MAX_OBJECTS("QUEST", "AR_CREATOR_MAX_OBJECTS", 20, 0, 200),
     // The largest GLB or USDZ the server takes, in MB. Players download the model with the quest,
     // so a large one costs every player that much data; the upload also warns above 5 MB.
-    QUEST_AR_MAX_MODEL_MB("QUEST", "AR_MAX_MODEL_MB", 50, 1, 200);
+    QUEST_AR_MAX_MODEL_MB("QUEST", "AR_MAX_MODEL_MB", 50, 1, 200),
+    // The most triangles a GLB may have. Detail beyond what the phone shows costs frame time, but
+    // the product favours fidelity; the upload warns above ArModelInspector.WARN_TRIANGLES.
+    QUEST_AR_MAX_TRIANGLES("QUEST", "AR_MAX_TRIANGLES", 1_000_000, 1_000, 5_000_000);
 
     /** Value shapes the configuration layer knows how to validate. */
     public enum ValueType {

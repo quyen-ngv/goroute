@@ -37,7 +37,9 @@ public record QuestArObjectView(
         String description,
         List<String> imageUrls,
         String audioUrl,
-        Integer audioSeconds) {
+        Integer audioSeconds,
+        /** Metres above the ground (APPROX); null on the ground. */
+        BigDecimal elevationM) {
 
     public record Clip(String name, double seconds) {
     }

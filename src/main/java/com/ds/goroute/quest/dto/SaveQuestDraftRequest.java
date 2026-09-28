@@ -117,6 +117,8 @@ public class SaveQuestDraftRequest {
         private List<String> imageUrls = new ArrayList<>();
         private String audioUrl;
         private Integer audioSeconds;
+        /** Metres above the ground (APPROX objects); null or 0 stands it on the ground. */
+        private BigDecimal elevationM;
     }
 
     /** A landmark photo; {@code offset} is where the object stands in the landmark's frame, in metres. */

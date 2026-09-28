@@ -694,7 +694,7 @@ public class QuestPlayService {
                 o.anchorMode(), o.latitude(), o.longitude(), o.headingDeg(), intOf(o.spawnRadiusM()),
                 o.wanderRadiusM(), ar.interactRadiusM(), o.scale(), markers, o.title(),
                 reveal ? o.description() : null, reveal ? o.imageUrlsOrEmpty() : List.of(),
-                reveal ? o.audioUrl() : null, reveal ? o.audioSeconds() : null);
+                reveal ? o.audioUrl() : null, reveal ? o.audioSeconds() : null, o.elevationM());
     }
 
     // --- dynamic checkpoints (§3.14) ----------------------------------------------------

@@ -70,6 +70,7 @@ class QuestArObjectLibraryServiceTest {
         when(repository.deleteArObjectAsset(eq(id), anyLong())).thenReturn(true);
         when(config.getInt(BusinessConfigKey.QUEST_AR_CREATOR_MAX_OBJECTS)).thenReturn(20);
         when(config.getInt(BusinessConfigKey.QUEST_AR_MAX_MODEL_MB)).thenReturn(50);
+        when(config.getInt(BusinessConfigKey.QUEST_AR_MAX_TRIANGLES)).thenReturn(1_000_000);
         when(storage.extractObjectKey(anyString()))
                 .thenAnswer(call -> call.<String>getArgument(0).replace("https://cdn/", ""));
         when(storage.urlFor(anyString())).thenAnswer(call -> "https://cdn/" + call.getArgument(0));

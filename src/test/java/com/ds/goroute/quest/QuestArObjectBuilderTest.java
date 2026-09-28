@@ -195,6 +195,21 @@ class QuestArObjectBuilderTest {
     }
 
     @Test
+    @DisplayName("an object can float above the ground, within 0–50 m")
+    void elevation() {
+        SaveQuestDraftRequest.ArObjectInput up = input("FIXED");
+        up.setElevationM(new BigDecimal("3.456"));
+        service.saveDraft(questId, owner, request(up));
+        QuestArObject saved = json.read(savedCheckpoint().getArObject(), QuestArObject.class, null);
+        assertThat(saved.elevationM()).isEqualByComparingTo("3.46");
+
+        SaveQuestDraftRequest.ArObjectInput tooHigh = input("FIXED");
+        tooHigh.setElevationM(new BigDecimal("80"));
+        assertThatThrownBy(() -> service.saveDraft(questId, owner, request(tooHigh)))
+                .isInstanceOf(BusinessException.class).hasMessageContaining("height");
+    }
+
+    @Test
     @DisplayName("a landmark photographed but not placed yet is kept in the draft, without an offset")
     void unplacedLandmarkSaves() {
         SaveQuestDraftRequest.ArObjectInput landmark = input("FIXED");

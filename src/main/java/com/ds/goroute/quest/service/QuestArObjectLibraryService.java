@@ -76,7 +76,7 @@ public class QuestArObjectLibraryService {
         String prefix = folder + UUID.randomUUID();
         return switch (kind) {
             case GLB -> {
-                ArModelInspector.Inspection inspection = ArModelInspector.inspectGlb(bytes, objectMapper);
+                ArModelInspector.Inspection inspection = ArModelInspector.inspectGlb(bytes, objectMapper, maxTriangles());
                 String url = inspection.usable()
                         ? store(prefix + ".glb", bytes, "model/gltf-binary")
                         : null;
@@ -139,7 +139,7 @@ public class QuestArObjectLibraryService {
 
         String glbKey = ownKey(request.glbUrl(), folder, "GLB", ".glb");
         byte[] glb = readStored(glbKey, "GLB", maxModelBytes());
-        ArModelInspector.Inspection inspection = ArModelInspector.inspectGlb(glb, objectMapper);
+        ArModelInspector.Inspection inspection = ArModelInspector.inspectGlb(glb, objectMapper, maxTriangles());
         if (!inspection.usable()) {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
                     "The GLB does not meet the AR asset spec: " + String.join("; ", inspection.errors()));
@@ -296,7 +296,7 @@ public class QuestArObjectLibraryService {
         String glbUrl = httpUrl(request.glbUrl(), "GLB");
         if (!glbUrl.equals(asset.getGlbUrl()) || asset.getClips() == null) {
             byte[] glb = download(glbUrl);
-            ArModelInspector.Inspection inspection = ArModelInspector.inspectGlb(glb, objectMapper);
+            ArModelInspector.Inspection inspection = ArModelInspector.inspectGlb(glb, objectMapper, maxTriangles());
             if (!inspection.usable()) {
                 throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
                         "The GLB does not meet the AR asset spec: " + String.join("; ", inspection.errors()));
@@ -365,6 +365,11 @@ public class QuestArObjectLibraryService {
                     "The file at " + url + " is over " + config.getInt(BusinessConfigKey.QUEST_AR_MAX_MODEL_MB) + " MB");
         }
         return bytes;
+    }
+
+    /** The most triangles a GLB may have: {@code QUEST.AR_MAX_TRIANGLES} (default 1,000,000). */
+    private int maxTriangles() {
+        return config.getInt(BusinessConfigKey.QUEST_AR_MAX_TRIANGLES);
     }
 
     /** The largest GLB or USDZ taken: {@code QUEST.AR_MAX_MODEL_MB} in the config table (default 50). */
