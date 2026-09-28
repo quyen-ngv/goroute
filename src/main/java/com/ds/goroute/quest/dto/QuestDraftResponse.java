@@ -57,6 +57,8 @@ public record QuestDraftResponse(
             String contentLanguage,
             int priceStars,
             int rewardStars,
+            /** Show every checkpoint from the start, or one at a time. */
+            boolean revealRoute,
             List<CheckpointView> checkpoints) {
     }
 
@@ -145,7 +147,8 @@ public record QuestDraftResponse(
                 version.getCoverMediaId(), version.getCoverUrl(), version.getDifficulty(), version.getEstimatedMinutes(),
                 version.getDistanceMeters(), amenityTags, cityImageIds, version.getSafetyNotes(),
                 version.getProvinceCode(), version.getWardCode(), version.getContentLanguage(),
-                n(version.getPriceStars()), n(version.getRewardStars()), checkpoints);
+                n(version.getPriceStars()), n(version.getRewardStars()), version.isRevealRoute(),
+                checkpoints);
         return new QuestDraftResponse(quest.getId(), quest.getCreatorId(), quest.getOrigin(),
                 quest.getStatus(), quest.getDataVersion() == null ? 0 : quest.getDataVersion(),
                 quest.getDraftVersionId(), quest.getPublishedVersionId(), quest.isPendingChangeReview(),

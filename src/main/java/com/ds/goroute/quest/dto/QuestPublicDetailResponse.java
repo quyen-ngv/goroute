@@ -1,14 +1,16 @@
 package com.ds.goroute.quest.dto;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
 /**
- * The pre-purchase detail page. Like the summary, it carries no checkpoint coordinates, answers,
- * hints or location keys: coordinates are the thing that reconstructs the whole route, so even a
- * detail page a stranger can open shows only counts and high-level facts. During a run, the next
- * checkpoint's coordinates are served by a separate run-scoped shape (§3.8), one checkpoint at a
- * time. Enforced by {@code QuestPublicDtoLeakTest}.
+ * The pre-purchase detail page. It carries no answers, hints or location keys. Checkpoint
+ * coordinates appear only in {@link #route}, and only when the creator chose to show the whole
+ * route ({@link #revealRoute}, the default): then each checkpoint is placed on the map — a PIN
+ * checkpoint at its spot, an AREA checkpoint only at its offset search circle, never its real spot.
+ * A creator who keeps the route hidden gets an empty list, and the run serves the next checkpoint
+ * one at a time (§3.8). Enforced by {@code QuestPublicDtoLeakTest}.
  */
 public record QuestPublicDetailResponse(
         UUID id,
@@ -33,5 +35,17 @@ public record QuestPublicDetailResponse(
         int requiredCheckinCount,
         boolean creatorSeesPlayers,
         /** The one language the quest is written in (one quest, one language). */
-        String language) {
+        String language,
+        /** The creator shows every checkpoint from the start. */
+        boolean revealRoute,
+        /** The checkpoints in order, on the map; empty unless {@link #revealRoute}. */
+        List<RouteStop> route) {
+
+    /**
+     * One checkpoint of a shown route. PIN: its spot and unlock radius. AREA: the offset search
+     * circle (the real spot stays hidden until the REVEAL clue is bought during a run).
+     */
+    public record RouteStop(int sortOrder, String name, String category, String findMode,
+                            BigDecimal latitude, BigDecimal longitude, Integer radiusM) {
+    }
 }

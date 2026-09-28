@@ -414,12 +414,22 @@ class QuestDynamicCheckpointTest {
             QuestCheckpoint second = QuestCheckpoint.builder().id(secondId).sortOrder(1).name("Temple")
                     .category("TEMPLE").latitude(SPOT_LAT).longitude(SPOT_LNG).radiusM(40)
                     .completionMode("STOPS").minStops(2).build();
+            QuestSearchArea.Center center = QuestSearchArea.center(questId, SPOT_LAT, SPOT_LNG, 30, 200);
             QuestCheckpoint third = QuestCheckpoint.builder().id(thirdId).sortOrder(2).name("Hidden stele")
                     .latitude(SPOT_LAT).longitude(SPOT_LNG).radiusM(30).findMode("AREA").searchRadiusM(200)
+                    .searchCenterLat(center.latitude()).searchCenterLng(center.longitude())
                     .story("Built in 1865.").build();
             play(first, second, third);
 
             QuestRunResponse run = service.getRun(user, runId);
+
+            // The route is shown by default: a PIN ahead at its spot, an AREA only by its search circle.
+            assertThat(run.revealRoute()).isTrue();
+            assertThat(run.upcoming().get(0).latitude()).isEqualByComparingTo(SPOT_LAT);
+            assertThat(run.upcoming().get(0).radiusM()).isEqualTo(40);
+            assertThat(run.upcoming().get(1).latitude()).as("never an AREA's real spot").isNull();
+            assertThat(run.upcoming().get(1).searchArea().latitude()).isEqualByComparingTo(center.latitude());
+            assertThat(run.upcoming().get(1).searchArea().radiusM()).isEqualTo(200);
 
             assertThat(run.current().checkpointId()).isEqualTo(cpId);
             assertThat(run.upcoming()).extracting(QuestRunResponse.UpcomingCheckpointView::checkpointId)
@@ -437,6 +447,28 @@ class QuestDynamicCheckpointTest {
                     .as("a cleared checkpoint leaves the list; the next one becomes current")
                     .extracting(QuestRunResponse.UpcomingCheckpointView::checkpointId)
                     .containsExactly(thirdId);
+        }
+
+        @Test
+        @DisplayName("a creator who keeps the route hidden gets no place for the checkpoints ahead")
+        void hiddenRoute() {
+            QuestCheckpoint first = QuestCheckpoint.builder().id(cpId).sortOrder(0).name("Gate")
+                    .latitude(SPOT_LAT).longitude(SPOT_LNG).radiusM(40).build();
+            QuestCheckpoint second = QuestCheckpoint.builder().id(UUID.randomUUID()).sortOrder(1).name("Temple")
+                    .latitude(SPOT_LAT).longitude(SPOT_LNG).radiusM(40).build();
+            when(questRepository.loadVersionGraph(versionId)).thenReturn(Optional.of(QuestVersion.builder()
+                    .id(versionId).questId(questId).contentLanguage("vi").revealRoute(false)
+                    .checkpoints(List.of(first, second)).build()));
+
+            QuestRunResponse run = service.getRun(user, runId);
+
+            assertThat(run.revealRoute()).isFalse();
+            QuestRunResponse.UpcomingCheckpointView temple = run.upcoming().get(0);
+            assertThat(temple.name()).isEqualTo("Temple");
+            assertThat(temple.latitude()).isNull();
+            assertThat(temple.longitude()).isNull();
+            assertThat(temple.radiusM()).isNull();
+            assertThat(temple.searchArea()).isNull();
         }
     }
 }

@@ -34,6 +34,11 @@ public interface QuestRunMapper {
 
     int touchRun(@Param("id") UUID id, @Param("lastActivityAt") LocalDateTime lastActivityAt);
 
+    List<QuestRun> findRunsForMember(@Param("userId") UUID userId, @Param("limit") int limit,
+                                     @Param("offset") int offset);
+
+    int countOwnCheckin(@Param("checkinId") UUID checkinId, @Param("userId") UUID userId);
+
     int countCompletedRunsForVersion(@Param("questId") UUID questId, @Param("versionId") UUID versionId);
 
     int countRunsByStatusSince(@Param("questId") UUID questId, @Param("status") String status,

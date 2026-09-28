@@ -47,6 +47,8 @@ public class SaveQuestDraftRequest {
     private List<Integer> playableMonths;
     private Map<String, Object> playableHours;
     private Integer runExpiryHours;
+    /** Show every checkpoint from the start; null (an older app) means true. */
+    private Boolean revealRoute;
 
     private List<CheckpointInput> checkpoints = new ArrayList<>();
 

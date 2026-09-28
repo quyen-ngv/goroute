@@ -39,6 +39,8 @@ public class QuestListItem {
     private String amenityTags;
     private String playableMonths;
     private Integer runExpiryHours;
+    @Builder.Default
+    private boolean revealRoute = true;
     private Integer checkpointCount;
     private Integer requiredCheckinCount;
 }

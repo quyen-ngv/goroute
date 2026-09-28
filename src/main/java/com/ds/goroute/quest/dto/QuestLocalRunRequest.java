@@ -27,7 +27,19 @@ public record QuestLocalRunRequest(
         @Valid @Size(max = 2000) List<Answer> answers,
         @Valid @Size(max = 500) List<Clue> clues,
         @Valid @Size(max = 2000) List<StopVisit> stopVisits,
-        @Valid @Size(max = 200) List<ArTap> arTaps) {
+        @Valid @Size(max = 200) List<ArTap> arTaps,
+        @Valid @Size(max = 200) List<CheckinLink> checkins) {
+
+    /** Keeps the older shape (no check-ins) constructible. */
+    public QuestLocalRunRequest(String clientRunId, UUID versionId, LocalDateTime startedAt,
+                                LocalDateTime completedAt, List<Arrival> arrivals, List<Answer> answers,
+                                List<Clue> clues, List<StopVisit> stopVisits, List<ArTap> arTaps) {
+        this(clientRunId, versionId, startedAt, completedAt, arrivals, answers, clues, stopVisits, arTaps, null);
+    }
+
+    /** A check-in the player posted through the composer for a checkpoint that asks for one (D13). */
+    public record CheckinLink(@NotNull UUID checkpointId, @NotNull UUID checkinId) {
+    }
 
     public record Arrival(@NotNull UUID checkpointId, BigDecimal latitude, BigDecimal longitude,
                           BigDecimal accuracyMeters, LocalDateTime arrivedAt) {
