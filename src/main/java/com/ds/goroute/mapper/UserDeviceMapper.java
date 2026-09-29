@@ -11,6 +11,14 @@ public interface UserDeviceMapper {
 
     void insert(UserDevice device);
 
+    /**
+     * Registers a token for one person, taking it over from whoever held it before.
+     *
+     * <p>One statement on the unique token, so two accounts registering the same phone at the
+     * same moment end with one owner rather than a constraint error.
+     */
+    UserDevice upsertByToken(UserDevice device);
+
     UserDevice findById(@Param("id") UUID id);
 
     List<UserDevice> findActiveByUserId(@Param("userId") UUID userId);
@@ -28,6 +36,11 @@ public interface UserDeviceMapper {
     void deactivate(@Param("id") UUID id);
 
     void deleteByToken(@Param("fcmToken") String fcmToken);
+
+    /** Frees a token for {@code deviceId}: any other row holding it is a stale registration. */
+    int deleteByTokenExceptDevice(@Param("fcmToken") String fcmToken, @Param("deviceId") UUID deviceId);
+
+    int deleteByUserId(@Param("userId") UUID userId);
 
     int deleteByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
 }

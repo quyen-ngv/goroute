@@ -3,7 +3,7 @@ import com.ds.goroute.constant.ErrorConstant;import com.ds.goroute.dto.request.*
 import java.util.Locale;
 @Service @RequiredArgsConstructor @lombok.extern.slf4j.Slf4j
 public class MarketplaceChatServiceImpl implements MarketplaceChatService {
- private final MarketplaceChatRepository repo;private final com.ds.goroute.mapper.MarketplaceChatMapper chatMapper;private final HotelMarketplaceRepository hotelRepo;private final ActivityCommerceRepository activityRepo;private final HostOrganizationRepository orgRepo;private final UserRepository userRepo;private final PartnerAuthorizationService authorization;private final MarketplaceHistoryService history;private final WebSocketService webSocketService;private final ObjectMapper mapper;private final BusinessConfigService businessConfig;private final com.ds.goroute.service.notification.ConversationNotifier conversationNotifier;private final com.ds.goroute.service.UserBlockService userBlocks;private final TripMemberRepository tripMembers;
+ private final MarketplaceChatRepository repo;private final com.ds.goroute.mapper.MarketplaceChatMapper chatMapper;private final HotelMarketplaceRepository hotelRepo;private final ActivityCommerceRepository activityRepo;private final HostOrganizationRepository orgRepo;private final UserRepository userRepo;private final PartnerAuthorizationService authorization;private final MarketplaceHistoryService history;private final WebSocketService webSocketService;private final ObjectMapper mapper;private final BusinessConfigService businessConfig;private final com.ds.goroute.service.notification.ConversationNotifier conversationNotifier;private final com.ds.goroute.service.UserBlockService userBlocks;private final TripMemberRepository tripMembers;private final com.ds.goroute.service.marketplace.ChatAttachmentValidator attachmentValidator;
  @Transactional public MarketplaceConversationResponse start(UUID actor,StartMarketplaceConversationRequest r){MarketplaceConversationType type=r.getConversationType();if(type==MarketplaceConversationType.TRIP)throw bad("A trip conversation is opened through its trip");if(type==MarketplaceConversationType.HOTEL_BOOKING)return startHotel(actor,r.getHotelBookingId());if(type==MarketplaceConversationType.ACTIVITY_ORDER)return startActivity(actor,r.getActivityOrderId());return startDirect(actor,r);}
  private MarketplaceConversationResponse startHotel(UUID actor,UUID id){if(id==null)throw bad("hotelBookingId is required");MarketplaceConversation existing=repo.findByHotelBooking(id,actor).orElse(null);if(existing!=null){require(existing.getId(),actor);return response(existing);}HotelBooking b=hotelRepo.findBooking(id).orElseThrow(()->notFound("Hotel booking not found"));if(!actor.equals(b.getUserId()))authorization.requireResourcePermission(b.getOrganizationId(),actor,"HOTEL",b.getHotelId(),"CHAT_WRITE");MarketplaceConversation c=create(MarketplaceConversationType.HOTEL_BOOKING,b.getOrganizationId(),b.getId(),null);if(b.getUserId()!=null)repo.addMember(c.getId(),b.getUserId(),"GUEST",c.getCreatedAt());if(!actor.equals(b.getUserId()))repo.addMember(c.getId(),actor,"HOST",c.getCreatedAt());history.record(b.getOrganizationId(),"CONVERSATION",c.getId(),"CREATED",c,List.of(),actor,"USER",null);return response(repo.find(c.getId(),actor).orElse(c));}
  private MarketplaceConversationResponse startActivity(UUID actor,UUID id){if(id==null)throw bad("activityOrderId is required");MarketplaceConversation existing=repo.findByActivityOrder(id,actor).orElse(null);if(existing!=null){require(existing.getId(),actor);return response(existing);}ActivityOrder o=activityRepo.findOrder(id).orElseThrow(()->notFound("Activity order not found"));if(!actor.equals(o.getUserId()))authorization.requireResourcePermission(o.getOrganizationId(),actor,"ACTIVITY",o.getActivityBookingId(),"CHAT_WRITE");MarketplaceConversation c=create(MarketplaceConversationType.ACTIVITY_ORDER,o.getOrganizationId(),null,o.getId());if(o.getUserId()!=null)repo.addMember(c.getId(),o.getUserId(),"GUEST",c.getCreatedAt());if(!actor.equals(o.getUserId()))repo.addMember(c.getId(),actor,"HOST",c.getCreatedAt());history.record(o.getOrganizationId(),"CONVERSATION",c.getId(),"CREATED",c,List.of(),actor,"USER",null);return response(repo.find(c.getId(),actor).orElse(c));}
@@ -13,12 +13,21 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
  public MarketplaceConversationResponse get(UUID a,UUID id){require(id,a);return response(conversation(id,a));}
  public List<MarketplaceMessageResponse> messages(UUID a,UUID id,Long after,int limit){require(id,a);return rawMessages(id,after,limit,a);}
 
+    /** Why an inbox row moved, as {@code CONVERSATION_UPDATED.data.reason}. */
+    static final String REASON_CREATED = "message.created";
+    static final String REASON_EDITED = "message.edited";
+    static final String REASON_DELETED = "message.deleted";
+    static final String REASON_READ = "read";
+
     /**
      * Says one thing in one thread.
      *
      * <p>Idempotent on the client's own id, twice: once before taking the row lock and once
      * after. A phone retrying a send on a flaky network is the normal case, not the odd one,
      * and a duplicated line is the most visible bug a chat can have.
+     *
+     * <p>The notifications it causes are written after commit, outside the conversation lock,
+     * so their failure can never cost the message.
      */
     @Transactional
     public MarketplaceMessageResponse send(UUID a, UUID id, SendMarketplaceMessageRequest r) {
@@ -30,6 +39,7 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
                 && (r.getAttachments() == null || r.getAttachments().isEmpty())) {
             throw bad("Message content or attachment is required");
         }
+        List<Map<String, Object>> attachments = attachmentValidator.validate(id, r.getAttachments());
         UUID replyTo = replyTarget(id, r.getReplyToMessageId());
         MarketplaceMessage prior = repo.findMessageByClientId(id, a, r.getClientMessageId()).orElse(null);
         if (prior != null) return messageResponse(prior);
@@ -44,7 +54,7 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
                 .clientMessageId(r.getClientMessageId())
                 .messageType((r.getMessageType() == null ? MarketplaceMessageType.TEXT : r.getMessageType()).name())
                 .content(r.getContent() == null ? null : r.getContent().trim())
-                .attachments(json(r.getAttachments() == null ? List.of() : r.getAttachments()))
+                .attachments(json(attachments))
                 .sequenceNo(repo.nextSequence(id))
                 .replyToMessageId(replyTo)
                 .createdAt(n)
@@ -53,15 +63,31 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
         repo.updateLast(id, n);
         MarketplaceMessageResponse saved = messageResponse(repo.findMessage(m.getId()).orElse(m));
         broadcastAfterCommit(id, a, "MESSAGE_CREATED", saved);
-        notifyInboxAfterCommit(id, a);
+        notifyInboxAfterCommit(id, a, REASON_CREATED, null);
         conversationNotifier.notifyNewMessage(id, a, saved, mentionedMembers(id, r.getMentionedUserIds()));
         return saved;
     }
 
- @Transactional public void markRead(UUID a,UUID id,UUID messageId){require(id,a);ensureConversationMember(id,a);MarketplaceMessage m=repo.findMessage(messageId).orElseThrow(()->notFound("Message not found"));if(!id.equals(m.getConversationId()))throw bad("Message does not belong to conversation");repo.markRead(id,a,messageId);
-  // Tell the thread that this person has now read this far, so the sender's open
-  // screen can turn "Sent" into "Seen" without waiting for a reload.
-  broadcastAfterCommit(id,a,"MESSAGE_READ",Map.of("userId",a.toString(),"sequenceNo",m.getSequenceNo()));}
+    /**
+     * Moves the reader's marker forward (never back) and clears the chat notifications of this
+     * thread, so the notification badge and the chat badge agree.
+     */
+    @Transactional
+    public void markRead(UUID a, UUID id, UUID messageId) {
+        require(id, a);
+        ensureConversationMember(id, a);
+        MarketplaceMessage m = repo.findMessage(messageId).orElseThrow(() -> notFound("Message not found"));
+        if (!id.equals(m.getConversationId())) throw bad("Message does not belong to conversation");
+        boolean isAdvanced = repo.markRead(id, a, messageId) == 1;
+        conversationNotifier.conversationRead(a, id);
+        if (!isAdvanced) return;
+        // Tell the thread that this person has now read this far, so the sender's open
+        // screen can turn "Sent" into "Seen" without waiting for a reload. A re-read of an
+        // older message moves nothing and says nothing.
+        broadcastAfterCommit(id, a, "MESSAGE_READ", Map.of("userId", a.toString(), "sequenceNo", m.getSequenceNo()));
+        // The reader's own other devices clear their badge for this thread.
+        notifyInboxAfterCommit(id, a, REASON_READ, a);
+    }
  /**
   * The access decision used to run in Java over an already paged result, so a scoped
   * employee saw short or empty pages and could not reach older conversations at all.
@@ -77,7 +103,7 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
  public List<MarketplaceMessageResponse> adminMessages(UUID actor,UUID id,Long after,int limit,String reason){MarketplaceConversation conversation=conversation(id,null);requireOperatorReadable(conversation);String accessReason=clean(reason);if(accessReason==null)throw bad("A reason is required to access a chat transcript");history.audit(conversation.getOrganizationId(),"CONVERSATION",id,"ADMIN_TRANSCRIPT_ACCESSED",actor,"ADMIN",accessReason,Map.of("afterSequence",after==null?0:after,"limit",Math.min(Math.max(limit,1),200)));return rawMessages(id,after,limit,null);}
  @Transactional public MarketplaceConversationResponse adminUpdate(UUID actor,UUID id,UpdateConversationStatusRequest r){MarketplaceConversation c=conversation(id,null);requireOperatorReadable(c);if(r.getAssignedMemberId()!=null){if(c.getOrganizationId()==null)throw bad("Direct conversation cannot be assigned");orgRepo.findMembers(c.getOrganizationId()).stream().filter(m->r.getAssignedMemberId().equals(m.getId())&&OrganizationMemberStatus.ACTIVE.name().equals(m.getMemberStatus())).findFirst().orElseThrow(()->bad("Assigned employee is not active in this organization"));}repo.updateConversation(id,r.getStatus()==null?c.getStatus():r.getStatus().name(),r.getAssignedMemberId(),r.isUnassign(),LocalDateTime.now());MarketplaceConversation saved=conversation(id,null);history.record(saved.getOrganizationId(),"CONVERSATION",id,"ADMIN_UPDATED",saved,List.of("status","assignedMemberId"),actor,"ADMIN",null);return response(saved);}
  @Transactional public MarketplaceMessageResponse adminSend(UUID actor,UUID id,SendMarketplaceMessageRequest r){MarketplaceConversation c=conversation(id,null);requireOperatorReadable(c);return send(actor,id,r);}
- @Transactional public void adminRedact(UUID actor,UUID conversationId,UUID messageId,String reason){MarketplaceConversation c=conversation(conversationId,null);requireOperatorReadable(c);MarketplaceMessage m=repo.findMessage(messageId).orElseThrow(()->notFound("Message not found"));if(!conversationId.equals(m.getConversationId()))throw bad("Message does not belong to conversation");if(repo.softDeleteMessage(conversationId,messageId,LocalDateTime.now())!=1)throw bad("Message is already deleted");history.record(c.getOrganizationId(),"CONVERSATION_MESSAGE",messageId,"ADMIN_REDACTED",m,List.of("content","attachments"),actor,"ADMIN",clean(reason));broadcastAfterCommit(conversationId,actor,"MESSAGE_DELETED",Map.of("id",messageId.toString(),"conversationId",conversationId.toString()));notifyInboxAfterCommit(conversationId,actor);}
+ @Transactional public void adminRedact(UUID actor,UUID conversationId,UUID messageId,String reason){MarketplaceConversation c=conversation(conversationId,null);requireOperatorReadable(c);MarketplaceMessage m=repo.findMessage(messageId).orElseThrow(()->notFound("Message not found"));if(!conversationId.equals(m.getConversationId()))throw bad("Message does not belong to conversation");if(repo.softDeleteMessage(conversationId,messageId,LocalDateTime.now())!=1)throw bad("Message is already deleted");history.record(c.getOrganizationId(),"CONVERSATION_MESSAGE",messageId,"ADMIN_REDACTED",m,List.of("content","attachments"),actor,"ADMIN",clean(reason));broadcastAfterCommit(conversationId,actor,"MESSAGE_DELETED",Map.of("id",messageId.toString(),"conversationId",conversationId.toString()));notifyInboxAfterCommit(conversationId,actor,REASON_DELETED,null);}
  private List<MarketplaceMessageResponse> rawMessages(UUID id,Long after,int limit,UUID viewer){int l=Math.min(Math.max(limit,1),200);return withReactions(repo.findMessages(id,after,l),viewer);}
 
     /**
@@ -332,7 +358,8 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
 
     /**
      * Reactions as the bubble draws them: one chip per emoji, in the order they first
-     * appeared, with the names behind it for the tooltip.
+     * appeared, with the names behind it for the tooltip and the ids behind it so each
+     * client can work out {@code reactedByMe} itself. A null viewer (a broadcast) is nobody.
      */
     private List<MarketplaceMessageResponse.MessageReactionResponse> groupReactions(
             List<MarketplaceMessageReaction> reactions, UUID viewer) {
@@ -347,6 +374,11 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
                         .count(entry.getValue().size())
                         .reactedByMe(viewer != null && entry.getValue().stream()
                                 .anyMatch(reaction -> viewer.equals(reaction.getUserId())))
+                        .userIds(entry.getValue().stream()
+                                .map(MarketplaceMessageReaction::getUserId)
+                                .filter(Objects::nonNull)
+                                .distinct()
+                                .toList())
                         .userNames(entry.getValue().stream()
                                 .map(MarketplaceMessageReaction::getUserName)
                                 .filter(Objects::nonNull)
@@ -411,7 +443,7 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
         }
         broadcastAfterCommit(conversationId, actor, "MESSAGE_DELETED",
                 Map.of("id", messageId.toString(), "conversationId", conversationId.toString()));
-        notifyInboxAfterCommit(conversationId, actor);
+        notifyInboxAfterCommit(conversationId, actor, REASON_DELETED, null);
     }
 
     /** Corrects one's own message; the new text went through the filter on the way in. */
@@ -428,10 +460,13 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
                 LocalDateTime.now()) != 1) {
             throw bad("Only your own message can be edited");
         }
-        MarketplaceMessageResponse saved = messageResponse(repo.findMessage(messageId).orElse(existing));
-        broadcastAfterCommit(conversationId, actor, "MESSAGE_EDITED", saved);
-        notifyInboxAfterCommit(conversationId, actor);
-        return saved;
+        // With its reactions: clients replace the whole message on an edit, and one without
+        // them would wipe every chip off the bubble.
+        MarketplaceMessage edited = repo.findMessage(messageId).orElse(existing);
+        List<MarketplaceMessageReaction> reactions = repo.findReactions(List.of(messageId));
+        broadcastAfterCommit(conversationId, actor, "MESSAGE_EDITED", messageResponse(edited, reactions, null));
+        notifyInboxAfterCommit(conversationId, actor, REASON_EDITED, null);
+        return messageResponse(edited, reactions, actor);
     }
 
     /** Adds or removes one reaction, and answers with the message as it now reads. */
@@ -448,9 +483,11 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
         } else {
             repo.deleteReaction(messageId, actor, emoji);
         }
-        MarketplaceMessageResponse saved = messageResponse(message, repo.findReactions(List.of(messageId)), actor);
-        broadcastAfterCommit(conversationId, actor, "MESSAGE_REACTED", saved);
-        return saved;
+        List<MarketplaceMessageReaction> reactions = repo.findReactions(List.of(messageId));
+        // The broadcast is read by everybody, so it is nobody's view: reactedByMe is false there
+        // and each client derives its own from userIds. The caller gets their own view.
+        broadcastAfterCommit(conversationId, actor, "MESSAGE_REACTED", messageResponse(message, reactions, null));
+        return messageResponse(message, reactions, actor);
     }
 
     /**
@@ -523,7 +560,7 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
         repo.updateLast(conversationId, now);
         MarketplaceMessageResponse saved = messageResponse(repo.findMessage(message.getId()).orElse(message));
         broadcastAfterCommit(conversationId, null, "MESSAGE_CREATED", saved);
-        notifyInboxAfterCommit(conversationId, null);
+        notifyInboxAfterCommit(conversationId, null, REASON_CREATED, null);
         return saved;
     }
 
@@ -535,27 +572,36 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
      * conversations you are <em>not</em> looking at. This goes to each member's
      * personal topic instead.
      *
-     * <p>The row is read once for the whole fan-out rather than once per member,
-     * and only the parts of it that read the same for everybody are sent. Unread
-     * counts and mute are per-person, so the client keeps its own and asks the
-     * server for the badge.
+     * <p>The row is read once for the whole fan-out rather than once per member, and each
+     * member's unread count comes from one query for all of them, so a client can show the
+     * server's number instead of guessing from its own arithmetic.
+     *
+     * @param reason   why the row moved, one of the {@code REASON_*} values
+     * @param onlyTo   a single member to tell (a read concerns only the reader), or null for all
      */
-    private void notifyInboxAfterCommit(UUID conversationId, UUID actor) {
+    private void notifyInboxAfterCommit(UUID conversationId, UUID actor, String reason, UUID onlyTo) {
         afterCommit(() -> {
             try {
                 MarketplaceConversation conversation = repo.find(conversationId, null).orElse(null);
                 if (conversation == null) return;
-                Map<String, Object> data = new LinkedHashMap<>();
-                data.put("conversationId", conversationId.toString());
-                data.put("lastMessageContent", conversation.getLastMessageContent());
-                data.put("lastMessageType", conversation.getLastMessageType());
-                data.put("lastMessageSenderId", conversation.getLastMessageSenderId() == null
+                Map<String, Object> shared = new LinkedHashMap<>();
+                shared.put("conversationId", conversationId.toString());
+                shared.put("reason", reason);
+                shared.put("lastMessageContent", conversation.getLastMessageContent());
+                shared.put("lastMessageType", conversation.getLastMessageType());
+                shared.put("lastMessageSenderId", conversation.getLastMessageSenderId() == null
                         ? null : conversation.getLastMessageSenderId().toString());
-                data.put("lastMessageSenderName", conversation.getLastMessageSenderName());
-                data.put("lastMessageAt", conversation.getLastMessageAt() == null
+                shared.put("lastMessageSenderName", conversation.getLastMessageSenderName());
+                shared.put("lastMessageAt", conversation.getLastMessageAt() == null
                         ? null : conversation.getLastMessageAt().toString());
-                for (UUID member : repo.findActiveMemberIds(conversationId)) {
-                    webSocketService.broadcastToUser(member, "CONVERSATION_UPDATED", data, actor);
+                for (MarketplaceMemberInboxState member : repo.findMemberInboxStates(conversationId)) {
+                    if (member.getUserId() == null || (onlyTo != null && !onlyTo.equals(member.getUserId()))) {
+                        continue;
+                    }
+                    Map<String, Object> data = new LinkedHashMap<>(shared);
+                    data.put("lastSequenceNo", member.getLastSequenceNo());
+                    data.put("unreadCount", member.getUnreadCount() == null ? null : member.getUnreadCount().intValue());
+                    webSocketService.broadcastToUser(member.getUserId(), "CONVERSATION_UPDATED", data, actor);
                 }
             } catch (RuntimeException exception) {
                 // The message is delivered either way; an inbox that updates on

@@ -29,6 +29,7 @@ import com.ds.goroute.utils.MediaAssetResponseMapper;
 import com.ds.goroute.utils.MemoryImageUrlNormalizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
@@ -405,6 +406,8 @@ public class TripServiceImpl implements TripService {
 
         // The owner or an accepted EDITOR. A VIEWER sees the trip and cannot rename or re-date it.
         tripAccessGuard.requireEditAccess(tripId, userId);
+        Trip before = new Trip();
+        BeanUtils.copyProperties(trip, before);
 
         if (request.getName() != null) trip.setName(request.getName());
         if (request.getCoverImageUrl() != null) trip.setCoverImageUrl(request.getCoverImageUrl());
@@ -473,7 +476,8 @@ public class TripServiceImpl implements TripService {
 
         notificationHelper.emitTripUpdated(trip, userId);
         tripRealtimePublisher.publishAfterCommit(
-                TripRealtimeEventType.TRIP_UPDATED, tripId, tripId, userId);
+                TripRealtimeEventType.TRIP_UPDATED, tripId, tripId, userId,
+                Map.of("fields", changedTripFields(before, trip, request.getDestinations() != null)));
 
         return mapToTripResponse(trip, userId);
     }
@@ -490,11 +494,17 @@ public class TripServiceImpl implements TripService {
         }
 
         imageStorageCleanupService.deleteImagesForEntityRecord("TRIP", tripId);
-        
-        // Publish realtime event before actual deletion so subscribers still exist
+
+        // Read before the delete. Once the trip is soft-deleted the socket's per-message check
+        // drops trip.deleted for every subscriber, so each member (the owner's other devices
+        // included) is told on their own topic instead; the trip-topic event stays for any
+        // client that still reads it.
+        List<UUID> affectedUserIds = usersWhoCanSeeTrip(trip);
         tripRealtimePublisher.publishAfterCommit(
                 TripRealtimeEventType.TRIP_DELETED, tripId, tripId, userId);
-        
+        tripRealtimePublisher.publishAccessRevokedAfterCommit(
+                tripId, affectedUserIds, TripAccessRevokedReason.DELETED);
+
         tripRepository.deleteById(tripId);
         tripChatService.onTripDeleted(tripId);
         log.info("Trip deleted: {}", tripId);
@@ -674,6 +684,8 @@ public class TripServiceImpl implements TripService {
         }
         tripRealtimePublisher.publishAfterCommit(
                 TripRealtimeEventType.MEMBER_DECLINED, tripId, member.getId(), userId);
+        tripRealtimePublisher.publishAccessRevokedAfterCommit(
+                tripId, List.of(userId), TripAccessRevokedReason.DECLINED);
     }
 
     @Override
@@ -728,6 +740,8 @@ public class TripServiceImpl implements TripService {
             }
             tripRealtimePublisher.publishAfterCommit(
                     TripRealtimeEventType.MEMBER_DECLINED, tripId, memberId, userId);
+            tripRealtimePublisher.publishAccessRevokedAfterCommit(
+                    tripId, List.of(userId), TripAccessRevokedReason.DECLINED);
             return;
         }
 
@@ -743,6 +757,8 @@ public class TripServiceImpl implements TripService {
             }
             tripRealtimePublisher.publishAfterCommit(
                     TripRealtimeEventType.MEMBER_REMOVED, tripId, memberId, userId);
+            tripRealtimePublisher.publishAccessRevokedAfterCommit(
+                    tripId, accountOf(member), TripAccessRevokedReason.REMOVED);
             return;
         }
 
@@ -769,6 +785,9 @@ public class TripServiceImpl implements TripService {
                 ), member.getUserId() == null ? List.of() : List.of(member.getUserId()));
         tripRealtimePublisher.publishAfterCommit(
                 TripRealtimeEventType.MEMBER_REMOVED, tripId, memberId, userId);
+        // The member.removed above is filtered away from the one person it is about.
+        tripRealtimePublisher.publishAccessRevokedAfterCommit(
+                tripId, accountOf(member), TripAccessRevokedReason.REMOVED);
     }
 
     @Override
@@ -1347,6 +1366,10 @@ public class TripServiceImpl implements TripService {
                 linkedData, List.of(targetUserId));
         tripRealtimePublisher.publishAfterCommit(
                 TripRealtimeEventType.MEMBER_REMOVED, tripId, guestMemberId, currentUserId);
+        // The guest's splits now belong to the linked user, so balances moved. A guest row has
+        // no account behind it, so nobody loses access here.
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.EXPENSE_UPDATED, tripId, null, currentUserId);
     }
 
     @Override
@@ -1711,6 +1734,72 @@ public class TripServiceImpl implements TripService {
         return mapToTripResponse(trip, userId);
     }
 
+    /** The owner and every member with an account who holds or was offered the trip. */
+    private List<UUID> usersWhoCanSeeTrip(Trip trip) {
+        List<UUID> userIds = new ArrayList<>();
+        userIds.add(trip.getOwnerId());
+        for (TripMember member : tripMemberRepository.findByTripId(trip.getId())) {
+            if (member.getUserId() != null
+                    && (member.getStatus() == MemberStatus.ACCEPTED || member.getStatus() == MemberStatus.PENDING)) {
+                userIds.add(member.getUserId());
+            }
+        }
+        return userIds;
+    }
+
+    /** The account behind a member row; empty for a guest, who has none to notify. */
+    private List<UUID> accountOf(TripMember member) {
+        return member.getUserId() == null ? List.of() : List.of(member.getUserId());
+    }
+
+    /**
+     * What an update actually changed, in wire names, so a client can tell a rename from a
+     * currency or budget change (which also invalidates its budget and expense views).
+     */
+    private static List<String> changedTripFields(Trip before, Trip after, boolean destinationsReplaced) {
+        List<String> fields = new ArrayList<>();
+        addIfChanged(fields, "name", before.getName(), after.getName());
+        addIfChanged(fields, "coverImageUrl", before.getCoverImageUrl(), after.getCoverImageUrl());
+        addIfChanged(fields, "destination",
+                List.of(Objects.toString(before.getDestination(), ""),
+                        Objects.toString(before.getDestinationPlaceId(), ""),
+                        normalized(before.getDestinationLat()), normalized(before.getDestinationLng())),
+                List.of(Objects.toString(after.getDestination(), ""),
+                        Objects.toString(after.getDestinationPlaceId(), ""),
+                        normalized(after.getDestinationLat()), normalized(after.getDestinationLng())));
+        if (destinationsReplaced) {
+            fields.add("destinations");
+        }
+        addIfChanged(fields, "startDate", before.getStartDate(), after.getStartDate());
+        addIfChanged(fields, "endDate", before.getEndDate(), after.getEndDate());
+        addIfChanged(fields, "budget", normalized(before.getBudget()), normalized(after.getBudget()));
+        addIfChanged(fields, "currency", before.getCurrency(), after.getCurrency());
+        addIfChanged(fields, "status", before.getStatus(), after.getStatus());
+        addIfChanged(fields, "visibility", before.getVisibility(), after.getVisibility());
+        addIfChanged(fields, "shareExpenses", before.getShareExpenses(), after.getShareExpenses());
+        addIfChanged(fields, "shareNotes", before.getShareNotes(), after.getShareNotes());
+        addIfChanged(fields, "description", before.getDescription(), after.getDescription());
+        addIfChanged(fields, "startingPoint",
+                Arrays.asList(before.getStartingPointName(), before.getStartingPointAddress(),
+                        normalized(before.getStartingPointLat()), normalized(before.getStartingPointLng()),
+                        before.getStartingPointTime()),
+                Arrays.asList(after.getStartingPointName(), after.getStartingPointAddress(),
+                        normalized(after.getStartingPointLat()), normalized(after.getStartingPointLng()),
+                        after.getStartingPointTime()));
+        return fields;
+    }
+
+    private static void addIfChanged(List<String> fields, String field, Object before, Object after) {
+        if (!Objects.equals(before, after)) {
+            fields.add(field);
+        }
+    }
+
+    /** 100 and 100.00 are the same amount; BigDecimal.equals disagrees. */
+    private static String normalized(BigDecimal value) {
+        return value == null ? "" : value.stripTrailingZeros().toPlainString();
+    }
+
     private boolean isReactivatableMember(TripMember member) {
         return member.getStatus() == MemberStatus.DECLINED
                 || member.getStatus() == MemberStatus.LEFT;
@@ -1792,6 +1881,8 @@ public class TripServiceImpl implements TripService {
         notificationHelper.emitMemberLeft(member, trip, userId);
         tripRealtimePublisher.publishAfterCommit(
                 TripRealtimeEventType.MEMBER_REMOVED, tripId, member.getId(), userId);
+        tripRealtimePublisher.publishAccessRevokedAfterCommit(
+                tripId, List.of(userId), TripAccessRevokedReason.LEFT);
     }
 
     @Override

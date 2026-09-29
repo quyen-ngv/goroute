@@ -1,5 +1,6 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.dto.request.ReorderActivitiesRequest;
 import com.ds.goroute.dto.response.ActivityResponse;
 import com.ds.goroute.entity.Activity;
 import com.ds.goroute.entity.Place;
@@ -31,6 +32,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
@@ -109,5 +111,17 @@ class ActivityServiceImplTest {
         assertThat(response.getPlace().getThumbnail()).isEqualTo("https://example.com/place.jpg");
         verify(placeRepository).findByIds(List.of(placeId));
         verify(placeRepository, never()).findById(any());
+    }
+
+    /** Order is derived from times; the deprecated reorder call persists nothing to announce. */
+    @Test
+    void reorderingPublishesNothingBecauseNothingChanged() {
+        UUID tripId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+
+        service.reorderActivities(tripId, new ReorderActivitiesRequest(), userId);
+
+        verify(tripAccessGuard).requireEditAccess(tripId, userId);
+        verifyNoInteractions(tripRealtimePublisher);
     }
 }

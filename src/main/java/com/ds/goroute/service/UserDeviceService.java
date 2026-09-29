@@ -12,4 +12,7 @@ public interface UserDeviceService {
     void update(UUID userId, UUID deviceId, UpdateDeviceRequest request);
 
     void delete(UUID userId, UUID deviceId);
+
+    /** Forgets every device of a person whose account is going away; they must not be pushed to. */
+    void deleteAllForUser(UUID userId);
 }

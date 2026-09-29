@@ -2,6 +2,9 @@ package com.ds.goroute.config;
 
 import com.ds.goroute.service.MarketplaceConversationAccessService;
 import com.ds.goroute.service.TripAccessGuard;
+import com.ds.goroute.service.UserRealtimePublisher;
+import com.ds.goroute.service.realtime.RealtimeSessionRegistry;
+import com.ds.goroute.service.realtime.TripRealtimeAccessCache;
 import com.ds.goroute.utils.JwtUtils;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.impl.DefaultClaims;
@@ -19,6 +22,7 @@ import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 
@@ -30,7 +34,8 @@ import static org.mockito.Mockito.*;
 
 /**
  * Tests WebSocket SUBSCRIBE authorization for trip topics.
- * Verifies that only authenticated trip members can subscribe to /topic/trips/{tripId}.
+ * Verifies that only authenticated trip members can subscribe to /topic/trips/{tripId}; any
+ * other SUBSCRIBE is dropped (null) rather than thrown, which would close the socket.
  */
 @ExtendWith(MockitoExtension.class)
 class WebSocketSubscriptionAuthorizationTest {
@@ -49,7 +54,7 @@ class WebSocketSubscriptionAuthorizationTest {
     @Mock
     private ChannelRegistration channelRegistration;
     @Mock
-    private ObjectProvider<org.springframework.messaging.simp.user.SimpUserRegistry> simpUserRegistryProvider;
+    private ObjectProvider<UserRealtimePublisher> userRealtimePublisherProvider;
 
     private ChannelInterceptor interceptor;
 
@@ -58,8 +63,11 @@ class WebSocketSubscriptionAuthorizationTest {
         WebSocketConfig config = new WebSocketConfig(
                 marketplaceConversationAccessService,
                 tripAccessGuard,
+                mock(TripRealtimeAccessCache.class),
+                new RealtimeSessionRegistry(),
                 jwtUtils,
-                simpUserRegistryProvider);
+                userRealtimePublisherProvider,
+                mock(TaskScheduler.class));
         config.configureClientInboundChannel(channelRegistration);
         ArgumentCaptor<ChannelInterceptor> captor = ArgumentCaptor.forClass(ChannelInterceptor.class);
         verify(channelRegistration).interceptors(captor.capture());
@@ -131,10 +139,8 @@ class WebSocketSubscriptionAuthorizationTest {
         // CONNECT should succeed
         assertDoesNotThrow(() -> interceptor.preSend(connectMessage, messageChannel));
 
-        // SUBSCRIBE should fail
-        assertThrows(AccessDeniedException.class, () ->
-                interceptor.preSend(subscribeMessage, messageChannel)
-        );
+        // SUBSCRIBE is dropped, not thrown, so the socket stays open
+        assertNull(interceptor.preSend(subscribeMessage, messageChannel));
 
         verify(tripAccessGuard).requireAccess(tripId, userId);
     }
@@ -148,10 +154,8 @@ class WebSocketSubscriptionAuthorizationTest {
         subscribeAccessor.setDestination("/topic/trips/" + tripId);
         Message<?> subscribeMessage = MessageBuilder.createMessage(new byte[0], subscribeAccessor.getMessageHeaders());
 
-        // Should fail due to missing authentication
-        assertThrows(AccessDeniedException.class, () ->
-                interceptor.preSend(subscribeMessage, messageChannel)
-        );
+        // Dropped due to missing authentication
+        assertNull(interceptor.preSend(subscribeMessage, messageChannel));
 
         verify(tripAccessGuard, never()).requireAccess(any(), any());
     }
@@ -180,10 +184,8 @@ class WebSocketSubscriptionAuthorizationTest {
         // CONNECT succeeds
         assertDoesNotThrow(() -> interceptor.preSend(connectMessage, messageChannel));
 
-        // SUBSCRIBE with invalid UUID should fail
-        assertThrows(AccessDeniedException.class, () ->
-                interceptor.preSend(subscribeMessage, messageChannel)
-        );
+        // SUBSCRIBE with invalid UUID is dropped
+        assertNull(interceptor.preSend(subscribeMessage, messageChannel));
 
         verify(tripAccessGuard, never()).requireAccess(any(), any());
     }

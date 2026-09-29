@@ -14,6 +14,9 @@ public class NotificationPayloadFactory {
         if (event.getMetadata() != null) {
             data.putAll(event.getMetadata());
         }
+        // Who else was told is routing, not content: it is stored on every row and pushed to
+        // every phone otherwise.
+        NotificationDataKeys.ROUTING_ONLY.forEach(data::remove);
 
         data.put("type", event.getType().name());
         data.put("tripId", event.getTripId().toString());

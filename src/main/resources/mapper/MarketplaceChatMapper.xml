@@ -24,6 +24,17 @@
       worth more than the space, and rejoining is then an update rather than a new start. -->
  <update id="markMemberLeft">UPDATE marketplace_conversation_members SET left_at=#{at} WHERE conversation_id=#{conversationId} AND user_id=#{userId} AND left_at IS NULL</update>
  <select id="findNotifiableMemberIds" resultType="java.util.UUID">SELECT user_id FROM marketplace_conversation_members WHERE conversation_id=#{conversationId} AND left_at IS NULL AND (muted_until IS NULL OR muted_until&lt;NOW())</select>
+ <!-- One row per current member for the inbox fan-out: counted per member, but one round trip. -->
+ <resultMap id="MemberInboxStateMap" type="com.ds.goroute.entity.MarketplaceMemberInboxState"><result property="userId" column="user_id"/><result property="readSequenceNo" column="read_sequence_no"/><result property="unreadCount" column="unread_count"/><result property="lastSequenceNo" column="last_sequence_no"/></resultMap>
+ <select id="findMemberInboxStates" resultMap="MemberInboxStateMap">
+  SELECT cm.user_id,
+         COALESCE(rm.sequence_no,0) AS read_sequence_no,
+         (SELECT COUNT(*) FROM marketplace_messages um WHERE um.conversation_id=cm.conversation_id AND um.deleted_at IS NULL AND um.sequence_no&gt;COALESCE(rm.sequence_no,0) AND um.sender_user_id IS DISTINCT FROM cm.user_id) AS unread_count,
+         (SELECT MAX(lm.sequence_no) FROM marketplace_messages lm WHERE lm.conversation_id=cm.conversation_id) AS last_sequence_no
+  FROM marketplace_conversation_members cm
+  LEFT JOIN marketplace_messages rm ON rm.id=cm.last_read_message_id
+  WHERE cm.conversation_id=#{conversationId} AND cm.left_at IS NULL
+ </select>
  <select id="findActiveMemberIds" resultType="java.util.UUID">SELECT user_id FROM marketplace_conversation_members WHERE conversation_id=#{conversationId} AND left_at IS NULL</select>
  <update id="updateMuted">UPDATE marketplace_conversation_members SET muted_until=#{mutedUntil} WHERE conversation_id=#{conversationId} AND user_id=#{userId}</update>
  <update id="updatePinnedMessage">UPDATE marketplace_conversations SET pinned_message_id=#{messageId},updated_at=#{at} WHERE id=#{conversationId}</update>

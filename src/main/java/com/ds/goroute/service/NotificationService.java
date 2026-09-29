@@ -20,7 +20,20 @@ public interface NotificationService {
 
     void markAsRead(UUID userId, UUID notificationId);
 
-    void markAllAsRead(UUID userId);
+    /** Marks every unread notification read, or only one trip's when {@code tripId} is given. */
+    void markAllAsRead(UUID userId, UUID tripId);
+
+    /**
+     * Rewrites a row that stands for a stream of events (a chat thread, a run of likes) with the
+     * newest one, and pushes it again when {@code isPushed}.
+     *
+     * @param data the row's complete new data
+     */
+    void refreshCoalescedNotification(com.ds.goroute.entity.Notification notification,
+                                      Map<String, Object> data, boolean isPushed);
+
+    /** Reading a conversation reads what its chat notifications announced. */
+    void markConversationNotificationsRead(UUID userId, UUID conversationId);
 
     void deleteNotification(UUID userId, UUID notificationId);
 

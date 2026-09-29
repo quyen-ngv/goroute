@@ -43,7 +43,16 @@ public interface NotificationMapper {
     
     int markAsRead(@Param("id") UUID id, @Param("userId") UUID userId);
     
-    int markAllAsRead(@Param("userId") UUID userId);
+    int markAllAsRead(@Param("userId") UUID userId, @Param("tripId") UUID tripId);
+
+    int markConversationNotificationsRead(@Param("userId") UUID userId,
+                                          @Param("conversationId") UUID conversationId);
+
+    /** Transaction-scoped advisory lock on one (recipient, type, target); see the repository. */
+    Boolean lockTarget(@Param("userId") UUID userId,
+                       @Param("type") com.ds.goroute.type.NotificationType type,
+                       @Param("targetType") String targetType,
+                       @Param("targetId") UUID targetId);
     
     int deleteByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
 }

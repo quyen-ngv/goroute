@@ -31,6 +31,9 @@ public interface MarketplaceChatMapper {
  /** Ids of everyone currently in the thread, for reconciling against another member list. */
  List<UUID> findActiveMemberIds(@Param("conversationId")UUID conversationId);
 
+ /** Every current member's read marker and unread count, in one query for the whole thread. */
+ List<com.ds.goroute.entity.MarketplaceMemberInboxState> findMemberInboxStates(@Param("conversationId")UUID conversationId);
+
  /** The same people, less the ones who muted the thread: who a new message is announced to. */
  List<UUID> findNotifiableMemberIds(@Param("conversationId")UUID conversationId);
 

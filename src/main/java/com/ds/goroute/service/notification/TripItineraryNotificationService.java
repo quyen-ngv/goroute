@@ -118,7 +118,7 @@ public class TripItineraryNotificationService {
                     reminder.type(),
                     reminderAt,
                     now,
-                    tripData(trip, "/trip/" + trip.getId()),
+                    startingAt(tripData(trip, "/trip/" + trip.getId()), tripStart),
                     null
             );
         }
@@ -377,6 +377,12 @@ public class TripItineraryNotificationService {
         return end;
     }
 
+    /** Lets the push expire when the thing it reminds of has started; see FirebaseService. */
+    private Map<String, Object> startingAt(Map<String, Object> data, ZonedDateTime startsAt) {
+        data.put(NotificationDataKeys.STARTS_AT, startsAt.toOffsetDateTime().toString());
+        return data;
+    }
+
     private Map<String, Object> tripData(Trip trip, String deepLink) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("tripId", trip.getId().toString());
@@ -393,6 +399,7 @@ public class TripItineraryNotificationService {
                 trip,
                 "/trip/" + trip.getId() + "/activities/" + activity.getId()
         );
+        startingAt(data, item.startsAt());
         data.put("activityId", activity.getId().toString());
         data.put("itemName", activity.getName());
         data.put("itemKind", itemKind(activity));

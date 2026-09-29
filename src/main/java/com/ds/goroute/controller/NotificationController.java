@@ -59,10 +59,12 @@ public class NotificationController {
         return ResponseEntity.ok(BaseResponse.ofSucceeded());
     }
 
+    /** Without {@code tripId} marks everything read; with it, only that trip's notifications. */
     @PutMapping("/read-all")
     public ResponseEntity<BaseResponse<Void>> markAllAsRead(
-            @CurrentUser UUID userId) {
-        notificationService.markAllAsRead(userId);
+            @CurrentUser UUID userId,
+            @RequestParam(required = false) UUID tripId) {
+        notificationService.markAllAsRead(userId, tripId);
         return ResponseEntity.ok(BaseResponse.ofSucceeded());
     }
 

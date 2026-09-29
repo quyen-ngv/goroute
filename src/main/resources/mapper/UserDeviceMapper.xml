@@ -19,6 +19,19 @@
         VALUES (#{id}, #{userId}, #{fcmToken}, #{deviceType}, #{deviceName}, #{language}, #{isActive}, #{createdAt}, #{updatedAt})
     </insert>
 
+    <select id="upsertByToken" resultMap="UserDeviceResultMap" affectData="true" flushCache="true" useCache="false">
+        INSERT INTO user_devices (id, user_id, fcm_token, device_type, device_name, language, is_active, created_at, updated_at)
+        VALUES (#{id}, #{userId}, #{fcmToken}, #{deviceType}, #{deviceName}, #{language}, TRUE, #{createdAt}, #{updatedAt})
+        ON CONFLICT (fcm_token) DO UPDATE SET
+            user_id = EXCLUDED.user_id,
+            device_type = EXCLUDED.device_type,
+            device_name = COALESCE(EXCLUDED.device_name, user_devices.device_name),
+            language = EXCLUDED.language,
+            is_active = TRUE,
+            updated_at = EXCLUDED.updated_at
+        RETURNING id, user_id, fcm_token, device_type, device_name, language, is_active, created_at, updated_at
+    </select>
+
     <select id="findById" resultMap="UserDeviceResultMap">
         SELECT * FROM user_devices WHERE id = #{id}
     </select>
@@ -60,6 +73,16 @@
     <delete id="deleteByToken">
         DELETE FROM user_devices
         WHERE fcm_token = #{fcmToken}
+    </delete>
+
+    <delete id="deleteByTokenExceptDevice">
+        DELETE FROM user_devices
+        WHERE fcm_token = #{fcmToken} AND id &lt;&gt; #{deviceId}
+    </delete>
+
+    <delete id="deleteByUserId">
+        DELETE FROM user_devices
+        WHERE user_id = #{userId}
     </delete>
 
     <delete id="deleteByIdAndUserId">

@@ -34,7 +34,13 @@ public class NotificationHelper {
         return metadata;
     }
 
+    /**
+     * The one way a person is named in a notification: full name, else username, else
+     * "Someone". Every event goes through it so one person does not read as "linh.ng" in one
+     * notification and "Linh Nguyễn" in the next.
+     */
     public String actorName(UUID userId) {
+        if (userId == null) return "Someone";
         return userRepository.findById(userId)
                 .map(user -> user.getFullName() != null && !user.getFullName().isBlank()
                         ? user.getFullName() : user.getUsername())
@@ -92,8 +98,7 @@ public class NotificationHelper {
 
     public void emitTripUpdated(Trip trip, UUID actorId) {
         try {
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             TripUpdatedEvent event = TripUpdatedEvent.builder()
                     .tripId(trip.getId())
@@ -115,8 +120,7 @@ public class NotificationHelper {
 
     public void emitTripDeleted(Trip trip, UUID actorId) {
         try {
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             TripDeletedEvent event = TripDeletedEvent.builder()
                     .tripId(trip.getId())
@@ -138,8 +142,7 @@ public class NotificationHelper {
             Trip trip = tripRepository.findById(activity.getTripId()).orElse(null);
             if (trip == null) return;
 
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             ActivityCreatedEvent event = ActivityCreatedEvent.builder()
                     .tripId(activity.getTripId())
@@ -165,8 +168,7 @@ public class NotificationHelper {
             Trip trip = tripRepository.findById(activity.getTripId()).orElse(null);
             if (trip == null) return;
 
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             ActivityUpdatedEvent event = ActivityUpdatedEvent.builder()
                     .tripId(activity.getTripId())
@@ -192,8 +194,7 @@ public class NotificationHelper {
             Trip trip = tripRepository.findById(activity.getTripId()).orElse(null);
             if (trip == null) return;
 
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             ActivityDeletedEvent event = ActivityDeletedEvent.builder()
                     .tripId(activity.getTripId())
@@ -213,13 +214,12 @@ public class NotificationHelper {
 
     public void emitMemberAdded(TripMember member, Trip trip, UUID actorId) {
         try {
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             String newMemberName = Boolean.TRUE.equals(member.getIsGuest())
                 ? member.getGuestName()
                 : (member.getUserId() != null
-                    ? userRepository.findById(member.getUserId()).map(User::getUsername).orElse("Someone")
+                    ? actorName(member.getUserId())
                     : "Someone");
 
             MemberAddedEvent event = MemberAddedEvent.builder()
@@ -240,13 +240,12 @@ public class NotificationHelper {
 
     public void emitMemberRemoved(TripMember member, Trip trip, UUID actorId) {
         try {
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             String removedMemberName = Boolean.TRUE.equals(member.getIsGuest())
                 ? member.getGuestName()
                 : (member.getUserId() != null
-                    ? userRepository.findById(member.getUserId()).map(User::getUsername).orElse("Someone")
+                    ? actorName(member.getUserId())
                     : "Someone");
 
             Map<String, Object> metadata = buildMetadata(
@@ -276,11 +275,10 @@ public class NotificationHelper {
 
     public void emitMemberAccepted(TripMember member, Trip trip, UUID actorId) {
         try {
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             String memberName = member.getUserId() != null
-                ? userRepository.findById(member.getUserId()).map(User::getUsername).orElse("Someone")
+                ? actorName(member.getUserId())
                 : "Someone";
 
             MemberAcceptedEvent event = MemberAcceptedEvent.builder()
@@ -304,8 +302,7 @@ public class NotificationHelper {
 
     public void emitMemberLeft(TripMember member, Trip trip, UUID actorId) {
         try {
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             MemberRemovedEvent event = MemberRemovedEvent.builder()
                     .tripId(trip.getId())
@@ -332,8 +329,7 @@ public class NotificationHelper {
             Trip trip = tripRepository.findById(tripId).orElse(null);
             if (trip == null) return;
 
-            User linkedUser = userRepository.findById(targetUserId).orElse(null);
-            String linkedUserName = linkedUser != null ? linkedUser.getUsername() : "Someone";
+            String linkedUserName = actorName(targetUserId);
 
             GuestLinkedEvent event = GuestLinkedEvent.builder()
                     .tripId(tripId)
@@ -356,8 +352,7 @@ public class NotificationHelper {
             Trip trip = tripRepository.findById(expense.getTripId()).orElse(null);
             if (trip == null) return;
 
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             Map<String, Object> metadata = buildMetadata(
                 expense.getTripId().toString(),
@@ -389,8 +384,7 @@ public class NotificationHelper {
             Trip trip = tripRepository.findById(expense.getTripId()).orElse(null);
             if (trip == null) return;
 
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             Map<String, Object> metadata = buildMetadata(
                 expense.getTripId().toString(),
@@ -422,8 +416,7 @@ public class NotificationHelper {
             Trip trip = tripRepository.findById(expense.getTripId()).orElse(null);
             if (trip == null) return;
 
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             Map<String, Object> metadata = buildMetadata(expense.getTripId().toString(), "/trip/" + expense.getTripId() + "/expenses");
             metadata.put("expenseId", expense.getId());
@@ -448,14 +441,12 @@ public class NotificationHelper {
     public void emitPaymentMarked(UUID tripId, UUID expenseId, UUID splitId, ExpenseSplit split,
                                   String expenseDescription, String currency, Boolean isPaid, UUID actorId) {
         try {
-            User actor = userRepository.findById(actorId).orElse(null);
-            String payerName = actor != null ? actor.getUsername() : "Someone";
+            String payerName = actorName(actorId);
 
             UUID payeeId = split.getUserId();
             String payeeName;
             if (payeeId != null) {
-                User payee = userRepository.findById(payeeId).orElse(null);
-                payeeName = payee != null ? payee.getUsername() : "Someone";
+                payeeName = actorName(payeeId);
             } else {
                 payeeName = split.getGuestName() != null ? split.getGuestName() : "Someone";
             }
@@ -491,8 +482,7 @@ public class NotificationHelper {
     public void emitPaymentAllMarked(UUID tripId, UUID expenseId, String expenseDescription,
                                      Boolean isPaid, UUID actorId) {
         try {
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             Map<String, Object> metadata = buildMetadata(
                 tripId.toString(),
@@ -522,8 +512,7 @@ public class NotificationHelper {
             Trip trip = tripRepository.findById(tripId).orElse(null);
             if (trip == null) return;
 
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             PaymentTripMarkedEvent event = PaymentTripMarkedEvent.builder()
                     .tripId(tripId)
@@ -562,8 +551,7 @@ public class NotificationHelper {
             String activityName = activity != null ? activity.getName()
                     : (locationName != null && !locationName.isBlank() ? locationName : "Unknown");
 
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             CheckinEvent event = CheckinEvent.builder()
                     .tripId(tripId)
@@ -594,8 +582,7 @@ public class NotificationHelper {
             Activity activity = activityId != null ? activityRepository.findById(activityId).orElse(null) : null;
             String activityName = activity != null ? activity.getName() : null;
 
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             String deepLink = activityId != null
                 ? "/trip/" + tripId + "/activities/" + activityId + "/notes"
@@ -625,8 +612,7 @@ public class NotificationHelper {
             Activity activity = activityId != null ? activityRepository.findById(activityId).orElse(null) : null;
             String activityName = activity != null ? activity.getName() : null;
 
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             String deepLink = activityId != null
                 ? "/trip/" + tripId + "/activities/" + activityId + "/notes"
@@ -656,8 +642,7 @@ public class NotificationHelper {
             Activity activity = activityRepository.findById(activityId).orElse(null);
             String activityName = activity != null ? activity.getName() : "Unknown";
 
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             CommentCreatedEvent event = CommentCreatedEvent.builder()
                     .tripId(tripId)
@@ -686,8 +671,7 @@ public class NotificationHelper {
             Activity activity = activityRepository.findById(activityId).orElse(null);
             String activityName = activity != null ? activity.getName() : "Unknown";
 
-            User actor = userRepository.findById(actorId).orElse(null);
-            String actorName = actor != null ? actor.getUsername() : "Someone";
+            String actorName = actorName(actorId);
 
             CommentDeletedEvent event = CommentDeletedEvent.builder()
                     .tripId(tripId)

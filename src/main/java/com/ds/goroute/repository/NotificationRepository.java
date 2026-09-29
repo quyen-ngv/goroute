@@ -34,5 +34,16 @@ public interface NotificationRepository {
 
     int markAsRead(UUID id, UUID userId);
 
-    int markAllAsRead(UUID userId);
+    /** Marks the person's unread notifications read; only one trip's when {@code tripId} is given. */
+    int markAllAsRead(UUID userId, UUID tripId);
+
+    /** Marks the person's unread chat notifications of one conversation read. */
+    int markConversationNotificationsRead(UUID userId, UUID conversationId);
+
+    /**
+     * Serialises "find the unread row for this target, else insert one" for one recipient and
+     * target until the current transaction ends, so two concurrent likes or messages cannot both
+     * miss the row and insert two. Must be called inside a transaction.
+     */
+    void lockTarget(UUID userId, NotificationType type, String targetType, UUID targetId);
 }

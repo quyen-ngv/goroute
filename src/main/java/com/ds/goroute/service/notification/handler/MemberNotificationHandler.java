@@ -34,11 +34,9 @@ public class MemberNotificationHandler implements NotificationEventHandler {
 
         log.info("Found {} member notification recipients", recipients.size());
 
-        for (UUID recipientId : recipients) {
-            notificationService.createNotification(recipientId, event);
-        }
+        int notified = notifyEach(notificationService, recipients, event);
 
-        log.info("Sent {} notifications for {}", recipients.size(), event.getType());
+        log.info("Sent {} notifications for {}", notified, event.getType());
     }
 
     @Override

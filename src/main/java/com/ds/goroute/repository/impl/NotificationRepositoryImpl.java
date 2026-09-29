@@ -91,7 +91,17 @@ public class NotificationRepositoryImpl implements NotificationRepository {
     }
 
     @Override
-    public int markAllAsRead(UUID userId) {
-        return notificationMapper.markAllAsRead(userId);
+    public int markAllAsRead(UUID userId, UUID tripId) {
+        return notificationMapper.markAllAsRead(userId, tripId);
+    }
+
+    @Override
+    public int markConversationNotificationsRead(UUID userId, UUID conversationId) {
+        return notificationMapper.markConversationNotificationsRead(userId, conversationId);
+    }
+
+    @Override
+    public void lockTarget(UUID userId, com.ds.goroute.type.NotificationType type, String targetType, UUID targetId) {
+        notificationMapper.lockTarget(userId, type, targetType, targetId);
     }
 }
