@@ -17,6 +17,7 @@ import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.service.FileUploadService;
 import com.ds.goroute.service.ImageUploadOutcome;
 import com.ds.goroute.service.ImageUploadRequest;
+import com.ds.goroute.service.UserDeviceService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.UserGuideService;
 import com.ds.goroute.service.UserService;
@@ -57,6 +58,7 @@ public class UserServiceImpl implements UserService {
     private final StorageService storageService;
     private final FileUploadService fileUploadService;
     private final ImageStorageCleanupService imageStorageCleanupService;
+    private final UserDeviceService userDeviceService;
 
     @Override
     @Transactional
@@ -220,7 +222,10 @@ public class UserServiceImpl implements UserService {
         // The account is gone, so its refresh tokens must go with it: otherwise a
         // token held by anyone keeps minting access tokens for up to 30 more days.
         refreshTokenRepository.deleteByUserId(userId);
-        
+        // Its phones as well: a deleted account must stop receiving pushes, and a token left
+        // behind would be handed to nobody until the phone registers for someone else.
+        userDeviceService.deleteAllForUser(userId);
+
         log.info("User account soft deleted: {}", userId);
     }
 

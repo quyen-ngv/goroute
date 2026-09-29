@@ -5,6 +5,7 @@ import com.ds.goroute.mapper.UserDeviceMapper;
 import com.ds.goroute.repository.NotificationRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.external.FirebaseService;
+import com.ds.goroute.service.notification.NotificationChangePublisher;
 import com.ds.goroute.service.notification.NotificationPayloadFactory;
 import com.google.gson.Gson;
 import org.junit.jupiter.api.Test;
@@ -27,7 +28,8 @@ class NotificationServiceOwnershipTest {
             mock(FirebaseService.class),
             mock(NotificationPayloadFactory.class),
             mock(UserDeviceMapper.class),
-            new Gson());
+            new Gson(),
+            mock(NotificationChangePublisher.class));
 
     @Test
     void notificationReadsUseDatabasePaginationAndUserScope() {

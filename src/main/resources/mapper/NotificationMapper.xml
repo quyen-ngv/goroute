@@ -61,7 +61,30 @@
     <update id="markAllAsRead">
         UPDATE notifications SET is_read = TRUE
         WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND is_read = FALSE
+        <if test="tripId != null">
+          AND trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+        </if>
     </update>
+
+    <!-- Opening a thread reads what its chat notifications announced. -->
+    <update id="markConversationNotificationsRead">
+        UPDATE notifications SET is_read = TRUE
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND is_read = FALSE
+          AND type IN ('MARKETPLACE_MESSAGE', 'CHAT_MENTION')
+          AND data -&gt;&gt; 'conversationId' = CAST(#{conversationId,javaType=java.util.UUID,jdbcType=OTHER} AS TEXT)
+    </update>
+
+    <!-- Held until the transaction ends; the key is a hash of the coalescing identity. -->
+    <select id="lockTarget" resultType="java.lang.Boolean" flushCache="true" useCache="false">
+        SELECT TRUE FROM pg_advisory_xact_lock(hashtextextended(CONCAT_WS(':',
+            'notification',
+            CAST(#{userId,javaType=java.util.UUID,jdbcType=OTHER} AS TEXT),
+            #{type},
+            #{targetType},
+            CAST(#{targetId,javaType=java.util.UUID,jdbcType=OTHER} AS TEXT)), 0))
+    </select>
 
     <delete id="deleteByIdAndUserId">
         DELETE FROM notifications

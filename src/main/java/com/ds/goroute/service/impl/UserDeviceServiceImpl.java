@@ -22,34 +22,30 @@ public class UserDeviceServiceImpl implements UserDeviceService {
 
     private final UserDeviceMapper userDeviceMapper;
 
+    /**
+     * Registers this phone's token for this person.
+     *
+     * <p>A token is one app install, so it has exactly one owner: whoever registered it last.
+     * Registering takes the row over from any other account that signed in on the same phone
+     * before, which otherwise kept receiving this person's pushes (and they theirs).
+     */
     @Override
     @Transactional
     public UserDeviceResponse register(UUID userId, RegisterDeviceRequest request) {
-        String language = NotificationLanguage.normalize(request.getLanguage());
-        UserDevice device = userDeviceMapper.findByUserIdAndToken(userId, request.getFcmToken());
-        if (device != null) {
-            userDeviceMapper.updateDevice(
-                    device.getId(), userId, request.getFcmToken(), language, true);
-            device.setLanguage(language);
-            device.setIsActive(true);
-            device.setUpdatedAt(LocalDateTime.now());
-            return toResponse(device);
-        }
-
         LocalDateTime now = LocalDateTime.now();
-        device = UserDevice.builder()
+        UserDevice candidate = UserDevice.builder()
                 .id(UUID.randomUUID())
                 .userId(userId)
                 .fcmToken(request.getFcmToken())
                 .deviceType(request.getDeviceType())
                 .deviceName(request.getDeviceName())
-                .language(language)
+                .language(NotificationLanguage.normalize(request.getLanguage()))
                 .isActive(true)
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
-        userDeviceMapper.insert(device);
-        return toResponse(device);
+        UserDevice saved = userDeviceMapper.upsertByToken(candidate);
+        return toResponse(saved == null ? candidate : saved);
     }
 
     @Override
@@ -58,6 +54,10 @@ public class UserDeviceServiceImpl implements UserDeviceService {
         String language = request.getLanguage() == null
                 ? null
                 : NotificationLanguage.normalize(request.getLanguage());
+        if (request.getFcmToken() != null) {
+            // Same single-owner rule as register; rolled back with the update when the device is not theirs.
+            userDeviceMapper.deleteByTokenExceptDevice(request.getFcmToken(), deviceId);
+        }
         int updated = userDeviceMapper.updateDevice(
                 deviceId, userId, request.getFcmToken(), language, request.getIsActive());
         if (updated != 1) {
@@ -71,6 +71,12 @@ public class UserDeviceServiceImpl implements UserDeviceService {
         if (userDeviceMapper.deleteByIdAndUserId(deviceId, userId) != 1) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Device not found");
         }
+    }
+
+    @Override
+    @Transactional
+    public void deleteAllForUser(UUID userId) {
+        userDeviceMapper.deleteByUserId(userId);
     }
 
     private UserDeviceResponse toResponse(UserDevice device) {

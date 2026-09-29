@@ -44,6 +44,25 @@ class NotificationMapperXmlTest {
         assertThat(deleteSql).contains("id = ?").contains("user_id = ?");
     }
 
+    @Test
+    void readAllHonoursTheTripAndOnlyTouchesUnreadRows() throws Exception {
+        Configuration configuration = configuration();
+        UUID userId = UUID.randomUUID();
+        java.util.HashMap<String, Object> all = new java.util.HashMap<>();
+        all.put("userId", userId);
+        all.put("tripId", null);
+
+        String byTrip = sql(configuration, "markAllAsRead", Map.of("userId", userId, "tripId", UUID.randomUUID()));
+        String everything = sql(configuration, "markAllAsRead", all);
+        String conversation = sql(configuration, "markConversationNotificationsRead",
+                Map.of("userId", userId, "conversationId", UUID.randomUUID()));
+
+        assertThat(byTrip).contains("user_id = ?").contains("is_read = FALSE").contains("trip_id = ?");
+        assertThat(everything).contains("user_id = ?").doesNotContain("trip_id");
+        assertThat(conversation).contains("user_id = ?").contains("'conversationId'")
+                .contains("'MARKETPLACE_MESSAGE', 'CHAT_MENTION'");
+    }
+
     private Configuration configuration() throws Exception {
         Configuration configuration = new Configuration();
         configuration.getTypeHandlerRegistry().register(UUID.class, UUIDTypeHandler.class);

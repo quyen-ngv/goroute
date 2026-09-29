@@ -32,11 +32,9 @@ public class ExpenseNotificationHandler implements NotificationEventHandler {
         List<UUID> recipients = expenseMembersStrategy.getRecipients(event);
         log.info("ðŸ“§ Found {} recipients (expense members)", recipients.size());
 
-        for (UUID recipientId : recipients) {
-            notificationService.createNotification(recipientId, event);
-        }
+        int notified = notifyEach(notificationService, recipients, event);
 
-        log.info("âœ… Sent {} notifications for {}", recipients.size(), event.getType());
+        log.info("âœ… Sent {} notifications for {}", notified, event.getType());
     }
 
     @Override

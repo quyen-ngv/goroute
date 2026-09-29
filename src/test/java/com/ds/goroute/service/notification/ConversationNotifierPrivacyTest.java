@@ -9,6 +9,7 @@ import com.ds.goroute.service.NotificationService;
 import com.ds.goroute.type.MarketplaceConversationType;
 import com.ds.goroute.type.NotificationType;
 import com.google.gson.Gson;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -56,13 +57,14 @@ class ConversationNotifierPrivacyTest {
     @Mock private NotificationService notificationService;
     @Mock private NotificationTemplateRenderer templateRenderer;
     @Mock private UserRepository users;
+    @Mock private PlatformTransactionManager transactionManager;
 
     private ConversationNotifier notifier;
 
     @BeforeEach
     void setUp() {
         notifier = new ConversationNotifier(conversations, notifications, notificationService,
-                templateRenderer, users, new Gson());
+                templateRenderer, users, new Gson(), transactionManager, Runnable::run);
         when(users.findById(any())).thenReturn(Optional.empty());
         when(templateRenderer.render(any(), anyMap(), any()))
                 .thenReturn(new NotificationMessage("New message", "Somebody sent you a message"));

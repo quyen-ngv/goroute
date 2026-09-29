@@ -10,6 +10,8 @@ import com.ds.goroute.repository.NotificationRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.NotificationService;
 import com.ds.goroute.service.external.FirebaseService;
+import com.ds.goroute.service.notification.NotificationChangePublisher;
+import com.ds.goroute.service.notification.NotificationDataKeys;
 import com.ds.goroute.service.notification.NotificationPayloadFactory;
 import com.ds.goroute.service.notification.event.TripEvent;
 import com.ds.goroute.type.NotificationType;
@@ -46,6 +48,7 @@ public class NotificationServiceImpl implements NotificationService {
     private final com.ds.goroute.mapper.UserDeviceMapper userDeviceMapper;
     // private final RedisTemplate<String, Object> redisTemplate;
     private final Gson gson;
+    private final NotificationChangePublisher changePublisher;
 
     @Resource(name = "notificationExecutor")
     private Executor notificationExecutor;
@@ -92,14 +95,7 @@ public class NotificationServiceImpl implements NotificationService {
     /** Writes the notification row and returns the push payload built alongside it. */
     private Map<String, Object> persistNotification(UUID userId, UUID tripId, NotificationType type,
                                                     String title, String body, Map<String, Object> data, UUID actorId) {
-        Map<String, Object> payload = new java.util.HashMap<>();
-        if (data != null) {
-            payload.putAll(data);
-        }
-        payload.putIfAbsent("type", type.name());
-        if (tripId != null) {
-            payload.putIfAbsent("tripId", tripId.toString());
-        }
+        Map<String, Object> payload = rowData(data, type, tripId);
 
         Notification notification = Notification.builder()
                 .id(UUID.randomUUID())
@@ -116,7 +112,46 @@ public class NotificationServiceImpl implements NotificationService {
 
         notificationRepository.insert(notification);
         log.info("Created notification: userId={}, type={}", userId, type);
+        changePublisher.rowChanged(userId, notification.getId(), type);
+        // Only the push carries the row id: the row knows its own id already.
+        payload.put(NotificationDataKeys.NOTIFICATION_ID, notification.getId().toString());
         return payload;
+    }
+
+    /** What a row stores: the caller's data, never routing lists, plus type and trip. */
+    private Map<String, Object> rowData(Map<String, Object> data, NotificationType type, UUID tripId) {
+        Map<String, Object> payload = new java.util.HashMap<>();
+        if (data != null) {
+            payload.putAll(data);
+        }
+        NotificationDataKeys.ROUTING_ONLY.forEach(payload::remove);
+        payload.remove(NotificationDataKeys.NOTIFICATION_ID);
+        payload.putIfAbsent("type", type.name());
+        if (tripId != null) {
+            payload.putIfAbsent("tripId", tripId.toString());
+        }
+        return payload;
+    }
+
+    @Override
+    @Transactional
+    public void refreshCoalescedNotification(Notification notification, Map<String, Object> data, boolean isPushed) {
+        Map<String, Object> payload = rowData(data, notification.getType(), notification.getTripId());
+        notification.setData(gson.toJson(payload));
+        notificationRepository.updateSocialNotification(notification);
+        changePublisher.rowChanged(notification.getUserId(), notification.getId(), notification.getType());
+        if (isPushed) {
+            payload.put(NotificationDataKeys.NOTIFICATION_ID, notification.getId().toString());
+            pushAfterCommit(notification.getUserId(), notification.getType(), payload);
+        }
+    }
+
+    @Override
+    @Transactional
+    public void markConversationNotificationsRead(UUID userId, UUID conversationId) {
+        if (notificationRepository.markConversationNotificationsRead(userId, conversationId) > 0) {
+            changePublisher.listChanged(userId);
+        }
     }
 
     /**
@@ -184,6 +219,7 @@ public class NotificationServiceImpl implements NotificationService {
         if (notificationRepository.markAsRead(notificationId, userId) != 1) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Notification not found");
         }
+        changePublisher.listChanged(userId);
 
         // Invalidate unread count cache
         // Notification notification = notificationRepository.findById(notificationId);
@@ -196,8 +232,10 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     @Transactional
     // @CacheEvict(value = "notifications", key = "#userId + '_unread'")
-    public void markAllAsRead(UUID userId) {
-        notificationRepository.markAllAsRead(userId);
+    public void markAllAsRead(UUID userId, UUID tripId) {
+        if (notificationRepository.markAllAsRead(userId, tripId) > 0) {
+            changePublisher.listChanged(userId);
+        }
     }
 
     @Override
@@ -207,6 +245,7 @@ public class NotificationServiceImpl implements NotificationService {
         if (notificationRepository.deleteByIdAndUserId(notificationId, userId) != 1) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Notification not found");
         }
+        changePublisher.listChanged(userId);
     }
 
     @Override

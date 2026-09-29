@@ -2,6 +2,7 @@ package com.ds.goroute.service.notification;
 
 import com.ds.goroute.dto.response.MarketplaceMessageResponse;
 import com.ds.goroute.entity.MarketplaceConversation;
+import com.ds.goroute.entity.MarketplaceMemberInboxState;
 import com.ds.goroute.entity.Notification;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.repository.MarketplaceChatRepository;
@@ -11,14 +12,21 @@ import com.ds.goroute.service.NotificationService;
 import com.ds.goroute.type.MarketplaceConversationType;
 import com.ds.goroute.type.NotificationType;
 import com.google.gson.Gson;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Executor;
+import java.util.stream.Collectors;
 
 /**
  * Tells the rest of a conversation that something was said.
@@ -27,21 +35,22 @@ import java.util.UUID;
  * the time a message matters: the interesting case is the partner whose phone is in a pocket.
  * So a message also becomes a notification.
  *
- * <p>One per conversation, not one per line. A conversation that is already waiting unread
- * has its existing notification refreshed instead of a new one added, reusing the same
- * thirty-minute window that already groups likes and comments — a chat is the one place where
- * per-event notifications would be unbearable. Being mentioned by name is the exception: it
- * gets its own notification, because that is the one a person is waiting for.
+ * <p>One row per conversation, not one per line: a conversation that is already waiting unread
+ * has its existing row refreshed instead of a new one added. The push is not coalesced — every
+ * message still rings, and the phone stacks them by conversation. Being mentioned by name gets
+ * its own row, because that is the one a person is waiting for.
  *
- * <p>Separate from the chat service because sending a message and telling people about it fail
- * for different reasons and must not fail together: nothing here throws.
+ * <p>Runs after the message commits, off the request thread, one short transaction per
+ * recipient. Inside the send's transaction a notification failure marked the whole transaction
+ * rollback-only and lost the message despite the catch; and every row written there extended
+ * the conversation lock. Nothing here throws.
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class ConversationNotifier {
     /** Groups the notification by thread; matches the key the coalescing query looks for. */
     private static final String TARGET_TYPE = "CONVERSATION";
+    private static final String SEQUENCE_NO = "sequenceNo";
     private static final int PREVIEW_LENGTH = 80;
     /** Shown when the message is an image or a file and has nothing to quote. */
     private static final String ATTACHMENT_PREVIEW = "📎";
@@ -51,34 +60,91 @@ public class ConversationNotifier {
     private final NotificationTemplateRenderer templateRenderer;
     private final UserRepository users;
     private final Gson gson;
+    private final TransactionTemplate perRecipient;
+    private final Executor executor;
+
+    public ConversationNotifier(MarketplaceChatRepository conversations,
+                                NotificationRepository notifications,
+                                NotificationService notificationService,
+                                NotificationTemplateRenderer templateRenderer,
+                                UserRepository users,
+                                Gson gson,
+                                PlatformTransactionManager transactionManager,
+                                @Qualifier("notificationExecutor") Executor executor) {
+        this.conversations = conversations;
+        this.notifications = notifications;
+        this.notificationService = notificationService;
+        this.templateRenderer = templateRenderer;
+        this.users = users;
+        this.gson = gson;
+        this.perRecipient = new TransactionTemplate(transactionManager);
+        this.perRecipient.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.executor = executor;
+    }
 
     public void notifyNewMessage(UUID conversationId, UUID senderId, MarketplaceMessageResponse message) {
         notifyNewMessage(conversationId, senderId, message, List.of());
     }
 
     /**
+     * Schedules the announcement for after the current transaction commits; nothing is sent
+     * for a message that rolls back.
+     *
      * @param mentionedUserIds people named in the message, already filtered to members by
      *                         the caller; they are told by name and are not silenced by mute
      */
     public void notifyNewMessage(UUID conversationId, UUID senderId, MarketplaceMessageResponse message,
                                  List<UUID> mentionedUserIds) {
+        List<UUID> mentioned = mentionedUserIds == null ? List.of() : List.copyOf(mentionedUserIds);
+        Runnable announce = () -> {
+            try {
+                executor.execute(() -> deliver(conversationId, senderId, message, mentioned));
+            } catch (RuntimeException exception) {
+                log.warn("Could not queue the announcement of a message in {}: {}",
+                        conversationId, exception.getMessage());
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    announce.run();
+                }
+            });
+        } else {
+            announce.run();
+        }
+    }
+
+    /**
+     * The reader caught up with a conversation: its chat notifications are read too. Joins the
+     * caller's transaction, since it is part of the same "I read this" action.
+     */
+    public void conversationRead(UUID readerId, UUID conversationId) {
+        notificationService.markConversationNotificationsRead(readerId, conversationId);
+    }
+
+    void deliver(UUID conversationId, UUID senderId, MarketplaceMessageResponse message, List<UUID> mentioned) {
         try {
             MarketplaceConversation conversation = conversations.find(conversationId, null).orElse(null);
             if (conversation == null) return;
             boolean isPrivate = MarketplaceConversationType.isPrivate(
                     conversation.getConversationType(), conversation.getOrganizationId());
             String title = threadTitle(conversation);
-            List<UUID> mentioned = mentionedUserIds == null ? List.of() : mentionedUserIds;
+            Map<UUID, Long> readUpTo = readMarkers(conversationId);
 
             for (UUID recipient : conversations.findNotifiableMemberIds(conversationId)) {
                 if (recipient == null || recipient.equals(senderId) || mentioned.contains(recipient)) {
                     continue;
                 }
-                notifyOne(recipient, senderId, conversationId, message, isPrivate, title);
+                if (hasAlreadyRead(readUpTo, recipient, message)) continue;
+                inOwnTransaction(recipient, conversationId,
+                        () -> notifyOne(recipient, senderId, conversationId, message, isPrivate, title));
             }
             for (UUID recipient : mentioned) {
                 if (recipient == null || recipient.equals(senderId)) continue;
-                notifyMention(recipient, senderId, conversationId, message, isPrivate, title);
+                inOwnTransaction(recipient, conversationId,
+                        () -> notifyMention(recipient, senderId, conversationId, message, isPrivate, title));
             }
         } catch (RuntimeException exception) {
             // The message is already delivered; failing to announce it must not undo that.
@@ -86,46 +152,69 @@ public class ConversationNotifier {
         }
     }
 
-    private void notifyOne(UUID recipientId, UUID senderId, UUID conversationId,
-                           MarketplaceMessageResponse message, boolean isPrivate, String title) {
-        Map<String, Object> data = payload(conversationId, message, isPrivate, title);
+    /** One recipient's failure is theirs alone: logged, and the next recipient is still told. */
+    private void inOwnTransaction(UUID recipientId, UUID conversationId, Runnable work) {
         try {
-            Notification existing = notifications
-                    .findRecentUnreadSocialNotification(recipientId, NotificationType.MARKETPLACE_MESSAGE,
-                            TARGET_TYPE, conversationId)
-                    .orElse(null);
-            if (existing == null) {
-                NotificationMessage rendered = templateRenderer.render(
-                        NotificationType.MARKETPLACE_MESSAGE, data, languageOf(recipientId));
-                notificationService.createNotification(recipientId, null, NotificationType.MARKETPLACE_MESSAGE,
-                        rendered.title(), rendered.body(), data, senderId);
-                return;
-            }
-            // Already waiting unread: show the newest line rather than stacking another row.
-            existing.setActorId(senderId);
-            existing.setData(gson.toJson(data));
-            existing.setBody(null);
-            notifications.updateSocialNotification(existing);
+            perRecipient.executeWithoutResult(status -> work.run());
         } catch (RuntimeException exception) {
             log.warn("Could not notify {} about a message in conversation {}: {}",
                     recipientId, conversationId, exception.getMessage());
         }
     }
 
+    /**
+     * Somebody with the thread open has usually marked this message read before we get here;
+     * a row and a banner for what they are looking at is noise.
+     */
+    private Map<UUID, Long> readMarkers(UUID conversationId) {
+        List<MarketplaceMemberInboxState> states = conversations.findMemberInboxStates(conversationId);
+        if (states == null) return Map.of();
+        return states.stream()
+                .filter(state -> state.getUserId() != null && state.getReadSequenceNo() != null)
+                .collect(Collectors.toMap(MarketplaceMemberInboxState::getUserId,
+                        MarketplaceMemberInboxState::getReadSequenceNo, Math::max));
+    }
+
+    private boolean hasAlreadyRead(Map<UUID, Long> readUpTo, UUID recipient, MarketplaceMessageResponse message) {
+        Long read = readUpTo.get(recipient);
+        return read != null && message.getSequenceNo() != null && read >= message.getSequenceNo();
+    }
+
+    private void notifyOne(UUID recipientId, UUID senderId, UUID conversationId,
+                           MarketplaceMessageResponse message, boolean isPrivate, String title) {
+        Map<String, Object> data = payload(conversationId, message, isPrivate, title);
+        // Two messages announced at once must not both miss the unread row and add two.
+        notifications.lockTarget(recipientId, NotificationType.MARKETPLACE_MESSAGE, TARGET_TYPE, conversationId);
+        Notification existing = notifications
+                .findRecentUnreadSocialNotification(recipientId, NotificationType.MARKETPLACE_MESSAGE,
+                        TARGET_TYPE, conversationId)
+                .orElse(null);
+        if (existing == null) {
+            NotificationMessage rendered = templateRenderer.render(
+                    NotificationType.MARKETPLACE_MESSAGE, data, languageOf(recipientId));
+            notificationService.createNotification(recipientId, null, NotificationType.MARKETPLACE_MESSAGE,
+                    rendered.title(), rendered.body(), data, senderId);
+            return;
+        }
+        // Already waiting unread: the row shows the newest line, and this line still rings.
+        // Announcements run in parallel, so an older line arriving second keeps the newer text.
+        Map<String, Object> stored = readData(existing.getData());
+        boolean isOlder = sequenceOf(stored.get(SEQUENCE_NO)) > sequenceOf(message.getSequenceNo());
+        if (!isOlder) {
+            existing.setActorId(senderId);
+        }
+        existing.setBody(null);
+        notificationService.refreshCoalescedNotification(existing, isOlder ? stored : data, true);
+    }
+
     /** A mention is never folded into an existing row: the point of it is to arrive. */
     private void notifyMention(UUID recipientId, UUID senderId, UUID conversationId,
                                MarketplaceMessageResponse message, boolean isPrivate, String title) {
-        try {
-            Map<String, Object> data = payload(conversationId, message, isPrivate, title);
-            data.put("conversationTitle", title == null ? "" : title);
-            NotificationMessage rendered = templateRenderer.render(
-                    NotificationType.CHAT_MENTION, data, languageOf(recipientId));
-            notificationService.createNotification(recipientId, null, NotificationType.CHAT_MENTION,
-                    rendered.title(), rendered.body(), data, senderId);
-        } catch (RuntimeException exception) {
-            log.warn("Could not notify {} about a mention in conversation {}: {}",
-                    recipientId, conversationId, exception.getMessage());
-        }
+        Map<String, Object> data = payload(conversationId, message, isPrivate, title);
+        NotificationMessage rendered = templateRenderer.render(
+                NotificationType.CHAT_MENTION, data, languageOf(recipientId));
+        notificationService.createNotification(recipientId, null, NotificationType.CHAT_MENTION,
+                rendered.title(), rendered.body(), data, senderId);
     }
 
     private Map<String, Object> payload(UUID conversationId, MarketplaceMessageResponse message,
@@ -133,9 +222,12 @@ public class ConversationNotifier {
         Map<String, Object> data = new HashMap<>();
         data.put("targetType", TARGET_TYPE);
         data.put("targetId", conversationId.toString());
-        data.put("conversationId", conversationId.toString());
+        data.put(NotificationDataKeys.CONVERSATION_ID, conversationId.toString());
         data.put("senderName", message.getSenderName() == null ? "" : message.getSenderName());
         data.put("conversationTitle", title == null ? "" : title);
+        if (message.getSequenceNo() != null) {
+            data.put(SEQUENCE_NO, message.getSequenceNo());
+        }
         // What was said travels no further than the two apps that hold the thread. A push
         // payload passes through a third party's servers and sits in a notification log on
         // the device; a private conversation announces that it has something in it and
@@ -145,6 +237,27 @@ public class ConversationNotifier {
         }
         data.put("deepLink", "/chat/" + conversationId);
         return data;
+    }
+
+    private Map<String, Object> readData(String rawData) {
+        if (rawData == null || rawData.isBlank()) return new HashMap<>();
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> parsed = gson.fromJson(rawData, Map.class);
+            return parsed == null ? new HashMap<>() : new HashMap<>(parsed);
+        } catch (RuntimeException malformed) {
+            return new HashMap<>();
+        }
+    }
+
+    private long sequenceOf(Object value) {
+        if (value instanceof Number number) return number.longValue();
+        if (value == null) return 0;
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (NumberFormatException malformed) {
+            return 0;
+        }
     }
 
     private String threadTitle(MarketplaceConversation conversation) {

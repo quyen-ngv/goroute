@@ -24,6 +24,9 @@ import com.ds.goroute.entity.*;import com.ds.goroute.mapper.MarketplaceChatMappe
     public List<UUID> findActiveMemberIds(UUID conversationId){return m.findActiveMemberIds(conversationId);}
 
     @Override
+    public List<MarketplaceMemberInboxState> findMemberInboxStates(UUID conversationId){return m.findMemberInboxStates(conversationId);}
+
+    @Override
     public List<UUID> findNotifiableMemberIds(UUID conversationId){return m.findNotifiableMemberIds(conversationId);}
 
     @Override

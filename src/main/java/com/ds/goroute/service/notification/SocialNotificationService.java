@@ -11,6 +11,7 @@ import com.ds.goroute.type.NotificationType;
 import com.google.gson.Gson;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -25,6 +26,10 @@ import java.util.UUID;
  * <p>Rather than sending a push for every reaction, interactions are coalesced for an
  * unread target notification for 30 minutes. The notification centre stays current
  * (latest actor and actor count) while only the first interaction produces a push.
+ *
+ * <p>The find-then-insert runs under a transaction-scoped lock on (recipient, type, target), so
+ * two likes landing together refresh one row instead of both inserting. The methods join the
+ * caller's transaction: the lock is held until the like itself commits, which is short.
  */
 @Service
 @RequiredArgsConstructor
@@ -39,10 +44,12 @@ public class SocialNotificationService {
     private final ContentCommentRepository contentCommentRepository;
     private final Gson gson;
 
+    @Transactional
     public void notifyLike(UUID recipientId, UUID actorId, String targetType, UUID targetId) {
         notify(recipientId, actorId, NotificationType.SOCIAL_LIKE, targetType, targetId);
     }
 
+    @Transactional
     public void notifyComment(UUID recipientId, UUID actorId, String targetType, UUID targetId) {
         notify(recipientId, actorId, NotificationType.SOCIAL_COMMENT, targetType, targetId);
     }
@@ -56,6 +63,7 @@ public class SocialNotificationService {
         String actorName = userRepository.findById(actorId)
                 .map(this::displayName)
                 .orElse("Someone");
+        notificationRepository.lockTarget(recipientId, type, targetType, targetId);
         Notification existing = notificationRepository
                 .findRecentUnreadSocialNotification(recipientId, type, targetType, targetId)
                 .orElse(null);
@@ -98,9 +106,8 @@ public class SocialNotificationService {
         data.putIfAbsent("targetId", targetId.toString());
         data.putIfAbsent("deepLink", deepLinkFor(targetType, targetId));
         existing.setActorId(actorId);
-        existing.setData(gson.toJson(data));
         existing.setBody(null);
-        notificationRepository.updateSocialNotification(existing);
+        notificationService.refreshCoalescedNotification(existing, data, false);
     }
 
     private Map<String, Object> readData(String rawData) {

@@ -40,8 +40,13 @@ public class MarketplaceMessageResponse {
     public static class MessageReactionResponse {
         private String emoji;
         private int count;
-        /** Whether the person asking is one of the people who reacted. */
+        /**
+         * Whether the person asking is one of the people who reacted. Always false on a socket
+         * broadcast, which has no single reader; clients recompute it from {@link #userIds}.
+         */
         private boolean reactedByMe;
+        /** Everyone who reacted with this emoji, uncapped, so each client can tell whether it is one. */
+        private List<UUID> userIds;
         /** Who reacted, capped by the query; used for the tooltip. */
         private List<String> userNames;
     }

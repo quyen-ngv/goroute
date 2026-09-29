@@ -30,11 +30,9 @@ public class CheckinNotificationHandler implements NotificationEventHandler {
         List<UUID> recipients = allMembersStrategy.getRecipients(event);
         log.info("ðŸ“§ Found {} recipients", recipients.size());
 
-        for (UUID recipientId : recipients) {
-            notificationService.createNotification(recipientId, event);
-        }
+        int notified = notifyEach(notificationService, recipients, event);
 
-        log.info("âœ… Sent {} notifications for {}", recipients.size(), event.getType());
+        log.info("âœ… Sent {} notifications for {}", notified, event.getType());
     }
 
     @Override

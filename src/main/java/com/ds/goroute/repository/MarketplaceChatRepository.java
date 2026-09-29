@@ -12,6 +12,9 @@ public interface MarketplaceChatRepository {int insertConversation(MarketplaceCo
  /** Everyone currently in the thread, for reconciling against the trip's member list. */
  List<UUID> findActiveMemberIds(UUID conversationId);
 
+ /** Each current member's read marker and unread count, for per-person inbox updates. */
+ List<MarketplaceMemberInboxState> findMemberInboxStates(UUID conversationId);
+
  /** The same people, less the ones who muted it: who a new message is announced to. */
  List<UUID> findNotifiableMemberIds(UUID conversationId);
 
