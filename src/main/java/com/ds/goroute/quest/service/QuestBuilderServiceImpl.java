@@ -58,6 +58,7 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
     private final QuestDraftValidator validator;
     private final QuestCreatorGate creatorGate;
     private final MarketplaceJson json;
+    private final QuestLifecycleRules lifecycleRules;
 
     @Override
     @Transactional
@@ -683,8 +684,11 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
         String title = version == null ? null : version.getTitle();
         String coverUrl = version == null ? null : version.getCoverUrl();
         int checkpoints = repository.countCheckpoints(versionId);
+        List<String> allowed = lifecycleRules.targets(quest, QuestStatus.Actor.CREATOR).stream()
+                .map(Enum::name).toList();
         return new QuestSummaryResponse(quest.getId(), quest.getOrigin(), quest.getStatus(), title, coverUrl,
-                checkpoints, quest.getDataVersion() == null ? 0 : quest.getDataVersion(), quest.getUpdatedAt());
+                checkpoints, quest.getDataVersion() == null ? 0 : quest.getDataVersion(), quest.getUpdatedAt(),
+                quest.getPausedBy(), allowed, lifecycleRules.isDeletable(quest, QuestStatus.Actor.CREATOR));
     }
 
     private BusinessException conflict(UUID questId) {

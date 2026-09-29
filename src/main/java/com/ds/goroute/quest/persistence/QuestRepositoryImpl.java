@@ -95,6 +95,16 @@ public class QuestRepositoryImpl implements QuestRepository {
     }
 
     @Override
+    public List<Quest> findAllQuests(String status, int limit, int offset) {
+        return mapper.findAllQuests(status, limit, offset);
+    }
+
+    @Override
+    public long countAllQuests(String status) {
+        return mapper.countAllQuests(status);
+    }
+
+    @Override
     public boolean updateDraftPointer(UUID id, long expectedVersion, UUID draftVersionId, LocalDateTime updatedAt) {
         return mapper.updateDraftPointer(id, expectedVersion, draftVersionId, updatedAt) == 1;
     }

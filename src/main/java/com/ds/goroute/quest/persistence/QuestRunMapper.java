@@ -44,6 +44,8 @@ public interface QuestRunMapper {
     int countRunsByStatusSince(@Param("questId") UUID questId, @Param("status") String status,
                                @Param("since") LocalDateTime since);
 
+    int countRunsByStatus(@Param("questId") UUID questId, @Param("status") String status);
+
     // --- members -----------------------------------------------------------------------
     void insertMember(QuestRunMember member);
 

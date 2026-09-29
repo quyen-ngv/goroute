@@ -45,6 +45,10 @@ public interface QuestRepository {
 
     long countQuestsByCreatorAndStatuses(UUID creatorId, List<String> statuses);
 
+    List<Quest> findAllQuests(String status, int limit, int offset);
+
+    long countAllQuests(String status);
+
     boolean updateDraftPointer(UUID id, long expectedVersion, UUID draftVersionId, LocalDateTime updatedAt);
 
     boolean updateStatus(UUID id, long expectedVersion, String status, String pausedBy, LocalDateTime updatedAt);

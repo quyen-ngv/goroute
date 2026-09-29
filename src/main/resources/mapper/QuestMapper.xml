@@ -130,6 +130,25 @@
         </where>
     </select>
 
+    <select id="findAllQuests" resultMap="QuestMap">
+        SELECT <include refid="QuestColumns"/>
+        FROM quests
+        <where>
+            is_deleted = FALSE
+            <if test="status != null">AND status = #{status}</if>
+        </where>
+        ORDER BY updated_at DESC, id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAllQuests" resultType="long">
+        SELECT COUNT(*) FROM quests
+        <where>
+            is_deleted = FALSE
+            <if test="status != null">AND status = #{status}</if>
+        </where>
+    </select>
+
     <select id="countQuestsByCreatorAndStatuses" resultType="long">
         SELECT COUNT(*) FROM quests
         WHERE creator_id = #{creatorId} AND is_deleted = FALSE

@@ -55,6 +55,10 @@ public class QuestRunRepository {
         return mapper.countRunsByStatusSince(questId, status, since);
     }
 
+    public int countRunsByStatus(UUID questId, String status) {
+        return mapper.countRunsByStatus(questId, status);
+    }
+
     public void insertMember(QuestRunMember member) {
         mapper.insertMember(member);
     }

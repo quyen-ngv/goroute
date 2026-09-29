@@ -83,6 +83,11 @@
         WHERE quest_id = #{questId} AND status = #{status} AND started_at >= #{since}
     </select>
 
+    <select id="countRunsByStatus" resultType="int">
+        SELECT COUNT(*) FROM quest_runs
+        WHERE quest_id = #{questId} AND status = #{status}
+    </select>
+
     <!-- ================= members ================= -->
     <resultMap id="MemberMap" type="com.ds.goroute.quest.domain.QuestRunMember">
         <id property="id" column="id"/>

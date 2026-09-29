@@ -51,7 +51,8 @@ class QuestBuilderServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new QuestBuilderServiceImpl(repository, validator, creatorGate, new MarketplaceJson(new ObjectMapper()));
+        service = new QuestBuilderServiceImpl(repository, validator, creatorGate, new MarketplaceJson(new ObjectMapper()),
+                new com.ds.goroute.quest.service.QuestLifecycleRules(org.mockito.Mockito.mock(com.ds.goroute.service.BusinessConfigService.class)));
     }
 
     private Quest draftQuest() {

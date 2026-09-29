@@ -58,6 +58,12 @@ public interface QuestMapper {
     long countQuestsByCreatorAndStatuses(@Param("creatorId") UUID creatorId,
                                          @Param("statuses") List<String> statuses);
 
+    /** Every live (not deleted) quest, any creator, for the console's management list. */
+    List<Quest> findAllQuests(@Param("status") String status, @Param("limit") int limit,
+                              @Param("offset") int offset);
+
+    long countAllQuests(@Param("status") String status);
+
     int updateDraftPointer(@Param("id") UUID id, @Param("expectedVersion") long expectedVersion,
                            @Param("draftVersionId") UUID draftVersionId,
                            @Param("updatedAt") LocalDateTime updatedAt);

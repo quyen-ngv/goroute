@@ -7,14 +7,20 @@ import com.ds.goroute.dto.response.PageResponse;
 import com.ds.goroute.quest.domain.QuestReviewComment;
 import com.ds.goroute.quest.domain.QuestReviewDecisionRow;
 import com.ds.goroute.quest.dto.CreateQuestRequest;
+import com.ds.goroute.quest.dto.QuestAdminListItem;
 import com.ds.goroute.quest.dto.QuestDraftResponse;
 import com.ds.goroute.quest.dto.QuestReviewDecisionRequest;
 import com.ds.goroute.quest.dto.QuestReviewQueueItem;
 import com.ds.goroute.quest.dto.QuestReviewResultResponse;
+import com.ds.goroute.quest.dto.QuestStatusChangeRequest;
+import com.ds.goroute.quest.dto.QuestStatusChangeResponse;
 import com.ds.goroute.quest.dto.QuestSummaryResponse;
 import com.ds.goroute.quest.dto.SaveQuestDraftRequest;
 import com.ds.goroute.quest.service.QuestBuilderService;
+import com.ds.goroute.quest.service.QuestLifecycleService;
 import com.ds.goroute.quest.service.QuestReviewService;
+import com.ds.goroute.type.QuestStatus;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +29,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -50,6 +57,7 @@ public class QuestAdminController {
 
     private final QuestBuilderService builderService;
     private final QuestReviewService reviewService;
+    private final QuestLifecycleService lifecycleService;
     private final AdminAuthorization adminAuthorization;
 
     @PostMapping
@@ -144,6 +152,37 @@ public class QuestAdminController {
         List<QuestReviewDecisionRow> decisions = reviewService.decisions(questId);
         List<QuestReviewComment> comments = reviewService.comments(questId);
         return ResponseEntity.ok(BaseResponse.ofSucceeded(Map.of("decisions", decisions, "comments", comments)));
+    }
+
+    // --- management: every creator's quests ----------------------------------------------
+
+    /** Every quest, any creator, newest first; each row carries the moves an admin may make. */
+    @GetMapping("/all")
+    @PreAuthorize("@adminAuthorization.can(authentication,'quests','get')")
+    public ResponseEntity<BaseResponse<PageResponse<QuestAdminListItem>>> listAll(
+            @RequestParam(required = false) QuestStatus status,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(lifecycleService.listAll(status, page, size)));
+    }
+
+    /** Pause, suspend, archive, or bring a quest back to PUBLISHED (lift a pause, restore). */
+    @PostMapping("/{questId}/status")
+    @PreAuthorize("@adminAuthorization.can(authentication,'quests','review')")
+    public ResponseEntity<BaseResponse<QuestStatusChangeResponse>> changeStatus(
+            @PathVariable UUID questId,
+            @Valid @RequestBody QuestStatusChangeRequest request) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(lifecycleService.changeStatusAsAdmin(questId, request)));
+    }
+
+    /** Soft delete. Refused for a PUBLISHED quest and while any run of it is in progress. */
+    @DeleteMapping("/{questId}")
+    @PreAuthorize("@adminAuthorization.can(authentication,'quests','delete')")
+    public ResponseEntity<BaseResponse<Void>> delete(
+            @PathVariable UUID questId,
+            @RequestParam(required = false) Long expectedVersion) {
+        lifecycleService.deleteAsAdmin(questId, expectedVersion);
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(null));
     }
 
     /** Suspend or reactivate a creator (§3.2): a SUSPENDED creator's quests drop out of discovery. */
