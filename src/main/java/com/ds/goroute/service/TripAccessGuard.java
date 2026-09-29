@@ -75,6 +75,16 @@ public class TripAccessGuard {
                 || acceptedMember(trip, userId).map(TripMember::getRole).filter(this::canEdit).isPresent();
     }
 
+    /**
+     * Whether this user may read the trip right now, for callers that filter rather than refuse
+     * (the socket's per-message check). A trip that is gone, soft-deleted included, reads as no.
+     */
+    public boolean canRead(UUID tripId, UUID userId) {
+        return tripRepository.findById(tripId)
+                .map(trip -> hasAccess(trip, userId))
+                .orElse(false);
+    }
+
     private boolean canEdit(MemberRole role) {
         // A null role is old data written before the column was populated. Those rows were
         // collaborators in every other respect, so they keep editing rather than losing it on

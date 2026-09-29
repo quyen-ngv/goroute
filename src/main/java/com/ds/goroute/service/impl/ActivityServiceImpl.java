@@ -241,11 +241,10 @@ public class ActivityServiceImpl implements ActivityService {
     public void reorderActivities(UUID tripId, ReorderActivitiesRequest request, UUID userId) {
         tripAccessGuard.requireEditAccess(tripId, userId);
 
-        // Reorder is now based on time, so this endpoint is deprecated
-        // But we keep it for backward compatibility
+        // Order is derived from activity times, so this endpoint is deprecated and kept only for
+        // backward compatibility. It persists nothing, so it publishes nothing: an
+        // activity.reordered here made every other member refetch an unchanged itinerary.
         log.info("Activities reorder requested in trip: {} (deprecated - order by time)", tripId);
-        tripRealtimePublisher.publishAfterCommit(
-                TripRealtimeEventType.ACTIVITY_REORDERED, tripId, null, userId);
     }
 
     private ActivityResponse mapToActivityResponse(Activity activity, Place place) {

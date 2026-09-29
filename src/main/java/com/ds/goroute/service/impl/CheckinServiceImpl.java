@@ -17,9 +17,11 @@ import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.CheckinService;
+import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.MemberStatus;
 import com.ds.goroute.type.NotificationType;
+import com.ds.goroute.type.TripRealtimeEventType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -42,6 +44,7 @@ public class CheckinServiceImpl implements CheckinService {
     private final TripMemberRepository tripMemberRepository;
     private final UserRepository userRepository;
     private final NotificationHelper notificationHelper;
+    private final TripRealtimePublisher tripRealtimePublisher;
 
     @Override
     @Transactional
@@ -68,6 +71,7 @@ public class CheckinServiceImpl implements CheckinService {
             checkin.setNotes(request.getNotes());
             checkinRepository.updateById(checkin);
             log.info("Checkin updated: {} - {}", activityId, userId);
+            publishActivityCheckinChanged(tripId, activityId, userId);
             notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.CHECKIN_UPDATED,
                     Map.of(
                             "actorName", notificationHelper.actorName(userId),
@@ -94,8 +98,16 @@ public class CheckinServiceImpl implements CheckinService {
         log.info("Checkin created: {} - {}", activityId, userId);
         
         notificationHelper.emitCheckin(tripId, activityId, userId);
+        publishActivityCheckinChanged(tripId, activityId, userId);
         
         return mapToCheckinResponse(checkin);
+    }
+
+    /** Clients show an activity with its check-ins (count, rating, notes), so it changed too. */
+    private void publishActivityCheckinChanged(UUID tripId, UUID activityId, UUID userId) {
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.ACTIVITY_UPDATED, tripId, activityId, userId,
+                Map.of("source", "checkin"));
     }
 
     private double distanceMeters(double lat1, double lng1, double lat2, double lng2) {

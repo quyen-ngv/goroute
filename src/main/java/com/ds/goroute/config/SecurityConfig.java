@@ -117,6 +117,10 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health", "/actuator/health/readiness", "/actuator/info").permitAll()
                         .requestMatchers("/actuator/**").hasAuthority("ROLE_ADMIN")
                         .requestMatchers("/api/health").permitAll()
+                        // The STOMP socket's HTTP upgrade. Mobile WebSocket clients cannot be relied
+                        // on to send headers with the upgrade, so identity is checked on the STOMP
+                        // CONNECT frame instead (WebSocketConfig), and every SUBSCRIBE/SEND after it.
+                        .requestMatchers(HttpMethod.GET, "/v1/api/ws", "/v1/api/ws/**").permitAll()
                         // The public Ondetour page is the only static asset left; the
                         // admin consoles now live in the separate React app.
                         .requestMatchers(
