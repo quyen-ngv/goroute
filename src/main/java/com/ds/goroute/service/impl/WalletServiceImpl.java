@@ -6,19 +6,17 @@ import com.ds.goroute.dto.response.WalletCategorySummaryResponse;
 import com.ds.goroute.dto.response.WalletDebtResponse;
 import com.ds.goroute.dto.response.WalletExpenseResponse;
 import com.ds.goroute.dto.response.WalletExpenseSplitResponse;
+import com.ds.goroute.dto.response.WalletPersonReminderResponse;
 import com.ds.goroute.dto.response.WalletPersonResponse;
 import com.ds.goroute.dto.response.WalletReminderResponse;
 import com.ds.goroute.dto.response.WalletResponse;
-import com.ds.goroute.entity.Expense;
 import com.ds.goroute.entity.ExpensePaymentReminder;
-import com.ds.goroute.entity.ExpenseSplit;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.entity.WalletCurrencySummaryRow;
 import com.ds.goroute.entity.WalletDebtRow;
 import com.ds.goroute.entity.WalletExpenseRow;
+import com.ds.goroute.entity.WalletReminderSplitRow;
 import com.ds.goroute.exception.BusinessException;
-import com.ds.goroute.repository.ExpenseRepository;
-import com.ds.goroute.repository.ExpenseSplitRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.WalletRepository;
 import com.ds.goroute.service.BusinessConfigService;
@@ -33,19 +31,27 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class WalletServiceImpl implements WalletService {
+    /** A reminder day, for the per-person daily limit. */
+    private static final ZoneId REMINDER_DAY_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    /** Expenses named in a grouped reminder before the rest become "+N". */
+    private static final int DESCRIBED_EXPENSES = 3;
+
     private final WalletRepository walletRepository;
-    private final ExpenseRepository expenseRepository;
-    private final ExpenseSplitRepository expenseSplitRepository;
     private final TripMemberRepository tripMemberRepository;
     private final TripAccessGuard tripAccessGuard;
     private final BusinessConfigService businessConfigService;
@@ -73,79 +79,145 @@ public class WalletServiceImpl implements WalletService {
     }
 
     /**
-     * Sends a reminder only when the caller is the registered payer. Guest splits stay visible
-     * in Wallet but deliberately have no delivery target, even if their profile is later absent.
+     * Legacy single-split reminder, kept for app builds that still remind split by split.
+     * It goes through the same per-person daily limit as {@link #sendReminders}.
      */
     @Override
     @Transactional
     public WalletReminderResponse sendReminder(UUID expenseId, UUID splitId, String idempotencyKey, UUID userId) {
-        var prior = walletRepository.findReminder(userId, idempotencyKey);
-        if (prior.isPresent()) {
-            ExpensePaymentReminder reminder = prior.get();
-            if (!reminder.getExpenseId().equals(expenseId) || !reminder.getSplitId().equals(splitId)) {
-                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
-                        "Idempotency-Key was already used for another payment reminder");
-            }
-            return toReminder(reminder);
+        return toReminder(remind(List.of(splitId), expenseId, idempotencyKey, userId).get(0));
+    }
+
+    /**
+     * Reminds one person about every open split the caller paid for, as a single notification.
+     * Only the registered payer may remind, only a registered recipient can be reminded, and a
+     * payer may remind the same person at most {@code EXPENSE.PAYMENT_REMINDER_DAILY_MAX} times
+     * per day. Guest splits stay visible in Wallet but have no delivery target.
+     */
+    @Override
+    @Transactional
+    public WalletPersonReminderResponse sendReminders(List<UUID> splitIds, String idempotencyKey, UUID userId) {
+        List<ExpensePaymentReminder> sent = remind(splitIds, null, idempotencyKey, userId);
+        return WalletPersonReminderResponse.builder()
+                .recipientUserId(sent.get(0).getRecipientUserId())
+                .splitIds(sent.stream().map(ExpensePaymentReminder::getSplitId).toList())
+                .sentAt(sent.get(0).getCreatedAt())
+                .build();
+    }
+
+    private List<ExpensePaymentReminder> remind(List<UUID> splitIds, UUID expectedExpenseId,
+                                                String idempotencyKey, UUID userId) {
+        List<UUID> requested = splitIds.stream().distinct().toList();
+        List<ExpensePaymentReminder> prior = walletRepository.findReminders(userId, idempotencyKey);
+        if (!prior.isEmpty()) {
+            return replay(prior, requested);
         }
 
-        Expense expense = expenseRepository.findById(expenseId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found"));
-        Trip trip = tripAccessGuard.requireAccess(expense.getTripId(), userId);
-        if (expense.getPaidByGuestMemberId() != null || !userId.equals(expense.getPaidBy())) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR,
-                    "Only the registered payer can send a payment reminder");
-        }
-
-        ExpenseSplit split = expenseSplitRepository.findById(splitId);
-        if (split == null || !expenseId.equals(split.getExpenseId())) {
+        List<WalletReminderSplitRow> rows = walletRepository.findReminderSplits(userId, requested);
+        if (rows.size() != requested.size()) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Expense split not found");
         }
-        if (Boolean.TRUE.equals(split.getIsSettled())) {
-            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "This payment has already been settled");
+        UUID recipient = rows.get(0).getRecipientUserId();
+        for (WalletReminderSplitRow row : rows) {
+            if (expectedExpenseId != null && !expectedExpenseId.equals(row.getExpenseId())) {
+                throw new BusinessException(ErrorConstant.NOT_FOUND, "Expense split not found");
+            }
+            if (row.getPaidByGuestMemberId() != null || !userId.equals(row.getPaidBy())) {
+                throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR,
+                        "Only the registered payer can send a payment reminder");
+            }
+            if (row.getRecipientUserId() == null || row.getRecipientUserId().equals(userId)) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                        "Only an outstanding registered member split can be reminded");
+            }
+            if (!row.getRecipientUserId().equals(recipient)) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                        "One payment reminder covers the splits of one person");
+            }
         }
-        if (split.getUserId() == null || split.getUserId().equals(userId)) {
+
+        // Settled since Wallet loaded, or in a trip the recipient has left: nothing to remind them of there.
+        Map<UUID, Boolean> recipientCanOpenTrip = new HashMap<>();
+        List<WalletReminderSplitRow> due = rows.stream()
+                .filter(row -> !Boolean.TRUE.equals(row.getIsSettled()))
+                .filter(row -> recipientCanOpenTrip.computeIfAbsent(row.getTripId(),
+                        tripId -> recipientCanStillOpenTrip(tripAccessGuard.requireAccess(tripId, userId), recipient)))
+                .toList();
+        if (due.isEmpty()) {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
-                    "Only an outstanding registered member split can be reminded");
-        }
-        if (!recipientCanStillOpenTrip(trip, split.getUserId())) {
-            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR,
-                    "The recipient no longer has access to this trip");
+                    "Nothing is left to remind this person about");
         }
 
         LocalDateTime now = LocalDateTime.now();
-        int cooldownMinutes = businessConfigService.getInt(BusinessConfigKey.EXPENSE_PAYMENT_REMINDER_COOLDOWN_MINUTES);
-        if (!walletRepository.claimReminderCooldown(userId, splitId, now, now.minusMinutes(cooldownMinutes))) {
-            // A concurrent retry with the same key may have inserted the ledger after our first read.
-            var racedReminder = walletRepository.findReminder(userId, idempotencyKey);
-            if (racedReminder.isPresent()) {
-                return toReminder(racedReminder.get());
-            }
-            throw new BusinessException(ErrorConstant.EXPENSE_PAYMENT_REMINDER_RATE_LIMITED,
-                    "A reminder was already sent recently for this payment");
+        List<ExpensePaymentReminder> reminders = due.stream()
+                .map(row -> ExpensePaymentReminder.builder()
+                        .id(UUID.randomUUID())
+                        .senderUserId(userId)
+                        .recipientUserId(recipient)
+                        .expenseId(row.getExpenseId())
+                        .splitId(row.getSplitId())
+                        .idempotencyKey(idempotencyKey)
+                        .createdAt(now)
+                        .build())
+                .toList();
+        if (walletRepository.saveReminders(reminders) == 0) {
+            // A concurrent retry with the same key committed first; answer with what it sent.
+            return replay(walletRepository.findReminders(userId, idempotencyKey), requested);
         }
 
-        ExpensePaymentReminder reminder = ExpensePaymentReminder.builder()
-                .id(UUID.randomUUID())
-                .senderUserId(userId)
-                .recipientUserId(split.getUserId())
-                .expenseId(expenseId)
-                .splitId(splitId)
-                .idempotencyKey(idempotencyKey)
-                .createdAt(now)
-                .build();
-        walletRepository.saveReminder(reminder);
+        int dailyMax = businessConfigService.getInt(BusinessConfigKey.EXPENSE_PAYMENT_REMINDER_DAILY_MAX);
+        if (!walletRepository.claimDailyReminder(userId, recipient, LocalDate.now(REMINDER_DAY_ZONE), dailyMax)) {
+            // Rolls back the ledger rows written above.
+            throw new BusinessException(ErrorConstant.EXPENSE_PAYMENT_REMINDER_RATE_LIMITED,
+                    "This person was already reminded " + dailyMax + " times today");
+        }
 
+        notificationHelper.emitGeneric(due.get(0).getTripId(), userId, NotificationType.PAYMENT_REMINDER,
+                reminderData(due, userId), List.of(recipient), null);
+        return reminders;
+    }
+
+    private List<ExpensePaymentReminder> replay(List<ExpensePaymentReminder> prior, List<UUID> requested) {
+        if (prior.isEmpty() || !requested.containsAll(prior.stream().map(ExpensePaymentReminder::getSplitId).toList())) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "Idempotency-Key was already used for another payment reminder");
+        }
+        return prior;
+    }
+
+    /**
+     * One expense keeps the original payload and opens that expense. Several carry
+     * {@code expenseCount}, a total when they share a currency, and open Wallet, where the
+     * recipient sees what they owe grouped by person. {@code expenseDescription} lists the
+     * expenses so app builds that only know the single-expense text still read sensibly.
+     */
+    private Map<String, Object> reminderData(List<WalletReminderSplitRow> due, UUID userId) {
+        WalletReminderSplitRow first = due.get(0);
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("actorName", notificationHelper.actorName(userId));
-        data.put("expenseDescription", safeDescription(expense.getDescription()));
-        data.put("amount", split.getAmount());
-        data.put("currency", expense.getCurrency());
-        data.put("expenseId", expenseId.toString());
-        data.put("deepLink", "/trip/" + trip.getId() + "/expenses/" + expenseId);
-        notificationHelper.emitGeneric(trip.getId(), userId, NotificationType.PAYMENT_REMINDER,
-                data, List.of(split.getUserId()), null);
-        return toReminder(reminder);
+        data.put("expenseCount", due.size());
+        data.put("expenseDescription", describe(due));
+        Set<String> currencies = due.stream().map(WalletReminderSplitRow::getCurrency).collect(Collectors.toSet());
+        if (currencies.size() == 1) {
+            data.put("amount", due.stream().map(row -> zero(row.getAmount())).reduce(BigDecimal.ZERO, BigDecimal::add));
+            data.put("currency", first.getCurrency());
+        } else {
+            data.put("amount", "");
+            data.put("currency", "");
+        }
+        if (due.size() == 1) {
+            data.put("expenseId", first.getExpenseId().toString());
+            data.put("deepLink", "/trip/" + first.getTripId() + "/expenses/" + first.getExpenseId());
+        } else {
+            data.put("deepLink", "/wallet");
+        }
+        return data;
+    }
+
+    private String describe(List<WalletReminderSplitRow> due) {
+        List<String> names = due.stream().map(row -> safeDescription(row.getExpenseDescription())).distinct().toList();
+        String shown = String.join(", ", names.subList(0, Math.min(names.size(), DESCRIBED_EXPENSES)));
+        return names.size() > DESCRIBED_EXPENSES ? shown + " +" + (names.size() - DESCRIBED_EXPENSES) : shown;
     }
 
     private boolean recipientCanStillOpenTrip(Trip trip, UUID recipientUserId) {

@@ -8,6 +8,7 @@ import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.type.MemberRole;
 import com.ds.goroute.type.MemberStatus;
+import com.ds.goroute.type.TripVisibility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -83,6 +84,28 @@ public class TripAccessGuard {
         return tripRepository.findById(tripId)
                 .map(trip -> hasAccess(trip, userId))
                 .orElse(false);
+    }
+
+    /**
+     * The public trip page's rule, for things shown next to it (the public route): PUBLIC is
+     * open to anyone, SHARED to its owner and accepted members, PRIVATE to nobody. Mirrors
+     * {@code TripServiceImpl.canViewPublicTrip}; keep the two in step.
+     *
+     * @param viewerId null for an anonymous visitor
+     * @throws BusinessException 404 when the trip is gone, 403 when it is not shared with the viewer
+     */
+    public Trip requirePublicView(UUID tripId, UUID viewerId) {
+        Trip trip = requireTrip(tripId);
+        TripVisibility visibility = trip.getVisibility() == null ? TripVisibility.PRIVATE : trip.getVisibility();
+        boolean isVisible = switch (visibility) {
+            case PUBLIC -> true;
+            case SHARED -> viewerId != null && hasAccess(trip, viewerId);
+            case PRIVATE -> false;
+        };
+        if (!isVisible) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Trip is not shared");
+        }
+        return trip;
     }
 
     private boolean canEdit(MemberRole role) {

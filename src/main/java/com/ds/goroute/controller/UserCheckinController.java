@@ -2,6 +2,7 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
+import com.ds.goroute.dto.FeedGeoFilter;
 import com.ds.goroute.dto.request.CreateUserCheckinRequest;
 import com.ds.goroute.dto.request.UpdateUserCheckinRequest;
 import com.ds.goroute.dto.response.CheckinContextResponse;
@@ -112,13 +113,20 @@ public class UserCheckinController extends BaseController {
      * Pages by number rather than on the last row's timestamp: posts with photos come
      * first, so the order is not chronological and a timestamp cursor would skip rows. A
      * post arriving mid-scroll only pushes rows down, which the client de-duplicates by id.
+     *
+     * <p>{@code latitude}/{@code longitude} scope the feed to {@code radiusKm} around a point,
+     * for the Feed's "near you" tab. Without them the feed covers everywhere.
      */
     @GetMapping("/feed")
     public ResponseEntity<BaseResponse<List<UserCheckinResponse>>> feed(
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
+            @RequestParam(required = false) BigDecimal latitude,
+            @RequestParam(required = false) BigDecimal longitude,
+            @RequestParam(defaultValue = "50") BigDecimal radiusKm,
             @CurrentUser(required = false) UUID userId) {
-        return ResponseEntity.ok(ofSucceeded(checkinService.feed(userId, page, size)));
+        return ResponseEntity.ok(ofSucceeded(checkinService.feed(
+                userId, FeedGeoFilter.of(latitude, longitude, radiusKm), page, size)));
     }
 
     @GetMapping("/users/{userId}")

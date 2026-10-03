@@ -1,5 +1,6 @@
 package com.ds.goroute.service;
 
+import com.ds.goroute.dto.FeedGeoFilter;
 import com.ds.goroute.dto.request.CreateUserCheckinRequest;
 import com.ds.goroute.dto.request.UpdateUserCheckinRequest;
 import com.ds.goroute.dto.response.CheckinContextResponse;
@@ -75,9 +76,9 @@ public interface UserCheckinService {
 
     /**
      * Public feed without the viewer's own check-ins: posts with photos first, then newest
-     * first.
+     * first. {@code geo} limits it to an area; null means everywhere.
      */
-    List<UserCheckinResponse> feed(UUID viewerId, int page, int size);
+    List<UserCheckinResponse> feed(UUID viewerId, FeedGeoFilter geo, int page, int size);
 
     List<UserCheckinResponse> byUser(UUID viewerId, UUID userId, int page, int size);
 

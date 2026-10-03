@@ -46,6 +46,8 @@ public interface QuestRunMapper {
 
     int countRunsByStatus(@Param("questId") UUID questId, @Param("status") String status);
 
+    boolean existsMemberRun(@Param("questId") UUID questId, @Param("userId") UUID userId);
+
     // --- members -----------------------------------------------------------------------
     void insertMember(QuestRunMember member);
 

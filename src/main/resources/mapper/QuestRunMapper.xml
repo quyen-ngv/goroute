@@ -83,6 +83,14 @@
         WHERE quest_id = #{questId} AND status = #{status} AND started_at >= #{since}
     </select>
 
+    <select id="existsMemberRun" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM quest_runs r
+            JOIN quest_run_members m ON m.run_id = r.id
+            WHERE r.quest_id = #{questId} AND m.user_id = #{userId}
+        )
+    </select>
+
     <select id="countRunsByStatus" resultType="int">
         SELECT COUNT(*) FROM quest_runs
         WHERE quest_id = #{questId} AND status = #{status}

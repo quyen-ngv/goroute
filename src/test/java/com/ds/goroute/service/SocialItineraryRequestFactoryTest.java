@@ -60,6 +60,45 @@ class SocialItineraryRequestFactoryTest {
     }
 
     @Test
+    void namesTheTripFromTheExtractorAndCarriesItsAdvice() throws Exception {
+        when(config.getInt(BusinessConfigKey.SOCIAL_START_OFFSET_DAYS)).thenReturn(5);
+        SocialLocationJob job = SocialLocationJob.builder().id(UUID.randomUUID()).build();
+
+        var request = factory.build(job, objectMapper.readTree("""
+                {"extraction":{"contentType":"ITINERARY","durationDays":2,
+                  "summary":"Video review Đà Lạt 2N1Đ #dalat",
+                  "trip_title":"Đà Lạt 2 ngày săn mây",
+                  "trip_description":"Đi giữa tuần cho vắng.",
+                  "general_guidance":["Mang áo khoác","Thuê xe máy"],
+                  "destination":{"city":"Đà Lạt"},
+                  "candidates":[{"candidateRef":"1","sequence":1,"name":"Đồi chè Cầu Đất",
+                    "description":"Đến trước 6 giờ để kịp mây.",
+                    "useful_info":["Vé vào cổng miễn phí"],"visit_guidance":["Đi xe máy mất 40 phút"]}]}}
+                """));
+
+        assertThat(request.getTripName()).isEqualTo("Đà Lạt 2 ngày săn mây");
+        assertThat(request.getSocialContext())
+                .containsEntry("tripDescription", "Đi giữa tuần cho vắng.")
+                .containsEntry("generalGuidance", java.util.List.of("Mang áo khoác", "Thuê xe máy"));
+        @SuppressWarnings("unchecked")
+        var rows = (java.util.List<Map<String, Object>>) request.getSocialContext().get("candidates");
+        assertThat(rows.get(0)).containsEntry("tips", java.util.List.of("Vé vào cổng miễn phí", "Đi xe máy mất 40 phút"));
+    }
+
+    @Test
+    void fallsBackToTheDestinationNotTheVideoSummaryWhenThereIsNoTitle() throws Exception {
+        when(config.getInt(BusinessConfigKey.SOCIAL_START_OFFSET_DAYS)).thenReturn(5);
+        SocialLocationJob job = SocialLocationJob.builder().id(UUID.randomUUID()).build();
+
+        var request = factory.build(job, objectMapper.readTree("""
+                {"extraction":{"contentType":"ITINERARY","durationDays":1,"summary":"POV: 1 ngày ở Huế #hue",
+                  "destination":{"city":"Huế"},"candidates":[{"candidateRef":"1","name":"Đại Nội"}]}}
+                """));
+
+        assertThat(request.getTripName()).isEqualTo("Huế");
+    }
+
+    @Test
     void returnsNullForPlaceListBecauseItMustNotCreateASchedule() throws Exception {
         when(config.getInt(BusinessConfigKey.SOCIAL_START_OFFSET_DAYS)).thenReturn(5);
         SocialLocationJob job = SocialLocationJob.builder().id(UUID.randomUUID()).build();

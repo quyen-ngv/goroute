@@ -19,6 +19,10 @@ import com.ds.goroute.service.PlaceImportJobService;
 import com.ds.goroute.service.PlaceSocialVideoService;
 import com.ds.goroute.service.SocialLocationConfigService;
 import com.ds.goroute.service.SocialLocationCompletionService;
+import com.ds.goroute.service.SocialCandidateImageService;
+import com.ds.goroute.service.InternalPlaceSearchService;
+import com.ds.goroute.type.SocialMapSearchProvider;
+import com.ds.goroute.service.StorageService;
 import com.ds.goroute.thirdparty.scrape.ScrapeServiceClient;
 import com.ds.goroute.thirdparty.scrape.ScrapeSocialLocationJobRequest;
 import com.ds.goroute.thirdparty.scrape.ScrapeSocialLocationJobResponse;
@@ -65,7 +69,10 @@ class SocialLocationJobServiceImplTest {
     private AiTripRepository aiTripRepository;
     private SocialLocationRestrictionRepository restrictionRepository;
     private SocialLocationCompletionService completionService;
+    private SocialCandidateImageService candidateImageService;
+    private StorageService storageService;
     private ObjectMapper objectMapper;
+    private InternalPlaceSearchService internalPlaceSearchService;
     private SocialLocationJobServiceImpl service;
 
     /**
@@ -104,6 +111,9 @@ class SocialLocationJobServiceImplTest {
         aiTripRepository = mock(AiTripRepository.class);
         restrictionRepository = mock(SocialLocationRestrictionRepository.class);
         completionService = mock(SocialLocationCompletionService.class);
+        storageService = mock(StorageService.class);
+        candidateImageService = new SocialCandidateImageServiceImpl(storageService);
+        internalPlaceSearchService = mock(InternalPlaceSearchService.class);
         objectMapper = new ObjectMapper();
         service = new SocialLocationJobServiceImpl(
                 jobMapper,
@@ -121,7 +131,9 @@ class SocialLocationJobServiceImplTest {
                 completionService,
                 transactionManager,
                 new com.ds.goroute.config.ScrapeHttpClientProperties(),
-                new InternalApiProperties("ai-token", "internal-token")
+                new InternalApiProperties("ai-token", "internal-token"),
+                candidateImageService,
+                internalPlaceSearchService
         );
         ReflectionTestUtils.setField(service, "dispatchTimeoutSeconds", 90L);
         ReflectionTestUtils.setField(service, "jobTimeoutMinutes", 15L);
@@ -391,9 +403,10 @@ class SocialLocationJobServiceImplTest {
         assertThat(aiCallCaptor.getValue().getFeature()).isEqualTo("SOCIAL_LOCATION");
         assertThat(aiCallCaptor.getValue().getOperation()).isEqualTo("EXTRACT_PLACES");
         assertThat(aiCallCaptor.getValue().getCandidateCount()).isEqualTo(3);
-        assertThat(aiCallCaptor.getValue().getInputTokens()).isEqualTo(120);
-        assertThat(aiCallCaptor.getValue().getOutputTokens()).isEqualTo(30);
-        assertThat(aiCallCaptor.getValue().getTotalTokens()).isEqualTo(150);
+        // Tokens are logged per provider call by the worker; the job row only groups them.
+        assertThat(aiCallCaptor.getValue().getTraceId()).isEqualTo(aiCallCaptor.getValue().getCorrelationId());
+        assertThat(aiCallCaptor.getValue().getInputTokens()).isNull();
+        assertThat(aiCallCaptor.getValue().getTotalTokens()).isNull();
         assertThat(aiCallCaptor.getValue().getResponsePayload()).contains("\"name\":\"A\"");
     }
 
@@ -527,6 +540,62 @@ class SocialLocationJobServiceImplTest {
     }
 
     @Test
+    void dispatchKeepsTheWorkerScrapingMapsByDefault() {
+        ScrapeSocialLocationJobRequest request = dispatchOneJob();
+
+        assertThat(request.getMapSearchProvider()).isEqualTo("SCRAPE");
+        assertThat(request.getMapSearchUrl()).isNull();
+        verify(internalPlaceSearchService, never()).isAvailable();
+    }
+
+    @Test
+    void dispatchSendsTheWorkerToTheBackendWhenGoogleIsChosenAndConfigured() {
+        when(socialConfigService.mapSearchProvider()).thenReturn(SocialMapSearchProvider.GOOGLE);
+        when(internalPlaceSearchService.isAvailable()).thenReturn(true);
+
+        ScrapeSocialLocationJobRequest request = dispatchOneJob();
+
+        assertThat(request.getMapSearchProvider()).isEqualTo("GOOGLE");
+        assertThat(request.getMapSearchUrl())
+                .isEqualTo("http://goroute-app:8080/v1/api/internal/place-search/text");
+        assertThat(objectMapper.valueToTree(request).path("map_search_provider").asText()).isEqualTo("GOOGLE");
+    }
+
+    @Test
+    void dispatchKeepsScrapingWhenGoogleIsChosenButHasNoKey() {
+        when(socialConfigService.mapSearchProvider()).thenReturn(SocialMapSearchProvider.GOOGLE);
+        when(internalPlaceSearchService.isAvailable()).thenReturn(false);
+
+        ScrapeSocialLocationJobRequest request = dispatchOneJob();
+
+        assertThat(request.getMapSearchProvider()).isEqualTo("SCRAPE");
+        assertThat(request.getMapSearchUrl()).isNull();
+    }
+
+    private ScrapeSocialLocationJobRequest dispatchOneJob() {
+        UUID jobId = UUID.randomUUID();
+        SocialLocationJob job = processingJob(jobId, UUID.randomUUID(), "tiktok");
+        job.setStatus(SocialLocationJobStatus.DISPATCHING);
+        job.setMaxDurationSeconds(180);
+        ScrapeSocialLocationJobResponse trigger = new ScrapeSocialLocationJobResponse();
+        trigger.setJobId("python-job-1");
+        when(jobMapper.tryDispatchLock()).thenReturn(true);
+        when(jobMapper.countActive()).thenReturn(0);
+        when(jobMapper.claimQueued(1)).thenReturn(List.of(job));
+        when(jobMapper.findById(jobId)).thenReturn(job);
+        when(socialConfigService.maxConcurrentJobs()).thenReturn(1);
+        when(socialConfigService.frameIntervalSeconds()).thenReturn(3);
+        when(scrapeServiceClient.triggerSocialLocationJob(any())).thenReturn(trigger);
+
+        service.dispatchQueuedJobs();
+
+        ArgumentCaptor<ScrapeSocialLocationJobRequest> requestCaptor =
+                ArgumentCaptor.forClass(ScrapeSocialLocationJobRequest.class);
+        verify(scrapeServiceClient).triggerSocialLocationJob(requestCaptor.capture());
+        return requestCaptor.getValue();
+    }
+
+    @Test
     void processingCallbackPersistsIncrementalCandidatesAndReusesExistingDatabasePlace() throws Exception {
         UUID jobId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
@@ -580,6 +649,68 @@ class SocialLocationJobServiceImplTest {
         assertThat(aiCallCaptor.getValue().getStatus()).isEqualTo("PROCESSING");
         assertThat(aiCallCaptor.getValue().getCandidateCount()).isEqualTo(1);
         assertThat(aiCallCaptor.getValue().getCompletedAt()).isNull();
+    }
+
+    @Test
+    void firstProgressReportStoresPicturesAndLaterReportsKeepThem() throws Exception {
+        UUID jobId = UUID.randomUUID();
+        SocialLocationJob job = processingJob(jobId, UUID.randomUUID(), "tiktok");
+        when(jobMapper.findById(jobId)).thenReturn(job);
+        when(placeImportJobMapper.findSocialItemsBySocialJobId(jobId)).thenReturn(List.of());
+        when(storageService.uploadBytes(any(), eq("social-location/" + jobId + "/cand-1.jpg"), eq("image/jpeg")))
+                .thenReturn("https://cdn.example/social/cand-1.jpg");
+        String jpeg = java.util.Base64.getEncoder().encodeToString(new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, 1, 2});
+
+        service.handleCallback(SocialLocationJobCallbackRequest.builder()
+                .gorouteJobId(jobId)
+                .status("PROCESSING")
+                .result(objectMapper.readTree("""
+                        {"progress": {"stage": "LOCATING", "processedCandidates": 0, "totalCandidates": 1},
+                         "extraction": {"candidates": [{
+                           "candidateRef": "cand-1", "name": "Cafe Giang", "mapSearchStatus": "PENDING",
+                           "previewImage": {"contentType": "image/jpeg", "data": "%s"}}]}}
+                        """.formatted(jpeg)))
+                .build());
+
+        assertThat(job.getResultPayload())
+                .contains("https://cdn.example/social/cand-1.jpg")
+                .doesNotContain("previewImage")
+                .contains("PENDING");
+
+        service.handleCallback(SocialLocationJobCallbackRequest.builder()
+                .gorouteJobId(jobId)
+                .status("PROCESSING")
+                .result(objectMapper.readTree("""
+                        {"progress": {"stage": "LOCATING", "processedCandidates": 1, "totalCandidates": 1},
+                         "extraction": {"candidates": [{
+                           "candidateRef": "cand-1", "name": "Cafe Giang", "mapSearchStatus": "DONE",
+                           "resolutionStatus": "UNRESOLVED"}]}}
+                        """))
+                .build());
+
+        assertThat(job.getResultPayload())
+                .contains("https://cdn.example/social/cand-1.jpg")
+                .contains("DONE");
+        verify(storageService).uploadBytes(any(), any(), any());
+    }
+
+    @Test
+    void progressReportBeforeDispatchRecordsItGetsADeadline() throws Exception {
+        UUID jobId = UUID.randomUUID();
+        SocialLocationJob job = processingJob(jobId, UUID.randomUUID(), "tiktok");
+        job.setStatus(SocialLocationJobStatus.DISPATCHING);
+        when(jobMapper.findById(jobId)).thenReturn(job);
+        when(placeImportJobMapper.findSocialItemsBySocialJobId(jobId)).thenReturn(List.of());
+
+        service.handleCallback(SocialLocationJobCallbackRequest.builder()
+                .gorouteJobId(jobId)
+                .status("PROCESSING")
+                .result(objectMapper.readTree("{\"extraction\": {\"candidates\": []}}"))
+                .build());
+
+        assertThat(job.getStatus()).isEqualTo(SocialLocationJobStatus.PROCESSING);
+        assertThat(job.getStartedAt()).isNotNull();
+        assertThat(job.getDeadlineAt()).isEqualTo(job.getStartedAt().plusMinutes(15));
     }
 
     private SocialLocationJob processingJob(UUID jobId, UUID userId, String platform) {

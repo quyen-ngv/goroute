@@ -133,6 +133,10 @@ public class GoongClient {
                 .body("{\"error\":{\"code\":\"UPSTREAM\",\"message\":\"Goong request failed\"}}");
     }
 
+    public boolean isConfigured() {
+        return !configuredKeys().isEmpty();
+    }
+
     private ResponseEntity<String> responseWithoutUpstreamHeaders(ResponseEntity<String> response) {
         String body = response.getBody();
         MediaType contentType = looksLikeJson(body) ? MediaType.APPLICATION_JSON : MediaType.TEXT_PLAIN;

@@ -93,6 +93,7 @@ class TripServiceImplRealtimeTest {
                 mock(MediaAssetRepository.class),
                 mock(ImageStorageCleanupService.class),
                 tripRealtimePublisher,
+                mock(com.ds.goroute.service.TrackService.class),
                 mock(TripDestinationRepository.class),
                 mock(SocialNotificationService.class),
                 mock(UserCheckinService.class),

@@ -191,7 +191,7 @@
             pending_change_review = TRUE,
             data_version = data_version + 1,
             updated_at = #{updatedAt}
-        WHERE id = #{id} AND data_version = #{expectedVersion} AND status = 'PUBLISHED'
+        WHERE id = #{id} AND data_version = #{expectedVersion} AND status IN ('PUBLISHED', 'PAUSED')
           AND is_deleted = FALSE
     </update>
 
@@ -367,6 +367,13 @@
     <select id="findPublicQuestDetail" resultMap="ListItemMap">
         <include refid="publicQuestProjection"/>
         WHERE q.id = #{id} AND <include refid="publicQuestGate"/>
+    </select>
+
+    <!-- The same page without the public gate, for someone who already played the quest; the
+         service decides which statuses that covers. -->
+    <select id="findQuestDetailUngated" resultMap="ListItemMap">
+        <include refid="publicQuestProjection"/>
+        WHERE q.id = #{id} AND q.is_deleted = FALSE
     </select>
 
     <!-- ================= versions ================= -->

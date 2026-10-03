@@ -224,9 +224,27 @@
          some posts twice and skips others. -->
     <select id="findFeed" resultMap="checkinMap">
         SELECT <include refid="columns"/> FROM user_checkins
+        <if test="latitude != null and longitude != null and radiusKm != null">
+            <!-- A catalogue place's coordinates win over the post's own: a gallery photo
+                 posted from home carries the phone's position, not the place's. -->
+            LEFT JOIN LATERAL (
+                SELECT p.latitude AS place_lat, p.longitude AS place_lng
+                FROM places p
+                WHERE p.id = user_checkins.place_id
+            ) feed_place ON TRUE
+        </if>
         WHERE visibility = 'PUBLIC'
           AND is_removed = FALSE
           <if test="excludeUserId != null">AND user_id &lt;&gt; #{excludeUserId}</if>
+          <if test="latitude != null and longitude != null and radiusKm != null">
+              AND COALESCE(feed_place.place_lat, user_checkins.latitude) IS NOT NULL
+              AND COALESCE(feed_place.place_lng, user_checkins.longitude) IS NOT NULL
+              AND 6371 * acos(LEAST(1, GREATEST(-1,
+                      cos(radians(#{latitude})) * cos(radians(COALESCE(feed_place.place_lat, user_checkins.latitude))) *
+                      cos(radians(COALESCE(feed_place.place_lng, user_checkins.longitude)) - radians(#{longitude})) +
+                      sin(radians(#{latitude})) * sin(radians(COALESCE(feed_place.place_lat, user_checkins.latitude)))
+                  ))) &lt;= #{radiusKm}
+          </if>
           AND NOT EXISTS (
               SELECT 1 FROM content_takedowns t
               WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id

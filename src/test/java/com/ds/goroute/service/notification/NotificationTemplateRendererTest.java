@@ -117,6 +117,30 @@ class NotificationTemplateRendererTest {
         }
     }
 
+    @Test
+    void groupedPaymentReminderNamesTheCountAndTotalOnlyWhenThereIsOne() {
+        Map<String, Object> data = new HashMap<>();
+        data.put("actorName", "An");
+        data.put("expenseCount", 3);
+        data.put("amount", "200000");
+        data.put("currency", "VND");
+
+        assertThat(renderer.render(NotificationType.PAYMENT_REMINDER, data, "vi").body())
+                .isEqualTo("An nhắc bạn thanh toán 3 khoản chi, tổng 200000 VND.");
+
+        data.put("amount", "");
+        data.put("currency", "");
+        assertThat(renderer.render(NotificationType.PAYMENT_REMINDER, data, "en").body())
+                .isEqualTo("An reminded you about 3 unpaid expenses.");
+
+        data.put("expenseCount", 1);
+        data.put("amount", "100");
+        data.put("currency", "THB");
+        data.put("expenseDescription", "Dinner");
+        assertThat(renderer.render(NotificationType.PAYMENT_REMINDER, data, "en").body())
+                .contains("“Dinner”");
+    }
+
     private Map<String, Object> completeData() {
         Map<String, Object> data = new HashMap<>();
         data.put("title", "Thông báo");

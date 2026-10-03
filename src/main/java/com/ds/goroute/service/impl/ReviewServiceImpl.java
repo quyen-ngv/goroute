@@ -1,5 +1,6 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.dto.FeedGeoFilter;
 import com.ds.goroute.dto.request.CreateReviewRequest;
 import com.ds.goroute.dto.request.UpdateReviewRequest;
 import com.ds.goroute.dto.response.PlaceScoreResponse;
@@ -429,9 +430,9 @@ public class ReviewServiceImpl implements ReviewService {
     }
 
     @Override
-    public List<UserReviewResponse> getFeedReviews(UUID currentUserId, int page, int size, String randomSeed) {
+    public List<UserReviewResponse> getFeedReviews(UUID currentUserId, FeedGeoFilter geo, int page, int size, String randomSeed) {
         int offset = page * size;
-        List<UserReview> reviews = reviewRepository.findFeedReviews(currentUserId, size, offset, randomSeed);
+        List<UserReview> reviews = reviewRepository.findFeedReviews(currentUserId, geo, size, offset, randomSeed);
 
         return mapToResponses(reviews, currentUserId);
     }

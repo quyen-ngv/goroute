@@ -1,5 +1,6 @@
 package com.ds.goroute.repository;
 
+import com.ds.goroute.dto.FeedGeoFilter;
 import com.ds.goroute.entity.CheckinCluster;
 import com.ds.goroute.entity.CheckinClusterDecision;
 import com.ds.goroute.entity.UserCheckin;
@@ -31,7 +32,8 @@ public interface UserCheckinRepository {
 
     Optional<UserCheckin> findByIdempotencyKey(UUID userId, String idempotencyKey);
 
-    List<UserCheckin> findFeed(UUID excludeUserId, int limit, int offset);
+    /** {@code geo} limits the feed to an area; null means everywhere. */
+    List<UserCheckin> findFeed(UUID excludeUserId, FeedGeoFilter geo, int limit, int offset);
 
     List<UserCheckin> findByUser(UUID userId, boolean includePrivate, int limit, int offset);
 

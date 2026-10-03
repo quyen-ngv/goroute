@@ -105,8 +105,8 @@ public enum BusinessConfigKey {
     PARTNER_RESPONSE_SLA_MINUTES("MARKETPLACE", "PARTNER_RESPONSE_SLA_MINUTES", 720, 5, 10080),
 
     // --- Epic 05: expenses ----------------------------------------------------------
-    /** Minimum interval before the same payer can remind the same outstanding split again. */
-    EXPENSE_PAYMENT_REMINDER_COOLDOWN_MINUTES("EXPENSE", "PAYMENT_REMINDER_COOLDOWN_MINUTES", 1440, 1, 10080),
+    /** Reminders one payer may send the same person per day (Asia/Ho_Chi_Minh); each covers all picked splits. */
+    EXPENSE_PAYMENT_REMINDER_DAILY_MAX("EXPENSE", "PAYMENT_REMINDER_DAILY_MAX", 2, 1, 20),
 
     // --- Epic 11: marketplace partner finance ---------------------------------------
     /**
@@ -146,15 +146,7 @@ public enum BusinessConfigKey {
      */
     CHAT_DIRECT_ENABLED("CHAT", "DIRECT_ENABLED", true),
 
-    // --- Media upload & compression -------------------------------------------------
-    /**
-     * Whether to compress uploaded images through the external ImagePress service.
-     * When disabled (default), images are stored as-is after validation and moderation,
-     * which is faster but results in larger storage size and slower client downloads.
-     * When enabled, images are compressed to WebP format before storage.
-     */
-    IMAGE_COMPRESSION_ENABLED("MEDIA_UPLOAD", "COMPRESSION_ENABLED", false),
-    
+    // --- Media upload -----------------------------------------------------------------
     /**
      * Maximum number of files allowed in a single batch upload request.
      * Higher values allow faster bulk uploads but may strain server resources.
@@ -243,7 +235,67 @@ public enum BusinessConfigKey {
     QUEST_AR_MAX_MODEL_MB("QUEST", "AR_MAX_MODEL_MB", 50, 1, 200),
     // The most triangles a GLB may have. Detail beyond what the phone shows costs frame time, but
     // the product favours fidelity; the upload warns above ArModelInspector.WARN_TRIANGLES.
-    QUEST_AR_MAX_TRIANGLES("QUEST", "AR_MAX_TRIANGLES", 1_000_000, 1_000, 5_000_000);
+    QUEST_AR_MAX_TRIANGLES("QUEST", "AR_MAX_TRIANGLES", 1_000_000, 1_000, 5_000_000),
+
+    // --- Epic 16: travel tracker (.docs/designs/TRAVEL_TRACKER_PLAN.md) ----------------
+    // The app reads these through GET /v1/api/trips/{tripId}/track/context, not PUBLIC_CONFIG:
+    // they only mean something once the user is inside a trip.
+    TRACKER_ENABLED("TRACKER", "ENABLED", false),
+    // Days before the first and after the last day of a trip that still accept points (TR-02).
+    TRACKER_WINDOW_PAD_DAYS("TRACKER", "WINDOW_PAD_DAYS", 1, 0, 3),
+    // A point whose reported accuracy is worse than this (m) is dropped, per recording mode.
+    TRACKER_MAX_ACCURACY_HIGH_M("TRACKER", "MAX_ACCURACY_HIGH_M", 30, 5, 500),
+    TRACKER_MAX_ACCURACY_BALANCED_M("TRACKER", "MAX_ACCURACY_BALANCED_M", 60, 5, 500),
+    TRACKER_MAX_ACCURACY_SAVER_M("TRACKER", "MAX_ACCURACY_SAVER_M", 150, 5, 500),
+    // Distance filter the phone asks the OS for, per recording mode (m).
+    TRACKER_DISTANCE_FILTER_HIGH_M("TRACKER", "DISTANCE_FILTER_HIGH_M", 10, 1, 500),
+    TRACKER_DISTANCE_FILTER_BALANCED_M("TRACKER", "DISTANCE_FILTER_BALANCED_M", 25, 1, 500),
+    TRACKER_DISTANCE_FILTER_SAVER_M("TRACKER", "DISTANCE_FILTER_SAVER_M", 100, 1, 500),
+    // A short hop faster than this (km/h) is a GPS jump and is ignored when building the line.
+    TRACKER_MAX_SPEED_KMH("TRACKER", "MAX_SPEED_KMH", 300, 50, 1200),
+    // No signal for longer than GAP_MINUTES and further than GAP_DISTANCE_M: dashed gap (TR-11).
+    TRACKER_GAP_MINUTES("TRACKER", "GAP_MINUTES", 10, 1, 240),
+    TRACKER_GAP_DISTANCE_M("TRACKER", "GAP_DISTANCE_M", 1000, 100, 100_000),
+    // A hop at least this long and this fast is a flight: arc, counted apart (TR-12).
+    TRACKER_FLIGHT_MIN_KM("TRACKER", "FLIGHT_MIN_KM", 200, 50, 2000),
+    TRACKER_FLIGHT_MIN_KMH("TRACKER", "FLIGHT_MIN_KMH", 300, 100, 1200),
+    // Standing still within this radius for this long auto-pauses recording (TR-08).
+    TRACKER_STATIONARY_RADIUS_M("TRACKER", "STATIONARY_RADIUS_M", 30, 5, 200),
+    TRACKER_STATIONARY_MINUTES("TRACKER", "STATIONARY_MINUTES", 3, 1, 30),
+    // Within this radius of a planned activity for this long counts as having arrived (TR-15).
+    TRACKER_ARRIVAL_RADIUS_M("TRACKER", "ARRIVAL_RADIUS_M", 100, 20, 500),
+    TRACKER_ARRIVAL_MINUTES("TRACKER", "ARRIVAL_MINUTES", 3, 1, 60),
+    // Check-in nudges: spacing, daily cap and quiet hours in the trip's local time (TR-18).
+    TRACKER_NUDGE_COOLDOWN_MINUTES("TRACKER", "NUDGE_COOLDOWN_MINUTES", 20, 0, 240),
+    TRACKER_NUDGE_DAILY_MAX("TRACKER", "NUDGE_DAILY_MAX", 6, 0, 50),
+    TRACKER_QUIET_START_HOUR("TRACKER", "QUIET_START_HOUR", 22, 0, 23),
+    TRACKER_QUIET_END_HOUR("TRACKER", "QUIET_END_HOUR", 7, 0, 23),
+    // Battery levels (%) that switch to the saver mode and that end the session (TR-09).
+    TRACKER_LOW_BATTERY_PCT("TRACKER", "LOW_BATTERY_PCT", 15, 5, 50),
+    TRACKER_STOP_BATTERY_PCT("TRACKER", "STOP_BATTERY_PCT", 5, 1, 30),
+    // Raw points are kept this many days after the trip's last day; day lines stay (TR-24).
+    TRACKER_RAW_RETENTION_DAYS("TRACKER", "RAW_RETENTION_DAYS", 90, 7, 365),
+    // Most points one upload may carry.
+    TRACKER_CHUNK_MAX_POINTS("TRACKER", "CHUNK_MAX_POINTS", 500, 50, 500),
+    // Off-plan stop (P2, TR-16): within this radius (m) for this long (minutes), away from
+    // every planned activity of the day.
+    TRACKER_OFFPLAN_RADIUS_M("TRACKER", "OFFPLAN_RADIUS_M", 100, 20, 500),
+    TRACKER_OFFPLAN_MIN_MINUTES("TRACKER", "OFFPLAN_MIN_MINUTES", 10, 1, 120),
+    // A catalogue place this close (m) to an off-plan stop names it; otherwise Goong does.
+    TRACKER_OFFPLAN_NAME_RADIUS_M("TRACKER", "OFFPLAN_NAME_RADIUS_M", 60, 10, 500),
+
+    // --- Epic 06: per-user limits on the app's Goong search proxy ---------------------
+    // Every autocomplete and place-detail call through /v1/api/goong is a paid Goong
+    // request. Server-side lookups (AI trip, tracker naming) are not counted here.
+    MAP_SEARCH_RATE_LIMIT_ENABLED("MAP_SEARCH", "RATE_LIMIT_ENABLED", true),
+    /** Operators fill place addresses from the console all day; they are staff, not abuse. */
+    MAP_SEARCH_EXEMPT_ADMINS("MAP_SEARCH", "EXEMPT_ADMINS", true),
+    MAP_SEARCH_AUTOCOMPLETE_PER_MINUTE("MAP_SEARCH", "AUTOCOMPLETE_PER_MINUTE", 30, 1, 600),
+    MAP_SEARCH_AUTOCOMPLETE_PER_DAY("MAP_SEARCH", "AUTOCOMPLETE_PER_DAY", 300, 1, 100000),
+    MAP_SEARCH_PLACE_DETAIL_PER_MINUTE("MAP_SEARCH", "PLACE_DETAIL_PER_MINUTE", 30, 1, 600),
+    MAP_SEARCH_PLACE_DETAIL_PER_DAY("MAP_SEARCH", "PLACE_DETAIL_PER_DAY", 200, 1, 100000),
+    /** Days of per-user daily counters kept for reporting before the nightly purge. */
+    MAP_SEARCH_USAGE_RETENTION_DAYS("MAP_SEARCH", "USAGE_RETENTION_DAYS", 90, 7, 730);
 
     /** Value shapes the configuration layer knows how to validate. */
     public enum ValueType {

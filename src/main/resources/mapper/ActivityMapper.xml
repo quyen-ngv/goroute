@@ -168,4 +168,55 @@
         SELECT * FROM activities ORDER BY created_at DESC
     </select>
 
+    <!--
+        An activity is unlinked when neither place_ref_id nor place_id resolves to a places row.
+        place_id is free text: a places.id UUID, a legacy Google id, or blank. The CASE keeps the
+        ::uuid cast from running on text that is not a UUID.
+    -->
+    <sql id="unlinkedActivityFilter">
+        FROM activities a
+        JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
+        WHERE NULLIF(BTRIM(a.address), '') IS NOT NULL
+          AND a.transport_mode IS NULL
+          AND LOWER(COALESCE(a.category, '')) &lt;&gt; 'transport'
+          AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+          AND NOT EXISTS (SELECT 1 FROM places p WHERE p.id = a.place_ref_id)
+          AND NOT EXISTS (
+              SELECT 1 FROM places p
+              WHERE p.id = CASE
+                  WHEN BTRIM(a.place_id) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                  THEN BTRIM(a.place_id)::uuid
+              END)
+        <if test="search != null">
+          AND (a.name ILIKE '%' || #{search} || '%'
+               OR a.address ILIKE '%' || #{search} || '%'
+               OR t.name ILIKE '%' || #{search} || '%')
+        </if>
+    </sql>
+
+    <select id="selectUnlinkedForAdmin" resultType="com.ds.goroute.entity.UnlinkedActivityRow">
+        SELECT a.id, a.trip_id AS tripId, t.name AS tripName, t.owner_id AS ownerId,
+               a.day_number AS dayNumber, a.name, a.address, a.lat, a.lng, a.category,
+               a.place_id AS placeId, a.custom_place_id AS customPlaceId, a.created_at AS createdAt
+        <include refid="unlinkedActivityFilter"/>
+        ORDER BY a.created_at DESC, a.id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countUnlinkedForAdmin" resultType="long">
+        SELECT COUNT(*)
+        <include refid="unlinkedActivityFilter"/>
+    </select>
+
+    <!-- place_ref_id is overwritten too: readers prefer it over place_id, so a stale value would hide the new link. -->
+    <update id="assignPlace">
+        UPDATE activities
+        SET place_id = #{placeId},
+            place_ref_id = #{placeRefId,javaType=java.util.UUID,jdbcType=OTHER},
+            lat = COALESCE(#{lat}, lat),
+            lng = COALESCE(#{lng}, lng),
+            updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
 </mapper>

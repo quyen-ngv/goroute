@@ -136,6 +136,11 @@ public class QuestRepositoryImpl implements QuestRepository {
     }
 
     @Override
+    public Optional<com.ds.goroute.quest.domain.QuestListItem> findQuestDetailUngated(UUID id) {
+        return Optional.ofNullable(mapper.findQuestDetailUngated(id));
+    }
+
+    @Override
     public Optional<com.ds.goroute.quest.domain.QuestListItem> findPublicQuestDetail(UUID id) {
         return Optional.ofNullable(mapper.findPublicQuestDetail(id));
     }

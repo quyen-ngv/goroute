@@ -1,5 +1,6 @@
 package com.ds.goroute.repository;
 
+import com.ds.goroute.dto.FeedGeoFilter;
 import com.ds.goroute.entity.UserReview;
 
 import java.time.LocalDateTime;
@@ -33,7 +34,7 @@ public interface UserReviewRepository {
 
     List<UserReview> findByUserId(UUID userId, int limit, int offset);
 
-    List<UserReview> findFeedReviews(UUID excludeUserId, int limit, int offset, String randomSeed);
+    List<UserReview> findFeedReviews(UUID excludeUserId, FeedGeoFilter geo, int limit, int offset, String randomSeed);
 
     int countByPlaceId(UUID placeId);
 

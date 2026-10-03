@@ -101,13 +101,23 @@ public class CorsFilter implements Filter {
 
                 String body = requestWrapper.getBody();
                 JSONObject dataRequest;
+                // A JSON array (or scalar) body is valid input for endpoints such as
+                // PUT /admin/users/{id}/roles; it must reach the controller untouched,
+                // not be replaced by the request-metadata object built below.
+                boolean keepOriginalBody = false;
 
                 // Check if body is empty or not valid JSON
                 if (ObjectUtils.isEmpty(body) || body.trim().isEmpty()) {
                     dataRequest = new JSONObject();
                 } else {
                     try {
-                        dataRequest = (JSONObject) parser.parse(body);
+                        Object parsed = parser.parse(body);
+                        if (parsed instanceof JSONObject jsonObject) {
+                            dataRequest = jsonObject;
+                        } else {
+                            dataRequest = new JSONObject();
+                            keepOriginalBody = true;
+                        }
                     } catch (Exception parseEx) {
                         // Never the body itself: a failed login posts its password here.
                         log.warn("Failed to parse request body as JSON, using empty object. "
@@ -136,7 +146,9 @@ public class CorsFilter implements Filter {
 
                 request.setAttribute(RequestKeyConstant.REQUEST_PARAMETERS, req.getParameterMap());
                 request.setAttribute(RequestKeyConstant.REQUEST_BODY, dataRequest);
-                requestWrapper.setBody(dataRequest.toString());
+                if (!keepOriginalBody) {
+                    requestWrapper.setBody(dataRequest.toString());
+                }
 
                 chain.doFilter(requestWrapper, res);
                 ThreadContext.clearAll();

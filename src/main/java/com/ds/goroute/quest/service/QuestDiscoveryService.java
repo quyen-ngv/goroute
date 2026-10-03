@@ -8,12 +8,15 @@ import com.ds.goroute.quest.domain.QuestListItem;
 import com.ds.goroute.quest.dto.QuestPublicDetailResponse;
 import com.ds.goroute.quest.dto.QuestPublicSummaryResponse;
 import com.ds.goroute.quest.persistence.QuestRepository;
+import com.ds.goroute.quest.persistence.QuestRunRepository;
 import com.ds.goroute.service.marketplace.MarketplaceJson;
+import com.ds.goroute.type.QuestStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -29,6 +32,7 @@ public class QuestDiscoveryService {
 
     private final QuestRepository repository;
     private final MarketplaceJson json;
+    private final QuestRunRepository runRepository;
 
     @Transactional(readOnly = true)
     public PageResponse<QuestPublicSummaryResponse> search(String provinceCode, String language, int page, int size) {
@@ -44,10 +48,35 @@ public class QuestDiscoveryService {
         return PageResponse.of(items, total, safePage, safeSize);
     }
 
+    /**
+     * The quest page. A quest that left discovery by being paused or archived is still shown, not
+     * playable, to a viewer who was in a run of it, so their history does not lead to a dead end.
+     * Everyone else gets the same 404 as for a quest that does not exist.
+     */
     @Transactional(readOnly = true)
-    public QuestPublicDetailResponse detail(UUID questId) {
-        QuestListItem item = repository.findPublicQuestDetail(questId)
+    public QuestPublicDetailResponse detail(UUID questId, UUID viewerUserId) {
+        QuestListItem publicItem = repository.findPublicQuestDetail(questId).orElse(null);
+        if (publicItem != null) {
+            return toDetail(publicItem, QuestStatus.PUBLISHED.name(), true);
+        }
+        return pastPlayerStatus(questId, viewerUserId)
+                .flatMap(status -> repository.findQuestDetailUngated(questId)
+                        .map(item -> toDetail(item, status.name(), false)))
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Quest not found"));
+    }
+
+    private Optional<QuestStatus> pastPlayerStatus(UUID questId, UUID viewerUserId) {
+        if (viewerUserId == null) {
+            return Optional.empty();
+        }
+        return repository.findQuestById(questId)
+                .filter(quest -> quest.getPublishedVersionId() != null)
+                .map(quest -> quest.questStatus())
+                .filter(QuestStatus::isViewableByPastPlayers)
+                .filter(status -> runRepository.existsMemberRun(questId, viewerUserId));
+    }
+
+    private QuestPublicDetailResponse toDetail(QuestListItem item, String status, boolean playable) {
         return new QuestPublicDetailResponse(
                 item.getQuestId(), item.getOrigin(), item.getTitle(), item.getSummary(), item.getDescription(),
                 item.getCoverMediaId(), item.getCoverUrl(), item.getDifficulty(), item.getEstimatedMinutes(), item.getDistanceMeters(),
@@ -56,7 +85,7 @@ public class QuestDiscoveryService {
                 json.readList(item.getPlayableMonths(), Integer.class), item.getRunExpiryHours(),
                 nz(item.getCheckpointCount()), nz(item.getRequiredCheckinCount()),
                 // D17: creators see who is playing; players are told so on the purchase and safety screens.
-                true, item.getContentLanguage(), item.isRevealRoute(), route(item));
+                true, item.getContentLanguage(), item.isRevealRoute(), route(item), status, playable);
     }
 
     /**

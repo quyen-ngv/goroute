@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.MapSearchUsageMapper">
+
+    <!--
+        Check and count in one statement, so two concurrent searches cannot both take the
+        last call of the day. The conflict branch only updates while under the limit; when
+        it is not, no row is affected and the caller is refused.
+    -->
+    <insert id="claimRequest">
+        INSERT INTO map_search_usage_daily (user_id, usage_date, operation, request_count, updated_at)
+        VALUES (#{userId,javaType=java.util.UUID,jdbcType=OTHER}, #{usageDate}, #{operation}, 1, CURRENT_TIMESTAMP)
+        ON CONFLICT (user_id, usage_date, operation) DO UPDATE
+        SET request_count = map_search_usage_daily.request_count + 1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE map_search_usage_daily.request_count &lt; #{dailyLimit}
+    </insert>
+
+    <insert id="recordRejected">
+        INSERT INTO map_search_usage_daily (user_id, usage_date, operation, rejected_count, updated_at)
+        VALUES (#{userId,javaType=java.util.UUID,jdbcType=OTHER}, #{usageDate}, #{operation}, 1, CURRENT_TIMESTAMP)
+        ON CONFLICT (user_id, usage_date, operation) DO UPDATE
+        SET rejected_count = map_search_usage_daily.rejected_count + 1,
+            updated_at = CURRENT_TIMESTAMP
+    </insert>
+
+    <delete id="deleteBefore">
+        DELETE FROM map_search_usage_daily
+        WHERE usage_date &lt; #{cutoffDate}
+    </delete>
+</mapper>

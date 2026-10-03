@@ -4,6 +4,7 @@ import com.ds.goroute.type.NotificationType;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.HashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -41,6 +42,9 @@ public class NotificationTemplateRenderer {
         }
         if (type == NotificationType.SOCIAL_LIKE || type == NotificationType.SOCIAL_COMMENT) {
             return withLocalizedPunctuation(renderSocialInteraction(type, normalizedData, lang), lang);
+        }
+        if (type == NotificationType.PAYMENT_REMINDER && expenseCount(normalizedData) > 1) {
+            return withLocalizedPunctuation(renderGroupedPaymentReminder(normalizedData, lang), lang);
         }
 
         NotificationMessage template = templates
@@ -147,6 +151,55 @@ public class NotificationTemplateRenderer {
                     "Places extracted",
                     "Places extracted from " + platformName + ": " + placeCount
                             + ". Open Saved Places to review the result");
+        };
+    }
+
+    private int expenseCount(Map<String, Object> data) {
+        String raw = stringValue(data.get("expenseCount"));
+        if (raw == null) {
+            return 1;
+        }
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException ignored) {
+            return 1;
+        }
+    }
+
+    /**
+     * One Wallet reminder covering several expenses of one person. The total is shown only
+     * when they share a currency; otherwise the payload leaves {@code amount} empty.
+     */
+    private NotificationMessage renderGroupedPaymentReminder(Map<String, Object> data, String language) {
+        String actor = stringValue(data.get("actorName"));
+        String count = String.valueOf(expenseCount(data));
+        String amount = stringValue(data.get("amount"));
+        String total = amount == null ? null : (amount + " " + Objects.toString(data.get("currency"), "")).trim();
+        return switch (language) {
+            case "vi" -> new NotificationMessage("Nhắc thanh toán", total == null
+                    ? (actor == null ? "Ai đó" : actor) + " nhắc bạn thanh toán " + count + " khoản chi"
+                    : (actor == null ? "Ai đó" : actor) + " nhắc bạn thanh toán " + count + " khoản chi, tổng " + total);
+            case "hi" -> new NotificationMessage("भुगतान रिमाइंडर", total == null
+                    ? (actor == null ? "किसी" : actor) + " ने " + count + " बकाया खर्चों के भुगतान की याद दिलाई"
+                    : (actor == null ? "किसी" : actor) + " ने " + count + " बकाया खर्चों (कुल " + total + ") के भुगतान की याद दिलाई");
+            case "ja" -> new NotificationMessage("支払いのリマインダー", total == null
+                    ? (actor == null ? "誰か" : actor) + "さんが未払いの" + count + "件についてリマインドしました"
+                    : (actor == null ? "誰か" : actor) + "さんが未払いの" + count + "件（合計" + total + "）についてリマインドしました");
+            case "ko" -> new NotificationMessage("결제 알림", total == null
+                    ? (actor == null ? "누군가" : actor) + "님이 미결제 " + count + "건의 결제를 알려드립니다"
+                    : (actor == null ? "누군가" : actor) + "님이 미결제 " + count + "건(총 " + total + ")의 결제를 알려드립니다");
+            case "ru" -> new NotificationMessage("Напоминание об оплате", total == null
+                    ? (actor == null ? "Кто-то" : actor) + " напоминает о неоплаченных расходах: " + count
+                    : (actor == null ? "Кто-то" : actor) + " напоминает о неоплаченных расходах: " + count + " на сумму " + total);
+            case "th" -> new NotificationMessage("แจ้งเตือนการชำระเงิน", total == null
+                    ? (actor == null ? "มีคน" : actor) + " เตือนคุณเรื่องค่าใช้จ่ายค้างชำระ " + count + " รายการ"
+                    : (actor == null ? "มีคน" : actor) + " เตือนคุณเรื่องค่าใช้จ่ายค้างชำระ " + count + " รายการ รวม " + total);
+            case "zh-TW" -> new NotificationMessage("付款提醒", total == null
+                    ? (actor == null ? "有人" : actor) + " 提醒您支付 " + count + " 筆未付款項"
+                    : (actor == null ? "有人" : actor) + " 提醒您支付 " + count + " 筆未付款項，共 " + total);
+            default -> new NotificationMessage("Payment reminder", total == null
+                    ? (actor == null ? "Someone" : actor) + " reminded you about " + count + " unpaid expenses"
+                    : (actor == null ? "Someone" : actor) + " reminded you about " + count + " unpaid expenses, " + total + " in total");
         };
     }
 

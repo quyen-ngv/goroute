@@ -59,6 +59,7 @@ public class UserServiceImpl implements UserService {
     private final FileUploadService fileUploadService;
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final UserDeviceService userDeviceService;
+    private final com.ds.goroute.service.TrackService trackService;
 
     @Override
     @Transactional
@@ -225,6 +226,8 @@ public class UserServiceImpl implements UserService {
         // Its phones as well: a deleted account must stop receiving pushes, and a token left
         // behind would be handed to nobody until the phone registers for someone else.
         userDeviceService.deleteAllForUser(userId);
+        // Recorded routes are location history; they go with the account, not with a delay.
+        trackService.onUserDeleted(userId);
 
         log.info("User account soft deleted: {}", userId);
     }

@@ -4,6 +4,7 @@ import com.ds.goroute.entity.UserReview;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -43,6 +44,9 @@ public interface UserReviewMapper {
                                   @Param("offset") int offset);
 
     List<UserReview> findFeedReviews(@Param("excludeUserId") UUID excludeUserId,
+                                     @Param("latitude") BigDecimal latitude,
+                                     @Param("longitude") BigDecimal longitude,
+                                     @Param("radiusKm") BigDecimal radiusKm,
                                      @Param("limit") int limit,
                                      @Param("offset") int offset,
                                      @Param("randomSeed") String randomSeed);

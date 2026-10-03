@@ -12,6 +12,7 @@ import com.ds.goroute.repository.ExpenseSplitRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.UserRepository;
+import com.ds.goroute.service.TrackSharingService;
 import com.ds.goroute.type.MemberStatus;
 import com.ds.goroute.type.NotificationType;
 import com.ds.goroute.type.TripStatus;
@@ -34,6 +35,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -67,6 +69,7 @@ public class TripItineraryNotificationService {
     private final ExpenseSplitRepository expenseSplitRepository;
     private final UserRepository userRepository;
     private final ScheduledNotificationSender notificationSender;
+    private final TrackSharingService trackSharingService;
 
     public int processDueNotifications(Instant now) {
         LocalDate utcDate = now.atZone(ZoneOffset.UTC).toLocalDate();
@@ -188,8 +191,14 @@ public class TripItineraryNotificationService {
         ZonedDateTime summaryAt = tripEnd.plus(SUMMARY_DELAY);
         if (isDue(summaryAt, now)) {
             TripTotals totals = calculateTripTotals(trip, activities);
+            Map<UUID, Long> distanceByUser = trackSharingService.distanceByUser(trip.getId());
             for (UUID recipientId : recipients) {
                 Map<String, Object> data = summaryData(trip, recipientId, totals);
+                Long distanceM = distanceByUser.get(recipientId);
+                if (distanceM != null) {
+                    // Travel tracker (P4): only people who recorded get a distance.
+                    data.put("distanceKm", String.format(Locale.ROOT, "%.1f", distanceM / 1000d));
+                }
                 if (sendOnce(
                         trip,
                         recipientId,

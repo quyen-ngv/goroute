@@ -129,9 +129,12 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
         Map<UUID, List<QuestCreatorNote>> notes = notesByCheckpoint(version);
         // The console shows AR objects read-only (§3.15): it round-trips them, never edits them.
         boolean arAllowed = !admin && creatorGate.isArCreationOpen(actorUserId);
+        QuestStatus.Actor actor = admin ? QuestStatus.Actor.ADMIN : QuestStatus.Actor.CREATOR;
+        List<String> allowed = lifecycleRules.targets(quest, actor).stream().map(Enum::name).toList();
         return QuestDraftResponse.of(quest, version, notes, json.readList(version.getAmenityTags(), String.class),
                 json.readList(version.getCityImageIds(), String.class),
-                raw -> json.readList(raw, String.class), this::readArObject, arAllowed);
+                raw -> json.readList(raw, String.class), this::readArObject, arAllowed,
+                allowed, lifecycleRules.isDeletable(quest, actor));
     }
 
     @Override
@@ -139,13 +142,13 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
     public QuestDraftResponse saveDraft(UUID questId, UUID actorUserId, SaveQuestDraftRequest request) {
         Quest quest = requireQuest(questId);
         requireOwner(quest, actorUserId);
-        if (quest.questStatus() != QuestStatus.PUBLISHED) {
+        if (!quest.questStatus().isLiveEditable()) {
             requireCreatorEditable(quest);
         }
         long expected = request.getExpectedVersion() > 0 ? request.getExpectedVersion() : quest.getDataVersion();
         LocalDateTime now = LocalDateTime.now();
 
-        if (quest.questStatus() == QuestStatus.PUBLISHED) {
+        if (quest.questStatus().isLiveEditable()) {
             return saveLiveEdit(quest, actorUserId, request, expected, now);
         }
 
@@ -170,8 +173,9 @@ public class QuestBuilderServiceImpl implements QuestBuilderService {
     /**
      * D18 / §3.10: an edit to a live quest never rewrites the version players are running (their
      * runs are pinned to it and reference its checkpoint ids). It becomes a new version that goes
-     * live at once; the quest stays PUBLISHED with {@code pending_change_review} set for the admin.
-     * The new version must pass the same checks as a submit.
+     * live at once; the quest keeps its status (PUBLISHED, or PAUSED while the creator fixes it)
+     * with {@code pending_change_review} set for the admin. The new version must pass the same
+     * checks as a submit.
      *
      * <p>Not built yet (ISSUES): the change log with old/new values, notifying open runs of a
      * location change, the edits-per-window auto-pause and the admin accept/revert actions.

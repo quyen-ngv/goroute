@@ -1,0 +1,558 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- Travel tracker (V202, V203). Every user-scoped UPDATE/DELETE carries user_id in its WHERE. -->
+<mapper namespace="com.ds.goroute.mapper.TrackMapper">
+
+    <!-- ================= chunks ================= -->
+
+    <resultMap id="TrackChunkResultMap" type="com.ds.goroute.entity.TrackChunk">
+        <id column="id" property="id"/>
+        <result column="trip_id" property="tripId"/>
+        <result column="user_id" property="userId"/>
+        <result column="client_chunk_id" property="clientChunkId"/>
+        <result column="client_session_id" property="clientSessionId"/>
+        <result column="local_date" property="localDate"/>
+        <result column="started_at" property="startedAt"/>
+        <result column="ended_at" property="endedAt"/>
+        <result column="point_count" property="pointCount"/>
+        <result column="rejected_count" property="rejectedCount"/>
+        <result column="accuracy_mode" property="accuracyMode"/>
+        <result column="source" property="source"/>
+        <result column="points" property="points"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="data_version" property="dataVersion"/>
+    </resultMap>
+
+    <sql id="chunkColumns">
+        id, trip_id, user_id, client_chunk_id, client_session_id, local_date, started_at, ended_at,
+        point_count, rejected_count, accuracy_mode, source, points, created_at, updated_at, data_version
+    </sql>
+
+    <insert id="insertChunk" parameterType="com.ds.goroute.entity.TrackChunk">
+        INSERT INTO trip_track_chunks (
+            id, trip_id, user_id, client_chunk_id, client_session_id, local_date, started_at, ended_at,
+            point_count, rejected_count, accuracy_mode, source, points, created_at, updated_at, data_version
+        ) VALUES (
+            #{id}, #{tripId}, #{userId}, #{clientChunkId}, #{clientSessionId}, #{localDate}, #{startedAt}, #{endedAt},
+            #{pointCount}, #{rejectedCount}, #{accuracyMode}, #{source}, #{points}::jsonb, NOW(), NOW(), 1
+        )
+    </insert>
+
+    <select id="selectChunksByClientId" resultMap="TrackChunkResultMap">
+        SELECT <include refid="chunkColumns"/>
+        FROM trip_track_chunks
+        WHERE user_id = #{userId} AND client_chunk_id = #{clientChunkId}
+        ORDER BY local_date
+        LIMIT 10
+    </select>
+
+    <select id="selectChunksForDay" resultMap="TrackChunkResultMap">
+        SELECT <include refid="chunkColumns"/>
+        FROM trip_track_chunks
+        WHERE trip_id = #{tripId} AND user_id = #{userId} AND local_date = #{localDate}
+        ORDER BY started_at, id
+        LIMIT #{limit}
+    </select>
+
+    <update id="updateChunkPoints" parameterType="com.ds.goroute.entity.TrackChunk">
+        UPDATE trip_track_chunks
+        SET points = #{points}::jsonb,
+            point_count = #{pointCount},
+            started_at = #{startedAt},
+            ended_at = #{endedAt},
+            updated_at = NOW(),
+            data_version = data_version + 1
+        WHERE id = #{id} AND user_id = #{userId}
+    </update>
+
+    <delete id="deleteChunkById">
+        DELETE FROM trip_track_chunks WHERE id = #{id} AND user_id = #{userId}
+    </delete>
+
+    <delete id="deleteChunksForDay">
+        DELETE FROM trip_track_chunks
+        WHERE trip_id = #{tripId} AND user_id = #{userId} AND local_date = #{localDate}
+    </delete>
+
+    <delete id="deleteChunksForTripUser">
+        DELETE FROM trip_track_chunks WHERE trip_id = #{tripId} AND user_id = #{userId}
+    </delete>
+
+    <delete id="deleteChunksForTrip">
+        DELETE FROM trip_track_chunks WHERE trip_id = #{tripId}
+    </delete>
+
+    <delete id="deleteChunksForUser">
+        DELETE FROM trip_track_chunks WHERE user_id = #{userId}
+    </delete>
+
+    <!-- Raw points of trips that ended on or before lastTripEndDate; one bounded batch per call. -->
+    <delete id="deleteExpiredChunks">
+        DELETE FROM trip_track_chunks
+        WHERE id IN (
+            SELECT c.id
+            FROM trip_track_chunks c
+            JOIN trips t ON t.id = c.trip_id
+            WHERE t.end_date &lt;= #{lastTripEndDate}
+            ORDER BY c.local_date, c.id
+            LIMIT #{limit}
+        )
+    </delete>
+
+    <!-- ================= days ================= -->
+
+    <resultMap id="TrackDayResultMap" type="com.ds.goroute.entity.TrackDay">
+        <id column="id" property="id"/>
+        <result column="trip_id" property="tripId"/>
+        <result column="user_id" property="userId"/>
+        <result column="local_date" property="localDate"/>
+        <result column="day_number" property="dayNumber"/>
+        <result column="line_segments" property="lineSegments"/>
+        <result column="bbox" property="bbox"/>
+        <result column="distance_m" property="distanceM"/>
+        <result column="flight_distance_m" property="flightDistanceM"/>
+        <result column="moving_seconds" property="movingSeconds"/>
+        <result column="elevation_gain_m" property="elevationGainM"/>
+        <result column="elevation_loss_m" property="elevationLossM"/>
+        <result column="point_count" property="pointCount"/>
+        <result column="province_codes" property="provinceCodes"/>
+        <result column="first_at" property="firstAt"/>
+        <result column="last_at" property="lastAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="data_version" property="dataVersion"/>
+    </resultMap>
+
+    <insert id="upsertDay" parameterType="com.ds.goroute.entity.TrackDay">
+        INSERT INTO trip_track_days (
+            id, trip_id, user_id, local_date, day_number, line_segments, bbox, distance_m, flight_distance_m,
+            moving_seconds, elevation_gain_m, elevation_loss_m, point_count, province_codes, first_at, last_at,
+            created_at, updated_at, data_version
+        ) VALUES (
+            #{id}, #{tripId}, #{userId}, #{localDate}, #{dayNumber}, #{lineSegments}::jsonb, #{bbox}::jsonb,
+            #{distanceM}, #{flightDistanceM}, #{movingSeconds}, #{elevationGainM}, #{elevationLossM},
+            #{pointCount}, COALESCE(#{provinceCodes}::jsonb, '[]'::jsonb), #{firstAt}, #{lastAt}, NOW(), NOW(), 1
+        )
+        ON CONFLICT (trip_id, user_id, local_date) DO UPDATE SET
+            day_number = EXCLUDED.day_number,
+            line_segments = EXCLUDED.line_segments,
+            bbox = EXCLUDED.bbox,
+            distance_m = EXCLUDED.distance_m,
+            flight_distance_m = EXCLUDED.flight_distance_m,
+            moving_seconds = EXCLUDED.moving_seconds,
+            elevation_gain_m = EXCLUDED.elevation_gain_m,
+            elevation_loss_m = EXCLUDED.elevation_loss_m,
+            point_count = EXCLUDED.point_count,
+            province_codes = EXCLUDED.province_codes,
+            first_at = EXCLUDED.first_at,
+            last_at = EXCLUDED.last_at,
+            updated_at = NOW(),
+            data_version = trip_track_days.data_version + 1
+    </insert>
+
+    <select id="selectDays" resultMap="TrackDayResultMap">
+        SELECT id, trip_id, user_id, local_date, day_number, line_segments, bbox, distance_m, flight_distance_m,
+               moving_seconds, elevation_gain_m, elevation_loss_m, point_count, province_codes, first_at, last_at,
+               created_at, updated_at, data_version
+        FROM trip_track_days
+        WHERE trip_id = #{tripId}
+          AND user_id IN
+          <foreach collection="userIds" item="userId" open="(" separator="," close=")">#{userId}</foreach>
+          <if test="dayNumber != null">AND day_number = #{dayNumber}</if>
+        ORDER BY user_id, local_date
+        LIMIT #{limit}
+    </select>
+
+    <!-- One person's days across trips, newest first: the "Hành trình của tôi" overview map. -->
+    <select id="selectDaysForUser" resultMap="TrackDayResultMap">
+        SELECT id, trip_id, user_id, local_date, day_number, line_segments, bbox, distance_m, flight_distance_m,
+               moving_seconds, elevation_gain_m, elevation_loss_m, point_count, province_codes, first_at, last_at,
+               created_at, updated_at, data_version
+        FROM trip_track_days
+        WHERE user_id = #{userId}
+        ORDER BY local_date DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectDayDates" resultType="java.time.LocalDate">
+        SELECT local_date
+        FROM trip_track_days
+        WHERE trip_id = #{tripId} AND user_id = #{userId}
+        ORDER BY local_date
+        LIMIT 400
+    </select>
+
+    <select id="selectUserIdsWithDays" resultType="java.util.UUID">
+        SELECT DISTINCT user_id
+        FROM trip_track_days
+        WHERE trip_id = #{tripId}
+        ORDER BY user_id
+        LIMIT #{limit}
+    </select>
+
+    <delete id="deleteDay">
+        DELETE FROM trip_track_days
+        WHERE trip_id = #{tripId} AND user_id = #{userId} AND local_date = #{localDate}
+    </delete>
+
+    <delete id="deleteDaysForTripUser">
+        DELETE FROM trip_track_days WHERE trip_id = #{tripId} AND user_id = #{userId}
+    </delete>
+
+    <delete id="deleteDaysForTrip">
+        DELETE FROM trip_track_days WHERE trip_id = #{tripId}
+    </delete>
+
+    <delete id="deleteDaysForUser">
+        DELETE FROM trip_track_days WHERE user_id = #{userId}
+    </delete>
+
+    <!-- ================= visits ================= -->
+
+    <resultMap id="TrackVisitResultMap" type="com.ds.goroute.entity.TrackVisit">
+        <id column="id" property="id"/>
+        <result column="trip_id" property="tripId"/>
+        <result column="user_id" property="userId"/>
+        <result column="local_date" property="localDate"/>
+        <result column="kind" property="kind"/>
+        <result column="activity_id" property="activityId"/>
+        <result column="place_id" property="placeId"/>
+        <result column="name" property="name"/>
+        <result column="latitude" property="latitude"/>
+        <result column="longitude" property="longitude"/>
+        <result column="arrived_at" property="arrivedAt"/>
+        <result column="departed_at" property="departedAt"/>
+        <result column="status" property="status"/>
+        <result column="created_activity_id" property="createdActivityId"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="data_version" property="dataVersion"/>
+    </resultMap>
+
+    <insert id="insertVisit" parameterType="com.ds.goroute.entity.TrackVisit">
+        INSERT INTO trip_track_visits (
+            id, trip_id, user_id, local_date, kind, activity_id, place_id, name, latitude, longitude,
+            arrived_at, departed_at, status, created_activity_id, created_at, updated_at, data_version
+        ) VALUES (
+            #{id}, #{tripId}, #{userId}, #{localDate}, #{kind}, #{activityId}, #{placeId}, #{name},
+            #{latitude}, #{longitude}, #{arrivedAt}, #{departedAt}, #{status}, #{createdActivityId},
+            NOW(), NOW(), 1
+        )
+    </insert>
+
+    <select id="selectVisits" resultMap="TrackVisitResultMap">
+        SELECT id, trip_id, user_id, local_date, kind, activity_id, place_id, name, latitude, longitude,
+               arrived_at, departed_at, status, created_activity_id, created_at, updated_at, data_version
+        FROM trip_track_visits
+        WHERE trip_id = #{tripId}
+          AND user_id IN
+          <foreach collection="userIds" item="userId" open="(" separator="," close=")">#{userId}</foreach>
+          <if test="localDates != null and localDates.size() > 0">
+              AND local_date IN
+              <foreach collection="localDates" item="localDate" open="(" separator="," close=")">#{localDate}</foreach>
+          </if>
+        ORDER BY user_id, local_date, arrived_at, id
+        LIMIT #{limit}
+    </select>
+
+    <delete id="deleteActivityVisitsForDay">
+        DELETE FROM trip_track_visits
+        WHERE trip_id = #{tripId} AND user_id = #{userId} AND local_date = #{localDate} AND kind = 'ACTIVITY'
+    </delete>
+
+    <delete id="deleteVisitsForDay">
+        DELETE FROM trip_track_visits
+        WHERE trip_id = #{tripId} AND user_id = #{userId} AND local_date = #{localDate}
+    </delete>
+
+    <delete id="deleteVisitsForTripUser">
+        DELETE FROM trip_track_visits WHERE trip_id = #{tripId} AND user_id = #{userId}
+    </delete>
+
+    <delete id="deleteVisitsForTrip">
+        DELETE FROM trip_track_visits WHERE trip_id = #{tripId}
+    </delete>
+
+    <delete id="deleteVisitsForUser">
+        DELETE FROM trip_track_visits WHERE user_id = #{userId}
+    </delete>
+
+    <select id="selectVisitById" resultMap="TrackVisitResultMap">
+        SELECT id, trip_id, user_id, local_date, kind, activity_id, place_id, name, latitude, longitude,
+               arrived_at, departed_at, status, created_activity_id, created_at, updated_at, data_version
+        FROM trip_track_visits
+        WHERE id = #{id} AND trip_id = #{tripId} AND user_id = #{userId}
+    </select>
+
+    <!-- A rebuilt day moves an off-plan stop that is still the same stop; its status is kept. -->
+    <update id="updateOffPlanStop" parameterType="com.ds.goroute.entity.TrackVisit">
+        UPDATE trip_track_visits
+        SET latitude = #{latitude},
+            longitude = #{longitude},
+            arrived_at = #{arrivedAt},
+            departed_at = #{departedAt},
+            name = #{name},
+            place_id = #{placeId},
+            updated_at = NOW(),
+            data_version = data_version + 1
+        WHERE id = #{id} AND user_id = #{userId} AND kind = 'OFF_PLAN'
+    </update>
+
+    <update id="updateOffPlanStatus">
+        UPDATE trip_track_visits
+        SET status = #{status},
+            created_activity_id = #{createdActivityId},
+            updated_at = NOW(),
+            data_version = data_version + 1
+        WHERE id = #{id} AND user_id = #{userId} AND kind = 'OFF_PLAN'
+    </update>
+
+    <!-- Late naming by reverse geocode never overwrites a name set meanwhile. -->
+    <update id="updateOffPlanNameIfMissing">
+        UPDATE trip_track_visits
+        SET name = #{name},
+            updated_at = NOW(),
+            data_version = data_version + 1
+        WHERE id = #{id} AND user_id = #{userId} AND kind = 'OFF_PLAN' AND name IS NULL
+    </update>
+
+    <delete id="deleteVisitById">
+        DELETE FROM trip_track_visits WHERE id = #{id} AND user_id = #{userId}
+    </delete>
+
+    <!-- ================= provinces and totals (P4) ================= -->
+
+    <!-- One GiST-indexed query per day rebuild; wkt is a MULTILINESTRING or POINT in SRID 4326. -->
+    <select id="selectProvinceCodesForRoute" resultType="java.lang.String">
+        SELECT p.code
+        FROM provinces p
+        WHERE p.is_active = TRUE
+          AND p.geom IS NOT NULL
+          AND ST_Intersects(p.geom, ST_GeomFromText(#{wkt}, 4326))
+        ORDER BY p.code
+        LIMIT 64
+    </select>
+
+    <resultMap id="TrackProvinceResultMap" type="com.ds.goroute.entity.TrackProvince">
+        <id column="code" property="code"/>
+        <result column="name" property="name"/>
+    </resultMap>
+
+    <select id="selectProvincesByCodes" resultMap="TrackProvinceResultMap">
+        SELECT code, name
+        FROM provinces
+        WHERE code IN
+        <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+        ORDER BY code
+        LIMIT 200
+    </select>
+
+    <select id="selectProvincesPassedByUser" resultMap="TrackProvinceResultMap">
+        SELECT p.code, p.name
+        FROM provinces p
+        WHERE p.code IN (
+            SELECT jsonb_array_elements_text(d.province_codes)
+            FROM trip_track_days d
+            WHERE d.user_id = #{userId}
+        )
+        ORDER BY p.code
+        LIMIT 200
+    </select>
+
+    <resultMap id="TrackUserTotalsResultMap" type="com.ds.goroute.entity.TrackUserTotals">
+        <result column="total_distance_m" property="totalDistanceM"/>
+        <result column="trip_count" property="tripCount"/>
+    </resultMap>
+
+    <select id="selectUserTotals" resultMap="TrackUserTotalsResultMap">
+        SELECT COALESCE(SUM(distance_m), 0) AS total_distance_m,
+               COUNT(DISTINCT trip_id) AS trip_count
+        FROM trip_track_days
+        WHERE user_id = #{userId}
+    </select>
+
+    <resultMap id="TrackUserAggregateResultMap" type="com.ds.goroute.entity.TrackUserAggregate">
+        <result column="user_id" property="userId"/>
+        <result column="distance_m" property="distanceM"/>
+        <result column="last_at" property="lastAt"/>
+    </resultMap>
+
+    <select id="selectDistanceByUser" resultMap="TrackUserAggregateResultMap">
+        SELECT user_id, SUM(distance_m) AS distance_m
+        FROM trip_track_days
+        WHERE trip_id = #{tripId}
+        GROUP BY user_id
+        ORDER BY user_id
+        LIMIT #{limit}
+    </select>
+
+    <!-- ================= check-ins read by the tracker (user_checkins, read-only) ================= -->
+
+    <!-- Latest check-in of each person in a trip within [fromUtc, toUtc): where today's public line stops (TR-22). -->
+    <select id="selectLatestCheckins" resultMap="TrackUserAggregateResultMap">
+        SELECT user_id, MAX(created_at) AS last_at
+        FROM user_checkins
+        WHERE trip_id = #{tripId}
+          AND is_removed = FALSE
+          AND user_id IN
+          <foreach collection="userIds" item="userId" open="(" separator="," close=")">#{userId}</foreach>
+          AND created_at &gt;= #{fromUtc}
+          AND created_at &lt; #{toUtc}
+        GROUP BY user_id
+        ORDER BY user_id
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectCheckedInActivityIds" resultType="java.util.UUID">
+        SELECT DISTINCT activity_id
+        FROM user_checkins
+        WHERE trip_id = #{tripId}
+          AND user_id = #{userId}
+          AND is_removed = FALSE
+          AND activity_id IS NOT NULL
+        ORDER BY activity_id
+        LIMIT 1000
+    </select>
+
+    <select id="countCheckins" resultType="int">
+        SELECT COUNT(*)
+        FROM user_checkins
+        WHERE trip_id = #{tripId} AND user_id = #{userId} AND is_removed = FALSE
+    </select>
+
+    <!-- ================= settings ================= -->
+
+    <resultMap id="TripTrackSettingsResultMap" type="com.ds.goroute.entity.TripTrackSettings">
+        <id column="id" property="id"/>
+        <result column="trip_id" property="tripId"/>
+        <result column="user_id" property="userId"/>
+        <result column="visibility" property="visibility"/>
+        <result column="trim_day_ends" property="trimDayEnds"/>
+        <result column="default_accuracy" property="defaultAccuracy"/>
+        <result column="auto_enabled" property="autoEnabled"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="data_version" property="dataVersion"/>
+    </resultMap>
+
+    <sql id="settingsColumns">
+        id, trip_id, user_id, visibility, trim_day_ends, default_accuracy, auto_enabled,
+        created_at, updated_at, data_version
+    </sql>
+
+    <select id="selectSettings" resultMap="TripTrackSettingsResultMap">
+        SELECT <include refid="settingsColumns"/>
+        FROM trip_track_settings
+        WHERE trip_id = #{tripId} AND user_id = #{userId}
+    </select>
+
+    <select id="selectSettingsForTrip" resultMap="TripTrackSettingsResultMap">
+        SELECT <include refid="settingsColumns"/>
+        FROM trip_track_settings
+        WHERE trip_id = #{tripId}
+        ORDER BY user_id
+        LIMIT #{limit}
+    </select>
+
+    <insert id="insertSettings" parameterType="com.ds.goroute.entity.TripTrackSettings">
+        INSERT INTO trip_track_settings (
+            id, trip_id, user_id, visibility, trim_day_ends, default_accuracy, auto_enabled,
+            created_at, updated_at, data_version
+        ) VALUES (
+            #{id}, #{tripId}, #{userId}, #{visibility}, #{trimDayEnds}, #{defaultAccuracy}, #{autoEnabled},
+            NOW(), NOW(), 1
+        )
+    </insert>
+
+    <update id="updateSettings">
+        UPDATE trip_track_settings
+        SET visibility = #{settings.visibility},
+            trim_day_ends = #{settings.trimDayEnds},
+            default_accuracy = #{settings.defaultAccuracy},
+            auto_enabled = #{settings.autoEnabled},
+            updated_at = NOW(),
+            data_version = data_version + 1
+        WHERE id = #{settings.id}
+          AND user_id = #{settings.userId}
+          AND data_version = #{expectedVersion}
+    </update>
+
+    <delete id="deleteSettingsForTripUser">
+        DELETE FROM trip_track_settings WHERE trip_id = #{tripId} AND user_id = #{userId}
+    </delete>
+
+    <delete id="deleteSettingsForTrip">
+        DELETE FROM trip_track_settings WHERE trip_id = #{tripId}
+    </delete>
+
+    <delete id="deleteSettingsForUser">
+        DELETE FROM trip_track_settings WHERE user_id = #{userId}
+    </delete>
+
+    <!-- ================= privacy zones ================= -->
+
+    <resultMap id="PrivacyZoneResultMap" type="com.ds.goroute.entity.PrivacyZone">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="name" property="name"/>
+        <result column="latitude" property="latitude"/>
+        <result column="longitude" property="longitude"/>
+        <result column="radius_m" property="radiusM"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="data_version" property="dataVersion"/>
+    </resultMap>
+
+    <select id="selectZonesByUser" resultMap="PrivacyZoneResultMap">
+        SELECT id, user_id, name, latitude, longitude, radius_m, created_at, updated_at, data_version
+        FROM user_privacy_zones
+        WHERE user_id = #{userId}
+        ORDER BY created_at, id
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectZonesByUsers" resultMap="PrivacyZoneResultMap">
+        SELECT id, user_id, name, latitude, longitude, radius_m, created_at, updated_at, data_version
+        FROM user_privacy_zones
+        WHERE user_id IN
+        <foreach collection="userIds" item="userId" open="(" separator="," close=")">#{userId}</foreach>
+        ORDER BY user_id, created_at, id
+        LIMIT #{limit}
+    </select>
+
+    <select id="countZonesByUser" resultType="int">
+        SELECT COUNT(*) FROM user_privacy_zones WHERE user_id = #{userId}
+    </select>
+
+    <insert id="insertZone" parameterType="com.ds.goroute.entity.PrivacyZone">
+        INSERT INTO user_privacy_zones (
+            id, user_id, name, latitude, longitude, radius_m, created_at, updated_at, data_version
+        ) VALUES (
+            #{id}, #{userId}, #{name}, #{latitude}, #{longitude}, #{radiusM}, NOW(), NOW(), 1
+        )
+    </insert>
+
+    <update id="updateZone">
+        UPDATE user_privacy_zones
+        SET name = #{zone.name},
+            latitude = #{zone.latitude},
+            longitude = #{zone.longitude},
+            radius_m = #{zone.radiusM},
+            updated_at = NOW(),
+            data_version = data_version + 1
+        WHERE id = #{zone.id}
+          AND user_id = #{zone.userId}
+          AND data_version = #{expectedVersion}
+    </update>
+
+    <delete id="deleteZone">
+        DELETE FROM user_privacy_zones WHERE id = #{id} AND user_id = #{userId}
+    </delete>
+
+    <delete id="deleteZonesForUser">
+        DELETE FROM user_privacy_zones WHERE user_id = #{userId}
+    </delete>
+</mapper>

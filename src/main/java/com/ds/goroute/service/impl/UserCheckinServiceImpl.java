@@ -1,6 +1,7 @@
 package com.ds.goroute.service.impl;
 
 import com.ds.goroute.constant.ErrorConstant;
+import com.ds.goroute.dto.FeedGeoFilter;
 import com.ds.goroute.dto.request.CreateUserCheckinRequest;
 import com.ds.goroute.dto.request.UpdateUserCheckinRequest;
 import com.ds.goroute.dto.response.CheckinContextResponse;
@@ -521,9 +522,9 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserCheckinResponse> feed(UUID viewerId, int page, int size) {
+    public List<UserCheckinResponse> feed(UUID viewerId, FeedGeoFilter geo, int page, int size) {
         return toResponses(checkinRepository.findFeed(
-                viewerId, boundedSize(size), boundedPage(page) * boundedSize(size)), Set.of(), viewerId);
+                viewerId, geo, boundedSize(size), boundedPage(page) * boundedSize(size)), Set.of(), viewerId);
     }
 
     @Override

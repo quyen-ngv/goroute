@@ -2,11 +2,13 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.BaseResponse;
+import com.ds.goroute.dto.request.AiApiCallLogRequest;
 import com.ds.goroute.dto.request.AiTripCandidateQueryRequest;
 import com.ds.goroute.dto.request.AiTripCandidateResolutionRequest;
 import com.ds.goroute.dto.request.AiTripCommitRequest;
 import com.ds.goroute.dto.request.AiTripJobEventRequest;
 import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.service.AiCallLogService;
 import com.ds.goroute.service.AiTripGenerationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,7 @@ import java.util.UUID;
 public class InternalAiTripGenerationController extends BaseController {
 
     private final AiTripGenerationService service;
+    private final AiCallLogService aiCallLogService;
 
     @PostMapping("/{jobId}/events")
     public ResponseEntity<BaseResponse<Void>> event(
@@ -52,6 +55,16 @@ public class InternalAiTripGenerationController extends BaseController {
             @RequestHeader("X-Attempt-Id") String attemptId,
             @Valid @RequestBody AiTripCandidateResolutionRequest request) {
         return ResponseEntity.ok(ofSucceeded(service.resolveCandidates(jobId, attemptId, request)));
+    }
+
+    /** One AI provider call made by the worker for this job (prompt, response, usage). */
+    @PostMapping("/{jobId}/ai-calls")
+    public ResponseEntity<BaseResponse<Void>> aiCall(
+            @PathVariable UUID jobId,
+            @Valid @RequestBody AiApiCallLogRequest request) {
+        if (request.getTraceId() == null) request.setTraceId(jobId.toString());
+        aiCallLogService.record(request, service.jobUserId(jobId));
+        return ResponseEntity.ok(ofSucceeded(null));
     }
 
     @GetMapping("/{jobId}/config")

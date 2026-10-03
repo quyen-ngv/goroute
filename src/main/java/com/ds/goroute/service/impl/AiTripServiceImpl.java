@@ -28,6 +28,7 @@ import com.ds.goroute.service.AiTripService;
 import com.ds.goroute.service.AiTripQuotaService;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.thirdparty.ai.AiClient;
+import com.ds.goroute.thirdparty.ai.AiCallScope;
 import com.ds.goroute.type.ActivityStatus;
 import com.ds.goroute.type.PlaceGroup;
 import com.ds.goroute.type.TransportMode;
@@ -799,7 +800,7 @@ public class AiTripServiceImpl implements AiTripService {
                 formatCandidatesForAI(candidates));
 
         String aiResponse = requireAiResponse(
-                aiClient.completeJson(system, prompt), "rank destination candidates");
+                AiCallScope.call("AI_TRIP_V1", "RANK_CANDIDATES", null, null, () -> aiClient.completeJson(system, prompt)), "rank destination candidates");
         return applyRankResult(aiResponse, candidates);
     }
     
@@ -1082,7 +1083,7 @@ public class AiTripServiceImpl implements AiTripService {
                 groupContext.isEmpty() ? "General travelers" : groupContext,
                 formatCandidatesForAI(selected));
         String aiResponse = requireAiResponse(
-                aiClient.completeJson(system, prompt), "sequence itinerary activities");
+                AiCallScope.call("AI_TRIP_V1", "SEQUENCE_ACTIVITIES", null, null, () -> aiClient.completeJson(system, prompt)), "sequence itinerary activities");
         return parseCandidateOrder(aiResponse, destination, selected);
     }
     
@@ -1447,7 +1448,7 @@ public class AiTripServiceImpl implements AiTripService {
                         to.getName(), to.getLatitude(), to.getLongitude(), to.getCitySlug(),
                         distanceKm);
         String aiResponse = requireAiResponse(
-                aiClient.completeJson(system, prompt), "recommend inter-province transport");
+                AiCallScope.call("AI_TRIP_V1", "RECOMMEND_TRANSPORT", null, null, () -> aiClient.completeJson(system, prompt)), "recommend inter-province transport");
         return parseTransportMode(aiResponse)
                 .map(TransportMode::valueOf)
                 .orElseThrow(() -> aiTripUnavailable("inter-province transport response was invalid"));
@@ -1621,7 +1622,7 @@ public class AiTripServiceImpl implements AiTripService {
                 JsonUtils.toJson(payload));
 
         String aiResponse = requireAiResponse(
-                aiClient.completeJson(system, prompt), "write visit tips");
+                AiCallScope.call("AI_TRIP_V1", "WRITE_VISIT_TIPS", null, null, () -> aiClient.completeJson(system, prompt)), "write visit tips");
         Map<String, String> tips = parseVisitTips(aiResponse);
         Map<String, String> resolved = new HashMap<>();
         for (ScheduledCandidate item : schedule) {

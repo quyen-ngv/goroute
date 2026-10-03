@@ -1,5 +1,6 @@
 package com.ds.goroute.service;
 
+import com.ds.goroute.dto.FeedGeoFilter;
 import com.ds.goroute.dto.request.CreateReviewRequest;
 import com.ds.goroute.dto.request.UpdateReviewRequest;
 import com.ds.goroute.dto.response.PlaceScoreResponse;
@@ -39,7 +40,11 @@ public interface ReviewService {
 
     List<UserReviewResponse> getUserReviewsForProfile(UUID targetUserId, UUID viewerId, int page, int size);
 
-    List<UserReviewResponse> getFeedReviews(UUID currentUserId, int page, int size, String randomSeed);
+    /**
+     * Reviews for the Feed, without the viewer's own and without those a public check-in
+     * already shows. {@code geo} limits them to an area; null means everywhere.
+     */
+    List<UserReviewResponse> getFeedReviews(UUID currentUserId, FeedGeoFilter geo, int page, int size, String randomSeed);
 
     UserReviewResponse voteHelpful(UUID userId, UUID reviewId);
 

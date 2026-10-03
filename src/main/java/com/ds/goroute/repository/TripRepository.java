@@ -30,6 +30,7 @@ public interface TripRepository {
                                  boolean allPublic,
                                  String randomSeed,
                                  boolean preferImages,
+                                 boolean recommended,
                                  int page,
                                  int size,
                                  UUID excludeUserId);

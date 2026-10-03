@@ -61,6 +61,27 @@ class SocialSavedSpotServiceImplTest {
     }
 
     @Test
+    void spotPictureIsTheCataloguePlaceElseTheVideoFrame() throws Exception {
+        String result = """
+                {"extraction":{"candidates":[
+                  {"candidateRef":"a","name":"Matched","imageUrl":"https://cdn.example/frame-a.jpg",
+                   "mapSearch":{"candidates":[{"placeId":"g-1",
+                     "placeMapping":{"thumbnail":"https://cdn.example/place.jpg"}}]}},
+                  {"candidateRef":"b","name":"Unmatched","imageUrl":"https://cdn.example/frame-b.jpg"},
+                  {"candidateRef":"c","name":"Voice-over only"}
+                ]}}
+                """;
+
+        service.saveFromJob(UUID.randomUUID(), UUID.randomUUID(), new ObjectMapper().readTree(result));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<SocialSavedSpot>> captor = ArgumentCaptor.forClass(List.class);
+        verify(mapper).upsertAll(captor.capture());
+        assertThat(captor.getValue()).extracting(SocialSavedSpot::getImageUrl)
+                .containsExactly("https://cdn.example/place.jpg", "https://cdn.example/frame-b.jpg", null);
+    }
+
+    @Test
     void sendsLargeResultsInIndependentBatches() throws Exception {
         StringBuilder json = new StringBuilder("{\"extraction\":{\"candidates\":[");
         for (int i = 1; i <= 101; i++) {

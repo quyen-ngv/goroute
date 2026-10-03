@@ -9,6 +9,7 @@ import com.ds.goroute.entity.CheckinLikeCount;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -38,6 +39,9 @@ public interface UserCheckinMapper {
 
     /** Public feed: posts with photos first, newest first within each group. */
     List<UserCheckin> findFeed(@Param("excludeUserId") UUID excludeUserId,
+                               @Param("latitude") BigDecimal latitude,
+                               @Param("longitude") BigDecimal longitude,
+                               @Param("radiusKm") BigDecimal radiusKm,
                                @Param("limit") int limit,
                                @Param("offset") int offset);
 

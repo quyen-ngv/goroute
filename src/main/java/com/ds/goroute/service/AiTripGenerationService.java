@@ -11,8 +11,11 @@ import com.ds.goroute.type.*;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ds.goroute.repository.AppConfigRepository;
-import com.ds.goroute.thirdparty.goong.GoongClient;
-import com.fasterxml.jackson.databind.JsonNode;
+import com.ds.goroute.service.placelookup.PlaceHit;
+import com.ds.goroute.service.placelookup.PlaceLookupProvider;
+import com.ds.goroute.service.placelookup.PlaceLookupProviderType;
+import com.ds.goroute.service.placelookup.PlaceLookupProviders;
+import com.ds.goroute.service.placelookup.PlaceLookupQuery;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +24,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import org.springframework.util.LinkedMultiValueMap;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -44,7 +46,13 @@ public class AiTripGenerationService {
     private final AiTripSseService sseService;
     private final AppConfigRepository appConfigRepository;
     private final NotificationService notificationService;
-    private final GoongClient goongClient;
+    /** Field-injected and optional so the hand-built service in unit tests keeps its constructor. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private TripPreferenceService tripPreferenceService;
+    private static final int GOONG_SEARCH_RADIUS_METERS = 50_000;
+    private static final int GOONG_SEARCH_LIMIT = 5;
+
+    private final PlaceLookupProviders placeLookupProviders;
     /** Local cache only: it reduces repeated resolver calls; it is never a source of truth. */
     private final Cache<String, Map<String, Object>> candidateResolutionCache = Caffeine.newBuilder()
             .maximumSize(10_000).expireAfterWrite(6, TimeUnit.HOURS).build();
@@ -107,6 +115,12 @@ public class AiTripGenerationService {
         AiTripGenerationEvent event = event(job, request.getStage(), "RUNNING", progress,
                 request.getMessageKey(), request.getParams() == null ? Map.of() : request.getParams());
         mapper.insertEvent(event); sseService.publish(event);
+    }
+
+    /** Owner of a job, for attributing the worker's AI call logs; null when the job is gone. */
+    public UUID jobUserId(UUID jobId) {
+        AiTripGenerationJob job = mapper.findById(jobId);
+        return job == null ? null : job.getUserId();
     }
 
     /** Editable prompt rules for the AI worker: every active row under config label AI_TRIP. */
@@ -199,35 +213,24 @@ public class AiTripGenerationService {
 
     private Map<String, Object> resolveWithGoong(AiTripCandidateResolutionRequest.Candidate candidate,
                                                   BigDecimal latitude, BigDecimal longitude) {
+        PlaceLookupProvider goong = placeLookupProviders.get(PlaceLookupProviderType.GOONG);
         try {
-            LinkedMultiValueMap<String, String> params = new LinkedMultiValueMap<>();
-            params.add("input", candidate.getTitle());
-            params.add("location", latitude + "," + longitude);
-            params.add("radius", "50000");
-            params.add("limit", "5");
-            var autocomplete = goongClient.forward("/Place/AutoComplete", params);
-            if (!autocomplete.getStatusCode().is2xxSuccessful() || autocomplete.getBody() == null) return null;
-            JsonNode predictions = objectMapper.readTree(autocomplete.getBody()).path("predictions");
-            if (!predictions.isArray()) return null;
-            for (JsonNode prediction : predictions) {
-                String predictionName = text(prediction.path("structured_formatting").path("main_text"));
-                if (predictionName == null) predictionName = text(prediction.path("name"));
-                String placeId = text(prediction.path("place_id"));
-                if (placeId == null || !normalizedName(candidate.getTitle()).equals(normalizedName(predictionName))) continue;
-                LinkedMultiValueMap<String, String> detailParams = new LinkedMultiValueMap<>();
-                detailParams.add("place_id", placeId);
-                var detail = goongClient.forward("/Place/Detail", detailParams);
-                if (!detail.getStatusCode().is2xxSuccessful() || detail.getBody() == null) continue;
-                JsonNode result = objectMapper.readTree(detail.getBody()).path("result");
-                String canonicalName = text(result.path("name"));
-                BigDecimal lat = decimal(result.path("geometry").path("location").path("lat"));
-                BigDecimal lng = decimal(result.path("geometry").path("location").path("lng"));
-                if (!normalizedName(candidate.getTitle()).equals(normalizedName(canonicalName)) || lat == null || lng == null
+            List<PlaceHit> predictions = goong.searchText(new PlaceLookupQuery(candidate.getTitle(), latitude, longitude,
+                    GOONG_SEARCH_RADIUS_METERS, GOONG_SEARCH_LIMIT));
+            for (PlaceHit prediction : predictions) {
+                if (!normalizedName(candidate.getTitle()).equals(normalizedName(prediction.name()))) continue;
+                Optional<PlaceHit> detail = goong.getDetails(prediction.providerPlaceId());
+                if (detail.isEmpty()) continue;
+                PlaceHit place = detail.get();
+                BigDecimal lat = place.latitude();
+                BigDecimal lng = place.longitude();
+                if (!normalizedName(candidate.getTitle()).equals(normalizedName(place.name())) || lat == null || lng == null
                         || haversineKm(latitude, longitude, lat, lng) > 50) continue;
+                // Historical wire name: this carries a Goong ID, not a Google place ID (ISSUES.md).
                 Map<String, Object> row = new LinkedHashMap<>();
-                row.put("googlePlaceId", placeId); row.put("title", canonicalName); row.put("address", text(result.path("formatted_address")));
+                row.put("googlePlaceId", prediction.providerPlaceId()); row.put("title", place.name()); row.put("address", place.address());
                 row.put("latitude", lat); row.put("longitude", lng); row.put("placeGroup", candidate.getPlaceGroup());
-                row.put("category", text(result.path("types").isArray() && result.path("types").size() > 0 ? result.path("types").get(0) : null));
+                row.put("category", place.primaryType());
                 row.put("resolvedBy", "GOONG"); row.put("resolutionStatus", "RESOLVED"); row.put("externalResolutionVerified", true);
                 return row;
             }
@@ -253,14 +256,6 @@ public class AiTripGenerationService {
         if (value == null) return "";
         return Normalizer.normalize(value, Normalizer.Form.NFD).replaceAll("\\p{M}", "")
                 .toLowerCase(Locale.ROOT).replaceAll("[^\\p{Alnum}]+", " ").trim().replaceAll("\\s+", " ");
-    }
-
-    private String text(JsonNode node) {
-        return node != null && node.isTextual() && !node.asText().isBlank() ? node.asText().trim() : null;
-    }
-
-    private BigDecimal decimal(JsonNode node) {
-        try { return node != null && node.isNumber() ? node.decimalValue() : null; } catch (Exception ignored) { return null; }
     }
 
     private double haversineKm(BigDecimal aLat, BigDecimal aLng, BigDecimal bLat, BigDecimal bLng) {
@@ -293,6 +288,9 @@ public class AiTripGenerationService {
                 .startDate(first.getStartDate()).endDate(last.getEndDate()).destination(original.getCityName())
                 .destinationLat(first.getLatitude()).destinationLng(first.getLongitude()).destinations(destinations)
                 .budget(original.getBudgetMax()).currency(original.getBudgetCurrency()).build(), job.getUserId());
+        if (tripPreferenceService != null) {
+            tripPreferenceService.save(trip.getId(), tripPreferenceService.fromAiRequest(original), TripPreference.SOURCE_AI);
+        }
         if (request.getTripDescription() != null) tripService.updateTrip(trip.getId(), UpdateTripRequest.builder().description(request.getTripDescription()).build(), job.getUserId());
         for (AiTripCommitRequest.Item item : request.getItems()) activityRepository.insert(toActivity(item, trip.getId(), job.getUserId()));
         int completed = mapper.markCompleted(jobId, job.getAttemptId(), trip.getId());

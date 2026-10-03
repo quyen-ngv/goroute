@@ -80,9 +80,15 @@ public class SocialItineraryRequestFactory {
         socialContext.put("destination", destination == null || destination.isMissingNode()
                 ? Map.of("name", destinationName) : destination);
         socialContext.put("candidates", rows);
+        // Planner-voice overview and advice the extractor wrote from the video; the worker uses
+        // them as the trip description instead of writing its own generic one.
+        put(socialContext, "tripDescription", first(extraction, "trip_description", "tripDescription"));
+        List<String> generalGuidance = strings(extraction, "general_guidance", "generalGuidance");
+        if (!generalGuidance.isEmpty()) socialContext.put("generalGuidance", generalGuidance);
 
-        String summary = first(extraction, "summary");
-        String tripName = summary == null ? destinationName + " itinerary" : summary;
+        // The extractor names the trip; the video's own title or summary never becomes the name.
+        String tripName = first(extraction, "trip_title", "tripTitle");
+        if (tripName == null) tripName = destinationName;
         return AiTripGenerateRequest.builder()
                 .tripName(limit(tripName, 255))
                 .cityName(limit(cityName, 255))
@@ -138,6 +144,8 @@ public class SocialItineraryRequestFactory {
         row.put("placeGroup", inferPlaceGroup(candidate));
         put(row, "category", first(candidate, "place_type_hint", "mention_type"));
         put(row, "description", first(candidate, "description"));
+        List<String> tips = strings(candidate, "useful_info", "visit_guidance");
+        if (!tips.isEmpty()) row.put("tips", tips);
         put(row, "visitDurationMinutes", integer(candidate, "visitDurationMinutes"));
         row.put("source", "social");
         row.put("socialJobId", job.getId().toString());
@@ -232,6 +240,21 @@ public class SocialItineraryRequestFactory {
             if (value != null && !value.isNull() && !value.asText().isBlank()) return value.asText().trim();
         }
         return null;
+    }
+
+    /** Every non-blank text entry of the listed array fields, in order, without duplicates. */
+    private List<String> strings(JsonNode node, String... fields) {
+        List<String> values = new ArrayList<>();
+        if (node == null || node.isMissingNode() || node.isNull()) return values;
+        for (String field : fields) {
+            JsonNode array = node.get(field);
+            if (array == null || !array.isArray()) continue;
+            for (JsonNode value : array) {
+                String text = value == null || value.isNull() ? "" : value.asText().trim();
+                if (!text.isEmpty() && !values.contains(text)) values.add(text);
+            }
+        }
+        return values;
     }
 
     private String text(JsonNode node, String field) {

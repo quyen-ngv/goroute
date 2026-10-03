@@ -99,9 +99,26 @@ public enum QuestStatus {
         return this == PUBLISHED;
     }
 
+    /**
+     * Paused or archived quests leave discovery but stay readable to anyone who already played
+     * them: their history links back to the quest page. SUSPENDED is a takedown and stays hidden.
+     */
+    public boolean isViewableByPastPlayers() {
+        return this == PUBLISHED || this == PAUSED || this == ARCHIVED;
+    }
+
     /** DRAFT and DENIED are the states a creator may edit content in. */
     public boolean isCreatorEditable() {
         return this == DRAFT || this == DENIED;
+    }
+
+    /**
+     * PUBLISHED and PAUSED are the live states a creator may still edit: the save becomes a new
+     * version (D18) and the status does not change. Pausing is how a creator takes a quest off
+     * the shelf to fix it.
+     */
+    public boolean isLiveEditable() {
+        return this == PUBLISHED || this == PAUSED;
     }
 
     /** SUSPENDED is the emergency takedown: the creator cannot touch it, only an admin lifts it. */

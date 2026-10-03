@@ -146,6 +146,10 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `EXPENSE` | `PAYMENT_REMINDER_COOLDOWN_MINUTES` | minutes, 1..10080 | safe fallback 1440 | private/admin |
 | `AI_TRIP_QUOTA` | `FREE_TRIP_QUOTA` / `PRO_TRIP_QUOTA` | count, 0..1000 | safe fallback 3 / 10 | private/admin |
 | `SOCIAL_LOCATION` | `DAILY_JOB_LIMIT_DEFAULT` | count/day/user, 0..1000 | safe fallback 5 | private/admin |
+| `MAP_SEARCH` | `RATE_LIMIT_ENABLED` / `EXEMPT_ADMINS` | boolean | safe fallback true / true | private/admin |
+| `MAP_SEARCH` | `AUTOCOMPLETE_PER_MINUTE` / `PLACE_DETAIL_PER_MINUTE` | count/minute/user, 1..600 | safe fallback 30 / 30 | private/admin |
+| `MAP_SEARCH` | `AUTOCOMPLETE_PER_DAY` / `PLACE_DETAIL_PER_DAY` | count/day/user, 1..100000 | safe fallback 300 / 200 | private/admin |
+| `MAP_SEARCH` | `USAGE_RETENTION_DAYS` | days, 7..730 | safe fallback 90 | private/admin |
 | `MODERATION` | `TEXT_FILTER_ENABLED` | boolean | safe fallback true | private/admin |
 | `MODERATION` | `AI_TEXT_ENABLED` | boolean | safe fallback false | private/admin |
 | `MODERATION` | `AI_TEXT_MAX_LENGTH` | characters, 200..20000 | safe fallback 4000 | private/admin |
@@ -176,6 +180,22 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `GUIDE` | `MIN_REVIEWS_TO_SHOW_RATING` | count, 1..100 | safe fallback 3 | public |
 | `GUIDE` | `FREE_SERVICE_LIMIT` | count, 1..100 | safe fallback 3 | public |
 | `GUIDE` | `PREMIUM_MONTHLY_PRICE_VND` / `PREMIUM_YEARLY_PRICE_VND` | VND | safe fallback per slide pricing | public |
+| `TRACKER` | `ENABLED` | boolean (beta users always on) | safe fallback false | members via `GET /v1/api/trips/{tripId}/track/context` (`enabled`) |
+| `TRACKER` | `WINDOW_PAD_DAYS` | days, 0..3 | safe fallback 1 | members via track context (`window.padDays`) |
+| `TRACKER` | `MAX_ACCURACY_HIGH_M` / `_BALANCED_M` / `_SAVER_M` | metres, 5..500 | safe fallback 30 / 60 / 150 | members via track context |
+| `TRACKER` | `DISTANCE_FILTER_HIGH_M` / `_BALANCED_M` / `_SAVER_M` | metres, 1..500 | safe fallback 10 / 25 / 100 | members via track context |
+| `TRACKER` | `MAX_SPEED_KMH` | km/h, 50..1200 | safe fallback 300 | members via track context |
+| `TRACKER` | `GAP_MINUTES` / `GAP_DISTANCE_M` | minutes 1..240 / metres 100..100000 | safe fallback 10 / 1000 | private/admin |
+| `TRACKER` | `FLIGHT_MIN_KM` / `FLIGHT_MIN_KMH` | km 50..2000 / km/h 100..1200 | safe fallback 200 / 300 | private/admin |
+| `TRACKER` | `STATIONARY_RADIUS_M` / `STATIONARY_MINUTES` | metres 5..200 / minutes 1..30 | safe fallback 30 / 3 | members via track context |
+| `TRACKER` | `ARRIVAL_RADIUS_M` / `ARRIVAL_MINUTES` | metres 20..500 / minutes 1..60 | safe fallback 100 / 3 | members via track context |
+| `TRACKER` | `NUDGE_COOLDOWN_MINUTES` / `NUDGE_DAILY_MAX` | minutes 0..240 / count 0..50 | safe fallback 20 / 6 | members via track context |
+| `TRACKER` | `QUIET_START_HOUR` / `QUIET_END_HOUR` | hour of trip local time, 0..23 | safe fallback 22 / 7 | members via track context |
+| `TRACKER` | `LOW_BATTERY_PCT` / `STOP_BATTERY_PCT` | percent 5..50 / 1..30 | safe fallback 15 / 5 | members via track context |
+| `TRACKER` | `RAW_RETENTION_DAYS` | days after the trip's last day, 7..365 | safe fallback 90 | private/admin |
+| `TRACKER` | `CHUNK_MAX_POINTS` | points per upload, 50..500 | safe fallback 500 | members via track context |
+| `TRACKER` | `OFFPLAN_RADIUS_M` / `OFFPLAN_MIN_MINUTES` | metres 20..500 / minutes 1..120 | safe fallback 100 / 10 | members via track context (`offPlanRadiusM`, `offPlanMinMinutes`) |
+| `TRACKER` | `OFFPLAN_NAME_RADIUS_M` | metres, 10..500 | safe fallback 60 | members via track context (`offPlanNameRadiusM`) |
 
 ## Build note
 

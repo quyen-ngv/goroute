@@ -89,6 +89,7 @@ class TripServiceImplCollaborationTest {
                 mediaAssetRepository,
                 mock(ImageStorageCleanupService.class),
                 mock(TripRealtimePublisher.class),
+                mock(com.ds.goroute.service.TrackService.class),
                 tripDestinationRepository,
                 mock(SocialNotificationService.class),
                 mock(UserCheckinService.class),

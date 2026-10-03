@@ -8,6 +8,7 @@ import com.ds.goroute.dto.response.BookPageResponse;
 import com.ds.goroute.dto.response.BookSkeletonResponse;
 import com.ds.goroute.dto.response.BookSlotDefResponse;
 import com.ds.goroute.dto.response.BookSlotResponse;
+import com.ds.goroute.dto.response.TrackResponses;
 import com.ds.goroute.dto.response.TripBookResponse;
 import com.ds.goroute.entity.Activity;
 import com.ds.goroute.entity.BookPage;
@@ -28,6 +29,7 @@ import com.ds.goroute.repository.TripBookRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripNoteRepository;
 import com.ds.goroute.repository.TripRepository;
+import com.ds.goroute.service.TrackSharingService;
 import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.TripBookService;
 import com.ds.goroute.service.notification.NotificationHelper;
@@ -45,6 +47,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -61,6 +64,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class TripBookServiceImpl implements TripBookService {
     private static final String DEFAULT_BACKGROUND = "asset://templates/default/bg_cream.png";
+    private static final String ROUTE_SLOT_TYPE = "route";
     private static final DateTimeFormatter COVER_DATE_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale.ENGLISH);
     private static final DateTimeFormatter PAGE_DATE_FORMAT = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH);
 
@@ -73,6 +77,7 @@ public class TripBookServiceImpl implements TripBookService {
     private final MediaAssetRepository mediaAssetRepository;
     private final TripBookRepository tripBookRepository;
     private final NotificationHelper notificationHelper;
+    private final TrackSharingService trackSharingService;
 
     @Override
     @Transactional
@@ -120,6 +125,12 @@ public class TripBookServiceImpl implements TripBookService {
                     template != null ? template.getId() : null,
                     buildActivitySlots(activity, activityMemories, noteText, template, expensesByActivity.get(activity.getId()))
             );
+        }
+
+        // Travel tracker (P4): the owner's recorded route, drawn by the app from the "route" slot.
+        Optional<TrackResponses.BookRoute> route = trackSharingService.bookRoute(tripId, trip.getOwnerId());
+        if (route.isPresent()) {
+            insertPage(book.getId(), null, "route", pageOrder++, "route_page", null, buildRouteSlots(trip, route.get()));
         }
 
         insertPage(book.getId(), null, "summary", pageOrder, "summary_page", null, buildSummarySlots(trip, activities, memories));
@@ -327,6 +338,15 @@ public class TripBookServiceImpl implements TripBookService {
         return slots;
     }
 
+    /** The route slot is stored as the JSON text of {@code {segments, bbox, distanceM}}; see {@link #slotValue}. */
+    private List<BookSlotResponse> buildRouteSlots(Trip trip, TrackResponses.BookRoute route) {
+        return List.of(
+                slot("background", "background", DEFAULT_BACKGROUND, true),
+                slot("trip_title", "text", trip.getName(), trip.getName() != null && !trip.getName().isBlank()),
+                slot("route", ROUTE_SLOT_TYPE, JsonUtils.toJson(route), true)
+        );
+    }
+
     private List<BookSlotResponse> buildSummarySlots(Trip trip, List<Activity> activities, List<MediaAsset> memories) {
         BigDecimal totalExpense = expenseRepository.findByTripId(trip.getId()).stream()
                 .map(this::expenseAmount)
@@ -453,7 +473,7 @@ public class TripBookServiceImpl implements TripBookService {
         return BookSlotResponse.builder()
                 .slotId(slot.getSlotId())
                 .type(slot.getType())
-                .value(slot.getValue())
+                .value(slotValue(slot))
                 .visible(slot.getVisible())
                 .frameStyle(slot.getFrameStyle())
                 .cropRect(parseMap(slot.getCropRect()))
@@ -528,7 +548,23 @@ public class TripBookServiceImpl implements TripBookService {
         if (value instanceof String stringValue) {
             return stringValue;
         }
+        if (value instanceof Map<?, ?> || value instanceof Collection<?>) {
+            // A structured value (the route slot) is kept as JSON, not as Map.toString().
+            return JsonUtils.toJson(value);
+        }
         return value.toString();
+    }
+
+    /**
+     * Slot values are stored as text. The route slot's value is the object
+     * {@code {segments, bbox, distanceM}}, so it is handed back parsed; every other value as stored.
+     */
+    private Object slotValue(BookPageSlot slot) {
+        String value = slot.getValue();
+        if (ROUTE_SLOT_TYPE.equals(slot.getType()) && value != null && value.startsWith("{")) {
+            return parseMap(value);
+        }
+        return value;
     }
 
     private BookSkeleton resolveSkeletonOrThrow(String skeletonKey) {

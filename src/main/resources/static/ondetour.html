@@ -165,6 +165,12 @@
         }
         .about-card p { font-size: 14.5px; color: var(--ink); line-height: 1.6; }
 
+        /* ---------- recorded route (travel tracker, public) ---------- */
+        .track-map { display: block; width: 100%; height: auto; border-radius: var(--radius-m); background: #f4f1ea; }
+        .track-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 10px; font-size: 13px; color: var(--ink); }
+        .track-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+        .track-legend-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+
         /* ---------- reveal on scroll ---------- */
         .reveal { opacity: 0; transform: translateY(10px); transition: opacity .5s ease-out, transform .5s ease-out; }
         .reveal.is-visible { opacity: 1; transform: none; }
@@ -1634,6 +1640,7 @@
             <main class="page-shell">
                 ${renderStatsStrip(trip, dayCount, nights)}
                 ${renderAbout(trip)}
+                <div id="track-section"></div>
                 <div class="route">
                     ${dayNumbers.map(day => renderDayBlock(trip, day, activitiesByDay)).join('')}
                 </div>
@@ -1668,12 +1675,109 @@
             if (data.meta && data.meta.code === 200000 && data.data) {
                 document.getElementById('loading').style.display = 'none';
                 renderTrip(data.data);
+                loadPublicTrack(tripId);
             } else {
                 throw new Error('Invalid response');
             }
         } catch (error) {
             console.error('Error loading trip:', error);
             showError('Trip not found', 'This link may have expired, or the trip is no longer shared.');
+        }
+    }
+
+    /* ============ recorded route (public track) ============ */
+    const TRACK_COLORS = ['#0f766e', '#e11d48', '#7c3aed', '#ea580c', '#2563eb', '#65a30d'];
+
+    // Google encoded polyline, precision 5 -> [[lat, lng], ...]
+    function decodePolyline(encoded) {
+        const points = [];
+        let index = 0, lat = 0, lng = 0;
+        while (index < encoded.length) {
+            for (let axis = 0; axis < 2; axis++) {
+                let result = 0, shift = 0, chunk;
+                do {
+                    chunk = encoded.charCodeAt(index++) - 63;
+                    result |= (chunk & 0x1f) << shift;
+                    shift += 5;
+                } while (chunk >= 0x20 && index < encoded.length);
+                const delta = (result & 1) ? ~(result >> 1) : (result >> 1);
+                if (axis === 0) lat += delta; else lng += delta;
+            }
+            points.push([lat / 1e5, lng / 1e5]);
+        }
+        return points;
+    }
+
+    function renderPublicTrack(days) {
+        const members = new Map();
+        let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+        days.forEach(day => {
+            if (!members.has(day.userId)) {
+                members.set(day.userId, {
+                    name: day.displayName || 'Traveller',
+                    color: TRACK_COLORS[members.size % TRACK_COLORS.length],
+                    distanceM: 0,
+                    lines: []
+                });
+            }
+            const member = members.get(day.userId);
+            member.distanceM += day.distanceM || 0;
+            (day.segments || []).forEach(segment => {
+                const points = decodePolyline(segment.polyline || '');
+                if (points.length < 2) return;
+                member.lines.push({ dashed: segment.kind !== 'TRACK', points });
+                points.forEach(([lat, lng]) => {
+                    minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat);
+                    minLng = Math.min(minLng, lng); maxLng = Math.max(maxLng, lng);
+                });
+            });
+        });
+        if (!isFinite(minLat)) return '';
+
+        // Equirectangular projection inside the bounding box, longitude scaled by cos(latitude).
+        const width = 600, pad = 18;
+        const kx = Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
+        const spanX = Math.max((maxLng - minLng) * kx, 1e-4);
+        const spanY = Math.max(maxLat - minLat, 1e-4);
+        const height = Math.round(Math.min(480, Math.max(200, spanY * ((width - 2 * pad) / spanX) + 2 * pad)));
+        const scale = Math.min((width - 2 * pad) / spanX, (height - 2 * pad) / spanY);
+        const offsetX = (width - spanX * scale) / 2;
+        const offsetY = (height - spanY * scale) / 2;
+        const project = ([lat, lng]) =>
+            `${(offsetX + (lng - minLng) * kx * scale).toFixed(1)},${(height - offsetY - (lat - minLat) * scale).toFixed(1)}`;
+
+        let paths = '';
+        let legend = '';
+        members.forEach(member => {
+            member.lines.forEach(line => {
+                const dash = line.dashed ? ' stroke-dasharray="6 7" opacity="0.7"' : '';
+                paths += `<polyline points="${line.points.map(project).join(' ')}" fill="none" stroke="${member.color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"${dash}/>`;
+            });
+            legend += `<span class="track-legend-item"><span class="track-legend-dot" style="background:${member.color}"></span>${escapeHtml(member.name)} · ${(member.distanceM / 1000).toFixed(1)} km</span>`;
+        });
+
+        return `
+            <div class="about-card">
+                <h3 class="card-eyebrow">Đường đi</h3>
+                <svg class="track-map" viewBox="0 0 ${width} ${height}" role="img" aria-label="Recorded route">${paths}</svg>
+                <div class="track-legend">${legend}</div>
+            </div>
+        `;
+    }
+
+    async function loadPublicTrack(tripId) {
+        const host = document.getElementById('track-section');
+        if (!host) return;
+        try {
+            const response = await fetch(`${API_BASE_URL}/v1/api/public/trips/${tripId}/track`);
+            if (!response.ok) return;
+            const body = await response.json();
+            const days = body && body.data;
+            if (!Array.isArray(days) || !days.length) return;
+            host.innerHTML = renderPublicTrack(days);
+        } catch (error) {
+            // The route is optional decoration; the trip page stands without it.
+            console.warn('Recorded route unavailable:', error);
         }
     }
 

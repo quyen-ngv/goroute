@@ -69,6 +69,9 @@ class ModeratedFieldCoverageTest {
             Map.entry("BlockUserRequest.reason", "The blocker's own note about why; filtering it would filter the complaint"),
             Map.entry("ModerationPreviewRequest.text", "This IS the filter being asked for its opinion"),
 
+            // Private labels: shown to their author only, never to anyone else.
+            Map.entry("PrivacyZoneRequest.name", "Label of a privacy zone; only its owner ever sees it"),
+
             // Bulk import from external sources. Blocking mid-import would abort a batch of
             // thousands; these paths are reviewed through the queue instead, and they are
             // reachable only with ROLE_ADMIN or ROLE_API_KEY.

@@ -64,6 +64,8 @@ public interface QuestMapper {
 
     long countAllQuests(@Param("status") String status);
 
+    com.ds.goroute.quest.domain.QuestListItem findQuestDetailUngated(@Param("id") UUID id);
+
     int updateDraftPointer(@Param("id") UUID id, @Param("expectedVersion") long expectedVersion,
                            @Param("draftVersionId") UUID draftVersionId,
                            @Param("updatedAt") LocalDateTime updatedAt);

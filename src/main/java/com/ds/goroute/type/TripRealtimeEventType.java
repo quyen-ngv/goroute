@@ -33,7 +33,9 @@ public enum TripRealtimeEventType {
     COMMENT_CREATED("comment.created"),
     COMMENT_UPDATED("comment.updated"),
     COMMENT_DELETED("comment.deleted"),
-    COMMENT_REACTED("comment.reacted");
+    COMMENT_REACTED("comment.reacted"),
+    /** A member's recorded route changed; entityId is that member, payload {@code dates}. */
+    TRACK_UPDATED("track.updated");
 
     private final String wireValue;
 

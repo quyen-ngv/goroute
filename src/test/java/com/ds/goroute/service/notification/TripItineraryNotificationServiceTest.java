@@ -12,6 +12,7 @@ import com.ds.goroute.repository.ExpenseSplitRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.UserRepository;
+import com.ds.goroute.service.TrackSharingService;
 import com.ds.goroute.type.MemberStatus;
 import com.ds.goroute.type.NotificationType;
 import com.ds.goroute.type.TripStatus;
@@ -56,6 +57,8 @@ class TripItineraryNotificationServiceTest {
     private UserRepository userRepository;
     @Mock
     private ScheduledNotificationSender sender;
+    @Mock
+    private TrackSharingService trackSharingService;
 
     private TripItineraryNotificationService service;
 
@@ -68,7 +71,8 @@ class TripItineraryNotificationServiceTest {
                 expenseRepository,
                 expenseSplitRepository,
                 userRepository,
-                sender
+                sender,
+                trackSharingService
         );
     }
 
@@ -301,6 +305,7 @@ class TripItineraryNotificationServiceTest {
         ));
         when(sender.sendOnce(any(), any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> invocation.getArgument(2) == NotificationType.TRIP_SUMMARY);
+        when(trackSharingService.distanceByUser(trip.getId())).thenReturn(Map.of(memberId, 14_100L));
         Instant now = ZonedDateTime.of(
                 trip.getEndDate(),
                 LocalTime.of(20, 5),
@@ -327,6 +332,9 @@ class TripItineraryNotificationServiceTest {
                     assertThat(data.get("outstandingAmount")).isEqualTo("400");
                     assertThat(data.get("payeeNames")).isEqualTo("An");
                 });
+        assertThat(dataCaptor.getAllValues())
+                .anySatisfy(data -> assertThat(data.get("distanceKm")).isEqualTo("14.1"))
+                .anySatisfy(data -> assertThat(data).doesNotContainKey("distanceKm"));
     }
 
     private Trip trip(LocalDate startDate) {

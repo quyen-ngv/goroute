@@ -13,6 +13,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import com.ds.goroute.thirdparty.ai.AiCallLoggingInterceptor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.web.client.RestClient;
 
 import java.util.List;
@@ -25,6 +28,16 @@ import java.util.Optional;
 public class ClaudeClient implements AiClient {
 
     private final RestClient.Builder restClientBuilder;
+
+    /** Optional so unit tests can build the client by hand; writes the ai_api_calls row. */
+    @Autowired(required = false)
+    private AiCallLoggingInterceptor aiCallLogging;
+
+    private void addCallLogging(java.util.List<ClientHttpRequestInterceptor> interceptors) {
+        if (aiCallLogging != null) {
+            interceptors.add(aiCallLogging.forProvider("anthropic", "AI_TEXT", "COMPLETE_JSON"));
+        }
+    }
 
     @Value("${AI_CONNECT_TIMEOUT_SECONDS:10}")
     private int connectTimeoutSeconds;
@@ -74,7 +87,7 @@ public class ClaudeClient implements AiClient {
                             .build()))
                     .build();
 
-            ClaudeMessageResponse response = restClientBuilder.clone().requestFactory(aiRequestFactory()).build()
+            ClaudeMessageResponse response = restClientBuilder.clone().requestFactory(aiRequestFactory()).requestInterceptors(this::addCallLogging).build()
                     .post()
                     .uri(apiUrl)
                     .contentType(MediaType.APPLICATION_JSON)

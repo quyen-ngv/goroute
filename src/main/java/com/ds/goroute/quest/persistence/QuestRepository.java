@@ -83,6 +83,9 @@ public interface QuestRepository {
 
     Optional<com.ds.goroute.quest.domain.QuestListItem> findPublicQuestDetail(UUID id);
 
+    /** The detail page's projection with no discovery gate; callers must check who may see it. */
+    Optional<com.ds.goroute.quest.domain.QuestListItem> findQuestDetailUngated(UUID id);
+
     void insertVersion(QuestVersion version);
 
     Optional<QuestVersion> findVersionById(UUID id);

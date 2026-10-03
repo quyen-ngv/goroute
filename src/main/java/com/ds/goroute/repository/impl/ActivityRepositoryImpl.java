@@ -1,11 +1,13 @@
 package com.ds.goroute.repository.impl;
 
 import com.ds.goroute.entity.Activity;
+import com.ds.goroute.entity.UnlinkedActivityRow;
 import com.ds.goroute.mapper.ActivityMapper;
 import com.ds.goroute.repository.ActivityRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -64,5 +66,20 @@ public class ActivityRepositoryImpl implements ActivityRepository {
     @Override
     public void deleteByTripId(UUID tripId) {
         activityMapper.deleteByTripId(tripId);
+    }
+
+    @Override
+    public List<UnlinkedActivityRow> findUnlinkedForAdmin(String search, int limit, int offset) {
+        return activityMapper.selectUnlinkedForAdmin(search, limit, offset);
+    }
+
+    @Override
+    public long countUnlinkedForAdmin(String search) {
+        return activityMapper.countUnlinkedForAdmin(search);
+    }
+
+    @Override
+    public int assignPlace(UUID activityId, UUID placeId, BigDecimal lat, BigDecimal lng) {
+        return activityMapper.assignPlace(activityId, placeId.toString(), placeId, lat, lng);
     }
 }

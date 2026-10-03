@@ -48,6 +48,9 @@ import java.util.stream.Collectors;
 @Slf4j
 public class TripServiceImpl implements TripService {
     private final StarService starService;
+    /** Field-injected and optional so the hand-built service in unit tests keeps its constructor. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.ds.goroute.service.TripPreferenceService tripPreferenceService;
 
     private final TripRepository tripRepository;
     private final TripAccessGuard tripAccessGuard;
@@ -71,6 +74,7 @@ public class TripServiceImpl implements TripService {
     private final MediaAssetRepository mediaAssetRepository;
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final TripRealtimePublisher tripRealtimePublisher;
+    private final com.ds.goroute.service.TrackService trackService;
     private final TripDestinationRepository tripDestinationRepository;
     private final SocialNotificationService socialNotificationService;
     private final UserCheckinService userCheckinService;
@@ -296,6 +300,9 @@ public class TripServiceImpl implements TripService {
         tripRepository.insert(trip);
         destinations.forEach(destination -> destination.setTripId(trip.getId()));
         destinations.forEach(tripDestinationRepository::insert);
+        if (tripPreferenceService != null) {
+            tripPreferenceService.save(trip.getId(), request.getPreferences(), TripPreference.SOURCE_MANUAL);
+        }
 
         // Add owner as member
         TripMember owner = TripMember.builder()
@@ -507,6 +514,8 @@ public class TripServiceImpl implements TripService {
 
         tripRepository.deleteById(tripId);
         tripChatService.onTripDeleted(tripId);
+        // Routes recorded in a deleted trip have nothing left to belong to (TR-24).
+        trackService.onTripDeleted(tripId);
         log.info("Trip deleted: {}", tripId);
 
         notificationHelper.emitTripDeleted(trip, userId);
@@ -764,6 +773,9 @@ public class TripServiceImpl implements TripService {
 
         tripMemberRepository.deleteById(memberId);
         tripChatService.onMembershipChanged(tripId);
+        if (member.getUserId() != null) {
+            trackService.onMemberLeft(tripId, member.getUserId());
+        }
         log.info("Member removed from trip: {} - {}", tripId, memberId);
 
         if (member.getUserId() != null) {
@@ -1876,6 +1888,7 @@ public class TripServiceImpl implements TripService {
         member.setStatus(MemberStatus.LEFT);
         tripMemberRepository.updateById(member);
         tripChatService.onMembershipChanged(tripId);
+        trackService.onMemberLeft(tripId, userId);
         log.info("Member left trip: tripId={}, userId={}", tripId, userId);
 
         notificationHelper.emitMemberLeft(member, trip, userId);
@@ -2047,6 +2060,7 @@ public class TripServiceImpl implements TripService {
                                                        boolean allPublic,
                                                        String randomSeed,
                                                        boolean preferImages,
+                                                       boolean recommended,
                                                        int page,
                                                        int size,
                                                        UUID viewerId,
@@ -2060,6 +2074,7 @@ public class TripServiceImpl implements TripService {
                 allPublic,
                 randomSeed,
                 preferImages,
+                recommended,
                 page,
                 size,
                 excludeUserId

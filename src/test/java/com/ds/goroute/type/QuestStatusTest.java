@@ -75,6 +75,11 @@ class QuestStatusTest {
         assertTrue(QuestStatus.DRAFT.isCreatorEditable());
         assertTrue(QuestStatus.DENIED.isCreatorEditable());
         assertFalse(QuestStatus.PUBLISHED.isCreatorEditable());
+        assertTrue(QuestStatus.PUBLISHED.isLiveEditable());
+        assertTrue(QuestStatus.PAUSED.isLiveEditable());
+        assertFalse(QuestStatus.SUSPENDED.isLiveEditable());
+        assertFalse(QuestStatus.ARCHIVED.isLiveEditable());
+        assertFalse(QuestStatus.DRAFT.isLiveEditable());
     }
 
     @Test

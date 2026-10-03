@@ -2,7 +2,6 @@ package com.ds.goroute.service.impl;
 
 import com.ds.goroute.utils.ErrorMessages;
 import com.ds.goroute.config.FileUploadProperties;
-import com.ds.goroute.config.ImgpressProperties;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.service.BusinessConfigService;
@@ -17,28 +16,17 @@ import com.ds.goroute.repository.AiTripRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.core.io.ByteArrayResource;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -54,7 +42,6 @@ public class FileUploadServiceImpl implements FileUploadService {
     private final StorageService storageService;
     private final RestTemplate restTemplate;
     private final FileUploadProperties uploadProperties;
-    private final ImgpressProperties imgpressProperties;
     private final ImageModerationService imageModerationService;
     private final BusinessConfigService businessConfigService;
     private final AiTripRepository aiTripRepository;
@@ -65,7 +52,6 @@ public class FileUploadServiceImpl implements FileUploadService {
             StorageService storageService,
             @Qualifier("scrapeRestTemplate") RestTemplate restTemplate,
             FileUploadProperties uploadProperties,
-            ImgpressProperties imgpressProperties,
             ImageModerationService imageModerationService,
             BusinessConfigService businessConfigService,
             AiTripRepository aiTripRepository,
@@ -73,7 +59,6 @@ public class FileUploadServiceImpl implements FileUploadService {
         this.storageService = storageService;
         this.restTemplate = restTemplate;
         this.uploadProperties = uploadProperties;
-        this.imgpressProperties = imgpressProperties;
         this.imageModerationService = imageModerationService;
         this.businessConfigService = businessConfigService;
         this.aiTripRepository = aiTripRepository;
@@ -84,11 +69,10 @@ public class FileUploadServiceImpl implements FileUploadService {
             StorageService storageService,
             RestTemplate restTemplate,
             FileUploadProperties uploadProperties,
-            ImgpressProperties imgpressProperties,
             ImageModerationService imageModerationService,
             BusinessConfigService businessConfigService,
             AiTripRepository aiTripRepository) {
-        this(storageService, restTemplate, uploadProperties, imgpressProperties,
+        this(storageService, restTemplate, uploadProperties,
                 imageModerationService, businessConfigService, aiTripRepository, Runnable::run);
     }
 
@@ -267,17 +251,15 @@ public class FileUploadServiceImpl implements FileUploadService {
                     ErrorMessages.of("moderation.category." + verdict.category().name()));
         }
 
-        // Compress only if compression is enabled in business config and requested by caller
-        boolean compressionEnabled = businessConfigService.getBoolean(BusinessConfigKey.IMAGE_COMPRESSION_ENABLED);
-        ValidatedImage upload = (request.compress() && compressionEnabled)
-                ? compressOrOriginal(image)
-                : image;
-        String objectKey = request.objectPrefix() + "/" + UUID.randomUUID() + upload.extension();
+        // Stored as uploaded. Re-encoding through the ImagePress service was a synchronous
+        // network round trip on every photo and made uploads slow enough to notice. The app
+        // already caps photos (picker 1920px at quality 85, in-app camera ~1080p).
+        String objectKey = request.objectPrefix() + "/" + UUID.randomUUID() + image.extension();
         String url = storageService.uploadFile(
                 objectKey,
-                new ByteArrayInputStream(upload.bytes()),
-                upload.contentType(),
-                upload.bytes().length);
+                new ByteArrayInputStream(image.bytes()),
+                image.contentType(),
+                image.bytes().length);
         return ImageUploadOutcome.accepted(filename, url);
     }
 
@@ -366,55 +348,6 @@ public class FileUploadServiceImpl implements FileUploadService {
             throw invalid("Video content does not match its declared type");
         }
         return new ValidatedVideo(contentType, videoExtension(contentType));
-    }
-
-    private ValidatedImage compressOrOriginal(ValidatedImage original) {
-        try {
-            byte[] compressed = compress(original.bytes(), original.filename());
-            if (compressed.length > 0 && compressed.length <= uploadProperties.getMaxImageSize().toBytes()) {
-                return new ValidatedImage(compressed, "image/webp", ".webp", original.filename());
-            }
-        } catch (RuntimeException exception) {
-            log.warn("Image compression failed; storing validated original image", exception);
-        }
-        return original;
-    }
-
-    private byte[] compress(byte[] bytes, String filename) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-        body.add("file", new ByteArrayResource(bytes) {
-            @Override
-            public String getFilename() {
-                return filename;
-            }
-        });
-
-        String url = UriComponentsBuilder.fromHttpUrl(imgpressProperties.getUrl())
-                .path("/compress/one")
-                .queryParam("format", "webp")
-                .queryParam("quality", imgpressProperties.getQuality())
-                .queryParam("width", imgpressProperties.getWidth())
-                .queryParam("autoOrient", true)
-                .toUriString();
-        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
-                url,
-                HttpMethod.POST,
-                new HttpEntity<>(body, headers),
-                new ParameterizedTypeReference<>() {});
-        Map<String, Object> responseBody = response.getBody();
-        if (!response.getStatusCode().is2xxSuccessful()
-                || responseBody == null
-                || Boolean.TRUE.equals(responseBody.get("error"))
-                || !(responseBody.get("data") instanceof String encoded)) {
-            throw new IllegalStateException("Image compression failed");
-        }
-        long maximumEncodedLength = (uploadProperties.getMaxImageSize().toBytes() * 4 / 3) + 4;
-        if (encoded.length() > maximumEncodedLength) {
-            throw new IllegalStateException("Compressed image exceeds the configured size limit");
-        }
-        return Base64.getDecoder().decode(encoded);
     }
 
     /** Content type read from the bytes themselves, for images the product downloaded. */

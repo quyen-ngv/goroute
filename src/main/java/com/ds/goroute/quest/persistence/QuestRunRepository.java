@@ -59,6 +59,11 @@ public class QuestRunRepository {
         return mapper.countRunsByStatus(questId, status);
     }
 
+    /** Whether the user was a member of any run of this quest, finished or not. */
+    public boolean existsMemberRun(UUID questId, UUID userId) {
+        return mapper.existsMemberRun(questId, userId);
+    }
+
     public void insertMember(QuestRunMember member) {
         mapper.insertMember(member);
     }

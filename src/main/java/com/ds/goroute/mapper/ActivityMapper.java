@@ -1,9 +1,11 @@
 package com.ds.goroute.mapper;
 
 import com.ds.goroute.entity.Activity;
+import com.ds.goroute.entity.UnlinkedActivityRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -30,4 +32,12 @@ public interface ActivityMapper {
     int deleteByTripId(@Param("tripId") UUID tripId);
     
     int updateSortOrder(@Param("id") UUID id, @Param("sortOrder") Integer sortOrder);
+
+    List<UnlinkedActivityRow> selectUnlinkedForAdmin(
+            @Param("search") String search, @Param("limit") int limit, @Param("offset") int offset);
+
+    long countUnlinkedForAdmin(@Param("search") String search);
+
+    int assignPlace(@Param("id") UUID id, @Param("placeId") String placeId, @Param("placeRefId") UUID placeRefId,
+                    @Param("lat") BigDecimal lat, @Param("lng") BigDecimal lng);
 }

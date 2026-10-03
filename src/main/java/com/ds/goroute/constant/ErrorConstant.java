@@ -81,7 +81,7 @@ public class ErrorConstant {
     public static final int SOCIAL_LOCATION_TEMPORARILY_BLOCKED = 4000603;
     public static final int SOCIAL_LOCATION_PERMANENTLY_BLOCKED = 4000604;
 
-    /** The payer already reminded this split within the configured cooldown. */
+    /** The payer already reminded this person EXPENSE.PAYMENT_REMINDER_DAILY_MAX times today. */
     public static final int EXPENSE_PAYMENT_REMINDER_RATE_LIMITED = 4001101;
 
     /**
@@ -130,6 +130,21 @@ public class ErrorConstant {
      */
     public static final int CHAT_DIRECT_DISABLED = 4001301;
 
+    /**
+     * Travel tracker (epic 16). An upload whose every point falls outside the trip's days
+     * (padded by TRACKER/WINDOW_PAD_DAYS) is refused as a whole rather than stored and hidden.
+     */
+    public static final int TRACK_OUTSIDE_TRIP_WINDOW = 4001401;
+
+    /** Malformed columnar points: unequal arrays, time not strictly increasing, too many points. */
+    public static final int TRACK_CHUNK_INVALID = 4001402;
+
+    /** A user may keep at most five privacy zones. */
+    public static final int TRACK_PRIVACY_ZONE_LIMIT = 4001403;
+
+    /** Dismiss / add-to-itinerary only apply to an off-plan stop, not to a planned activity's visit. */
+    public static final int TRACK_VISIT_NOT_OFF_PLAN = 4001404;
+
     public static final int SYSTEM_CONFIGURATION_NOT_FOUND = 4004208;
 
     public static final int HTTP_CONNECTION_ERROR  = 4009000;
@@ -157,6 +172,12 @@ public class ErrorConstant {
     /** One of the two people has blocked the other, so the message is refused rather than delivered. */
     public static final int CHAT_USER_BLOCKED = 4030003;
 
+    /** The travel tracker is switched off (TRACKER/ENABLED) and the caller is not a beta user. */
+    public static final int TRACK_DISABLED = 4031401;
+
+    /** The owner of this track does not share it with the caller. */
+    public static final int TRACK_NOT_VISIBLE = 4031402;
+
     /** The caller must change a temporary password before using the partner or admin portal. */
     public static final int PASSWORD_CHANGE_REQUIRED = 4031002;
 
@@ -170,6 +191,9 @@ public class ErrorConstant {
     public static final int USER_NOT_FOUND = 4040004;
     /** Also answers a draft that belongs to someone else: a guessed id must not confirm it exists. */
     public static final int ONBOARDING_DRAFT_NOT_FOUND = 4040005;
+
+    /** No such visit in this trip among the caller's own; another person's visit reads the same. */
+    public static final int TRACK_VISIT_NOT_FOUND = 4041401;
     
     /**
      * Write the error code prefixed with 409 below
@@ -182,7 +206,17 @@ public class ErrorConstant {
     public static final int ONBOARDING_ALREADY_SUBMITTED = 4090003;
     public static final int ONBOARDING_ORGANIZATION_REQUIRED = 4090004;
     public static final int ONBOARDING_TOO_MANY_DRAFTS = 4090005;
- 
+
+    /**
+     * Write the error code prefixed with 429 below
+     * 429
+     */
+    /** Map search (epic 06): too many Goong lookups in the current minute (MAP_SEARCH/*_PER_MINUTE). */
+    public static final int MAP_SEARCH_MINUTE_LIMIT_REACHED = 4290601;
+
+    /** Map search (epic 06): the caller used today's Goong lookups (MAP_SEARCH/*_PER_DAY). */
+    public static final int MAP_SEARCH_DAILY_LIMIT_REACHED = 4290602;
+
     /**
      * Write the error code prefixed with 500 below
      * 500

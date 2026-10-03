@@ -2,9 +2,12 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
+import com.ds.goroute.dto.request.WalletReminderRequest;
+import com.ds.goroute.dto.response.WalletPersonReminderResponse;
 import com.ds.goroute.dto.response.WalletReminderResponse;
 import com.ds.goroute.dto.response.WalletResponse;
 import com.ds.goroute.service.WalletService;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -15,6 +18,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -38,6 +42,16 @@ public class WalletController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(walletService.getWallet(userId, page, size, debtLimit)));
     }
 
+    /** One notification to one person about every split named; at most EXPENSE.PAYMENT_REMINDER_DAILY_MAX a day. */
+    @PostMapping("/reminders")
+    public ResponseEntity<BaseResponse<WalletPersonReminderResponse>> sendReminders(
+            @Valid @RequestBody WalletReminderRequest request,
+            @RequestHeader("Idempotency-Key") @NotBlank @Size(max = 120) String idempotencyKey,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(walletService.sendReminders(request.getSplitIds(), idempotencyKey, userId)));
+    }
+
+    /** Legacy per-split reminder for older app builds; shares the per-person daily limit. */
     @PostMapping("/expenses/{expenseId}/splits/{splitId}/reminders")
     public ResponseEntity<BaseResponse<WalletReminderResponse>> sendReminder(
             @PathVariable UUID expenseId,

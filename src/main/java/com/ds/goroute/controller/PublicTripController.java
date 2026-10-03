@@ -65,6 +65,9 @@ public class PublicTripController extends BaseController {
             @RequestParam(required = false) String randomSeed,
             // Trips with a cover or memory photos first; the feed asks for this.
             @RequestParam(defaultValue = "false") boolean preferImages,
+            // The Feed's ranking: trips with many stops and photos, recent ones first.
+            // Replaces randomSeed and distance ordering when set.
+            @RequestParam(defaultValue = "false") boolean recommended,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @CurrentUser(required = false) UUID userId
@@ -79,6 +82,7 @@ public class PublicTripController extends BaseController {
                 allPublic,
                 randomSeed,
                 preferImages,
+                recommended,
                 page,
                 size,
                 userId,

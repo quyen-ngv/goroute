@@ -81,6 +81,7 @@ class TripServiceImplPublicVisibilityTest {
                 mock(MediaAssetRepository.class),
                 mock(ImageStorageCleanupService.class),
                 mock(TripRealtimePublisher.class),
+                mock(com.ds.goroute.service.TrackService.class),
                 mock(TripDestinationRepository.class),
                 mock(SocialNotificationService.class),
                 mock(UserCheckinService.class),

@@ -177,6 +177,24 @@
                 ) DESC,
             </if>
             <choose>
+                <when test="recommended">
+                    <!-- The Feed's ranking. Stops and photos are what make an itinerary
+                         worth opening; capped so one huge trip cannot outrank a week of new
+                         ones. Recency counts for up to 45 days. -->
+                    (
+                        LEAST((SELECT COUNT(*) FROM activities a WHERE a.trip_id = t.id), 12) * 3
+                        + LEAST((
+                            SELECT COUNT(*) FROM media_assets ma
+                            WHERE ma.trip_id = t.id
+                              AND ma.entity_type IN ('TRIP_MEMORY', 'TRIP_ACTIVITY_MEMORY')
+                              AND (ma.asset_role IS NULL OR ma.asset_role = 'MEMORY')
+                              AND ma.deleted_at IS NULL
+                        ), 10) * 2
+                        + GREATEST(0, 45 - EXTRACT(EPOCH FROM (NOW() - COALESCE(t.public_shared_at, t.created_at))) / 86400)
+                    ) DESC,
+                    COALESCE(t.public_shared_at, t.created_at) DESC,
+                    t.id
+                </when>
                 <when test="randomSeed != null and randomSeed != ''">
                     MD5(t.id::text || #{randomSeed})
                 </when>

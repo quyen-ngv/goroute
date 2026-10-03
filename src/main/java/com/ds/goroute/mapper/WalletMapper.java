@@ -5,10 +5,12 @@ import com.ds.goroute.entity.WalletCurrencySummaryRow;
 import com.ds.goroute.entity.WalletCategorySummaryRow;
 import com.ds.goroute.entity.WalletDebtRow;
 import com.ds.goroute.entity.WalletExpenseRow;
+import com.ds.goroute.entity.WalletReminderSplitRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,13 +31,16 @@ public interface WalletMapper {
 
     long countExpenses(@Param("userId") UUID userId);
 
-    ExpensePaymentReminder selectReminderBySenderAndKey(@Param("senderUserId") UUID senderUserId,
-                                                         @Param("idempotencyKey") String idempotencyKey);
+    List<ExpensePaymentReminder> selectRemindersBySenderAndKey(@Param("senderUserId") UUID senderUserId,
+                                                               @Param("idempotencyKey") String idempotencyKey);
 
-    int claimReminderCooldown(@Param("senderUserId") UUID senderUserId,
-                              @Param("splitId") UUID splitId,
-                              @Param("sentAt") LocalDateTime sentAt,
-                              @Param("cooldownStart") LocalDateTime cooldownStart);
+    List<WalletReminderSplitRow> selectReminderSplits(@Param("userId") UUID userId,
+                                                      @Param("splitIds") Collection<UUID> splitIds);
 
-    int insertReminder(ExpensePaymentReminder reminder);
+    int claimDailyReminder(@Param("senderUserId") UUID senderUserId,
+                           @Param("recipientUserId") UUID recipientUserId,
+                           @Param("reminderDate") LocalDate reminderDate,
+                           @Param("dailyMax") int dailyMax);
+
+    int insertReminders(@Param("reminders") List<ExpensePaymentReminder> reminders);
 }

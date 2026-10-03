@@ -4,6 +4,7 @@ import com.ds.goroute.annotations.ModeratedText;
 import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.ModerationVisibility;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -39,4 +40,8 @@ public class CreateTripRequest {
     private List<TripDestinationRequest> destinations;
     private BigDecimal budget;
     private String currency;
+
+    /** Optional traveller preferences, stored in trip_preferences for filtering. */
+    @Valid
+    private TripPreferencesRequest preferences;
 }

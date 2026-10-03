@@ -34,6 +34,7 @@ public interface TripMapper {
         @Param("allPublic") boolean allPublic,
         @Param("randomSeed") String randomSeed,
         @Param("preferImages") boolean preferImages,
+        @Param("recommended") boolean recommended,
         @Param("offset") int offset,
         @Param("limit") int limit,
         @Param("excludeUserId") UUID excludeUserId

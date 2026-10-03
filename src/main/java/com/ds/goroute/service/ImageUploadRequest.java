@@ -15,15 +15,13 @@ import java.util.UUID;
  * @param entryPoint  short stable identifier, recorded with the moderation result;
  *                    see {@link ImageEntryPoint}
  * @param objectPrefix storage prefix, for example {@code avatars/<userId>}
- * @param compress    whether to run the image through the compression service first
  */
 public record ImageUploadRequest(UUID userId,
                                  String entryPoint,
-                                 String objectPrefix,
-                                 boolean compress) {
+                                 String objectPrefix) {
 
     public static ImageUploadRequest of(UUID userId, String entryPoint, String objectPrefix) {
-        return new ImageUploadRequest(userId, entryPoint, objectPrefix, true);
+        return new ImageUploadRequest(userId, entryPoint, objectPrefix);
     }
 
     /**

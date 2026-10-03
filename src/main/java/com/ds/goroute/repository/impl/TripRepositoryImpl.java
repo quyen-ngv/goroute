@@ -62,6 +62,7 @@ public class TripRepositoryImpl implements TripRepository {
                                         boolean allPublic,
                                         String randomSeed,
                                         boolean preferImages,
+                                        boolean recommended,
                                         int page,
                                         int size,
                                         UUID excludeUserId) {
@@ -75,6 +76,7 @@ public class TripRepositoryImpl implements TripRepository {
                 allPublic,
                 randomSeed,
                 preferImages,
+                recommended,
                 offset,
                 size,
                 excludeUserId

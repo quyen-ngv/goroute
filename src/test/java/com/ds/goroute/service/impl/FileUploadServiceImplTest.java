@@ -1,7 +1,6 @@
 package com.ds.goroute.service.impl;
 
 import com.ds.goroute.config.FileUploadProperties;
-import com.ds.goroute.config.ImgpressProperties;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.ImageModerationService;
@@ -27,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.endsWith;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -44,12 +44,12 @@ class FileUploadServiceImplTest {
     private final ImageModerationService imageModerationService = mock(ImageModerationService.class);
     private final BusinessConfigService businessConfigService = mock(BusinessConfigService.class);
     private final AiTripRepository aiTripRepository = mock(AiTripRepository.class);
+    private final RestTemplate restTemplate = mock(RestTemplate.class);
     private final FileUploadProperties properties = properties();
     private final FileUploadServiceImpl service = new FileUploadServiceImpl(
             storageService,
-            mock(RestTemplate.class),
+            restTemplate,
             properties,
-            new ImgpressProperties(),
             imageModerationService,
             businessConfigService,
             aiTripRepository);
@@ -92,8 +92,6 @@ class FileUploadServiceImplTest {
                 .thenReturn(ModerationVerdict.of(ModerationAction.BLOCK, ModerationCategory.SEXUAL, null, "x"));
         when(businessConfigService.getInt(BusinessConfigKey.UPLOAD_MAX_BATCH_FILES))
                 .thenReturn(30);
-        when(businessConfigService.getBoolean(BusinessConfigKey.IMAGE_COMPRESSION_ENABLED))
-                .thenReturn(false);
         when(storageService.uploadFile(anyString(), any(), anyString(), anyLong()))
                 .thenReturn("https://cdn/beach.webp");
 
@@ -117,6 +115,23 @@ class FileUploadServiceImplTest {
 
         assertThat(outcome.isContentRejection()).isTrue();
         verifyNoInteractions(storageService);
+    }
+
+    /** Upload latency: the image is stored as sent, with no call out to a re-encoding service. */
+    @Test
+    void storesTheImageAsUploadedWithoutCallingAnotherService() {
+        MockMultipartFile file = new MockMultipartFile("file", "beach.jpg", "image/jpeg", JPEG);
+        when(imageModerationService.inspect(any(), any(), any(), any()))
+                .thenReturn(ModerationVerdict.allowed());
+        when(storageService.uploadFile(anyString(), any(), anyString(), anyLong()))
+                .thenReturn("https://cdn/beach.jpg");
+
+        ImageUploadOutcome outcome = service.uploadImage(userUpload(), file);
+
+        assertThat(outcome.isAccepted()).isTrue();
+        verify(storageService).uploadFile(
+                endsWith(".jpg"), any(), eq("image/jpeg"), eq((long) JPEG.length));
+        verifyNoInteractions(restTemplate);
     }
 
     @Test
@@ -184,7 +199,6 @@ class FileUploadServiceImplTest {
                     storageService,
                     mock(RestTemplate.class),
                     properties,
-                    new ImgpressProperties(),
                     imageModerationService,
                     businessConfigService,
                     aiTripRepository,
@@ -192,8 +206,6 @@ class FileUploadServiceImplTest {
 
             when(businessConfigService.getInt(BusinessConfigKey.UPLOAD_MAX_BATCH_FILES))
                     .thenReturn(10);
-            when(businessConfigService.getBoolean(BusinessConfigKey.IMAGE_COMPRESSION_ENABLED))
-                    .thenReturn(false);
             when(imageModerationService.inspect(any(), any(), any(), any()))
                     .thenReturn(ModerationVerdict.allowed());
             when(storageService.uploadFile(anyString(), any(), anyString(), anyLong()))
@@ -217,7 +229,7 @@ class FileUploadServiceImplTest {
 
     private ImageUploadRequest userUpload() {
         return new ImageUploadRequest(UUID.randomUUID(),
-                ImageUploadRequest.ImageEntryPoint.USER_UPLOAD, "expenses/test", false);
+                ImageUploadRequest.ImageEntryPoint.USER_UPLOAD, "expenses/test");
     }
 
     private FileUploadProperties properties() {

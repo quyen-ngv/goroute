@@ -1,6 +1,7 @@
 package com.ds.goroute.controller;
 
 import com.ds.goroute.annotations.CurrentUser;
+import com.ds.goroute.dto.FeedGeoFilter;
 import com.ds.goroute.dto.request.CreateReviewRequest;
 import com.ds.goroute.dto.request.UpdateReviewRequest;
 import com.ds.goroute.dto.response.PlaceScoreResponse;
@@ -15,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -106,8 +108,13 @@ public class ReviewController extends BaseController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String randomSeed,
+            // Scope to an area for the Feed's "near you" tab; without a point, everywhere.
+            @RequestParam(required = false) BigDecimal latitude,
+            @RequestParam(required = false) BigDecimal longitude,
+            @RequestParam(defaultValue = "50") BigDecimal radiusKm,
             @CurrentUser(required = false) UUID userId) {
-        List<UserReviewResponse> reviews = reviewService.getFeedReviews(userId, page, size, randomSeed);
+        List<UserReviewResponse> reviews = reviewService.getFeedReviews(
+                userId, FeedGeoFilter.of(latitude, longitude, radiusKm), page, size, randomSeed);
         return ResponseEntity.ok(ofSucceeded(reviews));
     }
 

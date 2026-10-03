@@ -1,9 +1,11 @@
 package com.ds.goroute.service;
 
 import com.ds.goroute.repository.AppConfigRepository;
+import com.ds.goroute.type.SocialMapSearchProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.Locale;
 import java.util.UUID;
 
 @Service
@@ -30,9 +32,19 @@ public class SocialLocationConfigService {
     public int firstBlockMinutes() { return positive("FIRST_BLOCK_MINUTES", 10); }
     public int secondBlockHours() { return positive("SECOND_BLOCK_HOURS", 24); }
     public int permanentBlockStrikes() { return positive("PERMANENT_BLOCK_STRIKES", 3); }
-    public String aiProvider() { return text("AI_PROVIDER", "DEEPSEEK").toUpperCase(); }
+    public String aiProvider() { return text("AI_PROVIDER", "OPENAI").toUpperCase(); }
     public String aiModel() { return text("AI_MODEL", ""); }
     public String aiBaseUrl() { return text("AI_BASE_URL", ""); }
+
+    /** Unknown or missing values keep the scraper, so a typo never stops place lookups. */
+    public SocialMapSearchProvider mapSearchProvider() {
+        String value = text("MAP_SEARCH_PROVIDER", SocialMapSearchProvider.SCRAPE.name()).toUpperCase(Locale.ROOT);
+        try {
+            return SocialMapSearchProvider.valueOf(value);
+        } catch (IllegalArgumentException ignored) {
+            return SocialMapSearchProvider.SCRAPE;
+        }
+    }
 
     private String text(String key, String fallback) {
         return repository.findActiveByLabelAndKey(LABEL, key)

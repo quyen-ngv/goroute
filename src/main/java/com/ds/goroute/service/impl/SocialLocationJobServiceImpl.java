@@ -20,6 +20,9 @@ import com.ds.goroute.service.PlaceSocialVideoService;
 import com.ds.goroute.service.SocialLocationConfigService;
 import com.ds.goroute.service.NotificationService;
 import com.ds.goroute.service.SocialLocationCompletionService;
+import com.ds.goroute.service.SocialCandidateImageService;
+import com.ds.goroute.service.InternalPlaceSearchService;
+import com.ds.goroute.type.SocialMapSearchProvider;
 import com.ds.goroute.repository.AiTripRepository;
 import com.ds.goroute.repository.SocialLocationRestrictionRepository;
 import com.ds.goroute.entity.SocialLocationSubmissionEvent;
@@ -97,6 +100,10 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     private String internalBaseUrl;
 
     private final InternalApiProperties internalApiProperties;
+
+    private final SocialCandidateImageService candidateImageService;
+
+    private final InternalPlaceSearchService internalPlaceSearchService;
 
     @Value("${social-location.dispatch-timeout-seconds:90}")
     private long dispatchTimeoutSeconds;
@@ -269,6 +276,10 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         // Outside any transaction: this call can block for the worker's full read timeout.
         // gorouteJobId is the request id: it is stable across every attempt at this job, so a
         // worker that already accepted it can recognise a repeat submission as the same work.
+        // Google is used only when an operator chose it and the key is present; otherwise the
+        // worker keeps scraping, exactly as before the switch existed.
+        boolean backendMapSearch = socialConfig.mapSearchProvider() == SocialMapSearchProvider.GOOGLE
+                && internalPlaceSearchService.isAvailable();
         long startedNanos = System.nanoTime();
         ScrapeSocialLocationJobResponse trigger;
         try {
@@ -290,6 +301,10 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                         .aiBaseUrl(socialConfig.aiBaseUrl())
                         .includeMapSearch(true)
                         .mapSearchLimit(1)
+                        .mapSearchProvider(backendMapSearch
+                                ? SocialMapSearchProvider.GOOGLE.name()
+                                : SocialMapSearchProvider.SCRAPE.name())
+                        .mapSearchUrl(backendMapSearch ? placeSearchUrl() : null)
                         .headless(true)
                         .build());
         } catch (ScrapeServiceClient.TriggerUnverifiedException e) {
@@ -590,6 +605,9 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
      */
     @Override
     public SocialLocationJobResponse handleCallback(SocialLocationJobCallbackRequest request) {
+        // Stored before the transaction: an upload is a network call and must not hold the
+        // per-user lock taken below.
+        request.setResult(candidateImageService.storePreviewImages(callbackJobId(request), request.getResult()));
         CallbackOutcome outcome = inTransaction(() -> applyCallback(request));
         SocialLocationJob job = outcome.job();
         if (outcome.alreadyTerminal()) {
@@ -606,6 +624,16 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                                    SocialLocationJobStatus status,
                                    JsonNode result,
                                    boolean alreadyTerminal) {
+    }
+
+    private UUID callbackJobId(SocialLocationJobCallbackRequest request) {
+        if (request.getGorouteJobId() != null) {
+            return request.getGorouteJobId();
+        }
+        SocialLocationJob job = request.getPythonJobId() == null
+                ? null
+                : jobMapper.findByPythonJobId(request.getPythonJobId());
+        return job == null ? null : job.getId();
     }
 
     private CallbackOutcome applyCallback(SocialLocationJobCallbackRequest request) {
@@ -625,12 +653,20 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         if (isTerminal(job.getStatus())) {
             return new CallbackOutcome(job, job.getStatus(), null, true);
         }
+        if (status == SocialLocationJobStatus.PROCESSING && job.getDeadlineAt() == null) {
+            // A progress report can land before dispatch() records the worker's answer; dispatch
+            // then finds the job no longer DISPATCHING and skips its update, so the deadline must
+            // be set here or reconciliation could never time the job out.
+            LocalDateTime now = LocalDateTime.now();
+            job.setStartedAt(job.getStartedAt() == null ? now : job.getStartedAt());
+            job.setDeadlineAt(job.getStartedAt().plusMinutes(Math.max(1, jobTimeoutMinutes)));
+        }
         job.setStatus(status);
         job.setPythonJobId(firstNonBlank(request.getPythonJobId(), job.getPythonJobId()));
         job.setSourceUrl(firstNonBlank(request.getSourceUrl(), job.getSourceUrl()));
         job.setPlatform(firstNonBlank(request.getPlatform(), job.getPlatform()));
-        JsonNode callbackResult = retainOnlyCertainCandidates(
-                attachExistingDatabasePlaces(request.getResult()));
+        JsonNode callbackResult = retainOnlyCertainCandidates(attachExistingDatabasePlaces(
+                candidateImageService.carryOverImageUrls(parseJson(job.getResultPayload()), request.getResult())));
         request.setResult(callbackResult);
         job.setResultPayload(callbackResult != null && !callbackResult.isNull()
                 ? callbackResult.toString()
@@ -748,6 +784,10 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
 
     private String callbackUrl() {
         return internalBaseUrl.replaceAll("/+$", "") + "/v1/api/internal/social-location/jobs/callback";
+    }
+
+    private String placeSearchUrl() {
+        return internalBaseUrl.replaceAll("/+$", "") + "/v1/api/internal/place-search/text";
     }
 
     private String platformFromUrl(String url) {
@@ -895,7 +935,6 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         int candidateCount = hasAiResponse && extraction.path("candidates").isArray()
                 ? extraction.path("candidates").size()
                 : 0;
-        JsonNode usage = hasAiResponse ? extraction.path("usage") : null;
 
         aiApiCallMapper.upsert(AiApiCall.builder()
                 .id(UUID.randomUUID())
@@ -903,6 +942,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 .feature("SOCIAL_LOCATION")
                 .operation("EXTRACT_PLACES")
                 .correlationId(job.getId().toString())
+                .traceId(job.getId().toString())
                 .provider(hasAiResponse ? text(extraction, "provider") : socialConfig.aiProvider())
                 .model(hasAiResponse ? text(extraction, "model") : socialConfig.aiModel())
                 .status(jobStatus == SocialLocationJobStatus.PROCESSING
@@ -914,9 +954,9 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 .errorPayload(callback.getError() == null || callback.getError().isNull()
                         ? null : callback.getError().toString())
                 .candidateCount(candidateCount)
-                .inputTokens(integer(usage, "inputTokens", "prompt_tokens"))
-                .outputTokens(integer(usage, "outputTokens", "completion_tokens"))
-                .totalTokens(integer(usage, "totalTokens", "total_tokens"))
+                // Tokens and cost live on the per-call rows the worker reports (TRANSCRIBE_AUDIO,
+                // PREFILTER_TOPIC, EXTRACT_CANDIDATES, same traceId); repeating them here would
+                // count the extraction twice. The job usage stays readable in responsePayload.usage.
                 .latencyMs(latencyMs)
                 .startedAt(job.getStartedAt())
                 .completedAt(completedAt)
@@ -1208,18 +1248,5 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         } catch (NumberFormatException ignored) {
             return null;
         }
-    }
-
-    private Integer integer(JsonNode node, String... fields) {
-        if (node == null || node.isNull() || node.isMissingNode()) {
-            return null;
-        }
-        for (String field : fields) {
-            JsonNode value = node.get(field);
-            if (value != null && value.canConvertToInt()) {
-                return value.asInt();
-            }
-        }
-        return null;
     }
 }

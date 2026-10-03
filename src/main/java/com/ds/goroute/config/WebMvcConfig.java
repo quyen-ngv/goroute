@@ -21,7 +21,6 @@ import java.util.List;
         ScrapeHttpClientProperties.class,
         AiTripWorkerProperties.class,
         FileUploadProperties.class,
-        ImgpressProperties.class,
         ImageModerationProperties.class,
         OpenAiImageModerationProperties.class,
         PlaceImportWatchdogProperties.class
