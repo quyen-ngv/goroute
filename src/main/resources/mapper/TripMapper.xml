@@ -210,6 +210,38 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
+    <!-- The Home "Friends" tab: public trips owned by the people the viewer follows, most
+         recently shared first. Blocks are checked in both directions because blocking does
+         not remove a follow, and a deleted account's trips go with it. -->
+    <select id="findFollowingTrips" resultMap="TripResultMap">
+        SELECT t.id, t.name, t.cover_image_url, t.destination, t.destination_place_id,
+               t.destination_lat, t.destination_lng, t.start_date, t.end_date, t.budget, t.currency,
+               t.status, t.visibility, t.share_code, t.share_expenses, t.share_notes, t.description,
+               t.timezone, t.owner_id, t.starting_point_name, t.starting_point_address,
+               t.starting_point_lat, t.starting_point_lng, t.starting_point_time, t.view_count,
+               t.copy_count, t.helpful_votes, t.unhelpful_votes, t.is_deleted, t.deleted_at,
+               t.public_shared_at, t.created_at, t.updated_at, t.location_image_id
+        FROM trips t
+        JOIN user_follows f
+          ON f.following_id = t.owner_id
+         AND f.follower_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER}
+        JOIN users u ON u.id = t.owner_id AND u.deleted_at IS NULL
+        WHERE t.visibility = 'PUBLIC'
+          AND t.is_deleted = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM user_blocks b
+              WHERE (b.blocker_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER}
+                     AND b.blocked_id = t.owner_id)
+                 OR (b.blocker_id = t.owner_id
+                     AND b.blocked_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER}))
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns ct
+              WHERE ct.content_type = 'TRIP' AND ct.content_id = t.id
+                AND ct.restored_at IS NULL)
+        ORDER BY COALESCE(t.public_shared_at, t.created_at) DESC, t.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
     <update id="incrementViewCount" parameterType="java.util.UUID">
         UPDATE trips
         SET view_count = COALESCE(view_count, 0) + 1,

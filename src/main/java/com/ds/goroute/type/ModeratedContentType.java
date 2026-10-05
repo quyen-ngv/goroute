@@ -28,5 +28,7 @@ public enum ModeratedContentType {
     /** Quest-level text a creator writes: title, summary, description, safety notes. */
     QUEST,
     /** Per-checkpoint text: names, stories, question prompts, hints. */
-    QUEST_CHECKPOINT
+    QUEST_CHECKPOINT,
+    /** A user-hosted meetup (epic 18): title, description, place text, join message. */
+    MEETUP
 }

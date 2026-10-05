@@ -163,6 +163,34 @@ public class FileUploadServiceImpl implements FileUploadService {
     }
 
     @Override
+    public ImageUploadOutcome uploadImageFromPublicUrl(ImageUploadRequest request, String sourceUrl) {
+        StorageService.DownloadedFile downloaded;
+        try {
+            downloaded = storageService.downloadPublicFile(sourceUrl);
+        } catch (IllegalArgumentException exception) {
+            return ImageUploadOutcome.failed(sourceUrl, exception.getMessage() == null
+                    ? "Could not download the image"
+                    : exception.getMessage());
+        } catch (RuntimeException exception) {
+            return ImageUploadOutcome.failed(sourceUrl, "Could not download the image");
+        }
+        byte[] bytes = downloaded == null ? null : downloaded.bytes();
+        if (bytes == null || bytes.length == 0) {
+            return ImageUploadOutcome.failed(sourceUrl, "The address did not return an image");
+        }
+        if (bytes.length > getMaxImageSizeBytes(request.userId())) {
+            return ImageUploadOutcome.failed(sourceUrl, "Image exceeds the configured size limit");
+        }
+        // The reported type is not trusted: only the bytes decide.
+        String contentType = detectContentType(bytes);
+        if (contentType == null) {
+            return ImageUploadOutcome.failed(sourceUrl, "Only JPEG, PNG, and WEBP images are allowed");
+        }
+        ValidatedImage image = new ValidatedImage(bytes, contentType, extension(contentType), "image");
+        return store(request, image, sourceUrl);
+    }
+
+    @Override
     public String uploadVideo(UUID userId, MultipartFile file) {
         return uploadVideo("trip-memory-videos/" + userId, file);
     }

@@ -114,5 +114,22 @@ public enum NotificationType {
     // A partner submitted verification documents; sent to operators (optional).
     PARTNER_VERIFICATION_SUBMITTED,
     // Monthly commission statement issued; sent to the owner and finance members.
-    PARTNER_STATEMENT_READY
+    PARTNER_STATEMENT_READY,
+    // Meetups (epic 18). Data: meetupId, meetupTitle, hostName, userName, reason, deepLink "/meetups/<id>".
+    // An admin approved the host's meetup; sent to the host.
+    MEETUP_APPROVED,
+    // An admin rejected the host's meetup (reason label + note); sent to the host.
+    MEETUP_REJECTED,
+    // An admin removed an approved meetup; sent to the host (participants get MEETUP_CANCELLED).
+    MEETUP_REMOVED,
+    // Someone asked to join an APPROVAL meetup; sent to the host.
+    MEETUP_JOIN_REQUESTED,
+    // Someone joined an OPEN meetup; sent to the host.
+    MEETUP_PARTICIPANT_JOINED,
+    // The host accepted a join request; sent to the requester.
+    MEETUP_REQUEST_ACCEPTED,
+    // The host declined a join request; sent to the requester.
+    MEETUP_REQUEST_DECLINED,
+    // The host cancelled, or an admin removed, a meetup; sent to joined and requesting people.
+    MEETUP_CANCELLED
 }

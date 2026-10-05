@@ -138,4 +138,9 @@ public class UserRepositoryImpl implements UserRepository {
                               java.time.LocalDateTime changedAt) {
         return userMapper.updatePassword(id, passwordHash, mustChangePassword, changedAt);
     }
+
+    @Override
+    public int updateBirthYear(UUID id, int birthYear, java.time.LocalDateTime updatedAt) {
+        return userMapper.updateBirthYear(id, birthYear, updatedAt);
+    }
 }

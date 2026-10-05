@@ -35,6 +35,13 @@ public interface FileUploadService {
      */
     ImageUploadOutcome uploadImageFromUrl(ImageUploadRequest request, String sourceUrl);
 
+    /**
+     * Like {@link #uploadImageFromUrl}, but the download goes through the SSRF-guarded path
+     * ({@link StorageService#downloadPublicFile}: HTTPS only, public hosts only on every redirect,
+     * streamed with a size cap). Used for untrusted URLs such as the events crawler's.
+     */
+    ImageUploadOutcome uploadImageFromPublicUrl(ImageUploadRequest request, String sourceUrl);
+
     String uploadVideo(UUID userId, MultipartFile file);
 
     /** Operator upload through a fixed storage prefix, for curated (non-user) video assets. */

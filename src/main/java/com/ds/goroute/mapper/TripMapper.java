@@ -40,6 +40,11 @@ public interface TripMapper {
         @Param("excludeUserId") UUID excludeUserId
     );
     
+    /** Public trips owned by the people {@code viewerId} follows, most recently shared first. */
+    List<Trip> findFollowingTrips(@Param("viewerId") UUID viewerId,
+                                  @Param("limit") int limit,
+                                  @Param("offset") int offset);
+
     int incrementViewCount(@Param("id") UUID id);
     
     int incrementCopyCount(@Param("id") UUID id);

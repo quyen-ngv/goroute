@@ -157,6 +157,72 @@ class MarketplaceChatServiceChatFeaturesTest {
     }
 
     @Nested
+    @DisplayName("access to a meetup thread")
+    class MeetupThreadAccess {
+
+        private final UUID meetup = UUID.randomUUID();
+
+        @BeforeEach
+        void meetupThread() {
+            when(repo.find(eq(CONVERSATION), any())).thenReturn(Optional.of(meetupConversation(meetup)));
+        }
+
+        @Test
+        @DisplayName("is decided by the meetup, live: its host or a JOINED participant")
+        void asksTheMeetup() {
+            when(repo.isMeetupHostOrJoined(meetup, ME)).thenReturn(true);
+
+            service.get(ME, CONVERSATION);
+
+            verify(repo).isMeetupHostOrJoined(meetup, ME);
+            verify(repo, never()).canAccess(CONVERSATION, ME);
+        }
+
+        @Test
+        @DisplayName("is refused to somebody who left or was never seated")
+        void refusesSomebodyNotSeated() {
+            when(repo.isMeetupHostOrJoined(meetup, FRIEND)).thenReturn(false);
+
+            assertThatThrownBy(() -> service.get(FRIEND, CONVERSATION)).isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("cannot be obtained by asking the generic start endpoint for a MEETUP thread")
+        void refusesStartingAMeetupThreadDirectly() {
+            StartMarketplaceConversationRequest request = new StartMarketplaceConversationRequest();
+            request.setConversationType(MarketplaceConversationType.MEETUP);
+
+            assertThatThrownBy(() -> service.start(ME, request))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("through its meetup");
+        }
+
+        @Test
+        @DisplayName("is titled by the meetup and refused to an operator")
+        void isTitledByTheMeetupAndPrivate() {
+            when(repo.isMeetupHostOrJoined(meetup, ME)).thenReturn(true);
+
+            assertThat(service.get(ME, CONVERSATION).getTitle()).isEqualTo("chạy bộ quanh hồ Tây");
+            assertThat(service.get(ME, CONVERSATION).getMeetupId()).isEqualTo(meetup);
+            assertThatThrownBy(() -> service.adminMessages(OPERATOR, CONVERSATION, null, 50, "a reason"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("private");
+        }
+
+        @Test
+        @DisplayName("writes system lines about the group, not a trip")
+        void systemLinesSayGroup() {
+            when(repo.findMessage(any())).thenAnswer(invocation -> Optional.empty());
+
+            service.postSystemMessage(CONVERSATION, "MEMBER_JOINED", FRIEND, "Linh");
+
+            ArgumentCaptor<MarketplaceMessage> captor = ArgumentCaptor.forClass(MarketplaceMessage.class);
+            verify(repo).insertMessage(captor.capture());
+            assertThat(captor.getValue().getContent()).isEqualTo("Linh joined the group");
+        }
+    }
+
+    @Nested
     @DisplayName("what an operator may do with it")
     class OperatorAccess {
 
@@ -653,6 +719,18 @@ class MarketplaceChatServiceChatFeaturesTest {
                 .conversationType(MarketplaceConversationType.TRIP.name())
                 .tripId(TRIP)
                 .tripName("Đà Lạt")
+                .status(MarketplaceConversationStatus.OPEN.name())
+                .createdAt(LocalDateTime.now())
+                .build();
+    }
+
+    private MarketplaceConversation meetupConversation(UUID meetupId) {
+        return MarketplaceConversation.builder()
+                .id(CONVERSATION)
+                .conversationType(MarketplaceConversationType.MEETUP.name())
+                .meetupId(meetupId)
+                .meetupTitle("chạy bộ quanh hồ Tây")
+                .meetupHostUserId(ME)
                 .status(MarketplaceConversationStatus.OPEN.name())
                 .createdAt(LocalDateTime.now())
                 .build();

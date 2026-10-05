@@ -35,6 +35,12 @@ public interface UserCheckinRepository {
     /** {@code geo} limits the feed to an area; null means everywhere. */
     List<UserCheckin> findFeed(UUID excludeUserId, FeedGeoFilter geo, int limit, int offset);
 
+    /**
+     * Public check-ins by the people {@code viewerId} follows, newest first, without
+     * deleted authors, taken-down posts or blocks in either direction.
+     */
+    List<UserCheckin> findFollowingFeed(UUID viewerId, int limit, int offset);
+
     List<UserCheckin> findByUser(UUID userId, boolean includePrivate, int limit, int offset);
 
     long countByUser(UUID userId, boolean includePrivate);

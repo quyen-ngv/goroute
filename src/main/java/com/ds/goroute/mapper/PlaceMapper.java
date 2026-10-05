@@ -61,6 +61,9 @@ public interface PlaceMapper {
 
     List<Place> findByIds(@Param("ids") List<UUID> ids);
 
+    /** What a saved-place list shows of each place, without the heavy JSON columns. */
+    List<Place> findSavedSummaryByIds(@Param("ids") List<UUID> ids);
+
     List<Place> findByPlaceIds(@Param("placeIds") List<String> placeIds);
 
     List<Place> findForAiByDestination(@Param("citySlugJson") String citySlugJson,

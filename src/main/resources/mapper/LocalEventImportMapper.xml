@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.localevent.persistence.LocalEventImportMapper">
+
+    <insert id="insertBatch" parameterType="com.ds.goroute.localevent.domain.LocalEventImportBatch">
+        INSERT INTO local_event_import_batches (
+            id, actor_user_id, api_key_id, dry_run, total, created, updated, unchanged, skipped,
+            failed, created_at
+        ) VALUES (
+            #{id}, #{actorUserId}, #{apiKeyId}, #{dryRun}, #{total}, #{created}, #{updated},
+            #{unchanged}, #{skipped}, #{failed}, #{createdAt}
+        )
+    </insert>
+
+    <insert id="insertItems">
+        INSERT INTO local_event_import_items (
+            id, batch_id, item_index, source, external_id, result, event_id, duplicate_of_event_id,
+            errors, created_at
+        ) VALUES
+        <foreach item="item" collection="items" separator=",">
+            (#{item.id}, #{item.batchId}, #{item.itemIndex}, #{item.source}, #{item.externalId},
+             #{item.result}, #{item.eventId}, #{item.duplicateOfEventId},
+             COALESCE(CAST(#{item.errors} AS TEXT), '[]')::jsonb, #{item.createdAt})
+        </foreach>
+    </insert>
+
+    <!-- Display names are joined for the console list; the page is bounded. -->
+    <sql id="BatchColumns">
+        b.id, b.actor_user_id, b.api_key_id, b.dry_run, b.total, b.created, b.updated, b.unchanged,
+        b.skipped, b.failed, b.created_at,
+        u.full_name AS actor_name,
+        k.name AS api_key_name
+    </sql>
+
+    <select id="findBatches" resultType="com.ds.goroute.localevent.domain.LocalEventImportBatch">
+        SELECT <include refid="BatchColumns"/>
+        FROM local_event_import_batches b
+        LEFT JOIN users u ON u.id = b.actor_user_id
+        LEFT JOIN admin_api_keys k ON k.id = b.api_key_id
+        ORDER BY b.created_at DESC, b.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countBatches" resultType="long">
+        SELECT COUNT(*) FROM local_event_import_batches
+    </select>
+
+    <select id="findBatchById" resultType="com.ds.goroute.localevent.domain.LocalEventImportBatch">
+        SELECT <include refid="BatchColumns"/>
+        FROM local_event_import_batches b
+        LEFT JOIN users u ON u.id = b.actor_user_id
+        LEFT JOIN admin_api_keys k ON k.id = b.api_key_id
+        WHERE b.id = #{id}
+    </select>
+
+    <!-- A batch holds at most 100 items (import contract). -->
+    <select id="findItemsByBatch" resultType="com.ds.goroute.localevent.domain.LocalEventImportItem">
+        SELECT id, batch_id, item_index, source, external_id, result, event_id,
+               duplicate_of_event_id, errors, created_at
+        FROM local_event_import_items
+        WHERE batch_id = #{batchId}
+        ORDER BY item_index ASC, id ASC
+        LIMIT 200
+    </select>
+</mapper>

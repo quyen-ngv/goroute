@@ -22,4 +22,6 @@ public interface UserService {
     String updateAvatar(UUID userId, MultipartFile file);
     void deleteAccount(UUID userId);
     PublicUserProfileResponse getPublicProfile(UUID targetUserId, UUID viewerId);
+    /** Self-declared birth year, 1900..current year (Vietnam time); used by meetups only. */
+    com.ds.goroute.dto.response.BirthYearResponse updateBirthYear(UUID userId, int birthYear);
 }

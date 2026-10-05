@@ -238,6 +238,19 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
+    public com.ds.goroute.dto.response.BirthYearResponse updateBirthYear(UUID userId, int birthYear) {
+        int currentYear = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).getYear();
+        if (birthYear < 1900 || birthYear > currentYear) {
+            throw new BusinessException(ErrorConstant.MEETUP_INVALID_BIRTH_YEAR, "Birth year must be 1900.." + currentYear);
+        }
+        if (userRepository.updateBirthYear(userId, birthYear, java.time.LocalDateTime.now(java.time.ZoneOffset.UTC)) != 1) {
+            throw new BusinessException(ErrorConstant.USER_NOT_FOUND, "User not found");
+        }
+        return new com.ds.goroute.dto.response.BirthYearResponse(birthYear);
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public PublicUserProfileResponse getPublicProfile(UUID targetUserId, UUID viewerId) {
         User user = userRepository.findById(targetUserId)

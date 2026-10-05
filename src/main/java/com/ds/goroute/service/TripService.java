@@ -67,6 +67,12 @@ public interface TripService {
                                                UUID viewerId,
                                                UUID excludeUserId);
 
+    /**
+     * Public trips owned by the people {@code viewerId} follows, most recently shared first.
+     * Deleted owners, taken-down trips and blocks in either direction are left out.
+     */
+    List<PublicTripResponse> getFollowingTrips(UUID viewerId, int page, int size);
+
     TripRecentLocationResponse getRecentLocation(UUID userId);
 
     TripSearchBiasResponse resolveSearchBias(UUID tripId, int dayNumber, UUID userId, UUID overrideDestinationId);

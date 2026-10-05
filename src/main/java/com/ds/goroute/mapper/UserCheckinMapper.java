@@ -45,6 +45,11 @@ public interface UserCheckinMapper {
                                @Param("limit") int limit,
                                @Param("offset") int offset);
 
+    /** Public check-ins by the people {@code viewerId} follows, newest first. */
+    List<UserCheckin> findFollowingFeed(@Param("viewerId") UUID viewerId,
+                                        @Param("limit") int limit,
+                                        @Param("offset") int offset);
+
     List<UserCheckin> findByUser(@Param("userId") UUID userId,
                                  @Param("includePrivate") boolean includePrivate,
                                  @Param("limit") int limit,

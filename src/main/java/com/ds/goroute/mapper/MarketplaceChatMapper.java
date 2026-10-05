@@ -28,6 +28,12 @@ public interface MarketplaceChatMapper {
  /** The group chat of one trip, if it has been created. */
  MarketplaceConversation findByTrip(@Param("tripId")UUID tripId,@Param("viewerId")UUID viewerId);
 
+ /** The group chat of one meetup, if it has been created. */
+ MarketplaceConversation findByMeetup(@Param("meetupId")UUID meetupId,@Param("viewerId")UUID viewerId);
+
+ /** Whether the person hosts the meetup or holds a JOINED seat in it right now. */
+ boolean isMeetupHostOrJoined(@Param("meetupId")UUID meetupId,@Param("userId")UUID userId);
+
  /** Ids of everyone currently in the thread, for reconciling against another member list. */
  List<UUID> findActiveMemberIds(@Param("conversationId")UUID conversationId);
 

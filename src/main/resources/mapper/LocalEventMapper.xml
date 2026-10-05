@@ -1,0 +1,396 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.localevent.persistence.LocalEventMapper">
+
+    <!-- Columns are auto-mapped (mapUnderscoreToCamelCase); JSON columns arrive as text. -->
+
+    <!-- Everything except the large description and raw payload: list and duplicate reads. -->
+    <sql id="SummaryColumns">
+        e.id, e.title, e.category, e.start_at, e.end_at, e.timezone, e.all_day, e.event_status,
+        e.venue_name, e.address, e.latitude, e.longitude, e.province_code, e.cover_url,
+        e.is_free, e.price_min, e.price_max, e.currency, e.ticket_availability,
+        e.publish_status, e.source, e.external_id, e.duplicate_of_event_id, e.manually_edited,
+        e.updated_at
+    </sql>
+
+    <sql id="AllColumns">
+        e.id, e.title, e.title_norm, e.summary, e.description, e.language, e.category, e.tags,
+        e.start_at, e.end_at, e.end_at_estimated, e.timezone, e.all_day, e.sessions,
+        e.schedule_note, e.lunar_date_text, e.event_status, e.previous_start_at,
+        e.attendance_mode, e.online_url, e.venue_name, e.address, e.latitude, e.longitude,
+        e.place_id, e.province_code, e.ward_code, e.is_free, e.price_min, e.price_max,
+        e.currency, e.price_note, e.ticket_url, e.ticket_availability, e.organizer_name,
+        e.organizer_url, e.performers, e.min_age, e.cover_url, e.publish_status, e.published_at,
+        e.source, e.external_id, e.source_url, e.source_updated_at, e.content_hash,
+        e.extraction_confidence, e.extracted_by, e.raw_payload, e.duplicate_of_event_id,
+        e.manually_edited, e.created_by, e.updated_by, e.is_deleted, e.data_version,
+        e.created_at, e.updated_at
+    </sql>
+
+    <sql id="PublicDistanceKm">
+        (6371 * acos(
+            LEAST(1.0, GREATEST(-1.0,
+                cos(radians(#{p.latitude})) * cos(radians(e.latitude)) *
+                cos(radians(e.longitude) - radians(#{p.longitude})) +
+                sin(radians(#{p.latitude})) * sin(radians(e.latitude))
+            ))
+        ))
+    </sql>
+
+    <!--
+        Public visibility: published, live, mappable (not ONLINE, not MOVED_ONLINE), overlapping
+        [from, to], inside the radius. CANCELLED/POSTPONED stay visible: the app badges them.
+    -->
+    <sql id="PublicFilter">
+        WHERE e.is_deleted = FALSE
+          AND e.publish_status = 'PUBLISHED'
+          AND e.attendance_mode &lt;&gt; 'ONLINE'
+          AND e.event_status &lt;&gt; 'MOVED_ONLINE'
+          AND e.end_at &gt; #{p.from}
+          AND e.start_at &lt; #{p.to}
+          AND e.latitude BETWEEN #{p.minLat} AND #{p.maxLat}
+          AND e.longitude BETWEEN #{p.minLng} AND #{p.maxLng}
+          AND <include refid="PublicDistanceKm"/> &lt;= #{p.radiusKm}
+        <if test="p.categories != null and p.categories.size() > 0">
+          AND e.category IN
+            <foreach item="category" collection="p.categories" open="(" separator="," close=")">#{category}</foreach>
+        </if>
+    </sql>
+
+    <select id="findPublicWithinRadius" resultType="com.ds.goroute.localevent.domain.LocalEvent">
+        SELECT <include refid="SummaryColumns"/>,
+               jsonb_array_length(e.sessions) AS session_count,
+               <include refid="PublicDistanceKm"/> AS distance_km
+        FROM local_events e
+        <include refid="PublicFilter"/>
+        ORDER BY e.start_at ASC, e.id ASC
+        LIMIT #{p.limit} OFFSET #{p.offset}
+    </select>
+
+    <select id="countPublicWithinRadius" resultType="long">
+        SELECT COUNT(*)
+        FROM local_events e
+        <include refid="PublicFilter"/>
+    </select>
+
+    <select id="findPublishedById" resultType="com.ds.goroute.localevent.domain.LocalEvent">
+        SELECT <include refid="AllColumns"/>
+        FROM local_events e
+        WHERE e.id = #{id}
+          AND e.is_deleted = FALSE
+          AND e.publish_status = 'PUBLISHED'
+    </select>
+
+    <sql id="AdminFilter">
+        WHERE e.is_deleted = FALSE
+        <if test="p.searchNorm != null and p.searchNorm != ''">
+          AND (e.title_norm LIKE ('%' || #{p.searchNorm} || '%') ESCAPE '\'
+               OR e.external_id = #{p.search})
+        </if>
+        <if test="p.publishStatuses != null and p.publishStatuses.size() > 0">
+          AND e.publish_status IN
+            <foreach item="status" collection="p.publishStatuses" open="(" separator="," close=")">#{status}</foreach>
+        </if>
+        <if test="p.eventStatuses != null and p.eventStatuses.size() > 0">
+          AND e.event_status IN
+            <foreach item="status" collection="p.eventStatuses" open="(" separator="," close=")">#{status}</foreach>
+        </if>
+        <if test="p.categories != null and p.categories.size() > 0">
+          AND e.category IN
+            <foreach item="category" collection="p.categories" open="(" separator="," close=")">#{category}</foreach>
+        </if>
+        <if test="p.source != null and p.source != ''">
+          AND e.source = #{p.source}
+        </if>
+        <if test="p.provinceCode != null and p.provinceCode != ''">
+          AND e.province_code = #{p.provinceCode}
+        </if>
+        <if test="p.startFrom != null">
+          AND e.start_at &gt;= #{p.startFrom}
+        </if>
+        <if test="p.startTo != null">
+          AND e.start_at &lt; #{p.startTo}
+        </if>
+        <if test="p.duplicatesOnly">
+          AND e.duplicate_of_event_id IS NOT NULL
+        </if>
+    </sql>
+
+    <select id="findForAdmin" resultType="com.ds.goroute.localevent.domain.LocalEvent">
+        SELECT <include refid="SummaryColumns"/>
+        FROM local_events e
+        <include refid="AdminFilter"/>
+        <choose>
+            <when test="p.sortKey == 'startAt' and p.descending">ORDER BY e.start_at DESC, e.id DESC</when>
+            <when test="p.sortKey == 'startAt'">ORDER BY e.start_at ASC, e.id ASC</when>
+            <when test="p.sortKey == 'createdAt' and p.descending">ORDER BY e.created_at DESC, e.id DESC</when>
+            <when test="p.sortKey == 'createdAt'">ORDER BY e.created_at ASC, e.id ASC</when>
+            <when test="p.descending">ORDER BY e.updated_at DESC, e.id DESC</when>
+            <otherwise>ORDER BY e.updated_at ASC, e.id ASC</otherwise>
+        </choose>
+        LIMIT #{p.limit} OFFSET #{p.offset}
+    </select>
+
+    <select id="countForAdmin" resultType="long">
+        SELECT COUNT(*)
+        FROM local_events e
+        <include refid="AdminFilter"/>
+    </select>
+
+    <select id="findById" resultType="com.ds.goroute.localevent.domain.LocalEvent">
+        SELECT <include refid="AllColumns"/>
+        FROM local_events e
+        WHERE e.id = #{id}
+    </select>
+
+    <select id="findBySourceAndExternalId" resultType="com.ds.goroute.localevent.domain.LocalEvent">
+        SELECT <include refid="AllColumns"/>
+        FROM local_events e
+        WHERE e.source = #{source}
+          AND e.external_id = #{externalId}
+    </select>
+
+    <select id="findSummariesByIds" resultType="com.ds.goroute.localevent.domain.LocalEvent">
+        SELECT <include refid="SummaryColumns"/>
+        FROM local_events e
+        WHERE e.id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY e.id
+        LIMIT 500
+    </select>
+
+    <!-- pg_trgm similarity on the normalised title, within ±1 local day and nearby or same province. -->
+    <select id="findDuplicateCandidates" resultType="com.ds.goroute.localevent.domain.LocalEventDuplicateCandidate">
+        SELECT e.id, e.title, e.start_at, e.venue_name,
+               similarity(e.title_norm, #{p.titleNorm}) AS score
+        FROM local_events e
+        WHERE e.is_deleted = FALSE
+          <if test="p.excludeId != null">
+          AND e.id &lt;&gt; #{p.excludeId}
+          </if>
+          AND e.start_at &gt;= #{p.startFrom}
+          AND e.start_at &lt; #{p.startTo}
+          AND e.title_norm % #{p.titleNorm}
+          AND similarity(e.title_norm, #{p.titleNorm}) &gt;= #{p.minSimilarity}
+          AND (
+            (e.latitude BETWEEN #{p.minLat} AND #{p.maxLat}
+             AND e.longitude BETWEEN #{p.minLng} AND #{p.maxLng}
+             AND (6371 * acos(
+                    LEAST(1.0, GREATEST(-1.0,
+                        cos(radians(#{p.latitude})) * cos(radians(e.latitude)) *
+                        cos(radians(e.longitude) - radians(#{p.longitude})) +
+                        sin(radians(#{p.latitude})) * sin(radians(e.latitude))
+                    ))
+                 )) &lt;= #{p.radiusKm})
+            <if test="p.provinceCode != null and p.provinceCode != ''">
+            OR e.province_code = #{p.provinceCode}
+            </if>
+          )
+        ORDER BY score DESC, e.start_at ASC, e.id ASC
+        LIMIT #{p.limit}
+    </select>
+
+    <insert id="insert" parameterType="com.ds.goroute.localevent.domain.LocalEvent">
+        INSERT INTO local_events (
+            id, title, title_norm, summary, description, language, category, tags,
+            start_at, end_at, end_at_estimated, timezone, all_day, sessions,
+            schedule_note, lunar_date_text, event_status, previous_start_at,
+            attendance_mode, online_url, venue_name, address, latitude, longitude,
+            place_id, province_code, ward_code, is_free, price_min, price_max,
+            currency, price_note, ticket_url, ticket_availability, organizer_name,
+            organizer_url, performers, min_age, cover_url, publish_status, published_at,
+            source, external_id, source_url, source_updated_at, content_hash,
+            extraction_confidence, extracted_by, raw_payload, duplicate_of_event_id,
+            manually_edited, created_by, updated_by, is_deleted, data_version,
+            created_at, updated_at
+        ) VALUES (
+            #{id}, #{title}, #{titleNorm}, #{summary}, #{description}, #{language}, #{category},
+            COALESCE(CAST(#{tags} AS TEXT), '[]')::jsonb,
+            #{startAt}, #{endAt}, #{endAtEstimated}, #{timezone}, #{allDay},
+            COALESCE(CAST(#{sessions} AS TEXT), '[]')::jsonb,
+            #{scheduleNote}, #{lunarDateText}, #{eventStatus}, #{previousStartAt},
+            #{attendanceMode}, #{onlineUrl}, #{venueName}, #{address}, #{latitude}, #{longitude},
+            #{placeId}, #{provinceCode}, #{wardCode}, #{isFree}, #{priceMin}, #{priceMax},
+            #{currency}, #{priceNote}, #{ticketUrl}, #{ticketAvailability}, #{organizerName},
+            #{organizerUrl}, COALESCE(CAST(#{performers} AS TEXT), '[]')::jsonb, #{minAge},
+            #{coverUrl}, #{publishStatus}, #{publishedAt},
+            #{source}, #{externalId}, #{sourceUrl}, #{sourceUpdatedAt}, #{contentHash},
+            #{extractionConfidence}, #{extractedBy}, CAST(#{rawPayload} AS TEXT)::jsonb, #{duplicateOfEventId},
+            #{manuallyEdited}, #{createdBy}, #{updatedBy}, FALSE, 0,
+            #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <update id="updateContent">
+        UPDATE local_events
+        SET title = #{e.title},
+            title_norm = #{e.titleNorm},
+            summary = #{e.summary},
+            description = #{e.description},
+            language = #{e.language},
+            category = #{e.category},
+            tags = COALESCE(CAST(#{e.tags} AS TEXT), '[]')::jsonb,
+            start_at = #{e.startAt},
+            end_at = #{e.endAt},
+            end_at_estimated = #{e.endAtEstimated},
+            timezone = #{e.timezone},
+            all_day = #{e.allDay},
+            sessions = COALESCE(CAST(#{e.sessions} AS TEXT), '[]')::jsonb,
+            schedule_note = #{e.scheduleNote},
+            lunar_date_text = #{e.lunarDateText},
+            event_status = #{e.eventStatus},
+            previous_start_at = #{e.previousStartAt},
+            attendance_mode = #{e.attendanceMode},
+            online_url = #{e.onlineUrl},
+            venue_name = #{e.venueName},
+            address = #{e.address},
+            latitude = #{e.latitude},
+            longitude = #{e.longitude},
+            place_id = #{e.placeId},
+            province_code = #{e.provinceCode},
+            ward_code = #{e.wardCode},
+            is_free = #{e.isFree},
+            price_min = #{e.priceMin},
+            price_max = #{e.priceMax},
+            currency = #{e.currency},
+            price_note = #{e.priceNote},
+            ticket_url = #{e.ticketUrl},
+            ticket_availability = #{e.ticketAvailability},
+            organizer_name = #{e.organizerName},
+            organizer_url = #{e.organizerUrl},
+            performers = COALESCE(CAST(#{e.performers} AS TEXT), '[]')::jsonb,
+            min_age = #{e.minAge},
+            cover_url = #{e.coverUrl},
+            source_url = #{e.sourceUrl},
+            source_updated_at = #{e.sourceUpdatedAt},
+            content_hash = #{e.contentHash},
+            extraction_confidence = #{e.extractionConfidence},
+            extracted_by = #{e.extractedBy},
+            raw_payload = CAST(#{e.rawPayload} AS TEXT)::jsonb,
+            manually_edited = #{e.manuallyEdited},
+            updated_by = #{e.updatedBy},
+            data_version = data_version + 1,
+            updated_at = #{e.updatedAt}
+        WHERE id = #{e.id}
+          AND data_version = #{expectedVersion}
+    </update>
+
+    <update id="updatePublishStatus">
+        UPDATE local_events
+        SET publish_status = #{publishStatus},
+            published_at = COALESCE(published_at, #{publishedAt}),
+            updated_by = #{updatedBy},
+            data_version = data_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+          AND is_deleted = FALSE
+          AND data_version = #{expectedVersion}
+    </update>
+
+    <update id="softDelete">
+        UPDATE local_events
+        SET is_deleted = TRUE,
+            updated_by = #{updatedBy},
+            data_version = data_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+          AND is_deleted = FALSE
+    </update>
+
+    <update id="updateCoverFromImage">
+        UPDATE local_events e
+        SET cover_url = i.url
+        FROM local_event_images i
+        WHERE e.id = #{eventId}
+          AND i.id = #{imageId}
+          AND i.event_id = e.id
+          AND i.position = 0
+          AND i.status = 'DONE'
+          AND i.url IS NOT NULL
+    </update>
+
+    <!-- ================= images ================= -->
+    <sql id="ImageColumns">
+        id, event_id, position, source_url, url, credit, status, attempts, failure_reason,
+        created_at, updated_at
+    </sql>
+
+    <select id="findImagesByEvent" resultType="com.ds.goroute.localevent.domain.LocalEventImage">
+        SELECT <include refid="ImageColumns"/>
+        FROM local_event_images
+        WHERE event_id = #{eventId}
+        ORDER BY position ASC, id ASC
+        LIMIT 50
+    </select>
+
+    <select id="countPendingImages" resultType="com.ds.goroute.localevent.domain.LocalEventImageCount">
+        SELECT event_id, COUNT(*) AS image_count
+        FROM local_event_images
+        WHERE status = 'PENDING'
+          AND event_id IN
+          <foreach item="id" collection="eventIds" open="(" separator="," close=")">#{id}</foreach>
+        GROUP BY event_id
+        ORDER BY event_id
+        LIMIT 500
+    </select>
+
+    <insert id="insertImages">
+        INSERT INTO local_event_images (
+            id, event_id, position, source_url, url, credit, status, attempts, failure_reason,
+            created_at, updated_at
+        ) VALUES
+        <foreach item="image" collection="images" separator=",">
+            (#{image.id}, #{image.eventId}, #{image.position}, #{image.sourceUrl}, #{image.url},
+             #{image.credit}, #{image.status}, COALESCE(#{image.attempts}, 0), #{image.failureReason},
+             #{image.createdAt}, #{image.updatedAt})
+        </foreach>
+    </insert>
+
+    <delete id="deleteImagesByEvent">
+        DELETE FROM local_event_images WHERE event_id = #{eventId}
+    </delete>
+
+    <!-- Oldest first; rows of deleted events are left alone. -->
+    <select id="findPendingImages" resultType="com.ds.goroute.localevent.domain.LocalEventImage">
+        SELECT i.id, i.event_id, i.position, i.source_url, i.url, i.credit, i.status, i.attempts,
+               i.failure_reason, i.created_at, i.updated_at
+        FROM local_event_images i
+        JOIN local_events e ON e.id = i.event_id
+        WHERE i.status = 'PENDING'
+          AND i.attempts &lt; #{maxAttempts}
+          AND e.is_deleted = FALSE
+        ORDER BY i.created_at ASC, i.id ASC
+        LIMIT #{limit}
+    </select>
+
+    <update id="markImageDone">
+        UPDATE local_event_images
+        SET url = #{url},
+            status = 'DONE',
+            failure_reason = NULL,
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+          AND status = 'PENDING'
+    </update>
+
+    <update id="markImageAttemptFailed">
+        UPDATE local_event_images
+        SET attempts = attempts + 1,
+            status = #{status},
+            failure_reason = #{failureReason},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+          AND status = 'PENDING'
+    </update>
+
+    <update id="retryFailedImages">
+        UPDATE local_event_images
+        SET status = 'PENDING',
+            attempts = 0,
+            failure_reason = NULL,
+            updated_at = #{updatedAt}
+        WHERE event_id = #{eventId}
+          AND status = 'FAILED'
+    </update>
+</mapper>

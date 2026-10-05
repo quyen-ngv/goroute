@@ -1,0 +1,466 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.meetup.persistence.MeetupMapper">
+
+    <!-- ================= meetups ================= -->
+    <resultMap id="MeetupMap" type="com.ds.goroute.meetup.domain.Meetup">
+        <id property="id" column="id"/>
+        <result property="hostUserId" column="host_user_id"/>
+        <result property="title" column="title"/>
+        <result property="description" column="description"/>
+        <result property="category" column="category"/>
+        <result property="locationMode" column="location_mode"/>
+        <result property="latitude" column="latitude"/>
+        <result property="longitude" column="longitude"/>
+        <result property="displayLatitude" column="display_latitude"/>
+        <result property="displayLongitude" column="display_longitude"/>
+        <result property="radiusM" column="radius_m"/>
+        <result property="placeId" column="place_id"/>
+        <result property="placeName" column="place_name"/>
+        <result property="address" column="address"/>
+        <result property="areaLabel" column="area_label"/>
+        <result property="wardCode" column="ward_code"/>
+        <result property="provinceCode" column="province_code"/>
+        <result property="meetupDate" column="meetup_date"/>
+        <result property="timeMode" column="time_mode"/>
+        <result property="startsAt" column="starts_at"/>
+        <result property="visibleUntil" column="visible_until"/>
+        <result property="minAge" column="min_age"/>
+        <result property="maxAge" column="max_age"/>
+        <result property="joinPolicy" column="join_policy"/>
+        <result property="maxParticipants" column="max_participants"/>
+        <result property="status" column="status"/>
+        <result property="rejectReason" column="reject_reason"/>
+        <result property="reviewNote" column="review_note"/>
+        <result property="reviewedBy" column="reviewed_by"/>
+        <result property="reviewedAt" column="reviewed_at"/>
+        <result property="submittedAt" column="submitted_at"/>
+        <result property="resubmitCount" column="resubmit_count"/>
+        <result property="revision" column="revision"/>
+        <result property="cancelReason" column="cancel_reason"/>
+        <result property="cancelledAt" column="cancelled_at"/>
+        <result property="dataVersion" column="data_version"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="MeetupColumns">
+        m.id, m.host_user_id, m.title, m.description, m.category, m.location_mode,
+        m.latitude, m.longitude, m.display_latitude, m.display_longitude, m.radius_m,
+        m.place_id, m.place_name, m.address, m.area_label, m.ward_code, m.province_code,
+        m.meetup_date, m.time_mode, m.starts_at, m.visible_until, m.min_age, m.max_age,
+        m.join_policy, m.max_participants, m.status, m.reject_reason, m.review_note,
+        m.reviewed_by, m.reviewed_at, m.submitted_at, m.resubmit_count, m.revision,
+        m.cancel_reason, m.cancelled_at, m.data_version, m.created_at, m.updated_at
+    </sql>
+
+    <!-- Hidden by a moderator: never listed, whoever asks. -->
+    <sql id="NotTakenDown">
+        NOT EXISTS (
+            SELECT 1 FROM content_takedowns t
+            WHERE t.content_type = 'MEETUP' AND t.content_id = m.id AND t.restored_at IS NULL
+        )
+    </sql>
+
+    <insert id="insert">
+        INSERT INTO meetups (
+            id, host_user_id, title, description, category, location_mode,
+            latitude, longitude, display_latitude, display_longitude, radius_m,
+            place_id, place_name, address, area_label, ward_code, province_code,
+            meetup_date, time_mode, starts_at, visible_until, min_age, max_age,
+            join_policy, max_participants, status, submitted_at, resubmit_count, revision,
+            data_version, created_at, updated_at
+        ) VALUES (
+            #{m.id}, #{m.hostUserId}, #{m.title}, #{m.description}, #{m.category}, #{m.locationMode},
+            #{m.latitude}, #{m.longitude}, #{m.displayLatitude}, #{m.displayLongitude}, #{m.radiusM},
+            #{m.placeId}, #{m.placeName}, #{m.address}, #{m.areaLabel}, #{m.wardCode}, #{m.provinceCode},
+            #{m.meetupDate}, #{m.timeMode}, #{m.startsAt}, #{m.visibleUntil}, #{m.minAge}, #{m.maxAge},
+            #{m.joinPolicy}, #{m.maxParticipants}, #{m.status}, #{m.submittedAt}, #{m.resubmitCount}, #{m.revision},
+            0, #{m.createdAt}, #{m.updatedAt}
+        )
+    </insert>
+
+    <select id="findById" resultMap="MeetupMap">
+        SELECT <include refid="MeetupColumns"/>
+        FROM meetups m
+        WHERE m.id = #{id}
+    </select>
+
+    <select id="lockById" resultType="java.util.UUID">
+        SELECT id FROM meetups WHERE id = #{id} FOR UPDATE
+    </select>
+
+    <!-- Host edit or resubmit: only while PENDING_REVIEW or REJECTED, only by the host, only at the expected version. -->
+    <update id="updateContent">
+        UPDATE meetups
+        SET title = #{m.title},
+            description = #{m.description},
+            category = #{m.category},
+            location_mode = #{m.locationMode},
+            latitude = #{m.latitude},
+            longitude = #{m.longitude},
+            display_latitude = #{m.displayLatitude},
+            display_longitude = #{m.displayLongitude},
+            radius_m = #{m.radiusM},
+            place_id = #{m.placeId},
+            place_name = #{m.placeName},
+            address = #{m.address},
+            area_label = #{m.areaLabel},
+            ward_code = #{m.wardCode},
+            province_code = #{m.provinceCode},
+            meetup_date = #{m.meetupDate},
+            time_mode = #{m.timeMode},
+            starts_at = #{m.startsAt},
+            visible_until = #{m.visibleUntil},
+            min_age = #{m.minAge},
+            max_age = #{m.maxAge},
+            join_policy = #{m.joinPolicy},
+            max_participants = #{m.maxParticipants},
+            status = #{m.status},
+            reject_reason = NULL,
+            review_note = NULL,
+            reviewed_by = NULL,
+            reviewed_at = NULL,
+            submitted_at = #{m.submittedAt},
+            resubmit_count = #{m.resubmitCount},
+            revision = #{m.revision},
+            data_version = data_version + 1,
+            updated_at = #{m.updatedAt}
+        WHERE id = #{m.id}
+          AND host_user_id = #{m.hostUserId}
+          AND status IN ('PENDING_REVIEW', 'REJECTED')
+          AND data_version = #{expectedVersion}
+    </update>
+
+    <!-- Approve or reject: only a pending review whose window is still open, at the expected version. -->
+    <update id="updateReview">
+        UPDATE meetups
+        SET status = #{status},
+            reject_reason = #{rejectReason},
+            review_note = #{reviewNote},
+            reviewed_by = #{reviewedBy},
+            reviewed_at = #{now},
+            data_version = data_version + 1,
+            updated_at = #{now}
+        WHERE id = #{id}
+          AND status = 'PENDING_REVIEW'
+          AND visible_until &gt; #{now}
+          AND data_version = #{expectedVersion}
+    </update>
+
+    <update id="updateWithdrawn">
+        UPDATE meetups
+        SET status = 'WITHDRAWN',
+            data_version = data_version + 1,
+            updated_at = #{now}
+        WHERE id = #{id}
+          AND host_user_id = #{hostUserId}
+          AND status = 'PENDING_REVIEW'
+    </update>
+
+    <update id="updateCancelled">
+        UPDATE meetups
+        SET status = 'CANCELLED',
+            cancel_reason = #{reason},
+            cancelled_at = #{now},
+            data_version = data_version + 1,
+            updated_at = #{now}
+        WHERE id = #{id}
+          AND host_user_id = #{hostUserId}
+          AND status = 'APPROVED'
+          AND visible_until &gt; #{now}
+    </update>
+
+    <!-- An admin takes an approved meetup off the map; the reason is kept as the review note. -->
+    <update id="updateRemoved">
+        UPDATE meetups
+        SET status = 'REMOVED',
+            review_note = #{reason},
+            reviewed_by = #{reviewedBy},
+            reviewed_at = #{now},
+            data_version = data_version + 1,
+            updated_at = #{now}
+        WHERE id = #{id}
+          AND status = 'APPROVED'
+    </update>
+
+    <sql id="DiscoverableWhere">
+        WHERE m.status = 'APPROVED'
+          AND m.visible_until &gt; #{p.now}
+          AND m.display_latitude BETWEEN #{p.minLat} AND #{p.maxLat}
+          AND m.display_longitude BETWEEN #{p.minLng} AND #{p.maxLng}
+          AND (
+            6371 * acos(
+                LEAST(1.0, GREATEST(-1.0,
+                    cos(radians(#{p.latitude})) * cos(radians(m.display_latitude)) *
+                    cos(radians(m.display_longitude) - radians(#{p.longitude})) +
+                    sin(radians(#{p.latitude})) * sin(radians(m.display_latitude))
+                ))
+            )
+          ) &lt;= #{p.radiusKm}
+        <if test="p.categories != null and p.categories.size() > 0">
+          AND m.category IN
+            <foreach item="category" collection="p.categories" open="(" separator="," close=")">
+                #{category}
+            </foreach>
+        </if>
+          AND <include refid="NotTakenDown"/>
+          AND NOT EXISTS (
+            SELECT 1 FROM user_blocks b
+            WHERE (b.blocker_id = #{p.viewerId} AND b.blocked_id = m.host_user_id)
+               OR (b.blocker_id = m.host_user_id AND b.blocked_id = #{p.viewerId})
+          )
+    </sql>
+
+    <select id="countDiscoverable" resultType="long">
+        SELECT COUNT(*)
+        FROM meetups m
+        <include refid="DiscoverableWhere"/>
+    </select>
+
+    <!-- Soonest first: an exact start, else the meetup day; then oldest submission. -->
+    <select id="findDiscoverable" resultMap="MeetupMap">
+        SELECT <include refid="MeetupColumns"/>
+        FROM meetups m
+        <include refid="DiscoverableWhere"/>
+        ORDER BY COALESCE(m.starts_at, CAST(m.meetup_date AS TIMESTAMP)) ASC, m.created_at ASC, m.id ASC
+        LIMIT #{p.limit} OFFSET #{p.offset}
+    </select>
+
+    <select id="countByHost" resultType="long">
+        SELECT COUNT(*) FROM meetups m WHERE m.host_user_id = #{hostUserId}
+    </select>
+
+    <select id="findByHost" resultMap="MeetupMap">
+        SELECT <include refid="MeetupColumns"/>
+        FROM meetups m
+        WHERE m.host_user_id = #{hostUserId}
+        ORDER BY m.created_at DESC, m.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- Meetups the user asked to join or joined that they can still open: live or cancelled, not taken down. -->
+    <sql id="ParticipationsWhere">
+        WHERE p.user_id = #{userId}
+          AND p.status IN ('REQUESTED', 'JOINED')
+          AND m.status IN ('APPROVED', 'CANCELLED')
+          AND <include refid="NotTakenDown"/>
+    </sql>
+
+    <select id="countParticipations" resultType="long">
+        SELECT COUNT(*)
+        FROM meetup_participants p
+        JOIN meetups m ON m.id = p.meetup_id
+        <include refid="ParticipationsWhere"/>
+    </select>
+
+    <select id="findParticipations" resultMap="MeetupMap">
+        SELECT <include refid="MeetupColumns"/>
+        FROM meetup_participants p
+        JOIN meetups m ON m.id = p.meetup_id
+        <include refid="ParticipationsWhere"/>
+        ORDER BY p.requested_at DESC, m.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <sql id="AdminWhere">
+        <where>
+            <if test="p.statuses != null and p.statuses.size() > 0">
+                AND m.status IN
+                <foreach item="status" collection="p.statuses" open="(" separator="," close=")">
+                    #{status}
+                </foreach>
+            </if>
+            <if test="p.categories != null and p.categories.size() > 0">
+                AND m.category IN
+                <foreach item="category" collection="p.categories" open="(" separator="," close=")">
+                    #{category}
+                </foreach>
+            </if>
+            <if test="p.search != null and p.search != ''">
+                AND m.title ILIKE CONCAT('%', #{p.search}, '%')
+            </if>
+            <if test="p.provinceCode != null and p.provinceCode != ''">
+                AND m.province_code = #{p.provinceCode}
+            </if>
+            <if test="p.dateFrom != null">
+                AND m.meetup_date &gt;= #{p.dateFrom}
+            </if>
+            <if test="p.dateTo != null">
+                AND m.meetup_date &lt;= #{p.dateTo}
+            </if>
+            <if test="p.hidePast">
+                AND m.visible_until &gt; #{p.now}
+            </if>
+        </where>
+    </sql>
+
+    <select id="countAdmin" resultType="long">
+        SELECT COUNT(*)
+        FROM meetups m
+        <include refid="AdminWhere"/>
+    </select>
+
+    <select id="findAdmin" resultMap="MeetupMap">
+        SELECT <include refid="MeetupColumns"/>
+        FROM meetups m
+        <include refid="AdminWhere"/>
+        <choose>
+            <when test="p.sort == 'DEADLINE'">
+                ORDER BY m.visible_until ASC, m.id ASC
+            </when>
+            <otherwise>
+                ORDER BY m.submitted_at DESC, m.id DESC
+            </otherwise>
+        </choose>
+        LIMIT #{p.limit} OFFSET #{p.offset}
+    </select>
+
+    <select id="countActiveByHost" resultType="long">
+        SELECT COUNT(*)
+        FROM meetups m
+        WHERE m.host_user_id = #{hostUserId}
+          AND m.status IN ('PENDING_REVIEW', 'APPROVED')
+          AND m.visible_until &gt; #{now}
+        <if test="excludeId != null">
+          AND m.id &lt;&gt; #{excludeId}
+        </if>
+    </select>
+
+    <select id="countSubmittedSince" resultType="long">
+        SELECT COUNT(*)
+        FROM meetups m
+        WHERE m.host_user_id = #{hostUserId}
+          AND m.submitted_at &gt; #{since}
+    </select>
+
+    <select id="countHostStatuses" resultType="com.ds.goroute.meetup.domain.MeetupStatusCount">
+        SELECT m.status AS status, COUNT(*) AS total
+        FROM meetups m
+        WHERE m.host_user_id = #{hostUserId}
+        GROUP BY m.status
+        ORDER BY m.status
+    </select>
+
+    <select id="findBirthYear" resultType="java.lang.Integer">
+        SELECT birth_year FROM users WHERE id = #{userId} AND deleted_at IS NULL
+    </select>
+
+    <!-- ================= participants ================= -->
+    <resultMap id="ParticipantMap" type="com.ds.goroute.meetup.domain.MeetupParticipant">
+        <id property="meetupId" column="meetup_id"/>
+        <id property="userId" column="user_id"/>
+        <result property="status" column="status"/>
+        <result property="message" column="message"/>
+        <result property="requestedAt" column="requested_at"/>
+        <result property="decidedAt" column="decided_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="ParticipantColumns">
+        meetup_id, user_id, status, message, requested_at, decided_at, updated_at
+    </sql>
+
+    <select id="findParticipant" resultMap="ParticipantMap">
+        SELECT <include refid="ParticipantColumns"/>
+        FROM meetup_participants
+        WHERE meetup_id = #{meetupId} AND user_id = #{userId}
+    </select>
+
+    <select id="findParticipantsForUser" resultMap="ParticipantMap">
+        SELECT <include refid="ParticipantColumns"/>
+        FROM meetup_participants
+        WHERE user_id = #{userId}
+          AND meetup_id IN
+        <foreach item="meetupId" collection="meetupIds" open="(" separator="," close=")">
+            #{meetupId}
+        </foreach>
+        ORDER BY meetup_id
+    </select>
+
+    <select id="findParticipants" resultMap="ParticipantMap">
+        SELECT <include refid="ParticipantColumns"/>
+        FROM meetup_participants
+        WHERE meetup_id = #{meetupId}
+        <if test="statuses != null and statuses.size() > 0">
+          AND status IN
+            <foreach item="status" collection="statuses" open="(" separator="," close=")">
+                #{status}
+            </foreach>
+        </if>
+        ORDER BY requested_at ASC, user_id ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="countJoined" resultType="com.ds.goroute.meetup.domain.MeetupCount">
+        SELECT meetup_id AS id, COUNT(*) AS total
+        FROM meetup_participants
+        WHERE status = 'JOINED'
+          AND meetup_id IN
+        <foreach item="meetupId" collection="meetupIds" open="(" separator="," close=")">
+            #{meetupId}
+        </foreach>
+        GROUP BY meetup_id
+    </select>
+
+    <select id="countParticipantsWithStatus" resultType="long">
+        SELECT COUNT(*)
+        FROM meetup_participants
+        WHERE meetup_id = #{meetupId} AND status = #{status}
+    </select>
+
+    <!-- Requests still waiting on a live meetup; a request on a past or closed meetup no longer counts. -->
+    <select id="countOpenRequests" resultType="long">
+        SELECT COUNT(*)
+        FROM meetup_participants p
+        JOIN meetups m ON m.id = p.meetup_id
+        WHERE p.user_id = #{userId}
+          AND p.status = 'REQUESTED'
+          AND m.status = 'APPROVED'
+          AND m.visible_until &gt; #{now}
+    </select>
+
+    <!-- A first request, or a new one after WITHDRAWN/LEFT (the service refuses DECLINED/REMOVED). -->
+    <insert id="upsertParticipant">
+        INSERT INTO meetup_participants (meetup_id, user_id, status, message, requested_at, decided_at, updated_at)
+        VALUES (#{p.meetupId}, #{p.userId}, #{p.status}, #{p.message}, #{p.requestedAt}, #{p.decidedAt}, #{p.updatedAt})
+        ON CONFLICT (meetup_id, user_id) DO UPDATE
+        SET status = EXCLUDED.status,
+            message = EXCLUDED.message,
+            requested_at = EXCLUDED.requested_at,
+            decided_at = EXCLUDED.decided_at,
+            updated_at = EXCLUDED.updated_at
+    </insert>
+
+    <update id="updateParticipantStatus">
+        UPDATE meetup_participants
+        SET status = #{toStatus},
+            decided_at = #{now},
+            updated_at = #{now}
+        WHERE meetup_id = #{meetupId}
+          AND user_id = #{userId}
+          AND status = #{fromStatus}
+    </update>
+
+    <!-- ================= reports ================= -->
+    <select id="countReports" resultType="com.ds.goroute.meetup.domain.MeetupCount">
+        SELECT content_id AS id, COUNT(*) AS total
+        FROM content_reports
+        WHERE content_type = 'MEETUP'
+          AND content_id IN
+        <foreach item="meetupId" collection="meetupIds" open="(" separator="," close=")">
+            #{meetupId}
+        </foreach>
+        GROUP BY content_id
+    </select>
+
+    <select id="findLatestReports" resultType="com.ds.goroute.meetup.domain.MeetupReportReason">
+        SELECT reason, note, created_at AS createdAt
+        FROM content_reports
+        WHERE content_type = 'MEETUP' AND content_id = #{meetupId}
+        ORDER BY created_at DESC, id DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

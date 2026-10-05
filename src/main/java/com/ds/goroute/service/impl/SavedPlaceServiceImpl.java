@@ -6,22 +6,29 @@ import com.ds.goroute.dto.response.RecentSavedPlaceResponse;
 import com.ds.goroute.dto.response.SavedPlaceCategoryResponse;
 import com.ds.goroute.dto.response.SavedPlaceResponse;
 import com.ds.goroute.dto.response.SavedItemsOverviewResponse;
+import com.ds.goroute.entity.LocationImage;
+import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.SavedPlace;
 import com.ds.goroute.entity.SocialLocationJob;
 import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.mapper.PlaceMapper;
 import com.ds.goroute.mapper.SavedPlaceMapper;
 import com.ds.goroute.mapper.SocialLocationJobMapper;
+import com.ds.goroute.repository.LocationImageRepository;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.SavedPlaceService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.collect.Lists;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,9 +43,12 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
 
     private static final String DEFAULT_ITEM_TYPE = "PLACE";
     private static final Set<String> PLACE_ITEM_TYPES = Set.of("PLACE", "FOOD");
+    private static final int CATALOG_BATCH_SIZE = 500;
 
     private final SavedPlaceMapper savedPlaceMapper;
     private final SocialLocationJobMapper socialLocationJobMapper;
+    private final PlaceMapper placeMapper;
+    private final LocationImageRepository locationImageRepository;
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final ObjectMapper objectMapper;
 
@@ -129,6 +139,7 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
         for (SocialLocationJob job : socialLocationJobMapper.findAllCompletedByUserId(userId)) {
             mergeMappedSocialPlaces(places, job);
         }
+        applyCatalog(places);
 
         return places.values().stream()
                 .map(RecentSavedPlaceAccumulator::toResponse)
@@ -209,9 +220,57 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
                             text(mappedCandidate, "imageUrl"),
                             text(mappedCandidate, "photoUrl"),
                             text(mapping, "thumbnail")),
+                    null,
                     firstText(text(mappedCandidate, "category"), text(candidate, "category")),
-                    text(candidate, "description"),
                     savedAt);
+        }
+    }
+
+    /**
+     * The place's own record wins over what was copied when it was saved: names, photos and
+     * ratings change, and only the catalogue knows which tourist area a place lies in. The
+     * copy is kept for places the catalogue no longer has.
+     */
+    private void applyCatalog(Map<String, RecentSavedPlaceAccumulator> places) {
+        Map<UUID, RecentSavedPlaceAccumulator> byId = new LinkedHashMap<>();
+        places.forEach((placeId, saved) -> {
+            UUID id = parseUuid(placeId);
+            if (id != null) {
+                byId.put(id, saved);
+            }
+        });
+        if (byId.isEmpty()) {
+            return;
+        }
+
+        Set<UUID> areaIds = new HashSet<>();
+        for (List<UUID> batch : Lists.partition(List.copyOf(byId.keySet()), CATALOG_BATCH_SIZE)) {
+            for (Place place : placeMapper.findSavedSummaryByIds(batch)) {
+                RecentSavedPlaceAccumulator saved = byId.get(place.getId());
+                if (saved == null) {
+                    continue;
+                }
+                saved.applyCatalog(place);
+                if (place.getLocationImageId() != null) {
+                    areaIds.add(place.getLocationImageId());
+                }
+            }
+        }
+        if (areaIds.isEmpty()) {
+            return;
+        }
+
+        Map<UUID, String> areaNames = locationImageRepository.findNamesByIds(areaIds).stream()
+                .filter(area -> area.getFullAddress() != null && !area.getFullAddress().isBlank())
+                .collect(Collectors.toMap(LocationImage::getId, LocationImage::getFullAddress, (first, second) -> first));
+        byId.values().forEach(saved -> saved.applyAreaName(areaNames));
+    }
+
+    private static UUID parseUuid(String value) {
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException ignored) {
+            return null;
         }
     }
 
@@ -237,14 +296,14 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
             Double rating,
             String photoUrl,
             String category,
-            String categoryDescription,
+            String placeType,
             LocalDateTime savedAt) {
         String normalizedPlaceId = normalizeText(placeId);
         if (normalizedPlaceId == null) {
             return;
         }
         places.computeIfAbsent(normalizedPlaceId, RecentSavedPlaceAccumulator::new)
-                .merge(name, address, lat, lng, rating, photoUrl, category, categoryDescription, savedAt);
+                .merge(name, address, lat, lng, rating, photoUrl, category, placeType, savedAt);
     }
 
     private JsonNode parseJson(String payload) {
@@ -321,6 +380,9 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
         private Double lng;
         private Double rating;
         private String photoUrl;
+        private String placeCategory;
+        private UUID locationImageId;
+        private String locationImageName;
         private LocalDateTime savedAt;
         private final Map<String, SavedPlaceCategoryResponse> categories = new LinkedHashMap<>();
 
@@ -336,7 +398,7 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
                 Double rating,
                 String photoUrl,
                 String category,
-                String categoryDescription,
+                String placeType,
                 LocalDateTime savedAt) {
             if (this.name == null) this.name = name;
             if (this.address == null) this.address = address;
@@ -344,6 +406,7 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
             if (this.lng == null) this.lng = lng;
             if (this.rating == null) this.rating = rating;
             if (this.photoUrl == null) this.photoUrl = photoUrl;
+            if (this.placeCategory == null) this.placeCategory = normalizeBlank(placeType);
             if (this.savedAt == null || (savedAt != null && savedAt.isAfter(this.savedAt))) {
                 this.savedAt = savedAt;
             }
@@ -356,12 +419,40 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
             if (existing == null) {
                 categories.put(categoryKey, SavedPlaceCategoryResponse.builder()
                         .name(normalizedCategory == null || normalizedCategory.isEmpty() ? null : normalizedCategory)
-                        .description(categoryDescription)
                         .build());
-            } else if ((existing.getDescription() == null || existing.getDescription().isBlank())
-                    && categoryDescription != null && !categoryDescription.isBlank()) {
-                existing.setDescription(categoryDescription);
             }
+        }
+
+        private void applyCatalog(Place place) {
+            name = preferCatalog(place.getTitle(), name);
+            address = preferCatalog(place.getAddress(), address);
+            if (place.getLatitude() != null && place.getLongitude() != null) {
+                lat = place.getLatitude().doubleValue();
+                lng = place.getLongitude().doubleValue();
+            }
+            BigDecimal catalogRating = place.getAdjustedRating() != null
+                    ? place.getAdjustedRating()
+                    : place.getReviewRating();
+            if (catalogRating != null) {
+                rating = catalogRating.doubleValue();
+            }
+            photoUrl = preferCatalog(place.getThumbnail(), photoUrl);
+            placeCategory = preferCatalog(place.getCategory(), placeCategory);
+            locationImageId = place.getLocationImageId();
+        }
+
+        private void applyAreaName(Map<UUID, String> areaNames) {
+            if (locationImageId != null) {
+                locationImageName = areaNames.get(locationImageId);
+            }
+        }
+
+        private static String normalizeBlank(String value) {
+            return value == null || value.isBlank() ? null : value.trim();
+        }
+
+        private static String preferCatalog(String catalogValue, String savedValue) {
+            return catalogValue == null || catalogValue.isBlank() ? savedValue : catalogValue.trim();
         }
 
         private RecentSavedPlaceResponse toResponse() {
@@ -373,6 +464,9 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
                     .lng(lng)
                     .rating(rating)
                     .photoUrl(photoUrl)
+                    .placeCategory(placeCategory)
+                    .locationImageId(locationImageId)
+                    .locationImageName(locationImageName)
                     .categories(List.copyOf(categories.values()))
                     .savedAt(savedAt)
                     .build();

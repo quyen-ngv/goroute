@@ -284,6 +284,23 @@ public enum BusinessConfigKey {
     // A catalogue place this close (m) to an off-plan stop names it; otherwise Goong does.
     TRACKER_OFFPLAN_NAME_RADIUS_M("TRACKER", "OFFPLAN_NAME_RADIUS_M", 60, 10, 500),
 
+    // --- Epic 17: local events --------------------------------------------------------
+    // Events are public data, so this does not gate any endpoint: the app shows the Home
+    // "Sự kiện" tab when this is on (read through PUBLIC_CONFIG) or the user is a beta user.
+    EVENT_ENABLED("EVENT", "ENABLED", false),
+
+    // --- Epic 18: meetups ("Hoạt động") -----------------------------------------------
+    // The flag gates every meetup user endpoint on the server (beta users always pass) and is
+    // folded into GET /v1/api/meetups/context; the other keys are the caps and time windows.
+    MEETUP_ENABLED("MEETUP", "ENABLED", false),
+    MEETUP_MAX_ACTIVE_PER_HOST("MEETUP", "MAX_ACTIVE_PER_HOST", 2, 1, 10),
+    MEETUP_MAX_SUBMISSIONS_PER_DAY("MEETUP", "MAX_SUBMISSIONS_PER_DAY", 5, 1, 50),
+    MEETUP_MAX_DAYS_AHEAD("MEETUP", "MAX_DAYS_AHEAD", 3, 0, 14),
+    MEETUP_EXACT_MIN_LEAD_MINUTES("MEETUP", "EXACT_MIN_LEAD_MINUTES", 30, 0, 720),
+    MEETUP_EXACT_VISIBLE_HOURS("MEETUP", "EXACT_VISIBLE_HOURS", 3, 1, 12),
+    MEETUP_MAX_OPEN_REQUESTS_PER_USER("MEETUP", "MAX_OPEN_REQUESTS_PER_USER", 5, 1, 50),
+    MEETUP_MAX_RESUBMITS("MEETUP", "MAX_RESUBMITS", 2, 0, 10),
+
     // --- Epic 06: per-user limits on the app's Goong search proxy ---------------------
     // Every autocomplete and place-detail call through /v1/api/goong is a paid Goong
     // request. Server-side lookups (AI trip, tracker naming) are not counted here.

@@ -82,7 +82,7 @@ class MarketplaceMapperXmlTest {
 
     /**
      * The privacy rule, in the query rather than only in the service: an operator list that
-     * gains a filter or a sort must not be able to produce a trip group or a person-to-person
+     * gains a filter or a sort must not be able to produce a trip or meetup group or a person-to-person
      * thread by accident.
      */
     @Test
@@ -91,7 +91,7 @@ class MarketplaceMapperXmlTest {
         int start = xml.indexOf("<select id=\"findAdmin\"");
         String statement = xml.substring(start, xml.indexOf("</select>", start));
 
-        assertTrue(statement.contains("c.conversation_type &lt;&gt; 'TRIP'"));
+        assertTrue(statement.contains("c.conversation_type NOT IN ('TRIP','MEETUP')"));
         assertTrue(statement.contains("NOT (c.conversation_type='DIRECT' AND c.organization_id IS NULL)"));
     }
 
@@ -99,7 +99,9 @@ class MarketplaceMapperXmlTest {
     void chatWritesCarryTheNewColumns() throws Exception {
         String xml = chatMapperXml();
         int conversation = xml.indexOf("<insert id=\"insertConversation\">");
-        assertTrue(xml.substring(conversation, xml.indexOf("</insert>", conversation)).contains("trip_id"));
+        String insertConversation = xml.substring(conversation, xml.indexOf("</insert>", conversation));
+        assertTrue(insertConversation.contains("trip_id"));
+        assertTrue(insertConversation.contains("meetup_id"));
 
         int message = xml.indexOf("<insert id=\"insertMessage\">");
         assertTrue(xml.substring(message, xml.indexOf("</insert>", message)).contains("reply_to_message_id"));

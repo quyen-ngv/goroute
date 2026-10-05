@@ -260,6 +260,30 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
+    <!-- The Home "Friends" tab: public posts by the people the viewer follows, newest
+         first. Blocks are checked in both directions because blocking does not remove a
+         follow, and a deleted account's posts go with it. -->
+    <select id="findFollowingFeed" resultMap="checkinMap">
+        SELECT <include refid="columns"/> FROM user_checkins
+        WHERE user_id IN (
+                SELECT f.following_id
+                FROM user_follows f
+                JOIN users u ON u.id = f.following_id AND u.deleted_at IS NULL
+                WHERE f.follower_id = #{viewerId})
+          AND visibility = 'PUBLIC'
+          AND is_removed = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM user_blocks b
+              WHERE (b.blocker_id = #{viewerId} AND b.blocked_id = user_checkins.user_id)
+                 OR (b.blocker_id = user_checkins.user_id AND b.blocked_id = #{viewerId}))
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns t
+              WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
+                AND t.restored_at IS NULL)
+        ORDER BY created_at DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
     <select id="findByUser" resultMap="checkinMap">
         SELECT <include refid="columns"/> FROM user_checkins
         WHERE user_id = #{userId} AND is_removed = FALSE

@@ -12,6 +12,8 @@ import com.ds.goroute.dto.response.*;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.dto.BaseResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -26,6 +28,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 public class TripController extends BaseController {
+
+    private static final int MAX_FOLLOWING_PAGE_SIZE = 50;
 
     private final TripService tripService;
 
@@ -213,5 +217,18 @@ public class TripController extends BaseController {
             @CurrentUser UUID userId) {
         TripRecentLocationResponse location = tripService.getRecentLocation(userId);
         return ResponseEntity.ok(ofSucceeded(location));
+    }
+
+    /**
+     * Public trips owned by the people the caller follows, most recently shared first: the
+     * Home "Friends" tab. Same summary shape as public trip search, so the app reuses its
+     * model. Lives here rather than under {@code /public} because it needs a signed-in user.
+     */
+    @GetMapping("/following")
+    public ResponseEntity<BaseResponse<List<PublicTripResponse>>> getFollowingTrips(
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_FOLLOWING_PAGE_SIZE) int size,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(tripService.getFollowingTrips(userId, page, size)));
     }
 }

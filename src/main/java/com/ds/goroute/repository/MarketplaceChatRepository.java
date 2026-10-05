@@ -9,6 +9,12 @@ public interface MarketplaceChatRepository {int insertConversation(MarketplaceCo
  /** The group chat of one trip, if it has been created. */
  Optional<MarketplaceConversation> findByTrip(UUID tripId,UUID viewer);
 
+ /** The group chat of one meetup, if it has been created. */
+ Optional<MarketplaceConversation> findByMeetup(UUID meetupId,UUID viewer);
+
+ /** Live meetup-group access: the host, or a participant whose row is JOINED. */
+ boolean isMeetupHostOrJoined(UUID meetupId,UUID userId);
+
  /** Everyone currently in the thread, for reconciling against the trip's member list. */
  List<UUID> findActiveMemberIds(UUID conversationId);
 

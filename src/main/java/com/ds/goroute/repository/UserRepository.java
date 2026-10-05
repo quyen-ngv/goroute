@@ -57,4 +57,7 @@ public interface UserRepository {
     void softDeleteById(UUID id);
 
     int updatePassword(UUID id, String passwordHash, boolean mustChangePassword, java.time.LocalDateTime changedAt);
+
+    /** Rows changed: 1, or 0 when the user does not exist or is deleted. */
+    int updateBirthYear(UUID id, int birthYear, java.time.LocalDateTime updatedAt);
 }

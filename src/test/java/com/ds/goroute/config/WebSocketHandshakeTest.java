@@ -72,6 +72,7 @@ class WebSocketHandshakeTest {
             JwtUtils.class,
             JwtAuthenticationFilter.class,
             ApiKeyAuthenticationFilter.class,
+            com.ds.goroute.config.filter.AdminApiKeyAuthenticationFilter.class,
             InternalApiAuthenticationFilter.class,
             CorsFilter.class,
             ApiAuthenticationEntryPoint.class,
@@ -83,6 +84,8 @@ class WebSocketHandshakeTest {
 
     @MockitoBean
     private AdminMapper adminMapper;
+    @MockitoBean
+    private com.ds.goroute.localevent.service.AdminApiKeyService adminApiKeyService;
     @MockitoBean
     private UserRepository userRepository;
     @MockitoBean

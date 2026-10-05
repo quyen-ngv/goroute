@@ -262,6 +262,7 @@ public class ConversationNotifier {
 
     private String threadTitle(MarketplaceConversation conversation) {
         if (conversation.getTripName() != null) return conversation.getTripName();
+        if (conversation.getMeetupTitle() != null) return conversation.getMeetupTitle();
         if (conversation.getOrganizationName() != null) return conversation.getOrganizationName();
         if (conversation.getBookingCode() != null) return conversation.getBookingCode();
         return conversation.getOrderCode();

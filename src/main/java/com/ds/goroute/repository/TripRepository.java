@@ -35,6 +35,12 @@ public interface TripRepository {
                                  int size,
                                  UUID excludeUserId);
     
+    /**
+     * Public trips owned by the people {@code viewerId} follows, most recently shared first,
+     * without deleted owners, taken-down trips or blocks in either direction.
+     */
+    List<Trip> findFollowingTrips(UUID viewerId, int limit, int offset);
+
     void incrementViewCount(UUID id);
     
     void incrementCopyCount(UUID id);

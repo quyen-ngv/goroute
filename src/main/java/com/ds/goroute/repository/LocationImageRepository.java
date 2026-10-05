@@ -10,6 +10,9 @@ public interface LocationImageRepository {
     Optional<LocationImage> findBestMatch(String searchTerm);
     List<LocationImage> findAll();
     Optional<LocationImage> findById(UUID id);
+
+    /** Only {@code id} and {@code fullAddress} are filled. */
+    List<LocationImage> findNamesByIds(java.util.Collection<UUID> ids);
     void insert(LocationImage locationImage);
     void update(LocationImage locationImage);
     void deleteById(UUID id);

@@ -80,6 +80,13 @@ public interface UserCheckinService {
      */
     List<UserCheckinResponse> feed(UUID viewerId, FeedGeoFilter geo, int page, int size);
 
+    /**
+     * Public check-ins by the people {@code viewerId} follows, newest first. Deleted
+     * authors, taken-down posts and anyone blocked in either direction are left out:
+     * blocking does not remove a follow, so the follow alone is not consent to be shown.
+     */
+    List<UserCheckinResponse> followingFeed(UUID viewerId, int page, int size);
+
     List<UserCheckinResponse> byUser(UUID viewerId, UUID userId, int page, int size);
 
     List<UserCheckinResponse> byPlace(UUID placeId, int page, int size);

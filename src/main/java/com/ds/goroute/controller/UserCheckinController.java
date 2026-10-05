@@ -129,6 +129,19 @@ public class UserCheckinController extends BaseController {
                 userId, FeedGeoFilter.of(latitude, longitude, radiusKm), page, size)));
     }
 
+    /**
+     * Public check-ins by the people the caller follows, newest first: the Home "Friends"
+     * tab. Signed-in only, since "people I follow" means nothing to a guest. Paged by number
+     * like {@link #feed}, so the client de-duplicates by id.
+     */
+    @GetMapping("/following")
+    public ResponseEntity<BaseResponse<List<UserCheckinResponse>>> following(
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(checkinService.followingFeed(userId, page, size)));
+    }
+
     @GetMapping("/users/{userId}")
     public ResponseEntity<BaseResponse<List<UserCheckinResponse>>> byUser(
             @PathVariable("userId") UUID targetUserId,

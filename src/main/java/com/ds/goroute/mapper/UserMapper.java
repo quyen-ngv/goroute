@@ -64,4 +64,9 @@ public interface UserMapper {
                        @Param("passwordHash") String passwordHash,
                        @Param("mustChangePassword") boolean mustChangePassword,
                        @Param("changedAt") java.time.LocalDateTime changedAt);
+
+    /** Self-declared birth year (meetups, epic 18); never shown to other users. */
+    int updateBirthYear(@Param("id") UUID id,
+                        @Param("birthYear") int birthYear,
+                        @Param("updatedAt") java.time.LocalDateTime updatedAt);
 }

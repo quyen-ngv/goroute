@@ -34,7 +34,8 @@ import java.util.Map;
 // OnboardingDraftRepository does) becomes a second bean of its own type and the context
 // refuses to start. Every mapper in both packages carries @Mapper already.
 @MapperScan(basePackages = {"com.ds.goroute.mapper", "com.ds.goroute.partneronboarding.persistence",
-        "com.ds.goroute.quest.persistence"},
+        "com.ds.goroute.quest.persistence", "com.ds.goroute.localevent.persistence",
+        "com.ds.goroute.meetup.persistence"},
         annotationClass = Mapper.class,
         sqlSessionFactoryRef = "sqlSessionFactory")
 public class DataSourceConfig {

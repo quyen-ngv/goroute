@@ -56,6 +56,11 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     }
 
     @Override
+    public List<UserCheckin> findFollowingFeed(UUID viewerId, int limit, int offset) {
+        return mapper.findFollowingFeed(viewerId, limit, offset);
+    }
+
+    @Override
     public List<UserCheckin> findByUser(UUID userId, boolean includePrivate, int limit, int offset) {
         return mapper.findByUser(userId, includePrivate, limit, offset);
     }

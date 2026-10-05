@@ -145,6 +145,43 @@ public class ErrorConstant {
     /** Dismiss / add-to-itinerary only apply to an off-plan stop, not to a planned activity's visit. */
     public static final int TRACK_VISIT_NOT_OFF_PLAN = 4001404;
 
+    /**
+     * Meetups (epic 18). The day is outside today..today+MEETUP/MAX_DAYS_AHEAD (Vietnam time),
+     * an EXACT time is missing or closer than MEETUP/EXACT_MIN_LEAD_MINUTES, or a FLEXIBLE
+     * meetup carries a time.
+     */
+    public static final int MEETUP_INVALID_TIME = 4001601;
+
+    /** The meetup point is not inside any ward of Vietnam. */
+    public static final int MEETUP_OUTSIDE_SERVICE_AREA = 4001602;
+
+    /** The host's own age is outside the age range they chose. */
+    public static final int MEETUP_AGE_RANGE_EXCLUDES_HOST = 4001603;
+
+    /** min age not in 18..99, or max age below min age or above 99. */
+    public static final int MEETUP_INVALID_AGE_RANGE = 4001604;
+
+    /** An AREA radius other than 300, 1000 or 3000 metres. */
+    public static final int MEETUP_INVALID_LOCATION = 4001605;
+
+    /** A rejection with reason OTHER needs a note. */
+    public static final int MEETUP_REJECT_NOTE_REQUIRED = 4001606;
+
+    /** A birth year outside 1900..the current year. */
+    public static final int MEETUP_INVALID_BIRTH_YEAR = 4001607;
+
+    /**
+     * Local events (epic 17). A console create/update that breaks a field rule; the message
+     * names the field and the rule (the same codes the import reports per item).
+     */
+    public static final int LOCAL_EVENT_INVALID = 4001501;
+
+    /** An import body with no events, more than 100, or not the documented shape. */
+    public static final int LOCAL_EVENT_IMPORT_INVALID = 4001502;
+
+    /** An admin API key may only act as a user who holds an admin role. */
+    public static final int ADMIN_API_KEY_OWNER_NOT_ADMIN = 4001503;
+
     public static final int SYSTEM_CONFIGURATION_NOT_FOUND = 4004208;
 
     public static final int HTTP_CONNECTION_ERROR  = 4009000;
@@ -164,6 +201,12 @@ public class ErrorConstant {
     public static final int USERNAME_PASSWORD_WRONG = 4010002;
 
     /**
+     * X-Admin-Api-Key is unknown, revoked, expired, its owner is gone, or the key was sent to
+     * a path outside its scope (epic 17). Fails closed: the request never falls through.
+     */
+    public static final int ADMIN_API_KEY_INVALID = 4011501;
+
+    /**
      * Write the error code prefixed with 403 below
      * 403
      */
@@ -177,6 +220,18 @@ public class ErrorConstant {
 
     /** The owner of this track does not share it with the caller. */
     public static final int TRACK_NOT_VISIBLE = 4031402;
+
+    /** Meetups (epic 18) are switched off (MEETUP/ENABLED) and the caller is not a beta user. */
+    public static final int MEETUP_DISABLED = 4031601;
+
+    /** The caller's declared age is under 18. */
+    public static final int MEETUP_UNDERAGE = 4031602;
+
+    /** The caller's age is outside the meetup's age range. */
+    public static final int MEETUP_AGE_NOT_ALLOWED = 4031603;
+
+    /** The host joining their own meetup, a block, or a person the host declined or removed. */
+    public static final int MEETUP_JOIN_NOT_ALLOWED = 4031604;
 
     /** The caller must change a temporary password before using the partner or admin portal. */
     public static final int PASSWORD_CHANGE_REQUIRED = 4031002;
@@ -194,6 +249,17 @@ public class ErrorConstant {
 
     /** No such visit in this trip among the caller's own; another person's visit reads the same. */
     public static final int TRACK_VISIT_NOT_FOUND = 4041401;
+
+    /** Meetups (epic 18): no such meetup, or one the caller may not see (same answer on purpose). */
+    public static final int MEETUP_NOT_FOUND = 4041601;
+
+    /** The user has no participant row in this meetup. */
+    public static final int MEETUP_PARTICIPANT_NOT_FOUND = 4041602;
+
+    /** Local events (epic 17): no such event, or (publicly) not published. */
+    public static final int LOCAL_EVENT_NOT_FOUND = 4041501;
+    public static final int LOCAL_EVENT_IMPORT_BATCH_NOT_FOUND = 4041502;
+    public static final int ADMIN_API_KEY_NOT_FOUND = 4041503;
     
     /**
      * Write the error code prefixed with 409 below
@@ -207,6 +273,30 @@ public class ErrorConstant {
     public static final int ONBOARDING_ORGANIZATION_REQUIRED = 4090004;
     public static final int ONBOARDING_TOO_MANY_DRAFTS = 4090005;
 
+    /** Meetups (epic 18): hosting or joining needs a declared birth year first. */
+    public static final int MEETUP_BIRTH_YEAR_REQUIRED = 4091601;
+
+    /** The host already has MEETUP/MAX_ACTIVE_PER_HOST meetups pending or live. */
+    public static final int MEETUP_HOST_LIMIT = 4091602;
+
+    /** The user already has MEETUP/MAX_OPEN_REQUESTS_PER_USER join requests waiting. */
+    public static final int MEETUP_REQUEST_LIMIT = 4091603;
+
+    /** Every seat (max participants, host excluded) is taken. */
+    public static final int MEETUP_FULL = 4091604;
+
+    /** The meetup's window has passed, so it can no longer be reviewed, joined or cancelled. */
+    public static final int MEETUP_EXPIRED = 4091605;
+
+    /** The meetup is not in a status the host may edit (approved meetups are never edited). */
+    public static final int MEETUP_NOT_EDITABLE = 4091606;
+
+    /** A rejected meetup was already resubmitted MEETUP/MAX_RESUBMITS times. */
+    public static final int MEETUP_RESUBMIT_LIMIT = 4091607;
+
+    /** The meetup or the participant row is not in the status this action starts from. */
+    public static final int MEETUP_INVALID_STATE = 4091608;
+
     /**
      * Write the error code prefixed with 429 below
      * 429
@@ -216,6 +306,9 @@ public class ErrorConstant {
 
     /** Map search (epic 06): the caller used today's Goong lookups (MAP_SEARCH/*_PER_DAY). */
     public static final int MAP_SEARCH_DAILY_LIMIT_REACHED = 4290602;
+
+    /** Meetups (epic 18): more than MEETUP/MAX_SUBMISSIONS_PER_DAY submissions in 24 hours. */
+    public static final int MEETUP_RATE_LIMITED = 4291601;
 
     /**
      * Write the error code prefixed with 500 below

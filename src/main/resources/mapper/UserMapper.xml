@@ -262,4 +262,10 @@
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
     </update>
 
+    <update id="updateBirthYear">
+        UPDATE users
+        SET birth_year = #{birthYear}, updated_at = #{updatedAt}
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
+    </update>
+
 </mapper>

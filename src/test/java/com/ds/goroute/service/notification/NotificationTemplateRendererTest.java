@@ -170,6 +170,10 @@ class NotificationTemplateRendererTest {
         data.put("outstandingAmount", "300");
         data.put("hasOutstandingDebt", true);
         data.put("payeeNames", "Binh");
+        data.put("meetupTitle", "chạy bộ quanh hồ Tây");
+        data.put("hostName", "Linh");
+        data.put("userName", "Minh");
+        data.put("reason", "Trời mưa");
         return data;
     }
 }

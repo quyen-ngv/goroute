@@ -102,6 +102,26 @@ class ImageStorageCleanupServiceTest {
     }
 
     @Test
+    void aReHostedEventImageIsNotAnOrphan() {
+        when(storage.extractObjectKey(anyString()))
+                .thenAnswer(call -> call.<String>getArgument(0).replace("https://cdn/", ""));
+        when(mapper.selectRows(anyString(), any())).thenReturn(List.of());
+        when(mapper.selectRows(contains("FROM local_events"), any())).thenReturn(List.of(
+                Map.of("ref", "https://cdn/events/e1/cover.webp"),
+                Map.of("ref", "https://cdn/events/uploads/console.png")));
+        Instant old = Instant.now().minus(Duration.ofDays(40));
+        when(storage.listObjects("events/")).thenReturn(List.of(
+                new StorageService.StoredObject("events/e1/cover.webp", old),
+                new StorageService.StoredObject("events/uploads/console.png", old),
+                new StorageService.StoredObject("events/e1/replaced.webp", old)));
+
+        var result = service.cleanupOrphanedImages(
+                List.of("LOCAL_EVENT"), List.of("events/"), true, 500, false, null);
+
+        assertThat(result.orphanKeys()).containsExactly("events/e1/replaced.webp");
+    }
+
+    @Test
     void replacingAnArModelDeletesTheOldFileUnlessAnotherObjectUsesIt() {
         UUID assetId = UUID.randomUUID();
         when(storage.extractObjectKey(anyString()))

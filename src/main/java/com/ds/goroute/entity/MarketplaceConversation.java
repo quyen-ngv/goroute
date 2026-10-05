@@ -18,6 +18,12 @@ public class MarketplaceConversation {
     private String tripName;
     private String tripCoverImageUrl;
 
+    /** The meetup this is the group chat of, {@code null} for every other kind. */
+    private UUID meetupId;
+    private String meetupTitle;
+    /** The meetup host, so a member row can be given the CREATOR role without a second read. */
+    private UUID meetupHostUserId;
+
     /** Kept at the top of the thread for everyone; {@code null} when nothing is pinned. */
     private UUID pinnedMessageId;
 

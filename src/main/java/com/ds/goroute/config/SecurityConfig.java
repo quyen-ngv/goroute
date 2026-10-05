@@ -1,5 +1,6 @@
 package com.ds.goroute.config;
 
+import com.ds.goroute.config.filter.AdminApiKeyAuthenticationFilter;
 import com.ds.goroute.config.filter.ApiKeyAuthenticationFilter;
 import com.ds.goroute.config.filter.InternalApiAuthenticationFilter;
 import com.ds.goroute.config.filter.JwtAuthenticationFilter;
@@ -34,6 +35,7 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final ApiKeyAuthenticationFilter apiKeyAuthenticationFilter;
+    private final AdminApiKeyAuthenticationFilter adminApiKeyAuthenticationFilter;
     private final InternalApiAuthenticationFilter internalApiAuthenticationFilter;
     private final CorsProperties corsProperties;
     private final ApiAuthenticationEntryPoint apiAuthenticationEntryPoint;
@@ -134,6 +136,9 @@ public class SecurityConfig {
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(apiKeyAuthenticationFilter, JwtAuthenticationFilter.class)
+                // X-Admin-Api-Key (events crawler): only on its scoped admin paths, fails closed,
+                // and authenticates as the key owner before any bearer token is looked at.
+                .addFilterBefore(adminApiKeyAuthenticationFilter, JwtAuthenticationFilter.class)
                 .addFilterBefore(internalApiAuthenticationFilter, ApiKeyAuthenticationFilter.class);
 
         return http.build();

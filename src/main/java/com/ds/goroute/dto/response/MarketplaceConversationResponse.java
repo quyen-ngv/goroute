@@ -36,6 +36,9 @@ public class MarketplaceConversationResponse {
     /** The trip this is the group chat of, {@code null} for every other kind. */
     private UUID tripId;
 
+    /** The meetup this is the group chat of, {@code null} for every other kind. */
+    private UUID meetupId;
+
     private UUID pinnedMessageId;
     private Long memberCount;
     private LocalDateTime mutedUntil;

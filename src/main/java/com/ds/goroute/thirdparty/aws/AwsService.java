@@ -138,6 +138,23 @@ public class AwsService implements StorageService {
         }
     }
 
+    @Override
+    public StorageService.DownloadedFile downloadPublicFile(String fileUrl) {
+        Path temporaryFile = null;
+        try {
+            DownloadedRemoteFile downloadedFile = downloadRemoteFile(fileUrl, null);
+            temporaryFile = downloadedFile.path();
+            return new StorageService.DownloadedFile(Files.readAllBytes(temporaryFile), downloadedFile.contentType());
+        } catch (IllegalArgumentException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            log.warn("Failed to download remote file: {}", exception.getClass().getSimpleName());
+            throw new IllegalArgumentException("Remote file could not be downloaded", exception);
+        } finally {
+            deleteTemporaryFile(temporaryFile);
+        }
+    }
+
     private DownloadedRemoteFile downloadRemoteFile(String fileUrl, String bearerToken) throws IOException {
         URI originalUri = RemoteFileUrlPolicy.requirePublicHttps(fileUrl);
         URI currentUri = originalUri;

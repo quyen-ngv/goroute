@@ -21,6 +21,19 @@ public interface StorageService {
     /** An object's bytes, read from the bucket by key; null when there is no such object. */
     byte[] readObject(String key);
 
+    /**
+     * Downloads a public HTTPS file without storing it, through the same SSRF guard as
+     * {@link #uploadFileFromUrl}: HTTPS only, every redirect re-checked against private and
+     * reserved addresses, size and timeouts from {@code goroute.remote-file-download}.
+     *
+     * @throws IllegalArgumentException when the URL is refused or the download fails
+     */
+    DownloadedFile downloadPublicFile(String fileUrl);
+
+    /** Bytes of a downloaded file and the content type the server reported (may be unreliable). */
+    record DownloadedFile(byte[] bytes, String contentType) {
+    }
+
     /** One stored object: where it lives and when it was last written. */
     record StoredObject(String key, Instant lastModified) {
     }

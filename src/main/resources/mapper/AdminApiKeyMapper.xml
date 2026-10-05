@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.localevent.persistence.AdminApiKeyMapper">
+
+    <sql id="KeyColumns">
+        k.id, k.name, k.key_prefix, k.key_hash, k.owner_user_id, k.scopes, k.created_by,
+        k.created_at, k.expires_at, k.last_used_at, k.revoked_at
+    </sql>
+
+    <insert id="insert" parameterType="com.ds.goroute.localevent.domain.AdminApiKey">
+        INSERT INTO admin_api_keys (
+            id, name, key_prefix, key_hash, owner_user_id, scopes, created_by, created_at,
+            expires_at
+        ) VALUES (
+            #{id}, #{name}, #{keyPrefix}, #{keyHash}, #{ownerUserId},
+            COALESCE(CAST(#{scopes} AS TEXT), '[]')::jsonb, #{createdBy}, #{createdAt}, #{expiresAt}
+        )
+    </insert>
+
+    <select id="findById" resultType="com.ds.goroute.localevent.domain.AdminApiKey">
+        SELECT <include refid="KeyColumns"/>, u.full_name AS owner_name
+        FROM admin_api_keys k
+        LEFT JOIN users u ON u.id = k.owner_user_id
+        WHERE k.id = #{id}
+    </select>
+
+    <select id="findByHash" resultType="com.ds.goroute.localevent.domain.AdminApiKey">
+        SELECT <include refid="KeyColumns"/>
+        FROM admin_api_keys k
+        WHERE k.key_hash = #{keyHash}
+    </select>
+
+    <select id="findAll" resultType="com.ds.goroute.localevent.domain.AdminApiKey">
+        SELECT <include refid="KeyColumns"/>, u.full_name AS owner_name
+        FROM admin_api_keys k
+        LEFT JOIN users u ON u.id = k.owner_user_id
+        ORDER BY k.created_at DESC, k.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAll" resultType="long">
+        SELECT COUNT(*) FROM admin_api_keys
+    </select>
+
+    <update id="revoke">
+        UPDATE admin_api_keys
+        SET revoked_at = COALESCE(revoked_at, #{revokedAt})
+        WHERE id = #{id}
+    </update>
+
+    <update id="touchLastUsed">
+        UPDATE admin_api_keys
+        SET last_used_at = #{usedAt}
+        WHERE id = #{id}
+          AND (last_used_at IS NULL OR last_used_at &lt; #{staleBefore})
+    </update>
+</mapper>

@@ -91,6 +91,14 @@ public class UserController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(null));
     }
 
+    /** Self-declared birth year for the meetup age rules (epic 18); never shown to other users. */
+    @PutMapping("/me/birth-year")
+    public ResponseEntity<BaseResponse<com.ds.goroute.dto.response.BirthYearResponse>> updateBirthYear(
+            @Valid @RequestBody com.ds.goroute.dto.request.UpdateBirthYearRequest request,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(userService.updateBirthYear(userId, request.getBirthYear())));
+    }
+
     @GetMapping("/{userId}")
     public ResponseEntity<BaseResponse<PublicUserProfileResponse>> getPublicProfile(
             @PathVariable UUID userId,

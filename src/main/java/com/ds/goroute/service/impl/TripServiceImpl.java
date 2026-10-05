@@ -47,6 +47,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class TripServiceImpl implements TripService {
+    /** Page cap for the Friends tab: every trip card costs several queries to assemble. */
+    private static final int MAX_FOLLOWING_TRIPS_PAGE_SIZE = 50;
+
     private final StarService starService;
     /** Field-injected and optional so the hand-built service in unit tests keeps its constructor. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -2081,53 +2084,78 @@ public class TripServiceImpl implements TripService {
         );
 
         return trips.stream()
+                .map(trip -> toPublicTripSummary(trip, viewerId))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PublicTripResponse> getFollowingTrips(UUID viewerId, int page, int size) {
+        int limit = Math.max(1, Math.min(size, MAX_FOLLOWING_TRIPS_PAGE_SIZE));
+        int offset = Math.max(0, page) * limit;
+        return tripRepository.findFollowingTrips(viewerId, limit, offset).stream()
                 .map(trip -> {
-                    String coverImageUrl = trip.getCoverImageUrl();
-                    if (coverImageUrl == null || coverImageUrl.isEmpty()) {
-                        coverImageUrl = locationImageService.getImageForDestination(trip.getDestination());
+                    PublicTripResponse summary = toPublicTripSummary(trip, viewerId);
+                    // The app orders the Friends tab on this. A trip made public before the
+                    // column existed has none, and its creation date is the honest stand-in --
+                    // the same one the query sorts by.
+                    if (summary.getPublicSharedAt() == null) {
+                        summary.setPublicSharedAt(trip.getCreatedAt());
                     }
-                    List<MemoryImageResponse> memoryImages = getTripMemoryImages(trip.getId());
-                    List<String> memoryImageUrls = getMemoryImageUrls(memoryImages);
-
-                    // Get owner info
-                    User owner = userRepository.findById(trip.getOwnerId()).orElse(null);
-                    String ownerName = owner != null ? owner.getFullName() : null;
-                    String ownerAvatarUrl = owner != null ? owner.getAvatarUrl() : null;
-                    List<TripDestinationResponse> destinationResponses = destinationResponses(trip);
-
-                    return PublicTripResponse.builder()
-                            .id(trip.getId())
-                            .name(trip.getName())
-                            .coverImageUrl(coverImageUrl)
-                            .memoryImageUrls(memoryImageUrls)
-                            .memoryImageUrlsV2(memoryImages)
-                            .description(trip.getDescription())
-                            .destination(trip.getDestination())
-                            .lat(trip.getDestinationLat())
-                            .lng(trip.getDestinationLng())
-                            .destinations(destinationResponses)
-                            .routeSummary(routeSummary(destinationResponses))
-                            .startDate(trip.getStartDate())
-                            .endDate(trip.getEndDate())
-                            .currency(trip.getCurrency())
-                            .ownerId(trip.getOwnerId())
-                            .ownerName(ownerName)
-                            .ownerAvatarUrl(ownerAvatarUrl)
-                            .activities(null)
-                            .expenses(null)
-                            .notes(null)
-                            .viewCount(trip.getViewCount())
-                            .copyCount(trip.getCopyCount())
-                            .helpfulVotes(trip.getHelpfulVotes() != null ? trip.getHelpfulVotes() : 0)
-                            .unhelpfulVotes(trip.getUnhelpfulVotes() != null ? trip.getUnhelpfulVotes() : 0)
-                            .hasVotedHelpful(resolveTripHasVotedHelpful(trip.getId(), viewerId))
-                            .isOwnTrip(viewerId != null && trip.getOwnerId().equals(viewerId))
-                            .totalMembers(countAcceptedMembers(trip.getId()))
-                            .totalActivities(activityRepository.countByTripId(trip.getId()))
-                            .publicSharedAt(trip.getPublicSharedAt())
-                            .build();
+                    return summary;
                 })
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * A public trip as a list card: everything a search or feed row shows, with the heavy
+     * children (activities, expenses, notes) left out and only their counts carried.
+     */
+    private PublicTripResponse toPublicTripSummary(Trip trip, UUID viewerId) {
+        String coverImageUrl = trip.getCoverImageUrl();
+        if (coverImageUrl == null || coverImageUrl.isEmpty()) {
+            coverImageUrl = locationImageService.getImageForDestination(trip.getDestination());
+        }
+        List<MemoryImageResponse> memoryImages = getTripMemoryImages(trip.getId());
+        List<String> memoryImageUrls = getMemoryImageUrls(memoryImages);
+
+        // Get owner info
+        User owner = userRepository.findById(trip.getOwnerId()).orElse(null);
+        String ownerName = owner != null ? owner.getFullName() : null;
+        String ownerAvatarUrl = owner != null ? owner.getAvatarUrl() : null;
+        List<TripDestinationResponse> destinationResponses = destinationResponses(trip);
+
+        return PublicTripResponse.builder()
+                .id(trip.getId())
+                .name(trip.getName())
+                .coverImageUrl(coverImageUrl)
+                .memoryImageUrls(memoryImageUrls)
+                .memoryImageUrlsV2(memoryImages)
+                .description(trip.getDescription())
+                .destination(trip.getDestination())
+                .lat(trip.getDestinationLat())
+                .lng(trip.getDestinationLng())
+                .destinations(destinationResponses)
+                .routeSummary(routeSummary(destinationResponses))
+                .startDate(trip.getStartDate())
+                .endDate(trip.getEndDate())
+                .currency(trip.getCurrency())
+                .ownerId(trip.getOwnerId())
+                .ownerName(ownerName)
+                .ownerAvatarUrl(ownerAvatarUrl)
+                .activities(null)
+                .expenses(null)
+                .notes(null)
+                .viewCount(trip.getViewCount())
+                .copyCount(trip.getCopyCount())
+                .helpfulVotes(trip.getHelpfulVotes() != null ? trip.getHelpfulVotes() : 0)
+                .unhelpfulVotes(trip.getUnhelpfulVotes() != null ? trip.getUnhelpfulVotes() : 0)
+                .hasVotedHelpful(resolveTripHasVotedHelpful(trip.getId(), viewerId))
+                .isOwnTrip(viewerId != null && trip.getOwnerId().equals(viewerId))
+                .totalMembers(countAcceptedMembers(trip.getId()))
+                .totalActivities(activityRepository.countByTripId(trip.getId()))
+                .publicSharedAt(trip.getPublicSharedAt())
+                .build();
     }
 
     private int countAcceptedMembers(UUID tripId) {

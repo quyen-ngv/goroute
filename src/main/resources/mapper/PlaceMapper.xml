@@ -382,6 +382,23 @@
         </choose>
     </select>
 
+    <select id="findSavedSummaryByIds" resultMap="PlaceResultMap">
+        SELECT id, title, category, address, latitude, longitude,
+               review_rating, adjusted_rating, thumbnail, location_image_id
+        FROM places
+        <choose>
+            <when test="ids != null and ids.size() > 0">
+                WHERE id IN
+                <foreach item="id" collection="ids" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>
+                WHERE 1 = 0
+            </otherwise>
+        </choose>
+    </select>
+
     <select id="findByPlaceIds" resultMap="PlaceResultMap">
         SELECT * FROM places
         WHERE place_id IN

@@ -602,6 +602,15 @@ public class ImageStorageCleanupService {
                         "SELECT glb_url, usdz_url, thumbnail_url FROM quest_ar_object_assets WHERE id = ?",
                         "SELECT glb_url, usdz_url, thumbnail_url FROM quest_ar_object_assets WHERE id <> ?",
                         "quest-ar/"),
+                // Local events (epic 17): the cover and every re-hosted image. Crawled images are
+                // stored under events/<eventId>/, console uploads under events/uploads/.
+                spec("LOCAL_EVENT",
+                        """
+                        SELECT cover_url AS ref FROM local_events WHERE cover_url IS NOT NULL
+                        UNION ALL SELECT url FROM local_event_images WHERE url IS NOT NULL
+                        """,
+                        "SELECT e.cover_url, i.url FROM local_events e LEFT JOIN local_event_images i ON i.event_id = e.id WHERE e.id = ?",
+                        "events/"),
                 spec("ROOM_TYPE",
                         "SELECT images FROM room_types WHERE images IS NOT NULL",
                         "SELECT images FROM room_types WHERE id = ? AND images IS NOT NULL",

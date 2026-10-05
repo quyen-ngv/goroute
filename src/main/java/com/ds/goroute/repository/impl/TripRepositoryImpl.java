@@ -84,6 +84,11 @@ public class TripRepositoryImpl implements TripRepository {
     }
     
     @Override
+    public List<Trip> findFollowingTrips(UUID viewerId, int limit, int offset) {
+        return tripMapper.findFollowingTrips(viewerId, limit, offset);
+    }
+
+    @Override
     public void incrementViewCount(UUID id) {
         tripMapper.incrementViewCount(id);
     }

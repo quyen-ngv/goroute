@@ -52,6 +52,11 @@ public record ImageUploadRequest(UUID userId,
         public static final String LOCATION_IMAGE = "admin-location-image";
         /** Operators: imagery for curated passport collections and proof tags. */
         public static final String PASSPORT_CATALOG = "admin-passport-catalog";
+        /**
+         * Operators and the events crawler: local event images, uploaded in the console or
+         * re-hosted from the crawler's URLs by LocalEventImageJob (SSRF-guarded download).
+         */
+        public static final String LOCAL_EVENT = "admin-local-event";
 
         private ImageEntryPoint() {
         }

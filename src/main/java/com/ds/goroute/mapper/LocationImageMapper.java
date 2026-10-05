@@ -3,6 +3,7 @@ package com.ds.goroute.mapper;
 import com.ds.goroute.entity.LocationImage;
 import org.apache.ibatis.annotations.*;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,6 +25,15 @@ public interface LocationImageMapper {
 
     @Select("SELECT * FROM location_images WHERE id = #{id}")
     LocationImage selectById(UUID id);
+
+    @Select("""
+        <script>
+        SELECT id, full_address FROM location_images
+        WHERE id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">#{id}</foreach>
+        </script>
+        """)
+    List<LocationImage> selectNamesByIds(@Param("ids") Collection<UUID> ids);
 
     @Insert("""
         INSERT INTO location_images (id, full_address, normalized_address, slogan, description, image_url, avatar_url, city_slug, province_code, latitude, longitude, priority, coverage_radius_km, created_at, updated_at)

@@ -529,6 +529,13 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<UserCheckinResponse> followingFeed(UUID viewerId, int page, int size) {
+        return toResponses(checkinRepository.findFollowingFeed(
+                viewerId, boundedSize(size), boundedPage(page) * boundedSize(size)), Set.of(), viewerId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<UserCheckinResponse> byUser(UUID viewerId, UUID userId, int page, int size) {
         boolean includePrivate = userId.equals(viewerId);
         return toResponses(checkinRepository.findByUser(

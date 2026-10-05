@@ -196,6 +196,15 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `TRACKER` | `CHUNK_MAX_POINTS` | points per upload, 50..500 | safe fallback 500 | members via track context |
 | `TRACKER` | `OFFPLAN_RADIUS_M` / `OFFPLAN_MIN_MINUTES` | metres 20..500 / minutes 1..120 | safe fallback 100 / 10 | members via track context (`offPlanRadiusM`, `offPlanMinMinutes`) |
 | `TRACKER` | `OFFPLAN_NAME_RADIUS_M` | metres, 10..500 | safe fallback 60 | members via track context (`offPlanNameRadiusM`) |
+| `EVENT` | `ENABLED` | boolean (beta users always see the tab; the app checks beta itself); hides/shows the Home "Sự kiện" tab only — `/v1/api/public/events/**` never checks it | safe fallback false | public (listed in `PUBLIC_CONFIG` by V210) |
+| `MEETUP` | `ENABLED` | boolean (beta users always on); gates every `/v1/api/meetups/**` endpoint | safe fallback false | users via `GET /v1/api/meetups/context` (`enabled`) |
+| `MEETUP` | `MAX_ACTIVE_PER_HOST` | count of PENDING_REVIEW/APPROVED meetups not yet past, 1..10 | safe fallback 2 | users via meetup context (`cannotHostReason = HOST_LIMIT`) |
+| `MEETUP` | `MAX_SUBMISSIONS_PER_DAY` | submissions per host in the last 24 h, 1..50 | safe fallback 5 | private/admin |
+| `MEETUP` | `MAX_DAYS_AHEAD` | days after today (Vietnam time), 0..14 | safe fallback 3 | users via meetup context (`maxDaysAhead`) |
+| `MEETUP` | `EXACT_MIN_LEAD_MINUTES` | minutes, 0..720 | safe fallback 30 | users via meetup context (`exactMinLeadMinutes`) |
+| `MEETUP` | `EXACT_VISIBLE_HOURS` | hours after the start, capped at local midnight, 1..12 | safe fallback 3 | users via meetup context (`exactVisibleHours`) |
+| `MEETUP` | `MAX_OPEN_REQUESTS_PER_USER` | pending join requests on live meetups, 1..50 | safe fallback 5 | private/admin |
+| `MEETUP` | `MAX_RESUBMITS` | resubmits after a rejection, 0..10 | safe fallback 2 | host via meetup detail (`resubmitsLeft`) |
 
 ## Build note
 

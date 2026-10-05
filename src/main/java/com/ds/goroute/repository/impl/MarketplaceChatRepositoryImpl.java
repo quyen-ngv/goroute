@@ -21,6 +21,16 @@ import com.ds.goroute.entity.*;import com.ds.goroute.mapper.MarketplaceChatMappe
     }
 
     @Override
+    public Optional<MarketplaceConversation> findByMeetup(UUID meetupId,UUID viewer){
+        return meetupId==null?Optional.empty():Optional.ofNullable(m.findByMeetup(meetupId,viewer));
+    }
+
+    @Override
+    public boolean isMeetupHostOrJoined(UUID meetupId,UUID userId){
+        return meetupId!=null&&userId!=null&&m.isMeetupHostOrJoined(meetupId,userId);
+    }
+
+    @Override
     public List<UUID> findActiveMemberIds(UUID conversationId){return m.findActiveMemberIds(conversationId);}
 
     @Override

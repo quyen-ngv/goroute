@@ -227,6 +227,37 @@ class FileUploadServiceImplTest {
         }
     }
 
+    @Test
+    void aPublicUrlIsFetchedThroughTheGuardedDownloadAndRecognisedByItsBytes() {
+        when(storageService.downloadPublicFile("https://images.example.com/a"))
+                .thenReturn(new StorageService.DownloadedFile(JPEG, "text/html"));
+        when(imageModerationService.inspect(any(), any(), any(), any())).thenReturn(ModerationVerdict.allowed());
+        when(storageService.uploadFile(anyString(), any(), anyString(), anyLong()))
+                .thenAnswer(invocation -> "https://cdn/" + invocation.getArgument(0));
+
+        ImageUploadOutcome outcome = service.uploadImageFromPublicUrl(new ImageUploadRequest(null,
+                ImageUploadRequest.ImageEntryPoint.LOCAL_EVENT, "events/e1"), "https://images.example.com/a");
+
+        assertThat(outcome.isAccepted()).isTrue();
+        assertThat(outcome.url()).startsWith("https://cdn/events/e1/").endsWith(".jpg");
+        verify(storageService).uploadFile(anyString(), any(), eq("image/jpeg"), eq((long) JPEG.length));
+        verifyNoInteractions(restTemplate);
+    }
+
+    @Test
+    void aRefusedPublicUrlIsAFailureAndNothingIsStored() {
+        when(storageService.downloadPublicFile("https://10.0.0.1/a"))
+                .thenThrow(new IllegalArgumentException("Remote file URL must resolve to a public address"));
+
+        ImageUploadOutcome outcome = service.uploadImageFromPublicUrl(new ImageUploadRequest(null,
+                ImageUploadRequest.ImageEntryPoint.LOCAL_EVENT, "events/e1"), "https://10.0.0.1/a");
+
+        assertThat(outcome.isAccepted()).isFalse();
+        assertThat(outcome.failureMessage()).contains("public address");
+        verify(storageService, never()).uploadFile(anyString(), any(), anyString(), anyLong());
+        verifyNoInteractions(imageModerationService);
+    }
+
     private ImageUploadRequest userUpload() {
         return new ImageUploadRequest(UUID.randomUUID(),
                 ImageUploadRequest.ImageEntryPoint.USER_UPLOAD, "expenses/test");

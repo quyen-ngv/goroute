@@ -31,6 +31,11 @@ public class LocationImageRepositoryImpl implements LocationImageRepository {
     public Optional<LocationImage> findById(UUID id) {
         return Optional.ofNullable(locationImageMapper.selectById(id));
     }
+
+    @Override
+    public List<LocationImage> findNamesByIds(java.util.Collection<UUID> ids) {
+        return ids == null || ids.isEmpty() ? List.of() : locationImageMapper.selectNamesByIds(ids);
+    }
     
     @Override
     public void insert(LocationImage locationImage) {
