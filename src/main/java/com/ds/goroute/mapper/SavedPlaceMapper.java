@@ -1,6 +1,7 @@
 package com.ds.goroute.mapper;
 
 import com.ds.goroute.entity.SavedPlace;
+import com.ds.goroute.entity.SocialLocationJob;
 import com.ds.goroute.dto.response.SavedItemTripResponse;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -20,7 +21,14 @@ public interface SavedPlaceMapper {
                                    @Param("limit") Integer limit, 
                                    @Param("offset") Integer offset);
 
-    List<SavedPlace> findAllByUserId(@Param("userId") UUID userId);
+    /** The user's saved items, newest first: at most {@code limit}, or all of them when {@code limit} is null. */
+    List<SavedPlace> findAllByUserId(@Param("userId") UUID userId, @Param("limit") Integer limit);
+
+    /**
+     * The user's completed social-location jobs, newest first, with only id, createdAt, completedAt and a
+     * cut-down resultPayload (the fields the recent-saves list reads) populated.
+     */
+    List<SocialLocationJob> findSocialSavedPlacesByUserId(@Param("userId") UUID userId);
 
     List<SavedItemTripResponse> findTripItemsByUserId(@Param("userId") UUID userId);
     

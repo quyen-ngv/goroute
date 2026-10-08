@@ -40,6 +40,7 @@
         <result property="editedAt" column="edited_at"/>
         <result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
+        <result property="hasPhoto" column="has_photo"/>
     </resultMap>
 
     <resultMap id="photoMap" type="com.ds.goroute.entity.UserCheckinPhoto">
@@ -92,7 +93,7 @@
         ambiance_rating, service_rating, photo_source, visibility, verification_status,
         verification_scope, ward_code,
         distance_meters, idempotency_key, reward_points, reward_reason, is_removed,
-        visited_at, edited_at, created_at, updated_at
+        visited_at, edited_at, created_at, updated_at, has_photo
     </sql>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.UserCheckin">
@@ -220,43 +221,46 @@
         WHERE user_id = #{userId} AND idempotency_key = #{idempotencyKey}
     </select>
 
-    <!-- Keyset pagination: with new check-ins arriving constantly, offset paging shows
-         some posts twice and skips others. -->
+    <!-- The public feed: posts with photos first, then newest. has_photo is kept by a trigger
+         (V215), so the order is a range read of idx_user_checkins_feed_photo.
+
+         Two ways to page. With a cursor (the sort key of the last post shown) the next page is
+         every row with a smaller key: a post arriving mid-scroll can neither repeat a row nor
+         skip one. Without one, the old offset paging, for app builds that do not send a cursor.
+
+         "Near you": a check-in sits at its catalogue place when that place has coordinates (a
+         gallery photo posted from home carries the phone's position, not the place's), and
+         where it was posted otherwise. Each half of the IN list is driven by a GiST index
+         (V214) - the post's own point, or the place's point joined back by place_id - so the
+         radius never means scanning the table. -->
     <select id="findFeed" resultMap="checkinMap">
         SELECT <include refid="columns"/> FROM user_checkins
-        <if test="latitude != null and longitude != null and radiusKm != null">
-            <!-- A catalogue place's coordinates win over the post's own: a gallery photo
-                 posted from home carries the phone's position, not the place's. -->
-            LEFT JOIN LATERAL (
-                SELECT p.latitude AS place_lat, p.longitude AS place_lng
-                FROM places p
-                WHERE p.id = user_checkins.place_id
-            ) feed_place ON TRUE
-        </if>
         WHERE visibility = 'PUBLIC'
           AND is_removed = FALSE
           <if test="excludeUserId != null">AND user_id &lt;&gt; #{excludeUserId}</if>
           <if test="latitude != null and longitude != null and radiusKm != null">
-              AND COALESCE(feed_place.place_lat, user_checkins.latitude) IS NOT NULL
-              AND COALESCE(feed_place.place_lng, user_checkins.longitude) IS NOT NULL
-              AND 6371 * acos(LEAST(1, GREATEST(-1,
-                      cos(radians(#{latitude})) * cos(radians(COALESCE(feed_place.place_lat, user_checkins.latitude))) *
-                      cos(radians(COALESCE(feed_place.place_lng, user_checkins.longitude)) - radians(#{longitude})) +
-                      sin(radians(#{latitude})) * sin(radians(COALESCE(feed_place.place_lat, user_checkins.latitude)))
-                  ))) &lt;= #{radiusKm}
+              AND id IN (
+                  SELECT own.id
+                  FROM user_checkins own
+                  LEFT JOIN places own_place ON own_place.id = own.place_id
+                  WHERE ST_DWithin(goroute_point(own.latitude, own.longitude),
+                                   goroute_point(#{latitude}, #{longitude}), #{radiusKm} * 1000)
+                    AND (own_place.latitude IS NULL OR own_place.longitude IS NULL)
+                  UNION ALL
+                  SELECT at_place.id
+                  FROM places p
+                  JOIN user_checkins at_place ON at_place.place_id = p.id
+                  WHERE ST_DWithin(goroute_point(p.latitude, p.longitude),
+                                   goroute_point(#{latitude}, #{longitude}), #{radiusKm} * 1000))
+          </if>
+          <if test="cursorCreatedAt != null and cursorId != null">
+              AND (has_photo, created_at, id) &lt; (#{cursorHasPhoto}, #{cursorCreatedAt}, #{cursorId})
           </if>
           AND NOT EXISTS (
               SELECT 1 FROM content_takedowns t
               WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
                 AND t.restored_at IS NULL)
-        ORDER BY EXISTS (
-                     SELECT 1 FROM media_assets ma
-                     WHERE ma.entity_type = 'USER_CHECKIN'
-                       AND ma.entity_id = user_checkins.id
-                       AND (ma.asset_role IS NULL OR ma.asset_role = 'PHOTO')
-                       AND ma.deleted_at IS NULL) DESC,
-                 created_at DESC,
-                 id DESC
+        ORDER BY has_photo DESC, created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
@@ -295,14 +299,23 @@
                   AND t.restored_at IS NULL)
         </if>
         <!-- A history reads by when the person was there, not by when they got round to posting. -->
-        ORDER BY visited_at DESC, created_at DESC
+        ORDER BY visited_at DESC, created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
+    <!-- The profile's check-in count: exactly the rows findByUser can page through for the
+         same viewer, so the number on the profile matches the list behind it. Served by
+         idx_user_checkins_user (user_id, ...). -->
     <select id="countByUser" resultType="long">
         SELECT COUNT(*) FROM user_checkins
         WHERE user_id = #{userId} AND is_removed = FALSE
         <if test="!includePrivate">AND visibility = 'PUBLIC'</if>
+        <if test="!includePrivate">
+            AND NOT EXISTS (
+                SELECT 1 FROM content_takedowns t
+                WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
+                  AND t.restored_at IS NULL)
+        </if>
     </select>
 
     <select id="findByPlace" resultMap="checkinMap">
@@ -312,7 +325,7 @@
               SELECT 1 FROM content_takedowns t
               WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
                 AND t.restored_at IS NULL)
-        ORDER BY visited_at DESC, created_at DESC
+        ORDER BY visited_at DESC, created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
@@ -357,7 +370,7 @@
               SELECT 1 FROM content_takedowns t
               WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
                 AND t.restored_at IS NULL)
-        ORDER BY visited_at DESC, created_at DESC
+        ORDER BY visited_at DESC, created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
@@ -663,7 +676,7 @@
     <select id="findAllForAdmin" resultMap="checkinMap">
         SELECT <include refid="columns"/>
         <include refid="adminFilter"/>
-        ORDER BY created_at DESC
+        ORDER BY created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 

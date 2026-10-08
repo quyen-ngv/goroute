@@ -1,5 +1,6 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.dto.FeedCursor;
 import com.ds.goroute.dto.FeedGeoFilter;
 import com.ds.goroute.dto.request.CreateReviewRequest;
 import com.ds.goroute.dto.request.UpdateReviewRequest;
@@ -60,11 +61,18 @@ public class ReviewServiceImpl implements ReviewService {
 
     private static final String USER_REVIEW_ENTITY_TYPE = "USER_REVIEW";
 
+    /**
+     * Ceiling for every review list. The controllers validate it too; this is the backstop for
+     * callers that do not (the public profile endpoint), so no request reads an unbounded page.
+     */
+    static final int MAX_PAGE_SIZE = 100;
+
     private final ReviewScoringService scoringService;
     private final ReviewFraudDetectionService fraudDetectionService;
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final SocialNotificationService socialNotificationService;
     private final ContentModerationService contentModerationService;
+    private final ContentCommentRepository contentCommentRepository;
 
     /**
      * Create a new review
@@ -305,7 +313,7 @@ public class ReviewServiceImpl implements ReviewService {
 
         // Check ownership
         if (!review.getUserId().equals(userId)) {
-            throw new BusinessException(ErrorConstant.UNAUTHORIZED, "You can only edit your own reviews");
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You can only edit your own reviews");
         }
 
         // Update fields
@@ -360,7 +368,7 @@ public class ReviewServiceImpl implements ReviewService {
                 .orElseThrow(() -> new BusinessException(ErrorConstant.REVIEW_NOT_FOUND, "Review not found"));
 
         if (!review.getUserId().equals(userId)) {
-            throw new BusinessException(ErrorConstant.UNAUTHORIZED, "You can only delete your own reviews");
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You can only delete your own reviews");
         }
 
         UUID placeId = review.getPlaceId();
@@ -381,6 +389,7 @@ public class ReviewServiceImpl implements ReviewService {
      * Get reviews for a place
      */
     @Override
+    @Transactional(readOnly = true)
     public UserReviewResponse getReview(UUID reviewId, UUID currentUserId) {
         UserReview review = reviewRepository.findById(reviewId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.REVIEW_NOT_FOUND, "Review not found"));
@@ -391,19 +400,20 @@ public class ReviewServiceImpl implements ReviewService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<UserReviewResponse> getPlaceReviews(UUID placeId, UUID currentUserId, int page, int size) {
-        int offset = page * size;
-        List<UserReview> reviews = reviewRepository.findByPlaceId(placeId, size, offset);
+        List<UserReview> reviews = reviewRepository.findByPlaceId(placeId, boundedSize(size), offset(page, size));
 
         return mapToResponses(reviews, currentUserId);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<UserReviewResponse> getActivityBookingReviews(UUID activityBookingId, UUID currentUserId, int page, int size) {
         activityBookingRepository.findById(activityBookingId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity booking not found"));
-        int offset = page * size;
-        List<UserReview> reviews = reviewRepository.findByActivityBookingId(activityBookingId, size, offset);
+        List<UserReview> reviews = reviewRepository.findByActivityBookingId(
+                activityBookingId, boundedSize(size), offset(page, size));
 
         return mapToResponses(reviews, currentUserId);
     }
@@ -412,29 +422,56 @@ public class ReviewServiceImpl implements ReviewService {
      * Get user's reviews
      */
     @Override
+    @Transactional(readOnly = true)
     public List<UserReviewResponse> getUserReviews(UUID userId, int page, int size) {
-        int offset = page * size;
-        List<UserReview> reviews = reviewRepository.findByUserId(userId, size, offset);
+        List<UserReview> reviews = reviewRepository.findByUserId(userId, boundedSize(size), offset(page, size));
 
         return mapToResponses(reviews, userId);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<UserReviewResponse> getUserReviewsForProfile(UUID targetUserId, UUID viewerId, int page, int size) {
         userRepository.findById(targetUserId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.USER_NOT_FOUND, "User not found"));
-        int offset = page * size;
-        List<UserReview> reviews = reviewRepository.findByUserId(targetUserId, size, offset);
+        List<UserReview> reviews = reviewRepository.findByUserId(targetUserId, boundedSize(size), offset(page, size));
 
         return mapToResponses(reviews, viewerId);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<UserReviewResponse> getFeedReviews(UUID currentUserId, FeedGeoFilter geo, int page, int size, String randomSeed) {
-        int offset = page * size;
-        List<UserReview> reviews = reviewRepository.findFeedReviews(currentUserId, geo, size, offset, randomSeed);
+        return getFeedReviews(currentUserId, geo, page, size, randomSeed, null);
+    }
 
-        return mapToResponses(reviews, currentUserId);
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserReviewResponse> getFeedReviews(UUID currentUserId, FeedGeoFilter geo, int page, int size,
+                                                   String randomSeed, String cursor) {
+        boolean shuffled = randomSeed != null && !randomSeed.isEmpty();
+        FeedCursor after = shuffled ? null : FeedCursor.decode(cursor);
+        List<UserReview> reviews = reviewRepository.findFeedReviews(currentUserId, geo, after,
+                boundedSize(size), after != null ? 0 : offset(page, size), randomSeed);
+
+        List<UserReviewResponse> responses = mapToResponses(reviews, currentUserId);
+        if (!shuffled) {
+            // Same order as the rows, so each review carries the key the next page resumes after.
+            for (int index = 0; index < responses.size(); index++) {
+                UserReview review = reviews.get(index);
+                responses.get(index).setFeedCursor(FeedCursor.encodeAfter(
+                        review.getHasPhoto(), review.getCreatedAt(), review.getId()));
+            }
+        }
+        return responses;
+    }
+
+    private static int boundedSize(int size) {
+        return Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+    }
+
+    private static int offset(int page, int size) {
+        return Math.max(0, page) * boundedSize(size);
     }
 
     /**
@@ -531,6 +568,7 @@ public class ReviewServiceImpl implements ReviewService {
      * Get place score
      */
     @Override
+    @Transactional(readOnly = true)
     public PlaceScoreResponse getPlaceScore(UUID placeId) {
         PlaceScore score = scoreRepository.findByPlaceId(placeId).orElse(null);
 
@@ -567,6 +605,7 @@ public class ReviewServiceImpl implements ReviewService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public ReviewScoreResponse getActivityBookingScore(UUID activityBookingId) {
         activityBookingRepository.findById(activityBookingId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity booking not found"));
@@ -598,6 +637,7 @@ public class ReviewServiceImpl implements ReviewService {
      * Get user review profile
      */
     @Override
+    @Transactional(readOnly = true)
     public UserReviewProfileResponse getUserProfile(UUID userId) {
         UserReviewProfile profile = profileRepository.findByUserId(userId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.USER_NOT_FOUND, "User not found"));
@@ -615,27 +655,62 @@ public class ReviewServiceImpl implements ReviewService {
                 .build();
     }
 
+    /**
+     * Every list path goes through here: each kind of related row is loaded once for the whole
+     * page (authors, their profiles, places - a place's own review list loads that place once -
+     * activity products, the viewer's votes, photos, comment counts), so a page costs the same
+     * handful of queries whatever its size.
+     */
     private List<UserReviewResponse> mapToResponses(List<UserReview> reviews, UUID currentUserId) {
         if (reviews == null || reviews.isEmpty()) {
             return List.of();
         }
+        List<UUID> reviewIds = reviews.stream().map(UserReview::getId).toList();
         Map<UUID, List<MediaAsset>> photosByReview = mediaAssetRepository
-                .findByEntityIds(USER_REVIEW_ENTITY_TYPE, reviews.stream().map(UserReview::getId).toList())
+                .findByEntityIds(USER_REVIEW_ENTITY_TYPE, reviewIds)
                 .stream()
                 .collect(Collectors.groupingBy(MediaAsset::getEntityId));
+        // One grouped query for the page rather than the card's own count request per row.
+        Map<UUID, Integer> commentCounts = contentCommentRepository.countActiveByTargets(
+                ModeratedContentType.REVIEW, reviewIds);
+
+        Set<UUID> authorIds = reviews.stream().map(UserReview::getUserId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Map<UUID, User> users = userRepository.findByIds(authorIds).stream()
+                .collect(Collectors.toMap(User::getId, Function.identity(), (first, second) -> first));
+        Map<UUID, UserReviewProfile> profiles = profileRepository.findByUserIds(authorIds).stream()
+                .collect(Collectors.toMap(UserReviewProfile::getUserId, Function.identity(),
+                        (first, second) -> first));
+        List<UUID> placeIds = reviews.stream().map(UserReview::getPlaceId)
+                .filter(Objects::nonNull).distinct().toList();
+        Map<UUID, Place> places = placeIds.isEmpty() ? Map.of()
+                : placeRepository.findByIds(placeIds).stream()
+                        .collect(Collectors.toMap(Place::getId, Function.identity(), (first, second) -> first));
+        List<UUID> bookingIds = reviews.stream().map(UserReview::getActivityBookingId)
+                .filter(Objects::nonNull).distinct().toList();
+        Map<UUID, ActivityBooking> bookings = bookingIds.isEmpty() ? Map.of()
+                : activityBookingRepository.findByIds(bookingIds).stream()
+                        .collect(Collectors.toMap(ActivityBooking::getId, Function.identity(),
+                                (first, second) -> first));
+        Map<UUID, Boolean> votes = currentUserId == null ? Map.of()
+                : voteRepository.findByReviewIdsAndUserId(reviewIds, currentUserId).stream()
+                        .collect(Collectors.toMap(ReviewHelpfulVote::getReviewId, ReviewHelpfulVote::isHelpful,
+                                (first, second) -> first));
+
         return reviews.stream()
-                .map(review -> mapToResponse(review, currentUserId,
-                        photosByReview.getOrDefault(review.getId(), List.of())))
+                .map(review -> toResponse(review, currentUserId,
+                        photosByReview.getOrDefault(review.getId(), List.of()),
+                        commentCounts.getOrDefault(review.getId(), 0),
+                        users.get(review.getUserId()),
+                        profiles.get(review.getUserId()),
+                        review.getPlaceId() == null ? null : places.get(review.getPlaceId()),
+                        review.getActivityBookingId() == null ? null : bookings.get(review.getActivityBookingId()),
+                        votes.get(review.getId())))
                 .collect(Collectors.toList());
     }
 
+    /** One review on its own (detail, create, update, vote): single-row lookups are fine here. */
     private UserReviewResponse mapToResponse(UserReview review, UUID currentUserId) {
-        return mapToResponse(review, currentUserId,
-                mediaAssetRepository.findByEntity(USER_REVIEW_ENTITY_TYPE, review.getId()));
-    }
-
-    private UserReviewResponse mapToResponse(UserReview review, UUID currentUserId,
-                                             List<MediaAsset> photoAssets) {
         User user = userRepository.findById(review.getUserId()).orElse(null);
         UserReviewProfile profile = profileRepository.findByUserId(review.getUserId()).orElse(null);
         Place place = review.getPlaceId() != null
@@ -653,7 +728,16 @@ public class ReviewServiceImpl implements ReviewService {
                 hasVotedHelpful = vote.isHelpful();
             }
         }
+        return toResponse(review, currentUserId,
+                mediaAssetRepository.findByEntity(USER_REVIEW_ENTITY_TYPE, review.getId()),
+                contentCommentRepository.countActiveByTarget(ModeratedContentType.REVIEW, review.getId()),
+                user, profile, place, activityBooking, hasVotedHelpful);
+    }
 
+    private UserReviewResponse toResponse(UserReview review, UUID currentUserId,
+                                          List<MediaAsset> photoAssets, int commentCount,
+                                          User user, UserReviewProfile profile, Place place,
+                                          ActivityBooking activityBooking, Boolean hasVotedHelpful) {
         List<MemoryImageResponse> photoResponses = MediaAssetResponseMapper.toImageResponses(
                 photoAssets, user != null ? Map.of(user.getId(), user) : Map.of(), Map.of());
 
@@ -701,6 +785,7 @@ public class ReviewServiceImpl implements ReviewService {
                 .helpfulVotes(review.getHelpfulVotes())
                 .unhelpfulVotes(review.getUnhelpfulVotes() != null ? review.getUnhelpfulVotes() : 0)
                 .hasVotedHelpful(hasVotedHelpful)
+                .commentCount(commentCount)
                 .isOwnReview(currentUserId != null && review.getUserId().equals(currentUserId))
                 .verifiedStay(review.getHotelBookingId() != null || review.getActivityOrderId() != null)
                 .hotelBookingId(review.getHotelBookingId())

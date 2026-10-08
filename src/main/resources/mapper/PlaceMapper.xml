@@ -13,6 +13,7 @@
         <result property="title" column="title"/>
         <result property="placeGroup" column="place_group" javaType="com.ds.goroute.type.PlaceGroup"/>
         <result property="category" column="category"/>
+        <result property="subTypes" column="sub_types" typeHandler="org.apache.ibatis.type.ArrayTypeHandler"/>
         <result property="address" column="address"/>
         <result property="provinceCode" column="province_code"/>
         <result property="destinations" column="destinations"/>
@@ -70,7 +71,7 @@
     <insert id="insert" parameterType="com.ds.goroute.entity.Place">
         INSERT INTO places (
             id, place_id, cid, data_id, input_id,
-            title, place_group, category, address, destinations, latitude, longitude, verification_radius_meters,
+            title, place_group, category, sub_types, address, destinations, latitude, longitude, verification_radius_meters,
             plus_code, timezone, phone, website, google_maps_link,
             review_count, review_rating, reviews_per_rating,
             thumbnail, images, descriptions, ai_description, ai_references, status, visibility_status, price_range,
@@ -83,7 +84,8 @@
             created_at, updated_at
         ) VALUES (
             #{id}, #{placeId}, #{cid}, #{dataId}, #{inputId},
-            #{title}, #{placeGroup,typeHandler=org.apache.ibatis.type.EnumTypeHandler}, #{category}, #{address}, #{destinations}::jsonb, #{latitude}, #{longitude}, #{verificationRadiusMeters},
+            #{title}, #{placeGroup,typeHandler=org.apache.ibatis.type.EnumTypeHandler}, #{category},
+            COALESCE(#{subTypes,jdbcType=ARRAY,typeHandler=org.apache.ibatis.type.ArrayTypeHandler}::varchar[], '{}'), #{address}, #{destinations}::jsonb, #{latitude}, #{longitude}, #{verificationRadiusMeters},
             #{plusCode}, #{timezone}, #{phone}, #{website}, #{googleMapsLink},
             #{reviewCount}, #{reviewRating}, #{reviewsPerRating},
             #{thumbnail}, #{images}, #{descriptions}, #{aiDescription}, #{aiReferences}::jsonb, #{status}, #{visibilityStatus,javaType=com.ds.goroute.type.PlaceVisibilityStatus}, #{priceRange},
@@ -110,6 +112,16 @@
     <update id="updateWardCode">
         UPDATE places SET ward_code = #{wardCode,jdbcType=VARCHAR},
             province_code = COALESCE((SELECT province_code FROM wards WHERE code = #{wardCode,jdbcType=VARCHAR}), province_code),
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- Sub-types sit outside the generic update for the same reason: jobs re-save Place
+         objects loaded by projections that never carry them, and an import refresh must not
+         erase the kinds an operator chose. -->
+    <update id="updateSubTypes">
+        UPDATE places
+        SET sub_types = #{subTypes,jdbcType=ARRAY,typeHandler=org.apache.ibatis.type.ArrayTypeHandler}::varchar[],
             updated_at = NOW()
         WHERE id = #{id}
     </update>
@@ -242,23 +254,102 @@
         </foreach>
     </select>
 
+    <!-- Radius and nearest-first order spell goroute_point(latitude, longitude) exactly as
+         idx_places_point (V214) does, so the GiST index serves both. Distance in metres. -->
     <select id="findNearCoordinates" resultMap="PlaceResultMap">
         SELECT *,
-            (6371000 * acos(LEAST(1, GREATEST(-1,
-                cos(radians(#{latitude})) * cos(radians(latitude)) *
-                cos(radians(longitude) - radians(#{longitude})) +
-                sin(radians(#{latitude})) * sin(radians(latitude))
-            )))) AS distance
+            ST_Distance(goroute_point(latitude, longitude),
+                        goroute_point(#{latitude}::float8, #{longitude}::float8)) AS distance
         FROM places
-        WHERE latitude IS NOT NULL
-          AND longitude IS NOT NULL
-          AND (6371000 * acos(LEAST(1, GREATEST(-1,
-                cos(radians(#{latitude})) * cos(radians(latitude)) *
-                cos(radians(longitude) - radians(#{longitude})) +
-                sin(radians(#{latitude})) * sin(radians(latitude))
-            )))) &lt;= #{maxDistanceMeters}
-        ORDER BY distance
+        WHERE ST_DWithin(goroute_point(latitude, longitude),
+                         goroute_point(#{latitude}::float8, #{longitude}::float8),
+                         #{maxDistanceMeters}::float8)
+        ORDER BY goroute_point(latitude, longitude) &lt;-&gt; goroute_point(#{latitude}::float8, #{longitude}::float8), id
         LIMIT 1
+    </select>
+
+    <!-- Duplicate check: the K nearest places in the radius, identity columns only. -->
+    <select id="findNearbyIdentityCandidates" resultMap="PlaceResultMap">
+        SELECT id, place_id, cid, title, address, latitude, longitude,
+            ST_Distance(goroute_point(latitude, longitude),
+                        goroute_point(#{latitude}::float8, #{longitude}::float8)) AS distance
+        FROM places
+        WHERE ST_DWithin(goroute_point(latitude, longitude),
+                         goroute_point(#{latitude}::float8, #{longitude}::float8),
+                         #{maxDistanceMeters}::float8)
+        ORDER BY goroute_point(latitude, longitude) &lt;-&gt; goroute_point(#{latitude}::float8, #{longitude}::float8), id
+        LIMIT #{limit}
+    </select>
+
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM places WHERE id = #{id})
+    </select>
+
+    <select id="findGeoCodes" resultMap="PlaceResultMap">
+        SELECT id, ward_code, province_code FROM places WHERE id = #{id}
+    </select>
+
+    <!-- What a list card shows. Left out on purpose: raw_data, menu, popular_times, about,
+         reviews_per_rating, ai_description, ai_references, attributes and the drawn
+         verification geometry; the detail screen reloads the place by id. -->
+    <sql id="PlaceListColumns">
+        id, place_id, title, place_group, category, sub_types, address, province_code, ward_code, destinations,
+        latitude, longitude, verification_radius_meters, phone, website, google_maps_link,
+        review_count, review_rating, adjusted_rating, place_overall_score, score_sample_count,
+        score_source, last_scraped_at, thumbnail, images, descriptions, visibility_status,
+        price_range, open_hours, regular, created_at, updated_at
+    </sql>
+
+    <select id="findListSummaryByIds" resultMap="PlaceResultMap">
+        SELECT <include refid="PlaceListColumns"/>
+        FROM places
+        WHERE id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        <if test="publicOnly">
+            AND visibility_status = 'ACTIVE' AND lifecycle_status = 'ACTIVE'
+        </if>
+    </select>
+
+    <!-- Same order as idx_places_created_id (created_at DESC, id DESC). -->
+    <select id="findListPage" resultMap="PlaceResultMap">
+        SELECT <include refid="PlaceListColumns"/>
+        FROM places
+        <where>
+            <if test="publicOnly">
+                AND visibility_status = 'ACTIVE' AND lifecycle_status = 'ACTIVE'
+            </if>
+            <if test="placeGroups != null and placeGroups.size() > 0">
+                AND place_group IN
+                <foreach item="placeGroup" collection="placeGroups" open="(" separator="," close=")">
+                    #{placeGroup}
+                </foreach>
+            </if>
+        </where>
+        ORDER BY created_at DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <sql id="PlaceSearchIndexColumns">
+        id, title, latitude, longitude, visibility_status, category, place_group, sub_types,
+        review_rating, adjusted_rating, destinations
+    </sql>
+
+    <select id="findSearchIndexPage" resultMap="PlaceResultMap">
+        SELECT <include refid="PlaceSearchIndexColumns"/>
+        FROM places
+        <where>
+            <if test="afterId != null">id &gt; #{afterId}</if>
+        </where>
+        ORDER BY id
+        LIMIT #{limit}
+    </select>
+
+    <select id="findSearchIndexRow" resultMap="PlaceResultMap">
+        SELECT <include refid="PlaceSearchIndexColumns"/>
+        FROM places
+        WHERE id = #{id}
     </select>
 
     <select id="findAll" resultMap="PlaceResultMap">
@@ -272,7 +363,7 @@
 
     <select id="findPage" resultMap="PlaceResultMap">
         SELECT * FROM places
-        ORDER BY created_at DESC
+        ORDER BY created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
@@ -291,6 +382,12 @@
                 <foreach item="placeGroup" collection="placeGroups" open="(" separator="," close=")">
                     #{placeGroup}
                 </foreach>
+            </if>
+            <!-- Any of the chosen kinds (array overlap), served by idx_places_sub_types. -->
+            <if test="subTypes != null and subTypes.size() > 0">
+                AND sub_types &amp;&amp; ARRAY[
+                <foreach item="subType" collection="subTypes" separator=",">#{subType}</foreach>
+                ]::varchar[]
             </if>
             <if test="visibilityStatus != null and visibilityStatus.size() > 0">
                 AND visibility_status IN
@@ -413,14 +510,8 @@
 
     <select id="findForAiByDestination" resultMap="PlaceResultMap">
         SELECT p.*,
-               CASE
-                   WHEN p.latitude IS NULL OR p.longitude IS NULL THEN NULL
-                   ELSE (6371 * acos(LEAST(1, GREATEST(-1,
-                       cos(radians(#{latitude})) * cos(radians(p.latitude)) *
-                       cos(radians(p.longitude) - radians(#{longitude})) +
-                       sin(radians(#{latitude})) * sin(radians(p.latitude))
-                   ))))
-               END AS distance
+               ST_Distance(goroute_point(p.latitude, p.longitude),
+                           goroute_point(#{latitude}::float8, #{longitude}::float8)) / 1000.0 AS distance
         FROM places p
         WHERE p.visibility_status = 'ACTIVE'
           AND p.destinations @&gt; #{citySlugJson}::jsonb
@@ -431,36 +522,32 @@
         ORDER BY distance NULLS LAST,
                  p.place_overall_score DESC NULLS LAST,
                  p.adjusted_rating DESC NULLS LAST,
-                 p.review_count DESC NULLS LAST
+                 p.review_count DESC NULLS LAST,
+                 p.id
         LIMIT #{limit}
     </select>
 
     <!-- AI inventory is geo-scoped deliberately: destination slugs and incomplete ratings are not filters. -->
     <select id="findActiveForAiWithinRadius" resultMap="PlaceResultMap">
-        SELECT scoped.*
-        FROM (
-            SELECT p.*,
-                   (6371 * acos(LEAST(1, GREATEST(-1,
-                       cos(radians(#{latitude})) * cos(radians(p.latitude)) *
-                       cos(radians(p.longitude) - radians(#{longitude})) +
-                       sin(radians(#{latitude})) * sin(radians(p.latitude))
-                   )))) AS distance
-            FROM places p
-            WHERE p.visibility_status = 'ACTIVE'
-              AND p.latitude IS NOT NULL
-              AND p.longitude IS NOT NULL
-            <if test="placeGroups != null and placeGroups.size() > 0">
-              AND p.place_group IN
-              <foreach item="group" collection="placeGroups" open="(" separator="," close=")">
-                  #{group}
-              </foreach>
-            </if>
-        ) scoped
-        WHERE scoped.distance &lt;= #{radiusKm}
-        ORDER BY scoped.place_overall_score DESC NULLS LAST,
-                 scoped.adjusted_rating DESC NULLS LAST,
-                 scoped.review_count DESC NULLS LAST,
-                 scoped.distance ASC
+        SELECT p.*,
+               ST_Distance(goroute_point(p.latitude, p.longitude),
+                           goroute_point(#{latitude}::float8, #{longitude}::float8)) / 1000.0 AS distance
+        FROM places p
+        WHERE p.visibility_status = 'ACTIVE'
+          AND ST_DWithin(goroute_point(p.latitude, p.longitude),
+                         goroute_point(#{latitude}::float8, #{longitude}::float8),
+                         #{radiusKm}::float8 * 1000.0)
+        <if test="placeGroups != null and placeGroups.size() > 0">
+          AND p.place_group IN
+          <foreach item="group" collection="placeGroups" open="(" separator="," close=")">
+              #{group}
+          </foreach>
+        </if>
+        ORDER BY p.place_overall_score DESC NULLS LAST,
+                 p.adjusted_rating DESC NULLS LAST,
+                 p.review_count DESC NULLS LAST,
+                 distance ASC,
+                 p.id
         LIMIT #{limit}
     </select>
 

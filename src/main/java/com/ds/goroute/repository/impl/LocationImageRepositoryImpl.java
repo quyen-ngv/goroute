@@ -28,6 +28,11 @@ public class LocationImageRepositoryImpl implements LocationImageRepository {
     }
     
     @Override
+    public List<LocationImage> findAllForList() {
+        return locationImageMapper.selectAllForList();
+    }
+
+    @Override
     public Optional<LocationImage> findById(UUID id) {
         return Optional.ofNullable(locationImageMapper.selectById(id));
     }

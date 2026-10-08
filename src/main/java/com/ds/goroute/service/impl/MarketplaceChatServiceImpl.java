@@ -154,6 +154,7 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
                 .avatarUrl(avatarUrl(c, participants))
                 .tripId(c.getTripId())
                 .meetupId(c.getMeetupId())
+                .meetupCategory(c.getMeetupCategory())
                 .pinnedMessageId(c.getPinnedMessageId())
                 .memberCount(c.getMemberCount())
                 .mutedUntil(c.getMutedUntil())

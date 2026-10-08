@@ -2,6 +2,7 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.request.BatchUpdatePlaceImagesRequest;
 import com.ds.goroute.dto.PlaceSearchCriteria;
+import com.ds.goroute.type.PlaceSubType;
 import com.ds.goroute.dto.request.ImportPlaceRequest;
 import com.ds.goroute.dto.request.UpdatePlaceRequest;
 import com.ds.goroute.dto.BaseResponse;
@@ -16,9 +17,13 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -30,7 +35,11 @@ import java.util.UUID;
 @RequestMapping("/v1/api/places")
 @RequiredArgsConstructor
 @Slf4j
+@Validated
 public class PlaceController extends BaseController {
+
+    /** Page ceiling of a place's imported Google review list. */
+    private static final int MAX_REVIEW_PAGE_SIZE = 100;
 
     private final PlaceService placeService;
     private final FoodService foodService;
@@ -47,14 +56,27 @@ public class PlaceController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(responses));
     }
 
+    /**
+     * Public type-ahead/catalogue page. Guests and app users see ACTIVE places only, at most
+     * 50 per page; an admin sees every place, at most 500 (the console's linkable-place
+     * picker). Larger sizes are clamped, not refused.
+     */
     @GetMapping
     public ResponseEntity<BaseResponse<List<PlaceResponse>>> getAllPlaces(
-            @RequestParam(required = false) String search,
+            @RequestParam(required = false) @Size(max = 200) String search,
             @RequestParam(required = false) List<String> placeGroups,
-            @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(500) int size) {
-        List<PlaceResponse> responses = placeService.getAllPlaces(search, placeGroups, page, size);
+            @RequestParam(defaultValue = "0") @Min(0) @Max(10_000) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(500) int size,
+            Authentication authentication) {
+        List<PlaceResponse> responses = placeService.getAllPlaces(
+                search, placeGroups, isAdmin(authentication), page, size);
         return ResponseEntity.ok(ofSucceeded(responses));
+    }
+
+    private static boolean isAdmin(Authentication authentication) {
+        return authentication != null && authentication.isAuthenticated()
+                && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
     }
 
     @GetMapping("/detail-refresh-candidates")
@@ -86,6 +108,7 @@ public class PlaceController extends BaseController {
             @RequestParam(defaultValue = "0.1") @DecimalMin(value = "0", inclusive = false) BigDecimal radius,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) List<String> placeGroups,
+            @RequestParam(required = false) List<PlaceSubType> subTypes,
             @RequestParam(required = false) BigDecimal minRating,
             @RequestParam(defaultValue = "false") boolean sortByRating,
             @RequestParam(required = false) String citySlug,
@@ -97,16 +120,18 @@ public class PlaceController extends BaseController {
             @RequestParam(defaultValue = "20") @Min(1) @Max(PlaceSearchCriteria.MAX_PAGE_SIZE) int size
     ) {
         List<PlaceResponse> responses = placeService.searchPlaces(
-                keyword, latitude, longitude, radius, category, placeGroups, minRating, sortByRating,
+                keyword, latitude, longitude, radius, category, placeGroups, PlaceSubType.names(subTypes),
+                minRating, sortByRating,
                 citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, minLuceneScore, page, size);
-        return ResponseEntity.ok(ofSucceeded(responses));
+        // The search cache is shared by callers a few metres apart: distance is this caller's own.
+        return ResponseEntity.ok(ofSucceeded(PlaceService.withDistanceFrom(responses, latitude, longitude)));
     }
 
     @GetMapping("/{id}/reviews")
     public ResponseEntity getPlaceReviews(
             @PathVariable UUID id,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "0") @Min(0) @Max(10_000) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_REVIEW_PAGE_SIZE) int size) {
         List<PlaceReviewResponse> reviews = placeService.getPlaceReviews(id, page, size);
         return ResponseEntity.ok(ofSucceeded(reviews));
     }
@@ -137,10 +162,11 @@ public class PlaceController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(null));
     }
 
+    /** Starts the rebuild in the background: 202, with started=false when one is already running. */
     @PostMapping("/indexing/trigger")
-    public ResponseEntity triggerSearchReindex() {
-        placeService.triggerSearchReindex();
-        return ResponseEntity.ok(ofSucceeded(null));
+    public ResponseEntity<BaseResponse<Map<String, Boolean>>> triggerSearchReindex() {
+        boolean started = placeService.triggerSearchReindex();
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(ofSucceeded(Map.of("started", started)));
     }
 
     @DeleteMapping("/{id}")

@@ -46,6 +46,14 @@ public interface ReviewService {
      */
     List<UserReviewResponse> getFeedReviews(UUID currentUserId, FeedGeoFilter geo, int page, int size, String randomSeed);
 
+    /**
+     * {@link #getFeedReviews(UUID, FeedGeoFilter, int, int, String)} resuming after
+     * {@code cursor}, the {@code feedCursor} of the last review the client holds; {@code page}
+     * is then ignored. A shuffled order ({@code randomSeed}) always pages by number.
+     */
+    List<UserReviewResponse> getFeedReviews(UUID currentUserId, FeedGeoFilter geo, int page, int size,
+                                            String randomSeed, String cursor);
+
     UserReviewResponse voteHelpful(UUID userId, UUID reviewId);
 
     UserReviewResponse voteUnhelpful(UUID userId, UUID reviewId);

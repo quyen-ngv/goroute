@@ -19,6 +19,18 @@
         <result property="createdAt" column="created_at"/>
     </resultMap>
 
+    <sql id="SavedPlaceColumns">
+        id, user_id, place_id, item_type, custom_place_id, name, address, lat, lng,
+        category, rating, photo_url, tags, created_at
+    </sql>
+
+    <resultMap id="SocialSavedPlacesJobMap" type="com.ds.goroute.entity.SocialLocationJob">
+        <id property="id" column="id"/>
+        <result property="resultPayload" column="result_payload"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="completedAt" column="completed_at"/>
+    </resultMap>
+
     <insert id="insert">
         INSERT INTO saved_places (id, user_id, place_id, item_type, custom_place_id, name, address, lat, lng, category, rating, photo_url, tags, created_at)
         VALUES (#{id}, #{userId}, #{placeId}, #{itemType}, #{customPlaceId}, #{name}, #{address}, #{lat}, #{lng}, #{category}, #{rating}, #{photoUrl}, #{tags}, #{createdAt})
@@ -41,13 +53,91 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
+    <!-- Newest first, at most #{limit} rows when limit is set (idx_saved_places_user leads with user_id). -->
     <select id="findAllByUserId" resultMap="SavedPlaceResultMap">
-        SELECT * FROM saved_places
+        SELECT <include refid="SavedPlaceColumns"/>
+        FROM saved_places
         WHERE user_id = #{userId}
         ORDER BY created_at DESC, id DESC
+        <if test="limit != null">
+        LIMIT #{limit}
+        </if>
     </select>
 
+    <!--
+        The user's completed social-location jobs with result_payload cut down, in SQL, to what the
+        recent-saves list reads: per extraction candidate its name/query/address_hint/category and only the
+        first map-search candidate that has a placeMapping.placeId (title, address, coordinates, photo
+        fields, category, placeMapping.placeId/thumbnail). Same JSON shape as the full payload, so the
+        service parses it exactly as before; the rest of the payload never leaves the database.
+        result_payload is always written from JsonNode.toString(), so the jsonb cast cannot fail.
+    -->
+    <select id="findSocialSavedPlacesByUserId" resultMap="SocialSavedPlacesJobMap">
+        SELECT
+            j.id,
+            j.created_at,
+            j.completed_at,
+            jsonb_build_object('extraction', jsonb_build_object('candidates', COALESCE((
+                SELECT jsonb_agg(jsonb_build_object(
+                           'name', c.value -&gt; 'name',
+                           'query', c.value -&gt; 'query',
+                           'address_hint', c.value -&gt; 'address_hint',
+                           'category', c.value -&gt; 'category',
+                           'mapSearch', jsonb_build_object('candidates', jsonb_build_array(mapped.value)))
+                       ORDER BY c.ord)
+                FROM jsonb_array_elements(
+                         CASE WHEN jsonb_typeof(j.result_payload::jsonb -&gt; 'extraction' -&gt; 'candidates') = 'array'
+                              THEN j.result_payload::jsonb -&gt; 'extraction' -&gt; 'candidates'
+                              ELSE '[]'::jsonb END
+                     ) WITH ORDINALITY AS c(value, ord)
+                CROSS JOIN LATERAL (
+                    SELECT jsonb_build_object(
+                               'title', m.value -&gt; 'title',
+                               'address', m.value -&gt; 'address',
+                               'latitude', m.value -&gt; 'latitude',
+                               'longitude', m.value -&gt; 'longitude',
+                               'thumbnail', m.value -&gt; 'thumbnail',
+                               'thumbnailUrl', m.value -&gt; 'thumbnailUrl',
+                               'imageUrl', m.value -&gt; 'imageUrl',
+                               'photoUrl', m.value -&gt; 'photoUrl',
+                               'category', m.value -&gt; 'category',
+                               'placeMapping', jsonb_build_object(
+                                   'placeId', m.value -&gt; 'placeMapping' -&gt; 'placeId',
+                                   'thumbnail', m.value -&gt; 'placeMapping' -&gt; 'thumbnail')) AS value
+                    FROM jsonb_array_elements(
+                             CASE WHEN jsonb_typeof(c.value -&gt; 'mapSearch' -&gt; 'candidates') = 'array'
+                                  THEN c.value -&gt; 'mapSearch' -&gt; 'candidates'
+                                  ELSE '[]'::jsonb END
+                         ) WITH ORDINALITY AS m(value, ord)
+                    WHERE jsonb_typeof(m.value -&gt; 'placeMapping' -&gt; 'placeId') IN ('string', 'number')
+                      AND btrim(m.value -&gt; 'placeMapping' -&gt;&gt; 'placeId') &lt;&gt; ''
+                    ORDER BY m.ord
+                    LIMIT 1
+                ) mapped
+            ), '[]'::jsonb)))::text AS result_payload
+        FROM social_location_jobs j
+        WHERE j.user_id = #{userId}
+          AND j.status = 'COMPLETED'
+          AND j.result_payload IS NOT NULL
+        ORDER BY COALESCE(j.completed_at, j.created_at) DESC, j.id DESC
+    </select>
+
+    <!--
+        Trips the user owns or is an ACCEPTED member of (trip_members is UNIQUE(trip_id, user_id), so UNION
+        removes exactly the owner-and-member overlap), then their place and booking activities. Each branch
+        is an index lookup: idx_trips_owner, idx_trip_members_user, idx_activities_trip_day.
+    -->
     <select id="findTripItemsByUserId" resultType="com.ds.goroute.dto.response.SavedItemTripResponse">
+        WITH user_trip_ids AS (
+            SELECT t.id
+            FROM trips t
+            WHERE t.owner_id = #{userId}
+            UNION
+            SELECT tm.trip_id
+            FROM trip_members tm
+            WHERE tm.user_id = #{userId}
+              AND tm.status = 'ACCEPTED'
+        )
         SELECT
             a.place_id AS itemId,
             'PLACE' AS itemType,
@@ -57,14 +147,10 @@
             t.destination AS tripDestination,
             a.id AS activityId,
             a.day_number AS dayNumber
-        FROM activities a
-        INNER JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
-        LEFT JOIN trip_members tm
-            ON tm.trip_id = t.id
-            AND tm.user_id = #{userId}
-            AND tm.status = 'ACCEPTED'
+        FROM user_trip_ids ut
+        INNER JOIN trips t ON t.id = ut.id AND t.is_deleted = FALSE
+        INNER JOIN activities a ON a.trip_id = t.id
         WHERE a.place_id IS NOT NULL
-          AND (t.owner_id = #{userId} OR tm.user_id IS NOT NULL)
 
         UNION ALL
 
@@ -77,14 +163,10 @@
             t.destination AS tripDestination,
             a.id AS activityId,
             a.day_number AS dayNumber
-        FROM activities a
-        INNER JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
-        LEFT JOIN trip_members tm
-            ON tm.trip_id = t.id
-            AND tm.user_id = #{userId}
-            AND tm.status = 'ACCEPTED'
+        FROM user_trip_ids ut
+        INNER JOIN trips t ON t.id = ut.id AND t.is_deleted = FALSE
+        INNER JOIN activities a ON a.trip_id = t.id
         WHERE a.booking_id IS NOT NULL
-          AND (t.owner_id = #{userId} OR tm.user_id IS NOT NULL)
         ORDER BY tripName ASC, dayNumber ASC, activityId ASC
     </select>
 

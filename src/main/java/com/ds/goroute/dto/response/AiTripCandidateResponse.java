@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 @Data
@@ -25,6 +26,8 @@ public class AiTripCandidateResponse {
     private Integer reviewCount;
     private String photoUrl;
     private String placeGroup;
+    /** PlaceSubType codes of a catalogue place; empty for bookings and web rows. */
+    private List<String> subTypes;
     private String category;
     private Integer visitDurationMinutes;
     private String durationText;

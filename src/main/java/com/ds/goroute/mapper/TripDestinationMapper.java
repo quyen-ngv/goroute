@@ -13,6 +13,9 @@ public interface TripDestinationMapper {
 
     List<TripDestination> selectByTripId(@Param("tripId") UUID tripId);
 
+    /** Destinations of several trips, grouped by trip and in route order within each. */
+    List<TripDestination> selectByTripIds(@Param("tripIds") List<UUID> tripIds);
+
     TripDestination selectById(@Param("id") UUID id);
 
     int deleteByTripId(@Param("tripId") UUID tripId);

@@ -1,6 +1,7 @@
 package com.ds.goroute.mapper;
 
 import com.ds.goroute.entity.ContentComment;
+import com.ds.goroute.entity.ContentCommentCount;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -26,6 +27,16 @@ public interface ContentCommentMapper {
      */
     int countActiveByTarget(@Param("contentType") String contentType,
                             @Param("contentId") UUID contentId);
+
+    /**
+     * {@link #countActiveByTarget} for a whole page of targets in one grouped query. Targets
+     * with no active comment are absent from the result. With {@code excludeTakenDownTargets}
+     * a target under an unrestored takedown counts nothing, because the per-target endpoint
+     * refuses to read its thread.
+     */
+    List<ContentCommentCount> countActiveByTargets(@Param("contentType") String contentType,
+                                                   @Param("contentIds") List<UUID> contentIds,
+                                                   @Param("excludeTakenDownTargets") boolean excludeTakenDownTargets);
 
     List<ContentComment> findPage(@Param("contentType") String contentType,
                                   @Param("contentId") UUID contentId,

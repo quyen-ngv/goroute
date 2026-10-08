@@ -54,6 +54,8 @@ class UserCheckinServiceImplDeleteTest {
     @Mock private CheckinRepository activityVisits;
     @Mock private NotificationHelper notifications;
 
+    @Mock private com.ds.goroute.repository.ContentCommentRepository contentComments;
+
     @InjectMocks private UserCheckinServiceImpl service;
 
     @Test

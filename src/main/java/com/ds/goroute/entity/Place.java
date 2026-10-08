@@ -29,6 +29,8 @@ public class Place {
     private String title;
     private PlaceGroup placeGroup;
     private String category;
+    /** {@link com.ds.goroute.type.PlaceSubType} codes. The generic update leaves them alone; see {@code updateSubTypes}. */
+    private String[] subTypes;
     private String address;
     /** Province this row was resolved to; what a check-in inherits when it is linked here. */
     private String provinceCode;

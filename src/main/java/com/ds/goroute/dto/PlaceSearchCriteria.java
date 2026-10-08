@@ -14,6 +14,7 @@ public record PlaceSearchCriteria(
         BigDecimal radiusKm,
         String category,
         List<String> placeGroups,
+        List<String> subTypes,
         BigDecimal minRating,
         String citySlug,
         List<UUID> foodIds,

@@ -1,5 +1,6 @@
 package com.ds.goroute.localevent.service;
 
+import com.ds.goroute.utils.GeoBoundingBox;
 import com.ds.goroute.localevent.domain.LocalEvent;
 import com.ds.goroute.localevent.domain.LocalEventDuplicateCandidate;
 import com.ds.goroute.localevent.domain.LocalEventImage;
@@ -38,7 +39,6 @@ public class LocalEventAssembler {
     static final double DUPLICATE_MIN_SIMILARITY = 0.6;
     /** Two events closer than this (km) with similar titles and dates are likely the same. */
     static final double DUPLICATE_RADIUS_KM = 2.0;
-    private static final double KM_PER_DEGREE = 111.32;
     /** Session times in the JSON column: UTC, seconds always written, no offset. */
     private static final DateTimeFormatter UTC_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
 
@@ -187,8 +187,7 @@ public class LocalEventAssembler {
         LocalDate day = LocalEventTimes.localDate(LocalEventTimes.fromUtc(normalized.getStartAt()), zone);
         double latitude = normalized.getLatitude().doubleValue();
         double longitude = normalized.getLongitude().doubleValue();
-        double latDelta = DUPLICATE_RADIUS_KM / KM_PER_DEGREE;
-        double lngDelta = DUPLICATE_RADIUS_KM / (KM_PER_DEGREE * Math.max(0.01, Math.cos(Math.toRadians(latitude))));
+        GeoBoundingBox box = GeoBoundingBox.around(latitude, longitude, DUPLICATE_RADIUS_KM);
         LocalEventDuplicateSearchParams params = LocalEventDuplicateSearchParams.builder()
                 .excludeId(excludeId)
                 .titleNorm(normalized.getTitleNorm())
@@ -198,10 +197,10 @@ public class LocalEventAssembler {
                 .latitude(latitude)
                 .longitude(longitude)
                 .radiusKm(DUPLICATE_RADIUS_KM)
-                .minLat(latitude - latDelta)
-                .maxLat(latitude + latDelta)
-                .minLng(longitude - lngDelta)
-                .maxLng(longitude + lngDelta)
+                .minLat(box.minLat())
+                .maxLat(box.maxLat())
+                .minLng(box.minLng())
+                .maxLng(box.maxLng())
                 .provinceCode(normalized.getProvinceCode())
                 .limit(1)
                 .build();

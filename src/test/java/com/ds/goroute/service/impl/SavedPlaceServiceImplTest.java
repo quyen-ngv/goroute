@@ -1,6 +1,7 @@
 package com.ds.goroute.service.impl;
 
 import com.ds.goroute.dto.response.RecentSavedPlaceResponse;
+import com.ds.goroute.dto.response.SavedItemsOverviewResponse;
 import com.ds.goroute.dto.response.SavedPlaceCategoryResponse;
 import com.ds.goroute.entity.LocationImage;
 import com.ds.goroute.entity.Place;
@@ -8,7 +9,6 @@ import com.ds.goroute.entity.SavedPlace;
 import com.ds.goroute.entity.SocialLocationJob;
 import com.ds.goroute.mapper.PlaceMapper;
 import com.ds.goroute.mapper.SavedPlaceMapper;
-import com.ds.goroute.mapper.SocialLocationJobMapper;
 import com.ds.goroute.repository.LocationImageRepository;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -30,12 +31,10 @@ import static org.mockito.Mockito.when;
 
 class SavedPlaceServiceImplTest {
     private final SavedPlaceMapper savedPlaceMapper = mock(SavedPlaceMapper.class);
-    private final SocialLocationJobMapper socialLocationJobMapper = mock(SocialLocationJobMapper.class);
     private final PlaceMapper placeMapper = mock(PlaceMapper.class);
     private final LocationImageRepository locationImageRepository = mock(LocationImageRepository.class);
     private final SavedPlaceServiceImpl service = new SavedPlaceServiceImpl(
             savedPlaceMapper,
-            socialLocationJobMapper,
             placeMapper,
             locationImageRepository,
             mock(ImageStorageCleanupService.class),
@@ -44,10 +43,25 @@ class SavedPlaceServiceImplTest {
     private final UUID userId = UUID.randomUUID();
 
     @Test
+    void overviewReadsEverySavedItemWhileTheRecentListStaysCapped() {
+        List<SavedPlace> manySaves = IntStream.range(0, SavedPlaceServiceImpl.MAX_LISTED_SAVED_ITEMS + 1)
+                .mapToObj(i -> saved("ChIJ-google-" + i, "Place " + i, 16.0, 108.0))
+                .toList();
+        when(savedPlaceMapper.findAllByUserId(userId, null)).thenReturn(manySaves);
+
+        SavedItemsOverviewResponse overview = service.getSavedItemsOverview(userId);
+        service.getRecentSavedPlaces(userId);
+
+        assertThat(overview.getSavedItems()).hasSize(SavedPlaceServiceImpl.MAX_LISTED_SAVED_ITEMS + 1);
+        verify(savedPlaceMapper).findAllByUserId(userId, null);
+        verify(savedPlaceMapper).findAllByUserId(userId, SavedPlaceServiceImpl.MAX_LISTED_SAVED_ITEMS);
+    }
+
+    @Test
     void recentSavedPlacesComeFromThePlaceRecordWithItsTouristArea() {
         UUID placeId = UUID.randomUUID();
         UUID areaId = UUID.randomUUID();
-        when(savedPlaceMapper.findAllByUserId(userId)).thenReturn(List.of(
+        when(savedPlaceMapper.findAllByUserId(userId, SavedPlaceServiceImpl.MAX_LISTED_SAVED_ITEMS)).thenReturn(List.of(
                 saved(placeId.toString(), "Old name", 1.0, 1.0)));
         when(placeMapper.findSavedSummaryByIds(List.of(placeId))).thenReturn(List.of(Place.builder()
                 .id(placeId)
@@ -80,7 +94,7 @@ class SavedPlaceServiceImplTest {
     @Test
     void placeOutsideEveryTouristAreaKeepsNoArea() {
         UUID placeId = UUID.randomUUID();
-        when(savedPlaceMapper.findAllByUserId(userId)).thenReturn(List.of(
+        when(savedPlaceMapper.findAllByUserId(userId, SavedPlaceServiceImpl.MAX_LISTED_SAVED_ITEMS)).thenReturn(List.of(
                 saved(placeId.toString(), "Somewhere", 10.0, 105.0)));
         when(placeMapper.findSavedSummaryByIds(List.of(placeId))).thenReturn(List.of(Place.builder()
                 .id(placeId)
@@ -97,7 +111,7 @@ class SavedPlaceServiceImplTest {
     @Test
     void placeNoLongerInTheCatalogueKeepsWhatWasSaved() {
         UUID placeId = UUID.randomUUID();
-        when(savedPlaceMapper.findAllByUserId(userId)).thenReturn(List.of(
+        when(savedPlaceMapper.findAllByUserId(userId, SavedPlaceServiceImpl.MAX_LISTED_SAVED_ITEMS)).thenReturn(List.of(
                 saved(placeId.toString(), "Saved name", 16.0, 108.0)));
         when(placeMapper.findSavedSummaryByIds(anyList())).thenReturn(List.of());
 
@@ -111,7 +125,7 @@ class SavedPlaceServiceImplTest {
     @Test
     void kindOfPlaceFromAVideoIsNotASavedCategory() {
         UUID placeId = UUID.randomUUID();
-        when(socialLocationJobMapper.findAllCompletedByUserId(userId)).thenReturn(List.of(SocialLocationJob.builder()
+        when(savedPlaceMapper.findSocialSavedPlacesByUserId(userId)).thenReturn(List.of(SocialLocationJob.builder()
                 .completedAt(LocalDateTime.now())
                 .resultPayload("""
                         {"extraction":{"candidates":[{"name":"Cầu Rồng","category":"Bridge",
@@ -130,7 +144,7 @@ class SavedPlaceServiceImplTest {
 
     @Test
     void savedIdThatIsNotACatalogueIdIsNotLookedUp() {
-        when(savedPlaceMapper.findAllByUserId(userId)).thenReturn(List.of(
+        when(savedPlaceMapper.findAllByUserId(userId, SavedPlaceServiceImpl.MAX_LISTED_SAVED_ITEMS)).thenReturn(List.of(
                 saved("ChIJ-google-id", "Google place", 16.0, 108.0)));
 
         RecentSavedPlaceResponse place = service.getRecentSavedPlaces(userId).get(0);

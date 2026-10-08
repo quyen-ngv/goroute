@@ -30,6 +30,12 @@ public class ImportPlaceRequest {
 
     private String category;
     private String placeGroup;
+    /**
+     * {@link com.ds.goroute.type.PlaceSubType} codes derived by the scraper. Unknown codes and
+     * codes that do not fit the place group are dropped, never rejected, so one bad code cannot
+     * lose the whole place. A refresh only fills a place that has no sub-types yet.
+     */
+    private List<String> subTypes;
     private String address;
     private List<String> destinations;
 

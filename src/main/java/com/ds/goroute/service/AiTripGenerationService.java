@@ -135,14 +135,15 @@ public class AiTripGenerationService {
         AiTripGenerationJob job = mapper.findById(jobId);
         verifyAttempt(job, attemptId);
         List<Place> places = placeRepository.findActiveForAiWithinRadius(request.getLatitude(), request.getLongitude(),
-                BigDecimal.valueOf(50), request.getPlaceGroups(), request.getLimit());
+                BigDecimal.valueOf(50), PlaceGroup.normalizeCodes(request.getPlaceGroups()), request.getLimit());
         List<Map<String,Object>> result = new ArrayList<>();
         for (Place p : places) {
             Map<String,Object> row = new LinkedHashMap<>();
             row.put("id", p.getId()); row.put("googlePlaceId", p.getPlaceId()); row.put("title", p.getTitle()); row.put("address", p.getAddress());
             row.put("openHours", tree(p.getOpenHours()));
             row.put("latitude", p.getLatitude()); row.put("longitude", p.getLongitude()); row.put("placeGroup", p.getPlaceGroup());
-            row.put("category", p.getCategory()); row.put("reviewCount", p.getReviewCount()); row.put("reviewRating", p.getReviewRating());
+            row.put("category", p.getCategory()); row.put("subTypes", p.getSubTypes() != null ? List.of(p.getSubTypes()) : List.of());
+            row.put("reviewCount", p.getReviewCount()); row.put("reviewRating", p.getReviewRating());
             row.put("score", p.getPlaceOverallScore()); row.put("distanceKm", p.getDistance()); row.put("visitDurationMinutes", p.getVisitDurationMinutes());
             row.put("description", localizedDescription(p, job.getLocale()));
             row.put("attributes", valuedAttributes(p.getAttributes()));
@@ -163,8 +164,8 @@ public class AiTripGenerationService {
         AiTripGenerationJob job = mapper.findById(jobId);
         verifyAttempt(job, attemptId);
         if (request.getCandidates() == null || request.getCandidates().isEmpty()) return List.of();
-        List<String> groups = request.getCandidates().stream().map(AiTripCandidateResolutionRequest.Candidate::getPlaceGroup)
-                .filter(Objects::nonNull).distinct().toList();
+        List<String> groups = PlaceGroup.normalizeCodes(request.getCandidates().stream()
+                .map(AiTripCandidateResolutionRequest.Candidate::getPlaceGroup).toList());
         List<Place> catalogue = placeRepository.findActiveForAiWithinRadius(request.getLatitude(), request.getLongitude(),
                 BigDecimal.valueOf(50), groups, 500);
         List<Map<String, Object>> resolved = new ArrayList<>();
@@ -184,7 +185,7 @@ public class AiTripGenerationService {
     private Map<String, Object> resolveCandidate(AiTripCandidateResolutionRequest.Candidate candidate, BigDecimal latitude,
                                                    BigDecimal longitude, List<Place> catalogue, String locale) {
         List<Place> exact = catalogue.stream()
-                .filter(place -> Objects.equals(place.getPlaceGroup(), candidate.getPlaceGroup()))
+                .filter(place -> place.getPlaceGroup() == PlaceGroup.fromCode(candidate.getPlaceGroup()))
                 .filter(place -> normalizedName(place.getTitle()).equals(normalizedName(candidate.getTitle())))
                 .toList();
         if (exact.size() == 1) {
@@ -204,7 +205,8 @@ public class AiTripGenerationService {
         Map<String,Object> row = new LinkedHashMap<>();
         row.put("id", p.getId()); row.put("googlePlaceId", p.getPlaceId()); row.put("title", p.getTitle()); row.put("address", p.getAddress());
         row.put("openHours", tree(p.getOpenHours())); row.put("latitude", p.getLatitude()); row.put("longitude", p.getLongitude());
-        row.put("placeGroup", p.getPlaceGroup()); row.put("category", p.getCategory()); row.put("reviewCount", p.getReviewCount());
+        row.put("placeGroup", p.getPlaceGroup()); row.put("category", p.getCategory());
+        row.put("subTypes", p.getSubTypes() != null ? List.of(p.getSubTypes()) : List.of()); row.put("reviewCount", p.getReviewCount());
         row.put("reviewRating", p.getReviewRating()); row.put("score", p.getPlaceOverallScore()); row.put("distanceKm", p.getDistance());
         row.put("visitDurationMinutes", p.getVisitDurationMinutes()); row.put("description", localizedDescription(p, locale));
         row.put("attributes", valuedAttributes(p.getAttributes())); row.put("menuHighlights", highlightTitles(p.getMenu()));

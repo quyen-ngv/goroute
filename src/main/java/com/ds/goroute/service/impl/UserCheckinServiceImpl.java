@@ -1,6 +1,7 @@
 package com.ds.goroute.service.impl;
 
 import com.ds.goroute.constant.ErrorConstant;
+import com.ds.goroute.dto.FeedCursor;
 import com.ds.goroute.dto.FeedGeoFilter;
 import com.ds.goroute.dto.request.CreateUserCheckinRequest;
 import com.ds.goroute.dto.request.UpdateUserCheckinRequest;
@@ -26,6 +27,7 @@ import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.AiTripRepository;
 import com.ds.goroute.repository.CheckinRepository;
+import com.ds.goroute.repository.ContentCommentRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.UserCheckinRepository;
 import com.ds.goroute.repository.UserRepository;
@@ -117,6 +119,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     private final NotificationHelper notificationHelper;
     private final CheckinVerifier verifier;
     private final com.ds.goroute.quest.service.QuestPlayService questPlayService;
+    private final ContentCommentRepository contentCommentRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -522,9 +525,18 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserCheckinResponse> feed(UUID viewerId, FeedGeoFilter geo, int page, int size) {
-        return toResponses(checkinRepository.findFeed(
-                viewerId, geo, boundedSize(size), boundedPage(page) * boundedSize(size)), Set.of(), viewerId);
+    public List<UserCheckinResponse> feed(UUID viewerId, FeedGeoFilter geo, int page, int size, String cursor) {
+        FeedCursor after = FeedCursor.decode(cursor);
+        List<UserCheckin> checkins = checkinRepository.findFeed(viewerId, geo, after,
+                boundedSize(size), after != null ? 0 : boundedPage(page) * boundedSize(size));
+        List<UserCheckinResponse> responses = toResponses(checkins, Set.of(), viewerId);
+        // Same order as the rows, so each post carries the key the next page resumes after.
+        for (int index = 0; index < responses.size(); index++) {
+            UserCheckin checkin = checkins.get(index);
+            responses.get(index).setFeedCursor(FeedCursor.encodeAfter(
+                    checkin.getHasPhoto(), checkin.getCreatedAt(), checkin.getId()));
+        }
+        return responses;
     }
 
     @Override
@@ -724,15 +736,46 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         Map<UUID, UserReview> linkedReviews = reviewRepository.findByIds(reviewIds).stream()
                 .filter(review -> !takenDownReviewIds.contains(review.getId()))
                 .collect(Collectors.toMap(UserReview::getId, review -> review));
+        // The linked reviews' photos for the whole page in one query, not one per review.
+        Map<UUID, List<MediaAsset>> linkedReviewMedia = linkedReviews.isEmpty()
+                ? Map.of()
+                : mediaAssetRepository.findByEntityIds("USER_REVIEW", List.copyOf(linkedReviews.keySet()))
+                        .stream()
+                        .collect(Collectors.groupingBy(MediaAsset::getEntityId));
         Map<UUID, Place> places = loadPlaces(checkins);
+        Map<UUID, Integer> commentCounts = commentCounts(checkins);
 
         return checkins.stream()
                 .map(checkin -> toResponse(checkin, photos.getOrDefault(checkin.getId(), List.of()),
                         authors.getOrDefault(checkin.getUserId(), null), latestReviewCheckinIds.contains(checkin.getId()),
-                        linkedReviews.get(checkin.getReviewId()), likeCounts.getOrDefault(checkin.getId(), 0),
-                        likedIds.contains(checkin.getId()), 
-                        checkin.getPlaceId() == null ? null : places.get(checkin.getPlaceId())))
+                        linkedReviews.get(checkin.getReviewId()),
+                        checkin.getReviewId() == null ? List.of()
+                                : linkedReviewMedia.getOrDefault(checkin.getReviewId(), List.of()),
+                        likeCounts.getOrDefault(checkin.getId(), 0),
+                        likedIds.contains(checkin.getId()),
+                        checkin.getPlaceId() == null ? null : places.get(checkin.getPlaceId()),
+                        commentCounts.getOrDefault(checkin.getId(), 0)))
                 .toList();
+    }
+
+    /**
+     * The comment count GET /content-comments/count would answer for each check-in, in one
+     * grouped query. That endpoint only opens the thread of a public, live check-in that is
+     * not taken down, so any other check-in counts 0 here; the takedown half is applied in
+     * the query itself.
+     */
+    private Map<UUID, Integer> commentCounts(List<UserCheckin> checkins) {
+        List<UUID> commentable = checkins.stream()
+                .filter(UserCheckinServiceImpl::hasCommentThread)
+                .map(UserCheckin::getId)
+                .toList();
+        return commentable.isEmpty()
+                ? Map.of()
+                : contentCommentRepository.countActiveByTargets(ModeratedContentType.CHECKIN, commentable);
+    }
+
+    private static boolean hasCommentThread(UserCheckin checkin) {
+        return checkin.getVisibility() == ContentVisibility.PUBLIC && !Boolean.TRUE.equals(checkin.getIsRemoved());
     }
 
     /**
@@ -752,14 +795,12 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .collect(Collectors.toMap(Place::getId, place -> place, (first, second) -> first));
     }
 
+    /** One query for every author on the page. */
     private Map<UUID, User> loadAuthors(List<UserCheckin> checkins) {
         Set<UUID> authorIds = checkins.stream()
                 .map(UserCheckin::getUserId)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
-        return authorIds.stream()
-                .map(userRepository::findById)
-                .filter(Optional::isPresent)
-                .map(Optional::get)
+        return userRepository.findByIds(authorIds).stream()
                 .collect(Collectors.toMap(User::getId, user -> user, (first, second) -> first));
     }
 
@@ -771,14 +812,18 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 : reviewRepository.findById(checkin.getReviewId()).orElse(null);
         Place place = checkin.getPlaceId() == null ? null
                 : placeRepository.findById(checkin.getPlaceId()).orElse(null);
+        List<MediaAsset> linkedReviewMedia = linkedReview == null ? List.of()
+                : mediaAssetRepository.findByEntity("USER_REVIEW", linkedReview.getId());
         return toResponse(checkin, photos, userRepository.findById(checkin.getUserId()).orElse(null), false,
-                linkedReview, checkinRepository.countLikes(checkin.getId()),
-                viewerId != null && checkinRepository.hasLike(checkin.getId(), viewerId), place);
+                linkedReview, linkedReviewMedia, checkinRepository.countLikes(checkin.getId()),
+                viewerId != null && checkinRepository.hasLike(checkin.getId(), viewerId), place,
+                commentCounts(List.of(checkin)).getOrDefault(checkin.getId(), 0));
     }
 
     private UserCheckinResponse toResponse(UserCheckin checkin, List<UserCheckinPhoto> photos, User author,
-                                           boolean latestReview, UserReview linkedReview, int likeCount,
-                                           boolean hasLiked, Place place) {
+                                           boolean latestReview, UserReview linkedReview,
+                                           List<MediaAsset> linkedReviewMedia, int likeCount,
+                                           boolean hasLiked, Place place, int commentCount) {
         List<MemoryImageResponse> photoResponses = photos.stream()
                 .sorted(Comparator.comparing(UserCheckinPhoto::getPosition,
                         Comparator.nullsLast(Comparator.naturalOrder())))
@@ -856,9 +901,10 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .createdAt(checkin.getCreatedAt())
                 .linkedToReview(checkin.getReviewId() != null)
                 .latestReview(latestReview)
-                .linkedReview(toLinkedReview(linkedReview))
+                .linkedReview(toLinkedReview(linkedReview, linkedReviewMedia))
                 .likeCount(likeCount)
                 .hasLiked(hasLiked)
+                .commentCount(commentCount)
                 .photos(photos.stream()
                         .sorted(Comparator.comparing(UserCheckinPhoto::getPosition,
                                 Comparator.nullsLast(Comparator.naturalOrder())))
@@ -879,12 +925,11 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .build();
     }
 
-    private CheckinLinkedReviewResponse toLinkedReview(UserReview review) {
+    private CheckinLinkedReviewResponse toLinkedReview(UserReview review, List<MediaAsset> media) {
         if (review == null) {
             return null;
         }
-        List<MemoryImageResponse> photoResponses = MediaAssetResponseMapper.toImageResponses(
-                mediaAssetRepository.findByEntity("USER_REVIEW", review.getId()));
+        List<MemoryImageResponse> photoResponses = MediaAssetResponseMapper.toImageResponses(media);
         List<String> photos = photoResponses.isEmpty()
                 ? List.of()
                 : MediaAssetResponseMapper.toUrls(photoResponses);

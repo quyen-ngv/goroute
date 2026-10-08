@@ -15,7 +15,10 @@ public interface UserRepository {
     Optional<User> findByEmailIncludingDeleted(String email);
     
     Optional<User> findByUsername(String username);
-    
+
+    /** Counts soft-deleted rows too: the UNIQUE constraint on {@code users.username} does. */
+    boolean existsByUsername(String username);
+
     Optional<User> findByProviderId(String providerId);
     
     /** Batch form of {@link #findById}. Ids not found — or soft-deleted — are simply absent. */

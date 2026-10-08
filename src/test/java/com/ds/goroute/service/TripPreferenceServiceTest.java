@@ -8,6 +8,7 @@ import com.ds.goroute.type.PlaceGroup;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -84,6 +85,18 @@ class TripPreferenceServiceTest {
         assertThat(prefs.getWithElderly()).isFalse();
         assertThat(prefs.getDietary()).containsExactly("halal");
         assertThat(prefs.getPreferenceText()).isEqualTo("không dậy sớm");
+    }
+
+    @Test
+    void unknownPlaceGroupCodeInAnOlderAiRequestIsDropped() {
+        AiTripGenerateRequest request = AiTripGenerateRequest.builder()
+                // what Jackson binds for ["FOOD_AND_DRINK", "NOT_A_GROUP"]
+                .placeGroups(Arrays.asList(PlaceGroup.FOOD_AND_DRINK, PlaceGroup.fromCode("NOT_A_GROUP")))
+                .build();
+
+        TripPreferencesRequest prefs = service.fromAiRequest(request);
+
+        assertThat(prefs.getInterests()).containsExactly("FOOD_AND_DRINK");
     }
 
     @Test

@@ -1,13 +1,16 @@
 package com.ds.goroute.repository.impl;
 
+import com.ds.goroute.dto.PublicTripSearchCriteria;
 import com.ds.goroute.entity.Trip;
+import com.ds.goroute.entity.TripRankRow;
 import com.ds.goroute.mapper.TripMapper;
 import com.ds.goroute.repository.TripRepository;
+import com.google.common.collect.Lists;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -15,7 +18,9 @@ import java.util.UUID;
 @Repository
 @RequiredArgsConstructor
 public class TripRepositoryImpl implements TripRepository {
-    
+
+    private static final int ID_BATCH_SIZE = 500;
+
     private final TripMapper tripMapper;
     
     @Override
@@ -54,33 +59,42 @@ public class TripRepositoryImpl implements TripRepository {
     }
     
     @Override
-    public List<Trip> searchPublicTrips(BigDecimal latitude,
-                                        BigDecimal longitude,
-                                        BigDecimal radiusKm,
-                                        String destination,
-                                        String keyword,
-                                        boolean allPublic,
-                                        String randomSeed,
-                                        boolean preferImages,
-                                        boolean recommended,
-                                        int page,
-                                        int size,
-                                        UUID excludeUserId) {
-        int offset = page * size;
-        return tripMapper.searchPublicTrips(
-                latitude,
-                longitude,
-                radiusKm,
-                destination,
-                keyword,
-                allPublic,
-                randomSeed,
-                preferImages,
-                recommended,
-                offset,
-                size,
-                excludeUserId
-        );
+    public List<TripRankRow> searchPublicTripRanking(PublicTripSearchCriteria criteria,
+                                                     UUID excludeUserId,
+                                                     int limit,
+                                                     int offset) {
+        return tripMapper.searchPublicTripRanking(criteria, excludeUserId, limit, offset);
+    }
+
+    @Override
+    public List<Trip> findPublicByIds(List<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        List<Trip> trips = new ArrayList<>();
+        for (List<UUID> batch : Lists.partition(ids, ID_BATCH_SIZE)) {
+            trips.addAll(tripMapper.selectPublicByIds(batch));
+        }
+        return trips;
+    }
+
+    @Override
+    public void refreshActivityCount(UUID tripId) {
+        if (tripId != null) {
+            tripMapper.refreshActivityCount(tripId);
+        }
+    }
+
+    @Override
+    public void refreshMemoryCount(UUID tripId) {
+        if (tripId != null) {
+            tripMapper.refreshMemoryCount(tripId);
+        }
+    }
+
+    @Override
+    public int reconcileContentCounts() {
+        return tripMapper.reconcileContentCounts();
     }
     
     @Override

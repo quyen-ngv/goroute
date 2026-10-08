@@ -38,6 +38,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -54,6 +55,9 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final GoogleTokenVerifier googleTokenVerifier;
     private final AppleTokenVerifier appleTokenVerifier;
+    private final AnimalUsernameGenerator animalUsernameGenerator;
+
+    private static final String APPLE_PRIVATE_RELAY_DOMAIN = "@privaterelay.appleid.com";
 
     private static final long REFRESH_TOKEN_EXPIRY = 2592000000L; // 30 days in ms
 
@@ -169,21 +173,20 @@ public class AuthServiceImpl implements AuthService {
                     }
 
                     // Create new user
-                    String username = generateUsername(tokenInfo.getEmail());
+                    /*
+                     * Google always sends a display name; Apple only sends one on the very
+                     * first authorization and Firebase forwards nothing afterwards. The
+                     * column is NOT NULL, so fall back to the generated username rather
+                     * than failing the insert on a provider that is allowed to be terse.
+                     */
+                    NewAccountName name = nameNewAccount(tokenInfo.getEmail(), tokenInfo.getName());
                     User newUser = User.builder()
                             .id(UUID.randomUUID())
-                            .username(username)
+                            .username(name.username())
                             .provider(provider)
                             .providerId(tokenInfo.getSub())
                             .email(tokenInfo.getEmail())
-                            /*
-                             * Google always sends a display name; Apple only sends one on the very
-                             * first authorization and Firebase forwards nothing afterwards. The
-                             * column is NOT NULL, so fall back to the generated username rather
-                             * than failing the insert on a provider that is allowed to be terse.
-                             */
-                            .fullName(tokenInfo.getName() == null || tokenInfo.getName().isBlank()
-                                    ? username : tokenInfo.getName())
+                            .fullName(name.fullName())
                             .avatarUrl(tokenInfo.getPicture())
                             .defaultCurrency("VND")
                             .defaultTravelMode("driving")
@@ -222,8 +225,11 @@ public class AuthServiceImpl implements AuthService {
         // Find user by Apple ID or create new
         User user = userRepository.findByProviderId(tokenInfo.getSub())
                 .orElseGet(() -> {
-                    // Check if email already exists (link Apple to existing account)
-                    var existingUser = userRepository.findByEmail(tokenInfo.getEmail());
+                    // Check if email already exists (link Apple to existing account).
+                    // Apple omits the email claim when the email scope was not granted.
+                    var existingUser = tokenInfo.getEmail() == null
+                            ? Optional.<User>empty()
+                            : userRepository.findByEmail(tokenInfo.getEmail());
                     if (existingUser.isPresent()) {
                         requireVerifiedEmailForLinking(tokenInfo);
                         User existing = existingUser.get();
@@ -235,23 +241,34 @@ public class AuthServiceImpl implements AuthService {
                     }
 
                     // Check if email exists but was soft deleted
-                    var deletedUser = userRepository.findByEmailIncludingDeleted(tokenInfo.getEmail());
+                    var deletedUser = tokenInfo.getEmail() == null
+                            ? Optional.<User>empty()
+                            : userRepository.findByEmailIncludingDeleted(tokenInfo.getEmail());
                     if (deletedUser.isPresent()) {
                         requireVerifiedEmailForLinking(tokenInfo);
                         User existing = deletedUser.get();
                         existing.setProviderId(tokenInfo.getSub());
                         existing.setProvider(AuthProvider.APPLE);
                         existing.setDeletedAt(null); // Restore user
+                        if (request.getFullName() != null && !request.getFullName().isBlank()) {
+                            existing.setFullName(request.getFullName().trim());
+                        }
                         userRepository.update(existing);
                         log.info("Restored deleted user via Apple: {}", tokenInfo.getEmail());
                         return existing;
                     }
 
-                    String username = generateUsername(tokenInfo.getEmail());
+                    // users.email is UNIQUE NOT NULL: without the claim no account can be
+                    // created. Accounts already found by providerId above still sign in.
+                    if (tokenInfo.getEmail() == null || tokenInfo.getEmail().isBlank()) {
+                        throw new BusinessException(ErrorConstant.APPLE_EMAIL_REQUIRED);
+                    }
+
+                    NewAccountName name = nameNewAccount(tokenInfo.getEmail(), request.getFullName());
                     User newUser = User.builder()
                             .id(UUID.randomUUID())
-                            .username(username)
-                            .fullName(username)
+                            .username(name.username())
+                            .fullName(name.fullName())
                             .provider(AuthProvider.APPLE)
                             .providerId(tokenInfo.getSub())
                             .email(tokenInfo.getEmail())
@@ -375,20 +392,38 @@ public class AuthServiceImpl implements AuthService {
         }
     }
 
+    /**
+     * Username and display name for a brand new social account. A missing email or an
+     * Apple "Hide My Email" relay address (random letters) gives nothing readable to build
+     * a username from, so the account gets a generated animal name instead. With no name
+     * from the provider the display name equals the username.
+     */
+    private NewAccountName nameNewAccount(String email, String providedName) {
+        boolean hasReadableEmail = email != null && email.contains("@")
+                && !email.toLowerCase().endsWith(APPLE_PRIVATE_RELAY_DOMAIN);
+        String username = hasReadableEmail
+                ? generateUsername(email)
+                : animalUsernameGenerator.generate();
+        String fullName = providedName == null || providedName.isBlank() ? username : providedName.trim();
+        return new NewAccountName(username, fullName);
+    }
+
+    private record NewAccountName(String username, String fullName) {
+    }
+
     private String generateUsername(String email) {
         // Extract username from email (before @)
         String baseUsername = email.split("@")[0].toLowerCase();
 
-        // Check if username exists
-        var existingUser = userRepository.findByUsername(baseUsername);
-        if (existingUser.isEmpty()) {
+        // Soft-deleted rows count: the UNIQUE constraint on users.username covers them.
+        if (!userRepository.existsByUsername(baseUsername)) {
             return baseUsername;
         }
 
         // If exists, append random number
         int suffix = 1;
         String username = baseUsername + suffix;
-        while (userRepository.findByUsername(username).isPresent()) {
+        while (userRepository.existsByUsername(username)) {
             suffix++;
             username = baseUsername + suffix;
         }

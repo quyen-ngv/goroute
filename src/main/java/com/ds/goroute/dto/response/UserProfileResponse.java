@@ -36,6 +36,8 @@ public class UserProfileResponse {
     private int hiddenGemContributionCount;
     private int followersCount;
     private int followingCount;
+    /** Every check-in GET /checkins/users/{me} can list for the owner, private ones included. */
+    private long checkinCount;
     private UserRankProgressResponse rank;
 
     /** True when an operator has vouched for this account as a VietdeGuide. */

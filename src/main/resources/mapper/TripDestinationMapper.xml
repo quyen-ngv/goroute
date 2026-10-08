@@ -38,6 +38,17 @@
         ORDER BY order_index ASC, created_at ASC
     </select>
 
+    <select id="selectByTripIds" resultMap="TripDestinationResultMap">
+        SELECT id, trip_id, name, address, place_id, lat, lng, order_index,
+               start_date, end_date, is_primary, created_at, updated_at, location_image_id
+        FROM trip_destinations
+        WHERE trip_id IN
+        <foreach collection="tripIds" item="tripId" open="(" separator="," close=")">
+            #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+        </foreach>
+        ORDER BY trip_id, order_index ASC, created_at ASC
+    </select>
+
     <select id="selectById" resultMap="TripDestinationResultMap">
         SELECT * FROM trip_destinations
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}

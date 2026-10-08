@@ -21,6 +21,8 @@ public class MarketplaceConversation {
     /** The meetup this is the group chat of, {@code null} for every other kind. */
     private UUID meetupId;
     private String meetupTitle;
+    /** The meetup category code, so a client can draw the category emoji as the thread picture. */
+    private String meetupCategory;
     /** The meetup host, so a member row can be given the CREATOR role without a second read. */
     private UUID meetupHostUserId;
 

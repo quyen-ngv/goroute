@@ -344,10 +344,15 @@
         LIMIT #{limit}
     </select>
     
+    <!-- Predicate and order match idx_place_reviews_place_rank (V214); only what the
+         place-detail review list returns. -->
     <select id="findByPlaceIdPaginated" resultMap="PlaceReviewResultMap">
-        SELECT * FROM place_reviews
+        SELECT id, place_id, reviewer_name, profile_url, profile_picture, is_local_guide,
+               total_reviews, total_photos, rating, description, review_date, images, likes,
+               authenticity_score, authenticity_level
+        FROM place_reviews
         WHERE place_id = #{placeId}
-          AND (is_deleted IS NULL OR is_deleted = false)
+          AND is_deleted IS NOT TRUE
         ORDER BY
             authenticity_score DESC NULLS LAST,
             review_date DESC,

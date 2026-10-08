@@ -457,11 +457,10 @@ public class AiTripServiceImpl implements AiTripService {
         EnumSet<PlaceGroup> normalized = EnumSet.noneOf(PlaceGroup.class);
         if (groups == null || groups.isEmpty()) {
             normalized.addAll(Arrays.stream(PlaceGroup.values())
-                    .filter(group -> group != PlaceGroup.OTHER)
                     .toList());
         } else {
             groups.stream()
-                    .filter(group -> group != null && group != PlaceGroup.OTHER)
+                    .filter(java.util.Objects::nonNull)
                     .forEach(normalized::add);
         }
         normalized.add(PlaceGroup.ACCOMMODATION);
@@ -514,7 +513,8 @@ public class AiTripServiceImpl implements AiTripService {
         return switch (group) {
             case ACCOMMODATION -> Math.max(2, dayCount / 3);
             case FOOD_AND_DRINK -> dayCount * 4;
-            default -> dayCount * 5;
+            // One group now covers what culture, nature, shopping and attractions each fetched.
+            case ATTRACTIONS -> dayCount * 15;
         };
     }
 
@@ -553,6 +553,9 @@ public class AiTripServiceImpl implements AiTripService {
             item.put("id", c.getId());
             item.put("name", c.getName());
             item.put("placeGroup", c.getPlaceGroup());
+            if (c.getSubTypes() != null && !c.getSubTypes().isEmpty()) {
+                item.put("subTypes", c.getSubTypes());
+            }
             item.put("category", c.getCategory());
             
             // Use full description for AI context (not trimmed)
@@ -582,7 +585,7 @@ public class AiTripServiceImpl implements AiTripService {
                 : place.getDescriptions();
         Integer duration = place.getVisitDurationMinutes() != null
                 ? place.getVisitDurationMinutes()
-                : defaultDurationForGroup(place.getPlaceGroup());
+                : defaultDuration(place.getPlaceGroup(), place.getSubTypes());
         return AiTripCandidateResponse.builder()
                 .id(destinationCandidateId(destination, "PLACE", place.getId().toString()))
                 .sourceType("PLACE")
@@ -595,7 +598,8 @@ public class AiTripServiceImpl implements AiTripService {
                 .rating(place.getReviewRating())
                 .reviewCount(place.getReviewCount())
                 .photoUrl(place.getThumbnail())
-                .placeGroup(place.getPlaceGroup() != null ? place.getPlaceGroup().name() : PlaceGroup.OTHER.name())
+                .placeGroup(place.getPlaceGroup() != null ? place.getPlaceGroup().name() : PlaceGroup.ATTRACTIONS.name())
+                .subTypes(place.getSubTypes() != null ? List.of(place.getSubTypes()) : List.of())
                 .category(place.getCategory())
                 .visitDurationMinutes(duration)
                 .durationText(formatDuration(duration))
@@ -645,15 +649,28 @@ public class AiTripServiceImpl implements AiTripService {
         return "DEST:" + destination.getLocationImageId() + ":" + sourceType + ":" + sourceId;
     }
 
-    private Integer defaultDurationForGroup(PlaceGroup group) {
+    private Integer defaultDuration(PlaceGroup group, String[] subTypes) {
         if (group == null) return 120;
         return switch (group) {
             case FOOD_AND_DRINK -> 90;
-            case SHOPPING_AND_MARKET -> 120;
             case ACCOMMODATION -> 60;
-            case CULTURE_AND_HERITAGE, NATURE_AND_OUTDOORS, ATTRACTIONS -> 150;
-            case OTHER -> 120;
+            // A market or mall is a shorter stop than a sight.
+            case ATTRACTIONS -> hasAnySubType(subTypes, "SHOPPING", "MARKET")
+                    && !hasAnySubType(subTypes, "NATURE", "BEACH", "MUSEUM", "HERITAGE", "SPIRITUAL", "THEME_PARK")
+                    ? 120 : 150;
         };
+    }
+
+    private static boolean hasAnySubType(java.util.Collection<String> subTypes, String... kinds) {
+        if (subTypes == null) return false;
+        for (String kind : kinds) {
+            if (subTypes.contains(kind)) return true;
+        }
+        return false;
+    }
+
+    private static boolean hasAnySubType(String[] subTypes, String... kinds) {
+        return subTypes != null && hasAnySubType(List.of(subTypes), kinds);
     }
 
     private double candidateScore(AiTripCandidateResponse candidate) {
@@ -984,7 +1001,7 @@ public class AiTripServiceImpl implements AiTripService {
                 - Evening arrival time: 17:00-18:00 latest
                 
                 ### 3. OUTDOOR ACTIVITY TIMING (WEATHER-ADAPTIVE)
-                NATURE_AND_OUTDOORS placement:
+                Outdoor stops (subTypes NATURE, BEACH, PARK, VIEWPOINT) placement:
                 - **Hot season (Apr-Oct)**: 
                   * Morning: 05:30-10:00 (sunrise, cool)
                   * Evening: 16:00-19:00 (sunset, cooler)
@@ -1186,7 +1203,6 @@ public class AiTripServiceImpl implements AiTripService {
     }
     
     private LocalTime determineOptimalStartTime(AiTripCandidateResponse candidate, LocalTime currentTime, boolean isFirstOfDay) {
-        String group = candidate.getPlaceGroup();
         String name = candidate.getName() != null ? candidate.getName().toLowerCase() : "";
         
         // Ho Chi Minh Mausoleum - must arrive early to queue
@@ -1195,7 +1211,7 @@ public class AiTripServiceImpl implements AiTripService {
         }
         
         // Markets - early morning for authentic experience
-        if (group != null && group.equals("SHOPPING_AND_MARKET") && isFirstOfDay) {
+        if (hasAnySubType(candidate.getSubTypes(), "MARKET") && isFirstOfDay) {
             return LocalTime.of(6, 30); // 6:30am for local market vibe
         }
         
@@ -1205,7 +1221,7 @@ public class AiTripServiceImpl implements AiTripService {
         }
         
         // Temples/Pagodas - early morning prayers
-        if (group != null && group.equals("CULTURE_AND_HERITAGE") && 
+        if (hasAnySubType(candidate.getSubTypes(), "SPIRITUAL") ||
             (name.contains("temple") || name.contains("pagoda") || name.contains("chùa") || name.contains("đền"))) {
             if (isFirstOfDay && currentTime.isBefore(LocalTime.of(8, 0))) {
                 return LocalTime.of(6, 30); // Early for peaceful atmosphere
@@ -1505,6 +1521,13 @@ public class AiTripServiceImpl implements AiTripService {
     }
 
     private String activityCategoryFor(AiTripCandidateResponse candidate) {
+        // Curated sub-types beat the keyword guesses below.
+        List<String> kinds = candidate.getSubTypes();
+        if (hasAnySubType(kinds, "BEACH")) return "beach";
+        if (hasAnySubType(kinds, "SPIRITUAL")) return "spiritual";
+        if (hasAnySubType(kinds, "THEME_PARK", "ENTERTAINMENT")) return "entertainment";
+        if (hasAnySubType(kinds, "NATURE", "PARK", "VIEWPOINT")) return "nature";
+        if (hasAnySubType(kinds, "SHOPPING", "MARKET")) return "shopping";
         String category = normalizeKey(candidate.getCategory());
         String name = normalizeKey(candidate.getName());
         String text = category + " " + name + " " + normalizeKey(candidate.getDescription());
@@ -1538,9 +1561,6 @@ public class AiTripServiceImpl implements AiTripService {
         return switch (candidate.getPlaceGroup()) {
             case "FOOD_AND_DRINK" -> "restaurant";
             case "ACCOMMODATION" -> "hotel";
-            case "SHOPPING_AND_MARKET" -> "shopping";
-            case "NATURE_AND_OUTDOORS" -> "nature";
-            case "CULTURE_AND_HERITAGE" -> "museum";
             case "ATTRACTIONS" -> "attraction";
             default -> "attraction";
         };
@@ -1605,7 +1625,7 @@ public class AiTripServiceImpl implements AiTripService {
                 - Focus on HOW to visit: best time to arrive, what to bring, what to avoid, local tip.
                 - Use scheduled startTime to make timing-relevant tips (e.g. "arrive early before crowds" for an 08:00 slot).
                 - For FOOD_AND_DRINK: mention a dish or ordering tip if inferable from description.
-                - For NATURE_AND_OUTDOORS: mention weather/clothing/sun protection relevant to the trip month.
+                - For outdoor stops (subTypes NATURE, BEACH, PARK, VIEWPOINT): mention weather/clothing/sun protection relevant to the trip month.
                 - For ACCOMMODATION: mention check-in tip or nearby amenity.
                 - Never use generic phrases like "enjoy your visit" or "have a great time".
                 - Write in the same language as the user preferences field. If preferences is "none", use English.

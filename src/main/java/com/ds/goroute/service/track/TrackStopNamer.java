@@ -65,7 +65,7 @@ public class TrackStopNamer {
         try {
             List<UUID> ids = placeSearchIndexService.searchPlaceIds(new PlaceSearchCriteria(
                     null, BigDecimal.valueOf(latitude), BigDecimal.valueOf(longitude),
-                    BigDecimal.valueOf(radiusM / 1000d), null, null, null, null, null, null,
+                    BigDecimal.valueOf(radiusM / 1000d), null, null, null, null, null, null, null,
                     false, false, null, 0, CATALOG_CANDIDATES));
             if (ids.isEmpty()) {
                 return Optional.empty();

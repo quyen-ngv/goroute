@@ -27,6 +27,14 @@
         LIMIT 1
     </select>
 
+    <select id="findByTripIdsAndUserId" resultType="com.ds.goroute.entity.TripHelpfulVote">
+        SELECT trip_id as tripId, user_id as userId, is_helpful as isHelpful, created_at as createdAt
+        FROM trip_helpful_votes
+        WHERE user_id = #{userId}
+          AND trip_id IN
+          <foreach collection="tripIds" item="tripId" open="(" separator="," close=")">#{tripId}</foreach>
+    </select>
+
     <select id="countByTripIdAndIsHelpful" resultType="int">
         SELECT COUNT(*) FROM trip_helpful_votes
         WHERE trip_id = #{tripId} AND is_helpful = #{isHelpful}

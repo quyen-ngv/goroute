@@ -30,6 +30,11 @@ public interface ActivityBookingMapper {
 
     List<ActivityBooking> findWithinRadius(@Param("p") ActivityBookingGeoSearchParams params);
 
+    /** Only id and destinations are populated; nearest first, at most {@code params.limit} rows. */
+    List<ActivityBooking> findRadiusCandidates(@Param("p") ActivityBookingGeoSearchParams params);
+
+    List<ActivityBooking> findListByIds(@Param("ids") List<UUID> ids);
+
     List<ActivityBooking> searchByKeyword(@Param("keyword") String keyword,
                                           @Param("limit") int limit,
                                           @Param("offset") int offset);

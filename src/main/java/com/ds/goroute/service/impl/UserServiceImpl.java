@@ -11,6 +11,7 @@ import com.ds.goroute.entity.User;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.PlaceContributionMapper;
 import com.ds.goroute.repository.RefreshTokenRepository;
+import com.ds.goroute.repository.UserCheckinRepository;
 import com.ds.goroute.repository.UserReviewRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.repository.TripRepository;
@@ -60,6 +61,7 @@ public class UserServiceImpl implements UserService {
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final UserDeviceService userDeviceService;
     private final com.ds.goroute.service.TrackService trackService;
+    private final UserCheckinRepository userCheckinRepository;
 
     @Override
     @Transactional
@@ -281,6 +283,7 @@ public class UserServiceImpl implements UserService {
                 .hiddenGemContributionCount(stats.hiddenGemContributionCount())
                 .followersCount(stats.followersCount())
                 .followingCount(stats.followingCount())
+                .checkinCount(stats.checkinCount())
                 .rank(buildRankProgress(stats))
                 .guide(guideBadge != null)
                 .guideTitle(guideBadge)
@@ -314,6 +317,7 @@ public class UserServiceImpl implements UserService {
                 .hiddenGemContributionCount(stats.hiddenGemContributionCount())
                 .followersCount(stats.followersCount())
                 .followingCount(stats.followingCount())
+                .checkinCount(stats.checkinCount())
                 .rank(buildRankProgress(stats))
                 .guide(guideBadge != null)
                 .guideTitle(guideBadge)
@@ -333,6 +337,10 @@ public class UserServiceImpl implements UserService {
                 .orElse(null);
     }
 
+    /**
+     * @param includePrivateTrips the viewer is the profile's owner: their private trips and
+     *                            check-ins count too, exactly as their own lists show them
+     */
     private ProfileStats getProfileStats(UUID userId, boolean includePrivateTrips) {
         int tripCount = includePrivateTrips
                 ? tripRepository.countTripsByOwnerId(userId)
@@ -352,7 +360,9 @@ public class UserServiceImpl implements UserService {
                 contributionCount,
                 hiddenGemContributionCount,
                 userRepository.countFollowers(userId),
-                userRepository.countFollowing(userId)
+                userRepository.countFollowing(userId),
+                // The same rows GET /checkins/users/{userId} pages through for this viewer.
+                userCheckinRepository.countByUser(userId, includePrivateTrips)
         );
     }
 
@@ -445,7 +455,8 @@ public class UserServiceImpl implements UserService {
             int contributionCount,
             int hiddenGemContributionCount,
             int followersCount,
-            int followingCount
+            int followingCount,
+            long checkinCount
     ) {
     }
 

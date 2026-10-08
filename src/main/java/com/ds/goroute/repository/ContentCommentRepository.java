@@ -3,8 +3,10 @@ package com.ds.goroute.repository;
 import com.ds.goroute.entity.ContentComment;
 import com.ds.goroute.type.ModeratedContentType;
 
+import java.util.Collection;
 import java.util.List;
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -31,4 +33,12 @@ public interface ContentCommentRepository {
     void deleteLike(UUID commentId, UUID userId);
 
     int countActiveByTarget(ModeratedContentType contentType, UUID contentId);
+
+    /**
+     * Active comment count per target, for a page of targets of one type, in one grouped
+     * query per batch of ids. Every requested id is in the result; a target with no active
+     * comment maps to 0. A target under an unrestored takedown maps to 0 too, except for
+     * reviews, whose thread the per-target count still reads.
+     */
+    Map<UUID, Integer> countActiveByTargets(ModeratedContentType contentType, Collection<UUID> contentIds);
 }

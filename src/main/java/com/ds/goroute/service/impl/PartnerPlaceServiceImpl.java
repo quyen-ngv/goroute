@@ -11,6 +11,7 @@ import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.MarketplaceHistoryService;
 import com.ds.goroute.service.PartnerAuthorizationService;
 import com.ds.goroute.service.PartnerPlaceService;
+import com.ds.goroute.utils.PlaceIdentityMatcher;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -22,7 +23,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
-import java.util.Locale;
 import java.util.UUID;
 
 @Service
@@ -48,9 +48,13 @@ public class PartnerPlaceServiceImpl implements PartnerPlaceService {
             throw badRequest("latitude and longitude must be provided together");
         }
         LocalDateTime now=LocalDateTime.now();
-        Place candidate=request.getLatitude()==null ? null : placeRepository.findNearCoordinates(
-                request.getLatitude(),request.getLongitude(),java.math.BigDecimal.valueOf(50));
-        boolean attached=candidate!=null && isSamePlace(candidate,request);
+        // The same-named (or same-address) place among the nearest few within 50 m, not
+        // only the nearest one: a neighbour in the same building must not hide it.
+        Place candidate=request.getLatitude()==null ? null : PlaceIdentityMatcher.findNearbySameIdentityId(
+                placeRepository,request.getLatitude(),request.getLongitude(),
+                request.getTitle(),request.getAddress(),java.math.BigDecimal.valueOf(50))
+                .flatMap(placeRepository::findById).orElse(null);
+        boolean attached=candidate!=null;
         UUID placeId=attached ? candidate.getId() : UUID.randomUUID();
         PartnerPlace value=fromRequest(placeId,actor,request,now);
         if (!attached) repository.insertCanonical(value);
@@ -101,7 +105,7 @@ public class PartnerPlaceServiceImpl implements PartnerPlaceService {
             catch (Exception ex) { throw badRequest("Invalid IANA timezone"); }
         }
         return PartnerPlace.builder().id(id).organizationId(request.getOrganizationId())
-                .title(request.getTitle().trim()).placeGroup(request.getPlaceGroup()).category(clean(request.getCategory()))
+                .title(request.getTitle().trim()).placeGroup(java.util.Optional.ofNullable(com.ds.goroute.type.PlaceGroup.fromCode(request.getPlaceGroup())).map(Enum::name).orElse(null)).category(clean(request.getCategory()))
                 .address(clean(request.getAddress())).latitude(request.getLatitude()).longitude(request.getLongitude())
                 .timezone(clean(request.getTimezone())).phone(clean(request.getPhone())).website(clean(request.getWebsite()))
                 .thumbnail(clean(request.getThumbnail())).images(json(request.getImages()==null?List.of():request.getImages()))
@@ -109,18 +113,6 @@ public class PartnerPlaceServiceImpl implements PartnerPlaceService {
                 .descriptions(clean(request.getDescription())).attributes(attributeJson(request.getAttributes()))
                 .lifecycleStatus("ACTIVE").primarySourceType("PARTNER")
                 .dataVersion(1L).createdBy(actor).updatedBy(actor).createdAt(createdAt).updatedAt(LocalDateTime.now()).build();
-    }
-
-    private boolean isSamePlace(Place value,UpsertPartnerPlaceRequest request) {
-        String title=normalize(value.getTitle());
-        String requestedTitle=normalize(request.getTitle());
-        String address=normalize(value.getAddress());
-        String requestedAddress=normalize(request.getAddress());
-        return title.equals(requestedTitle) || !address.isEmpty() && address.equals(requestedAddress);
-    }
-
-    private String normalize(String value) {
-        return value==null ? "" : value.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]","");
     }
 
     private PartnerPlaceResponse response(PartnerPlace value,boolean attached) {

@@ -16,8 +16,16 @@ import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class LocationImageServiceImplTest {
@@ -60,5 +68,61 @@ class LocationImageServiceImplTest {
         verify(locationImageRepository).insert(captor.capture());
         assertThat(objectMapper.readTree(captor.getValue().getDescription()).isArray()).isTrue();
         assertThat(objectMapper.readTree(captor.getValue().getDescription()).size()).isEqualTo(6);
+    }
+
+    @Test
+    void listIsServedFromCacheWithoutDescriptionUntilAnAreaChanges() {
+        UUID areaId = UUID.randomUUID();
+        when(locationImageRepository.findAllForList()).thenReturn(List.of(LocationImage.builder()
+            .id(areaId)
+            .fullAddress("Đà Nẵng")
+            .imageUrl("https://example.com/danang.jpg")
+            .build()));
+        when(locationImageRepository.findAllWardCodes()).thenReturn(Map.of(areaId, List.of("20194")));
+
+        List<LocationImageResponse> first = service.getAllLocationImages(false);
+        List<LocationImageResponse> second = service.getAllLocationImages(false);
+
+        assertThat(first).singleElement().satisfies(area -> {
+            assertThat(area.getDescription()).isNull();
+            assertThat(area.getWardCodes()).containsExactly("20194");
+        });
+        assertThat(second).hasSize(1);
+        verify(locationImageRepository, times(1)).findAllForList();
+        verify(locationImageRepository, times(1)).findAllWardCodes();
+
+        service.createLocationImage(CreateLocationImageRequest.builder()
+            .fullAddress("Hội An")
+            .imageUrl("https://example.com/hoian.jpg")
+            .build());
+        service.getAllLocationImages(false);
+
+        verify(locationImageRepository, times(2)).findAllForList();
+    }
+
+    @Test
+    void destinationImageIsLookedUpOncePerNormalizedDestination() {
+        when(locationImageRepository.findBestMatch("ha noi")).thenReturn(Optional.of(LocationImage.builder()
+            .imageUrl("https://example.com/hanoi.jpg")
+            .build()));
+
+        String first = service.getImageForDestination("Hà Nội");
+        String second = service.getImageForDestination("  ha   NOI ");
+
+        assertThat(first).isEqualTo("https://example.com/hanoi.jpg");
+        assertThat(second).isEqualTo(first);
+        verify(locationImageRepository, times(1)).findBestMatch(anyString());
+    }
+
+    @Test
+    void unmatchedDestinationFallsBackToTheDefaultAndIsNotLookedUpAgain() {
+        when(locationImageRepository.findBestMatch("nowhere")).thenReturn(Optional.empty());
+
+        String first = service.getImageForDestination("Nowhere");
+        String second = service.getImageForDestination("nowhere");
+
+        assertThat(first).startsWith("https://");
+        assertThat(second).isEqualTo(first);
+        verify(locationImageRepository, times(1)).findBestMatch(anyString());
     }
 }

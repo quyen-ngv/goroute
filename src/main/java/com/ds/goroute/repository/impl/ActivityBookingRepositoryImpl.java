@@ -67,6 +67,19 @@ public class ActivityBookingRepositoryImpl implements ActivityBookingRepository 
     }
 
     @Override
+    public List<ActivityBooking> findRadiusCandidates(ActivityBookingGeoSearchParams params) {
+        return mapper.findRadiusCandidates(params);
+    }
+
+    @Override
+    public List<ActivityBooking> findListByIds(List<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return mapper.findListByIds(ids);
+    }
+
+    @Override
     public List<ActivityBooking> searchByKeyword(String keyword, int limit, int offset) {
         if (keyword == null || keyword.trim().isEmpty()) {
             return Collections.emptyList();

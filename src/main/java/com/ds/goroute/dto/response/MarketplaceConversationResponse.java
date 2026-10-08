@@ -39,6 +39,9 @@ public class MarketplaceConversationResponse {
     /** The meetup this is the group chat of, {@code null} for every other kind. */
     private UUID meetupId;
 
+    /** The meetup category code (e.g. COFFEE); the client draws its emoji as the thread picture. */
+    private String meetupCategory;
+
     private UUID pinnedMessageId;
     private Long memberCount;
     private LocalDateTime mutedUntil;

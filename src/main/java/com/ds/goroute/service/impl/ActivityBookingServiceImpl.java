@@ -36,6 +36,7 @@ import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.*;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
+import org.apache.lucene.util.BytesRef;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
@@ -54,7 +55,12 @@ import java.util.stream.Collectors;
 @Slf4j
 public class ActivityBookingServiceImpl implements ActivityBookingService {
 
-    private static final int MAX_GEO_FETCH = 250;
+    private static final int MAX_DESTINATION_FETCH = 250;
+    /**
+     * Safety ceiling on the lean (id + destinations) rows read for a radius search that must finish in Java.
+     * Far above any real radius result; only bounds a pathological request.
+     */
+    private static final int MAX_GEO_CANDIDATES = 5000;
     private static final int MAX_LUCENE_FETCH = 500;
     private static final int REINDEX_BATCH_SIZE = 200;
 
@@ -196,14 +202,8 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
         double radius = radiusKm != null && radiusKm > 0 ? radiusKm : 50.0;
 
         if (hasGeo) {
-            int fetchLimit = computeFetchLimit(page, size);
-            ActivityBookingGeoSearchParams geoParams = buildGeoSearchParams(
-                    latitude, longitude, radius, minPrice, maxPrice, minRating, fetchLimit, 0);
-            List<ActivityBooking> filtered = repository.findWithinRadius(geoParams).stream()
-                    .filter(booking -> matchesDestinationsForGeo(booking, destinationFilters))
-                    .collect(Collectors.toList());
-            filtered = applyTextFilter(filtered, query, minLuceneScore);
-            return paginateAndMap(filtered, page, size, targetCurrency);
+            return searchWithinRadius(latitude, longitude, radius, minPrice, maxPrice, minRating,
+                    destinationFilters, query, minLuceneScore, targetCurrency, page, size);
         }
 
         boolean hasDestinationFilter = !destinationFilters.isEmpty();
@@ -764,7 +764,61 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
     private int computeFetchLimit(int page, int size) {
         int safeSize = Math.max(size, 1);
         int safePage = Math.max(page, 0);
-        return Math.min(MAX_GEO_FETCH, (safePage + 1) * safeSize + safeSize * 2);
+        return Math.min(MAX_DESTINATION_FETCH, (safePage + 1) * safeSize + safeSize * 2);
+    }
+
+    /**
+     * Radius search, nearest first (then id). Without a destination or text filter the page is cut in SQL.
+     *
+     * <p>The destination filter and the text order stay in Java on purpose: destination matching folds
+     * accents and repairs mojibake on the raw names ({@link DestinationMatchUtils}), and rows written before
+     * V039 carry a {@code destinations_norm} built without accent folding, so a SQL match would silently drop
+     * them; the text order is a Lucene relevance score. Those cases read lean candidates (id + destinations)
+     * in distance order, filter and rank them, and load full list columns for the requested page only.
+     */
+    private List<ActivityBookingResponse> searchWithinRadius(
+            BigDecimal latitude, BigDecimal longitude, double radiusKm,
+            BigDecimal minPrice, BigDecimal maxPrice, BigDecimal minRating,
+            List<String> destinationFilters, String query, Float minLuceneScore,
+            String targetCurrency, int page, int size) {
+        if (size <= 0) {
+            return Collections.emptyList();
+        }
+        int offset = Math.max(page, 0) * size;
+        boolean hasQuery = query != null && !query.trim().isEmpty();
+        if (destinationFilters.isEmpty() && !hasQuery) {
+            ActivityBookingGeoSearchParams pageParams = buildGeoSearchParams(
+                    latitude, longitude, radiusKm, minPrice, maxPrice, minRating, size, offset);
+            return repository.findWithinRadius(pageParams).stream()
+                    .map(b -> mapToResponse(b, targetCurrency))
+                    .collect(Collectors.toList());
+        }
+
+        ActivityBookingGeoSearchParams candidateParams = buildGeoSearchParams(
+                latitude, longitude, radiusKm, minPrice, maxPrice, minRating, MAX_GEO_CANDIDATES, 0);
+        List<ActivityBooking> candidates = repository.findRadiusCandidates(candidateParams).stream()
+                .filter(booking -> matchesDestinationsForGeo(booking, destinationFilters))
+                .collect(Collectors.toList());
+        List<UUID> pageIds = applyTextFilter(candidates, query, minLuceneScore).stream()
+                .skip(offset)
+                .limit(size)
+                .map(ActivityBooking::getId)
+                .collect(Collectors.toList());
+        return loadListInOrder(pageIds).stream()
+                .map(b -> mapToResponse(b, targetCurrency))
+                .collect(Collectors.toList());
+    }
+
+    private List<ActivityBooking> loadListInOrder(List<UUID> orderedIds) {
+        if (orderedIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Map<UUID, ActivityBooking> byId = repository.findListByIds(orderedIds).stream()
+                .collect(Collectors.toMap(ActivityBooking::getId, booking -> booking, (a, b) -> a));
+        return orderedIds.stream()
+                .map(byId::get)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
     }
 
     private ActivityBookingGeoSearchParams buildGeoSearchParams(
@@ -921,13 +975,15 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
         IndexSearcher searcher = searcherManager.acquire();
         try {
             Query textQuery = LuceneTitleQueryBuilder.build(query, analyzer);
+            Map<String, Float> scoresById = scoreBookings(searcher, textQuery, bookings);
 
             List<ScoredBooking> scoredBookings = new ArrayList<>();
             for (ActivityBooking booking : bookings) {
-                float score = scoreBooking(searcher, textQuery, booking.getId());
+                float score = scoresById.getOrDefault(booking.getId().toString(), 0f);
                 scoredBookings.add(new ScoredBooking(booking, score));
             }
 
+            // Stable sort: equal scores keep the incoming (distance) order.
             scoredBookings.sort((left, right) -> Float.compare(right.score, left.score));
             return scoredBookings.stream()
                     .filter(scoredBooking -> minLuceneScore == null || scoredBooking.score >= minLuceneScore)
@@ -938,12 +994,28 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
         }
     }
 
-    private float scoreBooking(IndexSearcher searcher, Query textQuery, UUID bookingId) throws IOException {
-        TopDocs idHits = searcher.search(new TermQuery(new Term("id", bookingId.toString())), 1);
-        if (idHits.scoreDocs.length == 0) {
-            return 0f;
+    /**
+     * Text score of each booking in one search: the text query restricted to the candidate ids. A booking
+     * the text does not match (or that is missing from the index) has no entry, i.e. score 0.
+     */
+    private Map<String, Float> scoreBookings(IndexSearcher searcher, Query textQuery, List<ActivityBooking> bookings)
+            throws IOException {
+        if (bookings.isEmpty()) {
+            return Collections.emptyMap();
         }
-        return searcher.explain(textQuery, idHits.scoreDocs[0].doc).getValue().floatValue();
+        List<BytesRef> ids = bookings.stream()
+                .map(booking -> new BytesRef(booking.getId().toString()))
+                .collect(Collectors.toList());
+        Query restricted = new BooleanQuery.Builder()
+                .add(textQuery, BooleanClause.Occur.MUST)
+                .add(new TermInSetQuery("id", ids), BooleanClause.Occur.FILTER)
+                .build();
+        TopDocs hits = searcher.search(restricted, ids.size());
+        Map<String, Float> scores = new HashMap<>();
+        for (ScoreDoc hit : hits.scoreDocs) {
+            scores.putIfAbsent(searcher.doc(hit.doc).get("id"), hit.score);
+        }
+        return scores;
     }
 
     private static class ScoredBooking {

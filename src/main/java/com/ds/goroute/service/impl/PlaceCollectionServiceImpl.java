@@ -11,7 +11,6 @@ import com.ds.goroute.entity.PlaceCollectionItem;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.PlaceCollectionMapper;
-import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.PlaceCollectionService;
 import com.ds.goroute.type.ContentVisibility;
@@ -39,7 +38,6 @@ public class PlaceCollectionServiceImpl implements PlaceCollectionService {
     private static final int SLUG_BYTES = 12;
 
     private final PlaceCollectionMapper collectionMapper;
-    private final PlaceRepository placeRepository;
     private final UserRepository userRepository;
     private final SecureRandom random = new SecureRandom();
 
@@ -240,7 +238,9 @@ public class PlaceCollectionServiceImpl implements PlaceCollectionService {
         if (placeIds.isEmpty()) {
             return Map.of();
         }
-        return placeRepository.findByIds(placeIds).stream()
+        // Only what an item shows (thumbnail, category, rating, availability), not the whole places row.
+        // A collection holds at most MAX_ITEMS places, so one IN list is enough.
+        return collectionMapper.findItemPlaces(placeIds).stream()
                 .collect(Collectors.toMap(Place::getId, Function.identity(), (first, second) -> first));
     }
 

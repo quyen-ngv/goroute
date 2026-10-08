@@ -276,7 +276,9 @@ public class ImageStorageCleanupService {
 
         switch (entity) {
             case "TRIP" -> {
-                urls.addAll(queryUrls("SELECT cover_image_url FROM trips WHERE id = ? AND cover_image_url IS NOT NULL", id));
+                // trips.cover_image_url is left out on purpose: a cloned trip copies the same URL,
+                // so deleting the original must not remove the file the clone still shows. The
+                // orphan sweep reclaims it once no trip references it (see the TRIP allSql).
                 urls.addAll(queryUrls("SELECT photo_url FROM activities WHERE trip_id = ? AND photo_url IS NOT NULL", id));
                 urls.addAll(queryUrls("SELECT url FROM media_assets WHERE trip_id = ? AND deleted_at IS NULL AND url IS NOT NULL", id));
             }

@@ -57,4 +57,8 @@ private Boolean locationVerified;
     private String partnerResponseText;
     private String partnerResponderName;
     private LocalDateTime partnerRespondedAt;
+
+    // Maintained by the database (V215 trigger on media_assets), never written by the app:
+    // true while the review has a live media row. The Feed orders and pages on it.
+    private Boolean hasPhoto;
 }

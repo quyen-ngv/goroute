@@ -52,6 +52,8 @@ import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.IOUtils;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
 
@@ -59,6 +61,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -69,6 +72,12 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 @Service
@@ -76,19 +85,24 @@ import java.util.stream.Collectors;
 @Slf4j
 public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
 
-    private static final int REINDEX_BATCH_SIZE = 200;
-    private static final String INDEX_SCHEMA_VERSION = "6";
+    private static final int REINDEX_BATCH_SIZE = 500;
+    /** Largest page the location-free name search serves (the console picker asks for 500). */
+    static final int MAX_NAME_SEARCH_SIZE = 500;
+    private static final String INDEX_SCHEMA_VERSION = "7";
     private static final String ID_FIELD = "id";
     private static final String NAME_FIELD = "name";
     private static final String LOCATION_FIELD = "location";
     private static final String VISIBILITY_FIELD = "visibility";
     private static final String CATEGORY_FIELD = "category";
     private static final String PLACE_GROUP_FIELD = "place_group";
+    private static final String SUB_TYPE_FIELD = "sub_type";
     private static final String RATING_FIELD = "review_rating";
     private static final String EFFECTIVE_RATING_SORT_FIELD = "effective_rating_sort";
     private static final String CITY_SLUG_FIELD = "city_slug";
     private static final String FOOD_ID_FIELD = "food_id";
     private static final String HAS_LINKED_FOOD_FIELD = "has_linked_food";
+    /** Marks the documents of one rebuild, so the swap can drop every older one after adding them. */
+    private static final String REBUILD_GENERATION_FIELD = "rebuild_generation";
     private static final float DISTANCE_SCORE_WEIGHT = 1.5f;
     private static final double MIN_DISTANCE_PIVOT_METERS = 100.0;
     private static final double MAX_DISTANCE_PIVOT_METERS = 5_000.0;
@@ -106,6 +120,32 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     private IndexWriter writer;
     private SearcherManager searcherManager;
     private Analyzer analyzer;
+    private ExecutorService reindexExecutor;
+
+    /**
+     * Held around every writer mutation, commit and searcher refresh, so the rebuild swap
+     * (delete all, add the rebuilt segments, replay) is never visible half done.
+     */
+    private final ReentrantLock writeLock = new ReentrantLock();
+    private final AtomicBoolean reindexRunning = new AtomicBoolean();
+    /** Places written or deleted while a rebuild runs; replayed onto the rebuilt index. */
+    private final Set<UUID> changedDuringReindex = ConcurrentHashMap.newKeySet();
+
+    /**
+     * Exists on disk while the live index holds writes not yet committed. Commits are batched
+     * (see {@link #commitPendingChanges}), so a killed process loses the writes since the last
+     * one; finding this file at startup means that happened, and the index is rebuilt. A
+     * watermark on places.updated_at could not stand in for it: places are hard-deleted, and
+     * translations and food tags, both indexed, change without touching the places row.
+     */
+    private Path uncommittedMarker;
+    /** Guarded by {@link #writeLock}: the marker file is known to exist. */
+    private boolean uncommittedMarked;
+    /**
+     * Guarded by {@link #writeLock}: writes were lost before this start, so the marker stays
+     * until a rebuild has been swapped in, even across the periodic commits in between.
+     */
+    private boolean recoveryPending;
 
     @PostConstruct
     public void init() throws IOException {
@@ -113,8 +153,16 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         Path indexDir = Paths.get(indexPath);
         Files.createDirectories(indexDir);
         directory = FSDirectory.open(indexDir);
+        uncommittedMarker = Paths.get(indexPath + ".uncommitted");
+        uncommittedMarked = Files.exists(uncommittedMarker);
+        recoveryPending = uncommittedMarked;
         writer = new IndexWriter(directory, new IndexWriterConfig(analyzer));
         searcherManager = new SearcherManager(writer, new SearcherFactory());
+        reindexExecutor = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "place-search-reindex");
+            thread.setDaemon(true);
+            return thread;
+        });
         log.info("Place Lucene index initialized at: {}", indexDir.toAbsolutePath());
         ensureSearchIndexPopulated();
     }
@@ -144,6 +192,12 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
                 if (docCount > 0 && !isCurrentSchema(searcher)) {
                     log.warn("Place Lucene index schema is outdated; reindexing");
                     triggerReindex();
+                    return;
+                }
+                if (recoveryPending) {
+                    log.warn("Place Lucene index lost writes that were never committed (the previous run "
+                            + "did not stop cleanly); reindexing");
+                    triggerReindex();
                 }
             } finally {
                 searcherManager.release(searcher);
@@ -155,6 +209,15 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
 
     @PreDestroy
     public void cleanup() throws IOException {
+        if (reindexExecutor != null) {
+            reindexExecutor.shutdownNow();
+            try {
+                reindexExecutor.awaitTermination(10, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        commitPendingChanges();
         if (searcherManager != null) {
             searcherManager.close();
         }
@@ -175,10 +238,17 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
             return;
         }
         try {
-            writer.updateDocument(new Term(ID_FIELD, place.getId().toString()),
-                    toDocument(place, placeTranslationMapper.findByPlaceId(place.getId()), findFoodIds(place.getId())));
-            writer.commit();
-            refreshSearchIndex();
+            Document document = toDocument(
+                    place, placeTranslationMapper.findByPlaceId(place.getId()), findFoodIds(place.getId()));
+            writeLock.lock();
+            try {
+                markUncommitted();
+                writer.updateDocument(new Term(ID_FIELD, place.getId().toString()), document);
+                noteChangeDuringReindex(place.getId());
+                refreshSearchIndex();
+            } finally {
+                writeLock.unlock();
+            }
         } catch (Exception e) {
             log.error("Failed to index place {}", place.getId(), e);
         }
@@ -189,48 +259,237 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         if (id == null) {
             return;
         }
+        writeLock.lock();
         try {
+            markUncommitted();
             writer.deleteDocuments(new Term(ID_FIELD, id.toString()));
-            writer.commit();
+            noteChangeDuringReindex(id);
             refreshSearchIndex();
         } catch (IOException e) {
             log.error("Failed to delete place {} from index", id, e);
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
+    private void noteChangeDuringReindex(UUID id) {
+        if (reindexRunning.get()) {
+            changedDuringReindex.add(id);
+        }
+    }
+
+    /**
+     * Records, durably and before the write, that the live index is about to hold an
+     * uncommitted change. One file create and directory sync per commit window, not per write.
+     * Caller holds {@link #writeLock}. A failure is logged and the write still goes ahead.
+     */
+    private void markUncommitted() {
+        if (uncommittedMarked) {
+            return;
+        }
+        try {
+            Files.newByteChannel(uncommittedMarker, StandardOpenOption.CREATE, StandardOpenOption.WRITE).close();
+            IOUtils.fsync(uncommittedMarker.toAbsolutePath().getParent(), true);
+            uncommittedMarked = true;
+        } catch (IOException e) {
+            log.warn("Could not record pending place index writes in {}: {}", uncommittedMarker, e.getMessage());
+        }
+    }
+
+    /** After a commit: everything written so far is durable. Caller holds {@link #writeLock}. */
+    private void clearUncommitted() {
+        if (!uncommittedMarked || recoveryPending) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(uncommittedMarker);
+            uncommittedMarked = false;
+        } catch (IOException e) {
+            log.warn("Could not remove {}: {}", uncommittedMarker, e.getMessage());
+        }
+    }
+
+    /**
+     * Writes reach searches at once through the near-real-time refresh after each one; the
+     * commit that makes them survive a restart runs here, on a timer, and at shutdown.
+     */
+    @Scheduled(fixedDelayString = "${goroute.search.place-index-commit-ms:30000}",
+            initialDelayString = "${goroute.search.place-index-commit-ms:30000}")
+    public void commitPendingChanges() {
+        if (writer == null || !writer.isOpen()) {
+            return;
+        }
+        writeLock.lock();
+        try {
+            if (writer.hasUncommittedChanges()) {
+                writer.commit();
+            }
+            clearUncommitted();
+        } catch (IOException e) {
+            log.warn("Could not commit the place Lucene index: {}", e.getMessage(), e);
+        } finally {
+            writeLock.unlock();
         }
     }
 
     @Override
-    public void triggerReindex() {
+    public boolean triggerReindex() {
+        if (!reindexRunning.compareAndSet(false, true)) {
+            log.info("Place reindex already running; request ignored");
+            return false;
+        }
+        changedDuringReindex.clear();
         try {
-            writer.deleteAll();
+            reindexExecutor.execute(this::rebuildIndex);
+        } catch (RuntimeException e) {
+            reindexRunning.set(false);
+            throw e;
+        }
+        return true;
+    }
 
-            int offset = 0;
-            int total = 0;
-            while (true) {
-                List<Place> batch = placeRepository.findPage(REINDEX_BATCH_SIZE, offset);
-                if (batch.isEmpty()) {
-                    break;
+    @Override
+    public boolean isReindexRunning() {
+        return reindexRunning.get();
+    }
+
+    /**
+     * Builds the index into a fresh directory beside the live one, reading the database by
+     * keyset pages of the indexed columns only, then swaps it in under the write lock and
+     * replays the places written while it was building. A failure leaves the old index.
+     */
+    void rebuildIndex() {
+        long started = System.currentTimeMillis();
+        Path rebuildDir = Paths.get(indexPath + "-rebuild");
+        String generation = UUID.randomUUID().toString();
+        try {
+            IOUtils.rm(rebuildDir);
+            Files.createDirectories(rebuildDir);
+            int total;
+            try (Directory rebuildDirectory = FSDirectory.open(rebuildDir)) {
+                try (IndexWriter rebuildWriter = new IndexWriter(rebuildDirectory, new IndexWriterConfig(analyzer))) {
+                    total = writeAllPlaces(rebuildWriter, generation);
+                    rebuildWriter.commit();
                 }
-                List<UUID> placeIds = batch.stream().map(Place::getId).toList();
-                Map<UUID, List<PlaceTranslation>> translationsByPlaceId = placeTranslationMapper.findByPlaceIds(placeIds)
-                        .stream()
-                        .collect(Collectors.groupingBy(PlaceTranslation::getPlaceId));
-                Map<UUID, Set<UUID>> foodIdsByPlaceId = groupFoodIds(foodRepository.findFoodTagsByPlaceIds(placeIds));
-                for (Place place : batch) {
-                    writer.addDocument(toDocument(
-                            place,
-                            translationsByPlaceId.getOrDefault(place.getId(), List.of()),
-                            foodIdsByPlaceId.getOrDefault(place.getId(), Set.of())));
-                }
-                total += batch.size();
-                offset += batch.size();
+                swapIn(rebuildDirectory, generation);
             }
-
-            writer.commit();
-            refreshSearchIndex();
-            log.info("Reindexed {} places", total);
+            log.info("Reindexed {} places in {} ms", total, System.currentTimeMillis() - started);
         } catch (Exception e) {
-            log.error("Place reindex failed", e);
-            throw new BusinessException(ErrorConstant.INTERNAL_SERVER_ERROR, "Place reindex failed");
+            log.error("Place reindex failed; the previous index stays in use", e);
+        } finally {
+            reindexRunning.set(false);
+            changedDuringReindex.clear();
+            try {
+                IOUtils.rm(rebuildDir);
+            } catch (IOException e) {
+                log.warn("Could not remove the rebuild directory {}: {}", rebuildDir, e.getMessage());
+            }
+        }
+    }
+
+    private int writeAllPlaces(IndexWriter target, String generation) throws IOException {
+        int total = 0;
+        UUID afterId = null;
+        while (true) {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new IOException("Place reindex interrupted");
+            }
+            List<Place> batch = placeRepository.findSearchIndexPage(afterId, REINDEX_BATCH_SIZE);
+            if (batch.isEmpty()) {
+                return total;
+            }
+            List<UUID> placeIds = batch.stream().map(Place::getId).toList();
+            Map<UUID, List<PlaceTranslation>> translationsByPlaceId = placeTranslationMapper.findByPlaceIds(placeIds)
+                    .stream()
+                    .collect(Collectors.groupingBy(PlaceTranslation::getPlaceId));
+            Map<UUID, Set<UUID>> foodIdsByPlaceId = groupFoodIds(foodRepository.findFoodTagsByPlaceIds(placeIds));
+            for (Place place : batch) {
+                Document document = toDocument(
+                        place,
+                        translationsByPlaceId.getOrDefault(place.getId(), List.of()),
+                        foodIdsByPlaceId.getOrDefault(place.getId(), Set.of()));
+                document.add(new StringField(REBUILD_GENERATION_FIELD, generation, Field.Store.NO));
+                target.addDocument(document);
+            }
+            total += batch.size();
+            if (batch.size() < REINDEX_BATCH_SIZE) {
+                return total;
+            }
+            afterId = batch.get(batch.size() - 1).getId();
+        }
+    }
+
+    /**
+     * Adds the rebuilt documents first and only then deletes every document of an older
+     * generation: a failure part way leaves the old documents searchable, never an empty
+     * index.
+     */
+    private void swapIn(Directory rebuilt, String generation) throws IOException {
+        writeLock.lock();
+        try {
+            writer.addIndexes(rebuilt);
+            writer.deleteDocuments(new BooleanQuery.Builder()
+                    .add(new MatchAllDocsQuery(), BooleanClause.Occur.MUST)
+                    .add(new TermQuery(new Term(REBUILD_GENERATION_FIELD, generation)), BooleanClause.Occur.MUST_NOT)
+                    .build());
+            for (UUID id : changedDuringReindex) {
+                Term idTerm = new Term(ID_FIELD, id.toString());
+                Place current = placeRepository.findSearchIndexRow(id).orElse(null);
+                if (current == null) {
+                    writer.deleteDocuments(idTerm);
+                } else {
+                    writer.updateDocument(idTerm, toDocument(
+                            current, placeTranslationMapper.findByPlaceId(id), findFoodIds(id)));
+                }
+            }
+            writer.commit();
+            recoveryPending = false;
+            clearUncommitted();
+            searcherManager.maybeRefreshBlocking();
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
+    @Override
+    public List<UUID> searchPlaceIdsByName(String keyword, List<String> placeGroups, boolean includeInactive,
+                                           int page, int size) throws IOException {
+        if (keyword == null || keyword.isBlank()) {
+            return List.of();
+        }
+        if (page < 0 || size < 1 || size > MAX_NAME_SEARCH_SIZE) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "page must be >= 0 and size must be between 1 and " + MAX_NAME_SEARCH_SIZE);
+        }
+        int offset;
+        int requestedHits;
+        try {
+            offset = Math.multiplyExact(page, size);
+            requestedHits = Math.addExact(offset, size);
+        } catch (ArithmeticException e) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Requested page is too large");
+        }
+        BooleanQuery.Builder query = new BooleanQuery.Builder();
+        try {
+            query.add(LuceneTitleQueryBuilder.build(keyword.trim(), analyzer), BooleanClause.Occur.MUST);
+        } catch (IllegalArgumentException noSearchableText) {
+            return List.of();
+        }
+        if (!includeInactive) {
+            query.add(new TermQuery(new Term(VISIBILITY_FIELD, "ACTIVE")), BooleanClause.Occur.FILTER);
+        }
+        addTermSetFilter(query, PLACE_GROUP_FIELD, normalizeUpper(placeGroups));
+
+        IndexSearcher searcher = searcherManager.acquire();
+        try {
+            ScoreDoc[] hits = searcher.search(query.build(), requestedHits).scoreDocs;
+            List<UUID> ids = new ArrayList<>();
+            for (int index = offset; index < hits.length; index++) {
+                ids.add(UUID.fromString(searcher.doc(hits[index].doc).get(ID_FIELD)));
+            }
+            return ids;
+        } finally {
+            searcherManager.release(searcher);
         }
     }
 
@@ -301,6 +560,7 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
                     BooleanClause.Occur.FILTER);
         }
         addTermSetFilter(query, PLACE_GROUP_FIELD, normalizeUpper(criteria.placeGroups()));
+        addTermSetFilter(query, SUB_TYPE_FIELD, normalizeUpper(criteria.subTypes()));
         if (criteria.minRating() != null) {
             query.add(DoublePoint.newRangeQuery(
                             RATING_FIELD, criteria.minRating().doubleValue(), Double.POSITIVE_INFINITY),
@@ -383,6 +643,11 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         addKeywordField(doc, CATEGORY_FIELD, normalizeLower(place.getCategory()));
         if (place.getPlaceGroup() != null) {
             addKeywordField(doc, PLACE_GROUP_FIELD, place.getPlaceGroup().name());
+        }
+        if (place.getSubTypes() != null) {
+            for (String subType : place.getSubTypes()) {
+                addKeywordField(doc, SUB_TYPE_FIELD, subType);
+            }
         }
         if (place.getReviewRating() != null) {
             double reviewRating = place.getReviewRating().doubleValue();

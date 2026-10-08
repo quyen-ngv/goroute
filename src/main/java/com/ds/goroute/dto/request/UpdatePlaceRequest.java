@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.ds.goroute.type.PlaceSubType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -27,6 +28,8 @@ public class UpdatePlaceRequest {
 
     private String category;
     private String placeGroup;
+    /** Null keeps the stored sub-types; an empty list clears them. Each must fit {@link #placeGroup}. */
+    private List<PlaceSubType> subTypes;
     private String address;
     private List<String> destinations;
 

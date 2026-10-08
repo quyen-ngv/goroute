@@ -4,6 +4,7 @@ import com.ds.goroute.dto.request.AiTripDestinationRequest;
 import com.ds.goroute.dto.request.AiTripGenerateRequest;
 import com.ds.goroute.entity.SocialLocationJob;
 import com.ds.goroute.type.BusinessConfigKey;
+import com.ds.goroute.type.PlaceGroup;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -142,6 +143,7 @@ public class SocialItineraryRequestFactory {
         put(row, "latitude", latitude);
         put(row, "longitude", longitude);
         row.put("placeGroup", inferPlaceGroup(candidate));
+        row.put("subTypes", inferSubTypes(candidate));
         put(row, "category", first(candidate, "place_type_hint", "mention_type"));
         put(row, "description", first(candidate, "description"));
         List<String> tips = strings(candidate, "useful_info", "visit_guidance");
@@ -195,25 +197,27 @@ public class SocialItineraryRequestFactory {
         return new Coordinates(null, null);
     }
 
-    private String inferPlaceGroup(JsonNode candidate) {
-        String value = (first(candidate, "place_type_hint", "mention_type", "category") + " "
+    private String typeText(JsonNode candidate) {
+        return (first(candidate, "place_type_hint", "mention_type", "category") + " "
                 + first(candidate, "name", "query")).toLowerCase(Locale.ROOT);
-        if (value.matches(".*(restaurant|cafe|coffee|food|drink|bar|bakery|dessert|\u0103n|u\u1ed1ng|qu\u00e1n).*")) {
-            return FOOD;
-        }
-        if (value.matches(".*(museum|temple|pagoda|church|heritage|culture|\u0111\u1ec1n|ch\u00f9a).*")) {
-            return "CULTURE_AND_HERITAGE";
-        }
-        if (value.matches(".*(beach|park|mountain|nature|waterfall|island|bi\u1ec3n|n\u00fai|th\u00e1c).*")) {
-            return "NATURE_AND_OUTDOORS";
-        }
-        if (value.matches(".*(shop|market|mall|shopping|ch\u1ee3|mua s\u1eafm).*")) {
-            return "SHOPPING_AND_MARKET";
-        }
-        if (value.matches(".*(attraction|theme park|show|cinema|karaoke|tour|activity).*")) {
-            return "ATTRACTIONS";
-        }
-        return "OTHER";
+    }
+
+    private String inferPlaceGroup(JsonNode candidate) {
+        return typeText(candidate).matches(".*(restaurant|cafe|coffee|food|drink|bar|bakery|dessert|\u0103n|u\u1ed1ng|qu\u00e1n).*")
+                ? FOOD : PlaceGroup.ATTRACTIONS.name();
+    }
+
+    /** The kinds a video mention hints at, so the planner can still tell a temple from a beach. */
+    private List<String> inferSubTypes(JsonNode candidate) {
+        String value = typeText(candidate);
+        List<String> kinds = new ArrayList<>();
+        if (value.matches(".*(temple|pagoda|church|\u0111\u1ec1n|ch\u00f9a).*")) kinds.add("SPIRITUAL");
+        if (value.matches(".*(museum|b\u1ea3o t\u00e0ng).*")) kinds.add("MUSEUM");
+        if (value.matches(".*(beach|bi\u1ec3n).*")) kinds.add("BEACH");
+        if (value.matches(".*(park|mountain|nature|waterfall|island|n\u00fai|th\u00e1c).*")) kinds.add("NATURE");
+        if (value.matches(".*(market|ch\u1ee3).*")) kinds.add("MARKET");
+        if (value.matches(".*(mall|shopping|mua s\u1eafm).*")) kinds.add("SHOPPING");
+        return kinds;
     }
 
     private String firstCandidateContext(List<JsonNode> candidates) {

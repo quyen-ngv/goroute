@@ -13,7 +13,10 @@ import com.ds.goroute.service.ReviewService;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.dto.BaseResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
+import org.springframework.validation.annotation.Validated;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +27,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
+@Validated
 @RequestMapping("/v1/api/users")
 @RequiredArgsConstructor
 @Slf4j
@@ -116,8 +120,8 @@ public class UserController extends BaseController {
     @GetMapping("/{userId}/reviews")
     public ResponseEntity<BaseResponse<List<UserReviewResponse>>> getUserReviews(
             @PathVariable UUID userId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "50") @Min(1) @Max(100) int size,
             @CurrentUser(required = false) UUID viewerId) {
         return ResponseEntity.ok(ofSucceeded(
                 reviewService.getUserReviewsForProfile(userId, viewerId, page, size)));

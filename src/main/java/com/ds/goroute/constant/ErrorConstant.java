@@ -171,6 +171,12 @@ public class ErrorConstant {
     public static final int MEETUP_INVALID_BIRTH_YEAR = 4001607;
 
     /**
+     * First Apple sign-in without an email claim (email scope not granted). users.email is
+     * NOT NULL, so no account can be created; the user must sign in again sharing the email.
+     */
+    public static final int APPLE_EMAIL_REQUIRED = 4001801;
+
+    /**
      * Local events (epic 17). A console create/update that breaks a field rule; the message
      * names the field and the rule (the same codes the import reports per item).
      */
@@ -296,6 +302,22 @@ public class ErrorConstant {
 
     /** The meetup or the participant row is not in the status this action starts from. */
     public static final int MEETUP_INVALID_STATE = 4091608;
+
+    /**
+     * Idempotency-Key: a request with this key is still being processed. The client should
+     * retry later with the same key and the same request.
+     */
+    public static final int IDEMPOTENCY_REQUEST_IN_PROGRESS = 4091701;
+
+    /**
+     * Write the error code prefixed with 422 below
+     * 422
+     */
+    /**
+     * Idempotency-Key: the key was already used by this user for a different request (method,
+     * path or body differ). The client must use a new key for a new request.
+     */
+    public static final int IDEMPOTENCY_KEY_REUSED = 4221701;
 
     /**
      * Write the error code prefixed with 429 below

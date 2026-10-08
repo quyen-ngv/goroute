@@ -2,6 +2,7 @@ package com.ds.goroute.service.impl;
 
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.ExpenseSplitCount;
+import com.ds.goroute.dto.PublicTripSearchCriteria;
 import com.ds.goroute.dto.request.CloneTripRequest;
 import com.ds.goroute.dto.request.CreateTripRequest;
 import com.ds.goroute.dto.request.InviteMemberRequest;
@@ -23,6 +24,7 @@ import com.ds.goroute.service.TripService;
 import com.ds.goroute.service.StarService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.service.notification.SocialNotificationService;
+import com.ds.goroute.service.trip.PublicTripRankingCache;
 import com.ds.goroute.type.*;
 import com.ds.goroute.utils.JsonUtils;
 import com.ds.goroute.utils.MediaAssetResponseMapper;
@@ -30,8 +32,6 @@ import com.ds.goroute.utils.MemoryImageUrlNormalizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,11 +49,21 @@ import java.util.stream.Collectors;
 public class TripServiceImpl implements TripService {
     /** Page cap for the Friends tab: every trip card costs several queries to assemble. */
     private static final int MAX_FOLLOWING_TRIPS_PAGE_SIZE = 50;
+    /** Page cap for public trip search, matching the controller's @Max. */
+    private static final int MAX_PUBLIC_TRIP_SEARCH_PAGE_SIZE = 50;
+    /**
+     * Memory photos a search or Friends-tab card carries. The card shows a strip of a few;
+     * the trip detail loads the whole gallery, and totalMemoryCount says how many exist.
+     */
+    static final int CARD_MEMORY_PREVIEW_LIMIT = 6;
 
     private final StarService starService;
     /** Field-injected and optional so the hand-built service in unit tests keeps its constructor. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.ds.goroute.service.TripPreferenceService tripPreferenceService;
+    /** Optional for the same reason; without it every search page is ranked by the database. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private PublicTripRankingCache publicTripRankingCache;
 
     private final TripRepository tripRepository;
     private final TripAccessGuard tripAccessGuard;
@@ -82,6 +92,7 @@ public class TripServiceImpl implements TripService {
     private final SocialNotificationService socialNotificationService;
     private final UserCheckinService userCheckinService;
     private final Executor applicationTaskExecutor;
+    private final ContentCommentRepository contentCommentRepository;
 
     private List<TripDestination> buildDestinationsForTrip(
             UUID tripId,
@@ -194,8 +205,12 @@ public class TripServiceImpl implements TripService {
     }
 
     private List<TripDestinationResponse> destinationResponses(Trip trip) {
-        List<TripDestination> destinations = tripDestinationRepository.findByTripId(trip.getId());
-        if (destinations.isEmpty()) {
+        return destinationResponses(trip, tripDestinationRepository.findByTripId(trip.getId()));
+    }
+
+    /** As {@link #destinationResponses(Trip)}, for destinations already loaded in a batch. */
+    private List<TripDestinationResponse> destinationResponses(Trip trip, List<TripDestination> destinations) {
+        if (destinations == null || destinations.isEmpty()) {
             destinations = buildDestinationsForTrip(
                     trip.getId(),
                     null,
@@ -336,9 +351,30 @@ public class TripServiceImpl implements TripService {
                     .collect(Collectors.toList());
         }
 
+        // Every trip here is one the caller owns or is an accepted member of, so each thread is
+        // readable and its count is the one the comments endpoint would give.
+        Map<UUID, Integer> commentCounts = tripCommentCounts(trips);
         return trips.stream()
-                .map(t -> mapToTripResponse(t, userId))
+                .map(t -> {
+                    TripResponse response = mapToTripResponse(t, userId);
+                    response.setCommentCount(commentCounts.getOrDefault(t.getId(), 0));
+                    return response;
+                })
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Active comment count per trip, in one grouped query for the whole list, as
+     * GET /content-comments/count would answer it. Callers pass only trips whose thread the
+     * viewer can read (public, or the viewer is an accepted member); a deleted trip counts 0
+     * and a taken-down one is zeroed by the query.
+     */
+    private Map<UUID, Integer> tripCommentCounts(List<Trip> trips) {
+        List<UUID> ids = trips.stream()
+                .filter(trip -> !Boolean.TRUE.equals(trip.getIsDeleted()))
+                .map(Trip::getId)
+                .toList();
+        return ids.isEmpty() ? Map.of() : contentCommentRepository.countActiveByTargets(ModeratedContentType.TRIP, ids);
     }
 
     @Override
@@ -407,12 +443,13 @@ public class TripServiceImpl implements TripService {
                 .build();
     }
 
-    @CacheEvict(cacheNames = "publicTripSearch", cacheManager = "searchCacheManager", allEntries = true)
     @Override
     @Transactional
     public TripResponse updateTrip(UUID tripId, UpdateTripRequest request, UUID userId) {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+        // Visibility, destinations or the cover may change what public search ranks.
+        invalidatePublicTripRankingAfterCommit();
 
         // The owner or an accepted EDITOR. A VIEWER sees the trip and cannot rename or re-date it.
         tripAccessGuard.requireEditAccess(tripId, userId);
@@ -492,12 +529,12 @@ public class TripServiceImpl implements TripService {
         return mapToTripResponse(trip, userId);
     }
 
-    @CacheEvict(cacheNames = "publicTripSearch", cacheManager = "searchCacheManager", allEntries = true)
     @Override
     @Transactional
     public void deleteTrip(UUID tripId, UUID userId) {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
+        invalidatePublicTripRankingAfterCommit();
 
         if (!trip.getOwnerId().equals(userId)) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only owner can delete trip");
@@ -1551,6 +1588,7 @@ public class TripServiceImpl implements TripService {
                 .coverImageUrl(coverImageUrl)
                 .memoryImageUrls(memoryImageUrls)
                 .memoryImageUrlsV2(memoryImages)
+                .totalMemoryCount(memoryImages.size())
                 .description(trip.getDescription())
                 .destination(trip.getDestination())
                 .lat(trip.getDestinationLat())
@@ -1572,6 +1610,7 @@ public class TripServiceImpl implements TripService {
                 .helpfulVotes(trip.getHelpfulVotes() != null ? trip.getHelpfulVotes() : 0)
                 .unhelpfulVotes(trip.getUnhelpfulVotes() != null ? trip.getUnhelpfulVotes() : 0)
                 .hasVotedHelpful(resolveTripHasVotedHelpful(trip.getId(), viewerId))
+                .commentCount(tripCommentCounts(List.of(trip)).getOrDefault(trip.getId(), 0))
                 .isOwnTrip(viewerId != null && trip.getOwnerId().equals(viewerId))
                 .totalMembers(countAcceptedMembers(trip.getId()))
                 .totalActivities(activityResponses != null ? activityResponses.size() : 0)
@@ -1599,7 +1638,6 @@ public class TripServiceImpl implements TripService {
         };
     }
 
-    @CacheEvict(cacheNames = "publicTripSearch", cacheManager = "searchCacheManager", allEntries = true)
     @Override
     @Transactional
     public TripVoteResponse voteTripHelpful(UUID tripId, UUID userId) {
@@ -1634,7 +1672,6 @@ public class TripServiceImpl implements TripService {
         return buildTripVoteResponse(trip, userId);
     }
 
-    @CacheEvict(cacheNames = "publicTripSearch", cacheManager = "searchCacheManager", allEntries = true)
     @Override
     @Transactional
     public TripVoteResponse voteTripUnhelpful(UUID tripId, UUID userId) {
@@ -2048,11 +2085,6 @@ public class TripServiceImpl implements TripService {
         return mapToTripResponse(newTrip, userId);
     }
 
-    @Cacheable(
-            cacheNames = "publicTripSearch",
-            cacheManager = "searchCacheManager",
-            keyGenerator = "searchCacheKeyGenerator",
-            unless = "#result == null || #result.isEmpty()")
     @Override
     @Transactional(readOnly = true)
     public List<PublicTripResponse> searchPublicTrips(BigDecimal latitude,
@@ -2068,24 +2100,88 @@ public class TripServiceImpl implements TripService {
                                                        int size,
                                                        UUID viewerId,
                                                        UUID excludeUserId) {
-        List<Trip> trips = tripRepository.searchPublicTrips(
-                latitude,
-                longitude,
-                radiusKm,
-                destination,
-                keyword,
-                allPublic,
-                randomSeed,
-                preferImages,
-                recommended,
-                page,
-                size,
-                excludeUserId
-        );
+        PublicTripSearchCriteria criteria = PublicTripSearchCriteria.of(
+                latitude, longitude, radiusKm, destination, keyword,
+                allPublic, randomSeed, preferImages, recommended);
+        int limit = Math.max(1, Math.min(size, MAX_PUBLIC_TRIP_SEARCH_PAGE_SIZE));
+        int offset = Math.max(0, page) * limit;
 
-        return trips.stream()
-                .map(trip -> toPublicTripSummary(trip, viewerId))
-                .collect(Collectors.toList());
+        List<UUID> pageIds = rankedPublicTripIds(criteria, excludeUserId, offset, limit);
+        List<Trip> trips = loadPublicTripsInOrder(pageIds);
+        if (trips.size() < pageIds.size() && publicTripRankingCache != null) {
+            // A trip in the cached ranking went private, was deleted or taken down since it
+            // was ranked. Rank again once rather than hand back a short page, which the app
+            // reads as the end of the list.
+            publicTripRankingCache.evict(criteria);
+            pageIds = rankedPublicTripIds(criteria, excludeUserId, offset, limit);
+            trips = loadPublicTripsInOrder(pageIds);
+        }
+        return toPublicTripSummaries(trips, viewerId);
+    }
+
+    /**
+     * Trip ids of one search page. Served from the shared ranking when the page lies inside
+     * its window, after dropping the trips {@code excludeUserId} owns or has joined -- the
+     * same rows the query's own exclusion removes, so the slice equals what the query would
+     * return. Deeper pages, and services built without the cache, ask the database.
+     */
+    private List<UUID> rankedPublicTripIds(PublicTripSearchCriteria criteria,
+                                           UUID excludeUserId,
+                                           int offset,
+                                           int limit) {
+        if (publicTripRankingCache != null && offset + limit <= PublicTripRankingCache.WINDOW) {
+            List<TripRankRow> window = publicTripRankingCache.window(criteria);
+            List<TripRankRow> visible = withoutTripsOf(window, excludeUserId);
+            boolean wholeRanking = window.size() < PublicTripRankingCache.WINDOW;
+            if (wholeRanking || offset + limit <= visible.size()) {
+                return visible.stream()
+                        .skip(offset)
+                        .limit(limit)
+                        .map(TripRankRow::getId)
+                        .toList();
+            }
+        }
+        return tripRepository.searchPublicTripRanking(criteria, excludeUserId, limit, offset).stream()
+                .map(TripRankRow::getId)
+                .toList();
+    }
+
+    /** {@code ranking} without the trips {@code userId} owns or is an accepted member of. */
+    private List<TripRankRow> withoutTripsOf(List<TripRankRow> ranking, UUID userId) {
+        if (userId == null || ranking.isEmpty()) {
+            return ranking;
+        }
+        List<UUID> ids = ranking.stream().map(TripRankRow::getId).toList();
+        Set<UUID> joined = tripMemberRepository.findByTripIdsAndUserId(ids, userId).stream()
+                .filter(member -> member.getStatus() == MemberStatus.ACCEPTED)
+                .map(TripMember::getTripId)
+                .collect(Collectors.toSet());
+        return ranking.stream()
+                .filter(row -> !userId.equals(row.getOwnerId()))
+                .filter(row -> !joined.contains(row.getId()))
+                .toList();
+    }
+
+    /** The still-public trips among {@code ids}, in the order of {@code ids}. */
+    private List<Trip> loadPublicTripsInOrder(List<UUID> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, Trip> byId = tripRepository.findPublicByIds(ids).stream()
+                .collect(Collectors.toMap(Trip::getId, trip -> trip, (first, second) -> first));
+        return ids.stream().map(byId::get).filter(Objects::nonNull).toList();
+    }
+
+    @Override
+    @Transactional
+    public int reconcileContentCounts() {
+        return tripRepository.reconcileContentCounts();
+    }
+
+    private void invalidatePublicTripRankingAfterCommit() {
+        if (publicTripRankingCache != null) {
+            publicTripRankingCache.invalidateAllAfterCommit();
+        }
     }
 
     @Override
@@ -2093,69 +2189,123 @@ public class TripServiceImpl implements TripService {
     public List<PublicTripResponse> getFollowingTrips(UUID viewerId, int page, int size) {
         int limit = Math.max(1, Math.min(size, MAX_FOLLOWING_TRIPS_PAGE_SIZE));
         int offset = Math.max(0, page) * limit;
-        return tripRepository.findFollowingTrips(viewerId, limit, offset).stream()
-                .map(trip -> {
-                    PublicTripResponse summary = toPublicTripSummary(trip, viewerId);
-                    // The app orders the Friends tab on this. A trip made public before the
-                    // column existed has none, and its creation date is the honest stand-in --
-                    // the same one the query sorts by.
-                    if (summary.getPublicSharedAt() == null) {
-                        summary.setPublicSharedAt(trip.getCreatedAt());
-                    }
-                    return summary;
-                })
-                .collect(Collectors.toList());
+        List<Trip> trips = tripRepository.findFollowingTrips(viewerId, limit, offset);
+        List<PublicTripResponse> summaries = toPublicTripSummaries(trips, viewerId);
+        for (int i = 0; i < summaries.size(); i++) {
+            PublicTripResponse summary = summaries.get(i);
+            // The app orders the Friends tab on this. A trip made public before the
+            // column existed has none, and its creation date is the honest stand-in --
+            // the same one the query sorts by.
+            if (summary.getPublicSharedAt() == null) {
+                summary.setPublicSharedAt(trips.get(i).getCreatedAt());
+            }
+        }
+        return summaries;
     }
 
     /**
-     * A public trip as a list card: everything a search or feed row shows, with the heavy
+     * Public trips as list cards: everything a search or feed row shows, with the heavy
      * children (activities, expenses, notes) left out and only their counts carried.
+     *
+     * <p>One query per kind of data for the whole page, never one per trip: owners,
+     * destinations, the viewer's votes, member/activity/comment counts, memory previews
+     * (at most {@link #CARD_MEMORY_PREVIEW_LIMIT} per trip) with their total, the uploaders
+     * and stop names of those previews. The fallback cover is looked up once per distinct
+     * destination name. Order and size of the result follow {@code trips}.
      */
-    private PublicTripResponse toPublicTripSummary(Trip trip, UUID viewerId) {
-        String coverImageUrl = trip.getCoverImageUrl();
-        if (coverImageUrl == null || coverImageUrl.isEmpty()) {
-            coverImageUrl = locationImageService.getImageForDestination(trip.getDestination());
+    private List<PublicTripResponse> toPublicTripSummaries(List<Trip> trips, UUID viewerId) {
+        if (trips.isEmpty()) {
+            return List.of();
         }
-        List<MemoryImageResponse> memoryImages = getTripMemoryImages(trip.getId());
-        List<String> memoryImageUrls = getMemoryImageUrls(memoryImages);
+        List<UUID> tripIds = trips.stream().map(Trip::getId).toList();
 
-        // Get owner info
-        User owner = userRepository.findById(trip.getOwnerId()).orElse(null);
-        String ownerName = owner != null ? owner.getFullName() : null;
-        String ownerAvatarUrl = owner != null ? owner.getAvatarUrl() : null;
-        List<TripDestinationResponse> destinationResponses = destinationResponses(trip);
+        Set<UUID> ownerIds = trips.stream()
+                .map(Trip::getOwnerId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<UUID, User> owners = ownerIds.isEmpty()
+                ? Map.of()
+                : userRepository.findByIds(ownerIds).stream()
+                        .collect(Collectors.toMap(User::getId, user -> user, (first, second) -> first));
+        Map<UUID, List<TripDestination>> destinationsByTrip = tripDestinationRepository.findByTripIds(tripIds);
+        Map<UUID, TripHelpfulVote> viewerVotes = viewerId == null
+                ? Map.of()
+                : tripHelpfulVoteRepository.findByTripIdsAndUserId(tripIds, viewerId);
+        Map<UUID, Integer> memberCounts = tripMemberRepository.countAcceptedByTripIds(tripIds);
+        Map<UUID, Integer> activityCounts = activityRepository.countByTripIds(tripIds);
+        Map<UUID, Integer> commentCounts = tripCommentCounts(trips);
 
-        return PublicTripResponse.builder()
-                .id(trip.getId())
-                .name(trip.getName())
-                .coverImageUrl(coverImageUrl)
-                .memoryImageUrls(memoryImageUrls)
-                .memoryImageUrlsV2(memoryImages)
-                .description(trip.getDescription())
-                .destination(trip.getDestination())
-                .lat(trip.getDestinationLat())
-                .lng(trip.getDestinationLng())
-                .destinations(destinationResponses)
-                .routeSummary(routeSummary(destinationResponses))
-                .startDate(trip.getStartDate())
-                .endDate(trip.getEndDate())
-                .currency(trip.getCurrency())
-                .ownerId(trip.getOwnerId())
-                .ownerName(ownerName)
-                .ownerAvatarUrl(ownerAvatarUrl)
-                .activities(null)
-                .expenses(null)
-                .notes(null)
-                .viewCount(trip.getViewCount())
-                .copyCount(trip.getCopyCount())
-                .helpfulVotes(trip.getHelpfulVotes() != null ? trip.getHelpfulVotes() : 0)
-                .unhelpfulVotes(trip.getUnhelpfulVotes() != null ? trip.getUnhelpfulVotes() : 0)
-                .hasVotedHelpful(resolveTripHasVotedHelpful(trip.getId(), viewerId))
-                .isOwnTrip(viewerId != null && trip.getOwnerId().equals(viewerId))
-                .totalMembers(countAcceptedMembers(trip.getId()))
-                .totalActivities(activityRepository.countByTripId(trip.getId()))
-                .publicSharedAt(trip.getPublicSharedAt())
-                .build();
+        Map<UUID, List<MediaAsset>> previews =
+                mediaAssetRepository.findTripMemoryPreviewsByTripIds(tripIds, CARD_MEMORY_PREVIEW_LIMIT);
+        // A trip with no preview has no memory at all, so only the others need counting.
+        Map<UUID, Integer> memoryCounts = previews.isEmpty()
+                ? Map.of()
+                : mediaAssetRepository.countTripMemoriesByTripIds(previews.keySet());
+        List<MediaAsset> previewAssets = previews.values().stream().flatMap(List::stream).toList();
+        Map<UUID, User> uploaders = uploadersFor(previewAssets);
+        Set<UUID> previewActivityIds = previewAssets.stream()
+                .map(MediaAsset::getActivityId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<UUID, String> activityNames = previewActivityIds.isEmpty()
+                ? Map.of()
+                : activityRepository.findNamesByIds(previewActivityIds);
+
+        // Trips to the same city share a fallback cover; one lookup per name on the page.
+        Map<String, String> fallbackCovers = new HashMap<>();
+        List<PublicTripResponse> summaries = new ArrayList<>(trips.size());
+        for (Trip trip : trips) {
+            UUID tripId = trip.getId();
+            String coverImageUrl = trip.getCoverImageUrl();
+            if (coverImageUrl == null || coverImageUrl.isEmpty()) {
+                String destinationName = trip.getDestination();
+                if (!fallbackCovers.containsKey(destinationName)) {
+                    fallbackCovers.put(destinationName, locationImageService.getImageForDestination(destinationName));
+                }
+                coverImageUrl = fallbackCovers.get(destinationName);
+            }
+            List<MemoryImageResponse> memoryImages = MediaAssetResponseMapper.toImageResponses(
+                    previews.getOrDefault(tripId, List.of()), uploaders, activityNames);
+            User owner = owners.get(trip.getOwnerId());
+            List<TripDestinationResponse> destinationResponses =
+                    destinationResponses(trip, destinationsByTrip.get(tripId));
+            TripHelpfulVote viewerVote = viewerVotes.get(tripId);
+
+            summaries.add(PublicTripResponse.builder()
+                    .id(tripId)
+                    .name(trip.getName())
+                    .coverImageUrl(coverImageUrl)
+                    .memoryImageUrls(getMemoryImageUrls(memoryImages))
+                    .memoryImageUrlsV2(memoryImages)
+                    .totalMemoryCount(memoryCounts.getOrDefault(tripId, 0))
+                    .description(trip.getDescription())
+                    .destination(trip.getDestination())
+                    .lat(trip.getDestinationLat())
+                    .lng(trip.getDestinationLng())
+                    .destinations(destinationResponses)
+                    .routeSummary(routeSummary(destinationResponses))
+                    .startDate(trip.getStartDate())
+                    .endDate(trip.getEndDate())
+                    .currency(trip.getCurrency())
+                    .ownerId(trip.getOwnerId())
+                    .ownerName(owner != null ? owner.getFullName() : null)
+                    .ownerAvatarUrl(owner != null ? owner.getAvatarUrl() : null)
+                    .activities(null)
+                    .expenses(null)
+                    .notes(null)
+                    .viewCount(trip.getViewCount())
+                    .copyCount(trip.getCopyCount())
+                    .helpfulVotes(trip.getHelpfulVotes() != null ? trip.getHelpfulVotes() : 0)
+                    .unhelpfulVotes(trip.getUnhelpfulVotes() != null ? trip.getUnhelpfulVotes() : 0)
+                    .hasVotedHelpful(viewerVote != null ? viewerVote.isHelpful() : null)
+                    .commentCount(commentCounts.getOrDefault(tripId, 0))
+                    .isOwnTrip(viewerId != null && viewerId.equals(trip.getOwnerId()))
+                    .totalMembers(memberCounts.getOrDefault(tripId, 0))
+                    .totalActivities(activityCounts.getOrDefault(tripId, 0))
+                    .publicSharedAt(trip.getPublicSharedAt())
+                    .build());
+        }
+        return summaries;
     }
 
     private int countAcceptedMembers(UUID tripId) {
@@ -2399,8 +2549,15 @@ public class TripServiceImpl implements TripService {
                         .collect(Collectors.toMap(TripMember::getTripId, member -> member,
                                 (first, second) -> first));
 
+        // The owner's own trips (their thread is readable to them) or someone else's public
+        // trips (readable to anyone): every count here is what the comments endpoint gives.
+        Map<UUID, Integer> commentCounts = tripCommentCounts(trips);
         return trips.stream()
-                .map(trip -> mapToTripResponse(trip, mapViewerId, profileOwner, viewerMembership))
+                .map(trip -> {
+                    TripResponse response = mapToTripResponse(trip, mapViewerId, profileOwner, viewerMembership);
+                    response.setCommentCount(commentCounts.getOrDefault(trip.getId(), 0));
+                    return response;
+                })
                 .collect(Collectors.toList());
     }
 

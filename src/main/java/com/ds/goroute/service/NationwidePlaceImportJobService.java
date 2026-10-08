@@ -25,6 +25,7 @@ import com.ds.goroute.type.PlaceImportApprovalStatus;
 import com.ds.goroute.type.PlaceImportJobItemStatus;
 import com.ds.goroute.type.PlaceImportJobStatus;
 import com.ds.goroute.type.PlaceImportSourceType;
+import com.ds.goroute.utils.PlaceIdentityMatcher;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -199,6 +200,10 @@ public class NationwidePlaceImportJobService {
         }
         job.setUpdatedAt(LocalDateTime.now());
         jobMapper.updateJob(job);
+        if ("JOB_COMPLETED".equals(type) || "JOB_FAILED".equals(type) || "JOB_CANCELLED".equals(type)) {
+            // Imports during the job do not evict the place search cache; the end does, once.
+            placeService.evictSearchCache();
+        }
     }
 
     @Transactional
@@ -227,7 +232,9 @@ public class NationwidePlaceImportJobService {
                 googlePlaceId,
                 request.getPlace().getCid(),
                 request.getPlace().getLatitude(),
-                request.getPlace().getLongitude());
+                request.getPlace().getLongitude(),
+                request.getPlace().getTitle(),
+                request.getPlace().getAddress());
         if (existing != null) {
             item.setExistingPlaceId(existing.getId());
             completeItem(item, PlaceImportJobItemStatus.SKIPPED_EXISTING, "EXISTING_PLACE", null, 0);
@@ -292,6 +299,8 @@ public class NationwidePlaceImportJobService {
         place.setScoreSource(SCORE_SOURCE);
         place.setUpdatedAt(LocalDateTime.now());
         placeRepository.update(place);
+        // The import indexed the place before it had a score; "sort by rating" needs it.
+        placeService.reindexPlace(place.getId());
 
         item.setImportedPlaceId(place.getId());
         completeItem(item, PlaceImportJobItemStatus.COMPLETED, "IMPORTED", score, selected.size());
@@ -320,35 +329,22 @@ public class NationwidePlaceImportJobService {
                 ? Set.of() : Set.copyOf(placeRepository.findExistingPlaceIds(placeIds));
         Set<String> existingCids = cids.isEmpty()
                 ? Set.of() : Set.copyOf(placeRepository.findExistingCids(cids));
+        // Ids only: a candidate here carries no name, and a place nearby with another name is
+        // not a duplicate. Same-named neighbours are caught when the candidate is imported.
         Set<String> existingKeys = request.getCandidates().stream()
-                .filter(candidate -> existingPlaceIds.contains(candidate.getGooglePlaceId())
-                        || existingCids.contains(candidate.getCid())
-                        || (!hasText(candidate.getGooglePlaceId()) && !hasText(candidate.getCid())
-                        && candidate.getLatitude() != null && candidate.getLongitude() != null
-                        && placeRepository.findNearCoordinates(candidate.getLatitude(), candidate.getLongitude(),
-                        DUPLICATE_DISTANCE_METERS) != null))
+                .filter(candidate -> hasText(candidate.getGooglePlaceId())
+                        && existingPlaceIds.contains(candidate.getGooglePlaceId())
+                        || hasText(candidate.getCid()) && existingCids.contains(candidate.getCid()))
                 .map(NationwideDuplicateCheckRequest.Candidate::getCandidateKey)
                 .collect(Collectors.toSet());
         return NationwideDuplicateCheckResponse.builder().existingCandidateKeys(existingKeys).build();
     }
 
-    private Place findExistingPlace(String googlePlaceId, String cid, BigDecimal latitude, BigDecimal longitude) {
-        if (hasText(googlePlaceId)) {
-            Place place = placeRepository.findByPlaceId(googlePlaceId);
-            if (place != null) {
-                return place;
-            }
-        }
-        if (hasText(cid)) {
-            Place place = placeRepository.findByCid(cid);
-            if (place != null) {
-                return place;
-            }
-        }
-        if (latitude != null && longitude != null) {
-            return placeRepository.findNearCoordinates(latitude, longitude, DUPLICATE_DISTANCE_METERS);
-        }
-        return null;
+    private Place findExistingPlace(String googlePlaceId, String cid, BigDecimal latitude, BigDecimal longitude,
+                                    String title, String address) {
+        return PlaceIdentityMatcher.findExisting(placeRepository, googlePlaceId, cid,
+                        latitude, longitude, title, address, DUPLICATE_DISTANCE_METERS)
+                .orElse(null);
     }
 
     private boolean hasText(String value) {

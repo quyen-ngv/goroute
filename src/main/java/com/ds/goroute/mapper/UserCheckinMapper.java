@@ -37,11 +37,18 @@ public interface UserCheckinMapper {
     UserCheckin findByIdempotencyKey(@Param("userId") UUID userId,
                                      @Param("idempotencyKey") String idempotencyKey);
 
-    /** Public feed: posts with photos first, newest first within each group. */
+    /**
+     * Public feed: posts with photos first, newest first within each group. With a cursor
+     * (all three cursor values set) it returns the rows after that sort key and the offset
+     * should be 0.
+     */
     List<UserCheckin> findFeed(@Param("excludeUserId") UUID excludeUserId,
                                @Param("latitude") BigDecimal latitude,
                                @Param("longitude") BigDecimal longitude,
                                @Param("radiusKm") BigDecimal radiusKm,
+                               @Param("cursorHasPhoto") Boolean cursorHasPhoto,
+                               @Param("cursorCreatedAt") LocalDateTime cursorCreatedAt,
+                               @Param("cursorId") UUID cursorId,
                                @Param("limit") int limit,
                                @Param("offset") int offset);
 

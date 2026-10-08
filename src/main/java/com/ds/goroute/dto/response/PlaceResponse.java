@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -27,6 +27,7 @@ public class PlaceResponse {
     private Map<String, PlaceTranslationResponse> translations;
     private String category;
     private String placeGroup;
+    private List<String> subTypes;
     private String address;
     private List<String> destinations;
     private BigDecimal latitude;

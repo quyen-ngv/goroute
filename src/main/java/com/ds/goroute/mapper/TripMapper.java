@@ -1,10 +1,11 @@
 package com.ds.goroute.mapper;
 
+import com.ds.goroute.dto.PublicTripSearchCriteria;
 import com.ds.goroute.entity.Trip;
+import com.ds.goroute.entity.TripRankRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -25,21 +26,23 @@ public interface TripMapper {
     
     Trip selectByShareCode(@Param("shareCode") String shareCode);
     
-    List<Trip> searchPublicTrips(
-        @Param("latitude") BigDecimal latitude,
-        @Param("longitude") BigDecimal longitude,
-        @Param("radiusKm") BigDecimal radiusKm,
-        @Param("destination") String destination,
-        @Param("keyword") String keyword,
-        @Param("allPublic") boolean allPublic,
-        @Param("randomSeed") String randomSeed,
-        @Param("preferImages") boolean preferImages,
-        @Param("recommended") boolean recommended,
-        @Param("offset") int offset,
+    /** One page of the public trip search ranking: ids and owners, best first. */
+    List<TripRankRow> searchPublicTripRanking(
+        @Param("criteria") PublicTripSearchCriteria criteria,
+        @Param("excludeUserId") UUID excludeUserId,
         @Param("limit") int limit,
-        @Param("excludeUserId") UUID excludeUserId
+        @Param("offset") int offset
     );
-    
+
+    /** The public, live, not taken-down trips among {@code ids}, in no particular order. */
+    List<Trip> selectPublicByIds(@Param("ids") List<UUID> ids);
+
+    int refreshActivityCount(@Param("tripId") UUID tripId);
+
+    int refreshMemoryCount(@Param("tripId") UUID tripId);
+
+    int reconcileContentCounts();
+
     /** Public trips owned by the people {@code viewerId} follows, most recently shared first. */
     List<Trip> findFollowingTrips(@Param("viewerId") UUID viewerId,
                                   @Param("limit") int limit,

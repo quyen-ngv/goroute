@@ -18,11 +18,16 @@ import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.CityStoryService;
 import com.ds.goroute.service.CityWeatherService;
 import com.ds.goroute.service.ImageStorageCleanupService;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -45,6 +50,15 @@ public class CityStoryServiceImpl implements CityStoryService {
 
     private static final int STORY_TTL_HOURS = 24;
 
+    /**
+     * How long every viewer shares one copy of the story groups. The groups (stories, places,
+     * weather) are the same for everyone; only "viewed" and "liked" belong to the viewer and
+     * are read fresh on each request. A new or deleted story clears the copy at once; like
+     * counts may lag by up to this long.
+     */
+    static final Duration STORY_GROUPS_TTL = Duration.ofSeconds(45);
+    private static final String STORY_GROUPS_KEY = "active";
+
     private final CityStoryMapper cityStoryMapper;
     private final LocationImageRepository locationImageRepository;
     private final PlaceRepository placeRepository;
@@ -52,15 +66,32 @@ public class CityStoryServiceImpl implements CityStoryService {
     private final CityWeatherService cityWeatherService;
     private final Executor applicationTaskExecutor;
 
+    /** One shared copy of the viewer-independent story groups; see {@link #STORY_GROUPS_TTL}. */
+    private final Cache<String, StoryGroupsSnapshot> storyGroupsCache = Caffeine.newBuilder()
+            .expireAfterWrite(STORY_GROUPS_TTL)
+            .maximumSize(1)
+            .build();
+
+    /** One city's stories as everyone sees them, before the viewer's own viewed/liked marks. */
+    private record CityGroupSnapshot(LocationImage location, List<CityStory> stories, CityWeatherResponse weather) {
+    }
+
+    private record StoryGroupsSnapshot(List<CityGroupSnapshot> cities, Map<UUID, CityStoryPlaceSummary> places) {
+    }
+
+    /**
+     * Deliberately not transactional: the shared groups are loaded with a few short reads and
+     * then the weather is fetched over HTTP, and a transaction around that would hold a pooled
+     * connection for the whole upstream round-trip. Only the viewer's marks are read per request.
+     */
     @Override
-    @Transactional(readOnly = true)
     public CityStoryFeedResponse getFeed(UUID userId) {
-        LocalDateTime since = sinceWindow();
-        List<CityStory> activeStories = cityStoryMapper.selectActiveSince(since);
-        if (activeStories.isEmpty()) {
+        StoryGroupsSnapshot snapshot = storyGroupsCache.get(STORY_GROUPS_KEY, key -> loadStoryGroups());
+        if (snapshot.cities().isEmpty()) {
             return CityStoryFeedResponse.builder().cities(List.of()).build();
         }
 
+        LocalDateTime since = sinceWindow();
         Set<UUID> viewedIds = userId != null
                 ? new HashSet<>(cityStoryMapper.selectViewedStoryIdsSince(userId, since))
                 : Set.of();
@@ -68,28 +99,11 @@ public class CityStoryServiceImpl implements CityStoryService {
                 ? new HashSet<>(cityStoryMapper.selectLikedStoryIdsSince(userId, since))
                 : Set.of();
 
-        Map<UUID, LocationImage> locationsById = locationImageRepository.findAll().stream()
-                .collect(Collectors.toMap(LocationImage::getId, loc -> loc, (a, b) -> a));
-
-        Map<UUID, List<CityStory>> grouped = activeStories.stream()
-                .collect(Collectors.groupingBy(CityStory::getLocationImageId));
-
-        Map<UUID, CityWeatherResponse> weatherByLocation =
-                fetchWeather(grouped.keySet(), locationsById);
-
         List<CityStoryGroupResponse> groups = new ArrayList<>();
-        for (Map.Entry<UUID, List<CityStory>> entry : grouped.entrySet()) {
-            LocationImage location = locationsById.get(entry.getKey());
-            if (location == null) {
-                continue;
-            }
-
-            List<CityStory> stories = entry.getValue().stream()
-                    .sorted(Comparator.comparing(CityStory::getCreatedAt))
-                    .toList();
-
-            List<CityStoryItemResponse> storyResponses = stories.stream()
-                    .map(story -> mapStory(story, viewedIds, likedIds))
+        for (CityGroupSnapshot city : snapshot.cities()) {
+            LocationImage location = city.location();
+            List<CityStoryItemResponse> storyResponses = city.stories().stream()
+                    .map(story -> mapStory(story, viewedIds, likedIds, snapshot.places()))
                     .toList();
 
             boolean hasUnviewed = userId == null
@@ -102,7 +116,7 @@ public class CityStoryServiceImpl implements CityStoryService {
                     .avatarUrl(resolveAvatarUrl(location))
                     .hasUnviewedStories(hasUnviewed)
                     .stories(storyResponses)
-                    .weather(weatherByLocation.get(location.getId()))
+                    .weather(city.weather())
                     .build());
         }
 
@@ -114,6 +128,72 @@ public class CityStoryServiceImpl implements CityStoryService {
                         Comparator.reverseOrder()));
 
         return CityStoryFeedResponse.builder().cities(groups).build();
+    }
+
+    /**
+     * The story groups every viewer shares: active stories by city (oldest first), the places
+     * they mention (one query) and each city's weather. The database reads finish before the
+     * weather is fetched.
+     */
+    private StoryGroupsSnapshot loadStoryGroups() {
+        List<CityStory> activeStories = cityStoryMapper.selectActiveSince(sinceWindow());
+        if (activeStories.isEmpty()) {
+            return new StoryGroupsSnapshot(List.of(), Map.of());
+        }
+
+        Map<UUID, LocationImage> locationsById = locationImageRepository.findAll().stream()
+                .collect(Collectors.toMap(LocationImage::getId, loc -> loc, (a, b) -> a));
+        Map<UUID, CityStoryPlaceSummary> places = loadPlaceSummaries(activeStories);
+
+        Map<UUID, List<CityStory>> grouped = activeStories.stream()
+                .collect(Collectors.groupingBy(CityStory::getLocationImageId));
+
+        Map<UUID, CityWeatherResponse> weatherByLocation =
+                fetchWeather(grouped.keySet(), locationsById);
+
+        List<CityGroupSnapshot> cities = new ArrayList<>();
+        for (Map.Entry<UUID, List<CityStory>> entry : grouped.entrySet()) {
+            LocationImage location = locationsById.get(entry.getKey());
+            if (location == null) {
+                continue;
+            }
+            List<CityStory> stories = entry.getValue().stream()
+                    .sorted(Comparator.comparing(CityStory::getCreatedAt))
+                    .toList();
+            cities.add(new CityGroupSnapshot(location, stories, weatherByLocation.get(location.getId())));
+        }
+        return new StoryGroupsSnapshot(List.copyOf(cities), Map.copyOf(places));
+    }
+
+    /** Every place the stories mention, in one query rather than one per story. */
+    private Map<UUID, CityStoryPlaceSummary> loadPlaceSummaries(List<CityStory> stories) {
+        List<UUID> placeIds = stories.stream()
+                .map(CityStory::getPlaceId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        if (placeIds.isEmpty()) {
+            return Map.of();
+        }
+        return placeRepository.findByIds(placeIds).stream()
+                .collect(Collectors.toMap(Place::getId, this::toPlaceSummary, (first, second) -> first));
+    }
+
+    /**
+     * Drops the shared copy once the change that made it stale is committed. Clearing it before
+     * the commit would let a concurrent reader load the old rows and keep them for the full TTL.
+     */
+    private void invalidateStoryGroupsAfterCommit() {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            storyGroupsCache.invalidateAll();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                storyGroupsCache.invalidateAll();
+            }
+        });
     }
 
     @Override
@@ -130,8 +210,10 @@ public class CityStoryServiceImpl implements CityStoryService {
                 ? new HashSet<>(cityStoryMapper.selectLikedStoryIdsSince(userId, since))
                 : Set.of();
 
-        return cityStoryMapper.selectActiveByLocationSince(locationImageId, since).stream()
-                .map(story -> mapStory(story, viewedIds, likedIds))
+        List<CityStory> stories = cityStoryMapper.selectActiveByLocationSince(locationImageId, since);
+        Map<UUID, CityStoryPlaceSummary> places = loadPlaceSummaries(stories);
+        return stories.stream()
+                .map(story -> mapStory(story, viewedIds, likedIds, places))
                 .toList();
     }
 
@@ -170,8 +252,9 @@ public class CityStoryServiceImpl implements CityStoryService {
                 .build();
 
         cityStoryMapper.insert(story);
+        invalidateStoryGroupsAfterCommit();
         log.info("City story created: {} for location {}", story.getId(), locationImageId);
-        return mapStory(story, Set.of(), Set.of());
+        return mapStory(story, Set.of(), Set.of(), loadPlaceSummaries(List.of(story)));
     }
 
     @Override
@@ -187,6 +270,7 @@ public class CityStoryServiceImpl implements CityStoryService {
         story.setDeletedAt(now);
         story.setUpdatedAt(now);
         cityStoryMapper.softDelete(story);
+        invalidateStoryGroupsAfterCommit();
         log.info("City story deleted: {}", storyId);
     }
 
@@ -269,7 +353,8 @@ public class CityStoryServiceImpl implements CityStoryService {
     private CityStoryItemResponse mapStory(
             CityStory story,
             Set<UUID> viewedIds,
-            Set<UUID> likedIds) {
+            Set<UUID> likedIds,
+            Map<UUID, CityStoryPlaceSummary> places) {
         return CityStoryItemResponse.builder()
                 .id(story.getId())
                 .locationImageId(story.getLocationImageId())
@@ -279,21 +364,12 @@ public class CityStoryServiceImpl implements CityStoryService {
                 .thumbnailUrl(story.getThumbnailUrl())
                 .description(story.getDescription())
                 .placeId(story.getPlaceId())
-                .place(mapPlace(story.getPlaceId()))
+                .place(story.getPlaceId() == null ? null : places.get(story.getPlaceId()))
                 .likeCount(story.getLikeCount() != null ? story.getLikeCount() : 0)
                 .hasLiked(likedIds.contains(story.getId()))
                 .hasViewed(viewedIds.contains(story.getId()))
                 .createdAt(toInstant(story.getCreatedAt()))
                 .build();
-    }
-
-    private CityStoryPlaceSummary mapPlace(UUID placeId) {
-        if (placeId == null) {
-            return null;
-        }
-        return placeRepository.findById(placeId)
-                .map(this::toPlaceSummary)
-                .orElse(null);
     }
 
     private CityStoryPlaceSummary toPlaceSummary(Place place) {

@@ -42,15 +42,31 @@ public class LocalCacheConfig {
     @Bean("searchCacheManager")
     public CacheManager searchCacheManager() {
         CaffeineCacheManager cacheManager = new CaffeineCacheManager(
-                "placeSearch",
                 "activityBookingSearch",
-                "activityBookingByPlaceSearch",
-                "publicTripSearch");
+                "activityBookingByPlaceSearch");
         cacheManager.setCaffeine(
                 Caffeine.newBuilder()
                         .expireAfterWrite(2, TimeUnit.MINUTES)
                         .maximumSize(2_000));
+        // One entry holds up to 100 places, so a count bound let the cache grow to 200,000
+        // place responses. Bounded by the places held instead.
+        cacheManager.registerCustomCache("placeSearch",
+                Caffeine.newBuilder()
+                        .expireAfterWrite(2, TimeUnit.MINUTES)
+                        .maximumWeight(PLACE_SEARCH_MAX_CACHED_PLACES)
+                        .weigher((Object key, Object value) -> value instanceof java.util.Collection<?> list
+                                ? list.size() + 1 : 1)
+                        .build());
         return cacheManager;
+    }
+
+    /** Place responses the place search cache may hold across all its entries. */
+    static final long PLACE_SEARCH_MAX_CACHED_PLACES = 20_000;
+
+    @Bean("placeSearchCacheKeyGenerator")
+    public KeyGenerator placeSearchCacheKeyGenerator() {
+        // searchPlaces(keyword, latitude, longitude, ...): parameters 1 and 2 are the point.
+        return new SearchCacheKeyGenerator(java.util.Set.of(1, 2));
     }
 
     /** Dedicated 6-hour cache for exchange rates (daily updated, low churn). */

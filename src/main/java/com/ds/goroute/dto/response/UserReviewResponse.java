@@ -74,6 +74,8 @@ public class UserReviewResponse {
     private Integer helpfulVotes;
     private Integer unhelpfulVotes;
     private Boolean hasVotedHelpful; // Current user voted helpful (true) or unhelpful (false) or null
+    /** Active comments on this review's thread, the number GET /content-comments/count returns. */
+    private int commentCount;
     private Boolean isOwnReview; // Current user is author
 
     // Marketplace stay/visit link
@@ -85,4 +87,11 @@ public class UserReviewResponse {
     // Timestamps
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    /**
+     * Opaque keyset cursor of this review in GET /reviews/feed: send the last item's value back
+     * as {@code cursor} for the page after it. Null outside that feed and on the shuffled
+     * (randomSeed) order, which still pages by number.
+     */
+    private String feedCursor;
 }

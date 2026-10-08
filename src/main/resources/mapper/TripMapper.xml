@@ -108,106 +108,182 @@
         SELECT * FROM trips WHERE share_code = #{shareCode} AND is_deleted = FALSE
     </select>
 
-    <select id="searchPublicTrips" resultMap="TripResultMap">
-        SELECT * FROM (
-            SELECT t.*,
-                MIN(
-                    CASE
-                        WHEN COALESCE(td.lat, t.destination_lat) IS NULL
-                          OR COALESCE(td.lng, t.destination_lng) IS NULL
-                        THEN NULL
-                        ELSE 6371 * acos(LEAST(1, GREATEST(-1,
-                            cos(radians(#{latitude})) * cos(radians(COALESCE(td.lat, t.destination_lat))) *
-                            cos(radians(COALESCE(td.lng, t.destination_lng)) - radians(#{longitude})) +
-                            sin(radians(#{latitude})) * sin(radians(COALESCE(td.lat, t.destination_lat)))
-                        )))
-                    END
-                ) AS distance
-            FROM trips t
-            LEFT JOIN trip_destinations td
-              ON td.trip_id = t.id
-            WHERE t.visibility = 'PUBLIC'
-              AND t.is_deleted = FALSE
-              <if test="!allPublic">
-                  AND (
-                      (t.destination_lat IS NOT NULL AND t.destination_lng IS NOT NULL)
-                      OR (td.lat IS NOT NULL AND td.lng IS NOT NULL)
-                  )
-              </if>
-              <if test="excludeUserId != null">
-                  AND t.owner_id != #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
-                  AND t.id NOT IN (
-                      SELECT trip_id FROM trip_members
-                      WHERE user_id = #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
-                      AND status = 'ACCEPTED'
-                  )
-              </if>
-              <if test="destination != null and destination != ''">
-                  AND (
-                      LOWER(t.destination) LIKE LOWER(CONCAT('%', #{destination}, '%'))
-                      OR LOWER(td.name) LIKE LOWER(CONCAT('%', #{destination}, '%'))
-                      OR LOWER(td.address) LIKE LOWER(CONCAT('%', #{destination}, '%'))
-                  )
-              </if>
-              <if test="keyword != null and keyword != ''">
-                  AND (
-                      LOWER(t.name) LIKE LOWER(CONCAT('%', #{keyword}, '%'))
-                      OR LOWER(t.destination) LIKE LOWER(CONCAT('%', #{keyword}, '%'))
-                      OR LOWER(t.description) LIKE LOWER(CONCAT('%', #{keyword}, '%'))
-                      OR LOWER(td.name) LIKE LOWER(CONCAT('%', #{keyword}, '%'))
-                      OR LOWER(td.address) LIKE LOWER(CONCAT('%', #{keyword}, '%'))
-                  )
-              </if>
-            GROUP BY t.id
-        ) AS t
-        <if test="!allPublic">
-            WHERE distance &lt;= #{radiusKm}
+    <!-- A trip's memory photos, as the gallery and the ranking count them. -->
+    <sql id="tripMemoryPredicate">
+        ma.entity_type IN ('TRIP_MEMORY', 'TRIP_ACTIVITY_MEMORY')
+        AND (ma.asset_role IS NULL OR ma.asset_role = 'MEMORY')
+        AND ma.deleted_at IS NULL
+    </sql>
+
+    <sql id="publicTripColumns">
+        t.id, t.name, t.cover_image_url, t.destination, t.destination_place_id,
+        t.destination_lat, t.destination_lng, t.start_date, t.end_date, t.budget, t.currency,
+        t.status, t.visibility, t.share_code, t.share_expenses, t.share_notes, t.description,
+        t.timezone, t.owner_id, t.starting_point_name, t.starting_point_address,
+        t.starting_point_lat, t.starting_point_lng, t.starting_point_time, t.view_count,
+        t.copy_count, t.helpful_votes, t.unhelpful_votes, t.is_deleted, t.deleted_at,
+        t.public_shared_at, t.created_at, t.updated_at, t.location_image_id
+    </sql>
+
+    <!-- Radius test for one destination row (alias td); matches idx_trip_destinations_point. -->
+    <sql id="destinationWithinRadius">
+        td.lat IS NOT NULL AND td.lng IS NOT NULL
+        AND ST_DWithin(goroute_point(td.lat, td.lng),
+                       goroute_point(#{criteria.latitude}, #{criteria.longitude}),
+                       #{criteria.radiusMeters}, false)
+    </sql>
+
+    <!-- Radius test for the trip's own point (alias tr); matches idx_trips_destination_point.
+         The trip's point counts only where a destination cannot speak for it: the trip has
+         no destination rows, or one of them has no coordinates. -->
+    <sql id="tripPointWithinRadius">
+        tr.destination_lat IS NOT NULL AND tr.destination_lng IS NOT NULL
+        AND ST_DWithin(goroute_point(tr.destination_lat, tr.destination_lng),
+                       goroute_point(#{criteria.latitude}, #{criteria.longitude}),
+                       #{criteria.radiusMeters}, false)
+        AND NOT COALESCE((
+            SELECT bool_and(x.lat IS NOT NULL AND x.lng IS NOT NULL)
+            FROM trip_destinations x
+            WHERE x.trip_id = tr.id), FALSE)
+    </sql>
+
+    <!--
+        Public trip search: the ranked trip ids (and owners) for one page. The trips
+        themselves are loaded afterwards by selectPublicByIds, so a ranking can be cached
+        and shared by every viewer.
+
+        Radius search (allPublic = false) finds candidates through the GiST indexes of V214:
+        a trip is near when one of its destinations is, or - for a trip with no destination
+        rows or a destination without coordinates - when the trip's own destination point
+        is. goroute_point(...) must be spelled exactly like the index expressions. Distances
+        are on the sphere (use_spheroid = false), the same model as the haversine this
+        replaced and cheaper than the spheroid; the index serves both. Only the nearest-first
+        order computes a distance; the other orders only need "within the radius".
+
+        Ranking inputs come from the columns of V216, not from a count per row.
+    -->
+    <select id="searchPublicTripRanking" resultType="com.ds.goroute.entity.TripRankRow">
+        SELECT t.id, t.owner_id
+        FROM trips t
+        <if test="!criteria.allPublic()">
+            <choose>
+                <when test="criteria.orderedByDistance()">
+        JOIN (
+            SELECT near.trip_id, MIN(near.distance_m) AS distance_m
+            FROM (
+                SELECT td.trip_id,
+                       ST_Distance(goroute_point(td.lat, td.lng),
+                                   goroute_point(#{criteria.latitude}, #{criteria.longitude}), false) AS distance_m
+                FROM trip_destinations td
+                WHERE <include refid="destinationWithinRadius"/>
+                UNION ALL
+                SELECT tr.id AS trip_id,
+                       ST_Distance(goroute_point(tr.destination_lat, tr.destination_lng),
+                                   goroute_point(#{criteria.latitude}, #{criteria.longitude}), false) AS distance_m
+                FROM trips tr
+                WHERE <include refid="tripPointWithinRadius"/>
+            ) near
+            GROUP BY near.trip_id
+        ) nearest ON nearest.trip_id = t.id
+                </when>
+                <otherwise>
+        JOIN (
+            SELECT td.trip_id
+            FROM trip_destinations td
+            WHERE <include refid="destinationWithinRadius"/>
+            UNION
+            SELECT tr.id AS trip_id
+            FROM trips tr
+            WHERE <include refid="tripPointWithinRadius"/>
+        ) nearby ON nearby.trip_id = t.id
+                </otherwise>
+            </choose>
         </if>
+        WHERE t.visibility = 'PUBLIC'
+          AND t.is_deleted = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns ct
+              WHERE ct.content_type = 'TRIP' AND ct.content_id = t.id
+                AND ct.restored_at IS NULL)
+          <if test="excludeUserId != null">
+              AND t.owner_id != #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
+              AND NOT EXISTS (
+                  SELECT 1 FROM trip_members tm
+                  WHERE tm.trip_id = t.id
+                    AND tm.user_id = #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
+                    AND tm.status = 'ACCEPTED')
+          </if>
+          <if test="criteria.destination() != null">
+              AND (
+                  LOWER(t.destination) LIKE LOWER(CONCAT('%', #{criteria.destination}, '%'))
+                  OR EXISTS (
+                      SELECT 1 FROM trip_destinations x
+                      WHERE x.trip_id = t.id
+                        AND (LOWER(x.name) LIKE LOWER(CONCAT('%', #{criteria.destination}, '%'))
+                             OR LOWER(x.address) LIKE LOWER(CONCAT('%', #{criteria.destination}, '%'))))
+              )
+          </if>
+          <if test="criteria.keyword() != null">
+              AND (
+                  LOWER(t.name) LIKE LOWER(CONCAT('%', #{criteria.keyword}, '%'))
+                  OR LOWER(t.destination) LIKE LOWER(CONCAT('%', #{criteria.keyword}, '%'))
+                  OR LOWER(t.description) LIKE LOWER(CONCAT('%', #{criteria.keyword}, '%'))
+                  OR EXISTS (
+                      SELECT 1 FROM trip_destinations x
+                      WHERE x.trip_id = t.id
+                        AND (LOWER(x.name) LIKE LOWER(CONCAT('%', #{criteria.keyword}, '%'))
+                             OR LOWER(x.address) LIKE LOWER(CONCAT('%', #{criteria.keyword}, '%'))))
+              )
+          </if>
         ORDER BY
-            <if test="preferImages">
-                (
-                    NULLIF(TRIM(COALESCE(t.cover_image_url, '')), '') IS NOT NULL
-                    OR EXISTS (
-                        SELECT 1 FROM media_assets ma
-                        WHERE ma.trip_id = t.id
-                          AND ma.entity_type IN ('TRIP_MEMORY', 'TRIP_ACTIVITY_MEMORY')
-                          AND (ma.asset_role IS NULL OR ma.asset_role = 'MEMORY')
-                          AND ma.deleted_at IS NULL
-                    )
-                ) DESC,
+            <if test="criteria.preferImages()">
+                (NULLIF(TRIM(COALESCE(t.cover_image_url, '')), '') IS NOT NULL OR t.memory_count > 0) DESC,
             </if>
             <choose>
-                <when test="recommended">
+                <when test="criteria.recommended()">
                     <!-- The Feed's ranking. Stops and photos are what make an itinerary
                          worth opening; capped so one huge trip cannot outrank a week of new
                          ones. Recency counts for up to 45 days. -->
                     (
-                        LEAST((SELECT COUNT(*) FROM activities a WHERE a.trip_id = t.id), 12) * 3
-                        + LEAST((
-                            SELECT COUNT(*) FROM media_assets ma
-                            WHERE ma.trip_id = t.id
-                              AND ma.entity_type IN ('TRIP_MEMORY', 'TRIP_ACTIVITY_MEMORY')
-                              AND (ma.asset_role IS NULL OR ma.asset_role = 'MEMORY')
-                              AND ma.deleted_at IS NULL
-                        ), 10) * 2
+                        LEAST(t.activity_count, 12) * 3
+                        + LEAST(t.memory_count, 10) * 2
                         + GREATEST(0, 45 - EXTRACT(EPOCH FROM (NOW() - COALESCE(t.public_shared_at, t.created_at))) / 86400)
                     ) DESC,
                     COALESCE(t.public_shared_at, t.created_at) DESC,
                     t.id
                 </when>
-                <when test="randomSeed != null and randomSeed != ''">
-                    MD5(t.id::text || #{randomSeed})
+                <when test="criteria.randomSeed() != null">
+                    MD5(t.id::text || #{criteria.randomSeed}),
+                    t.id
                 </when>
-                <when test="allPublic">
-                    COALESCE(public_shared_at, created_at) DESC,
-                    distance ASC NULLS LAST
+                <when test="criteria.allPublic()">
+                    COALESCE(t.public_shared_at, t.created_at) DESC,
+                    t.id DESC
                 </when>
                 <otherwise>
-                    distance ASC,
-                    COALESCE(public_shared_at, created_at) DESC
+                    nearest.distance_m ASC,
+                    COALESCE(t.public_shared_at, t.created_at) DESC,
+                    t.id
                 </otherwise>
             </choose>
         LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- The trips of one ranked page. Visibility, deletion and takedowns are checked again:
+         a cached ranking can be up to two minutes old. Order is the caller's. -->
+    <select id="selectPublicByIds" resultMap="TripResultMap">
+        SELECT <include refid="publicTripColumns"/>
+        FROM trips t
+        WHERE t.id IN
+              <foreach collection="ids" item="id" open="(" separator="," close=")">
+                  #{id,javaType=java.util.UUID,jdbcType=OTHER}
+              </foreach>
+          AND t.visibility = 'PUBLIC'
+          AND t.is_deleted = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns ct
+              WHERE ct.content_type = 'TRIP' AND ct.content_id = t.id
+                AND ct.restored_at IS NULL)
     </select>
 
     <!-- The Home "Friends" tab: public trips owned by the people the viewer follows, most
@@ -338,5 +414,41 @@
           AND end_date &gt;= #{fromDate}
         ORDER BY start_date, id
     </select>
+
+    <!-- Recount the ranking input of V216 for one trip after its activities changed. -->
+    <update id="refreshActivityCount">
+        UPDATE trips
+        SET activity_count = (SELECT COUNT(*) FROM activities a WHERE a.trip_id = trips.id)
+        WHERE id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <!-- Recount the ranking input of V216 for one trip after its memories changed. -->
+    <update id="refreshMemoryCount">
+        UPDATE trips
+        SET memory_count = (
+            SELECT COUNT(*) FROM media_assets ma
+            WHERE ma.trip_id = trips.id
+              AND <include refid="tripMemoryPredicate"/>
+        )
+        WHERE id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <!-- Nightly repair of both counters for every trip; writes only the rows that drifted. -->
+    <update id="reconcileContentCounts">
+        UPDATE trips t
+        SET activity_count = counted.activity_count,
+            memory_count = counted.memory_count
+        FROM (
+            SELECT tr.id,
+                   (SELECT COUNT(*) FROM activities a WHERE a.trip_id = tr.id)::int AS activity_count,
+                   (SELECT COUNT(*) FROM media_assets ma
+                    WHERE ma.trip_id = tr.id
+                      AND <include refid="tripMemoryPredicate"/>)::int AS memory_count
+            FROM trips tr
+        ) counted
+        WHERE counted.id = t.id
+          AND (t.activity_count, t.memory_count)
+              IS DISTINCT FROM (counted.activity_count, counted.memory_count)
+    </update>
 
 </mapper>

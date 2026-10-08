@@ -27,6 +27,11 @@ public class PublicUserProfileResponse {
     private int hiddenGemContributionCount;
     private int followersCount;
     private int followingCount;
+    /**
+     * The check-ins GET /checkins/users/{userId} can list for this viewer: public, live and
+     * not taken down for anyone else; every live one when the viewer is the profile's owner.
+     */
+    private long checkinCount;
     private UserRankProgressResponse rank;
 
     /** True when an operator has vouched for this account as a VietdeGuide. */

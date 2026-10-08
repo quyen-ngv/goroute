@@ -1,5 +1,6 @@
 package com.ds.goroute.mapper;
 
+import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.PlaceCollection;
 import com.ds.goroute.entity.PlaceCollectionItem;
 import org.apache.ibatis.annotations.Mapper;
@@ -48,6 +49,9 @@ public interface PlaceCollectionMapper {
     List<PlaceCollectionItem> findItems(@Param("collectionId") UUID collectionId);
 
     int countItems(@Param("collectionId") UUID collectionId);
+
+    /** Id, thumbnail, category, reviewRating and visibilityStatus of the given places; nothing else is loaded. */
+    List<Place> findItemPlaces(@Param("ids") List<UUID> ids);
 
     int refreshItemCount(@Param("collectionId") UUID collectionId);
 }

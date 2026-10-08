@@ -70,6 +70,7 @@ public class AdminPlaceController extends BaseController {
     public ResponseEntity listPlaces(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) java.util.List<String> placeGroups,
+            @RequestParam(required = false) java.util.List<com.ds.goroute.type.PlaceSubType> subTypes,
             @RequestParam(required = false) java.util.List<String> visibilityStatus,
             @RequestParam(required = false) java.util.List<String> trustLevel,
             @RequestParam(required = false) java.util.List<UUID> locationImageId,
@@ -77,7 +78,8 @@ public class AdminPlaceController extends BaseController {
             @RequestParam(required = false) String direction,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        return ResponseEntity.ok(ofSucceeded(placeService.getAdminPlaces(search, placeGroups, visibilityStatus,
+        return ResponseEntity.ok(ofSucceeded(placeService.getAdminPlaces(search, placeGroups,
+                com.ds.goroute.type.PlaceSubType.names(subTypes), visibilityStatus,
                 trustLevel, locationImageId, AdminListSort.field(sort, PLACE_SORT_FIELDS),
                 AdminListSort.descending(direction), page, size)));
     }
@@ -123,8 +125,9 @@ public class AdminPlaceController extends BaseController {
     @PostMapping("/indexing/trigger")
     @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
     public ResponseEntity triggerSearchReindex() {
-        placeService.triggerSearchReindex();
-        return ResponseEntity.ok(ofSucceeded(null));
+        // The rebuild runs in the background; false means one is already running.
+        boolean started = placeService.triggerSearchReindex();
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(ofSucceeded(java.util.Map.of("started", started)));
     }
 
     @GetMapping("/{placeId}/food-tags")

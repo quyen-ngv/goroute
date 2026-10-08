@@ -1,5 +1,6 @@
 package com.ds.goroute.repository;
 
+import com.ds.goroute.dto.FeedCursor;
 import com.ds.goroute.dto.FeedGeoFilter;
 import com.ds.goroute.entity.CheckinCluster;
 import com.ds.goroute.entity.CheckinClusterDecision;
@@ -32,8 +33,11 @@ public interface UserCheckinRepository {
 
     Optional<UserCheckin> findByIdempotencyKey(UUID userId, String idempotencyKey);
 
-    /** {@code geo} limits the feed to an area; null means everywhere. */
-    List<UserCheckin> findFeed(UUID excludeUserId, FeedGeoFilter geo, int limit, int offset);
+    /**
+     * {@code geo} limits the feed to an area; null means everywhere. {@code after} resumes
+     * after a post's sort key (keyset paging); null pages by {@code offset}.
+     */
+    List<UserCheckin> findFeed(UUID excludeUserId, FeedGeoFilter geo, FeedCursor after, int limit, int offset);
 
     /**
      * Public check-ins by the people {@code viewerId} follows, newest first, without
@@ -43,6 +47,7 @@ public interface UserCheckinRepository {
 
     List<UserCheckin> findByUser(UUID userId, boolean includePrivate, int limit, int offset);
 
+    /** How many rows {@link #findByUser} pages through for the same arguments. */
     long countByUser(UUID userId, boolean includePrivate);
 
     List<UserCheckin> findByPlace(UUID placeId, int limit, int offset);

@@ -93,6 +93,29 @@
         SELECT COUNT(*) FROM activities WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
     </select>
 
+    <select id="countByTripIds" resultType="com.ds.goroute.entity.TripCount">
+        SELECT trip_id, COUNT(*) AS item_count
+        FROM activities
+        WHERE trip_id IN
+        <foreach collection="tripIds" item="tripId" open="(" separator="," close=")">
+            #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+        </foreach>
+        GROUP BY trip_id
+    </select>
+
+    <select id="selectNamesByIds" resultMap="ActivityResultMap">
+        SELECT id, trip_id, name
+        FROM activities
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id,javaType=java.util.UUID,jdbcType=OTHER}
+        </foreach>
+    </select>
+
+    <select id="selectTripIdById" resultType="java.util.UUID">
+        SELECT trip_id FROM activities WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
     <select id="selectByTripIdAndDay" resultMap="ActivityResultMap">
         SELECT * FROM activities WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
         AND day_number = #{dayNumber}

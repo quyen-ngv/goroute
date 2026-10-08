@@ -124,4 +124,16 @@ public class UserCheckinResponse {
 
     private int likeCount;
     private boolean hasLiked;
+
+    /**
+     * Active comments on this check-in's thread, the number GET /content-comments/count
+     * returns. 0 when the viewer cannot open the thread (not public, removed, taken down).
+     */
+    private int commentCount;
+
+    /**
+     * Opaque keyset cursor of this post in the public feed (GET /checkins/feed): send the last
+     * item's value back as {@code cursor} to get the page after it. Null outside that feed.
+     */
+    private String feedCursor;
 }

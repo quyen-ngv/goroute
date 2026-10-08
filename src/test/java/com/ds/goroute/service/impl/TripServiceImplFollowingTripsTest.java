@@ -2,6 +2,7 @@ package com.ds.goroute.service.impl;
 
 import com.ds.goroute.dto.response.PublicTripResponse;
 import com.ds.goroute.entity.Trip;
+import com.ds.goroute.entity.TripRankRow;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.CheckinRepository;
@@ -35,12 +36,11 @@ import org.junit.jupiter.api.Test;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -89,7 +89,8 @@ class TripServiceImplFollowingTripsTest {
                 mock(TripDestinationRepository.class),
                 mock(SocialNotificationService.class),
                 mock(UserCheckinService.class),
-                Runnable::run);
+                Runnable::run,
+                mock(com.ds.goroute.repository.ContentCommentRepository.class));
     }
 
     @Test
@@ -137,7 +138,7 @@ class TripServiceImplFollowingTripsTest {
         UUID ownerId = UUID.randomUUID();
         Trip trip = trip(ownerId, null, LocalDateTime.of(2026, 9, 1, 8, 0));
         when(tripRepository.findFollowingTrips(viewerId, 20, 0)).thenReturn(List.of(trip));
-        when(userRepository.findById(ownerId)).thenReturn(Optional.of(
+        when(userRepository.findByIds(Set.of(ownerId))).thenReturn(List.of(
                 User.builder().id(ownerId).fullName("Linh").avatarUrl("https://cdn/linh.jpg").build()));
 
         PublicTripResponse summary = service.getFollowingTrips(viewerId, 0, 20).get(0);
@@ -155,9 +156,9 @@ class TripServiceImplFollowingTripsTest {
     void searchStillReportsAMissingShareDateAndTheViewersOwnTrip() {
         UUID viewerId = UUID.randomUUID();
         Trip ownTrip = trip(viewerId, null, LocalDateTime.of(2026, 9, 1, 8, 0));
-        when(tripRepository.searchPublicTrips(any(), any(), any(), any(), any(), anyBoolean(), any(),
-                anyBoolean(), anyBoolean(), anyInt(), anyInt(), any()))
-                .thenReturn(List.of(ownTrip));
+        when(tripRepository.searchPublicTripRanking(any(), any(), anyInt(), anyInt()))
+                .thenReturn(List.of(new TripRankRow(ownTrip.getId(), viewerId)));
+        when(tripRepository.findPublicByIds(List.of(ownTrip.getId()))).thenReturn(List.of(ownTrip));
 
         PublicTripResponse summary = service.searchPublicTrips(null, null, null, null, null, true, null,
                 false, false, 0, 20, viewerId, null).get(0);

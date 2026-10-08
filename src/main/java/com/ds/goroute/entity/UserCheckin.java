@@ -92,6 +92,12 @@ public class UserCheckin {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
+    /**
+     * Maintained by the database (V215 trigger on media_assets): true while the post has a
+     * live photo. Read-only here; the public feed orders and pages on it.
+     */
+    private Boolean hasPhoto;
+
     /** True when this check-in is attached to a row in the curated catalogue. */
     public boolean hasCataloguePlace() {
         return placeId != null;

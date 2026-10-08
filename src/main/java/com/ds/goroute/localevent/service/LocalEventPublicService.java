@@ -1,5 +1,6 @@
 package com.ds.goroute.localevent.service;
 
+import com.ds.goroute.utils.GeoBoundingBox;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.response.PageResponse;
 import com.ds.goroute.exception.BusinessException;
@@ -34,7 +35,6 @@ public class LocalEventPublicService {
     /** Default and longest window of a search. */
     static final Duration DEFAULT_WINDOW = Duration.ofDays(60);
     static final Duration MAX_WINDOW = Duration.ofDays(366);
-    private static final double KM_PER_DEGREE = 111.32;
 
     private final LocalEventRepository repository;
     private final LocalEventResponses responses;
@@ -53,16 +53,15 @@ public class LocalEventPublicService {
         if (toInstant.isAfter(fromInstant.plus(MAX_WINDOW))) {
             throw invalid("to must be at most 366 days after from");
         }
-        double latDelta = radiusKm / KM_PER_DEGREE;
-        double lngDelta = radiusKm / (KM_PER_DEGREE * Math.max(0.01, Math.cos(Math.toRadians(latitude))));
+        GeoBoundingBox box = GeoBoundingBox.around(latitude, longitude, radiusKm);
         LocalEventGeoSearchParams params = LocalEventGeoSearchParams.builder()
                 .latitude(latitude)
                 .longitude(longitude)
                 .radiusKm(radiusKm)
-                .minLat(latitude - latDelta)
-                .maxLat(latitude + latDelta)
-                .minLng(longitude - lngDelta)
-                .maxLng(longitude + lngDelta)
+                .minLat(box.minLat())
+                .maxLat(box.maxLat())
+                .minLng(box.minLng())
+                .maxLng(box.maxLng())
                 .from(LocalEventTimes.toUtc(fromInstant))
                 .to(LocalEventTimes.toUtc(toInstant))
                 .categories(categories(category))

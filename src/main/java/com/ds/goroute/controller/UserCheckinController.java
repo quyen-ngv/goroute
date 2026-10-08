@@ -12,6 +12,7 @@ import com.ds.goroute.service.UserCheckinService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -110,9 +111,10 @@ public class UserCheckinController extends BaseController {
     }
 
     /**
-     * Pages by number rather than on the last row's timestamp: posts with photos come
-     * first, so the order is not chronological and a timestamp cursor would skip rows. A
-     * post arriving mid-scroll only pushes rows down, which the client de-duplicates by id.
+     * Posts with photos first, then newest. Each post carries a {@code feedCursor}; sending
+     * the last one back as {@code cursor} returns the page after it, so a post arriving
+     * mid-scroll neither repeats nor skips a row. Without a cursor the feed pages by
+     * {@code page}, for app builds that predate it (they de-duplicate by id).
      *
      * <p>{@code latitude}/{@code longitude} scope the feed to {@code radiusKm} around a point,
      * for the Feed's "near you" tab. Without them the feed covers everywhere.
@@ -124,9 +126,10 @@ public class UserCheckinController extends BaseController {
             @RequestParam(required = false) BigDecimal latitude,
             @RequestParam(required = false) BigDecimal longitude,
             @RequestParam(defaultValue = "50") BigDecimal radiusKm,
+            @RequestParam(required = false) @Size(max = 200) String cursor,
             @CurrentUser(required = false) UUID userId) {
         return ResponseEntity.ok(ofSucceeded(checkinService.feed(
-                userId, FeedGeoFilter.of(latitude, longitude, radiusKm), page, size)));
+                userId, FeedGeoFilter.of(latitude, longitude, radiusKm), page, size, cursor)));
     }
 
     /**

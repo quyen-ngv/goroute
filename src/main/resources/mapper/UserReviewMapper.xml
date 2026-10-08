@@ -34,6 +34,7 @@
         <result property="partnerResponseText" column="partner_response_text"/>
         <result property="partnerResponderName" column="partner_responder_name"/>
         <result property="partnerRespondedAt" column="partner_responded_at"/>
+        <result property="hasPhoto" column="has_photo"/>
     </resultMap>
 
     <!--
@@ -143,29 +144,38 @@
     <select id="findByPlaceId" resultMap="UserReviewResultMap">
         <include refid="ReviewSelect"/>
         WHERE r.place_id = #{placeId}
-        ORDER BY r.created_at DESC
+        ORDER BY r.created_at DESC, r.id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <select id="findByActivityBookingId" resultMap="UserReviewResultMap">
         <include refid="ReviewSelect"/>
         WHERE r.activity_booking_id = #{activityBookingId}
-        ORDER BY r.created_at DESC
+        ORDER BY r.created_at DESC, r.id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <select id="findByUserId" resultMap="UserReviewResultMap">
         <include refid="ReviewSelect"/>
         WHERE r.user_id = #{userId}
-        ORDER BY r.created_at DESC
+        ORDER BY r.created_at DESC, r.id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
+    <!-- The Feed's reviews: not the viewer's own, not taken down, not already shown through a
+         public check-in, and with something to read or look at. Ordered like the check-in
+         feed - photos first, then newest - over idx_user_reviews_feed_photo, whose predicate
+         is the text-or-photo condition below spelled the same way.
+
+         With a cursor (the sort key of the last review shown) the next page is every row with
+         a smaller key; without one, offset paging for older app builds. The shuffled order
+         (randomSeed) is stable for a seed and keeps offset paging.
+
+         "Near you": a review sits at its place when the place has coordinates, and at the
+         coordinates it was written from otherwise (an activity review has no place). Both
+         halves of the IN list are GiST-driven (V214). -->
     <select id="findFeedReviews" resultMap="UserReviewResultMap">
         <include refid="ReviewSelect"/>
-        <if test="latitude != null and longitude != null and radiusKm != null">
-            LEFT JOIN places feed_place ON feed_place.id = r.place_id
-        </if>
         WHERE (#{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER} IS NULL
             OR r.user_id != #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER})
         AND NOT EXISTS (
@@ -180,42 +190,35 @@
               AND c.visibility = 'PUBLIC'
               AND c.is_removed = FALSE)
         <if test="latitude != null and longitude != null and radiusKm != null">
-            AND COALESCE(feed_place.latitude, r.checkin_lat) IS NOT NULL
-            AND COALESCE(feed_place.longitude, r.checkin_lng) IS NOT NULL
-            AND 6371 * acos(LEAST(1, GREATEST(-1,
-                    cos(radians(#{latitude})) * cos(radians(COALESCE(feed_place.latitude, r.checkin_lat))) *
-                    cos(radians(COALESCE(feed_place.longitude, r.checkin_lng)) - radians(#{longitude})) +
-                    sin(radians(#{latitude})) * sin(radians(COALESCE(feed_place.latitude, r.checkin_lat)))
-                ))) &lt;= #{radiusKm}
+            AND r.id IN (
+                SELECT own.id
+                FROM user_reviews own
+                LEFT JOIN places own_place ON own_place.id = own.place_id
+                WHERE own.checkin_lat IS NOT NULL AND own.checkin_lng IS NOT NULL
+                  AND ST_DWithin(goroute_point(own.checkin_lat, own.checkin_lng),
+                                 goroute_point(#{latitude}, #{longitude}), #{radiusKm} * 1000)
+                  AND (own_place.latitude IS NULL OR own_place.longitude IS NULL)
+                UNION ALL
+                SELECT at_place.id
+                FROM places p
+                JOIN user_reviews at_place ON at_place.place_id = p.id
+                WHERE ST_DWithin(goroute_point(p.latitude, p.longitude),
+                                 goroute_point(#{latitude}, #{longitude}), #{radiusKm} * 1000))
         </if>
-        AND (
-            NULLIF(TRIM(COALESCE(r.text, '')), '') IS NOT NULL
-            OR EXISTS (
-                SELECT 1 FROM media_assets ma
-                WHERE ma.entity_type = 'USER_REVIEW'
-                  AND ma.entity_id = r.id
-                  AND ma.deleted_at IS NULL
-            )
-        )
-        ORDER BY
-            <choose>
-                <when test="randomSeed != null and randomSeed != ''">
-                    MD5(r.id::text || #{randomSeed})
-                </when>
-                <otherwise>
-                    <!-- The Feed merges this with check-ins and trips by time, so it orders
-                         the way the check-in feed does: photos first, then newest. -->
-                    EXISTS (
-                        SELECT 1 FROM media_assets ma
-                        WHERE ma.entity_type = 'USER_REVIEW'
-                          AND ma.entity_id = r.id
-                          AND ma.deleted_at IS NULL
-                    ) DESC,
-                    r.created_at DESC,
-                    r.id DESC
-                </otherwise>
-            </choose>
-        LIMIT #{limit} OFFSET #{offset}
+        AND (NULLIF(TRIM(COALESCE(r.text, '')), '') IS NOT NULL OR r.has_photo)
+        <choose>
+            <when test="randomSeed != null and randomSeed != ''">
+                ORDER BY MD5(r.id::text || #{randomSeed}), r.id
+                LIMIT #{limit} OFFSET #{offset}
+            </when>
+            <otherwise>
+                <if test="cursorCreatedAt != null and cursorId != null">
+                    AND (r.has_photo, r.created_at, r.id) &lt; (#{cursorHasPhoto}, #{cursorCreatedAt}, #{cursorId})
+                </if>
+                ORDER BY r.has_photo DESC, r.created_at DESC, r.id DESC
+                LIMIT #{limit} OFFSET #{offset}
+            </otherwise>
+        </choose>
     </select>
 
     <select id="countByPlaceId" resultType="int">

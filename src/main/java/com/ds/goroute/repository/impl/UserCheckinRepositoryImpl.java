@@ -1,5 +1,6 @@
 package com.ds.goroute.repository.impl;
 
+import com.ds.goroute.dto.FeedCursor;
 import com.ds.goroute.dto.FeedGeoFilter;
 import com.ds.goroute.entity.CheckinCluster;
 import com.ds.goroute.entity.CheckinClusterDecision;
@@ -49,10 +50,16 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     }
 
     @Override
-    public List<UserCheckin> findFeed(UUID excludeUserId, FeedGeoFilter geo, int limit, int offset) {
-        return geo == null
-                ? mapper.findFeed(excludeUserId, null, null, null, limit, offset)
-                : mapper.findFeed(excludeUserId, geo.latitude(), geo.longitude(), geo.radiusKm(), limit, offset);
+    public List<UserCheckin> findFeed(UUID excludeUserId, FeedGeoFilter geo, FeedCursor after,
+                                      int limit, int offset) {
+        return mapper.findFeed(excludeUserId,
+                geo == null ? null : geo.latitude(),
+                geo == null ? null : geo.longitude(),
+                geo == null ? null : geo.radiusKm(),
+                after == null ? null : after.hasPhoto(),
+                after == null ? null : after.createdAt(),
+                after == null ? null : after.id(),
+                limit, after == null ? offset : 0);
     }
 
     @Override

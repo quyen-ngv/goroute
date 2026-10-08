@@ -119,6 +119,24 @@
         ORDER BY position, created_at
     </select>
 
+    <!-- The few place columns a collection item shows, instead of the whole places row. -->
+    <resultMap id="itemPlaceMap" type="com.ds.goroute.entity.Place">
+        <id property="id" column="id"/>
+        <result property="thumbnail" column="thumbnail"/>
+        <result property="category" column="category"/>
+        <result property="reviewRating" column="review_rating"/>
+        <result property="visibilityStatus" column="visibility_status" javaType="com.ds.goroute.type.PlaceVisibilityStatus"/>
+    </resultMap>
+
+    <select id="findItemPlaces" resultMap="itemPlaceMap">
+        SELECT id, thumbnail, category, review_rating, visibility_status
+        FROM places
+        WHERE id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
     <select id="countItems" resultType="int">
         SELECT COUNT(*) FROM place_collection_items WHERE collection_id = #{collectionId}
     </select>

@@ -109,6 +109,11 @@
         SELECT * FROM users WHERE username = #{username} AND deleted_at IS NULL
     </select>
 
+    <!-- No deleted_at filter: the UNIQUE constraint on username covers soft-deleted rows. -->
+    <select id="existsByUsername" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM users WHERE username = #{username})
+    </select>
+
     <select id="selectAll" resultMap="UserResultMap">
         SELECT * FROM users ORDER BY created_at DESC
     </select>

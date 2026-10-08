@@ -47,6 +47,17 @@
         </foreach>
     </select>
 
+    <select id="countAcceptedByTripIds" resultType="com.ds.goroute.entity.TripCount">
+        SELECT trip_id, COUNT(*) AS item_count
+        FROM trip_members
+        WHERE status = 'ACCEPTED'
+          AND trip_id IN
+          <foreach collection="tripIds" item="tripId" open="(" separator="," close=")">
+              #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+          </foreach>
+        GROUP BY trip_id
+    </select>
+
     <update id="updateById" parameterType="com.ds.goroute.entity.TripMember">
         UPDATE trip_members SET
             user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER},

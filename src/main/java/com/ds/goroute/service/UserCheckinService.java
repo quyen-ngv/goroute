@@ -77,8 +77,12 @@ public interface UserCheckinService {
     /**
      * Public feed without the viewer's own check-ins: posts with photos first, then newest
      * first. {@code geo} limits it to an area; null means everywhere.
+     *
+     * <p>{@code cursor} is the {@code feedCursor} of the last post the client holds; when
+     * present the page after it is returned and {@code page} is ignored. Without it the feed
+     * pages by number, as builds that predate the cursor expect.
      */
-    List<UserCheckinResponse> feed(UUID viewerId, FeedGeoFilter geo, int page, int size);
+    List<UserCheckinResponse> feed(UUID viewerId, FeedGeoFilter geo, int page, int size, String cursor);
 
     /**
      * Public check-ins by the people {@code viewerId} follows, newest first. Deleted

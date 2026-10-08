@@ -1,5 +1,7 @@
 package com.ds.goroute.thirdparty.goong;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,6 +20,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -34,6 +37,19 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class GoongClient {
 
     private final RestClient.Builder restClientBuilder;
+
+    /** Goong place-detail endpoint; its answers are cached by place_id. */
+    static final String PLACE_DETAIL_PATH = "/Place/Detail";
+
+    /**
+     * A place's detail barely changes within a day, and every detail call spends quota. Only
+     * successful answers are kept, keyed by place_id alone (the session token does not
+     * change the answer).
+     */
+    private final Cache<String, String> placeDetailCache = Caffeine.newBuilder()
+            .expireAfterWrite(1, TimeUnit.DAYS)
+            .maximumSize(20_000)
+            .build();
 
     private final AtomicInteger nextKeyIndex = new AtomicInteger();
     private final Map<String, Long> keyCooldownUntilMillis = new ConcurrentHashMap<>();
@@ -88,6 +104,32 @@ public class GoongClient {
      * @return Goong's raw JSON body with the upstream HTTP status preserved
      */
     public ResponseEntity<String> forward(String path, MultiValueMap<String, String> params) {
+        String detailPlaceId = PLACE_DETAIL_PATH.equals(path) && params != null ? params.getFirst("place_id") : null;
+        if (detailPlaceId != null && !detailPlaceId.isBlank()) {
+            String cached = placeDetailCache.getIfPresent(detailPlaceId);
+            if (cached != null) {
+                return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(cached);
+            }
+            ResponseEntity<String> response = forwardUncached(path, params);
+            if (isCacheableDetail(response)) {
+                placeDetailCache.put(detailPlaceId, response.getBody());
+            }
+            return response;
+        }
+        return forwardUncached(path, params);
+    }
+
+    /** A 2xx JSON answer that carries a result; errors and empty answers are asked again. */
+    private boolean isCacheableDetail(ResponseEntity<String> response) {
+        String body = response.getBody();
+        return response.getStatusCode().is2xxSuccessful()
+                && body != null
+                && body.trim().startsWith("{")
+                && body.contains("\"result\"")
+                && !body.replace(" ", "").contains("\"result\":null");
+    }
+
+    private ResponseEntity<String> forwardUncached(String path, MultiValueMap<String, String> params) {
         List<String> keys = configuredKeys();
         if (keys.isEmpty()) {
             log.warn("GOONG_API_KEY is not configured; Goong proxy is disabled");

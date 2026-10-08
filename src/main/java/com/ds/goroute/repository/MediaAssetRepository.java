@@ -2,7 +2,9 @@ package com.ds.goroute.repository;
 
 import com.ds.goroute.entity.MediaAsset;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -30,4 +32,13 @@ public interface MediaAssetRepository {
     void updateUrl(UUID id, String url);
     void softDelete(UUID id);
     void softDeleteByEntity(String entityType, UUID entityId);
+
+    /**
+     * Trip card previews: at most {@code perTrip} memories of each trip, in gallery order,
+     * keyed by trip id. Trips without memories are absent.
+     */
+    Map<UUID, List<MediaAsset>> findTripMemoryPreviewsByTripIds(Collection<UUID> tripIds, int perTrip);
+
+    /** Memory count per trip, in one grouped query; trips without memories are absent. */
+    Map<UUID, Integer> countTripMemoriesByTripIds(Collection<UUID> tripIds);
 }

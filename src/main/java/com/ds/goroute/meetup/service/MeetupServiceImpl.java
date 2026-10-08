@@ -1,5 +1,6 @@
 package com.ds.goroute.meetup.service;
 
+import com.ds.goroute.utils.GeoBoundingBox;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.response.PageResponse;
 import com.ds.goroute.entity.User;
@@ -53,7 +54,6 @@ public class MeetupServiceImpl implements MeetupService {
     static final int MAX_PARTICIPANTS = 50;
     /** Bounds the participant list; seats are capped at 50, requests by the per-user cap. */
     static final int PARTICIPANT_LIST_LIMIT = 200;
-    private static final double KM_PER_DEGREE_LAT = 111.32;
 
     private final MeetupRepository repository;
     private final MeetupAccess access;
@@ -109,18 +109,16 @@ public class MeetupServiceImpl implements MeetupService {
                                                         int page, int size) {
         access.requireEnabled(userId);
         LocalDateTime now = MeetupSchedule.nowUtc(clock.instant());
-        double dLat = radiusKm / KM_PER_DEGREE_LAT;
-        double cosLat = Math.max(0.01, Math.cos(Math.toRadians(latitude.doubleValue())));
-        double dLng = radiusKm / (KM_PER_DEGREE_LAT * cosLat);
+        GeoBoundingBox box = GeoBoundingBox.around(latitude.doubleValue(), longitude.doubleValue(), radiusKm);
         MeetupDiscoveryQuery query = MeetupDiscoveryQuery.builder()
                 .viewerId(userId)
                 .latitude(latitude)
                 .longitude(longitude)
                 .radiusKm(radiusKm)
-                .minLat(degrees(latitude.doubleValue() - dLat))
-                .maxLat(degrees(latitude.doubleValue() + dLat))
-                .minLng(degrees(longitude.doubleValue() - dLng))
-                .maxLng(degrees(longitude.doubleValue() + dLng))
+                .minLat(degrees(box.minLat(), RoundingMode.FLOOR))
+                .maxLat(degrees(box.maxLat(), RoundingMode.CEILING))
+                .minLng(degrees(box.minLng(), RoundingMode.FLOOR))
+                .maxLng(degrees(box.maxLng(), RoundingMode.CEILING))
                 .categories(categories == null ? List.of() : categories.stream().map(Enum::name).distinct().toList())
                 .now(now)
                 .limit(size)
@@ -606,8 +604,9 @@ public class MeetupServiceImpl implements MeetupService {
                 null, hostUserId);
     }
 
-    private static BigDecimal degrees(double value) {
-        return BigDecimal.valueOf(value).setScale(7, RoundingMode.HALF_UP);
+    /** Rounded outward (FLOOR for a minimum, CEILING for a maximum) so the box never shrinks. */
+    private static BigDecimal degrees(double value, RoundingMode rounding) {
+        return BigDecimal.valueOf(value).setScale(7, rounding);
     }
 
     private static String blankToNull(String value) {

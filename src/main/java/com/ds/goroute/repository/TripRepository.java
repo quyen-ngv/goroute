@@ -1,7 +1,8 @@
 package com.ds.goroute.repository;
 
+import com.ds.goroute.dto.PublicTripSearchCriteria;
 import com.ds.goroute.entity.Trip;
-import java.math.BigDecimal;
+import com.ds.goroute.entity.TripRankRow;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -22,19 +23,28 @@ public interface TripRepository {
     
     Optional<Trip> findByShareCode(String shareCode);
     
-    List<Trip> searchPublicTrips(BigDecimal latitude,
-                                 BigDecimal longitude,
-                                 BigDecimal radiusKm,
-                                 String destination,
-                                 String keyword,
-                                 boolean allPublic,
-                                 String randomSeed,
-                                 boolean preferImages,
-                                 boolean recommended,
-                                 int page,
-                                 int size,
-                                 UUID excludeUserId);
-    
+    /**
+     * Ranked public trips (id and owner) for one slice of a search, without deleted or
+     * taken-down trips and, when {@code excludeUserId} is set, without the trips that user
+     * owns or is an accepted member of.
+     */
+    List<TripRankRow> searchPublicTripRanking(PublicTripSearchCriteria criteria,
+                                              UUID excludeUserId,
+                                              int limit,
+                                              int offset);
+
+    /** The trips among {@code ids} that are still public, live and not taken down. */
+    List<Trip> findPublicByIds(List<UUID> ids);
+
+    /** Recounts {@code trips.activity_count} (V216) for one trip. */
+    void refreshActivityCount(UUID tripId);
+
+    /** Recounts {@code trips.memory_count} (V216) for one trip. */
+    void refreshMemoryCount(UUID tripId);
+
+    /** Repairs both V216 counters for every trip that drifted; returns the rows fixed. */
+    int reconcileContentCounts();
+
     /**
      * Public trips owned by the people {@code viewerId} follows, most recently shared first,
      * without deleted owners, taken-down trips or blocks in either direction.

@@ -67,7 +67,7 @@ public class UserAccountServiceImpl implements UserAccountService {
     public void changePassword(UUID userId, ChangePasswordRequest request) {
         User user = users.findById(userId).orElseThrow(() -> new BusinessException(ErrorConstant.USER_NOT_FOUND));
         if (user.getPasswordHash() == null || !encoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
-            throw new BusinessException(ErrorConstant.UNAUTHORIZED, "Current password is incorrect");
+            throw new BusinessException(ErrorConstant.BAD_REQUEST, "Current password is incorrect");
         }
         if (encoder.matches(request.getNewPassword(), user.getPasswordHash())) {
             throw new BusinessException(ErrorConstant.BAD_REQUEST, "New password must be different from the current password");

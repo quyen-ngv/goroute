@@ -21,6 +21,7 @@ import com.ds.goroute.service.checkin.LocationKeyFactory;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.type.ContentVisibility;
+import com.ds.goroute.type.ModeratedContentType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -29,7 +30,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,6 +58,8 @@ class UserCheckinServiceImplFollowingFeedTest {
     @Mock private ActivityRepository activities;
     @Mock private CheckinRepository activityVisits;
     @Mock private NotificationHelper notifications;
+
+    @Mock private com.ds.goroute.repository.ContentCommentRepository contentComments;
 
     @InjectMocks private UserCheckinServiceImpl service;
 
@@ -86,7 +89,7 @@ class UserCheckinServiceImplFollowingFeedTest {
                 .createdAt(createdAt)
                 .build();
         when(checkins.findFollowingFeed(viewerId, 20, 0)).thenReturn(List.of(row));
-        when(users.findById(authorId)).thenReturn(Optional.of(
+        when(users.findByIds(java.util.Set.of(authorId))).thenReturn(List.of(
                 User.builder().id(authorId).fullName("Minh").avatarUrl("https://cdn/minh.jpg").build()));
         when(checkins.findLikedCheckinIds(viewerId, List.of(checkinId))).thenReturn(List.of(checkinId));
 
@@ -100,5 +103,24 @@ class UserCheckinServiceImplFollowingFeedTest {
             assertThat(post.isHasLiked()).as("liked state belongs to the viewer").isTrue();
             assertThat(post.getCreatedAt()).isEqualTo(createdAt);
         });
+    }
+
+    @Test
+    void commentCountsComeFromOneGroupedQueryAndOnlyForThreadsTheViewerCanOpen() {
+        UUID ownerId = UUID.randomUUID();
+        UUID publicId = UUID.randomUUID();
+        UUID privateId = UUID.randomUUID();
+        UserCheckin publicPost = UserCheckin.builder().id(publicId).userId(ownerId)
+                .visibility(ContentVisibility.PUBLIC).createdAt(LocalDateTime.now()).build();
+        UserCheckin privatePost = UserCheckin.builder().id(privateId).userId(ownerId)
+                .visibility(ContentVisibility.PRIVATE).createdAt(LocalDateTime.now()).build();
+        when(checkins.findByUser(ownerId, true, 20, 0)).thenReturn(List.of(publicPost, privatePost));
+        when(contentComments.countActiveByTargets(ModeratedContentType.CHECKIN, List.of(publicId)))
+                .thenReturn(Map.of(publicId, 4));
+
+        List<UserCheckinResponse> mine = service.byUser(ownerId, ownerId, 0, 20);
+
+        assertThat(mine).extracting(UserCheckinResponse::getCommentCount).containsExactly(4, 0);
+        verify(contentComments).countActiveByTargets(ModeratedContentType.CHECKIN, List.of(publicId));
     }
 }

@@ -1,6 +1,7 @@
 package com.ds.goroute.mapper;
 
 import com.ds.goroute.entity.Activity;
+import com.ds.goroute.entity.TripCount;
 import com.ds.goroute.entity.UnlinkedActivityRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -20,7 +21,15 @@ public interface ActivityMapper {
     List<Activity> selectByTripId(@Param("tripId") UUID tripId);
     
     int countByTripId(@Param("tripId") UUID tripId);
-    
+
+    /** Activity count per trip; trips without activities have no row. */
+    List<TripCount> countByTripIds(@Param("tripIds") List<UUID> tripIds);
+
+    /** Id, trip id and name only: enough to label photos with the stop they belong to. */
+    List<Activity> selectNamesByIds(@Param("ids") List<UUID> ids);
+
+    UUID selectTripIdById(@Param("id") UUID id);
+
     List<Activity> selectByTripIdAndDay(@Param("tripId") UUID tripId, @Param("dayNumber") Integer dayNumber);
     
     List<Activity> selectByTripIdAndDayNumber(@Param("tripId") UUID tripId, @Param("dayNumber") int dayNumber);

@@ -7,22 +7,29 @@ import com.ds.goroute.dto.response.SavedPlaceResponse;
 import com.ds.goroute.dto.response.SavedItemsOverviewResponse;
 import com.ds.goroute.service.SavedPlaceService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.UUID;
 
 @RestController
+@Validated
 @RequestMapping("/v1/api/saved-places")
 @RequiredArgsConstructor
 @Slf4j
 public class SavedPlaceController {
+
+    /** The app asks for 100 per page. */
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final SavedPlaceService savedPlaceService;
 
@@ -31,8 +38,8 @@ public class SavedPlaceController {
             Authentication authentication,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) String itemType,
-            @RequestParam(defaultValue = "0") Integer page,
-            @RequestParam(defaultValue = "20") Integer size) {
+            @RequestParam(defaultValue = "0") @Min(0) Integer page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) Integer size) {
         UUID userId = currentUserId(authentication);
         List<SavedPlaceResponse> places = savedPlaceService.getSavedPlaces(userId, category, itemType, page, size);
         return ResponseEntity.ok(BaseResponse.ofSucceeded(places));

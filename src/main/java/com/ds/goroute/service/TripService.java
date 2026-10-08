@@ -73,6 +73,12 @@ public interface TripService {
      */
     List<PublicTripResponse> getFollowingTrips(UUID viewerId, int page, int size);
 
+    /**
+     * Recounts the public-search ranking inputs (activity and memory counts, V216) of every
+     * trip whose stored numbers drifted. Returns the number of trips fixed.
+     */
+    int reconcileContentCounts();
+
     TripRecentLocationResponse getRecentLocation(UUID userId);
 
     TripSearchBiasResponse resolveSearchBias(UUID tripId, int dayNumber, UUID userId, UUID overrideDestinationId);

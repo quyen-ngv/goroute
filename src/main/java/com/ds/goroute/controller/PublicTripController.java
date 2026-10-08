@@ -5,12 +5,17 @@ import com.ds.goroute.dto.response.PublicTripResponse;
 import com.ds.goroute.dto.response.TripVoteResponse;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.dto.BaseResponse;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StreamUtils;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
@@ -21,7 +26,11 @@ import java.util.UUID;
 
 @RestController
 @Slf4j
+@Validated
 public class PublicTripController extends BaseController {
+
+    /** Every card costs a batch of lookups; the app asks for 20. */
+    static final int MAX_SEARCH_PAGE_SIZE = 50;
     
     private final TripService tripService;
 
@@ -55,9 +64,10 @@ public class PublicTripController extends BaseController {
     
     @GetMapping("/v1/api/public/trips/search")
     public ResponseEntity<BaseResponse<List<PublicTripResponse>>> searchPublicTrips(
-            @RequestParam BigDecimal latitude,
-            @RequestParam BigDecimal longitude,
-            @RequestParam(defaultValue = "50") BigDecimal radiusKm,
+            @RequestParam @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
+            @RequestParam @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
+            // Half the Earth's circumference: a larger radius means nothing.
+            @RequestParam(defaultValue = "50") @DecimalMin("0") @DecimalMax("20040") BigDecimal radiusKm,
             @RequestParam(required = false) String destination,
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "false") boolean allPublic,
@@ -68,8 +78,8 @@ public class PublicTripController extends BaseController {
             // The Feed's ranking: trips with many stops and photos, recent ones first.
             // Replaces randomSeed and distance ordering when set.
             @RequestParam(defaultValue = "false") boolean recommended,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_SEARCH_PAGE_SIZE) int size,
             @CurrentUser(required = false) UUID userId
     ) {
         UUID excludedUserId = excludeUserTrips ? userId : null;

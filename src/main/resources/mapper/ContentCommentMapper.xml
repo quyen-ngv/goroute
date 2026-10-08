@@ -71,6 +71,36 @@
           )
     </select>
 
+    <!--
+         countActiveByTarget for a page of targets: the same predicate, grouped by target, so
+         a feed page of twenty posts costs one query instead of twenty. The target takedown
+         check mirrors the per-target endpoint, which refuses to read the thread of a taken
+         down trip, check-in or collection (but not of a review, hence the flag).
+    -->
+    <select id="countActiveByTargets" resultType="com.ds.goroute.entity.ContentCommentCount">
+        SELECT c.content_id AS "contentId", COUNT(*) AS "commentCount"
+        FROM content_comments c
+        WHERE c.content_type = #{contentType}
+          AND c.content_id IN
+          <foreach collection="contentIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+          AND c.is_deleted IS DISTINCT FROM TRUE
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns td
+              WHERE td.content_type = 'CONTENT_COMMENT'
+                AND td.content_id = c.id
+                AND td.restored_at IS NULL
+          )
+          <if test="excludeTakenDownTargets">
+              AND NOT EXISTS (
+                  SELECT 1 FROM content_takedowns target
+                  WHERE target.content_type = #{contentType}
+                    AND target.content_id = c.content_id
+                    AND target.restored_at IS NULL
+              )
+          </if>
+        GROUP BY c.content_id
+    </select>
+
     <select id="findPage" resultMap="contentCommentMap">
         SELECT c.*,
                (SELECT COUNT(*) FROM content_comments reply

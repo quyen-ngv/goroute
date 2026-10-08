@@ -51,7 +51,8 @@ public class FoodServiceImpl implements FoodService {
     @Cacheable(
             cacheNames = "foodsByCity",
             cacheManager = "foodsByCityCacheManager",
-            key = "#citySlug + ':' + #page + ':' + #limit",
+            // Names are resolved for the request language (FoodNameResolver), so the language is part of the key.
+            key = "T(com.ds.goroute.config.filter.AcceptLanguageFilter).currentCode() + ':' + #citySlug + ':' + #page + ':' + #limit",
             unless = "#result == null || #result.isEmpty()")
     public List<FoodSummaryResponse> listByCity(String citySlug, int limit, int page) {
         String normalizedCitySlug = CitySlugResolver.normalizeRequired(citySlug);

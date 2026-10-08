@@ -69,6 +69,10 @@ class ModeratedFieldCoverageTest {
             Map.entry("BlockUserRequest.reason", "The blocker's own note about why; filtering it would filter the complaint"),
             Map.entry("ModerationPreviewRequest.text", "This IS the filter being asked for its opinion"),
 
+            // Identity-provider data, not typed in our app.
+            Map.entry("AppleLoginRequest.fullName",
+                    "Name from the user's Apple ID, like the name in a Google token; filtering it would block sign-in"),
+
             // Private labels: shown to their author only, never to anyone else.
             Map.entry("PrivacyZoneRequest.name", "Label of a privacy zone; only its owner ever sees it"),
 

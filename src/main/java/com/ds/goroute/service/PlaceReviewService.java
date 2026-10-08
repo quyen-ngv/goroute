@@ -43,6 +43,7 @@ public class PlaceReviewService {
     private final PlaceReviewScoringService scoringService;
     private final PlaceReviewScoreCalculator scoreCalculator;
     private final BusinessConfigService businessConfigService;
+    private final PlaceSearchIndexService placeSearchIndexService;
 
     /**
      * Batch insert reviews from crawler data. Every persisted review image must be a
@@ -359,6 +360,7 @@ public class PlaceReviewService {
         place.setLastScrapedAt(LocalDateTime.now());
         place.setUpdatedAt(LocalDateTime.now());
         placeRepository.updateReviewRefreshMetadata(place);
+        reindexAfterCommit(place);
         if (!imageCleanupDeferred) {
             deleteManagedImagesQuietly(existingReviews, "completed review refresh");
         }
@@ -371,6 +373,23 @@ public class PlaceReviewService {
         result.put("imageMigrationFailures", imageMigrationFailures);
         result.put("lastScrapedAt", place.getLastScrapedAt());
         return result;
+    }
+
+    /**
+     * The search index sorts by adjusted_rating ("sort by rating"), so a new score must reach
+     * it; after commit, so a rolled-back refresh never changes the order.
+     */
+    private void reindexAfterCommit(Place place) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            placeSearchIndexService.indexPlace(place);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                placeSearchIndexService.indexPlace(place);
+            }
+        });
     }
 
     private Place requireActivePlace(UUID placeId, String googlePlaceId) {

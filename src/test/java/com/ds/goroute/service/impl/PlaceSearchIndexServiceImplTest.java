@@ -11,15 +11,25 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.apache.lucene.index.IndexWriter;
+import org.apache.lucene.search.SearcherManager;
+import org.apache.lucene.store.Directory;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -29,19 +39,42 @@ class PlaceSearchIndexServiceImplTest {
     Path tempDir;
 
     private PlaceSearchIndexServiceImpl searchService;
+    private PlaceRepository placeRepository;
+    private PlaceTranslationMapper translationMapper;
+    private FoodRepository foodRepository;
 
     @BeforeEach
     void setUp() throws Exception {
-        PlaceRepository placeRepository = mock(PlaceRepository.class);
-        PlaceTranslationMapper translationMapper = mock(PlaceTranslationMapper.class);
-        FoodRepository foodRepository = mock(FoodRepository.class);
+        placeRepository = mock(PlaceRepository.class);
+        translationMapper = mock(PlaceTranslationMapper.class);
+        foodRepository = mock(FoodRepository.class);
         when(placeRepository.countAll()).thenReturn(0L);
         when(translationMapper.findByPlaceId(any())).thenReturn(List.of());
         when(foodRepository.findFoodTagsByPlaceIds(any())).thenReturn(List.of());
 
-        searchService = new PlaceSearchIndexServiceImpl(placeRepository, translationMapper, foodRepository);
-        ReflectionTestUtils.setField(searchService, "indexPath", tempDir.resolve("places").toString());
-        searchService.init();
+        searchService = startService();
+    }
+
+    private PlaceSearchIndexServiceImpl startService() throws Exception {
+        PlaceSearchIndexServiceImpl service = new PlaceSearchIndexServiceImpl(placeRepository, translationMapper, foodRepository);
+        ReflectionTestUtils.setField(service, "indexPath", tempDir.resolve("places").toString());
+        service.init();
+        return service;
+    }
+
+    /** kill -9: the process goes away without the shutdown commit. */
+    private void crash(PlaceSearchIndexServiceImpl service) throws Exception {
+        ((ExecutorService) ReflectionTestUtils.getField(service, "reindexExecutor")).shutdownNow();
+        ((SearcherManager) ReflectionTestUtils.getField(service, "searcherManager")).close();
+        ((IndexWriter) ReflectionTestUtils.getField(service, "writer")).rollback();
+        ((Directory) ReflectionTestUtils.getField(service, "directory")).close();
+    }
+
+    private void awaitReindex(PlaceSearchIndexServiceImpl service) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (service.isReindexRunning() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20);
+        }
     }
 
     @AfterEach
@@ -70,6 +103,29 @@ class PlaceSearchIndexServiceImplTest {
 
         assertThat(searchService.searchPlaceIds(criteria("pho thin", null, 2.0)))
                 .containsExactly(phoThin.getId());
+    }
+
+    @Test
+    void subTypeFilterMatchesAnyOfTheChosenKinds() throws Exception {
+        Place halalSeafood = place("Halal seafood", "restaurant", 10.0001, 106.0);
+        halalSeafood.setSubTypes(new String[] {"SEAFOOD", "HALAL"});
+        Place vegetarian = place("Quán chay", "restaurant", 10.0002, 106.0);
+        vegetarian.setSubTypes(new String[] {"VEGETARIAN"});
+        Place plain = place("Plain restaurant", "restaurant", 10.0003, 106.0);
+        searchService.indexPlace(halalSeafood);
+        searchService.indexPlace(vegetarian);
+        searchService.indexPlace(plain);
+
+        assertThat(searchService.searchPlaceIds(subTypeCriteria(List.of("halal", "VEGETARIAN"))))
+                .containsExactlyInAnyOrder(halalSeafood.getId(), vegetarian.getId());
+        assertThat(searchService.searchPlaceIds(subTypeCriteria(List.of("SEAFOOD"))))
+                .containsExactly(halalSeafood.getId());
+    }
+
+    private PlaceSearchCriteria subTypeCriteria(List<String> subTypes) {
+        return new PlaceSearchCriteria(null, BigDecimal.valueOf(10.0), BigDecimal.valueOf(106.0),
+                BigDecimal.valueOf(2.0), null, null, subTypes, null, null, null, null,
+                false, false, null, 0, 20);
     }
 
     @Test
@@ -111,6 +167,135 @@ class PlaceSearchIndexServiceImplTest {
                 .containsExactly(lowRated.getId(), noCalculatedRating.getId());
     }
 
+    @Test
+    void ratingChangeReordersRatingSortWithoutWaitingForACommit() throws Exception {
+        Place first = place("First", "cafe", 10.0001, 106.0, 4.5, 4.8);
+        Place second = place("Second", "cafe", 10.0002, 106.0, 4.5, 4.0);
+        searchService.indexPlace(first);
+        searchService.indexPlace(second);
+        assertThat(searchService.searchPlaceIds(ratingCriteria(0, 2)))
+                .containsExactly(first.getId(), second.getId());
+
+        second.setAdjustedRating(BigDecimal.valueOf(4.9));
+        searchService.indexPlace(second);
+
+        assertThat(searchService.searchPlaceIds(ratingCriteria(0, 2)))
+                .containsExactly(second.getId(), first.getId());
+    }
+
+    @Test
+    void nameSearchNeedsNoLocationFoldsAccentsAndHidesInactivePlaces() throws Exception {
+        Place active = place("Bún Chả Hương Liên", "restaurant", 21.0, 105.8);
+        Place inactive = place("Bún Chả Đắc Kim", "restaurant", 10.0, 106.0);
+        inactive.setVisibilityStatus(PlaceVisibilityStatus.INACTIVE);
+        searchService.indexPlace(active);
+        searchService.indexPlace(inactive);
+
+        assertThat(searchService.searchPlaceIdsByName("bun cha", null, false, 0, 20))
+                .containsExactly(active.getId());
+        assertThat(searchService.searchPlaceIdsByName("bun cha", null, true, 0, 20))
+                .containsExactlyInAnyOrder(active.getId(), inactive.getId());
+    }
+
+    @Test
+    void reindexRunsInTheBackgroundAndReplacesStaleDocuments() throws Exception {
+        Place stale = place("Stale cafe", "cafe", 10.0001, 106.0);
+        searchService.indexPlace(stale);
+        Place fresh = place("Fresh cafe", "cafe", 10.0002, 106.0);
+        CountDownLatch release = new CountDownLatch(1);
+        when(placeRepository.findSearchIndexPage(any(), anyInt())).thenAnswer(invocation -> {
+            release.await(5, TimeUnit.SECONDS);
+            return List.of(fresh);
+        });
+
+        assertThat(searchService.triggerReindex()).isTrue();
+        // A second trigger while the first runs starts nothing, and the old index still answers.
+        assertThat(searchService.triggerReindex()).isFalse();
+        assertThat(searchService.searchPlaceIds(criteria(null, null, 2.0))).containsExactly(stale.getId());
+
+        release.countDown();
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (searchService.isReindexRunning() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20);
+        }
+
+        assertThat(searchService.isReindexRunning()).isFalse();
+        assertThat(searchService.searchPlaceIds(criteria(null, null, 2.0))).containsExactly(fresh.getId());
+        verify(placeRepository, never()).findPage(anyInt(), anyInt());
+    }
+
+    @Test
+    void aPlaceWrittenDuringAReindexSurvivesTheSwap() throws Exception {
+        Place existing = place("Existing cafe", "cafe", 10.0001, 106.0);
+        Place addedMeanwhile = place("Added cafe", "cafe", 10.0003, 106.0);
+        CountDownLatch release = new CountDownLatch(1);
+        when(placeRepository.findSearchIndexPage(any(), anyInt())).thenAnswer(invocation -> {
+            release.await(5, TimeUnit.SECONDS);
+            return List.of(existing);
+        });
+        when(placeRepository.findSearchIndexRow(addedMeanwhile.getId())).thenReturn(Optional.of(addedMeanwhile));
+
+        searchService.triggerReindex();
+        searchService.indexPlace(addedMeanwhile);
+        release.countDown();
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (searchService.isReindexRunning() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20);
+        }
+
+        assertThat(searchService.searchPlaceIds(criteria(null, null, 2.0)))
+                .containsExactlyInAnyOrder(existing.getId(), addedMeanwhile.getId());
+    }
+
+    @Test
+    void writesLostToACrashBeforeTheBatchedCommitAreRebuiltAtStartup() throws Exception {
+        Place written = place("Uncommitted cafe", "cafe", 10.0001, 106.0);
+        searchService.indexPlace(written);
+        crash(searchService);
+        when(placeRepository.findSearchIndexPage(any(), anyInt())).thenReturn(List.of(written));
+
+        searchService = startService();
+        awaitReindex(searchService);
+
+        assertThat(searchService.searchPlaceIds(criteria(null, null, 2.0))).containsExactly(written.getId());
+        assertThat(tempDir.resolve("places.uncommitted")).doesNotExist();
+    }
+
+    @Test
+    void aCommittedIndexIsNotRebuiltAfterACrash() throws Exception {
+        Place written = place("Committed cafe", "cafe", 10.0001, 106.0);
+        searchService.indexPlace(written);
+        searchService.commitPendingChanges();
+        assertThat(tempDir.resolve("places.uncommitted")).doesNotExist();
+        crash(searchService);
+
+        searchService = startService();
+
+        assertThat(searchService.isReindexRunning()).isFalse();
+        verify(placeRepository, never()).findSearchIndexPage(any(), anyInt());
+        assertThat(searchService.searchPlaceIds(criteria(null, null, 2.0))).containsExactly(written.getId());
+    }
+
+    @Test
+    void aRecoveryRebuildKeepsTheMarkerAcrossPeriodicCommitsUntilItSwapsIn() throws Exception {
+        Place written = place("Lost cafe", "cafe", 10.0001, 106.0);
+        searchService.indexPlace(written);
+        crash(searchService);
+        CountDownLatch release = new CountDownLatch(1);
+        when(placeRepository.findSearchIndexPage(any(), anyInt())).thenAnswer(invocation -> {
+            release.await(5, TimeUnit.SECONDS);
+            return List.of(written);
+        });
+
+        searchService = startService();
+        searchService.commitPendingChanges();
+
+        assertThat(tempDir.resolve("places.uncommitted")).exists();
+        release.countDown();
+        awaitReindex(searchService);
+        assertThat(tempDir.resolve("places.uncommitted")).doesNotExist();
+    }
+
     private PlaceSearchCriteria criteria(String keyword, String category, double radiusKm) {
         return new PlaceSearchCriteria(
                 keyword,
@@ -118,6 +303,7 @@ class PlaceSearchIndexServiceImplTest {
                 BigDecimal.valueOf(106.0),
                 BigDecimal.valueOf(radiusKm),
                 category,
+                null,
                 null,
                 null,
                 null,
@@ -137,6 +323,7 @@ class PlaceSearchIndexServiceImplTest {
                 BigDecimal.valueOf(106.0),
                 BigDecimal.valueOf(5.0),
                 "cafe",
+                null,
                 null,
                 null,
                 null,

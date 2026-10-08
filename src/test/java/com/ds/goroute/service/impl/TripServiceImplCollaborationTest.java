@@ -93,7 +93,8 @@ class TripServiceImplCollaborationTest {
                 tripDestinationRepository,
                 mock(SocialNotificationService.class),
                 mock(UserCheckinService.class),
-                Runnable::run);
+                Runnable::run,
+                mock(com.ds.goroute.repository.ContentCommentRepository.class));
     }
 
     @Test

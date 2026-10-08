@@ -21,6 +21,7 @@ import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.PlaceImportJobService;
+import com.ds.goroute.service.PlaceService;
 import com.ds.goroute.service.PlaceSocialVideoService;
 import com.ds.goroute.thirdparty.scrape.ScrapeJobStatusResponse;
 import com.ds.goroute.thirdparty.scrape.ScrapeJobTriggerResponse;
@@ -53,6 +54,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import com.ds.goroute.utils.PlaceImportCandidateKey;
+import com.ds.goroute.utils.PlaceIdentityMatcher;
 
 @Service
 @RequiredArgsConstructor
@@ -72,6 +74,7 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
     private final ScrapeServiceClient scrapeServiceClient;
     private final ObjectMapper objectMapper;
     private final PlaceSocialVideoService placeSocialVideoService;
+    private final PlaceService placeService;
 
     @Resource(name = "placeImportJobExecutor")
     private Executor placeImportJobExecutor;
@@ -394,6 +397,9 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
         } catch (Exception e) {
             log.error("Place import job failed: {}", jobId, e);
             finishJob(job, e.getMessage());
+        } finally {
+            // Places arrive one by one through /places/import, which does not evict; once here.
+            placeService.evictSearchCache();
         }
     }
 
@@ -569,23 +575,17 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
         return candidates;
     }
 
+    /**
+     * Google id, CID, then a same-named (or same-address) place among the nearest few inside
+     * the radius. A neighbour with another name is not a duplicate.
+     */
     private Place findExistingPlace(Candidate candidate) {
-        if (!isBlank(candidate.googlePlaceId)) {
-            Place place = placeRepository.findByPlaceId(candidate.googlePlaceId);
-            if (place != null) {
-                return place;
-            }
-        }
-        if (!isBlank(candidate.cid)) {
-            Place place = placeRepository.findByCid(candidate.cid);
-            if (place != null) {
-                return place;
-            }
-        }
-        if (candidate.latitude != null && candidate.longitude != null) {
-            return placeRepository.findNearCoordinates(candidate.latitude, candidate.longitude, DUPLICATE_DISTANCE_METERS);
-        }
-        return null;
+        return PlaceIdentityMatcher.findExisting(placeRepository,
+                        candidate.googlePlaceId, candidate.cid,
+                        candidate.latitude, candidate.longitude,
+                        candidate.name, candidate.sourceAddress,
+                        DUPLICATE_DISTANCE_METERS)
+                .orElse(null);
     }
 
     private void enrichFromResolve(Candidate candidate) {
@@ -683,7 +683,7 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
             return false;
         }
         try {
-            return placeRepository.findById(UUID.fromString(activity.getPlaceId())).isPresent();
+            return placeRepository.existsById(UUID.fromString(activity.getPlaceId()));
         } catch (IllegalArgumentException ignored) {
             // Legacy Google place ids are still eligible for resolving/import.
             return false;

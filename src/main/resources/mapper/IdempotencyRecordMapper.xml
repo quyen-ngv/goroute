@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.IdempotencyRecordMapper">
+
+    <resultMap id="idempotencyRecordMap" type="com.ds.goroute.entity.IdempotencyRecord">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="idempotencyKey" column="idempotency_key"/>
+        <result property="requestMethod" column="request_method"/>
+        <result property="requestPath" column="request_path"/>
+        <result property="requestFingerprint" column="request_fingerprint"/>
+        <result property="state" column="state"/>
+        <result property="responseStatus" column="response_status"/>
+        <result property="responseContentType" column="response_content_type"/>
+        <result property="responseBody" column="response_body"/>
+        <result property="lockedAt" column="locked_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="expiresAt" column="expires_at"/>
+    </resultMap>
+
+    <!-- The atomic claim: the unique index on (user_id, idempotency_key) decides which of two
+         concurrent first requests runs. -->
+    <insert id="insertIfAbsent" parameterType="com.ds.goroute.entity.IdempotencyRecord">
+        INSERT INTO idempotency_keys
+            (id, user_id, idempotency_key, request_method, request_path, request_fingerprint,
+             state, locked_at, created_at, updated_at, expires_at)
+        VALUES
+            (#{id}, #{userId}, #{idempotencyKey}, #{requestMethod}, #{requestPath}, #{requestFingerprint},
+             'IN_PROGRESS', #{lockedAt}, #{createdAt}, #{updatedAt}, #{expiresAt})
+        ON CONFLICT (user_id, idempotency_key) DO NOTHING
+    </insert>
+
+    <select id="findByUserAndKey" resultMap="idempotencyRecordMap">
+        SELECT id, user_id, idempotency_key, request_method, request_path, request_fingerprint,
+               state, response_status, response_content_type, response_body,
+               locked_at, created_at, updated_at, expires_at
+        FROM idempotency_keys
+        WHERE user_id = #{userId}
+          AND idempotency_key = #{idempotencyKey}
+    </select>
+
+    <update id="takeOverStale">
+        UPDATE idempotency_keys
+        SET locked_at = #{now},
+            updated_at = #{now}
+        WHERE id = #{id}
+          AND state = 'IN_PROGRESS'
+          AND locked_at &lt; #{staleBefore}
+    </update>
+
+    <update id="complete">
+        UPDATE idempotency_keys
+        SET state = 'COMPLETED',
+            response_status = #{responseStatus},
+            response_content_type = #{responseContentType},
+            response_body = #{responseBody},
+            updated_at = #{now}
+        WHERE id = #{id}
+          AND state = 'IN_PROGRESS'
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM idempotency_keys WHERE id = #{id}
+    </delete>
+
+    <delete id="deleteIfExpired">
+        DELETE FROM idempotency_keys WHERE id = #{id} AND expires_at &lt;= #{now}
+    </delete>
+
+    <!-- Batched so one purge never holds a long lock; served by idx_idempotency_keys_expires_at. -->
+    <delete id="deleteExpired">
+        DELETE FROM idempotency_keys
+        WHERE id IN (
+            SELECT id FROM idempotency_keys
+            WHERE expires_at &lt;= #{now}
+            ORDER BY expires_at
+            LIMIT #{limit}
+        )
+    </delete>
+</mapper>

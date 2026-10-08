@@ -226,7 +226,7 @@
         FROM foods f
         INNER JOIN food_city_scores fcs ON fcs.food_id = f.id
         WHERE fcs.city_slug = #{citySlug} AND fcs.score &gt;= #{minScore}
-        ORDER BY fcs.score DESC
+        ORDER BY fcs.score DESC, f.id
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
@@ -306,22 +306,19 @@
                 SELECT * FROM (
                     SELECT p.id, p.title, p.thumbnail, p.adjusted_rating, p.price_range, p.address,
                            p.latitude, p.longitude,
-                           (6371000 * acos(
-                               LEAST(1.0, GREATEST(-1.0,
-                                   cos(radians(#{latitude})) * cos(radians(p.latitude::double precision)) *
-                                   cos(radians(p.longitude::double precision) - radians(#{longitude})) +
-                                   sin(radians(#{latitude})) * sin(radians(p.latitude::double precision))
-                               ))
-                           )) AS distance_meters
+                           ST_Distance(
+                               goroute_point(p.latitude, p.longitude),
+                               goroute_point(#{latitude}::float8, #{longitude}::float8)
+                           ) AS distance_meters
                     <include refid="foodPlacesBase"/>
                 ) ranked
-                ORDER BY distance_meters ASC NULLS LAST
+                ORDER BY distance_meters ASC NULLS LAST, id
             </when>
             <otherwise>
                 SELECT p.id, p.title, p.thumbnail, p.adjusted_rating, p.price_range, p.address,
                        p.latitude, p.longitude, NULL::float8 AS distance_meters
                 <include refid="foodPlacesBase"/>
-                ORDER BY p.adjusted_rating DESC NULLS LAST
+                ORDER BY p.adjusted_rating DESC NULLS LAST, p.id
             </otherwise>
         </choose>
         LIMIT #{limit} OFFSET #{offset}
@@ -336,7 +333,7 @@
         SELECT p.id, p.title, p.thumbnail, p.adjusted_rating, p.price_range, p.address,
                p.latitude, p.longitude, NULL::float8 AS distance_meters
         <include refid="foodPlacesBase"/>
-        ORDER BY p.title
+        ORDER BY p.title, p.id
         LIMIT #{limit} OFFSET #{offset}
     </select>
 

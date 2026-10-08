@@ -13,7 +13,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -22,6 +26,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 public class PlaceTranslationService {
+
+    private static final int ID_BATCH_SIZE = 500;
 
     private final PlaceTranslationMapper placeTranslationMapper;
 
@@ -69,9 +75,65 @@ public class PlaceTranslationService {
     public Map<String, PlaceTranslationResponse> allResponses(UUID placeId) {
         Map<String, PlaceTranslationResponse> result = new LinkedHashMap<>();
         for (PlaceTranslation translation : placeTranslationMapper.findByPlaceId(placeId)) {
-            result.put(translation.getLocale().code(), toResponse(translation));
+            result.put(translation.getLocale().code(), responseOf(translation));
         }
         return result;
+    }
+
+    /**
+     * Every translation of the given places, grouped by place, in one query per 500 ids.
+     * List endpoints resolve the locale from this in memory instead of querying per row.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, List<PlaceTranslation>> findByPlaceIds(Collection<UUID> placeIds) {
+        if (placeIds == null || placeIds.isEmpty()) {
+            return Map.of();
+        }
+        List<UUID> distinctIds = placeIds.stream().filter(Objects::nonNull).distinct().toList();
+        Map<UUID, List<PlaceTranslation>> result = new HashMap<>();
+        for (int from = 0; from < distinctIds.size(); from += ID_BATCH_SIZE) {
+            List<UUID> batch = distinctIds.subList(from, Math.min(from + ID_BATCH_SIZE, distinctIds.size()));
+            for (PlaceTranslation translation : placeTranslationMapper.findByPlaceIds(batch)) {
+                result.computeIfAbsent(translation.getPlaceId(), ignored -> new ArrayList<>()).add(translation);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * {@link #resolve} over an already loaded list: the requested locale, then
+     * {@link TranslationLocale#FALLBACK}, then {@link TranslationLocale#DEFAULT}; null when
+     * none of them exists.
+     */
+    public static PlaceTranslation resolveFrom(List<PlaceTranslation> translations, String requestedLocale) {
+        if (translations == null || translations.isEmpty()) {
+            return null;
+        }
+        TranslationLocale locale = TranslationLocale.fromCode(requestedLocale).orElse(TranslationLocale.DEFAULT);
+        PlaceTranslation match = findLocale(translations, locale);
+        if (match == null && locale != TranslationLocale.FALLBACK) {
+            match = findLocale(translations, TranslationLocale.FALLBACK);
+        }
+        return match != null ? match : findLocale(translations, TranslationLocale.DEFAULT);
+    }
+
+    private static PlaceTranslation findLocale(List<PlaceTranslation> translations, TranslationLocale locale) {
+        for (PlaceTranslation translation : translations) {
+            if (translation.getLocale() == locale) {
+                return translation;
+            }
+        }
+        return null;
+    }
+
+    /** The wire shape of one translation, as {@link #allResponses} returns it. */
+    public static PlaceTranslationResponse responseOf(PlaceTranslation translation) {
+        return PlaceTranslationResponse.builder()
+                .locale(translation.getLocale().code())
+                .name(translation.getName())
+                .description(translation.getDescription())
+                .translationSource(translation.getTranslationSource())
+                .build();
     }
 
     private void upsert(UUID placeId, TranslationLocale locale, String name, String description, TranslationSource source) {
@@ -116,15 +178,6 @@ public class PlaceTranslationService {
                     firstNonBlank(descriptionOf(source), place.getDescriptions()));
         }
         return new TranslationText(place.getTitle(), place.getDescriptions());
-    }
-
-    private PlaceTranslationResponse toResponse(PlaceTranslation translation) {
-        return PlaceTranslationResponse.builder()
-                .locale(translation.getLocale().code())
-                .name(translation.getName())
-                .description(translation.getDescription())
-                .translationSource(translation.getTranslationSource())
-                .build();
     }
 
     private String descriptionOf(PlaceTranslationRequest request) {

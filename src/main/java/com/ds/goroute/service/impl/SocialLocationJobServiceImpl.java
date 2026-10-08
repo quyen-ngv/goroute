@@ -39,6 +39,7 @@ import com.ds.goroute.type.NotificationType;
 import com.ds.goroute.type.SocialLocationOperation;
 import com.ds.goroute.utils.SocialLocationSourceKey;
 import com.ds.goroute.utils.PlaceImportCandidateKey;
+import com.ds.goroute.utils.PlaceIdentityMatcher;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -1057,15 +1058,21 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 return place;
             }
         }
+        // Coordinates alone are not identity: only a same-named (or same-address) place
+        // among the nearest few inside 25 m is this candidate.
         java.math.BigDecimal latitude = decimal(candidate, "latitude");
         java.math.BigDecimal longitude = decimal(candidate, "longitude");
-        if (latitude != null && longitude != null) {
-            return placeMapper.findNearCoordinates(
-                    latitude,
-                    longitude,
-                    java.math.BigDecimal.valueOf(25));
+        if (latitude == null || longitude == null) {
+            return null;
         }
-        return null;
+        String title = text(candidate, "title", "name");
+        String address = text(candidate, "address");
+        return PlaceIdentityMatcher.firstSameIdentity(
+                        placeMapper.findNearbyIdentityCandidates(latitude, longitude,
+                                java.math.BigDecimal.valueOf(25), PlaceIdentityMatcher.NEARBY_CANDIDATE_LIMIT),
+                        title, address)
+                .map(placeMapper::findById)
+                .orElse(null);
     }
 
     private void enforceRestriction(UUID userId, String sourceUrl) {

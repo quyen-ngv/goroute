@@ -39,6 +39,17 @@
         LIMIT 1
     </select>
 
+    <!-- One viewer's votes on a whole page of reviews. -->
+    <select id="findByReviewIdsAndUserId" resultType="com.ds.goroute.entity.ReviewHelpfulVote">
+        SELECT review_id as reviewId, user_id as userId, is_helpful as isHelpful, created_at as createdAt
+        FROM review_helpful_votes
+        WHERE user_id = #{userId}
+          AND review_id IN
+        <foreach collection="reviewIds" item="reviewId" open="(" separator="," close=")">
+            #{reviewId}
+        </foreach>
+    </select>
+
     <select id="countByReviewIdAndIsHelpful" resultType="int">
         SELECT COUNT(*) FROM review_helpful_votes
         WHERE review_id = #{reviewId} AND is_helpful = #{isHelpful}

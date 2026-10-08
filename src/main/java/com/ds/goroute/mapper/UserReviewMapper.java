@@ -47,6 +47,9 @@ public interface UserReviewMapper {
                                      @Param("latitude") BigDecimal latitude,
                                      @Param("longitude") BigDecimal longitude,
                                      @Param("radiusKm") BigDecimal radiusKm,
+                                     @Param("cursorHasPhoto") Boolean cursorHasPhoto,
+                                     @Param("cursorCreatedAt") LocalDateTime cursorCreatedAt,
+                                     @Param("cursorId") UUID cursorId,
                                      @Param("limit") int limit,
                                      @Param("offset") int offset,
                                      @Param("randomSeed") String randomSeed);

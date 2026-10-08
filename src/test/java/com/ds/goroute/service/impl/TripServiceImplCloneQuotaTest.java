@@ -95,7 +95,8 @@ class TripServiceImplCloneQuotaTest {
                 mock(TripDestinationRepository.class),
                 mock(SocialNotificationService.class),
                 mock(UserCheckinService.class),
-                Runnable::run);
+                Runnable::run,
+                mock(com.ds.goroute.repository.ContentCommentRepository.class));
     }
 
     private CloneTripRequest request() {

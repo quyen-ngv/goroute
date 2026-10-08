@@ -557,50 +557,93 @@
           )
     </select>
 
+    <!--
+      Same rule as before (an event counts when it is at a linked place, or - for a tag with no
+      linked places - in one of the Passport's provinces / within the radius of one of its
+      Location Images), but the qualifying events are found through indexes instead of testing
+      every row of passport_events:
+        linked places      -> idx_passport_events_place_user (V217)
+        provinces          -> idx_passport_events_province_code (V217)
+        locations, place   -> idx_places_point (V214) around each Location Image, then by place
+        locations, own GPS -> idx_passport_events_coordinates, a box around each Location Image
+      The exact radius test is still the R = 6371 haversine; the PostGIS and box filters only
+      narrow the rows it runs on (ST_DWithin uses the sphere and a 0.1% wider radius, so it never
+      drops a row the haversine keeps). An event whose place has coordinates is measured from
+      the place, otherwise from its own coordinates, as before.
+    -->
     <select id="findTagAwardCandidates" resultType="java.util.LinkedHashMap">
+        WITH tag_links AS (
+            SELECT tp.place_id
+            FROM passport_tag_places tp
+            WHERE tp.passport_tag_id = #{tag.id}
+        ),
+        scoped_areas AS (
+            SELECT li.latitude, li.longitude
+            FROM passport_definition_location_images pdi
+            JOIN location_images li ON li.id = pdi.location_image_id
+            WHERE pdi.passport_id = #{tag.passportId}
+              AND li.latitude IS NOT NULL AND li.longitude IS NOT NULL
+        ),
+        qualifying_events AS (
+            SELECT e.id
+            FROM passport_events e
+            WHERE e.place_id IN (SELECT place_id FROM tag_links)
+            <if test="tag.qualificationMode == 'PASSPORT_PROVINCES'">
+            UNION
+            SELECT e.id
+            FROM passport_events e
+            WHERE NOT EXISTS (SELECT 1 FROM tag_links)
+              AND e.province_code IN (
+                  SELECT dp.province_code
+                  FROM passport_definition_provinces dp
+                  WHERE dp.passport_id = #{tag.passportId}
+              )
+            </if>
+            <if test="tag.qualificationMode == 'PASSPORT_LOCATIONS'">
+            UNION
+            SELECT e.id
+            FROM passport_events e
+            WHERE NOT EXISTS (SELECT 1 FROM tag_links)
+              AND e.place_id IN (
+                  SELECT p.id
+                  FROM scoped_areas a
+                  JOIN places p
+                    ON ST_DWithin(goroute_point(p.latitude, p.longitude),
+                                  goroute_point(a.latitude, a.longitude),
+                                  #{locationRadiusKm} * 1001.0, false)
+                  WHERE p.latitude IS NOT NULL AND p.longitude IS NOT NULL
+                    AND 6371 * acos(LEAST(1, GREATEST(-1,
+                        cos(radians(a.latitude)) * cos(radians(p.latitude)) *
+                        cos(radians(p.longitude) - radians(a.longitude)) +
+                        sin(radians(a.latitude)) * sin(radians(p.latitude))
+                    ))) &lt;= #{locationRadiusKm}
+              )
+            UNION
+            SELECT e.id
+            FROM scoped_areas a
+            JOIN passport_events e
+              <!-- Bounds cast to numeric so the (latitude, longitude) btree can be used. 111.19 km per
+                   degree (R = 6371 gives 111.195) and the cosine of the poleward edge make the box a
+                   little wider than the circle. -->
+              ON e.latitude BETWEEN (a.latitude - #{locationRadiusKm} / 111.19)::numeric
+                                AND (a.latitude + #{locationRadiusKm} / 111.19)::numeric
+             AND e.longitude BETWEEN (a.longitude - #{locationRadiusKm} / (111.19 * GREATEST(0.01, cos(radians(abs(a.latitude) + #{locationRadiusKm} / 111.19)))))::numeric
+                                 AND (a.longitude + #{locationRadiusKm} / (111.19 * GREATEST(0.01, cos(radians(abs(a.latitude) + #{locationRadiusKm} / 111.19)))))::numeric
+            LEFT JOIN places p ON p.id = e.place_id
+            WHERE NOT EXISTS (SELECT 1 FROM tag_links)
+              AND (p.latitude IS NULL OR p.longitude IS NULL)
+              AND COALESCE(p.latitude, e.latitude) IS NOT NULL
+              AND COALESCE(p.longitude, e.longitude) IS NOT NULL
+              AND 6371 * acos(LEAST(1, GREATEST(-1,
+                  cos(radians(a.latitude)) * cos(radians(COALESCE(p.latitude, e.latitude))) *
+                  cos(radians(COALESCE(p.longitude, e.longitude)) - radians(a.longitude)) +
+                  sin(radians(a.latitude)) * sin(radians(COALESCE(p.latitude, e.latitude)))
+              ))) &lt;= #{locationRadiusKm}
+            </if>
+        )
         SELECT e.user_id, (array_agg(e.id ORDER BY e.occurred_at DESC))[1] AS triggering_event_id
         FROM passport_events e
-        WHERE (
-            EXISTS (
-                SELECT 1 FROM passport_tag_places tp
-                WHERE tp.passport_tag_id = #{tag.id} AND tp.place_id = e.place_id
-            )
-            OR (
-                #{tag.qualificationMode} = 'PASSPORT_PROVINCES'
-                AND
-                NOT EXISTS (
-                    SELECT 1 FROM passport_tag_places any_link
-                    WHERE any_link.passport_tag_id = #{tag.id}
-                )
-                AND EXISTS (
-                    SELECT 1 FROM passport_definition_provinces dp
-                    WHERE dp.passport_id = #{tag.passportId}
-                      AND dp.province_code = e.province_code
-                )
-            )
-            OR (
-                #{tag.qualificationMode} = 'PASSPORT_LOCATIONS'
-                AND NOT EXISTS (
-                    SELECT 1 FROM passport_tag_places any_link
-                    WHERE any_link.passport_tag_id = #{tag.id}
-                )
-                AND EXISTS (
-                    SELECT 1
-                    FROM passport_definition_location_images pdi
-                    JOIN location_images li ON li.id = pdi.location_image_id
-                    LEFT JOIN places p ON p.id = e.place_id
-                    WHERE pdi.passport_id = #{tag.passportId}
-                      AND li.latitude IS NOT NULL AND li.longitude IS NOT NULL
-                      AND COALESCE(p.latitude, e.latitude) IS NOT NULL
-                      AND COALESCE(p.longitude, e.longitude) IS NOT NULL
-                      AND 6371 * acos(LEAST(1, GREATEST(-1,
-                          cos(radians(li.latitude)) * cos(radians(COALESCE(p.latitude, e.latitude))) *
-                          cos(radians(COALESCE(p.longitude, e.longitude)) - radians(li.longitude)) +
-                          sin(radians(li.latitude)) * sin(radians(COALESCE(p.latitude, e.latitude)))
-                      ))) &lt;= #{locationRadiusKm}
-                )
-            )
-        )
+        WHERE e.id IN (SELECT id FROM qualifying_events)
         GROUP BY e.user_id
         HAVING (
             (

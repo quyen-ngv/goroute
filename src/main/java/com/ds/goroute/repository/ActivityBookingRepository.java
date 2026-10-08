@@ -25,7 +25,14 @@ public interface ActivityBookingRepository {
 
     List<ActivityBooking> findByDestinations(List<String> normalizedDestinationKeys, int limit, int offset);
 
+    /** One page of the radius search, nearest first. */
     List<ActivityBooking> findWithinRadius(ActivityBookingGeoSearchParams params);
+
+    /** Id and destinations of the bookings in the radius, nearest first, at most {@code params.limit}. */
+    List<ActivityBooking> findRadiusCandidates(ActivityBookingGeoSearchParams params);
+
+    /** List columns (no heavy JSON) for the given ids, unordered. */
+    List<ActivityBooking> findListByIds(List<UUID> ids);
 
     List<ActivityBooking> searchByKeyword(String keyword, int limit, int offset);
 

@@ -32,6 +32,36 @@ public interface PlaceMapper {
                               @Param("longitude") BigDecimal longitude,
                               @Param("maxDistanceMeters") BigDecimal maxDistanceMeters);
 
+    /**
+     * The nearest {@code limit} places within the radius, carrying only what a duplicate
+     * check compares (id, Google ids, title, address, coordinates, distance in metres).
+     */
+    List<Place> findNearbyIdentityCandidates(@Param("latitude") BigDecimal latitude,
+                                             @Param("longitude") BigDecimal longitude,
+                                             @Param("maxDistanceMeters") BigDecimal maxDistanceMeters,
+                                             @Param("limit") int limit);
+
+    boolean existsById(@Param("id") UUID id);
+
+    /** Ward and province of one place, nothing else. */
+    Place findGeoCodes(@Param("id") UUID id);
+
+    /** What a place card shows, for the given ids; heavy JSON columns are left out. */
+    List<Place> findListSummaryByIds(@Param("ids") List<UUID> ids,
+                                     @Param("publicOnly") boolean publicOnly);
+
+    /** Newest places first, list columns only. */
+    List<Place> findListPage(@Param("placeGroups") List<String> placeGroups,
+                             @Param("publicOnly") boolean publicOnly,
+                             @Param("limit") int limit,
+                             @Param("offset") int offset);
+
+    /** Keyset page of the columns the Lucene index stores, ordered by id. */
+    List<Place> findSearchIndexPage(@Param("afterId") UUID afterId, @Param("limit") int limit);
+
+    /** Single row of the columns the Lucene index stores. */
+    Place findSearchIndexRow(@Param("id") UUID id);
+
     List<Place> findAll();
 
     long countAll();
@@ -40,6 +70,7 @@ public interface PlaceMapper {
 
     List<Place> findFilteredPage(@Param("search") String search,
                               @Param("placeGroups") List<String> placeGroups,
+                              @Param("subTypes") List<String> subTypes,
                               @Param("visibilityStatus") List<String> visibilityStatus,
                               @Param("trustLevel") List<String> trustLevel,
                               @Param("locationImageIds") List<UUID> locationImageIds,
@@ -55,6 +86,7 @@ public interface PlaceMapper {
 
     long countFiltered(@Param("search") String search,
                     @Param("placeGroups") List<String> placeGroups,
+                    @Param("subTypes") List<String> subTypes,
                     @Param("visibilityStatus") List<String> visibilityStatus,
                     @Param("trustLevel") List<String> trustLevel,
                     @Param("locationImageIds") List<UUID> locationImageIds);
@@ -84,6 +116,8 @@ public interface PlaceMapper {
     int updateVerificationGeometry(@Param("id") UUID id, @Param("geoJson") String geoJson);
 
     int updateWardCode(@Param("id") UUID id, @Param("wardCode") String wardCode);
+
+    int updateSubTypes(@Param("id") UUID id, @Param("subTypes") String[] subTypes);
 
     int assignWard(@Param("id") UUID id);
 

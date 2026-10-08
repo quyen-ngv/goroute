@@ -1,5 +1,6 @@
 package com.ds.goroute.repository;
 
+import com.ds.goroute.dto.FeedCursor;
 import com.ds.goroute.dto.FeedGeoFilter;
 import com.ds.goroute.entity.UserReview;
 
@@ -34,7 +35,12 @@ public interface UserReviewRepository {
 
     List<UserReview> findByUserId(UUID userId, int limit, int offset);
 
-    List<UserReview> findFeedReviews(UUID excludeUserId, FeedGeoFilter geo, int limit, int offset, String randomSeed);
+    /**
+     * The Feed's reviews. {@code after} resumes after a review's sort key (keyset paging) and
+     * is ignored when {@code randomSeed} shuffles the order, which pages by {@code offset}.
+     */
+    List<UserReview> findFeedReviews(UUID excludeUserId, FeedGeoFilter geo, FeedCursor after,
+                                     int limit, int offset, String randomSeed);
 
     int countByPlaceId(UUID placeId);
 

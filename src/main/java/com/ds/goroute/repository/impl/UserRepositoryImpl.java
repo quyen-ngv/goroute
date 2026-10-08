@@ -40,6 +40,11 @@ public class UserRepositoryImpl implements UserRepository {
     public Optional<User> findByUsername(String username) {
         return Optional.ofNullable(userMapper.selectByUsername(username));
     }
+
+    @Override
+    public boolean existsByUsername(String username) {
+        return userMapper.existsByUsername(username);
+    }
     
     @Override
     public Optional<User> findByProviderId(String providerId) {

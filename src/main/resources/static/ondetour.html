@@ -767,7 +767,9 @@
         const dayCount = (trip.startDate && trip.endDate) ? getDayCount(trip.startDate, trip.endDate) : 0;
         const nights = getNightCount(dayCount);
         const dates = (trip.startDate && trip.endDate) ? formatDateRange(trip.startDate, trip.endDate) : '';
-        const memoryCount = (trip.memoryImageUrlsV2 && trip.memoryImageUrlsV2.length)
+        // List cards carry only the first few photos; totalMemoryCount is the full number.
+        const memoryCount = trip.totalMemoryCount
+            || (trip.memoryImageUrlsV2 && trip.memoryImageUrlsV2.length)
             || (trip.memoryImageUrls && trip.memoryImageUrls.length) || 0;
 
         const pills = [];

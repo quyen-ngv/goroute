@@ -72,6 +72,48 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     }
 
     @Override
+    public List<Place> findNearbyIdentityCandidates(BigDecimal latitude, BigDecimal longitude,
+                                                    BigDecimal maxDistanceMeters, int limit) {
+        if (latitude == null || longitude == null || maxDistanceMeters == null || limit <= 0) {
+            return List.of();
+        }
+        return placeMapper.findNearbyIdentityCandidates(latitude, longitude, maxDistanceMeters, limit);
+    }
+
+    @Override
+    public boolean existsById(UUID id) {
+        return id != null && placeMapper.existsById(id);
+    }
+
+    @Override
+    public Optional<Place> findGeoCodes(UUID id) {
+        return id == null ? Optional.empty() : Optional.ofNullable(placeMapper.findGeoCodes(id));
+    }
+
+    @Override
+    public List<Place> findListSummaryByIds(List<UUID> ids, boolean publicOnly) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        return placeMapper.findListSummaryByIds(ids, publicOnly);
+    }
+
+    @Override
+    public List<Place> findListPage(List<String> placeGroups, boolean publicOnly, int limit, int offset) {
+        return placeMapper.findListPage(placeGroups, publicOnly, limit, offset);
+    }
+
+    @Override
+    public List<Place> findSearchIndexPage(UUID afterId, int limit) {
+        return placeMapper.findSearchIndexPage(afterId, limit);
+    }
+
+    @Override
+    public Optional<Place> findSearchIndexRow(UUID id) {
+        return id == null ? Optional.empty() : Optional.ofNullable(placeMapper.findSearchIndexRow(id));
+    }
+
+    @Override
     public List<Place> findAll() {
         return placeMapper.findAll();
     }
@@ -87,10 +129,12 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     }
 
     @Override
-    public List<Place> findFilteredPage(String search, List<String> placeGroups, List<String> visibilityStatus,
+    public List<Place> findFilteredPage(String search, List<String> placeGroups, List<String> subTypes,
+                                        List<String> visibilityStatus,
                                         List<String> trustLevel, List<UUID> locationImageIds,
                                         String sort, boolean descending, int limit, int offset) {
-        return placeMapper.findFilteredPage(search, placeGroups, visibilityStatus, trustLevel, locationImageIds, sort, descending, limit, offset);
+        return placeMapper.findFilteredPage(search, placeGroups, subTypes, visibilityStatus, trustLevel, locationImageIds,
+                sort, descending, limit, offset);
     }
 
     @Override
@@ -100,9 +144,10 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     }
 
     @Override
-    public long countFiltered(String search, List<String> placeGroups, List<String> visibilityStatus,
+    public long countFiltered(String search, List<String> placeGroups, List<String> subTypes,
+                              List<String> visibilityStatus,
                               List<String> trustLevel, List<UUID> locationImageIds) {
-        return placeMapper.countFiltered(search, placeGroups, visibilityStatus, trustLevel, locationImageIds);
+        return placeMapper.countFiltered(search, placeGroups, subTypes, visibilityStatus, trustLevel, locationImageIds);
     }
 
     @Override
@@ -150,6 +195,11 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     @Override
     public void updateWardCode(UUID id, String wardCode) {
         placeMapper.updateWardCode(id, wardCode);
+    }
+
+    @Override
+    public void updateSubTypes(UUID id, String[] subTypes) {
+        placeMapper.updateSubTypes(id, subTypes == null ? new String[0] : subTypes);
     }
 
     @Override

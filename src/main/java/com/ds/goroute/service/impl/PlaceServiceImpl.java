@@ -6,6 +6,7 @@ import com.ds.goroute.dto.request.ReviewInput;
 import com.ds.goroute.dto.request.UpdatePlaceRequest;
 import com.ds.goroute.dto.PlaceSearchCriteria;
 import com.ds.goroute.constant.ErrorConstant;
+import com.ds.goroute.type.PlaceSubType;
 import com.ds.goroute.dto.response.PlaceAboutDto;
 import com.ds.goroute.dto.response.PlaceDetailRefreshCandidateResponse;
 import com.ds.goroute.dto.response.AdminPlaceResponse;
@@ -14,6 +15,7 @@ import com.ds.goroute.dto.response.PlaceImagesDto;
 import com.ds.goroute.dto.response.PlaceMenuDto;
 import com.ds.goroute.dto.response.PlaceResponse;
 import com.ds.goroute.dto.response.PlaceReviewResponse;
+import com.ds.goroute.dto.response.PlaceTranslationResponse;
 import com.ds.goroute.config.filter.AcceptLanguageFilter;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.PlaceReview;
@@ -42,6 +44,7 @@ import com.ds.goroute.utils.FoodNameResolver;
 import com.ds.goroute.utils.AdminListSort;
 import com.ds.goroute.utils.GeoDistance;
 import com.ds.goroute.utils.JsonUtils;
+import com.ds.goroute.utils.PlaceIdentityMatcher;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -149,7 +152,24 @@ public class PlaceServiceImpl implements PlaceService {
     private final com.ds.goroute.service.GeoService geoService;
 
     private static final Integer maxReview = 50;
-    @CacheEvict(cacheNames = "placeSearch", cacheManager = "searchCacheManager", allEntries = true)
+
+    /** How far a same-named place may be from an imported one and still be that place. */
+    private static final BigDecimal IMPORT_MATCH_RADIUS_METERS = BigDecimal.valueOf(15);
+
+    /** GET /places page ceiling for guests and app users. */
+    static final int PUBLIC_LIST_MAX_SIZE = 50;
+
+    /** GET /places page ceiling for an admin (the console's linkable-place picker asks for 500). */
+    static final int ADMIN_LIST_MAX_SIZE = 500;
+
+    /** Shorter type-ahead text matches too much of the catalogue to be useful. */
+    static final int MIN_SEARCH_LENGTH = 2;
+
+    /*
+     * No per-call cache eviction: import jobs call this once per place and evict the
+     * place search cache once when they finish (evictSearchCache); a one-off import shows
+     * up in cached searches within the cache's 2-minute TTL.
+     */
     @Override
     @Transactional
     public PlaceResponse importPlace(ImportPlaceRequest request) {
@@ -288,16 +308,77 @@ public class PlaceServiceImpl implements PlaceService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<PlaceResponse> getAllPlaces(String search, List<String> placeGroups, int page, int size) {
+    public List<PlaceResponse> getAllPlaces(String search, List<String> placeGroups, boolean includeInactive,
+                                            int page, int size) {
         int safePage = Math.max(0, page);
-        int safeSize = Math.max(1, Math.min(size, 500));
-        /* Same filter as the console list: a picker that cannot search is a picker that only
-         * ever offers the newest page of the catalogue. */
-        return placeRepository
-                .findFilteredPage(blankToNull(search), normalizedPlaceGroups(placeGroups), null, null, null, null, true, safeSize, safePage * safeSize)
-                .stream()
-                .map(this::toPlaceResponse)
-                .collect(Collectors.toList());
+        int safeSize = Math.max(1, Math.min(size, includeInactive ? ADMIN_LIST_MAX_SIZE : PUBLIC_LIST_MAX_SIZE));
+        boolean publicOnly = !includeInactive;
+        List<String> groups = normalizedPlaceGroups(placeGroups);
+        String text = blankToNull(search);
+        if (text == null) {
+            return toListResponses(placeRepository.findListPage(groups, publicOnly, safeSize, safePage * safeSize));
+        }
+        if (text.length() < MIN_SEARCH_LENGTH) {
+            return List.of();
+        }
+        UUID exactId = parseUuidOrNull(text);
+        if (exactId != null) {
+            return safePage > 0 ? List.of()
+                    : toListResponses(inGroups(placeRepository.findListSummaryByIds(List.of(exactId), publicOnly), groups));
+        }
+        if (safePage == 0 && text.chars().noneMatch(Character::isWhitespace)) {
+            Place byGoogleId = placeRepository.findByPlaceId(text);
+            if (byGoogleId != null) {
+                List<Place> exact = inGroups(
+                        placeRepository.findListSummaryByIds(List.of(byGoogleId.getId()), publicOnly), groups);
+                if (!exact.isEmpty()) {
+                    return toListResponses(exact);
+                }
+            }
+        }
+        try {
+            List<UUID> orderedIds = placeSearchIndexService.searchPlaceIdsByName(
+                    text, groups, includeInactive, safePage, safeSize);
+            return toListResponses(inIdOrder(orderedIds, placeRepository.findListSummaryByIds(orderedIds, publicOnly)));
+        } catch (java.io.IOException e) {
+            log.error("Place name search failed", e);
+            throw new BusinessException(ErrorConstant.INTERNAL_SERVER_ERROR, "Place search failed");
+        }
+    }
+
+    private static UUID parseUuidOrNull(String value) {
+        if (value.length() != 36) {
+            return null;
+        }
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException notUuid) {
+            return null;
+        }
+    }
+
+    private static List<Place> inGroups(List<Place> places, List<String> groups) {
+        if (groups == null || groups.isEmpty()) {
+            return places;
+        }
+        Set<String> wanted = groups.stream().map(group -> group.toUpperCase(Locale.ROOT)).collect(Collectors.toSet());
+        return places.stream()
+                .filter(place -> place.getPlaceGroup() != null && wanted.contains(place.getPlaceGroup().name()))
+                .toList();
+    }
+
+    /** The rows in the order the search returned their ids; ids without a row are skipped. */
+    private static List<Place> inIdOrder(List<UUID> orderedIds, List<Place> rows) {
+        Map<UUID, Place> byId = rows.stream()
+                .collect(Collectors.toMap(Place::getId, place -> place, (left, right) -> left));
+        List<Place> ordered = new ArrayList<>(orderedIds.size());
+        for (UUID id : orderedIds) {
+            Place place = byId.get(id);
+            if (place != null) {
+                ordered.add(place);
+            }
+        }
+        return ordered;
     }
 
     @Override
@@ -320,36 +401,36 @@ public class PlaceServiceImpl implements PlaceService {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
+    /** Legacy group codes from older clients fold into ATTRACTIONS (see PlaceGroup.fromCode). */
     private static List<String> normalizedPlaceGroups(List<String> placeGroups) {
-        if (placeGroups == null) return null;
-        List<String> groups = placeGroups.stream()
-                .filter(java.util.Objects::nonNull)
-                .map(String::trim)
-                .filter(group -> !group.isEmpty())
-                .collect(Collectors.toList());
-        return groups.isEmpty() ? null : groups;
+        return com.ds.goroute.type.PlaceGroup.normalizeCodes(placeGroups);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public AdminPlacePageResponse getAdminPlaces(String search, List<String> placeGroups, List<String> visibilityStatus,
+    public AdminPlacePageResponse getAdminPlaces(String search, List<String> placeGroups, List<String> subTypes,
+                                                 List<String> visibilityStatus,
                                                  List<String> trustLevel, List<UUID> locationImageIds,
                                                  String sort, boolean descending, int page, int size) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 100);
         String normalizedSearch = blankToNull(search);
         List<String> normalizedGroups = normalizedPlaceGroups(placeGroups);
+        List<String> normalizedSubTypes = AdminListSort.codes(subTypes);
         List<String> normalizedVisibility = AdminListSort.codes(visibilityStatus);
         List<String> normalizedTrust = AdminListSort.codes(trustLevel);
         List<UUID> normalizedAreas = AdminListSort.ids(locationImageIds);
-        List<AdminPlaceResponse> items = placeRepository
-                .findFilteredPage(normalizedSearch, normalizedGroups, normalizedVisibility, normalizedTrust, normalizedAreas,
-                        sort, descending, safeSize, safePage * safeSize).stream()
-                .map(this::toAdminPlaceResponse)
+        List<Place> places = placeRepository
+                .findFilteredPage(normalizedSearch, normalizedGroups, normalizedSubTypes, normalizedVisibility, normalizedTrust, normalizedAreas,
+                        sort, descending, safeSize, safePage * safeSize);
+        Map<UUID, List<PlaceTranslation>> translations = placeTranslationService.findByPlaceIds(
+                places.stream().map(Place::getId).toList());
+        List<AdminPlaceResponse> items = places.stream()
+                .map(place -> toAdminPlaceResponse(place, translations.getOrDefault(place.getId(), List.of())))
                 .collect(Collectors.toList());
         return AdminPlacePageResponse.builder()
                 .items(items)
-                .total(placeRepository.countFiltered(normalizedSearch, normalizedGroups, normalizedVisibility, normalizedTrust, normalizedAreas))
+                .total(placeRepository.countFiltered(normalizedSearch, normalizedGroups, normalizedSubTypes, normalizedVisibility, normalizedTrust, normalizedAreas))
                 .page(safePage)
                 .size(safeSize)
                 .build();
@@ -368,7 +449,7 @@ public class PlaceServiceImpl implements PlaceService {
     public List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
                                             BigDecimal radius, String category, List<String> placeGroups,
                                             BigDecimal minRating, int page, int size) {
-        return searchPlaces(keyword, latitude, longitude, radius, category, placeGroups,
+        return searchPlaces(keyword, latitude, longitude, radius, category, placeGroups, null,
                 minRating, false, null, null, null, false, null, page, size);
     }
 
@@ -377,24 +458,25 @@ public class PlaceServiceImpl implements PlaceService {
                                             BigDecimal radius, String category, List<String> placeGroups,
                                             BigDecimal minRating, String citySlug, List<UUID> foodIds,
                                             Boolean excludeLinkedFoodPlaces, boolean includeInactive, int page, int size) {
-        return searchPlaces(keyword, latitude, longitude, radius, category, placeGroups,
+        return searchPlaces(keyword, latitude, longitude, radius, category, placeGroups, null,
                 minRating, false, citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, null, page, size);
     }
 
     @Cacheable(
             cacheNames = "placeSearch",
             cacheManager = "searchCacheManager",
-            keyGenerator = "searchCacheKeyGenerator",
+            keyGenerator = "placeSearchCacheKeyGenerator",
             unless = "#result == null || #result.isEmpty()")
     @Override
     public List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
                                             BigDecimal radius, String category, List<String> placeGroups,
+                                            List<String> subTypes,
                                             BigDecimal minRating, boolean sortByRating, String citySlug, List<UUID> foodIds,
                                             Boolean excludeLinkedFoodPlaces, boolean includeInactive,
                                             Float minLuceneScore, int page, int size) {
         try {
             PlaceSearchCriteria criteria = new PlaceSearchCriteria(
-                    keyword, latitude, longitude, radius, category, placeGroups, minRating,
+                    keyword, latitude, longitude, radius, category, normalizedPlaceGroups(placeGroups), subTypes, minRating,
                     citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, sortByRating,
                     minLuceneScore, page, size);
             List<UUID> orderedIds = placeSearchIndexService.searchPlaceIds(criteria);
@@ -402,21 +484,15 @@ public class PlaceServiceImpl implements PlaceService {
                 return List.of();
             }
 
-            Map<UUID, Place> placesById = placeRepository.findByIds(orderedIds).stream()
-                    .collect(Collectors.toMap(Place::getId, place -> place, (left, right) -> left));
-            List<Place> places = new ArrayList<>(orderedIds.size());
-            for (UUID id : orderedIds) {
-                Place place = placesById.get(id);
-                if (place != null) {
-                    place.setDistance(GeoDistance.kilometresOrFarAway(
-                            latitude, longitude, place.getLatitude(), place.getLongitude()));
-                    places.add(place);
-                }
+            // List columns only: the detail screen reloads the place by id for the heavy ones.
+            List<Place> places = inIdOrder(orderedIds,
+                    placeRepository.findListSummaryByIds(orderedIds, !includeInactive));
+            for (Place place : places) {
+                place.setDistance(GeoDistance.kilometresOrFarAway(
+                        latitude, longitude, place.getLatitude(), place.getLongitude()));
             }
 
-            List<PlaceResponse> responses = places.stream()
-                    .map(this::toPlaceResponse)
-                    .collect(Collectors.toList());
+            List<PlaceResponse> responses = toListResponses(places);
             attachFoodTags(responses);
             return responses;
         } catch (BusinessException e) {
@@ -428,8 +504,19 @@ public class PlaceServiceImpl implements PlaceService {
     }
 
     @Override
-    public void triggerSearchReindex() {
-        placeSearchIndexService.triggerReindex();
+    public boolean triggerSearchReindex() {
+        return placeSearchIndexService.triggerReindex();
+    }
+
+    @Override
+    public void reindexPlace(UUID placeId) {
+        placeRepository.findById(placeId).ifPresent(placeSearchIndexService::indexPlace);
+    }
+
+    @CacheEvict(cacheNames = "placeSearch", cacheManager = "searchCacheManager", allEntries = true)
+    @Override
+    public void evictSearchCache() {
+        log.debug("Place search cache cleared");
     }
 
     private void attachFoodTags(List<PlaceResponse> responses) {
@@ -465,10 +552,11 @@ public class PlaceServiceImpl implements PlaceService {
 
     @Override
     public List<PlaceReviewResponse> getPlaceReviews(UUID placeId, int page, int size) {
-        Place place = placeRepository.findById(placeId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND));
+        if (!placeRepository.existsById(placeId)) {
+            throw new BusinessException(ErrorConstant.PLACE_NOT_FOUND);
+        }
 
-        int offset = page * size;
+        int offset = Math.max(0, page) * Math.max(1, size);
         
         // Simple paginated query sorted by authenticity_score DESC, review_date DESC
         List<PlaceReview> reviews = placeReviewRepository.findByPlaceIdPaginated(placeId, size, offset);
@@ -561,7 +649,9 @@ public class PlaceServiceImpl implements PlaceService {
     @Override
     @Transactional
     public void deletePlace(UUID id) {
-        Place place = placeRepository.findById(id).orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND));
+        if (!placeRepository.existsById(id)) {
+            throw new BusinessException(ErrorConstant.PLACE_NOT_FOUND);
+        }
 
         imageStorageCleanupService.deleteImagesForEntityRecord("PLACE", id);
         // Delete reviews first
@@ -579,6 +669,8 @@ public class PlaceServiceImpl implements PlaceService {
     public PlaceResponse updatePlace(UUID id, UpdatePlaceRequest request) {
         Place place = placeRepository.findById(id).orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND));
         PlaceVisibilityStatus previousVisibility = place.getVisibilityStatus();
+        boolean coordinatesChanged = !sameCoordinate(place.getLatitude(), request.getLatitude())
+                || !sameCoordinate(place.getLongitude(), request.getLongitude());
 
         // Collect old image URLs before update
         Set<String> oldImageUrls = collectPlaceImageUrls(place);
@@ -586,8 +678,9 @@ public class PlaceServiceImpl implements PlaceService {
         // Update all fields
         place.setTitle(request.getTitle());
         place.setCategory(request.getCategory());
-        place.setPlaceGroup(request.getPlaceGroup() != null ?
-                com.ds.goroute.type.PlaceGroup.valueOf(request.getPlaceGroup()) : null);
+        place.setPlaceGroup(com.ds.goroute.type.PlaceGroup.fromCode(request.getPlaceGroup()));
+        String[] previousSubTypes = place.getSubTypes();
+        place.setSubTypes(subTypesForUpdate(request.getSubTypes(), previousSubTypes, place.getPlaceGroup()));
         place.setAddress(request.getAddress());
         place.setDestinations(toJson(request.getDestinations()));
         place.setLatitude(request.getLatitude());
@@ -631,14 +724,16 @@ public class PlaceServiceImpl implements PlaceService {
         deleteRemovedPlaceImages(oldImageUrls, newImageUrls);
 
         placeRepository.update(place);
+        if (!Arrays.equals(previousSubTypes, place.getSubTypes())) {
+            placeRepository.updateSubTypes(place.getId(), place.getSubTypes());
+        }
         applyVerificationGeometry(place, request.getVerificationGeometry());
         if (request.getWardCode() != null) {
             String wardCode = request.getWardCode().isBlank() ? null : request.getWardCode().trim();
             placeRepository.updateWardCode(place.getId(), wardCode);
             place.setWardCode(wardCode);
-        } else if (place.getWardCode() == null) {
-            placeRepository.assignWard(place.getId());
-            place.setWardCode(placeRepository.findById(place.getId()).map(Place::getWardCode).orElse(null));
+        } else if (place.getWardCode() == null || coordinatesChanged) {
+            reassignWard(place);
         }
         placeTranslationService.syncTranslations(place, request.getTranslations());
         placeSearchIndexService.indexPlace(place);
@@ -653,29 +748,31 @@ public class PlaceServiceImpl implements PlaceService {
 
     // Helper methods
 
+    private static boolean sameCoordinate(BigDecimal before, BigDecimal after) {
+        return before == null ? after == null : after != null && before.compareTo(after) == 0;
+    }
+
+    /**
+     * Ward and province from the place's current point. A point outside every loaded
+     * boundary clears the ward rather than keeping the one the old point was in.
+     */
+    private void reassignWard(Place place) {
+        if (placeRepository.assignWard(place.getId()) == 0 && place.getWardCode() != null) {
+            placeRepository.updateWardCode(place.getId(), null);
+        }
+        placeRepository.findGeoCodes(place.getId()).ifPresent(codes -> {
+            place.setWardCode(codes.getWardCode());
+            place.setProvinceCode(codes.getProvinceCode());
+        });
+    }
+
     private Place findExistingPlaceForImport(ImportPlaceRequest request) {
-        if (request.getPlaceId() != null && !request.getPlaceId().isBlank()) {
-            Place byPlaceId = placeRepository.findByPlaceId(request.getPlaceId());
-            if (byPlaceId != null) {
-                return byPlaceId;
-            }
-        }
-        if (request.getCid() != null && !request.getCid().isBlank()) {
-            Place byCid = placeRepository.findByCid(request.getCid());
-            if (byCid != null) {
-                return byCid;
-            }
-        }
-        if (request.getLatitude() != null && request.getLongitude() != null) {
-            Place nearby = placeRepository.findNearCoordinates(
-                    request.getLatitude(),
-                    request.getLongitude(),
-                    BigDecimal.valueOf(15));
-            if (nearby != null && sameCanonicalIdentity(nearby, request)) {
-                return nearby;
-            }
-        }
-        return null;
+        return PlaceIdentityMatcher.findExisting(placeRepository,
+                        request.getPlaceId(), request.getCid(),
+                        request.getLatitude(), request.getLongitude(),
+                        request.getTitle(), request.getAddress(),
+                        IMPORT_MATCH_RADIUS_METERS)
+                .orElse(null);
     }
 
     private PlaceResponse updateExistingPlace(Place existingPlace, ImportPlaceRequest request) {
@@ -685,6 +782,11 @@ public class PlaceServiceImpl implements PlaceService {
         updated.setPlaceGroup(existingPlace.getPlaceGroup() != null
                 ? existingPlace.getPlaceGroup()
                 : updated.getPlaceGroup());
+        // A refresh fills sub-types only while the place has none, so an operator's choice stays.
+        boolean fillSubTypes = isEmpty(existingPlace.getSubTypes());
+        updated.setSubTypes(fillSubTypes
+                ? PlaceSubType.toStorable(request.getSubTypes(), updated.getPlaceGroup())
+                : existingPlace.getSubTypes());
         updated.setCategory(existingPlace.getCategory() != null ? existingPlace.getCategory() : request.getCategory());
         // Imports do not carry the admin-only verification override; never erase it.
         updated.setVerificationRadiusMeters(existingPlace.getVerificationRadiusMeters());
@@ -737,6 +839,9 @@ public class PlaceServiceImpl implements PlaceService {
         updated.setUpdatedAt(LocalDateTime.now());
 
         placeRepository.update(updated);
+        if (fillSubTypes && !isEmpty(updated.getSubTypes())) {
+            placeRepository.updateSubTypes(updated.getId(), updated.getSubTypes());
+        }
         syncGoogleSource(updated.getId(), request);
         placeTranslationService.syncTranslations(updated, request.getTranslations());
         placeSearchIndexService.indexPlace(updated);
@@ -747,19 +852,6 @@ public class PlaceServiceImpl implements PlaceService {
         }
 
         return toPlaceResponse(updated);
-    }
-
-    private boolean sameCanonicalIdentity(Place existing, ImportPlaceRequest request) {
-        String existingTitle = normalizeIdentity(existing.getTitle());
-        String incomingTitle = normalizeIdentity(request.getTitle());
-        String existingAddress = normalizeIdentity(existing.getAddress());
-        String incomingAddress = normalizeIdentity(request.getAddress());
-        return !existingTitle.isEmpty() && existingTitle.equals(incomingTitle)
-                || !existingAddress.isEmpty() && existingAddress.equals(incomingAddress);
-    }
-
-    private String normalizeIdentity(String value) {
-        return value == null ? "" : value.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]", "");
     }
 
     private void syncGoogleSource(UUID canonicalPlaceId, ImportPlaceRequest request) {
@@ -776,6 +868,32 @@ public class PlaceServiceImpl implements PlaceService {
         } catch (Exception ex) {
             throw new IllegalStateException("Cannot persist Google place source snapshot", ex);
         }
+    }
+
+    private static boolean isEmpty(String[] values) {
+        return values == null || values.length == 0;
+    }
+
+    /**
+     * Sub-types after an operator edit. Null in the request keeps what is stored, minus kinds the
+     * (possibly changed) group no longer allows; an explicit list must fit the group or the edit fails.
+     */
+    private static String[] subTypesForUpdate(List<PlaceSubType> requested, String[] stored,
+                                              com.ds.goroute.type.PlaceGroup placeGroup) {
+        if (requested == null) {
+            return PlaceSubType.toStorable(stored == null ? List.of() : List.of(stored), placeGroup);
+        }
+        List<String> misfits = requested.stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(kind -> !kind.fits(placeGroup))
+                .map(Enum::name)
+                .toList();
+        if (!misfits.isEmpty()) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "Sub-types " + misfits + " do not fit place group " + placeGroup);
+        }
+        return PlaceSubType.toStorable(requested.stream()
+                .filter(java.util.Objects::nonNull).map(Enum::name).toList(), placeGroup);
     }
 
     private String preferNonBlank(String incoming, String existing) {
@@ -797,6 +915,7 @@ public class PlaceServiceImpl implements PlaceService {
     }
 
     private Place buildPlaceFromRequest(ImportPlaceRequest request) {
+        com.ds.goroute.type.PlaceGroup placeGroup = com.ds.goroute.type.PlaceGroup.fromCode(request.getPlaceGroup());
         return Place.builder()
                 .id(UUID.randomUUID())
                 .placeId(request.getPlaceId())
@@ -804,8 +923,8 @@ public class PlaceServiceImpl implements PlaceService {
                 .dataId(request.getDataId())
                 .title(request.getTitle())
                 .category(request.getCategory())
-                .placeGroup(request.getPlaceGroup() != null ?
-                        com.ds.goroute.type.PlaceGroup.valueOf(request.getPlaceGroup()) : null)
+                .placeGroup(placeGroup)
+                .subTypes(PlaceSubType.toStorable(request.getSubTypes(), placeGroup))
                 .address(request.getAddress())
                 .destinations(toJson(request.getDestinations()))
                 .latitude(request.getLatitude())
@@ -1045,8 +1164,51 @@ public class PlaceServiceImpl implements PlaceService {
         }
     }
 
+    /** Full single-place response: every translation of the place, one query for them. */
     private PlaceResponse toPlaceResponse(Place place) {
-        PlaceTranslation translation = placeTranslationService.resolve(place.getId(), AcceptLanguageFilter.currentCode());
+        return toPlaceResponse(place, placeTranslationService.findByPlaceIds(List.of(place.getId()))
+                .getOrDefault(place.getId(), List.of()));
+    }
+
+    private PlaceResponse toPlaceResponse(Place place, List<PlaceTranslation> translations) {
+        Map<String, PlaceTranslationResponse> all = new LinkedHashMap<>();
+        translations.stream()
+                .sorted(Comparator.comparing(translation -> translation.getLocale().code()))
+                .forEach(translation -> all.put(translation.getLocale().code(),
+                        PlaceTranslationService.responseOf(translation)));
+        return buildPlaceResponse(place,
+                PlaceTranslationService.resolveFrom(translations, AcceptLanguageFilter.currentCode()), all);
+    }
+
+    /**
+     * List responses: translations loaded once for the whole page, and only the resolved
+     * locale sent back. The places come from the list projection, so the heavy JSON fields
+     * (menu, popular times, about, ratings histogram, AI references, attributes) stay null.
+     */
+    private List<PlaceResponse> toListResponses(List<Place> places) {
+        if (places.isEmpty()) {
+            return new ArrayList<>();
+        }
+        Map<UUID, List<PlaceTranslation>> translations = placeTranslationService.findByPlaceIds(
+                places.stream().map(Place::getId).toList());
+        String locale = AcceptLanguageFilter.currentCode();
+        List<PlaceResponse> responses = new ArrayList<>(places.size());
+        for (Place place : places) {
+            PlaceTranslation translation = PlaceTranslationService.resolveFrom(
+                    translations.getOrDefault(place.getId(), List.of()), locale);
+            Map<String, PlaceTranslationResponse> current = new LinkedHashMap<>();
+            if (translation != null) {
+                current.put(translation.getLocale().code(), PlaceTranslationService.responseOf(translation));
+            }
+            PlaceResponse response = buildPlaceResponse(place, translation, current);
+            response.setAttributes(null);
+            responses.add(response);
+        }
+        return responses;
+    }
+
+    private PlaceResponse buildPlaceResponse(Place place, PlaceTranslation translation,
+                                             Map<String, PlaceTranslationResponse> translationResponses) {
         String resolvedTitle = translation != null && translation.getName() != null
                 ? translation.getName()
                 : place.getTitle();
@@ -1059,9 +1221,10 @@ public class PlaceServiceImpl implements PlaceService {
                 .locale(translation != null ? translation.getLocale().code() : null)
                 .name(resolvedTitle)
                 .title(resolvedTitle)
-                .translations(placeTranslationService.allResponses(place.getId()))
+                .translations(translationResponses)
                 .category(place.getCategory())
                 .placeGroup(place.getPlaceGroup() != null ? place.getPlaceGroup().name() : null)
+                .subTypes(place.getSubTypes() != null ? List.of(place.getSubTypes()) : List.of())
                 .address(place.getAddress())
                 .destinations(parseJsonToStringList(place.getDestinations()))
                 .latitude(place.getLatitude())
@@ -1172,7 +1335,12 @@ public class PlaceServiceImpl implements PlaceService {
     }
 
     private AdminPlaceResponse toAdminPlaceResponse(Place place) {
-        AdminPlaceResponse response = objectMapper.convertValue(toPlaceResponse(place), AdminPlaceResponse.class);
+        return toAdminPlaceResponse(place, placeTranslationService.findByPlaceIds(List.of(place.getId()))
+                .getOrDefault(place.getId(), List.of()));
+    }
+
+    private AdminPlaceResponse toAdminPlaceResponse(Place place, List<PlaceTranslation> translations) {
+        AdminPlaceResponse response = objectMapper.convertValue(toPlaceResponse(place, translations), AdminPlaceResponse.class);
         response.setLocationImageId(place.getLocationImageId());
         response.setCid(place.getCid());
         response.setDataId(place.getDataId());

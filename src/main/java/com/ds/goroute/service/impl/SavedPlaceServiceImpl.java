@@ -13,7 +13,6 @@ import com.ds.goroute.entity.SocialLocationJob;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.PlaceMapper;
 import com.ds.goroute.mapper.SavedPlaceMapper;
-import com.ds.goroute.mapper.SocialLocationJobMapper;
 import com.ds.goroute.repository.LocationImageRepository;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.SavedPlaceService;
@@ -44,9 +43,10 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
     private static final String DEFAULT_ITEM_TYPE = "PLACE";
     private static final Set<String> PLACE_ITEM_TYPES = Set.of("PLACE", "FOOD");
     private static final int CATALOG_BATCH_SIZE = 500;
+    /** Saved items read for the recent list: the newest ones, far more than the screen shows. */
+    static final int MAX_LISTED_SAVED_ITEMS = 500;
 
     private final SavedPlaceMapper savedPlaceMapper;
-    private final SocialLocationJobMapper socialLocationJobMapper;
     private final PlaceMapper placeMapper;
     private final LocationImageRepository locationImageRepository;
     private final ImageStorageCleanupService imageStorageCleanupService;
@@ -103,7 +103,8 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
     @Override
     @Transactional(readOnly = true)
     public SavedItemsOverviewResponse getSavedItemsOverview(UUID userId) {
-        List<SavedPlaceResponse> savedItems = savedPlaceMapper.findAllByUserId(userId)
+        // Uncapped: the app derives the saved/heart state of every item from this list.
+        List<SavedPlaceResponse> savedItems = savedPlaceMapper.findAllByUserId(userId, null)
                 .stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
@@ -118,7 +119,7 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
     public List<RecentSavedPlaceResponse> getRecentSavedPlaces(UUID userId) {
         Map<String, RecentSavedPlaceAccumulator> places = new LinkedHashMap<>();
 
-        for (SavedPlace savedPlace : savedPlaceMapper.findAllByUserId(userId)) {
+        for (SavedPlace savedPlace : savedPlaceMapper.findAllByUserId(userId, MAX_LISTED_SAVED_ITEMS)) {
             if (!PLACE_ITEM_TYPES.contains(normalizeItemType(savedPlace.getItemType()))) {
                 continue;
             }
@@ -136,7 +137,7 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
                     savedPlace.getCreatedAt());
         }
 
-        for (SocialLocationJob job : socialLocationJobMapper.findAllCompletedByUserId(userId)) {
+        for (SocialLocationJob job : savedPlaceMapper.findSocialSavedPlacesByUserId(userId)) {
             mergeMappedSocialPlaces(places, job);
         }
         applyCatalog(places);

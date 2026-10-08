@@ -167,22 +167,24 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
-    <select id="findWithinRadius" resultMap="ActivityBookingResultMap">
-        SELECT <include refid="ActivityBookingListColumns"/>
-        FROM activity_bookings ab
+    <!-- Great-circle distance in km (R = 6371) from the search point to the booking's primary coordinate. -->
+    <sql id="RadiusDistanceKm">
+        (6371 * acos(
+            LEAST(1.0, GREATEST(-1.0,
+                cos(radians(#{p.latitude})) * cos(radians(ab.search_lat)) *
+                cos(radians(ab.search_lng) - radians(#{p.longitude})) +
+                sin(radians(#{p.latitude})) * sin(radians(ab.search_lat))
+            ))
+        ))
+    </sql>
+
+    <!-- Bounding box first so idx_activity_bookings_search_lat_lng narrows the rows the distance runs on. -->
+    <sql id="WithinRadiusFilter">
         WHERE ab.search_lat IS NOT NULL
           AND ab.search_lng IS NOT NULL
           AND ab.search_lat BETWEEN #{p.minLat} AND #{p.maxLat}
           AND ab.search_lng BETWEEN #{p.minLng} AND #{p.maxLng}
-          AND (
-            6371 * acos(
-                LEAST(1.0, GREATEST(-1.0,
-                    cos(radians(#{p.latitude})) * cos(radians(ab.search_lat)) *
-                    cos(radians(ab.search_lng) - radians(#{p.longitude})) +
-                    sin(radians(#{p.latitude})) * sin(radians(ab.search_lat))
-                ))
-            )
-          ) &lt;= #{p.radiusKm}
+          AND <include refid="RadiusDistanceKm"/> &lt;= #{p.radiusKm}
         <if test="p.minPrice != null">
             AND ab.price_amount &gt;= #{p.minPrice}
         </if>
@@ -192,8 +194,35 @@
         <if test="p.minRating != null">
             AND ab.rating &gt;= #{p.minRating}
         </if>
-        ORDER BY ab.updated_at DESC
+    </sql>
+
+    <!-- One page of the radius search, nearest first. -->
+    <select id="findWithinRadius" resultMap="ActivityBookingResultMap">
+        SELECT <include refid="ActivityBookingListColumns"/>
+        FROM activity_bookings ab
+        <include refid="WithinRadiusFilter"/>
+        ORDER BY <include refid="RadiusDistanceKm"/>, ab.id
         LIMIT #{p.limit} OFFSET #{p.offset}
+    </select>
+
+    <!-- Lean candidates (id + destinations) for radius searches the service still filters/ranks in Java,
+         nearest first. -->
+    <select id="findRadiusCandidates" resultMap="ActivityBookingResultMap">
+        SELECT ab.id, ab.destinations
+        FROM activity_bookings ab
+        <include refid="WithinRadiusFilter"/>
+        ORDER BY <include refid="RadiusDistanceKm"/>, ab.id
+        LIMIT #{p.limit}
+    </select>
+
+    <!-- List columns for a known set of ids (order is restored by the caller). -->
+    <select id="findListByIds" resultMap="ActivityBookingResultMap">
+        SELECT <include refid="ActivityBookingListColumns"/>
+        FROM activity_bookings
+        WHERE id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">
+            #{id}
+        </foreach>
     </select>
 
     <select id="searchByKeyword" resultMap="ActivityBookingResultMap">

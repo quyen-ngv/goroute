@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -66,7 +67,8 @@ public class TripPreferenceService {
         }
         if (request.getSocialContext() != null) return null;
         List<String> interests = new ArrayList<>();
-        if (request.getPlaceGroups() != null) request.getPlaceGroups().stream().map(PlaceGroup::name).forEach(interests::add);
+        // Jackson binds an unknown group code to null (PlaceGroup.fromCode).
+        if (request.getPlaceGroups() != null) request.getPlaceGroups().stream().filter(Objects::nonNull).map(PlaceGroup::name).forEach(interests::add);
         if (request.getActivityTypes() != null) interests.addAll(request.getActivityTypes());
         List<String> mobility = request.getMobilityConsiderations() == null ? List.of() : request.getMobilityConsiderations();
         return TripPreferencesRequest.builder()

@@ -1,5 +1,6 @@
 package com.ds.goroute.repository.impl;
 
+import com.ds.goroute.dto.FeedCursor;
 import com.ds.goroute.dto.FeedGeoFilter;
 import com.ds.goroute.entity.UserReview;
 import com.ds.goroute.entity.MediaAsset;
@@ -101,11 +102,18 @@ public class UserReviewRepositoryImpl implements UserReviewRepository {
     }
 
     @Override
-    public List<UserReview> findFeedReviews(UUID excludeUserId, FeedGeoFilter geo, int limit, int offset, String randomSeed) {
-        return geo == null
-                ? mapper.findFeedReviews(excludeUserId, null, null, null, limit, offset, randomSeed)
-                : mapper.findFeedReviews(excludeUserId, geo.latitude(), geo.longitude(), geo.radiusKm(),
-                        limit, offset, randomSeed);
+    public List<UserReview> findFeedReviews(UUID excludeUserId, FeedGeoFilter geo, FeedCursor after,
+                                            int limit, int offset, String randomSeed) {
+        boolean shuffled = randomSeed != null && !randomSeed.isEmpty();
+        FeedCursor keyset = shuffled ? null : after;
+        return mapper.findFeedReviews(excludeUserId,
+                geo == null ? null : geo.latitude(),
+                geo == null ? null : geo.longitude(),
+                geo == null ? null : geo.radiusKm(),
+                keyset == null ? null : keyset.hasPhoto(),
+                keyset == null ? null : keyset.createdAt(),
+                keyset == null ? null : keyset.id(),
+                limit, keyset == null ? offset : 0, randomSeed);
     }
 
     @Override

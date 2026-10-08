@@ -10,18 +10,31 @@ import java.util.UUID;
 @Mapper
 public interface LocationImageMapper {
 
+    // `%` is "similarity above pg_trgm.similarity_threshold" (default 0.3) and can use the GIN trigram
+    // index idx_location_images_normalized; the explicit > 0.3 keeps the cut-off fixed whatever the setting.
     @Select("""
-        SELECT * FROM location_images
-        WHERE similarity(normalized_address, #{searchTerm}) > 0.3
+        SELECT id, image_url, priority FROM location_images
+        WHERE normalized_address % #{searchTerm}
+          AND similarity(normalized_address, #{searchTerm}) > 0.3
         ORDER BY
             priority DESC,
-            similarity(normalized_address, #{searchTerm}) DESC
+            similarity(normalized_address, #{searchTerm}) DESC,
+            id
         LIMIT 1
         """)
     LocationImage selectBestMatch(String searchTerm);
 
     @Select("SELECT * FROM location_images ORDER BY priority DESC, created_at DESC")
     List<LocationImage> selectAll();
+
+    /** Every column the public list shows; leaves out the JSONB description and normalized_address. */
+    @Select("""
+        SELECT id, full_address, slogan, image_url, avatar_url, city_slug, province_code,
+               latitude, longitude, priority, coverage_radius_km, created_at, updated_at
+        FROM location_images
+        ORDER BY priority DESC, created_at DESC, id
+        """)
+    List<LocationImage> selectAllForList();
 
     @Select("SELECT * FROM location_images WHERE id = #{id}")
     LocationImage selectById(UUID id);

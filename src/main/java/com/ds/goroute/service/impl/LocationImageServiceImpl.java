@@ -23,17 +23,23 @@ import com.ds.goroute.type.BusinessConfigKey;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.text.Normalizer;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -56,6 +62,29 @@ public class LocationImageServiceImpl implements LocationImageService {
 
     private static final String DEFAULT_IMAGE = "https://images.unsplash.com/photo-1488646953014-85cb44e25828";
 
+    static final Duration CATALOG_CACHE_TTL = Duration.ofMinutes(5);
+    static final Duration BEST_MATCH_CACHE_TTL = Duration.ofMinutes(10);
+    private static final int BEST_MATCH_CACHE_SIZE = 2_000;
+
+    /**
+     * The area list Home and Explore load on every open: rows (without the JSONB description) plus ward
+     * links. One entry; dropped on every create/update/delete here (the only writers of areas and their
+     * ward links) and again after that transaction commits.
+     */
+    private final Cache<Boolean, CatalogSnapshot> catalogCache = Caffeine.newBuilder()
+            .maximumSize(1)
+            .expireAfterWrite(CATALOG_CACHE_TTL)
+            .build();
+
+    /** Best-matching area image per normalized destination; trip cards ask once per card. */
+    private final Cache<String, Optional<String>> bestMatchCache = Caffeine.newBuilder()
+            .maximumSize(BEST_MATCH_CACHE_SIZE)
+            .expireAfterWrite(BEST_MATCH_CACHE_TTL)
+            .build();
+
+    private record CatalogSnapshot(List<LocationImage> rows, Map<UUID, List<String>> wardsByArea) {
+    }
+
     @Override
     public String getImageForDestination(String destination) {
         if (destination == null || destination.isEmpty()) {
@@ -64,9 +93,10 @@ public class LocationImageServiceImpl implements LocationImageService {
 
         String normalized = normalizeVietnamese(destination.toLowerCase());
 
-        return locationImageRepository.findBestMatch(normalized)
-            .map(LocationImage::getImageUrl)
-            .orElse(defaultImageUrl());
+        // The default is not cached: it is an admin setting with its own cache.
+        return bestMatchCache.get(normalized, key -> locationImageRepository.findBestMatch(key)
+                .map(LocationImage::getImageUrl))
+            .orElseGet(this::defaultImageUrl);
     }
 
     private String defaultImageUrl() {
@@ -86,12 +116,12 @@ public class LocationImageServiceImpl implements LocationImageService {
     @Override
     @Transactional(readOnly = true)
     public List<LocationImageResponse> getAllLocationImages(boolean includeWeather) {
-        List<LocationImage> locationImages = locationImageRepository.findAll();
-        // One query for every area's wards rather than one per row.
-        Map<UUID, List<String>> wardsByArea = locationImageRepository.findAllWardCodes();
+        CatalogSnapshot catalog = catalogCache.get(Boolean.TRUE, ignored -> loadCatalog());
+        List<LocationImage> locationImages = catalog.rows();
+        Map<UUID, List<String>> wardsByArea = catalog.wardsByArea();
         if (!includeWeather) {
             return locationImages.stream()
-                .map(locationImage -> withWards(mapToResponse(locationImage), wardsByArea))
+                .map(locationImage -> withWards(mapToListResponse(locationImage, null), wardsByArea))
                 .collect(Collectors.toList());
         }
 
@@ -99,7 +129,7 @@ public class LocationImageServiceImpl implements LocationImageService {
         // Weather is cached per grid cell, so repeats across the list collapse into one call.
         List<CompletableFuture<LocationImageResponse>> pending = locationImages.stream()
             .map(locationImage -> CompletableFuture.supplyAsync(
-                () -> withWards(mapToResponse(locationImage, cityWeatherService.findWeatherQuietly(locationImage)),
+                () -> withWards(mapToListResponse(locationImage, cityWeatherService.findWeatherQuietly(locationImage)),
                         wardsByArea),
                 applicationTaskExecutor))
             .toList();
@@ -125,6 +155,32 @@ public class LocationImageServiceImpl implements LocationImageService {
             : mapToResponse(locationImage);
         response.setWardCodes(locationImageRepository.findWardCodes(id));
         return response;
+    }
+
+    private CatalogSnapshot loadCatalog() {
+        // One query for every area's wards rather than one per row.
+        Map<UUID, List<String>> wardsByArea = new java.util.HashMap<>();
+        locationImageRepository.findAllWardCodes()
+                .forEach((areaId, wards) -> wardsByArea.put(areaId, List.copyOf(wards)));
+        return new CatalogSnapshot(List.copyOf(locationImageRepository.findAllForList()), Map.copyOf(wardsByArea));
+    }
+
+    /**
+     * Drops the cached area list and destination matches now and once more after the surrounding
+     * transaction commits, so a read racing the write cannot re-cache the old rows.
+     */
+    private void invalidateCaches() {
+        catalogCache.invalidateAll();
+        bestMatchCache.invalidateAll();
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    catalogCache.invalidateAll();
+                    bestMatchCache.invalidateAll();
+                }
+            });
+        }
     }
 
     private LocationImageResponse withWards(LocationImageResponse response, Map<UUID, List<String>> wardsByArea) {
@@ -158,6 +214,7 @@ public class LocationImageServiceImpl implements LocationImageService {
         if (request.getWardCodes() != null) {
             locationImageRepository.replaceWardCodes(locationImage.getId(), request.getWardCodes());
         }
+        invalidateCaches();
 
         log.info("Location image created: {}", locationImage.getId());
         LocationImageResponse response = mapToResponse(locationImage);
@@ -210,6 +267,7 @@ public class LocationImageServiceImpl implements LocationImageService {
         if (request.getWardCodes() != null) {
             locationImageRepository.replaceWardCodes(id, request.getWardCodes());
         }
+        invalidateCaches();
 
         log.info("Location image updated: {}", id);
         LocationImageResponse response = mapToResponse(locationImage);
@@ -225,6 +283,7 @@ public class LocationImageServiceImpl implements LocationImageService {
 
         imageStorageCleanupService.deleteImagesForEntityRecord("LOCATION_IMAGE", id);
         locationImageRepository.deleteById(id);
+        invalidateCaches();
         log.info("Location image deleted: {}", id);
     }
 
@@ -251,6 +310,16 @@ public class LocationImageServiceImpl implements LocationImageService {
 
     private LocationImageResponse mapToResponse(LocationImage locationImage) {
         return mapToResponse(locationImage, null);
+    }
+
+    /**
+     * List item: every field except {@code description}, which is null. The list query does not read it;
+     * the app never shows it in a list and the admin editor loads the area by id.
+     */
+    private LocationImageResponse mapToListResponse(LocationImage locationImage, CityWeatherResponse weather) {
+        LocationImageResponse response = mapToResponse(locationImage, weather);
+        response.setDescription(null);
+        return response;
     }
 
     private LocationImageResponse mapToResponse(LocationImage locationImage, CityWeatherResponse weather) {

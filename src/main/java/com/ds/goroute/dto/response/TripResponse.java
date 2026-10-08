@@ -45,5 +45,10 @@ public class TripResponse {
     private Integer copyCount;
     private Integer helpfulVotes;
     private Integer unhelpfulVotes;
+    /**
+     * Active comments on this trip's thread. Filled only by the lists that render trips as
+     * posts (GET /trips, GET /users/{userId}/trips); null on every other trip response.
+     */
+    private Integer commentCount;
     private LocalDateTime publicSharedAt;
 }
