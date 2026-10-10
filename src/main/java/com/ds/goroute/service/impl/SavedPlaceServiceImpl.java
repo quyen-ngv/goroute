@@ -8,13 +8,14 @@ import com.ds.goroute.dto.response.SavedPlaceResponse;
 import com.ds.goroute.dto.response.SavedItemsOverviewResponse;
 import com.ds.goroute.entity.LocationImage;
 import com.ds.goroute.entity.Place;
+import com.ds.goroute.entity.SavedCategory;
 import com.ds.goroute.entity.SavedPlace;
 import com.ds.goroute.entity.SocialLocationJob;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.PlaceMapper;
+import com.ds.goroute.mapper.SavedCategoryMapper;
 import com.ds.goroute.mapper.SavedPlaceMapper;
 import com.ds.goroute.repository.LocationImageRepository;
-import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.SavedPlaceService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -42,14 +43,16 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
 
     private static final String DEFAULT_ITEM_TYPE = "PLACE";
     private static final Set<String> PLACE_ITEM_TYPES = Set.of("PLACE", "FOOD");
+    /** A place picked from map search that is not in the catalogue; placeId is the map provider's id. */
+    private static final String MAP_PLACE_ITEM_TYPE = "MAP_PLACE";
     private static final int CATALOG_BATCH_SIZE = 500;
     /** Saved items read for the recent list: the newest ones, far more than the screen shows. */
     static final int MAX_LISTED_SAVED_ITEMS = 500;
 
     private final SavedPlaceMapper savedPlaceMapper;
+    private final SavedCategoryMapper savedCategoryMapper;
     private final PlaceMapper placeMapper;
     private final LocationImageRepository locationImageRepository;
-    private final ImageStorageCleanupService imageStorageCleanupService;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -69,11 +72,17 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
     @Transactional
     public SavedPlaceResponse savePlace(UUID userId, SavePlaceRequest request) {
         String itemType = normalizeItemType(request.getItemType());
+        // A map place has no catalogue record to read a position from later.
+        if (MAP_PLACE_ITEM_TYPE.equals(itemType) && (request.getLat() == null || request.getLng() == null)) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "A place picked from the map needs coordinates", HttpStatus.BAD_REQUEST);
+        }
+        String category = resolveCategory(userId, request.getCategory());
         SavedPlace existing = savedPlaceMapper.findByUserIdAndPlaceId(
                 userId,
                 request.getPlaceId(),
                 itemType,
-                request.getCategory());
+                category);
         if (existing != null) {
             return toResponse(existing);
         }
@@ -87,7 +96,7 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
                 .address(request.getAddress())
                 .lat(request.getLat())
                 .lng(request.getLng())
-                .category(request.getCategory())
+                .category(category)
                 .rating(request.getRating())
                 .photoUrl(request.getPhotoUrl())
                 .tags(request.getTags() != null ? request.getTags().toArray(new String[0]) : null)
@@ -98,6 +107,23 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
         log.info("Saved item: userId={}, itemType={}, placeId={}", userId, itemType, request.getPlaceId());
         
         return toResponse(savedPlace);
+    }
+
+    /**
+     * Files a save under the user's existing spelling of its category, ignoring case, and creates
+     * the category record on its first save.
+     */
+    private String resolveCategory(UUID userId, String requested) {
+        String name = normalizeText(requested);
+        if (name == null) {
+            return null;
+        }
+        SavedCategory existing = savedCategoryMapper.findByUserAndName(userId, name);
+        if (existing != null) {
+            return existing.getName();
+        }
+        savedCategoryMapper.insertIfAbsent(UUID.randomUUID(), userId, name, LocalDateTime.now());
+        return name;
     }
 
     @Override
@@ -152,7 +178,8 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
     @Transactional
     public void unsavePlace(UUID userId, UUID savedPlaceId) {
         SavedPlace savedPlace = requireOwnedSavedPlace(userId, savedPlaceId);
-        imageStorageCleanupService.deleteImagesForEntityRecord("SAVED_PLACE", savedPlaceId);
+        // No image cleanup: photo_url is a copy of the place's, trip's or quest's own photo, never
+        // an upload of this save, so deleting its object would take it off that record too.
         savedPlaceMapper.deleteById(savedPlaceId);
         log.info("Unsaved item: userId={}, id={}, itemType={}", userId, savedPlaceId, savedPlace.getItemType());
     }

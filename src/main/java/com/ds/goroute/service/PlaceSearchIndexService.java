@@ -2,9 +2,11 @@ package com.ds.goroute.service;
 
 import com.ds.goroute.dto.PlaceSearchCriteria;
 import com.ds.goroute.entity.Place;
+import com.ds.goroute.type.PlaceSubType;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public interface PlaceSearchIndexService {
@@ -30,6 +32,14 @@ public interface PlaceSearchIndexService {
      * boost, and structured place filters are evaluated in the same index query.
      */
     List<UUID> searchPlaceIds(PlaceSearchCriteria criteria) throws IOException;
+
+    /**
+     * How many places of the area {@code criteria} describes (its sub-type filter ignored) carry
+     * each of {@code kinds}, in that order, then {@link PlaceSubType#UNTYPED_FILTER}: those that
+     * carry none. A place with two kinds counts under both.
+     */
+    Map<String, Integer> countBySubType(PlaceSearchCriteria criteria, List<PlaceSubType> kinds)
+            throws IOException;
 
     /**
      * Name search without a location, best match first: the type-ahead behind GET /places.

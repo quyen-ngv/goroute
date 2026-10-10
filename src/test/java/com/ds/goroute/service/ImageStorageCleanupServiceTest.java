@@ -1,5 +1,6 @@
 package com.ds.goroute.service;
 
+import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.ImageCleanupMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
@@ -64,20 +66,53 @@ class ImageStorageCleanupServiceTest {
     }
 
     @Test
-    void anEditDeletesOnlyThePhotosItDroppedAndSparesThoseTheReviewStillShows() {
+    void aCheckinEditLeavesItsDroppedPhotosToTheSweep() {
         UUID checkinId = UUID.randomUUID();
         when(storage.extractObjectKey(anyString()))
                 .thenAnswer(call -> call.<String>getArgument(0).replace("https://cdn/", ""));
         when(mapper.selectRows(contains("entity_type = 'USER_CHECKIN'"), eq(checkinId)))
-                .thenReturn(urlRows("https://cdn/kept.webp", "https://cdn/shared.webp", "https://cdn/dropped.webp"));
-        when(mapper.selectRows(contains("m.entity_type = 'USER_REVIEW'"), eq(checkinId)))
-                .thenReturn(urlRows("https://cdn/shared.webp"));
+                .thenReturn(urlRows("https://cdn/kept.webp", "https://cdn/dropped.webp"));
 
         var result = service.deleteImagesForEntityRecord(
                 "USER_CHECKIN_PHOTO", checkinId, List.of("https://cdn/kept.webp"));
 
-        assertThat(result.deletedKeys()).containsExactly("dropped.webp");
-        verify(storage).deleteObjectKeys(List.of("dropped.webp"));
+        // A saved-category cover or a trip memory may point at the same file.
+        assertThat(result.deletedKeys()).isEmpty();
+        assertThat(result.referencedUrlCount()).isEqualTo(2);
+        verify(storage, never()).deleteObjectKeys(any());
+    }
+
+    @Test
+    void deletingAnAccountDeletesItsAvatarAtOnce() {
+        UUID userId = UUID.randomUUID();
+        when(storage.extractObjectKey(anyString()))
+                .thenAnswer(call -> call.<String>getArgument(0).replace("https://cdn/", ""));
+        when(mapper.selectRows(contains("FROM users WHERE id = ?"), eq(userId)))
+                .thenReturn(urlRows("https://cdn/avatars/u/a.png"));
+
+        var result = service.deleteImagesForEntityRecord("USER", userId);
+
+        assertThat(result.deletedKeys()).containsExactly("avatars/u/a.png");
+        verify(storage).deleteObjectKeys(List.of("avatars/u/a.png"));
+    }
+
+    @Test
+    void theNightlySweepCoversEveryKnownPrefixAndSparesTheHardCodedLogo() {
+        when(storage.extractObjectKey(anyString())).thenAnswer(call -> call.getArgument(0));
+        when(mapper.selectRows(anyString(), any())).thenReturn(List.of());
+        when(storage.listObjects(anyString())).thenReturn(List.of());
+        Instant old = Instant.now().minus(Duration.ofDays(40));
+        when(storage.listObjects("admin-media/")).thenReturn(List.of(
+                new StorageService.StoredObject("admin-media/06a38eef-3fb4-4139-9c5e-3240ea368c66-app_icon.png", old),
+                new StorageService.StoredObject("admin-media/unused.png", old)));
+        when(storage.listObjects("places/")).thenReturn(List.of(
+                new StorageService.StoredObject("places/p1/replaced.webp", old)));
+
+        var deleted = service.sweepOrphans(500);
+
+        assertThat(deleted).containsExactly("admin-media/unused.png", "places/p1/replaced.webp");
+        verify(storage).listObjects("expenses/");
+        verify(storage, never()).copyObjectKeys(any(), anyString());
     }
 
     @Test
@@ -159,6 +194,68 @@ class ImageStorageCleanupServiceTest {
         assertThat(deleted).containsExactly("quest-ar/abandoned.glb");
         verify(storage).deleteObjectKeys(List.of("quest-ar/abandoned.glb"));
         verify(storage, never()).copyObjectKeys(any(), anyString());
+    }
+
+    @Test
+    void aFileNamedInAColumnNoSpecReadsIsNotAnOrphan() {
+        when(storage.extractObjectKey(anyString()))
+                .thenAnswer(call -> call.<String>getArgument(0).replace("https://cdn/", ""));
+        when(mapper.selectRows(anyString(), any())).thenReturn(List.of());
+        when(mapper.selectRows(contains("information_schema.columns"), any())).thenReturn(List.of(
+                column("places", "menu"),
+                column("marketplace_entity_versions", "snapshot")));
+        // A menu photo as a JSON object, and a listing snapshot with the URL buried in nested JSON.
+        when(mapper.selectRows(contains("FROM \"places\""), any())).thenReturn(List.of(
+                Map.of("ref", "[{\"name\":\"Pho\",\"image\":\"https://cdn/places/p1/menu-1.webp?v=2\"}]")));
+        // An older key holding the original file name, stored percent-encoded.
+        when(mapper.selectRows(contains("FROM \"marketplace_entity_versions\""), any())).thenReturn(List.of(
+                Map.of("ref", "{\"rooms\":[{\"images\":[\"https://cdn/places/p1/room.webp\","
+                        + "\"https://cdn/places/p1/s%C3%A2n%20v%C6%B0%E1%BB%9Dn.jpg\"]}]}")));
+        Instant old = Instant.now().minus(Duration.ofDays(40));
+        when(storage.listObjects("places/")).thenReturn(List.of(
+                new StorageService.StoredObject("places/p1/menu-1.webp", old),
+                new StorageService.StoredObject("places/p1/room.webp", old),
+                new StorageService.StoredObject("places/p1/sân vườn.jpg", old),
+                new StorageService.StoredObject("places/p1/replaced.webp", old)));
+
+        var result = service.cleanupOrphanedImages(
+                List.of("PLACE"), List.of("places/"), true, 500, false, null);
+
+        assertThat(result.orphanKeys()).containsExactly("places/p1/replaced.webp");
+    }
+
+    @Test
+    void aSoftDeletedMediaRowStillReleasesItsFile() {
+        when(storage.extractObjectKey(anyString()))
+                .thenAnswer(call -> call.<String>getArgument(0).replace("https://cdn/", ""));
+        when(mapper.selectRows(anyString(), any())).thenReturn(List.of());
+        when(mapper.selectRows(contains("information_schema.columns"), any()))
+                .thenReturn(List.of(column("media_assets", "url")));
+        when(mapper.selectRows(contains("FROM \"media_assets\""), any()))
+                .thenReturn(List.of(Map.of("ref", "https://cdn/admin-media/deleted.jpg")));
+        Instant old = Instant.now().minus(Duration.ofDays(40));
+        when(storage.listObjects("admin-media/")).thenReturn(List.of(
+                new StorageService.StoredObject("admin-media/deleted.jpg", old)));
+
+        var result = service.cleanupOrphanedImages(
+                List.of("MEDIA_ASSET"), List.of("admin-media/"), true, 500, false, null);
+
+        assertThat(result.orphanKeys()).containsExactly("admin-media/deleted.jpg");
+        verify(mapper, never()).selectRows(contains("FROM \"media_assets\""), any());
+    }
+
+    @Test
+    void aPrefixThatIsNotAPlainPathIsRefused() {
+        when(mapper.selectRows(anyString(), any())).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.cleanupOrphanedImages(
+                List.of("PLACE"), List.of("places/' OR 1=1 --"), true, 500, false, null))
+                .isInstanceOf(BusinessException.class);
+        verify(storage, never()).listObjects(anyString());
+    }
+
+    private static Map<String, Object> column(String table, String name) {
+        return Map.of("table_name", table, "column_name", name);
     }
 
     private static List<Map<String, Object>> urlRows(String... urls) {

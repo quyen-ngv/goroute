@@ -285,14 +285,17 @@ public enum BusinessConfigKey {
     TRACKER_OFFPLAN_NAME_RADIUS_M("TRACKER", "OFFPLAN_NAME_RADIUS_M", 60, 10, 500),
 
     // --- Epic 17: local events --------------------------------------------------------
-    // Events are public data, so this does not gate any endpoint: the app shows the Home
-    // "Sự kiện" tab when this is on (read through PUBLIC_CONFIG) or the user is a beta user.
-    EVENT_ENABLED("EVENT", "ENABLED", false),
+    // Event data is public, so reads are never gated; the app shows the Home "Sự kiện" tab when
+    // this is on (read through PUBLIC_CONFIG) or the user is a beta user. Joining an event and its
+    // group chat are gated on the server by the same flag (LocalEventAttendanceService). On for
+    // everyone since V224.
+    EVENT_ENABLED("EVENT", "ENABLED", true),
 
     // --- Epic 18: meetups ("Hoạt động") -----------------------------------------------
     // The flag gates every meetup user endpoint on the server (beta users always pass) and is
-    // folded into GET /v1/api/meetups/context; the other keys are the caps and time windows.
-    MEETUP_ENABLED("MEETUP", "ENABLED", false),
+    // folded into GET /v1/api/meetups/context (on for everyone since V224); the other keys are
+    // the caps and time windows.
+    MEETUP_ENABLED("MEETUP", "ENABLED", true),
     MEETUP_MAX_ACTIVE_PER_HOST("MEETUP", "MAX_ACTIVE_PER_HOST", 2, 1, 10),
     MEETUP_MAX_SUBMISSIONS_PER_DAY("MEETUP", "MAX_SUBMISSIONS_PER_DAY", 5, 1, 50),
     MEETUP_MAX_DAYS_AHEAD("MEETUP", "MAX_DAYS_AHEAD", 3, 0, 14),

@@ -6,6 +6,7 @@ import com.ds.goroute.mapper.PlaceTranslationMapper;
 import com.ds.goroute.repository.FoodRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.type.PlaceGroup;
+import com.ds.goroute.type.PlaceSubType;
 import com.ds.goroute.type.PlaceVisibilityStatus;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,6 +20,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.math.BigDecimal;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -120,6 +122,48 @@ class PlaceSearchIndexServiceImplTest {
                 .containsExactlyInAnyOrder(halalSeafood.getId(), vegetarian.getId());
         assertThat(searchService.searchPlaceIds(subTypeCriteria(List.of("SEAFOOD"))))
                 .containsExactly(halalSeafood.getId());
+    }
+
+    @Test
+    void otherMatchesPlacesWithoutAnyKindAlongsideTheChosenOnes() throws Exception {
+        Place halal = place("Halal", "restaurant", 10.0001, 106.0);
+        halal.setSubTypes(new String[] {"HALAL"});
+        Place cafe = place("Cafe", "restaurant", 10.0002, 106.0);
+        cafe.setSubTypes(new String[] {"CAFE"});
+        Place plain = place("Plain restaurant", "restaurant", 10.0003, 106.0);
+        searchService.indexPlace(halal);
+        searchService.indexPlace(cafe);
+        searchService.indexPlace(plain);
+
+        assertThat(searchService.searchPlaceIds(subTypeCriteria(List.of("other"))))
+                .containsExactly(plain.getId());
+        assertThat(searchService.searchPlaceIds(subTypeCriteria(List.of("HALAL", "OTHER"))))
+                .containsExactlyInAnyOrder(halal.getId(), plain.getId());
+    }
+
+    @Test
+    void countsEachKindInTheAreaAndThePlacesWithNone() throws Exception {
+        Place halalSeafood = place("Halal seafood", "restaurant", 10.0001, 106.0);
+        halalSeafood.setSubTypes(new String[] {"SEAFOOD", "HALAL"});
+        Place seafood = place("Seafood", "restaurant", 10.0002, 106.0);
+        seafood.setSubTypes(new String[] {"SEAFOOD"});
+        Place plain = place("Plain restaurant", "restaurant", 10.0003, 106.0);
+        Place farSeafood = place("Far seafood", "restaurant", 11.0, 106.0);
+        farSeafood.setSubTypes(new String[] {"SEAFOOD"});
+        for (Place place : List.of(halalSeafood, seafood, plain, farSeafood)) {
+            searchService.indexPlace(place);
+        }
+
+        // The area's own sub-type filter is ignored: the counts are for choosing one.
+        Map<String, Integer> counts = searchService.countBySubType(
+                subTypeCriteria(List.of("HALAL")),
+                List.of(PlaceSubType.SEAFOOD, PlaceSubType.HALAL, PlaceSubType.CAFE));
+
+        assertThat(counts).containsExactly(
+                Map.entry("SEAFOOD", 2),
+                Map.entry("HALAL", 1),
+                Map.entry("CAFE", 0),
+                Map.entry(PlaceSubType.UNTYPED_FILTER, 1));
     }
 
     private PlaceSearchCriteria subTypeCriteria(List<String> subTypes) {

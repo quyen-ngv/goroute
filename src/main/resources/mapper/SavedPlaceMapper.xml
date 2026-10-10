@@ -195,4 +195,55 @@
         DELETE FROM saved_places WHERE id = #{id}
     </delete>
 
+    <!-- Category matching: trimmed and case-insensitive, on idx_saved_places_user_category_key. -->
+    <select id="findByCategoryKey" resultMap="SavedPlaceResultMap">
+        SELECT <include refid="SavedPlaceColumns"/>
+        FROM saved_places
+        WHERE user_id = #{userId}
+          AND category IS NOT NULL
+          AND LOWER(BTRIM(category)) = LOWER(BTRIM(#{category}))
+        ORDER BY created_at DESC NULLS LAST, id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="existsByCategoryKey" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1
+            FROM saved_places
+            WHERE user_id = #{userId}
+              AND category IS NOT NULL
+              AND LOWER(BTRIM(category)) = LOWER(BTRIM(#{category}))
+        )
+    </select>
+
+    <delete id="deleteDuplicatesInCategory">
+        DELETE FROM saved_places later
+        USING saved_places earlier
+        WHERE later.user_id = #{userId}
+          AND earlier.user_id = #{userId}
+          AND later.category IS NOT NULL
+          AND earlier.category IS NOT NULL
+          AND LOWER(BTRIM(later.category)) = LOWER(BTRIM(#{category}))
+          AND LOWER(BTRIM(earlier.category)) = LOWER(BTRIM(#{category}))
+          AND later.item_type = earlier.item_type
+          AND later.place_id = earlier.place_id
+          AND (COALESCE(later.created_at, TIMESTAMP 'epoch'), later.id)
+              &gt; (COALESCE(earlier.created_at, TIMESTAMP 'epoch'), earlier.id)
+    </delete>
+
+    <update id="renameCategory">
+        UPDATE saved_places
+        SET category = #{newCategory}
+        WHERE user_id = #{userId}
+          AND category IS NOT NULL
+          AND LOWER(BTRIM(category)) = LOWER(BTRIM(#{category}))
+    </update>
+
+    <delete id="deleteByCategoryKey">
+        DELETE FROM saved_places
+        WHERE user_id = #{userId}
+          AND category IS NOT NULL
+          AND LOWER(BTRIM(category)) = LOWER(BTRIM(#{category}))
+    </delete>
+
 </mapper>

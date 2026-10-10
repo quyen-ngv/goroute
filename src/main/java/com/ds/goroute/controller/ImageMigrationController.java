@@ -140,7 +140,7 @@ public class ImageMigrationController extends BaseController {
     // ==================== REVIEW CLEANUP ====================
 
     /**
-     * Cleanup low-quality reviews - keep only top 200 reviews per place
+     * Cleanup low-quality reviews - keep only top 20 reviews per place
      */
     @PostMapping("/reviews/cleanup")
     @PreAuthorize("@adminAuthorization.can(authentication,'system-maintenance','update')")

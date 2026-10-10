@@ -166,7 +166,8 @@ public class MeetupAdminServiceImpl implements MeetupAdminService {
         notifier.send(meetup.getHostUserId(), NotificationType.MEETUP_REMOVED, meetup, hostName, null,
                 language -> cleanReason, adminUserId);
         List<UUID> participants = repository.findParticipants(meetupId,
-                        List.of(MeetupParticipantStatus.JOINED, MeetupParticipantStatus.REQUESTED),
+                        List.of(MeetupParticipantStatus.JOINED, MeetupParticipantStatus.REQUESTED,
+                                MeetupParticipantStatus.INVITED),
                         MeetupServiceImpl.PARTICIPANT_LIST_LIMIT)
                 .stream().map(MeetupParticipant::getUserId).toList();
         // Participants are told it is cancelled, not why: the removal reason is between the

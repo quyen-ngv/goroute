@@ -40,6 +40,27 @@ public interface SavedPlaceMapper {
     void updateTags(@Param("id") UUID id, @Param("tags") String[] tags);
 
     void updateCategory(@Param("id") UUID id, @Param("category") String category);
-    
+
     void deleteById(@Param("id") UUID id);
+
+    /** The user's items in one category (matched ignoring case), newest first, at most {@code limit}. */
+    List<SavedPlace> findByCategoryKey(@Param("userId") UUID userId,
+                                       @Param("category") String category,
+                                       @Param("limit") int limit);
+
+    /** Whether any of the user's items sit in a category of this name, ignoring case. */
+    boolean existsByCategoryKey(@Param("userId") UUID userId, @Param("category") String category);
+
+    /**
+     * Within one category, removes every save of an item but its earliest. Items saved under
+     * spellings that differ only in case are one category; renaming them to one spelling would
+     * otherwise break the per-category unique index.
+     */
+    int deleteDuplicatesInCategory(@Param("userId") UUID userId, @Param("category") String category);
+
+    int renameCategory(@Param("userId") UUID userId,
+                       @Param("category") String category,
+                       @Param("newCategory") String newCategory);
+
+    int deleteByCategoryKey(@Param("userId") UUID userId, @Param("category") String category);
 }

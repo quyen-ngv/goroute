@@ -130,6 +130,8 @@ public enum NotificationType {
     MEETUP_REQUEST_ACCEPTED,
     // The host declined a join request; sent to the requester.
     MEETUP_REQUEST_DECLINED,
-    // The host cancelled, or an admin removed, a meetup; sent to joined and requesting people.
-    MEETUP_CANCELLED
+    // The host cancelled, or an admin removed, a meetup; sent to joined, requesting and invited people.
+    MEETUP_CANCELLED,
+    // The host invited someone they follow or who follows them; sent to the invitee.
+    MEETUP_INVITED
 }

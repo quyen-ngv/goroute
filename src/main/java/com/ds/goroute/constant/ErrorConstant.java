@@ -239,6 +239,12 @@ public class ErrorConstant {
     /** The host joining their own meetup, a block, or a person the host declined or removed. */
     public static final int MEETUP_JOIN_NOT_ALLOWED = 4031604;
 
+    /** The host may only invite someone they follow or who follows them, with no block between them. */
+    public static final int MEETUP_INVITE_NOT_ALLOWED = 4031605;
+
+    /** Local events (epic 17): joining events is switched off (EVENT/ENABLED) and the caller is not a beta user. */
+    public static final int LOCAL_EVENT_JOIN_DISABLED = 4031501;
+
     /** The caller must change a temporary password before using the partner or admin portal. */
     public static final int PASSWORD_CHANGE_REQUIRED = 4031002;
 
@@ -279,6 +285,9 @@ public class ErrorConstant {
     public static final int ONBOARDING_ORGANIZATION_REQUIRED = 4090004;
     public static final int ONBOARDING_TOO_MANY_DRAFTS = 4090005;
 
+    /** Saved categories (epic 06): renaming onto a name another of the user's categories has. */
+    public static final int SAVED_CATEGORY_NAME_TAKEN = 4090601;
+
     /** Meetups (epic 18): hosting or joining needs a declared birth year first. */
     public static final int MEETUP_BIRTH_YEAR_REQUIRED = 4091601;
 
@@ -302,6 +311,12 @@ public class ErrorConstant {
 
     /** The meetup or the participant row is not in the status this action starts from. */
     public static final int MEETUP_INVALID_STATE = 4091608;
+
+    /** The meetup already has MeetupServiceImpl.MAX_PENDING_INVITES invitations waiting. */
+    public static final int MEETUP_INVITE_LIMIT = 4091609;
+
+    /** Local events (epic 17): the event is cancelled or over, so nobody can join it now. */
+    public static final int LOCAL_EVENT_NOT_JOINABLE = 4091501;
 
     /**
      * Idempotency-Key: a request with this key is still being processed. The client should

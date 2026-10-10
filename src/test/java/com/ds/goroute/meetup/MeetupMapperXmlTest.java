@@ -190,7 +190,7 @@ class MeetupMapperXmlTest {
                 "offset", 0)).getSql());
 
         assertThat(sql)
-                .contains("p.status IN ('REQUESTED', 'JOINED')")
+                .contains("p.status IN ('REQUESTED', 'INVITED', 'JOINED')")
                 .contains("m.status IN ('APPROVED', 'CANCELLED')")
                 .contains("content_takedowns")
                 .endsWith("ORDER BY p.requested_at DESC, m.id DESC LIMIT ? OFFSET ?");

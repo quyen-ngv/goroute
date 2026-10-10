@@ -84,6 +84,15 @@ public interface PlaceService {
                                      Float minLuceneScore, int page, int size);
 
     /**
+     * How many places within {@code radius} km of the point carry each sub type that fits
+     * {@code placeGroups} (every sub type when none is given), then {@code OTHER}: those with no
+     * sub type. Counted in the same index and with the same filters as {@link #searchPlaces}, so
+     * a chip's number is what choosing it lists.
+     */
+    Map<String, Integer> countPlacesBySubType(BigDecimal latitude, BigDecimal longitude, BigDecimal radius,
+                                             List<String> placeGroups, boolean includeInactive);
+
+    /**
      * Copies of {@code places} with {@code distance} measured from this exact point, order kept.
      * The inputs are never modified: they may be entries of the shared search cache.
      */

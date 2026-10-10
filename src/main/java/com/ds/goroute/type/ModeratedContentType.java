@@ -12,12 +12,13 @@ public enum ModeratedContentType {
     TRIP,
     ACTIVITY,
     ACTIVITY_COMMENT,
-    /** A comment on a trip, check-in, review or public collection. */
+    /** A comment on a trip, check-in or review. */
     CONTENT_COMMENT,
     TRIP_NOTE,
     TRIP_MEMORY,
     EXPENSE,
     CITY_STORY,
+    /** Removed feature. Kept only so old moderation and comment rows still deserialize. */
     PLACE_COLLECTION,
     /** A place name or address typed by a user: saved places and place contributions. */
     USER_PLACE,

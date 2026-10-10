@@ -31,6 +31,16 @@ import com.ds.goroute.entity.*;import com.ds.goroute.mapper.MarketplaceChatMappe
     }
 
     @Override
+    public Optional<MarketplaceConversation> findByLocalEvent(UUID eventId,UUID viewer){
+        return eventId==null?Optional.empty():Optional.ofNullable(m.findByLocalEvent(eventId,viewer));
+    }
+
+    @Override
+    public boolean isEventAttendee(UUID eventId,UUID userId){
+        return eventId!=null&&userId!=null&&m.isEventAttendee(eventId,userId);
+    }
+
+    @Override
     public List<UUID> findActiveMemberIds(UUID conversationId){return m.findActiveMemberIds(conversationId);}
 
     @Override

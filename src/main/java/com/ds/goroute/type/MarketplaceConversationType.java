@@ -7,10 +7,12 @@ public enum MarketplaceConversationType {
     /** The group chat of one trip; its members are the trip's members. */
     TRIP,
     /** The group chat of one meetup; its members are the host and every JOINED participant. */
-    MEETUP;
+    MEETUP,
+    /** The group chat of one local event; its members are everybody going to it. */
+    EVENT;
 
     /**
-     * Threads nobody but their participants may read: the trip and meetup groups and
+     * Threads nobody but their participants may read: the trip, meetup and event groups and
      * person-to-person chat. A thread about a booking is commercial, can be disputed, and stays readable by
      * an operator; these are not and do not.
      *
@@ -18,7 +20,7 @@ public enum MarketplaceConversationType {
      * endpoint cannot forget the rule.
      */
     public boolean isPrivate(java.util.UUID organizationId) {
-        return this == TRIP || this == MEETUP || (this == DIRECT && organizationId == null);
+        return this == TRIP || this == MEETUP || this == EVENT || (this == DIRECT && organizationId == null);
     }
 
     public static boolean isPrivate(String conversationType, java.util.UUID organizationId) {

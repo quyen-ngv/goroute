@@ -2,6 +2,7 @@ package com.ds.goroute.meetup.persistence;
 
 import com.ds.goroute.meetup.domain.Meetup;
 import com.ds.goroute.meetup.domain.MeetupCount;
+import com.ds.goroute.meetup.domain.MeetupInviteCandidate;
 import com.ds.goroute.meetup.domain.MeetupParticipant;
 import com.ds.goroute.meetup.domain.MeetupReportReason;
 import com.ds.goroute.meetup.domain.MeetupStatusCount;
@@ -110,6 +111,15 @@ public interface MeetupMapper {
                                 @Param("fromStatus") String fromStatus,
                                 @Param("toStatus") String toStatus,
                                 @Param("now") LocalDateTime now);
+
+    // --- invitations ------------------------------------------------------------------
+
+    List<MeetupInviteCandidate> findInviteCandidates(@Param("hostUserId") UUID hostUserId,
+                                                     @Param("meetupId") UUID meetupId,
+                                                     @Param("query") String query,
+                                                     @Param("limit") int limit);
+
+    boolean isInvitable(@Param("hostUserId") UUID hostUserId, @Param("userId") UUID userId);
 
     // --- reports ----------------------------------------------------------------------
 

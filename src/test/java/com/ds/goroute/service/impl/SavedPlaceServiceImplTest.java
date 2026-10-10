@@ -1,18 +1,23 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.dto.request.SavePlaceRequest;
 import com.ds.goroute.dto.response.RecentSavedPlaceResponse;
 import com.ds.goroute.dto.response.SavedItemsOverviewResponse;
 import com.ds.goroute.dto.response.SavedPlaceCategoryResponse;
+import com.ds.goroute.dto.response.SavedPlaceResponse;
 import com.ds.goroute.entity.LocationImage;
 import com.ds.goroute.entity.Place;
+import com.ds.goroute.entity.SavedCategory;
 import com.ds.goroute.entity.SavedPlace;
 import com.ds.goroute.entity.SocialLocationJob;
+import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.PlaceMapper;
+import com.ds.goroute.mapper.SavedCategoryMapper;
 import com.ds.goroute.mapper.SavedPlaceMapper;
 import com.ds.goroute.repository.LocationImageRepository;
-import com.ds.goroute.service.ImageStorageCleanupService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -22,8 +27,10 @@ import java.util.UUID;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -33,11 +40,12 @@ class SavedPlaceServiceImplTest {
     private final SavedPlaceMapper savedPlaceMapper = mock(SavedPlaceMapper.class);
     private final PlaceMapper placeMapper = mock(PlaceMapper.class);
     private final LocationImageRepository locationImageRepository = mock(LocationImageRepository.class);
+    private final SavedCategoryMapper savedCategoryMapper = mock(SavedCategoryMapper.class);
     private final SavedPlaceServiceImpl service = new SavedPlaceServiceImpl(
             savedPlaceMapper,
+            savedCategoryMapper,
             placeMapper,
             locationImageRepository,
-            mock(ImageStorageCleanupService.class),
             new ObjectMapper());
 
     private final UUID userId = UUID.randomUUID();
@@ -151,6 +159,64 @@ class SavedPlaceServiceImplTest {
 
         assertThat(place.getName()).isEqualTo("Google place");
         verify(placeMapper, never()).findSavedSummaryByIds(anyList());
+    }
+
+    @Test
+    void savingIntoAnExistingCategoryUsesItsSpelling() {
+        when(savedCategoryMapper.findByUserAndName(userId, "ăn uống")).thenReturn(SavedCategory.builder()
+                .id(UUID.randomUUID()).userId(userId).name("Ăn uống").build());
+
+        SavedPlaceResponse saved = service.savePlace(userId, request("PLACE", " ăn uống "));
+
+        assertThat(saved.getCategory()).isEqualTo("Ăn uống");
+        verify(savedCategoryMapper, never()).insertIfAbsent(any(), any(), any(), any());
+        verify(savedPlaceMapper).findByUserIdAndPlaceId(userId, "place-1", "PLACE", "Ăn uống");
+    }
+
+    @Test
+    void savingIntoANewCategoryCreatesIt() {
+        SavedPlaceResponse saved = service.savePlace(userId, request("PLACE", "Cà phê"));
+
+        assertThat(saved.getCategory()).isEqualTo("Cà phê");
+        verify(savedCategoryMapper).insertIfAbsent(any(UUID.class), eq(userId), eq("Cà phê"), any());
+    }
+
+    @Test
+    void savingWithoutACategoryCreatesNone() {
+        service.savePlace(userId, request("PLACE", "  "));
+
+        verify(savedCategoryMapper, never()).insertIfAbsent(any(), any(), any(), any());
+        ArgumentCaptor<SavedPlace> inserted = ArgumentCaptor.forClass(SavedPlace.class);
+        verify(savedPlaceMapper).insert(inserted.capture());
+        assertThat(inserted.getValue().getCategory()).isNull();
+    }
+
+    @Test
+    void mapPlaceWithoutCoordinatesIsRefused() {
+        SavePlaceRequest request = request("MAP_PLACE", "Cà phê");
+        request.setLat(null);
+
+        assertThatThrownBy(() -> service.savePlace(userId, request))
+                .isInstanceOf(BusinessException.class);
+        verify(savedPlaceMapper, never()).insert(any());
+    }
+
+    @Test
+    void mapPlaceIsSavedWithItsType() {
+        SavedPlaceResponse saved = service.savePlace(userId, request("map_place", "Cà phê"));
+
+        assertThat(saved.getItemType()).isEqualTo("MAP_PLACE");
+    }
+
+    private SavePlaceRequest request(String itemType, String category) {
+        return SavePlaceRequest.builder()
+                .placeId("place-1")
+                .itemType(itemType)
+                .name("Cộng Cà Phê")
+                .lat(21.03)
+                .lng(105.85)
+                .category(category)
+                .build();
     }
 
     private SavedPlace saved(String placeId, String name, Double lat, Double lng) {

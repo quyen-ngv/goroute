@@ -4,7 +4,7 @@ import java.util.Locale;
 @Service @RequiredArgsConstructor @lombok.extern.slf4j.Slf4j
 public class MarketplaceChatServiceImpl implements MarketplaceChatService {
  private final MarketplaceChatRepository repo;private final com.ds.goroute.mapper.MarketplaceChatMapper chatMapper;private final HotelMarketplaceRepository hotelRepo;private final ActivityCommerceRepository activityRepo;private final HostOrganizationRepository orgRepo;private final UserRepository userRepo;private final PartnerAuthorizationService authorization;private final MarketplaceHistoryService history;private final WebSocketService webSocketService;private final ObjectMapper mapper;private final BusinessConfigService businessConfig;private final com.ds.goroute.service.notification.ConversationNotifier conversationNotifier;private final com.ds.goroute.service.UserBlockService userBlocks;private final TripMemberRepository tripMembers;private final com.ds.goroute.service.marketplace.ChatAttachmentValidator attachmentValidator;
- @Transactional public MarketplaceConversationResponse start(UUID actor,StartMarketplaceConversationRequest r){MarketplaceConversationType type=r.getConversationType();if(type==MarketplaceConversationType.TRIP)throw bad("A trip conversation is opened through its trip");if(type==MarketplaceConversationType.MEETUP)throw bad("A meetup conversation is opened through its meetup");if(type==MarketplaceConversationType.HOTEL_BOOKING)return startHotel(actor,r.getHotelBookingId());if(type==MarketplaceConversationType.ACTIVITY_ORDER)return startActivity(actor,r.getActivityOrderId());return startDirect(actor,r);}
+ @Transactional public MarketplaceConversationResponse start(UUID actor,StartMarketplaceConversationRequest r){MarketplaceConversationType type=r.getConversationType();if(type==MarketplaceConversationType.TRIP)throw bad("A trip conversation is opened through its trip");if(type==MarketplaceConversationType.MEETUP)throw bad("A meetup conversation is opened through its meetup");if(type==MarketplaceConversationType.EVENT)throw bad("An event conversation is opened through its event");if(type==MarketplaceConversationType.HOTEL_BOOKING)return startHotel(actor,r.getHotelBookingId());if(type==MarketplaceConversationType.ACTIVITY_ORDER)return startActivity(actor,r.getActivityOrderId());return startDirect(actor,r);}
  private MarketplaceConversationResponse startHotel(UUID actor,UUID id){if(id==null)throw bad("hotelBookingId is required");MarketplaceConversation existing=repo.findByHotelBooking(id,actor).orElse(null);if(existing!=null){require(existing.getId(),actor);return response(existing);}HotelBooking b=hotelRepo.findBooking(id).orElseThrow(()->notFound("Hotel booking not found"));if(!actor.equals(b.getUserId()))authorization.requireResourcePermission(b.getOrganizationId(),actor,"HOTEL",b.getHotelId(),"CHAT_WRITE");MarketplaceConversation c=create(MarketplaceConversationType.HOTEL_BOOKING,b.getOrganizationId(),b.getId(),null);if(b.getUserId()!=null)repo.addMember(c.getId(),b.getUserId(),"GUEST",c.getCreatedAt());if(!actor.equals(b.getUserId()))repo.addMember(c.getId(),actor,"HOST",c.getCreatedAt());history.record(b.getOrganizationId(),"CONVERSATION",c.getId(),"CREATED",c,List.of(),actor,"USER",null);return response(repo.find(c.getId(),actor).orElse(c));}
  private MarketplaceConversationResponse startActivity(UUID actor,UUID id){if(id==null)throw bad("activityOrderId is required");MarketplaceConversation existing=repo.findByActivityOrder(id,actor).orElse(null);if(existing!=null){require(existing.getId(),actor);return response(existing);}ActivityOrder o=activityRepo.findOrder(id).orElseThrow(()->notFound("Activity order not found"));if(!actor.equals(o.getUserId()))authorization.requireResourcePermission(o.getOrganizationId(),actor,"ACTIVITY",o.getActivityBookingId(),"CHAT_WRITE");MarketplaceConversation c=create(MarketplaceConversationType.ACTIVITY_ORDER,o.getOrganizationId(),null,o.getId());if(o.getUserId()!=null)repo.addMember(c.getId(),o.getUserId(),"GUEST",c.getCreatedAt());if(!actor.equals(o.getUserId()))repo.addMember(c.getId(),actor,"HOST",c.getCreatedAt());history.record(o.getOrganizationId(),"CONVERSATION",c.getId(),"CREATED",c,List.of(),actor,"USER",null);return response(repo.find(c.getId(),actor).orElse(c));}
  private MarketplaceConversation create(MarketplaceConversationType type,UUID org,UUID booking,UUID order){LocalDateTime n=LocalDateTime.now();MarketplaceConversation c=MarketplaceConversation.builder().id(UUID.randomUUID()).conversationType(type.name()).organizationId(org).hotelBookingId(booking).activityOrderId(order).status(MarketplaceConversationStatus.OPEN.name()).createdAt(n).updatedAt(n).build();try{repo.insertConversation(c);}catch(DataIntegrityViolationException ex){MarketplaceConversation found=booking!=null?repo.findByHotelBooking(booking,null).orElse(null):repo.findByActivityOrder(order,null).orElse(null);if(found!=null)return found;throw ex;}return c;}
@@ -122,7 +122,7 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
                         viewer))
                 .toList();
     }
- private void require(UUID id,UUID a){MarketplaceConversation c=conversation(id,a);if(c.getTripId()!=null){requireTripMember(c.getTripId(),a);return;}if(c.getMeetupId()!=null){requireMeetupMember(c.getMeetupId(),a);return;}if(c.getOrganizationId()==null){if(!repo.canAccess(id,a))throw forbidden();return;}if(c.getHotelBookingId()!=null){HotelBooking b=hotelRepo.findBooking(c.getHotelBookingId()).orElseThrow(()->notFound("Hotel booking not found"));if(a.equals(b.getUserId()))return;authorization.requireResourcePermission(c.getOrganizationId(),a,"HOTEL",b.getHotelId(),"CHAT_WRITE");return;}if(c.getActivityOrderId()!=null){ActivityOrder o=activityRepo.findOrder(c.getActivityOrderId()).orElseThrow(()->notFound("Activity order not found"));if(a.equals(o.getUserId()))return;authorization.requireResourcePermission(c.getOrganizationId(),a,"ACTIVITY",o.getActivityBookingId(),"CHAT_WRITE");return;}authorization.requirePermission(c.getOrganizationId(),a,"CHAT_WRITE");}private void ensureConversationMember(UUID id,UUID userId){MarketplaceConversation c=conversation(id,userId);if(c.getTripId()!=null){repo.addMember(id,userId,tripMemberRole(c.getTripId(),userId),LocalDateTime.now());return;}if(c.getMeetupId()!=null){repo.addMember(id,userId,userId.equals(c.getMeetupHostUserId())?"CREATOR":"PARTICIPANT",LocalDateTime.now());return;}if(c.getOrganizationId()==null)return;String role="HOST";if(c.getHotelBookingId()!=null){HotelBooking b=hotelRepo.findBooking(c.getHotelBookingId()).orElseThrow(()->notFound("Hotel booking not found"));if(userId.equals(b.getUserId()))role="GUEST";}else if(c.getActivityOrderId()!=null){ActivityOrder o=activityRepo.findOrder(c.getActivityOrderId()).orElseThrow(()->notFound("Activity order not found"));if(userId.equals(o.getUserId()))role="GUEST";}repo.addMember(id,userId,role,LocalDateTime.now());}private boolean canPartnerAccess(MarketplaceConversation c,UUID a){if(c.getHotelBookingId()!=null){HotelBooking b=hotelRepo.findBooking(c.getHotelBookingId()).orElse(null);return b!=null&&authorization.hasResourcePermission(c.getOrganizationId(),a,"HOTEL",b.getHotelId(),"CHAT_WRITE");}if(c.getActivityOrderId()!=null){ActivityOrder o=activityRepo.findOrder(c.getActivityOrderId()).orElse(null);return o!=null&&authorization.hasResourcePermission(c.getOrganizationId(),a,"ACTIVITY",o.getActivityBookingId(),"CHAT_WRITE");}return true;}private MarketplaceConversation conversation(UUID id,UUID v){return repo.find(id,v).orElseThrow(()->notFound("Conversation not found"));}
+ private void require(UUID id,UUID a){MarketplaceConversation c=conversation(id,a);if(c.getTripId()!=null){requireTripMember(c.getTripId(),a);return;}if(c.getMeetupId()!=null){requireMeetupMember(c.getMeetupId(),a);return;}if(c.getLocalEventId()!=null){requireEventAttendee(c.getLocalEventId(),a);return;}if(c.getOrganizationId()==null){if(!repo.canAccess(id,a))throw forbidden();return;}if(c.getHotelBookingId()!=null){HotelBooking b=hotelRepo.findBooking(c.getHotelBookingId()).orElseThrow(()->notFound("Hotel booking not found"));if(a.equals(b.getUserId()))return;authorization.requireResourcePermission(c.getOrganizationId(),a,"HOTEL",b.getHotelId(),"CHAT_WRITE");return;}if(c.getActivityOrderId()!=null){ActivityOrder o=activityRepo.findOrder(c.getActivityOrderId()).orElseThrow(()->notFound("Activity order not found"));if(a.equals(o.getUserId()))return;authorization.requireResourcePermission(c.getOrganizationId(),a,"ACTIVITY",o.getActivityBookingId(),"CHAT_WRITE");return;}authorization.requirePermission(c.getOrganizationId(),a,"CHAT_WRITE");}private void ensureConversationMember(UUID id,UUID userId){MarketplaceConversation c=conversation(id,userId);if(c.getTripId()!=null){repo.addMember(id,userId,tripMemberRole(c.getTripId(),userId),LocalDateTime.now());return;}if(c.getMeetupId()!=null){repo.addMember(id,userId,userId.equals(c.getMeetupHostUserId())?"CREATOR":"PARTICIPANT",LocalDateTime.now());return;}if(c.getLocalEventId()!=null){repo.addMember(id,userId,"PARTICIPANT",LocalDateTime.now());return;}if(c.getOrganizationId()==null)return;String role="HOST";if(c.getHotelBookingId()!=null){HotelBooking b=hotelRepo.findBooking(c.getHotelBookingId()).orElseThrow(()->notFound("Hotel booking not found"));if(userId.equals(b.getUserId()))role="GUEST";}else if(c.getActivityOrderId()!=null){ActivityOrder o=activityRepo.findOrder(c.getActivityOrderId()).orElseThrow(()->notFound("Activity order not found"));if(userId.equals(o.getUserId()))role="GUEST";}repo.addMember(id,userId,role,LocalDateTime.now());}private boolean canPartnerAccess(MarketplaceConversation c,UUID a){if(c.getHotelBookingId()!=null){HotelBooking b=hotelRepo.findBooking(c.getHotelBookingId()).orElse(null);return b!=null&&authorization.hasResourcePermission(c.getOrganizationId(),a,"HOTEL",b.getHotelId(),"CHAT_WRITE");}if(c.getActivityOrderId()!=null){ActivityOrder o=activityRepo.findOrder(c.getActivityOrderId()).orElse(null);return o!=null&&authorization.hasResourcePermission(c.getOrganizationId(),a,"ACTIVITY",o.getActivityBookingId(),"CHAT_WRITE");}return true;}private MarketplaceConversation conversation(UUID id,UUID v){return repo.find(id,v).orElseThrow(()->notFound("Conversation not found"));}
  private MarketplaceConversationResponse response(MarketplaceConversation c){return response(c,repo.findParticipants(List.of(c.getId())));}
 
     /**
@@ -155,6 +155,8 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
                 .tripId(c.getTripId())
                 .meetupId(c.getMeetupId())
                 .meetupCategory(c.getMeetupCategory())
+                .localEventId(c.getLocalEventId())
+                .eventCategory(c.getEventCategory())
                 .pinnedMessageId(c.getPinnedMessageId())
                 .memberCount(c.getMemberCount())
                 .mutedUntil(c.getMutedUntil())
@@ -173,6 +175,7 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
     private String title(MarketplaceConversation c, List<MarketplaceConversationResponse.ConversationParticipantResponse> participants) {
         if (c.getTripName() != null) return c.getTripName();
         if (c.getMeetupTitle() != null) return c.getMeetupTitle();
+        if (c.getEventTitle() != null) return c.getEventTitle();
         if (c.getBookingCode() != null) return c.getOrganizationName() == null ? c.getBookingCode() : c.getOrganizationName();
         if (c.getOrderCode() != null) return c.getOrganizationName() == null ? c.getOrderCode() : c.getOrganizationName();
         if (c.getOrganizationName() != null) return c.getOrganizationName();
@@ -317,6 +320,11 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
         if (userId == null || !repo.isMeetupHostOrJoined(meetupId, userId)) throw forbidden();
     }
 
+    /** Access to an event thread is asked of the attendee list, live: leaving takes the chat away at once. */
+    private void requireEventAttendee(UUID eventId, UUID userId) {
+        if (userId == null || !repo.isEventAttendee(eventId, userId)) throw forbidden();
+    }
+
     private String tripMemberRole(UUID tripId, UUID userId) {
         return tripMembers.findByTripIdAndUserId(tripId, userId)
                 .filter(m -> m.getRole() == com.ds.goroute.type.MemberRole.OWNER)
@@ -406,7 +414,7 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
      */
     private String avatarUrl(MarketplaceConversation c,
                             List<MarketplaceConversationResponse.ConversationParticipantResponse> participants) {
-        return c.getTripCoverImageUrl();
+        return c.getTripCoverImageUrl() != null ? c.getTripCoverImageUrl() : c.getEventCoverUrl();
     }
 
     /** Normalises the inbox filter, refusing anything that is not a conversation type. */
@@ -638,9 +646,11 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
         }
     }
 
-    /** Whether the thread is a meetup group, whose system lines say "group" rather than "trip". */
+    /** Whether the thread is a meetup or event group, whose system lines say "group" rather than "trip". */
     private boolean isMeetupThread(UUID conversationId) {
-        return repo.find(conversationId, null).map(c -> c.getMeetupId() != null).orElse(false);
+        return repo.find(conversationId, null)
+                .map(c -> c.getMeetupId() != null || c.getLocalEventId() != null)
+                .orElse(false);
     }
 
     private String systemText(String event, String subjectName, boolean meetup) {

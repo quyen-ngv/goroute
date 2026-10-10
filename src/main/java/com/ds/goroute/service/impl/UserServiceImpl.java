@@ -22,7 +22,6 @@ import com.ds.goroute.service.UserDeviceService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.UserGuideService;
 import com.ds.goroute.service.UserService;
-import com.ds.goroute.service.StorageService;
 import com.ds.goroute.utils.JsonUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
@@ -56,7 +55,6 @@ public class UserServiceImpl implements UserService {
     private final UserReviewRepository userReviewRepository;
     private final TripRepository tripRepository;
     private final PlaceContributionMapper placeContributionMapper;
-    private final StorageService storageService;
     private final FileUploadService fileUploadService;
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final UserDeviceService userDeviceService;
@@ -188,7 +186,6 @@ public class UserServiceImpl implements UserService {
     public String updateAvatar(UUID userId, MultipartFile file) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
-        String oldAvatarUrl = user.getAvatarUrl();
 
         ImageUploadOutcome outcome = fileUploadService.uploadImage(
                 ImageUploadRequest.of(userId, ImageUploadRequest.ImageEntryPoint.USER_AVATAR,
@@ -205,9 +202,6 @@ public class UserServiceImpl implements UserService {
         String avatarUrl = outcome.url();
         user.setAvatarUrl(avatarUrl);
         userRepository.updateById(user);
-        if (oldAvatarUrl != null && !oldAvatarUrl.equals(avatarUrl)) {
-            storageService.deleteFile(oldAvatarUrl);
-        }
 
         log.info("User avatar updated: {} -> {}", userId, avatarUrl);
         return avatarUrl;

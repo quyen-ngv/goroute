@@ -652,6 +652,113 @@ class MeetupServiceImplTest {
         }
     }
 
+    // --- invitations --------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("invitations")
+    class Invitations {
+
+        @BeforeEach
+        void approvalMeetupWithAFollower() {
+            stored(meetup().joinPolicy(MeetupJoinPolicy.APPROVAL).maxParticipants(3).build());
+            when(repository.isInvitable(hostId, joinerId)).thenReturn(true);
+        }
+
+        @Test
+        void theHostInvitesSomeoneTheyAreConnectedToAndTellsThem() {
+            MeetupParticipantResponse response = service.invite(hostId, meetupId, joinerId);
+
+            assertThat(response.getStatus()).isEqualTo(MeetupParticipantStatus.INVITED);
+            ArgumentCaptor<MeetupParticipant> saved = ArgumentCaptor.forClass(MeetupParticipant.class);
+            verify(repository).upsertParticipant(saved.capture());
+            assertThat(saved.getValue().getStatus()).isEqualTo(MeetupParticipantStatus.INVITED);
+            assertThat(saved.getValue().getDecidedAt()).isNull();
+            verifyNotified(joinerId, NotificationType.MEETUP_INVITED);
+            // An invitation is not a seat: the chat waits for the answer.
+            verify(meetupChat, never()).onMembershipChanged(any());
+        }
+
+        @Test
+        void onlyConnectedPeopleWithNoBlockCanBeInvited() {
+            UUID stranger = UUID.randomUUID();
+            assertThatThrownBy(() -> service.invite(hostId, meetupId, stranger))
+                    .satisfies(e -> assertThat(code(e)).isEqualTo(ErrorConstant.MEETUP_INVITE_NOT_ALLOWED));
+            assertThatThrownBy(() -> service.invite(hostId, meetupId, hostId))
+                    .satisfies(e -> assertThat(code(e)).isEqualTo(ErrorConstant.MEETUP_INVITE_NOT_ALLOWED));
+            assertThatThrownBy(() -> service.invite(joinerId, meetupId, hostId))
+                    .satisfies(e -> assertThat(code(e)).isEqualTo(ErrorConstant.MEETUP_NOT_FOUND));
+            verify(repository, never()).upsertParticipant(any());
+        }
+
+        @Test
+        void inviteRules() {
+            row(joinerId, MeetupParticipantStatus.REQUESTED);
+            assertThatThrownBy(() -> service.invite(hostId, meetupId, joinerId))
+                    .satisfies(e -> assertThat(code(e)).isEqualTo(ErrorConstant.MEETUP_INVALID_STATE));
+
+            row(joinerId, MeetupParticipantStatus.INVITED);
+            assertThat(service.invite(hostId, meetupId, joinerId).getStatus())
+                    .isEqualTo(MeetupParticipantStatus.INVITED);
+            verify(repository, never()).upsertParticipant(any());
+
+            // The host's own invitation overrides an earlier decline or removal.
+            row(joinerId, MeetupParticipantStatus.REMOVED);
+            assertThat(service.invite(hostId, meetupId, joinerId).getStatus())
+                    .isEqualTo(MeetupParticipantStatus.INVITED);
+
+            when(repository.countParticipantsWithStatus(meetupId, MeetupParticipantStatus.JOINED)).thenReturn(3L);
+            assertThatThrownBy(() -> service.invite(hostId, meetupId, joinerId))
+                    .satisfies(e -> assertThat(code(e)).isEqualTo(ErrorConstant.MEETUP_FULL));
+
+            when(repository.countParticipantsWithStatus(meetupId, MeetupParticipantStatus.JOINED)).thenReturn(0L);
+            when(repository.countParticipantsWithStatus(meetupId, MeetupParticipantStatus.INVITED))
+                    .thenReturn((long) MeetupServiceImpl.MAX_PENDING_INVITES);
+            assertThatThrownBy(() -> service.invite(hostId, meetupId, joinerId))
+                    .satisfies(e -> assertThat(code(e)).isEqualTo(ErrorConstant.MEETUP_INVITE_LIMIT));
+
+            stored(meetup().status(MeetupStatus.PENDING_REVIEW).build());
+            assertThatThrownBy(() -> service.invite(hostId, meetupId, joinerId))
+                    .satisfies(e -> assertThat(code(e)).isEqualTo(ErrorConstant.MEETUP_INVALID_STATE));
+        }
+
+        @Test
+        void acceptingSeatsTheInviteeWithNoApprovalAndTellsTheHost() {
+            row(joinerId, MeetupParticipantStatus.INVITED);
+
+            MeetupJoinResponse response = service.join(joinerId, meetupId, "hi");
+
+            assertThat(response.getStatus()).isEqualTo(MeetupParticipantStatus.JOINED);
+            verify(repository).updateParticipantStatus(meetupId, joinerId, MeetupParticipantStatus.INVITED,
+                    MeetupParticipantStatus.JOINED, NOW_UTC);
+            verify(repository, never()).upsertParticipant(any());
+            verify(meetupChat).onMembershipChanged(meetupId);
+            verifyNotified(hostId, NotificationType.MEETUP_PARTICIPANT_JOINED);
+        }
+
+        @Test
+        void acceptingStillChecksAgeAndSeats() {
+            row(joinerId, MeetupParticipantStatus.INVITED);
+            when(repository.countParticipantsWithStatus(meetupId, MeetupParticipantStatus.JOINED)).thenReturn(3L);
+            assertThatThrownBy(() -> service.join(joinerId, meetupId, null))
+                    .satisfies(e -> assertThat(code(e)).isEqualTo(ErrorConstant.MEETUP_FULL));
+
+            stored(meetup().joinPolicy(MeetupJoinPolicy.APPROVAL).minAge(40).build());
+            assertThatThrownBy(() -> service.join(joinerId, meetupId, null))
+                    .satisfies(e -> assertThat(code(e)).isEqualTo(ErrorConstant.MEETUP_AGE_NOT_ALLOWED));
+        }
+
+        @Test
+        void decliningOrTakingBackAnInvitationLeavesThePersonFreeToAsk() {
+            row(joinerId, MeetupParticipantStatus.INVITED);
+            assertThat(service.leave(joinerId, meetupId).getStatus()).isEqualTo(MeetupParticipantStatus.WITHDRAWN);
+
+            assertThat(service.removeParticipant(hostId, meetupId, joinerId).getStatus())
+                    .isEqualTo(MeetupParticipantStatus.WITHDRAWN);
+            verify(meetupChat, never()).onMembershipChanged(any());
+            assertThat(MeetupParticipantStatus.WITHDRAWN.canRejoin()).isTrue();
+        }
+    }
+
     // --- group chat ---------------------------------------------------------------------
 
     @Nested

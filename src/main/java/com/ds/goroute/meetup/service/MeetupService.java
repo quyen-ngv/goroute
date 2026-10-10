@@ -3,6 +3,7 @@ package com.ds.goroute.meetup.service;
 import com.ds.goroute.dto.response.PageResponse;
 import com.ds.goroute.meetup.dto.MeetupContextResponse;
 import com.ds.goroute.meetup.dto.MeetupDetailResponse;
+import com.ds.goroute.meetup.dto.MeetupInviteCandidateResponse;
 import com.ds.goroute.meetup.dto.MeetupJoinResponse;
 import com.ds.goroute.meetup.dto.MeetupParticipantResponse;
 import com.ds.goroute.meetup.dto.MeetupSummaryResponse;
@@ -49,5 +50,12 @@ public interface MeetupService {
 
     MeetupParticipantResponse decline(UUID hostUserId, UUID meetupId, UUID participantUserId);
 
+    /** Takes a JOINED person out of the meetup, or takes back an invitation that is still waiting. */
     MeetupParticipantResponse removeParticipant(UUID hostUserId, UUID meetupId, UUID participantUserId);
+
+    /** People the host may invite (follows either way, no block), filtered by name when {@code query} is set. */
+    List<MeetupInviteCandidateResponse> inviteCandidates(UUID hostUserId, UUID meetupId, String query);
+
+    /** The host invites one person; they join by accepting, with no approval step. */
+    MeetupParticipantResponse invite(UUID hostUserId, UUID meetupId, UUID inviteeUserId);
 }

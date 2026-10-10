@@ -788,6 +788,7 @@ public class ExpenseServiceImpl implements ExpenseService {
                     return ExpenseSplitResponse.builder()
                             .id(s.getId())
                             .user(userResponse)
+                            .guestMemberId(s.getGuestMemberId())
                             .amount(s.getAmount())
                             .isPaid(s.getIsSettled())
                             .build();
@@ -1013,6 +1014,7 @@ public class ExpenseServiceImpl implements ExpenseService {
         return ExpenseSplitResponse.builder()
                 .id(split.getId())
                 .user(userResponse)
+                .guestMemberId(split.getGuestMemberId())
                 .amount(split.getAmount())
                 .isPaid(split.getIsSettled())
                 .build();

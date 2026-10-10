@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.localevent.persistence.LocalEventAttendeeMapper">
+
+    <!-- Going twice is a no-op, so a double tap or a retry cannot announce the same person twice. -->
+    <insert id="insert">
+        INSERT INTO local_event_attendees (event_id, user_id, joined_at)
+        VALUES (#{eventId}, #{userId}, #{joinedAt})
+        ON CONFLICT (event_id, user_id) DO NOTHING
+    </insert>
+
+    <delete id="delete">
+        DELETE FROM local_event_attendees
+        WHERE event_id = #{eventId} AND user_id = #{userId}
+    </delete>
+
+    <select id="exists" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM local_event_attendees WHERE event_id = #{eventId} AND user_id = #{userId}
+        )
+    </select>
+
+    <select id="countByEvent" resultType="long">
+        SELECT COUNT(*) FROM local_event_attendees WHERE event_id = #{eventId}
+    </select>
+
+    <select id="findUserIds" resultType="java.util.UUID">
+        SELECT user_id
+        FROM local_event_attendees
+        WHERE event_id = #{eventId}
+        ORDER BY joined_at ASC, user_id ASC
+        LIMIT #{limit}
+    </select>
+</mapper>

@@ -2,6 +2,7 @@ package com.ds.goroute.meetup.persistence;
 
 import com.ds.goroute.meetup.domain.Meetup;
 import com.ds.goroute.meetup.domain.MeetupCount;
+import com.ds.goroute.meetup.domain.MeetupInviteCandidate;
 import com.ds.goroute.meetup.domain.MeetupParticipant;
 import com.ds.goroute.meetup.domain.MeetupReportReason;
 import com.ds.goroute.meetup.domain.MeetupStatusCount;
@@ -179,6 +180,16 @@ public class MeetupRepositoryImpl implements MeetupRepository {
     public boolean updateParticipantStatus(UUID meetupId, UUID userId, MeetupParticipantStatus from,
                                            MeetupParticipantStatus to, LocalDateTime now) {
         return mapper.updateParticipantStatus(meetupId, userId, from.name(), to.name(), now) == 1;
+    }
+
+    @Override
+    public List<MeetupInviteCandidate> findInviteCandidates(UUID hostUserId, UUID meetupId, String query, int limit) {
+        return mapper.findInviteCandidates(hostUserId, meetupId, query, limit);
+    }
+
+    @Override
+    public boolean isInvitable(UUID hostUserId, UUID userId) {
+        return hostUserId != null && userId != null && mapper.isInvitable(hostUserId, userId);
     }
 
     @Override

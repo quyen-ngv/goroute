@@ -15,6 +15,8 @@ import java.util.UUID;
 public class ExpenseSplitResponse {
     private UUID id;
     private UserResponse user;
+    /** trip_members.id of a guest split; null for a registered user's split. */
+    private UUID guestMemberId;
     private BigDecimal amount;
     private Boolean isPaid;
 }

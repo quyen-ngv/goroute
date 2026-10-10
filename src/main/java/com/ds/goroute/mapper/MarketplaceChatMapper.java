@@ -34,6 +34,12 @@ public interface MarketplaceChatMapper {
  /** Whether the person hosts the meetup or holds a JOINED seat in it right now. */
  boolean isMeetupHostOrJoined(@Param("meetupId")UUID meetupId,@Param("userId")UUID userId);
 
+ /** The group chat of one local event, if it has been created. */
+ MarketplaceConversation findByLocalEvent(@Param("eventId")UUID eventId,@Param("viewerId")UUID viewerId);
+
+ /** Whether the person is going to the event right now. */
+ boolean isEventAttendee(@Param("eventId")UUID eventId,@Param("userId")UUID userId);
+
  /** Ids of everyone currently in the thread, for reconciling against another member list. */
  List<UUID> findActiveMemberIds(@Param("conversationId")UUID conversationId);
 

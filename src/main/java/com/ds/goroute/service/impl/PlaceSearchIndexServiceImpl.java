@@ -10,6 +10,7 @@ import com.ds.goroute.mapper.PlaceTranslationMapper;
 import com.ds.goroute.repository.FoodRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.PlaceSearchIndexService;
+import com.ds.goroute.type.PlaceSubType;
 import com.ds.goroute.utils.CitySlugResolver;
 import com.ds.goroute.utils.DestinationMatchUtils;
 import com.ds.goroute.utils.JsonUtils;
@@ -63,9 +64,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -560,7 +563,7 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
                     BooleanClause.Occur.FILTER);
         }
         addTermSetFilter(query, PLACE_GROUP_FIELD, normalizeUpper(criteria.placeGroups()));
-        addTermSetFilter(query, SUB_TYPE_FIELD, normalizeUpper(criteria.subTypes()));
+        addSubTypeFilter(query, normalizeUpper(criteria.subTypes()));
         if (criteria.minRating() != null) {
             query.add(DoublePoint.newRangeQuery(
                             RATING_FIELD, criteria.minRating().doubleValue(), Double.POSITIVE_INFINITY),
@@ -582,6 +585,75 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
                     BooleanClause.Occur.FILTER);
         }
         return query.build();
+    }
+
+    /**
+     * Places with any of the kinds; {@link PlaceSubType#UNTYPED_FILTER} among them also lets
+     * through the places that have no kind at all.
+     */
+    private void addSubTypeFilter(BooleanQuery.Builder query, List<String> codes) {
+        if (codes.isEmpty()) {
+            return;
+        }
+        List<String> kinds = codes.stream().filter(code -> !PlaceSubType.UNTYPED_FILTER.equals(code)).toList();
+        if (kinds.size() == codes.size()) {
+            addTermSetFilter(query, SUB_TYPE_FIELD, kinds);
+            return;
+        }
+        BooleanQuery.Builder either = new BooleanQuery.Builder();
+        if (!kinds.isEmpty()) {
+            either.add(new TermInSetQuery(SUB_TYPE_FIELD, toBytesRefs(kinds)), BooleanClause.Occur.SHOULD);
+        }
+        either.add(untypedQuery(), BooleanClause.Occur.SHOULD);
+        query.add(either.build(), BooleanClause.Occur.FILTER);
+    }
+
+    /** Places that carry none of the kinds. */
+    private static Query untypedQuery() {
+        return new BooleanQuery.Builder()
+                .add(new MatchAllDocsQuery(), BooleanClause.Occur.MUST)
+                .add(new TermInSetQuery(SUB_TYPE_FIELD, toBytesRefs(
+                                Arrays.stream(PlaceSubType.values()).map(Enum::name).toList())),
+                        BooleanClause.Occur.MUST_NOT)
+                .build();
+    }
+
+    private static List<BytesRef> toBytesRefs(Collection<String> values) {
+        return values.stream().map(BytesRef::new).toList();
+    }
+
+    @Override
+    public Map<String, Integer> countBySubType(PlaceSearchCriteria criteria, List<PlaceSubType> kinds)
+            throws IOException {
+        validateCriteria(criteria);
+        // The area as the list searches it, before any kind is chosen.
+        Query area = buildSearchQuery(withoutSubTypes(criteria));
+        IndexSearcher searcher = searcherManager.acquire();
+        try {
+            Map<String, Integer> counts = new LinkedHashMap<>();
+            for (PlaceSubType kind : kinds) {
+                counts.put(kind.name(), searcher.count(new BooleanQuery.Builder()
+                        .add(area, BooleanClause.Occur.MUST)
+                        .add(new TermQuery(new Term(SUB_TYPE_FIELD, kind.name())), BooleanClause.Occur.FILTER)
+                        .build()));
+            }
+            counts.put(PlaceSubType.UNTYPED_FILTER, searcher.count(new BooleanQuery.Builder()
+                    .add(area, BooleanClause.Occur.MUST)
+                    .add(untypedQuery(), BooleanClause.Occur.FILTER)
+                    .build()));
+            return counts;
+        } finally {
+            searcherManager.release(searcher);
+        }
+    }
+
+    private static PlaceSearchCriteria withoutSubTypes(PlaceSearchCriteria criteria) {
+        return new PlaceSearchCriteria(
+                criteria.keyword(), criteria.latitude(), criteria.longitude(), criteria.radiusKm(),
+                criteria.category(), criteria.placeGroups(), null, criteria.minRating(),
+                criteria.citySlug(), criteria.foodIds(), criteria.excludeLinkedFoodPlaces(),
+                criteria.includeInactive(), criteria.sortByRating(), criteria.minLuceneScore(),
+                criteria.page(), criteria.size());
     }
 
     private void addTermSetFilter(BooleanQuery.Builder query, String field, Collection<String> values) {

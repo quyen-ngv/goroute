@@ -7,6 +7,7 @@ import com.ds.goroute.dto.response.PageResponse;
 import com.ds.goroute.meetup.dto.MeetupCancelRequest;
 import com.ds.goroute.meetup.dto.MeetupContextResponse;
 import com.ds.goroute.meetup.dto.MeetupDetailResponse;
+import com.ds.goroute.meetup.dto.MeetupInviteCandidateResponse;
 import com.ds.goroute.meetup.dto.MeetupJoinRequest;
 import com.ds.goroute.meetup.dto.MeetupJoinResponse;
 import com.ds.goroute.meetup.dto.MeetupParticipantResponse;
@@ -21,6 +22,7 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -175,5 +177,22 @@ public class MeetupController {
             @PathVariable UUID participantUserId) {
         return ResponseEntity.ok(BaseResponse.ofSucceeded(
                 meetupService.removeParticipant(userId, meetupId, participantUserId)));
+    }
+
+    /** The host's invite picker: people they follow or who follow them, filtered by {@code q}. */
+    @GetMapping("/{meetupId}/invite-candidates")
+    public ResponseEntity<BaseResponse<List<MeetupInviteCandidateResponse>>> inviteCandidates(
+            @CurrentUser UUID userId,
+            @PathVariable UUID meetupId,
+            @RequestParam(required = false) @Size(max = 100) String q) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(meetupService.inviteCandidates(userId, meetupId, q)));
+    }
+
+    @PostMapping("/{meetupId}/participants/{participantUserId}/invite")
+    public ResponseEntity<BaseResponse<MeetupParticipantResponse>> invite(
+            @CurrentUser UUID userId,
+            @PathVariable UUID meetupId,
+            @PathVariable UUID participantUserId) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(meetupService.invite(userId, meetupId, participantUserId)));
     }
 }

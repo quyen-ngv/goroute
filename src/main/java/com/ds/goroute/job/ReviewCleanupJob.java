@@ -10,6 +10,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -23,12 +25,13 @@ public class ReviewCleanupJob {
     private final PlaceRepository placeRepository;
     private final PlaceReviewScoringService scoringService;
     private final ImageStorageCleanupService imageStorageCleanupService;
+    private final PlatformTransactionManager transactionManager;
 
-    private static final int MAX_REVIEWS_PER_PLACE = 200;
+    private static final int MAX_REVIEWS_PER_PLACE = 20;
 
     /**
      * Clean up low-quality reviews for all places
-     * Keep only top 200 reviews per place based on weighted score
+     * Keep only top 20 reviews per place based on weighted score
      */
     @Async
     public void cleanupAllPlaces() {
@@ -90,7 +93,7 @@ public class ReviewCleanupJob {
         // Sort by weight descending
         reviewsWithWeights.sort((a, b) -> Double.compare(b.weight, a.weight));
 
-        // Keep top 200 reviews
+        // Keep top 20 reviews
         List<UUID> reviewsToKeep = reviewsWithWeights.stream()
                 .limit(MAX_REVIEWS_PER_PLACE)
                 .map(rw -> rw.review.getId())
@@ -103,8 +106,14 @@ public class ReviewCleanupJob {
                 .collect(Collectors.toList());
 
         if (!reviewsToDelete.isEmpty()) {
-            reviewsToDelete.forEach(id -> imageStorageCleanupService.deleteImagesForEntityRecord("PLACE_REVIEW", id));
-            reviewRepository.deleteByIds(reviewsToDelete);
+            // One transaction, so the files leave MinIO only after the rows are really gone:
+            // deleteImagesForEntityRecord defers its delete to commit, and runs it at once
+            // when there is no transaction, which used to strand rows pointing at deleted files
+            // whenever the row delete failed.
+            new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                reviewsToDelete.forEach(id -> imageStorageCleanupService.deleteImagesForEntityRecord("PLACE_REVIEW", id));
+                reviewRepository.deleteByIds(reviewsToDelete);
+            });
             log.info("Place {}: Kept {} reviews, deleted {} reviews",
                     placeId, reviewsToKeep.size(), reviewsToDelete.size());
         }

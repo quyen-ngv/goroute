@@ -26,6 +26,14 @@ public class MarketplaceConversation {
     /** The meetup host, so a member row can be given the CREATOR role without a second read. */
     private UUID meetupHostUserId;
 
+    /** The local event this is the group chat of, {@code null} for every other kind. */
+    private UUID localEventId;
+    private String eventTitle;
+    /** The event's re-hosted cover, used as the thread picture. */
+    private String eventCoverUrl;
+    /** The event category code, so a client can draw the category icon when there is no cover. */
+    private String eventCategory;
+
     /** Kept at the top of the thread for everyone; {@code null} when nothing is pinned. */
     private UUID pinnedMessageId;
 

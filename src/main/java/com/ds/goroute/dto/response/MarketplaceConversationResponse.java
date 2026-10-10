@@ -42,6 +42,12 @@ public class MarketplaceConversationResponse {
     /** The meetup category code (e.g. COFFEE); the client draws its emoji as the thread picture. */
     private String meetupCategory;
 
+    /** The local event this is the group chat of, {@code null} for every other kind. */
+    private UUID localEventId;
+
+    /** The event category code (e.g. MUSIC); the client draws its icon when the event has no cover. */
+    private String eventCategory;
+
     private UUID pinnedMessageId;
     private Long memberCount;
     private LocalDateTime mutedUntil;

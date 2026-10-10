@@ -10,8 +10,10 @@ import com.ds.goroute.meetup.domain.Meetup;
 import com.ds.goroute.meetup.domain.MeetupParticipant;
 import com.ds.goroute.meetup.dto.MeetupContextResponse;
 import com.ds.goroute.meetup.dto.MeetupDetailResponse;
+import com.ds.goroute.meetup.dto.MeetupInviteCandidateResponse;
 import com.ds.goroute.meetup.dto.MeetupJoinResponse;
 import com.ds.goroute.meetup.dto.MeetupParticipantResponse;
+import com.ds.goroute.meetup.dto.MeetupPersonResponse;
 import com.ds.goroute.meetup.dto.MeetupSummaryResponse;
 import com.ds.goroute.meetup.dto.MeetupUpsertRequest;
 import com.ds.goroute.meetup.persistence.MeetupDiscoveryQuery;
@@ -54,6 +56,10 @@ public class MeetupServiceImpl implements MeetupService {
     static final int MAX_PARTICIPANTS = 50;
     /** Bounds the participant list; seats are capped at 50, requests by the per-user cap. */
     static final int PARTICIPANT_LIST_LIMIT = 200;
+    /** Invitations waiting on one meetup at a time. */
+    static final int MAX_PENDING_INVITES = 50;
+    /** Rows the invite picker shows; the host narrows it down by typing a name. */
+    static final int INVITE_CANDIDATE_LIMIT = 50;
 
     private final MeetupRepository repository;
     private final MeetupAccess access;
@@ -288,6 +294,9 @@ public class MeetupServiceImpl implements MeetupService {
             throw new BusinessException(ErrorConstant.MEETUP_AGE_NOT_ALLOWED, "Your age is outside this meetup's range");
         }
         MeetupParticipant existing = repository.findParticipant(meetupId, userId).orElse(null);
+        if (existing != null && existing.getStatus() == MeetupParticipantStatus.INVITED) {
+            return acceptInvitation(meetup, existing, nowUtc);
+        }
         if (existing != null) {
             if (existing.getStatus().isActive()) {
                 return new MeetupJoinResponse(existing.getStatus());
@@ -337,7 +346,7 @@ public class MeetupServiceImpl implements MeetupService {
                         "You are not in this meetup"));
         MeetupParticipantStatus target = switch (row.getStatus()) {
             case JOINED -> MeetupParticipantStatus.LEFT;
-            case REQUESTED -> MeetupParticipantStatus.WITHDRAWN;
+            case REQUESTED, INVITED -> MeetupParticipantStatus.WITHDRAWN;
             default -> throw new BusinessException(ErrorConstant.MEETUP_INVALID_STATE,
                     "You have already left this meetup");
         };
@@ -389,10 +398,102 @@ public class MeetupServiceImpl implements MeetupService {
         access.requireEnabled(hostUserId);
         LocalDateTime nowUtc = MeetupSchedule.nowUtc(clock.instant());
         requireApproved(requireHosted(hostUserId, meetupId));
-        MeetupParticipant row = requireParticipant(meetupId, participantUserId, MeetupParticipantStatus.JOINED);
+        MeetupParticipant row = repository.findParticipant(meetupId, participantUserId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.MEETUP_PARTICIPANT_NOT_FOUND,
+                        "This person is not in the meetup"));
+        // Taking back an invitation is not a removal: the person may still find the meetup and ask.
+        if (row.getStatus() == MeetupParticipantStatus.INVITED) {
+            return hostView(transition(row, MeetupParticipantStatus.WITHDRAWN, nowUtc));
+        }
+        if (row.getStatus() != MeetupParticipantStatus.JOINED) {
+            throw new BusinessException(ErrorConstant.MEETUP_INVALID_STATE,
+                    "This person is " + row.getStatus() + ", not JOINED or INVITED");
+        }
         MeetupParticipant updated = transition(row, MeetupParticipantStatus.REMOVED, nowUtc);
         meetupChat.onMembershipChanged(meetupId);
         return hostView(updated);
+    }
+
+    // --- invitations --------------------------------------------------------------------
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<MeetupInviteCandidateResponse> inviteCandidates(UUID hostUserId, UUID meetupId, String query) {
+        access.requireEnabled(hostUserId);
+        requireHosted(hostUserId, meetupId);
+        return repository.findInviteCandidates(hostUserId, meetupId, blankToNull(query), INVITE_CANDIDATE_LIMIT)
+                .stream()
+                .map(candidate -> MeetupInviteCandidateResponse.builder()
+                        .user(MeetupPersonResponse.builder()
+                                .id(candidate.getUserId())
+                                .name(candidate.getFullName() == null || candidate.getFullName().isBlank()
+                                        ? candidate.getUsername() : candidate.getFullName())
+                                .avatarUrl(candidate.getAvatarUrl())
+                                .build())
+                        .status(candidate.getStatus())
+                        .build())
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public MeetupParticipantResponse invite(UUID hostUserId, UUID meetupId, UUID inviteeUserId) {
+        access.requireEnabled(hostUserId);
+        LocalDateTime nowUtc = MeetupSchedule.nowUtc(clock.instant());
+        requireHosted(hostUserId, meetupId);
+        repository.lock(meetupId);
+        Meetup meetup = requireApproved(reload(meetupId));
+        if (meetup.isPast(nowUtc)) {
+            throw new BusinessException(ErrorConstant.MEETUP_EXPIRED, "The meetup has already ended");
+        }
+        // One answer for "unknown", "not connected" and "blocked", so it confirms nothing.
+        if (hostUserId.equals(inviteeUserId) || !repository.isInvitable(hostUserId, inviteeUserId)) {
+            throw new BusinessException(ErrorConstant.MEETUP_INVITE_NOT_ALLOWED,
+                    "You can only invite people you follow or who follow you");
+        }
+        MeetupParticipant existing = repository.findParticipant(meetupId, inviteeUserId).orElse(null);
+        if (existing != null) {
+            switch (existing.getStatus()) {
+                case INVITED, JOINED -> {
+                    return hostView(existing);
+                }
+                case REQUESTED -> throw new BusinessException(ErrorConstant.MEETUP_INVALID_STATE,
+                        "This person already asked to join; accept their request instead");
+                default -> {
+                    // Declined, removed, withdrawn or left: the host's own invitation overrides it.
+                }
+            }
+        }
+        requireSeat(meetup);
+        if (repository.countParticipantsWithStatus(meetupId, MeetupParticipantStatus.INVITED) >= MAX_PENDING_INVITES) {
+            throw new BusinessException(ErrorConstant.MEETUP_INVITE_LIMIT, "Too many invitations are waiting");
+        }
+        MeetupParticipant row = MeetupParticipant.builder()
+                .meetupId(meetupId)
+                .userId(inviteeUserId)
+                .status(MeetupParticipantStatus.INVITED)
+                .requestedAt(nowUtc)
+                .updatedAt(nowUtc)
+                .build();
+        repository.upsertParticipant(row);
+        notifyDecision(meetup, inviteeUserId, NotificationType.MEETUP_INVITED, hostUserId);
+        return hostView(row);
+    }
+
+    /**
+     * The invitee says yes: a seat like any other (age range and seats were checked by
+     * {@link #join} or are checked here), with no approval step since the host asked them.
+     */
+    private MeetupJoinResponse acceptInvitation(Meetup meetup, MeetupParticipant invitation, LocalDateTime nowUtc) {
+        requireSeat(meetup);
+        transition(invitation, MeetupParticipantStatus.JOINED, nowUtc);
+        meetupChat.onMembershipChanged(meetup.getId());
+        Map<UUID, User> people = assembler.people(List.of(invitation.getUserId(), meetup.getHostUserId()));
+        notifier.send(meetup.getHostUserId(), NotificationType.MEETUP_PARTICIPANT_JOINED, meetup,
+                MeetupResponseAssembler.displayName(people.get(meetup.getHostUserId())),
+                MeetupResponseAssembler.displayName(people.get(invitation.getUserId())),
+                null, invitation.getUserId());
+        return new MeetupJoinResponse(MeetupParticipantStatus.JOINED);
     }
 
     // --- helpers ------------------------------------------------------------------------
@@ -586,7 +687,8 @@ public class MeetupServiceImpl implements MeetupService {
 
     private void notifyParticipantsCancelled(Meetup meetup, String reason, UUID actorId) {
         List<UUID> recipients = repository.findParticipants(meetup.getId(),
-                        List.of(MeetupParticipantStatus.JOINED, MeetupParticipantStatus.REQUESTED), PARTICIPANT_LIST_LIMIT)
+                        List.of(MeetupParticipantStatus.JOINED, MeetupParticipantStatus.REQUESTED,
+                                MeetupParticipantStatus.INVITED), PARTICIPANT_LIST_LIMIT)
                 .stream().map(MeetupParticipant::getUserId).toList();
         if (recipients.isEmpty()) {
             return;

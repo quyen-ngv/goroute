@@ -15,6 +15,12 @@ public interface MarketplaceChatRepository {int insertConversation(MarketplaceCo
  /** Live meetup-group access: the host, or a participant whose row is JOINED. */
  boolean isMeetupHostOrJoined(UUID meetupId,UUID userId);
 
+ /** The group chat of one local event, if it has been created. */
+ Optional<MarketplaceConversation> findByLocalEvent(UUID eventId,UUID viewer);
+
+ /** Live event-group access: the person is going to the event. */
+ boolean isEventAttendee(UUID eventId,UUID userId);
+
  /** Everyone currently in the thread, for reconciling against the trip's member list. */
  List<UUID> findActiveMemberIds(UUID conversationId);
 

@@ -240,10 +240,10 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
-    <!-- Meetups the user asked to join or joined that they can still open: live or cancelled, not taken down. -->
+    <!-- Meetups the user asked to join, was invited to or joined that they can still open: live or cancelled, not taken down. -->
     <sql id="ParticipationsWhere">
         WHERE p.user_id = #{userId}
-          AND p.status IN ('REQUESTED', 'JOINED')
+          AND p.status IN ('REQUESTED', 'INVITED', 'JOINED')
           AND m.status IN ('APPROVED', 'CANCELLED')
           AND <include refid="NotTakenDown"/>
     </sql>
@@ -421,7 +421,8 @@
           AND m.visible_until &gt; #{now}
     </select>
 
-    <!-- A first request, or a new one after WITHDRAWN/LEFT (the service refuses DECLINED/REMOVED). -->
+    <!-- A first request or invitation, or a new one after WITHDRAWN/LEFT (the service refuses a request after
+         DECLINED/REMOVED; the host may still invite). -->
     <insert id="upsertParticipant">
         INSERT INTO meetup_participants (meetup_id, user_id, status, message, requested_at, decided_at, updated_at)
         VALUES (#{p.meetupId}, #{p.userId}, #{p.status}, #{p.message}, #{p.requestedAt}, #{p.decidedAt}, #{p.updatedAt})
@@ -442,6 +443,38 @@
           AND user_id = #{userId}
           AND status = #{fromStatus}
     </update>
+
+    <!-- ================= invitations ================= -->
+    <!-- Who the host is connected to: a follow in either direction, an account that still
+         exists, no block either way. -->
+    <sql id="InvitableWhere">
+        u.id &lt;&gt; #{hostUserId}
+          AND u.deleted_at IS NULL
+          AND (EXISTS (SELECT 1 FROM user_follows f WHERE f.follower_id = #{hostUserId} AND f.following_id = u.id)
+               OR EXISTS (SELECT 1 FROM user_follows f WHERE f.follower_id = u.id AND f.following_id = #{hostUserId}))
+          AND NOT EXISTS (
+            SELECT 1 FROM user_blocks b
+            WHERE (b.blocker_id = #{hostUserId} AND b.blocked_id = u.id)
+               OR (b.blocker_id = u.id AND b.blocked_id = #{hostUserId})
+          )
+    </sql>
+
+    <select id="findInviteCandidates" resultType="com.ds.goroute.meetup.domain.MeetupInviteCandidate">
+        SELECT u.id AS userId, u.full_name AS fullName, u.username AS username, u.avatar_url AS avatarUrl,
+               p.status AS status
+        FROM users u
+        LEFT JOIN meetup_participants p ON p.meetup_id = #{meetupId} AND p.user_id = u.id
+        WHERE <include refid="InvitableWhere"/>
+        <if test="query != null and query != ''">
+          AND (u.full_name ILIKE CONCAT('%', #{query}, '%') OR u.username ILIKE CONCAT('%', #{query}, '%'))
+        </if>
+        ORDER BY COALESCE(NULLIF(u.full_name, ''), u.username) ASC, u.id ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="isInvitable" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM users u WHERE u.id = #{userId} AND <include refid="InvitableWhere"/>)
+    </select>
 
     <!-- ================= reports ================= -->
     <select id="countReports" resultType="com.ds.goroute.meetup.domain.MeetupCount">

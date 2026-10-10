@@ -108,7 +108,8 @@ public class PlaceController extends BaseController {
             @RequestParam(defaultValue = "0.1") @DecimalMin(value = "0", inclusive = false) BigDecimal radius,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) List<String> placeGroups,
-            @RequestParam(required = false) List<PlaceSubType> subTypes,
+            // PlaceSubType codes, and OTHER for places with none of them.
+            @RequestParam(required = false) List<String> subTypes,
             @RequestParam(required = false) BigDecimal minRating,
             @RequestParam(defaultValue = "false") boolean sortByRating,
             @RequestParam(required = false) String citySlug,
@@ -120,11 +121,26 @@ public class PlaceController extends BaseController {
             @RequestParam(defaultValue = "20") @Min(1) @Max(PlaceSearchCriteria.MAX_PAGE_SIZE) int size
     ) {
         List<PlaceResponse> responses = placeService.searchPlaces(
-                keyword, latitude, longitude, radius, category, placeGroups, PlaceSubType.names(subTypes),
+                keyword, latitude, longitude, radius, category, placeGroups, PlaceSubType.filterCodes(subTypes),
                 minRating, sortByRating,
                 citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, minLuceneScore, page, size);
         // The search cache is shared by callers a few metres apart: distance is this caller's own.
         return ResponseEntity.ok(ofSucceeded(PlaceService.withDistanceFrom(responses, latitude, longitude)));
+    }
+
+    /**
+     * Places per sub type around a point, for the numbers on the filter chips: one entry per
+     * sub type fitting {@code placeGroups}, then {@code OTHER} (no sub type).
+     */
+    @GetMapping("/search/sub-type-counts")
+    public ResponseEntity<BaseResponse<Map<String, Integer>>> countPlacesBySubType(
+            @RequestParam @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
+            @RequestParam @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
+            @RequestParam @DecimalMin(value = "0", inclusive = false) BigDecimal radius,
+            @RequestParam(required = false) List<String> placeGroups,
+            @RequestParam(defaultValue = "false") boolean includeInactive) {
+        return ResponseEntity.ok(ofSucceeded(placeService.countPlacesBySubType(
+                latitude, longitude, radius, placeGroups, includeInactive)));
     }
 
     @GetMapping("/{id}/reviews")

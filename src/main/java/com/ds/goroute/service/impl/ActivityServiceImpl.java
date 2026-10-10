@@ -459,6 +459,7 @@ public class ActivityServiceImpl implements ActivityService {
                     return ExpenseSplitResponse.builder()
                             .id(split.getId())
                             .user(userResponse)
+                            .guestMemberId(split.getGuestMemberId())
                             .amount(split.getAmount())
                             .isPaid(split.getIsSettled())
                             .build();

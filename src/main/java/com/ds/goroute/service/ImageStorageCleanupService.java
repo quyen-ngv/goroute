@@ -11,6 +11,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.sql.Array;
 import java.time.Duration;
 import java.time.Instant;
@@ -26,6 +28,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -51,13 +54,63 @@ public class ImageStorageCleanupService {
      */
     private static final Duration MIN_ORPHAN_AGE = Duration.ofDays(14);
 
+    /** Every text, JSON and text-array column of the application schema. */
+    private static final String TEXT_COLUMNS_SQL = """
+            SELECT c.table_name, c.column_name
+            FROM information_schema.columns c
+            JOIN information_schema.tables t
+              ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+            WHERE c.table_schema = current_schema()
+              AND t.table_type = 'BASE TABLE'
+              AND t.table_name <> 'flyway_schema_history'
+              AND (c.data_type IN ('text', 'character varying', 'json', 'jsonb')
+                   OR c.udt_name IN ('_text', '_varchar'))
+            ORDER BY c.table_name, c.column_name
+            """;
+
+    /**
+     * Columns the column scan skips because their spec reads them with a soft-delete filter on
+     * purpose: deleting the row is what hands its file to the sweep. Every other column counts
+     * as soon as any row names a key, deleted or not.
+     */
+    private static final Set<String> SPEC_FILTERED_COLUMNS = Set.of(
+            "users.avatar_url",
+            "trips.cover_image_url",
+            "media_assets.url",
+            "city_stories.image_url",
+            "city_stories.video_url",
+            "city_stories.thumbnail_url");
+
+    /**
+     * The only entities whose files go with the record, because nothing copies them: a user's
+     * avatar (account deletion must not leave it public), a scraped Google review's photos,
+     * and AR library files, which other rows reach by asset id rather than by URL.
+     */
+    private static final Set<String> DELETED_WITH_RECORD = Set.of("USER", "PLACE_REVIEW", "QUEST_AR_ASSET");
+
+    /** Objects named outside the database. {@code goroute-admin/src/App.tsx} hard-codes the brand logo. */
+    private static final Set<String> KEYS_USED_OUTSIDE_DATABASE = Set.of(
+            "admin-media/06a38eef-3fb4-4139-9c5e-3240ea368c66-app_icon.png");
+
+    private static final Pattern SQL_IDENTIFIER = Pattern.compile("[a-z_][a-z0-9_]*");
+    /** Prefixes go into SQL text, so only path characters are let through. */
+    private static final Pattern SAFE_PREFIX = Pattern.compile("[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*/");
+    private static final String KEY_TERMINATORS = "\"'\\?#<>()[]{},;|`";
+
     public List<String> supportedEntities() {
         return specs.keySet().stream().sorted().toList();
     }
 
     /**
      * Deletes the storage objects a record owns, keeping any object that a surviving
-     * record still displays.
+     * record still displays -- but only for {@link #DELETED_WITH_RECORD}. For every other
+     * entity this deletes nothing and leaves the files to {@link #sweepOrphans}.
+     *
+     * <p>Most files do not belong to one row. An AI trip activity copies the place thumbnail,
+     * a cloned trip copies its activities' photos, a trip cover is a location image, a
+     * check-in's photos carry the trip, activity and place it was made in, and a partner
+     * Stay photo sits in three tables at once. Deleting with the record broke whichever copy
+     * outlived it. The sweep deletes a file only once no row anywhere names it.
      *
      * <p>The retain step is not a nicety. A rated check-in and the review it wrote point
      * at the same uploaded files, and either one can be deleted while the other lives on;
@@ -85,6 +138,11 @@ public class ImageStorageCleanupService {
                                                                 Collection<String> keptUrls) {
         String normalizedEntity = normalizeEntity(entity);
         Set<String> urls = collectRecordUrls(normalizedEntity, id);
+        if (!DELETED_WITH_RECORD.contains(normalizedEntity)) {
+            log.debug("Left {} image refs of entity {} record {} to the orphan sweep",
+                    urls.size(), normalizedEntity, id);
+            return new DeleteRecordImagesResult(normalizedEntity, id, urls.size(), 0, List.of());
+        }
         Set<String> keys = toKeys(urls);
         keys.removeAll(toKeys(keptUrls));
 
@@ -145,25 +203,49 @@ public class ImageStorageCleanupService {
     /**
      * The unattended sweep of one prefix: deletes objects under it that no table references and
      * that are older than {@code minAge}, at most {@code limit} per call, with no backup copy --
-     * the point is to free the space. Only for a prefix whose writers are all listed in the
-     * specs, so that "unreferenced" really means "abandoned".
+     * the point is to free the space. "Unreferenced" means no database column names the key
+     * (see {@link #collectReferencedKeys}).
      *
      * @return the keys deleted
      */
     public List<String> deleteOrphansUnder(String prefix, Duration minAge, int limit) {
-        Set<String> referencedKeys = collectReferencedKeys(specs.keySet());
+        return deleteOrphansUnder(List.of(prefix), minAge, limit);
+    }
+
+    /**
+     * The nightly sweep: every prefix the specs know, {@link #MIN_ORPHAN_AGE} old, no backup.
+     * This is how files of deleted and edited records are freed for every entity outside
+     * {@link #DELETED_WITH_RECORD}.
+     */
+    public List<String> sweepOrphans(int limit) {
+        List<String> prefixes = specs.values().stream()
+                .flatMap(spec -> spec.defaultPrefixes().stream())
+                .distinct()
+                .sorted()
+                .toList();
+        return deleteOrphansUnder(prefixes, MIN_ORPHAN_AGE, limit);
+    }
+
+    private List<String> deleteOrphansUnder(Collection<String> prefixes, Duration minAge, int limit) {
+        Set<String> referencedKeys = collectReferencedKeys(specs.keySet(), prefixes);
         Instant newestDeletable = Instant.now().minus(minAge);
-        List<String> orphans = storageService.listObjects(prefix).stream()
-                .filter(object -> !referencedKeys.contains(object.key()))
+        Map<String, Instant> scanned = new LinkedHashMap<>();
+        for (String prefix : prefixes) {
+            for (StorageService.StoredObject object : storageService.listObjects(prefix)) {
+                scanned.putIfAbsent(object.key(), object.lastModified());
+            }
+        }
+        List<String> orphans = scanned.entrySet().stream()
+                .filter(object -> !referencedKeys.contains(object.getKey()))
                 // An unknown write time is treated as brand new, as in the manual sweep.
-                .filter(object -> object.lastModified() != null && !object.lastModified().isAfter(newestDeletable))
-                .map(StorageService.StoredObject::key)
+                .filter(object -> object.getValue() != null && !object.getValue().isAfter(newestDeletable))
+                .map(Map.Entry::getKey)
                 .sorted()
                 .limit(Math.max(1, limit))
                 .toList();
         if (!orphans.isEmpty()) {
             storageService.deleteObjectKeys(orphans);
-            log.info("Deleted {} orphaned objects under {} (older than {} h)", orphans.size(), prefix, minAge.toHours());
+            log.info("Deleted {} orphaned objects under {} (older than {} h)", orphans.size(), prefixes, minAge.toHours());
         }
         return orphans;
     }
@@ -178,7 +260,6 @@ public class ImageStorageCleanupService {
     ) {
         List<String> normalizedEntities = normalizeEntities(entities);
         Set<String> prefixes = resolvePrefixes(normalizedEntities, requestedPrefixes);
-        Set<String> referencedKeys = collectReferencedKeys(specs.keySet());
 
         if (!dryRun && !backupBeforeDelete) {
             throw new BusinessException(
@@ -186,6 +267,7 @@ public class ImageStorageCleanupService {
                     "backupBeforeDelete=true is required when dryRun=false"
             );
         }
+        Set<String> referencedKeys = collectReferencedKeys(specs.keySet(), prefixes);
 
         Map<String, Instant> scanned = new LinkedHashMap<>();
         for (String prefix : prefixes) {
@@ -260,7 +342,17 @@ public class ImageStorageCleanupService {
         );
     }
 
-    private Set<String> collectReferencedKeys(Collection<String> entities) {
+    /**
+     * Every key under {@code prefixes} that something in the database still names: the spec
+     * queries, plus a scan of every text and JSON column in the schema.
+     *
+     * <p>The specs alone are a hand-kept list, and a list like that falls behind the schema:
+     * {@code places.menu}, partner listing snapshots and AI trip drafts all held live
+     * {@code places/} URLs the specs never read, so the sweep would have deleted them. The
+     * column scan cannot fall behind. It errs towards keeping: any text that contains a key
+     * keeps that key, whatever column or JSON shape it sits in.
+     */
+    private Set<String> collectReferencedKeys(Collection<String> entities, Collection<String> prefixes) {
         Set<String> urls = new LinkedHashSet<>();
         for (String entity : entities) {
             EntitySpec spec = requireSpec(entity);
@@ -268,7 +360,82 @@ public class ImageStorageCleanupService {
                     .filter(row -> row != null && !row.isEmpty())
                     .forEach(row -> urls.addAll(extractUrls(row.values())));
         }
-        return toKeys(urls);
+        Set<String> keys = toKeys(urls);
+        keys.addAll(collectKeysNamedAnywhere(prefixes));
+        keys.addAll(KEYS_USED_OUTSIDE_DATABASE);
+        return keys;
+    }
+
+    private Set<String> collectKeysNamedAnywhere(Collection<String> prefixes) {
+        List<String> safePrefixes = prefixes.stream().map(this::requireSafePrefix).distinct().toList();
+        Set<String> keys = new LinkedHashSet<>();
+        if (safePrefixes.isEmpty()) {
+            return keys;
+        }
+        String likeAny = safePrefixes.stream()
+                .map(prefix -> "%" + prefix + "%")
+                .map(pattern -> "'" + pattern + "'")
+                .reduce((left, right) -> left + ", " + right)
+                .orElseThrow();
+        for (Map<String, Object> column : queryRows(TEXT_COLUMNS_SQL)) {
+            String table = String.valueOf(column.get("table_name"));
+            String name = String.valueOf(column.get("column_name"));
+            if (!SQL_IDENTIFIER.matcher(table).matches() || !SQL_IDENTIFIER.matcher(name).matches()) {
+                // Skipping a column could delete what it names, so stop instead.
+                throw new BusinessException(ErrorConstant.INTERNAL_SERVER_ERROR,
+                        "Unexpected column name " + table + "." + name + "; cleanup aborted");
+            }
+            if (SPEC_FILTERED_COLUMNS.contains(table + "." + name)) {
+                continue;
+            }
+            String sql = "SELECT \"" + name + "\"::text AS ref FROM \"" + table + "\""
+                    + " WHERE \"" + name + "\"::text LIKE ANY (ARRAY[" + likeAny + "])";
+            for (Map<String, Object> row : queryRows(sql)) {
+                Object ref = row == null ? null : row.get("ref");
+                if (ref != null) {
+                    collectKeysInText(ref.toString(), safePrefixes, keys);
+                }
+            }
+        }
+        return keys;
+    }
+
+    /**
+     * Cuts each key out of free text: from a prefix that starts a path segment to the first
+     * character a key never holds. A URL, a bare key and a key inside JSON all yield the same key.
+     */
+    private static void collectKeysInText(String text, List<String> prefixes, Set<String> keys) {
+        for (String prefix : prefixes) {
+            int from = text.indexOf(prefix);
+            while (from >= 0) {
+                boolean startsSegment = from == 0 || !Character.isLetterOrDigit(text.charAt(from - 1));
+                int end = from + prefix.length();
+                while (end < text.length() && KEY_TERMINATORS.indexOf(text.charAt(end)) < 0
+                        && !Character.isWhitespace(text.charAt(end))) {
+                    end++;
+                }
+                if (startsSegment && end > from + prefix.length()) {
+                    String key = text.substring(from, end);
+                    keys.add(key);
+                    // Older keys carry the original file name, which a stored URL may percent-encode.
+                    if (key.indexOf('%') >= 0) {
+                        try {
+                            keys.add(URLDecoder.decode(key, StandardCharsets.UTF_8));
+                        } catch (IllegalArgumentException ignored) {
+                            // Not valid percent-encoding: the raw key is all there is.
+                        }
+                    }
+                }
+                from = text.indexOf(prefix, from + prefix.length());
+            }
+        }
+    }
+
+    private String requireSafePrefix(String prefix) {
+        if (prefix == null || !SAFE_PREFIX.matcher(prefix).matches()) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Invalid storage prefix: " + prefix);
+        }
+        return prefix;
     }
 
     private Set<String> collectRecordUrls(String entity, UUID id) {
@@ -283,7 +450,7 @@ public class ImageStorageCleanupService {
                 urls.addAll(queryUrls("SELECT url FROM media_assets WHERE trip_id = ? AND deleted_at IS NULL AND url IS NOT NULL", id));
             }
             case "PLACE" -> {
-                urls.addAll(queryUrls("SELECT thumbnail, images FROM places WHERE id = ? AND (thumbnail IS NOT NULL OR images IS NOT NULL)", id));
+                urls.addAll(queryUrls("SELECT thumbnail, images, menu FROM places WHERE id = ? AND (thumbnail IS NOT NULL OR images IS NOT NULL OR menu IS NOT NULL)", id));
                 urls.addAll(queryUrls("SELECT profile_picture, images FROM place_reviews WHERE place_id = ? AND (profile_picture IS NOT NULL OR images IS NOT NULL)", id));
                 urls.addAll(queryUrls("SELECT url FROM media_assets WHERE place_id = ? AND entity_type = 'USER_REVIEW' AND deleted_at IS NULL AND url IS NOT NULL", id));
             }
@@ -471,6 +638,7 @@ public class ImageStorageCleanupService {
             requestedPrefixes.stream()
                     .filter(prefix -> prefix != null && !prefix.isBlank())
                     .map(prefix -> prefix.startsWith("/") ? prefix.substring(1) : prefix)
+                    .map(prefix -> prefix.endsWith("/") ? prefix : prefix + "/")
                     .forEach(prefixes::add);
         }
         if (!prefixes.isEmpty()) {
@@ -507,7 +675,7 @@ public class ImageStorageCleanupService {
                 spec("TRIP", "SELECT cover_image_url FROM trips WHERE is_deleted = FALSE AND cover_image_url IS NOT NULL", "SELECT cover_image_url FROM trips WHERE id = ? AND cover_image_url IS NOT NULL"),
                 spec("ACTIVITY", "SELECT photo_url FROM activities WHERE photo_url IS NOT NULL", "SELECT photo_url FROM activities WHERE id = ? AND photo_url IS NOT NULL", "activities/"),
                 spec("EXPENSE", "SELECT url FROM media_assets WHERE entity_type = 'EXPENSE' AND deleted_at IS NULL AND url IS NOT NULL", "SELECT url FROM media_assets WHERE entity_type = 'EXPENSE' AND entity_id = ? AND deleted_at IS NULL AND url IS NOT NULL", "expenses/"),
-                spec("PLACE", "SELECT thumbnail, images FROM places WHERE thumbnail IS NOT NULL OR images IS NOT NULL", "SELECT thumbnail, images FROM places WHERE id = ? AND (thumbnail IS NOT NULL OR images IS NOT NULL)", "places/"),
+                spec("PLACE", "SELECT thumbnail, images, menu FROM places WHERE thumbnail IS NOT NULL OR images IS NOT NULL OR menu IS NOT NULL", "SELECT thumbnail, images, menu FROM places WHERE id = ? AND (thumbnail IS NOT NULL OR images IS NOT NULL OR menu IS NOT NULL)", "places/"),
                 spec("PLACE_REVIEW", "SELECT profile_picture, images FROM place_reviews WHERE is_deleted = FALSE AND (profile_picture IS NOT NULL OR images IS NOT NULL)", "SELECT profile_picture, images FROM place_reviews WHERE id = ? AND (profile_picture IS NOT NULL OR images IS NOT NULL)", "reviews/"),
                 // A review written from a check-in shows that visit's uploads. Check-ins
                 // outlive the review they wrote, so deleting the review must leave the
@@ -564,6 +732,9 @@ public class ImageStorageCleanupService {
                 spec("PLACE_COLLECTION",
                         "SELECT cover_image_url FROM place_collections WHERE cover_image_url IS NOT NULL",
                         "SELECT cover_image_url FROM place_collections WHERE id = ? AND cover_image_url IS NOT NULL"),
+                spec("SAVED_CATEGORY",
+                        "SELECT cover_url FROM saved_categories WHERE cover_url IS NOT NULL",
+                        "SELECT cover_url FROM saved_categories WHERE id = ? AND cover_url IS NOT NULL"),
                 spec("PASSPORT_DEFINITION",
                         "SELECT cover_image_url FROM passport_definitions WHERE cover_image_url IS NOT NULL",
                         "SELECT cover_image_url FROM passport_definitions WHERE id = ? AND cover_image_url IS NOT NULL",

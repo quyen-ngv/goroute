@@ -1,6 +1,7 @@
 package com.ds.goroute.meetup.persistence;
 
 import com.ds.goroute.meetup.domain.Meetup;
+import com.ds.goroute.meetup.domain.MeetupInviteCandidate;
 import com.ds.goroute.meetup.domain.MeetupParticipant;
 import com.ds.goroute.meetup.domain.MeetupReportReason;
 import com.ds.goroute.type.MeetupParticipantStatus;
@@ -83,6 +84,15 @@ public interface MeetupRepository {
 
     boolean updateParticipantStatus(UUID meetupId, UUID userId, MeetupParticipantStatus from,
                                     MeetupParticipantStatus to, LocalDateTime now);
+
+    /**
+     * People the host follows or who follow the host, not deleted, with no block either way,
+     * optionally filtered by name; each with their row in this meetup when they have one.
+     */
+    List<MeetupInviteCandidate> findInviteCandidates(UUID hostUserId, UUID meetupId, String query, int limit);
+
+    /** Whether the host may invite this person: an existing user, a follow either way, no block. */
+    boolean isInvitable(UUID hostUserId, UUID userId);
 
     /** User reports per meetup; meetups with none are absent. */
     Map<UUID, Long> countReports(Collection<UUID> meetupIds);

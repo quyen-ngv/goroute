@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.SavedCategoryMapper">
+
+    <resultMap id="SavedCategoryResultMap" type="com.ds.goroute.entity.SavedCategory">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="name" column="name"/>
+        <result property="coverUrl" column="cover_url"/>
+        <result property="visibility" column="visibility"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="itemCount" column="item_count"/>
+        <result property="latestPhotoUrl" column="latest_photo_url"/>
+        <result property="lastSavedAt" column="last_saved_at"/>
+    </resultMap>
+
+    <sql id="SavedCategoryColumns">
+        c.id, c.user_id, c.name, c.cover_url, c.visibility, c.created_at, c.updated_at
+    </sql>
+
+    <!--
+        Per-category counts. An item belongs to the category whose name matches its trimmed category
+        ignoring case; the `category IS NOT NULL` predicate lets both lookups use
+        idx_saved_places_user_category_key.
+    -->
+    <sql id="SavedCategorySummaryFrom">
+        FROM saved_categories c
+        LEFT JOIN LATERAL (
+            SELECT COUNT(*) AS item_count, MAX(sp.created_at) AS last_saved_at
+            FROM saved_places sp
+            WHERE sp.user_id = c.user_id
+              AND sp.category IS NOT NULL
+              AND LOWER(BTRIM(sp.category)) = LOWER(BTRIM(c.name))
+        ) stats ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT sp.photo_url
+            FROM saved_places sp
+            WHERE sp.user_id = c.user_id
+              AND sp.category IS NOT NULL
+              AND LOWER(BTRIM(sp.category)) = LOWER(BTRIM(c.name))
+              AND sp.photo_url IS NOT NULL
+              AND BTRIM(sp.photo_url) &lt;&gt; ''
+            ORDER BY sp.created_at DESC NULLS LAST, sp.id DESC
+            LIMIT 1
+        ) photo ON TRUE
+    </sql>
+
+    <insert id="insertIfAbsent">
+        INSERT INTO saved_categories (id, user_id, name, visibility, created_at, updated_at)
+        VALUES (#{id}, #{userId}, BTRIM(#{name}), 'PRIVATE', #{now}, #{now})
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <select id="findById" resultMap="SavedCategoryResultMap">
+        SELECT <include refid="SavedCategoryColumns"/>
+        FROM saved_categories c
+        WHERE c.id = #{id}
+    </select>
+
+    <select id="findByUserAndName" resultMap="SavedCategoryResultMap">
+        SELECT <include refid="SavedCategoryColumns"/>
+        FROM saved_categories c
+        WHERE c.user_id = #{userId}
+          AND LOWER(BTRIM(c.name)) = LOWER(BTRIM(#{name}))
+    </select>
+
+    <select id="findSummaryById" resultMap="SavedCategoryResultMap">
+        SELECT <include refid="SavedCategoryColumns"/>,
+               COALESCE(stats.item_count, 0) AS item_count,
+               stats.last_saved_at,
+               photo.photo_url AS latest_photo_url
+        <include refid="SavedCategorySummaryFrom"/>
+        WHERE c.id = #{id}
+    </select>
+
+    <select id="findSummariesByUser" resultMap="SavedCategoryResultMap">
+        SELECT <include refid="SavedCategoryColumns"/>,
+               COALESCE(stats.item_count, 0) AS item_count,
+               stats.last_saved_at,
+               photo.photo_url AS latest_photo_url
+        <include refid="SavedCategorySummaryFrom"/>
+        WHERE c.user_id = #{userId}
+        <if test="publicOnly">
+          AND c.visibility = 'PUBLIC'
+        </if>
+        ORDER BY COALESCE(stats.last_saved_at, c.updated_at) DESC, c.id DESC
+        LIMIT #{limit}
+    </select>
+
+    <update id="update">
+        UPDATE saved_categories
+        SET name = #{name},
+            cover_url = #{coverUrl},
+            visibility = #{visibility},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+          AND user_id = #{userId}
+    </update>
+
+    <delete id="deleteOwned">
+        DELETE FROM saved_categories
+        WHERE id = #{id}
+          AND user_id = #{userId}
+    </delete>
+
+</mapper>

@@ -6,8 +6,36 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class PlaceSubTypeTest {
+
+    @Test
+    void filterCodesAcceptOtherBesideTheKinds() {
+        assertThat(PlaceSubType.filterCodes(List.of(" halal", "other", "HALAL", "")))
+                .containsExactly("HALAL", PlaceSubType.UNTYPED_FILTER);
+        assertThat(PlaceSubType.filterCodes(List.of(" "))).isNull();
+        assertThat(PlaceSubType.filterCodes(null)).isNull();
+    }
+
+    @Test
+    void anUnknownFilterCodeIsRejected() {
+        assertThatThrownBy(() -> PlaceSubType.filterCodes(List.of("PIZZA")))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void otherIsNeverStored() {
+        assertThat(PlaceSubType.toStorable(List.of("OTHER"), PlaceGroup.ATTRACTIONS)).isEmpty();
+    }
+
+    @Test
+    void fittingKindsFollowTheGroups() {
+        assertThat(PlaceSubType.fittingAny(List.of(PlaceGroup.FOOD_AND_DRINK)))
+                .allMatch(kind -> kind.getFamily() == PlaceSubType.Family.FOOD)
+                .contains(PlaceSubType.HALAL);
+        assertThat(PlaceSubType.fittingAny(List.of())).hasSize(PlaceSubType.values().length);
+    }
 
     @Test
     void foodKindsFitOnlyFoodPlaces() {
