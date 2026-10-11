@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.MapProviderUsageMapper">
+
+    <!--
+        Check and count in one statement. The insert branch creates the period's row with one
+        call; the conflict branch only counts while under the cap, so at the cap nothing is
+        returned and the caller is refused. Written as a select because of RETURNING; the
+        cache flags keep MyBatis from answering a second call with the first call's result.
+    -->
+    <select id="claim" resultType="java.lang.Long" useCache="false" flushCache="true">
+        INSERT INTO map_provider_usage (period_kind, period_start, api, call_count, updated_at)
+        VALUES (#{periodKind}, #{periodStart}, #{api}, 1, CURRENT_TIMESTAMP)
+        ON CONFLICT (period_kind, period_start, api) DO UPDATE
+        SET call_count = map_provider_usage.call_count + 1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE map_provider_usage.call_count &lt; #{cap}
+        RETURNING call_count
+    </select>
+
+    <update id="release">
+        UPDATE map_provider_usage
+        SET call_count = GREATEST(call_count - 1, 0),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE period_kind = #{periodKind} AND period_start = #{periodStart} AND api = #{api}
+    </update>
+
+    <select id="recordRefused" resultType="java.lang.Long" useCache="false" flushCache="true">
+        INSERT INTO map_provider_usage (period_kind, period_start, api, refused_count, updated_at)
+        VALUES (#{periodKind}, #{periodStart}, #{api}, 1, CURRENT_TIMESTAMP)
+        ON CONFLICT (period_kind, period_start, api) DO UPDATE
+        SET refused_count = map_provider_usage.refused_count + 1,
+            updated_at = CURRENT_TIMESTAMP
+        RETURNING refused_count
+    </select>
+
+    <select id="findPeriod" resultType="java.util.LinkedHashMap" useCache="false" flushCache="true">
+        SELECT api, call_count, refused_count
+        FROM map_provider_usage
+        WHERE period_kind = #{periodKind} AND period_start = #{periodStart}
+        ORDER BY api
+    </select>
+
+    <select id="findAdminUserIds" resultType="java.util.UUID">
+        SELECT DISTINCT user_id FROM admin_user_roles
+    </select>
+</mapper>

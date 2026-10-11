@@ -19,7 +19,8 @@ public interface MapSearchUsageMapper {
                      @Param("operation") String operation,
                      @Param("dailyLimit") int dailyLimit);
 
-    int recordRejected(@Param("userId") UUID userId,
+    /** @return the user's refusals for this operation today, this one included */
+    Long recordRejected(@Param("userId") UUID userId,
                        @Param("usageDate") LocalDate usageDate,
                        @Param("operation") String operation);
 

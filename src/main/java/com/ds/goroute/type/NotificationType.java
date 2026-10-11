@@ -133,5 +133,15 @@ public enum NotificationType {
     // The host cancelled, or an admin removed, a meetup; sent to joined, requesting and invited people.
     MEETUP_CANCELLED,
     // The host invited someone they follow or who follows them; sent to the invitee.
-    MEETUP_INVITED
+    MEETUP_INVITED,
+    // Map usage (epic 06). Data: operation, resetAt (ISO instant), resetTime (shown, GMT+7).
+    // The user used up today's map calls of one kind; sent to that user once a day per kind.
+    MAP_LIMIT_REACHED,
+    // A user keeps calling after being refused; sent to operators. Data: spamUserId, userName,
+    // operation, rejectedCount.
+    MAP_SPAM_ALERT,
+    // The month's paid Mapbox calls crossed MAP_BUDGET/WARN_PERCENT; sent to operators. Data: api, usedPercent.
+    MAP_BUDGET_WARNING,
+    // A Mapbox API hit its cap and the server answers from caches; sent to operators. Data: api, resetAt, resetTime.
+    MAP_BUDGET_REACHED
 }

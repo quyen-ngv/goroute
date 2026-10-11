@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.MapCacheMapper">
+
+    <sql id="placeColumns">
+        provider, provider_place_id, name, name_normalized, address, latitude, longitude,
+        categories, phone, website, country_code, picked_count
+    </sql>
+
+    <insert id="upsertPlace">
+        INSERT INTO map_place_cache (provider, provider_place_id, name, name_normalized, address,
+                                     latitude, longitude, categories, phone, website, country_code,
+                                     created_at, updated_at)
+        VALUES (#{entry.provider}, #{entry.providerPlaceId}, #{entry.name}, #{entry.nameNormalized},
+                #{entry.address}, #{entry.latitude}, #{entry.longitude}, #{entry.categories},
+                #{entry.phone}, #{entry.website}, #{entry.countryCode},
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (provider, provider_place_id) DO UPDATE
+        SET name            = EXCLUDED.name,
+            name_normalized = EXCLUDED.name_normalized,
+            address         = COALESCE(EXCLUDED.address, map_place_cache.address),
+            latitude        = EXCLUDED.latitude,
+            longitude       = EXCLUDED.longitude,
+            categories      = COALESCE(EXCLUDED.categories, map_place_cache.categories),
+            phone           = COALESCE(EXCLUDED.phone, map_place_cache.phone),
+            website         = COALESCE(EXCLUDED.website, map_place_cache.website),
+            country_code    = COALESCE(EXCLUDED.country_code, map_place_cache.country_code),
+            updated_at      = CURRENT_TIMESTAMP
+    </insert>
+
+    <select id="findPlace" resultType="com.ds.goroute.entity.MapPlaceCacheEntry" useCache="false" flushCache="true">
+        SELECT <include refid="placeColumns"/>
+        FROM map_place_cache
+        WHERE provider = #{provider} AND provider_place_id = #{providerPlaceId}
+    </select>
+
+    <update id="incrementPicked">
+        UPDATE map_place_cache
+        SET picked_count = picked_count + 1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE provider = #{provider} AND provider_place_id = #{providerPlaceId}
+    </update>
+
+    <!--
+        Equirectangular distance is plenty for "within tens of km" and needs no PostGIS column.
+        111.32 km per degree of latitude; a degree of longitude shrinks with cos(latitude).
+    -->
+    <select id="searchPicked" resultType="com.ds.goroute.entity.MapPlaceCacheEntry" useCache="false" flushCache="true">
+        SELECT <include refid="placeColumns"/>
+        FROM map_place_cache
+        WHERE picked_count &gt; 0
+          AND (name_normalized LIKE '%' || #{query} || '%' OR name_normalized % #{query})
+        <if test="latitude != null and longitude != null">
+          AND sqrt(power((latitude - #{latitude}) * 111.32, 2)
+                 + power((longitude - #{longitude}) * 111.32 * cos(radians(#{latitude})), 2)) &lt;= #{radiusKm}
+        </if>
+        ORDER BY (name_normalized LIKE #{query} || '%') DESC,
+                 similarity(name_normalized, #{query}) DESC,
+                 picked_count DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="findResponse" resultType="string" useCache="false" flushCache="true">
+        SELECT body FROM map_response_cache
+        WHERE cache_key = #{cacheKey} AND expires_at &gt; #{now}
+    </select>
+
+    <insert id="upsertResponse">
+        INSERT INTO map_response_cache (cache_key, operation, provider, body, created_at, expires_at)
+        VALUES (#{cacheKey}, #{operation}, #{provider}, #{body}, CURRENT_TIMESTAMP, #{expiresAt})
+        ON CONFLICT (cache_key) DO UPDATE
+        SET operation = EXCLUDED.operation,
+            provider = EXCLUDED.provider,
+            body = EXCLUDED.body,
+            created_at = CURRENT_TIMESTAMP,
+            expires_at = EXCLUDED.expires_at
+    </insert>
+
+    <delete id="deleteExpiredResponses">
+        DELETE FROM map_response_cache WHERE expires_at &lt;= #{now}
+    </delete>
+
+    <select id="findLegs" resultType="com.ds.goroute.entity.RouteLegCacheEntry" useCache="false" flushCache="true">
+        SELECT leg_key, provider, profile, from_lat, from_lng, to_lat, to_lng, distance_m, duration_s, polyline
+        FROM route_leg_cache
+        WHERE leg_key IN
+        <foreach collection="legKeys" item="key" open="(" separator="," close=")">#{key}</foreach>
+    </select>
+
+    <insert id="upsertLeg">
+        INSERT INTO route_leg_cache (leg_key, provider, profile, from_lat, from_lng, to_lat, to_lng,
+                                     distance_m, duration_s, polyline, created_at, last_used_at)
+        VALUES (#{entry.legKey}, #{entry.provider}, #{entry.profile}, #{entry.fromLat}, #{entry.fromLng},
+                #{entry.toLat}, #{entry.toLng}, #{entry.distanceM}, #{entry.durationS}, #{entry.polyline},
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (leg_key) DO UPDATE
+        SET provider = EXCLUDED.provider,
+            distance_m = EXCLUDED.distance_m,
+            duration_s = EXCLUDED.duration_s,
+            polyline = EXCLUDED.polyline,
+            last_used_at = CURRENT_TIMESTAMP
+    </insert>
+
+    <update id="touchLegs">
+        UPDATE route_leg_cache SET last_used_at = CURRENT_TIMESTAMP
+        WHERE leg_key IN
+        <foreach collection="legKeys" item="key" open="(" separator="," close=")">#{key}</foreach>
+    </update>
+
+    <delete id="deleteLegsUnusedSince">
+        DELETE FROM route_leg_cache WHERE last_used_at &lt; #{cutoff}
+    </delete>
+</mapper>

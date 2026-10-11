@@ -49,8 +49,11 @@ public class AiTripGenerationService {
     /** Field-injected and optional so the hand-built service in unit tests keeps its constructor. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private TripPreferenceService tripPreferenceService;
-    private static final int GOONG_SEARCH_RADIUS_METERS = 50_000;
-    private static final int GOONG_SEARCH_LIMIT = 5;
+    /** Same as above: absent in hand-built tests, which then resolve with Goong as before. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.ds.goroute.service.mapsearch.MapProviderResolver mapProviderResolver;
+    private static final int EXTERNAL_SEARCH_RADIUS_METERS = 50_000;
+    private static final int EXTERNAL_SEARCH_LIMIT = 5;
 
     private final PlaceLookupProviders placeLookupProviders;
     /** Local cache only: it reduces repeated resolver calls; it is never a source of truth. */
@@ -156,8 +159,9 @@ public class AiTripGenerationService {
 
     /**
      * Resolve names discovered by cited Web research. Catalogue matches must be a unique exact
-     * normalized title; otherwise Goong is queried server-side and is accepted only when its
-     * returned canonical name is also an exact normalized match near the destination.  An
+     * normalized title; otherwise the requester's map provider (Goong or Mapbox) is queried
+     * server-side and is accepted only when its returned canonical name is also an exact
+     * normalized match near the destination.  An
      * unresolved row deliberately has no address or coordinates.
      */
     public List<Map<String, Object>> resolveCandidates(UUID jobId, String attemptId, AiTripCandidateResolutionRequest request) {
@@ -168,11 +172,12 @@ public class AiTripGenerationService {
                 .map(AiTripCandidateResolutionRequest.Candidate::getPlaceGroup).toList());
         List<Place> catalogue = placeRepository.findActiveForAiWithinRadius(request.getLatitude(), request.getLongitude(),
                 BigDecimal.valueOf(50), groups, 500);
+        PlaceLookupProviderType lookup = lookupProviderFor(job.getUserId());
         List<Map<String, Object>> resolved = new ArrayList<>();
         for (AiTripCandidateResolutionRequest.Candidate candidate : request.getCandidates()) {
-            String key = resolutionKey(request, candidate);
+            String key = lookup + "|" + resolutionKey(request, candidate);
             Map<String, Object> value = candidateResolutionCache.get(key,
-                    ignored -> resolveCandidate(candidate, request.getLatitude(), request.getLongitude(), catalogue, job.getLocale()));
+                    ignored -> resolveCandidate(candidate, request.getLatitude(), request.getLongitude(), catalogue, job.getLocale(), lookup));
             Map<String, Object> row = new LinkedHashMap<>(value);
             row.put("candidateId", candidate.getCandidateId());
             resolved.add(row);
@@ -183,7 +188,8 @@ public class AiTripGenerationService {
     }
 
     private Map<String, Object> resolveCandidate(AiTripCandidateResolutionRequest.Candidate candidate, BigDecimal latitude,
-                                                   BigDecimal longitude, List<Place> catalogue, String locale) {
+                                                   BigDecimal longitude, List<Place> catalogue, String locale,
+                                                   PlaceLookupProviderType lookup) {
         List<Place> exact = catalogue.stream()
                 .filter(place -> place.getPlaceGroup() == PlaceGroup.fromCode(candidate.getPlaceGroup()))
                 .filter(place -> normalizedName(place.getTitle()).equals(normalizedName(candidate.getTitle())))
@@ -196,8 +202,8 @@ public class AiTripGenerationService {
             row.put("externalResolutionVerified", false);
             return row;
         }
-        Map<String, Object> goong = resolveWithGoong(candidate, latitude, longitude);
-        if (goong != null) return goong;
+        Map<String, Object> external = resolveExternally(candidate, latitude, longitude, lookup);
+        if (external != null) return external;
         return unresolvedRow(candidate);
     }
 
@@ -213,31 +219,41 @@ public class AiTripGenerationService {
         return row;
     }
 
-    private Map<String, Object> resolveWithGoong(AiTripCandidateResolutionRequest.Candidate candidate,
-                                                  BigDecimal latitude, BigDecimal longitude) {
-        PlaceLookupProvider goong = placeLookupProviders.get(PlaceLookupProviderType.GOONG);
+    /** The requester's map provider (beta users and everyone else are configured apart); Goong without a resolver. */
+    private PlaceLookupProviderType lookupProviderFor(UUID userId) {
+        if (mapProviderResolver == null) return PlaceLookupProviderType.GOONG;
+        return mapProviderResolver.forUser(userId)
+                .map(provider -> provider == com.ds.goroute.type.MapProvider.MAPBOX
+                        ? PlaceLookupProviderType.MAPBOX : PlaceLookupProviderType.GOONG)
+                .orElse(PlaceLookupProviderType.GOONG);
+    }
+
+    private Map<String, Object> resolveExternally(AiTripCandidateResolutionRequest.Candidate candidate,
+                                                  BigDecimal latitude, BigDecimal longitude,
+                                                  PlaceLookupProviderType lookup) {
+        PlaceLookupProvider provider = placeLookupProviders.get(lookup);
         try {
-            List<PlaceHit> predictions = goong.searchText(new PlaceLookupQuery(candidate.getTitle(), latitude, longitude,
-                    GOONG_SEARCH_RADIUS_METERS, GOONG_SEARCH_LIMIT));
+            List<PlaceHit> predictions = provider.searchText(new PlaceLookupQuery(candidate.getTitle(), latitude, longitude,
+                    EXTERNAL_SEARCH_RADIUS_METERS, EXTERNAL_SEARCH_LIMIT));
             for (PlaceHit prediction : predictions) {
                 if (!normalizedName(candidate.getTitle()).equals(normalizedName(prediction.name()))) continue;
-                Optional<PlaceHit> detail = goong.getDetails(prediction.providerPlaceId());
+                Optional<PlaceHit> detail = provider.getDetails(prediction.providerPlaceId());
                 if (detail.isEmpty()) continue;
                 PlaceHit place = detail.get();
                 BigDecimal lat = place.latitude();
                 BigDecimal lng = place.longitude();
                 if (!normalizedName(candidate.getTitle()).equals(normalizedName(place.name())) || lat == null || lng == null
                         || haversineKm(latitude, longitude, lat, lng) > 50) continue;
-                // Historical wire name: this carries a Goong ID, not a Google place ID (ISSUES.md).
+                // Historical wire name: this carries a Goong or Mapbox ID, not a Google place ID (ISSUES.md).
                 Map<String, Object> row = new LinkedHashMap<>();
                 row.put("googlePlaceId", prediction.providerPlaceId()); row.put("title", place.name()); row.put("address", place.address());
                 row.put("latitude", lat); row.put("longitude", lng); row.put("placeGroup", candidate.getPlaceGroup());
                 row.put("category", place.primaryType());
-                row.put("resolvedBy", "GOONG"); row.put("resolutionStatus", "RESOLVED"); row.put("externalResolutionVerified", true);
+                row.put("resolvedBy", lookup.name()); row.put("resolutionStatus", "RESOLVED"); row.put("externalResolutionVerified", true);
                 return row;
             }
         } catch (Exception e) {
-            log.warn("AI trip Goong resolver failed for '{}': {}", candidate.getTitle(), e.getMessage());
+            log.warn("AI trip {} resolver failed for '{}': {}", lookup, candidate.getTitle(), e.getMessage());
         }
         return null;
     }

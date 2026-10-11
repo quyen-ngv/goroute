@@ -388,7 +388,7 @@ public class TrackServiceImpl implements TrackService {
         return visits;
     }
 
-    /** An off-plan stop that Goong should name once the transaction has committed. */
+    /** An off-plan stop the map provider should name once the transaction has committed. */
     record UnnamedStop(UUID visitId, double latitude, double longitude) {
     }
 
@@ -488,7 +488,7 @@ public class TrackServiceImpl implements TrackService {
         boolean isChanged = false;
         for (UnnamedStop stop : stops) {
             try {
-                String name = stopNamer.reverseGeocode(stop.latitude(), stop.longitude());
+                String name = stopNamer.reverseGeocode(userId, stop.latitude(), stop.longitude());
                 if (name != null && trackRepository.updateOffPlanNameIfMissing(stop.visitId(), userId, name) == 1) {
                     isChanged = true;
                 }

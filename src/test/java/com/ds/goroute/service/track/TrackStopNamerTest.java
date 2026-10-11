@@ -4,7 +4,7 @@ import com.ds.goroute.dto.PlaceSearchCriteria;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.PlaceSearchIndexService;
-import com.ds.goroute.thirdparty.goong.GoongClient;
+import com.ds.goroute.service.mapsearch.MapSearchService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -26,9 +26,10 @@ class TrackStopNamerTest {
 
     private final PlaceSearchIndexService index = mock(PlaceSearchIndexService.class);
     private final PlaceRepository places = mock(PlaceRepository.class);
-    private final GoongClient goong = mock(GoongClient.class);
+    private final MapSearchService mapSearch = mock(MapSearchService.class);
+    private final UUID owner = UUID.randomUUID();
     private final Executor inline = Runnable::run;
-    private final TrackStopNamer namer = new TrackStopNamer(index, places, goong, new ObjectMapper(), inline);
+    private final TrackStopNamer namer = new TrackStopNamer(index, places, mapSearch, new ObjectMapper(), inline);
 
     @Test
     void theNearestCataloguePlaceWithinTheRadiusWins() throws IOException {
@@ -56,16 +57,16 @@ class TrackStopNamerTest {
     }
 
     @Test
-    void goongGivesTheFirstResultNameOrItsAddressAndNothingOnError() {
-        when(goong.forward(eq("/Geocode"), any())).thenReturn(ResponseEntity.ok(
+    void theProviderGivesTheFirstResultNameOrItsAddressAndNothingOnError() {
+        when(mapSearch.reverseForServer(owner, 11.94, 108.44, 1)).thenReturn(ResponseEntity.ok(
                 "{\"results\":[{\"name\":\"\",\"formatted_address\":\"12 Nguyễn Chí Thanh, Đà Lạt\"}]}"));
-        assertThat(namer.reverseGeocode(11.94, 108.44)).isEqualTo("12 Nguyễn Chí Thanh, Đà Lạt");
+        assertThat(namer.reverseGeocode(owner, 11.94, 108.44)).isEqualTo("12 Nguyễn Chí Thanh, Đà Lạt");
 
-        when(goong.forward(eq("/Geocode"), any())).thenReturn(ResponseEntity.status(503).body("{}"));
-        assertThat(namer.reverseGeocode(11.94, 108.44)).isNull();
+        when(mapSearch.reverseForServer(owner, 11.94, 108.44, 1)).thenReturn(ResponseEntity.status(503).body("{}"));
+        assertThat(namer.reverseGeocode(owner, 11.94, 108.44)).isNull();
 
-        when(goong.forward(eq("/Geocode"), any())).thenThrow(new IllegalStateException("boom"));
-        assertThat(namer.reverseGeocode(11.94, 108.44)).isNull();
+        when(mapSearch.reverseForServer(owner, 11.94, 108.44, 1)).thenThrow(new IllegalStateException("boom"));
+        assertThat(namer.reverseGeocode(owner, 11.94, 108.44)).isNull();
     }
 
     private static Place place(UUID id, String title, String latitude, String longitude) {

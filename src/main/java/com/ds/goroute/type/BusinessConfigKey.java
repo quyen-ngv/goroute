@@ -314,8 +314,36 @@ public enum BusinessConfigKey {
     MAP_SEARCH_AUTOCOMPLETE_PER_DAY("MAP_SEARCH", "AUTOCOMPLETE_PER_DAY", 300, 1, 100000),
     MAP_SEARCH_PLACE_DETAIL_PER_MINUTE("MAP_SEARCH", "PLACE_DETAIL_PER_MINUTE", 30, 1, 600),
     MAP_SEARCH_PLACE_DETAIL_PER_DAY("MAP_SEARCH", "PLACE_DETAIL_PER_DAY", 200, 1, 100000),
+    // Reverse/forward geocoding (/v1/api/goong/geocode) and road routes (/v1/api/routes/day).
+    MAP_SEARCH_GEOCODE_PER_MINUTE("MAP_SEARCH", "GEOCODE_PER_MINUTE", 20, 1, 600),
+    MAP_SEARCH_GEOCODE_PER_DAY("MAP_SEARCH", "GEOCODE_PER_DAY", 200, 1, 100000),
+    MAP_SEARCH_ROUTE_PER_MINUTE("MAP_SEARCH", "ROUTE_PER_MINUTE", 30, 1, 600),
+    MAP_SEARCH_ROUTE_PER_DAY("MAP_SEARCH", "ROUTE_PER_DAY", 300, 1, 100000),
     /** Days of per-user daily counters kept for reporting before the nightly purge. */
-    MAP_SEARCH_USAGE_RETENTION_DAYS("MAP_SEARCH", "USAGE_RETENTION_DAYS", 90, 7, 730);
+    MAP_SEARCH_USAGE_RETENTION_DAYS("MAP_SEARCH", "USAGE_RETENTION_DAYS", 90, 7, 730),
+
+    // --- Epic 06: which map provider answers search, geocode and routes ----------------
+    // Values: GOONG or MAPBOX. Beta users (USER/BETA_USER) read BETA_PROVIDER, everybody else
+    // USER_PROVIDER. A provider without a key is skipped (MAPBOX -> GOONG -> catalogue only).
+    MAP_PROVIDER_USER("MAP_PROVIDER", "USER_PROVIDER", "GOONG"),
+    MAP_PROVIDER_BETA("MAP_PROVIDER", "BETA_PROVIDER", "MAPBOX"),
+    /** Mapbox failing (5xx, 429, timeout) retries with Goong; Goong only knows Vietnam. */
+    MAP_PROVIDER_FALLBACK_TO_GOONG("MAP_PROVIDER", "FALLBACK_TO_GOONG", true),
+
+    // --- Epic 06: ceiling on paid Mapbox calls for the whole system ---------------------
+    // Counted per calendar month (UTC) and per day. At the cap the server stops calling Mapbox
+    // and answers from its caches and the catalogue ("saving mode") until the period ends.
+    MAP_BUDGET_ENABLED("MAP_BUDGET", "ENABLED", true),
+    /** Search Box requests (forward, reverse, retrieve). Free tier: 50,000 a month. */
+    MAP_BUDGET_SEARCH_MONTHLY_CAP("MAP_BUDGET", "SEARCH_MONTHLY_CAP", 50000, 0, 100000000),
+    /** Geocoding v6 requests (city names). Free tier: 100,000 a month. */
+    MAP_BUDGET_GEOCODE_MONTHLY_CAP("MAP_BUDGET", "GEOCODE_MONTHLY_CAP", 100000, 0, 100000000),
+    /** Directions requests. Free tier: 100,000 a month. */
+    MAP_BUDGET_DIRECTIONS_MONTHLY_CAP("MAP_BUDGET", "DIRECTIONS_MONTHLY_CAP", 100000, 0, 100000000),
+    /** One day may spend at most this share of the month, so one bad day cannot use it all. */
+    MAP_BUDGET_DAILY_CAP_PERCENT("MAP_BUDGET", "DAILY_CAP_PERCENT", 10, 1, 100),
+    /** Operators are told when a month's count crosses this share of its cap. */
+    MAP_BUDGET_WARN_PERCENT("MAP_BUDGET", "WARN_PERCENT", 80, 1, 100);
 
     /** Value shapes the configuration layer knows how to validate. */
     public enum ValueType {

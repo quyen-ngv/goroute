@@ -4,7 +4,7 @@ import com.ds.goroute.dto.PlaceSearchCriteria;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.PlaceSearchIndexService;
-import com.ds.goroute.thirdparty.goong.GoongClient;
+import com.ds.goroute.service.mapsearch.MapSearchService;
 import com.ds.goroute.utils.GeoDistance;
 import com.ds.goroute.type.PlaceSearchSort;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -13,12 +13,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -26,15 +23,16 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Names an off-plan stop (TR-16): the nearest catalogue place first, Goong's reverse geocode
- * second. Neither lookup may fail an upload; every failure is logged and answered with
+ * Names an off-plan stop (TR-16): the nearest catalogue place first, the map provider's reverse
+ * geocode second (Goong or Mapbox, by the track owner's cohort; see {@link MapSearchService}).
+ * Neither lookup may fail an upload; every failure is logged and answered with
  * "no name".
  */
 @Component
 @Slf4j
 public class TrackStopNamer {
 
-    /** Goong gets this long; a stop without a name is better than a slow upload. */
+    /** The map provider gets this long; a stop without a name is better than a slow upload. */
     static final long GEOCODE_TIMEOUT_MS = 2_000;
     /** Candidates asked from the index; the nearest of them wins. */
     private static final int CATALOG_CANDIDATES = 5;
@@ -42,18 +40,18 @@ public class TrackStopNamer {
 
     private final PlaceSearchIndexService placeSearchIndexService;
     private final PlaceRepository placeRepository;
-    private final GoongClient goongClient;
+    private final MapSearchService mapSearchService;
     private final ObjectMapper objectMapper;
     private final Executor executor;
 
     public TrackStopNamer(PlaceSearchIndexService placeSearchIndexService,
                           PlaceRepository placeRepository,
-                          GoongClient goongClient,
+                          MapSearchService mapSearchService,
                           ObjectMapper objectMapper,
                           @Qualifier("applicationTaskExecutor") Executor executor) {
         this.placeSearchIndexService = placeSearchIndexService;
         this.placeRepository = placeRepository;
-        this.goongClient = goongClient;
+        this.mapSearchService = mapSearchService;
         this.objectMapper = objectMapper;
         this.executor = executor;
     }
@@ -94,13 +92,10 @@ public class TrackStopNamer {
         }
     }
 
-    /** Goong's name for the spot, or null (no key, timeout, error, empty answer). */
-    public String reverseGeocode(double latitude, double longitude) {
-        MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
-        params.add("latlng", String.format(Locale.ROOT, "%.6f,%.6f", latitude, longitude));
-        params.add("limit", "1");
-        CompletableFuture<ResponseEntity<String>> call =
-                CompletableFuture.supplyAsync(() -> goongClient.forward("/Geocode", params), executor);
+    /** The provider's name for the spot, or null (no key, timeout, error, empty answer, budget spent). */
+    public String reverseGeocode(UUID ownerId, double latitude, double longitude) {
+        CompletableFuture<ResponseEntity<String>> call = CompletableFuture.supplyAsync(
+                () -> mapSearchService.reverseForServer(ownerId, latitude, longitude, 1), executor);
         try {
             ResponseEntity<String> response = call.get(GEOCODE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
@@ -112,7 +107,7 @@ public class TrackStopNamer {
             return null;
         } catch (Exception exception) {
             call.cancel(true);
-            log.warn("Goong reverse geocode for an off-plan stop failed: {}", exception.toString());
+            log.warn("Reverse geocode for an off-plan stop failed: {}", exception.toString());
             return null;
         }
     }

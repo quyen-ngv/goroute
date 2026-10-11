@@ -397,7 +397,7 @@ class TrackServiceImplTest {
         assertThat(visit.status()).isEqualTo(TrackVisitStatus.SUGGESTED);
         assertThat(visit.name()).isEqualTo("Cà phê Tùng");
         assertThat(visit.placeId()).isEqualTo(placeId);
-        verify(stopNamer, never()).reverseGeocode(anyDouble(), anyDouble());
+        verify(stopNamer, never()).reverseGeocode(any(), anyDouble(), anyDouble());
     }
 
     @Test
@@ -413,7 +413,7 @@ class TrackServiceImplTest {
 
     @Test
     void withoutACatalogPlaceGoongNamesTheStopAfterwardsAndAFailureLeavesItUnnamed() {
-        when(stopNamer.reverseGeocode(anyDouble(), anyDouble())).thenReturn("12 Nguyễn Chí Thanh");
+        when(stopNamer.reverseGeocode(any(), anyDouble(), anyDouble())).thenReturn("12 Nguyễn Chí Thanh");
 
         service.uploadChunk(OWNER, TRIP_ID, upload(stopAt(CAFE_LAT, CAFE_LNG)));
 
@@ -421,7 +421,7 @@ class TrackServiceImplTest {
                 .satisfies(visit -> assertThat(visit.getName()).isEqualTo("12 Nguyễn Chí Thanh"));
 
         repository.visits.clear();
-        when(stopNamer.reverseGeocode(anyDouble(), anyDouble())).thenThrow(new IllegalStateException("down"));
+        when(stopNamer.reverseGeocode(any(), anyDouble(), anyDouble())).thenThrow(new IllegalStateException("down"));
         TrackService.UploadOutcome outcome = service.uploadChunk(OWNER, TRIP_ID,
                 upload(stopAt(CAFE_LAT + 0.05, CAFE_LNG, DAY2_0900 + 60 * MINUTE)));
 

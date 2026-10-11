@@ -174,6 +174,11 @@ class NotificationTemplateRendererTest {
         data.put("hostName", "Linh");
         data.put("userName", "Minh");
         data.put("reason", "Trời mưa");
+        data.put("resetTime", "00:00 12/10/2026 (GMT+7)");
+        data.put("operation", "AUTOCOMPLETE");
+        data.put("rejectedCount", 50);
+        data.put("api", "SEARCH");
+        data.put("usedPercent", 80);
         return data;
     }
 }

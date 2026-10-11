@@ -16,13 +16,14 @@
         WHERE map_search_usage_daily.request_count &lt; #{dailyLimit}
     </insert>
 
-    <insert id="recordRejected">
+    <select id="recordRejected" resultType="java.lang.Long" useCache="false" flushCache="true">
         INSERT INTO map_search_usage_daily (user_id, usage_date, operation, rejected_count, updated_at)
         VALUES (#{userId,javaType=java.util.UUID,jdbcType=OTHER}, #{usageDate}, #{operation}, 1, CURRENT_TIMESTAMP)
         ON CONFLICT (user_id, usage_date, operation) DO UPDATE
         SET rejected_count = map_search_usage_daily.rejected_count + 1,
             updated_at = CURRENT_TIMESTAMP
-    </insert>
+        RETURNING rejected_count
+    </select>
 
     <delete id="deleteBefore">
         DELETE FROM map_search_usage_daily

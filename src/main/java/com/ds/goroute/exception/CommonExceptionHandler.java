@@ -49,6 +49,11 @@ public class CommonExceptionHandler {
         List<ErrorViolation> violations = error.getData() instanceof String description
                 ? List.of(ErrorViolation.builder().description(description).build())
                 : null;
+        if (error.getData() instanceof java.util.Map<?, ?>) {
+            // Structured detail the client acts on, e.g. when a refused map search may retry.
+            BaseResponse<?> body = BaseResponse.ofFailed(requestId(), error, message, null, error.getData());
+            return ResponseEntity.status(status).body(body);
+        }
         return response(error, message, violations, status);
     }
 
