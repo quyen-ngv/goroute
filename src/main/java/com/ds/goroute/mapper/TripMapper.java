@@ -48,6 +48,14 @@ public interface TripMapper {
                                   @Param("limit") int limit,
                                   @Param("offset") int offset);
 
+    /**
+     * Ids of the public, live, not taken-down trips with a non-rejected activity on the
+     * catalogue place {@code placeId}, most recently shared first.
+     */
+    List<UUID> selectPublicTripIdsByPlace(@Param("placeId") UUID placeId,
+                                          @Param("limit") int limit,
+                                          @Param("offset") int offset);
+
     int incrementViewCount(@Param("id") UUID id);
     
     int incrementCopyCount(@Param("id") UUID id);

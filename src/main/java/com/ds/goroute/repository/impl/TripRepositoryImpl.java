@@ -3,16 +3,20 @@ package com.ds.goroute.repository.impl;
 import com.ds.goroute.dto.PublicTripSearchCriteria;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.entity.TripRankRow;
+import com.ds.goroute.event.PlaceUsageChangedEvent;
 import com.ds.goroute.mapper.TripMapper;
+import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.google.common.collect.Lists;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Repository
@@ -22,6 +26,8 @@ public class TripRepositoryImpl implements TripRepository {
     private static final int ID_BATCH_SIZE = 500;
 
     private final TripMapper tripMapper;
+    private final ActivityRepository activityRepository;
+    private final ApplicationEventPublisher events;
     
     @Override
     public void insert(Trip trip) {
@@ -50,7 +56,12 @@ public class TripRepositoryImpl implements TripRepository {
     
     @Override
     public void deleteById(UUID id) {
+        // A deleted trip no longer counts towards its places' usage (V225).
+        Set<String> places = activityRepository.tripPlaceReferences(id);
         tripMapper.deleteById(id);
+        if (!places.isEmpty()) {
+            events.publishEvent(new PlaceUsageChangedEvent(places));
+        }
     }
     
     @Override
@@ -100,6 +111,11 @@ public class TripRepositoryImpl implements TripRepository {
     @Override
     public List<Trip> findFollowingTrips(UUID viewerId, int limit, int offset) {
         return tripMapper.findFollowingTrips(viewerId, limit, offset);
+    }
+
+    @Override
+    public List<UUID> findPublicTripIdsByPlace(UUID placeId, int limit, int offset) {
+        return tripMapper.selectPublicTripIdsByPlace(placeId, limit, offset);
     }
 
     @Override

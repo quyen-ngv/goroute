@@ -6,12 +6,16 @@ import com.ds.goroute.type.PlaceSubType;
 import com.ds.goroute.dto.request.ImportPlaceRequest;
 import com.ds.goroute.dto.request.UpdatePlaceRequest;
 import com.ds.goroute.dto.BaseResponse;
+import com.ds.goroute.dto.response.PlaceMapTileResponse;
 import com.ds.goroute.dto.response.PlaceResponse;
 import com.ds.goroute.dto.response.PlaceReviewResponse;
 import com.ds.goroute.dto.response.FoodSummaryResponse;
 import com.ds.goroute.dto.response.FoodTagResponse;
 import com.ds.goroute.service.FoodService;
+import com.ds.goroute.service.PlaceMapTileService;
 import com.ds.goroute.service.PlaceService;
+import com.ds.goroute.utils.MapTile;
+import com.ds.goroute.type.PlaceSearchSort;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
@@ -27,6 +31,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -43,6 +48,7 @@ public class PlaceController extends BaseController {
 
     private final PlaceService placeService;
     private final FoodService foodService;
+    private final PlaceMapTileService placeMapTileService;
 
     @PostMapping("/import")
     public ResponseEntity importPlace(@Valid @RequestBody ImportPlaceRequest request) {
@@ -111,7 +117,9 @@ public class PlaceController extends BaseController {
             // PlaceSubType codes, and OTHER for places with none of them.
             @RequestParam(required = false) List<String> subTypes,
             @RequestParam(required = false) BigDecimal minRating,
+            // Kept for older clients: true means sortBy=RATING. sortBy wins when both are sent.
             @RequestParam(defaultValue = "false") boolean sortByRating,
+            @RequestParam(required = false) PlaceSearchSort sortBy,
             @RequestParam(required = false) String citySlug,
             @RequestParam(required = false) List<UUID> foodIds,
             @RequestParam(required = false) Boolean excludeLinkedFoodPlaces,
@@ -122,7 +130,7 @@ public class PlaceController extends BaseController {
     ) {
         List<PlaceResponse> responses = placeService.searchPlaces(
                 keyword, latitude, longitude, radius, category, placeGroups, PlaceSubType.filterCodes(subTypes),
-                minRating, sortByRating,
+                minRating, sortBy != null ? sortBy : (sortByRating ? PlaceSearchSort.RATING : PlaceSearchSort.RELEVANCE),
                 citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, minLuceneScore, page, size);
         // The search cache is shared by callers a few metres apart: distance is this caller's own.
         return ResponseEntity.ok(ofSucceeded(PlaceService.withDistanceFrom(responses, latitude, longitude)));
@@ -141,6 +149,43 @@ public class PlaceController extends BaseController {
             @RequestParam(defaultValue = "false") boolean includeInactive) {
         return ResponseEntity.ok(ofSucceeded(placeService.countPlacesBySubType(
                 latitude, longitude, radius, placeGroups, includeInactive)));
+    }
+
+    /**
+     * The places a map draws, by slippy-map tile (Web Mercator, as Mapbox and Google Maps):
+     * {@code tiles} are {@code x:y} pairs at zoom {@code z}; each tile holds the most
+     * prominent ACTIVE place of each sixteenth of it. Public, like the search.
+     */
+    @GetMapping("/map-tiles")
+    public ResponseEntity<BaseResponse<List<PlaceMapTileResponse>>> getMapTiles(
+            @RequestParam @Min(PlaceMapTileService.MIN_ZOOM) @Max(PlaceMapTileService.MAX_ZOOM) int z,
+            @RequestParam @Size(min = 1, max = PlaceMapTileService.MAX_TILES) List<String> tiles,
+            @RequestParam(required = false) List<String> placeGroups,
+            // PlaceSubType codes, and OTHER for places with none of them.
+            @RequestParam(required = false) List<String> subTypes) {
+        return ResponseEntity.ok(ofSucceeded(placeMapTileService.getTiles(
+                parseMapTiles(z, tiles), placeGroups, PlaceSubType.filterCodes(subTypes))));
+    }
+
+    private static List<MapTile> parseMapTiles(int zoom, List<String> tiles) {
+        List<MapTile> parsed = new ArrayList<>(tiles.size());
+        for (String tile : tiles) {
+            String[] parts = tile == null ? new String[0] : tile.trim().split(":");
+            if (parts.length == 2) {
+                try {
+                    int x = Integer.parseInt(parts[0]);
+                    int y = Integer.parseInt(parts[1]);
+                    if (MapTile.isValid(zoom, x, y)) {
+                        parsed.add(new MapTile(zoom, x, y));
+                        continue;
+                    }
+                } catch (NumberFormatException ignored) {
+                    // Reported below with every other malformed tile.
+                }
+            }
+            throw new IllegalArgumentException("tiles must be x:y pairs inside zoom " + zoom);
+        }
+        return parsed;
     }
 
     @GetMapping("/{id}/reviews")

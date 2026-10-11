@@ -35,6 +35,7 @@ import com.ds.goroute.service.PlaceAttributeCatalog;
 import com.ds.goroute.service.PlaceSearchIndexService;
 import com.ds.goroute.service.PlaceService;
 import com.ds.goroute.service.PlaceSocialVideoService;
+import com.ds.goroute.service.PlaceMapTileService;
 import com.ds.goroute.service.PlaceTranslationService;
 import com.ds.goroute.service.ImageMigrationService;
 import com.ds.goroute.service.ImageStorageCleanupService;
@@ -44,6 +45,7 @@ import com.ds.goroute.utils.AdminListSort;
 import com.ds.goroute.utils.GeoDistance;
 import com.ds.goroute.utils.JsonUtils;
 import com.ds.goroute.utils.PlaceIdentityMatcher;
+import com.ds.goroute.type.PlaceSearchSort;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -258,7 +260,7 @@ public class PlaceServiceImpl implements PlaceService {
         }
     }
 
-    @CacheEvict(cacheNames = "placeSearch", cacheManager = "searchCacheManager", allEntries = true)
+    @CacheEvict(cacheNames = {"placeSearch", PlaceMapTileService.CACHE}, cacheManager = "searchCacheManager", allEntries = true)
     @Override
     @Transactional
     public List<PlaceResponse> importPlaces(List<ImportPlaceRequest> requests) {
@@ -446,7 +448,7 @@ public class PlaceServiceImpl implements PlaceService {
                                             BigDecimal radius, String category, List<String> placeGroups,
                                             BigDecimal minRating, int page, int size) {
         return searchPlaces(keyword, latitude, longitude, radius, category, placeGroups, null,
-                minRating, false, null, null, null, false, null, page, size);
+                minRating, PlaceSearchSort.RELEVANCE, null, null, null, false, null, page, size);
     }
 
     @Override
@@ -455,7 +457,8 @@ public class PlaceServiceImpl implements PlaceService {
                                             BigDecimal minRating, String citySlug, List<UUID> foodIds,
                                             Boolean excludeLinkedFoodPlaces, boolean includeInactive, int page, int size) {
         return searchPlaces(keyword, latitude, longitude, radius, category, placeGroups, null,
-                minRating, false, citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, null, page, size);
+                minRating, PlaceSearchSort.RELEVANCE, citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive,
+                null, page, size);
     }
 
     @Cacheable(
@@ -467,13 +470,13 @@ public class PlaceServiceImpl implements PlaceService {
     public List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
                                             BigDecimal radius, String category, List<String> placeGroups,
                                             List<String> subTypes,
-                                            BigDecimal minRating, boolean sortByRating, String citySlug, List<UUID> foodIds,
+                                            BigDecimal minRating, PlaceSearchSort sort, String citySlug, List<UUID> foodIds,
                                             Boolean excludeLinkedFoodPlaces, boolean includeInactive,
                                             Float minLuceneScore, int page, int size) {
         try {
             PlaceSearchCriteria criteria = new PlaceSearchCriteria(
                     keyword, latitude, longitude, radius, category, normalizedPlaceGroups(placeGroups), subTypes, minRating,
-                    citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, sortByRating,
+                    citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, sort,
                     minLuceneScore, page, size);
             List<UUID> orderedIds = placeSearchIndexService.searchPlaceIds(criteria);
             if (orderedIds.isEmpty()) {
@@ -510,7 +513,7 @@ public class PlaceServiceImpl implements PlaceService {
         try {
             PlaceSearchCriteria area = new PlaceSearchCriteria(
                     null, latitude, longitude, radius, null, groups, null, null,
-                    null, null, null, includeInactive, false, null, 0, 1);
+                    null, null, null, includeInactive, PlaceSearchSort.RELEVANCE, null, 0, 1);
             return placeSearchIndexService.countBySubType(area, kinds);
         } catch (BusinessException e) {
             throw e;
@@ -530,7 +533,7 @@ public class PlaceServiceImpl implements PlaceService {
         placeRepository.findById(placeId).ifPresent(placeSearchIndexService::indexPlace);
     }
 
-    @CacheEvict(cacheNames = "placeSearch", cacheManager = "searchCacheManager", allEntries = true)
+    @CacheEvict(cacheNames = {"placeSearch", PlaceMapTileService.CACHE}, cacheManager = "searchCacheManager", allEntries = true)
     @Override
     public void evictSearchCache() {
         log.debug("Place search cache cleared");
@@ -662,7 +665,7 @@ public class PlaceServiceImpl implements PlaceService {
         return a.compareTo(b);
     }
 
-    @CacheEvict(cacheNames = "placeSearch", cacheManager = "searchCacheManager", allEntries = true)
+    @CacheEvict(cacheNames = {"placeSearch", PlaceMapTileService.CACHE}, cacheManager = "searchCacheManager", allEntries = true)
     @Override
     @Transactional
     public void deletePlace(UUID id) {
@@ -680,7 +683,7 @@ public class PlaceServiceImpl implements PlaceService {
         log.info("Deleted place: {}", id);
     }
 
-    @CacheEvict(cacheNames = "placeSearch", cacheManager = "searchCacheManager", allEntries = true)
+    @CacheEvict(cacheNames = {"placeSearch", PlaceMapTileService.CACHE}, cacheManager = "searchCacheManager", allEntries = true)
     @Override
     @Transactional
     public PlaceResponse updatePlace(UUID id, UpdatePlaceRequest request) {
@@ -1245,6 +1248,8 @@ public class PlaceServiceImpl implements PlaceService {
                 .website(place.getWebsite())
                 .googleMapsLink(place.getGoogleMapsLink())
                 .reviewCount(place.getReviewCount())
+                .tripUseCount(place.getTripUseCount())
+                .checkinCount(place.getCheckinCount())
                 .reviewRating(place.getReviewRating())
                 .adjustedRating(place.getAdjustedRating())
                 .placeOverallScore(place.getPlaceOverallScore())

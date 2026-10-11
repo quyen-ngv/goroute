@@ -8,6 +8,8 @@ import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.type.PlaceGroup;
 import com.ds.goroute.type.PlaceSubType;
 import com.ds.goroute.type.PlaceVisibilityStatus;
+import com.ds.goroute.utils.MapTile;
+import com.ds.goroute.type.PlaceSearchSort;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,9 +21,11 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -169,7 +173,7 @@ class PlaceSearchIndexServiceImplTest {
     private PlaceSearchCriteria subTypeCriteria(List<String> subTypes) {
         return new PlaceSearchCriteria(null, BigDecimal.valueOf(10.0), BigDecimal.valueOf(106.0),
                 BigDecimal.valueOf(2.0), null, null, subTypes, null, null, null, null,
-                false, false, null, 0, 20);
+                false, PlaceSearchSort.RELEVANCE, null, 0, 20);
     }
 
     @Test
@@ -340,6 +344,128 @@ class PlaceSearchIndexServiceImplTest {
         assertThat(tempDir.resolve("places.uncommitted")).doesNotExist();
     }
 
+    @Test
+    void mapTileKeepsTheMostProminentPlaceOfEachCell() throws Exception {
+        MapTile tile = MapTile.containing(21.0287, 105.8524, 12);
+        double cornerLat = tile.north() - 0.0005;
+        double cornerLng = tile.west() + 0.0005;
+        Place landmark = mapPlace("Landmark", cornerLat, cornerLng, 4.6, 30_000);
+        Place nextDoor = mapPlace("Next door", cornerLat - 0.0001, cornerLng + 0.0001, 4.9, 12);
+        Place farCorner = mapPlace("Far corner", tile.south() + 0.0005, tile.east() - 0.0005, 4.0, 50);
+        searchService.indexPlace(landmark);
+        searchService.indexPlace(nextDoor);
+        searchService.indexPlace(farCorner);
+
+        Map<MapTile, List<UUID>> found = searchService.findMapTilePlaceIds(List.of(tile), null, null);
+
+        assertThat(found.get(tile)).containsExactly(landmark.getId(), farCorner.getId());
+    }
+
+    @Test
+    void mapTileKeepsThePlaceTravellersUseOverTheMostReviewed() throws Exception {
+        MapTile tile = MapTile.containing(21.0287, 105.8524, 12);
+        double cornerLat = tile.north() - 0.0005;
+        double cornerLng = tile.west() + 0.0005;
+        Place reviewed = mapPlace("Reviewed", cornerLat, cornerLng, 4.9, 500_000);
+        Place used = mapPlace("Used", cornerLat - 0.0001, cornerLng + 0.0001, 3.2, 40);
+        used.setTripUseCount(2);
+        used.setCheckinCount(1);
+        searchService.indexPlace(reviewed);
+        searchService.indexPlace(used);
+
+        Map<MapTile, List<UUID>> found = searchService.findMapTilePlaceIds(List.of(tile), null, null);
+
+        assertThat(found.get(tile)).containsExactly(used.getId());
+    }
+
+    @Test
+    void popularitySortRanksByTripsAndCheckinsNotStars() throws Exception {
+        Place starred = place("Starred cafe", "cafe", 10.0, 106.0, 5.0, 5.0);
+        Place visited = place("Visited cafe", "cafe", 10.0005, 106.0005, 3.0, 3.0);
+        visited.setCheckinCount(4);
+        Place planned = place("Planned cafe", "cafe", 10.001, 106.001, 4.0, 4.0);
+        planned.setTripUseCount(1);
+        searchService.indexPlace(starred);
+        searchService.indexPlace(visited);
+        searchService.indexPlace(planned);
+
+        List<UUID> ids = searchService.searchPlaceIds(new PlaceSearchCriteria(
+                null, BigDecimal.valueOf(10.0), BigDecimal.valueOf(106.0), BigDecimal.valueOf(5.0),
+                null, null, null, null, null, null, null, false, PlaceSearchSort.POPULARITY, null, 0, 10));
+
+        assertThat(ids).containsExactly(visited.getId(), planned.getId(), starred.getId());
+    }
+
+    @Test
+    void aPlaceKeptOnATileIsKeptOnTheCloserTileItFallsIn() throws Exception {
+        Random random = new Random(42);
+        Map<UUID, Place> placesById = new HashMap<>();
+        for (int index = 0; index < 120; index++) {
+            Place place = mapPlace("Place " + index,
+                    21.0 + random.nextDouble() * 0.08,
+                    105.8 + random.nextDouble() * 0.08,
+                    3.0 + random.nextDouble() * 2.0,
+                    random.nextInt(5_000));
+            placesById.put(place.getId(), place);
+            searchService.indexPlace(place);
+        }
+
+        for (int zoom = 9; zoom <= 14; zoom++) {
+            MapTile tile = MapTile.containing(21.04, 105.84, zoom);
+            List<UUID> kept = searchService.findMapTilePlaceIds(List.of(tile), null, null).get(tile);
+            for (UUID id : kept) {
+                Place place = placesById.get(id);
+                MapTile closer = MapTile.containing(
+                        place.getLatitude().doubleValue(), place.getLongitude().doubleValue(), zoom + 1);
+                assertThat(searchService.findMapTilePlaceIds(List.of(closer), null, null).get(closer))
+                        .as("zoom %d keeps %s", zoom, place.getTitle())
+                        .contains(id);
+            }
+        }
+    }
+
+    @Test
+    void mapTileLeavesOutHiddenPlacesAndOtherGroups() throws Exception {
+        MapTile tile = MapTile.containing(21.0287, 105.8524, 12);
+        Place sight = mapPlace("Sight", tile.north() - 0.0005, tile.west() + 0.0005, 4.5, 900);
+        Place hidden = mapPlace("Hidden", tile.south() + 0.0005, tile.east() - 0.0005, 4.5, 900);
+        hidden.setVisibilityStatus(PlaceVisibilityStatus.INACTIVE);
+        Place restaurant = mapPlace("Restaurant", tile.south() + 0.0005, tile.west() + 0.0005, 4.5, 900);
+        restaurant.setPlaceGroup(PlaceGroup.FOOD_AND_DRINK);
+        searchService.indexPlace(sight);
+        searchService.indexPlace(hidden);
+        searchService.indexPlace(restaurant);
+
+        Map<MapTile, List<UUID>> found = searchService.findMapTilePlaceIds(
+                List.of(tile), List.of(PlaceGroup.ATTRACTIONS.name()), null);
+
+        assertThat(found.get(tile)).containsExactly(sight.getId());
+    }
+
+    @Test
+    void mapTilesAnswerEveryTileAskedAndNoOther() throws Exception {
+        MapTile asked = MapTile.containing(21.0287, 105.8524, 12);
+        MapTile neighbour = new MapTile(12, asked.x() + 1, asked.y());
+        MapTile empty = new MapTile(12, asked.x() - 1, asked.y());
+        Place here = mapPlace("Here", asked.north() - 0.0005, asked.west() + 0.0005, 4.5, 900);
+        Place there = mapPlace("There", neighbour.north() - 0.0005, neighbour.west() + 0.0005, 4.5, 900);
+        searchService.indexPlace(here);
+        searchService.indexPlace(there);
+
+        Map<MapTile, List<UUID>> found = searchService.findMapTilePlaceIds(List.of(asked, empty), null, null);
+
+        assertThat(found).containsOnlyKeys(asked, empty);
+        assertThat(found.get(asked)).containsExactly(here.getId());
+        assertThat(found.get(empty)).isEmpty();
+    }
+
+    private Place mapPlace(String title, double latitude, double longitude, double rating, int reviews) {
+        Place place = place(title, "tourist_attraction", latitude, longitude, rating);
+        place.setPlaceGroup(PlaceGroup.ATTRACTIONS);
+        place.setReviewCount(reviews);
+        return place;
+    }
+
     private PlaceSearchCriteria criteria(String keyword, String category, double radiusKm) {
         return new PlaceSearchCriteria(
                 keyword,
@@ -354,7 +480,7 @@ class PlaceSearchIndexServiceImplTest {
                 null,
                 null,
                 false,
-                false,
+                PlaceSearchSort.RELEVANCE,
                 null,
                 0,
                 20);
@@ -374,7 +500,7 @@ class PlaceSearchIndexServiceImplTest {
                 null,
                 null,
                 false,
-                true,
+                PlaceSearchSort.RATING,
                 null,
                 page,
                 size);

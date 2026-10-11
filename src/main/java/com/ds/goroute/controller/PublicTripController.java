@@ -102,6 +102,20 @@ public class PublicTripController extends BaseController {
     }
     
     /**
+     * Public itineraries that include a catalogue place, most recently shared first, for
+     * Place Detail. Only public trips: the place's tripUseCount also counts private ones.
+     */
+    @GetMapping("/v1/api/places/{placeId}/public-trips")
+    public ResponseEntity<BaseResponse<List<PublicTripResponse>>> getPublicTripsWithPlace(
+            @PathVariable UUID placeId,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_SEARCH_PAGE_SIZE) int size,
+            @CurrentUser(required = false) UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(
+                tripService.getPublicTripsWithPlace(placeId, page, size, userId)));
+    }
+
+    /**
      * The Ondetour web page. One file backs both the public-trip list and a
      * single trip; the browser decides which to render from the path, so every
      * route here returns the same HTML. /share/{tripId} is the legacy link

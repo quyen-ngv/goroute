@@ -3,8 +3,10 @@ package com.ds.goroute.service;
 import com.ds.goroute.dto.PlaceSearchCriteria;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.type.PlaceSubType;
+import com.ds.goroute.utils.MapTile;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -40,6 +42,19 @@ public interface PlaceSearchIndexService {
      */
     Map<String, Integer> countBySubType(PlaceSearchCriteria criteria, List<PlaceSubType> kinds)
             throws IOException;
+
+    /**
+     * The places a map draws on each of {@code tiles} (one zoom for all): in every tile, the
+     * most prominent ACTIVE place of each of its cells {@code MAP_TILE_CELL_DEPTH} zooms
+     * closer, most prominent first. Ranked by {@link com.ds.goroute.utils.PlaceProminence}, so
+     * a place kept on a tile is kept on the closer tile it falls in. Every tile is in the
+     * result, a tile with no place as an empty list.
+     *
+     * @param placeGroups any of these groups; null or empty for every group
+     * @param subTypes    any of these sub types, as in {@link #searchPlaceIds}; null or empty for all
+     */
+    Map<MapTile, List<UUID>> findMapTilePlaceIds(Collection<MapTile> tiles, List<String> placeGroups,
+                                                List<String> subTypes) throws IOException;
 
     /**
      * Name search without a location, best match first: the type-ahead behind GET /places.

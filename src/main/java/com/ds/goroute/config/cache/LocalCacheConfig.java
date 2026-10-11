@@ -1,5 +1,6 @@
 package com.ds.goroute.config.cache;
 
+import com.ds.goroute.service.PlaceMapTileService;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -57,11 +58,23 @@ public class LocalCacheConfig {
                         .weigher((Object key, Object value) -> value instanceof java.util.Collection<?> list
                                 ? list.size() + 1 : 1)
                         .build());
+        // Map tiles are the same for every caller, so they live longer than a search: a busy
+        // city is read from the index once per 10 minutes. Bounded by the pins held.
+        cacheManager.registerCustomCache(PlaceMapTileService.CACHE,
+                Caffeine.newBuilder()
+                        .expireAfterWrite(10, TimeUnit.MINUTES)
+                        .maximumWeight(PLACE_MAP_TILE_MAX_CACHED_PINS)
+                        .weigher((Object key, Object value) -> value instanceof java.util.Collection<?> list
+                                ? list.size() + 1 : 1)
+                        .build());
         return cacheManager;
     }
 
     /** Place responses the place search cache may hold across all its entries. */
     static final long PLACE_SEARCH_MAX_CACHED_PLACES = 20_000;
+
+    /** Map pins the tile cache may hold across all its tiles (16 at most per tile). */
+    static final long PLACE_MAP_TILE_MAX_CACHED_PINS = 60_000;
 
     @Bean("placeSearchCacheKeyGenerator")
     public KeyGenerator placeSearchCacheKeyGenerator() {

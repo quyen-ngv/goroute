@@ -15,6 +15,8 @@ import com.ds.goroute.utils.CitySlugResolver;
 import com.ds.goroute.utils.DestinationMatchUtils;
 import com.ds.goroute.utils.JsonUtils;
 import com.ds.goroute.utils.LuceneTitleQueryBuilder;
+import com.ds.goroute.utils.MapTile;
+import com.ds.goroute.utils.PlaceProminence;
 import com.fasterxml.jackson.core.type.TypeReference;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -33,8 +35,13 @@ import org.apache.lucene.document.LatLonDocValuesField;
 import org.apache.lucene.document.LatLonPoint;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
+import org.apache.lucene.geo.GeoEncodingUtils;
+import org.apache.lucene.index.DocValues;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.index.NumericDocValues;
+import org.apache.lucene.index.SortedNumericDocValues;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
@@ -45,6 +52,8 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.SearcherFactory;
 import org.apache.lucene.search.SearcherManager;
+import org.apache.lucene.search.ScoreMode;
+import org.apache.lucene.search.SimpleCollector;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.TermInSetQuery;
@@ -91,7 +100,7 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     private static final int REINDEX_BATCH_SIZE = 500;
     /** Largest page the location-free name search serves (the console picker asks for 500). */
     static final int MAX_NAME_SEARCH_SIZE = 500;
-    private static final String INDEX_SCHEMA_VERSION = "7";
+    private static final String INDEX_SCHEMA_VERSION = "9";
     private static final String ID_FIELD = "id";
     private static final String NAME_FIELD = "name";
     private static final String LOCATION_FIELD = "location";
@@ -101,6 +110,13 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     private static final String SUB_TYPE_FIELD = "sub_type";
     private static final String RATING_FIELD = "review_rating";
     private static final String EFFECTIVE_RATING_SORT_FIELD = "effective_rating_sort";
+    /** {@link PlaceProminence}: which places a zoomed-out map keeps. */
+    private static final String PROMINENCE_FIELD = "prominence";
+    /**
+     * A map tile keeps its most prominent place in each tile this many zooms closer: 4 x 4
+     * cells, so places spread over the tile instead of piling up in its busiest corner.
+     */
+    static final int MAP_TILE_CELL_DEPTH = 2;
     private static final String CITY_SLUG_FIELD = "city_slug";
     private static final String FOOD_ID_FIELD = "food_id";
     private static final String HAS_LINKED_FOOD_FIELD = "has_linked_food";
@@ -111,6 +127,8 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     private static final double MAX_DISTANCE_PIVOT_METERS = 5_000.0;
     private static final Sort EFFECTIVE_RATING_DESCENDING_SORT = new Sort(
             new SortField(EFFECTIVE_RATING_SORT_FIELD, SortField.Type.DOUBLE, true));
+    private static final Sort PROMINENCE_DESCENDING_SORT = new Sort(
+            new SortField(PROMINENCE_FIELD, SortField.Type.DOUBLE, true));
 
     private final PlaceRepository placeRepository;
     private final PlaceTranslationMapper placeTranslationMapper;
@@ -505,13 +523,14 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
 
         IndexSearcher searcher = searcherManager.acquire();
         try {
-            TopDocs topDocs = criteria.sortByRating()
-                    ? searcher.search(
-                            query,
-                            requestedHits,
-                            EFFECTIVE_RATING_DESCENDING_SORT,
-                            criteria.minLuceneScore() != null)
-                    : searcher.search(query, requestedHits);
+            Sort sort = switch (criteria.sort()) {
+                case RATING -> EFFECTIVE_RATING_DESCENDING_SORT;
+                case POPULARITY -> PROMINENCE_DESCENDING_SORT;
+                case RELEVANCE -> null;
+            };
+            TopDocs topDocs = sort == null
+                    ? searcher.search(query, requestedHits)
+                    : searcher.search(query, requestedHits, sort, criteria.minLuceneScore() != null);
             List<UUID> ids = new ArrayList<>(criteria.size());
             int qualifyingHitIndex = 0;
             for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
@@ -647,12 +666,132 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         }
     }
 
+    @Override
+    public Map<MapTile, List<UUID>> findMapTilePlaceIds(Collection<MapTile> tiles, List<String> placeGroups,
+                                                       List<String> subTypes) throws IOException {
+        Map<MapTile, List<UUID>> result = new LinkedHashMap<>();
+        if (tiles == null || tiles.isEmpty()) {
+            return result;
+        }
+        int zoom = tiles.iterator().next().z();
+        if (tiles.stream().anyMatch(tile -> tile.z() != zoom)) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Map tiles must share one zoom");
+        }
+        double south = MapTile.MAX_LATITUDE;
+        double north = -MapTile.MAX_LATITUDE;
+        double west = 180.0;
+        double east = -180.0;
+        Set<Long> wantedTiles = new HashSet<>();
+        for (MapTile tile : tiles) {
+            south = Math.min(south, tile.south());
+            north = Math.max(north, tile.north());
+            west = Math.min(west, tile.west());
+            east = Math.max(east, tile.east());
+            wantedTiles.add(cellKey(tile.x(), tile.y()));
+        }
+
+        BooleanQuery.Builder query = new BooleanQuery.Builder();
+        query.add(LatLonPoint.newBoxQuery(LOCATION_FIELD, south, north, west, east), BooleanClause.Occur.FILTER);
+        query.add(new TermQuery(new Term(VISIBILITY_FIELD, "ACTIVE")), BooleanClause.Occur.FILTER);
+        addTermSetFilter(query, PLACE_GROUP_FIELD, normalizeUpper(placeGroups));
+        addSubTypeFilter(query, normalizeUpper(subTypes));
+
+        MapTileCellCollector collector = new MapTileCellCollector(zoom + MAP_TILE_CELL_DEPTH, wantedTiles);
+        Map<MapTile, List<UUID>> found = new HashMap<>();
+        IndexSearcher searcher = searcherManager.acquire();
+        try {
+            searcher.search(query.build(), collector);
+            List<Map.Entry<Long, MapTileCellCollector.Best>> winners = new ArrayList<>(collector.bestByCell.entrySet());
+            winners.sort((a, b) -> Double.compare(b.getValue().prominence(), a.getValue().prominence()));
+            for (Map.Entry<Long, MapTileCellCollector.Best> winner : winners) {
+                long cell = winner.getKey();
+                MapTile tile = new MapTile(zoom,
+                        (int) ((cell >>> 32) >> MAP_TILE_CELL_DEPTH),
+                        (int) ((cell & 0xFFFFFFFFL) >> MAP_TILE_CELL_DEPTH));
+                Document doc = searcher.doc(winner.getValue().doc(), Set.of(ID_FIELD));
+                found.computeIfAbsent(tile, ignored -> new ArrayList<>()).add(UUID.fromString(doc.get(ID_FIELD)));
+            }
+        } finally {
+            searcherManager.release(searcher);
+        }
+        for (MapTile tile : tiles) {
+            result.put(tile, found.getOrDefault(tile, List.of()));
+        }
+        return result;
+    }
+
+    private static long cellKey(long x, long y) {
+        return (x << 32) | y;
+    }
+
+    /**
+     * One pass over the matching places, keeping the most prominent in each cell of the
+     * requested tiles. No sort over the whole match: a country-wide tile is one read of two
+     * doc values per place.
+     */
+    private static final class MapTileCellCollector extends SimpleCollector {
+
+        record Best(double prominence, int doc) {
+        }
+
+        private final long cellsAcross;
+        private final Set<Long> wantedTiles;
+        private final Map<Long, Best> bestByCell = new HashMap<>();
+        private SortedNumericDocValues locations;
+        private NumericDocValues prominences;
+        private int docBase;
+
+        MapTileCellCollector(int cellZoom, Set<Long> wantedTiles) {
+            this.cellsAcross = 1L << cellZoom;
+            this.wantedTiles = wantedTiles;
+        }
+
+        @Override
+        protected void doSetNextReader(LeafReaderContext context) throws IOException {
+            docBase = context.docBase;
+            locations = DocValues.getSortedNumeric(context.reader(), LOCATION_FIELD);
+            prominences = DocValues.getNumeric(context.reader(), PROMINENCE_FIELD);
+        }
+
+        @Override
+        public void collect(int doc) throws IOException {
+            if (!locations.advanceExact(doc)) {
+                return;
+            }
+            long encoded = locations.nextValue();
+            double latitude = GeoEncodingUtils.decodeLatitude((int) (encoded >>> 32));
+            double longitude = GeoEncodingUtils.decodeLongitude((int) encoded);
+            long cellX = cellIndex(MapTile.unitX(longitude));
+            long cellY = cellIndex(MapTile.unitY(latitude));
+            if (!wantedTiles.contains(cellKey(cellX >> MAP_TILE_CELL_DEPTH, cellY >> MAP_TILE_CELL_DEPTH))) {
+                return;
+            }
+            double prominence = prominences.advanceExact(doc)
+                    ? Double.longBitsToDouble(prominences.longValue())
+                    : 0.0;
+            long key = cellKey(cellX, cellY);
+            Best best = bestByCell.get(key);
+            if (best == null || prominence > best.prominence()) {
+                bestByCell.put(key, new Best(prominence, docBase + doc));
+            }
+        }
+
+        private long cellIndex(double unit) {
+            return Math.max(0L, Math.min(cellsAcross - 1, (long) Math.floor(unit * cellsAcross)));
+        }
+
+        @Override
+        public ScoreMode scoreMode() {
+            return ScoreMode.COMPLETE_NO_SCORES;
+        }
+    }
+
     private static PlaceSearchCriteria withoutSubTypes(PlaceSearchCriteria criteria) {
         return new PlaceSearchCriteria(
                 criteria.keyword(), criteria.latitude(), criteria.longitude(), criteria.radiusKm(),
                 criteria.category(), criteria.placeGroups(), null, criteria.minRating(),
                 criteria.citySlug(), criteria.foodIds(), criteria.excludeLinkedFoodPlaces(),
-                criteria.includeInactive(), criteria.sortByRating(), criteria.minLuceneScore(),
+                criteria.includeInactive(), criteria.sort(), criteria.minLuceneScore(),
                 criteria.page(), criteria.size());
     }
 
@@ -695,6 +834,18 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         }
     }
 
+    /**
+     * The place's usage counts (V225), which rank it. A place loaded from its row has them; one
+     * built by its caller (a new place, an edit) is read back for them, and counts 0 when it is
+     * not stored yet.
+     */
+    private Place withUsageCounts(Place place) {
+        if (place.getTripUseCount() != null && place.getCheckinCount() != null) {
+            return place;
+        }
+        return placeRepository.findUsageCounts(place.getId()).orElse(place);
+    }
+
     private Document toDocument(Place place, List<PlaceTranslation> translations, Set<UUID> foodIds) {
         Document doc = new Document();
         doc.add(new StringField(ID_FIELD, place.getId().toString(), Field.Store.YES));
@@ -729,6 +880,9 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
             doc.add(new DoubleDocValuesField(
                     EFFECTIVE_RATING_SORT_FIELD, place.getAdjustedRating().doubleValue()));
         }
+        Place usage = withUsageCounts(place);
+        doc.add(new DoubleDocValuesField(PROMINENCE_FIELD, PlaceProminence.of(
+                place.getId(), usage.getTripUseCount(), usage.getCheckinCount(), place.getReviewCount())));
         List<String> destinations = JsonUtils.fromJson(
                 place.getDestinations(), new TypeReference<List<String>>() {});
         if (destinations != null) {

@@ -2203,6 +2203,18 @@ public class TripServiceImpl implements TripService {
         return summaries;
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<PublicTripResponse> getPublicTripsWithPlace(UUID placeId, int page, int size, UUID viewerId) {
+        if (placeId == null) {
+            return List.of();
+        }
+        int limit = Math.max(1, Math.min(size, MAX_PUBLIC_TRIP_SEARCH_PAGE_SIZE));
+        int offset = Math.max(0, page) * limit;
+        List<UUID> ids = tripRepository.findPublicTripIdsByPlace(placeId, limit, offset);
+        return toPublicTripSummaries(loadPublicTripsInOrder(ids), viewerId);
+    }
+
     /**
      * Public trips as list cards: everything a search or feed row shows, with the heavy
      * children (activities, expenses, notes) left out and only their counts carried.

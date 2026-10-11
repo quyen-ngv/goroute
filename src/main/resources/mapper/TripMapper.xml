@@ -318,6 +318,40 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
+    <!-- Place Detail's "public itineraries with this place". An activity points at a place
+         by place_ref_id, or, without one, by place_id holding the catalogue id or the Google
+         place id; REJECTED activities do not count. The same matching as the place's
+         trip_use_count (V225), narrowed to trips anyone may open. -->
+    <select id="selectPublicTripIdsByPlace" resultType="java.util.UUID">
+        SELECT t.id
+        FROM trips t
+        WHERE t.id IN (
+                SELECT a.trip_id
+                FROM activities a
+                WHERE a.place_ref_id = #{placeId,javaType=java.util.UUID,jdbcType=OTHER}
+                  AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+                UNION
+                SELECT a.trip_id
+                FROM places p
+                JOIN activities a ON a.place_id = p.place_id AND a.place_ref_id IS NULL
+                WHERE p.id = #{placeId,javaType=java.util.UUID,jdbcType=OTHER}
+                  AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+                UNION
+                SELECT a.trip_id
+                FROM activities a
+                WHERE a.place_ref_id IS NULL
+                  AND a.place_id = CAST(#{placeId,javaType=java.util.UUID,jdbcType=OTHER} AS TEXT)
+                  AND COALESCE(a.status, '') &lt;&gt; 'REJECTED')
+          AND t.visibility = 'PUBLIC'
+          AND t.is_deleted = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns ct
+              WHERE ct.content_type = 'TRIP' AND ct.content_id = t.id
+                AND ct.restored_at IS NULL)
+        ORDER BY COALESCE(t.public_shared_at, t.created_at) DESC, t.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
     <update id="incrementViewCount" parameterType="java.util.UUID">
         UPDATE trips
         SET view_count = COALESCE(view_count, 0) + 1,

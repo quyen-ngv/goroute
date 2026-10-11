@@ -106,6 +106,13 @@ public class Place {
     private String scoreSource;
     private LocalDateTime lastScrapedAt;
 
+    // How much travellers use the place (V225), recounted asynchronously by
+    // PlaceUsageStatsService. Read-only here: no insert or update writes them.
+    /** Trips (not deleted) with a non-rejected activity on the place, each trip once. */
+    private Integer tripUseCount;
+    /** Check-ins on the place that are not removed. */
+    private Integer checkinCount;
+
     // Metadata
     /** Curated tourist area (location_images) this row belongs to; null until auto-map resolves one. */
     private UUID locationImageId;

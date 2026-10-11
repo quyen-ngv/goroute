@@ -41,7 +41,7 @@ public class LocalEventPublicController {
     public ResponseEntity<BaseResponse<PageResponse<LocalEventSummaryResponse>>> search(
             @RequestParam @DecimalMin("-90") @DecimalMax("90") double lat,
             @RequestParam @DecimalMin("-180") @DecimalMax("180") double lng,
-            @RequestParam(defaultValue = "30") @DecimalMin("1") @DecimalMax("100") double radiusKm,
+            @RequestParam(defaultValue = "30") @DecimalMin("1") @DecimalMax("1000") double radiusKm,
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,
             @RequestParam(required = false) String category,

@@ -6,6 +6,7 @@ import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.PlaceSearchIndexService;
 import com.ds.goroute.thirdparty.goong.GoongClient;
 import com.ds.goroute.utils.GeoDistance;
+import com.ds.goroute.type.PlaceSearchSort;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -66,7 +67,7 @@ public class TrackStopNamer {
             List<UUID> ids = placeSearchIndexService.searchPlaceIds(new PlaceSearchCriteria(
                     null, BigDecimal.valueOf(latitude), BigDecimal.valueOf(longitude),
                     BigDecimal.valueOf(radiusM / 1000d), null, null, null, null, null, null, null,
-                    false, false, null, 0, CATALOG_CANDIDATES));
+                    false, PlaceSearchSort.RELEVANCE, null, 0, CATALOG_CANDIDATES));
             if (ids.isEmpty()) {
                 return Optional.empty();
             }

@@ -8,6 +8,7 @@ import com.ds.goroute.dto.response.AdminPlaceResponse;
 import com.ds.goroute.dto.response.AdminPlacePageResponse;
 import com.ds.goroute.dto.response.PlaceReviewResponse;
 import com.ds.goroute.utils.GeoDistance;
+import com.ds.goroute.type.PlaceSearchSort;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -79,7 +80,7 @@ public interface PlaceService {
     List<PlaceResponse> searchPlaces(String keyword, BigDecimal latitude, BigDecimal longitude,
                                      BigDecimal radius, String category, List<String> placeGroups,
                                      List<String> subTypes,
-                                     BigDecimal minRating, boolean sortByRating, String citySlug, List<UUID> foodIds,
+                                     BigDecimal minRating, PlaceSearchSort sort, String citySlug, List<UUID> foodIds,
                                      Boolean excludeLinkedFoodPlaces, boolean includeInactive,
                                      Float minLuceneScore, int page, int size);
 

@@ -8,12 +8,14 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
  * Activities of a trip. Every insert and delete here also recounts the owning trip's
- * {@code trips.activity_count} (V216), the ranking input of public trip search, so no
- * caller has to remember it.
+ * {@code trips.activity_count} (V216), the ranking input of public trip search, and every
+ * write that may change which places the trip uses publishes a {@code PlaceUsageChangedEvent}
+ * (V225 usage counts), so no caller has to remember either.
  */
 public interface ActivityRepository {
     void insert(Activity activity);
@@ -42,6 +44,12 @@ public interface ActivityRepository {
     void deleteById(UUID id);
     
     void deleteByTripId(UUID tripId);
+
+    /**
+     * The place references (place_ref_id, place_id) of the trip's activities: what a change
+     * to the whole trip, such as deleting it, may change the usage counts of (V225).
+     */
+    Set<String> tripPlaceReferences(UUID tripId);
 
     /** Activities with an address that resolves to no catalogue place, newest first. */
     List<UnlinkedActivityRow> findUnlinkedForAdmin(String search, int limit, int offset);

@@ -66,6 +66,8 @@
         <result property="updatedAt" column="updated_at"/>
         <result property="distance" column="distance"/>
         <result property="locationImageId" column="location_image_id"/>
+        <result property="tripUseCount" column="trip_use_count"/>
+        <result property="checkinCount" column="checkin_count"/>
     </resultMap>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.Place">
@@ -297,7 +299,7 @@
         latitude, longitude, verification_radius_meters, phone, website, google_maps_link,
         review_count, review_rating, adjusted_rating, place_overall_score, score_sample_count,
         score_source, last_scraped_at, thumbnail, images, descriptions, visibility_status,
-        price_range, open_hours, regular, created_at, updated_at
+        price_range, open_hours, regular, created_at, updated_at, trip_use_count, checkin_count
     </sql>
 
     <select id="findListSummaryByIds" resultMap="PlaceResultMap">
@@ -310,6 +312,19 @@
         <if test="publicOnly">
             AND visibility_status = 'ACTIVE' AND lifecycle_status = 'ACTIVE'
         </if>
+    </select>
+
+    <!-- Map pins: the search index picked the ids, this reads only what a pin draws. Same
+         public rule as findListSummaryByIds with publicOnly. -->
+    <select id="findMapPinsByIds" resultMap="PlaceResultMap">
+        SELECT id, place_id, title, place_group, sub_types, address, latitude, longitude, thumbnail,
+               images, review_count, review_rating, adjusted_rating, trip_use_count, checkin_count
+        FROM places
+        WHERE id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        AND visibility_status = 'ACTIVE' AND lifecycle_status = 'ACTIVE'
     </select>
 
     <!-- Same order as idx_places_created_id (created_at DESC, id DESC). -->
@@ -333,7 +348,7 @@
 
     <sql id="PlaceSearchIndexColumns">
         id, title, latitude, longitude, visibility_status, category, place_group, sub_types,
-        review_rating, adjusted_rating, destinations
+        review_rating, adjusted_rating, review_count, destinations, trip_use_count, checkin_count
     </sql>
 
     <select id="findSearchIndexPage" resultMap="PlaceResultMap">
@@ -344,6 +359,104 @@
         </where>
         ORDER BY id
         LIMIT #{limit}
+    </select>
+
+    <!--
+      Recounts trip_use_count and checkin_count (V225) of the given places, or of every place
+      when placeIds is null, and returns the ids whose counts changed. An activity points at a
+      place by place_ref_id, or, without one, by place_id holding the catalogue id or the Google
+      place id; each trip counts once, deleted trips and REJECTED activities not at all. Removed
+      check-ins do not count. Set-based, so the nightly run over every place is one statement.
+    -->
+    <select id="recomputeUsageCounts" resultType="java.util.UUID" flushCache="true" useCache="false">
+        WITH activity_places AS (
+            SELECT a.place_ref_id AS place_uuid, a.trip_id
+            FROM activities a
+            JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
+            WHERE a.place_ref_id IS NOT NULL
+              AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+              <if test="placeIds != null">
+                AND a.place_ref_id IN
+                <foreach item="placeId" collection="placeIds" open="(" separator="," close=")">#{placeId}</foreach>
+              </if>
+            UNION ALL
+            SELECT p.id, a.trip_id
+            FROM places p
+            JOIN activities a ON a.place_id = p.place_id AND a.place_ref_id IS NULL
+            JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
+            WHERE COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+              <if test="placeIds != null">
+                AND p.id IN
+                <foreach item="placeId" collection="placeIds" open="(" separator="," close=")">#{placeId}</foreach>
+              </if>
+            UNION ALL
+            SELECT p.id, a.trip_id
+            FROM places p
+            JOIN activities a ON a.place_id = p.id::text AND a.place_ref_id IS NULL
+            JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
+            WHERE COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+              <if test="placeIds != null">
+                AND p.id IN
+                <foreach item="placeId" collection="placeIds" open="(" separator="," close=")">#{placeId}</foreach>
+              </if>
+        ),
+        trip_uses AS (
+            SELECT place_uuid, COUNT(DISTINCT trip_id) AS uses
+            FROM activity_places
+            GROUP BY place_uuid
+        ),
+        checkins AS (
+            SELECT c.place_id AS place_uuid, COUNT(*) AS checkins
+            FROM user_checkins c
+            WHERE c.is_removed = FALSE
+              AND c.place_id IS NOT NULL
+              <if test="placeIds != null">
+                AND c.place_id IN
+                <foreach item="placeId" collection="placeIds" open="(" separator="," close=")">#{placeId}</foreach>
+              </if>
+            GROUP BY c.place_id
+        ),
+        counted AS (
+            SELECT p.id, COALESCE(tu.uses, 0) AS uses, COALESCE(ck.checkins, 0) AS checkins
+            FROM places p
+            LEFT JOIN trip_uses tu ON tu.place_uuid = p.id
+            LEFT JOIN checkins ck ON ck.place_uuid = p.id
+            <if test="placeIds != null">
+                WHERE p.id IN
+                <foreach item="placeId" collection="placeIds" open="(" separator="," close=")">#{placeId}</foreach>
+            </if>
+        )
+        UPDATE places p
+        SET trip_use_count = counted.uses,
+            checkin_count = counted.checkins
+        FROM counted
+        WHERE counted.id = p.id
+          AND (p.trip_use_count &lt;&gt; counted.uses OR p.checkin_count &lt;&gt; counted.checkins)
+        RETURNING p.id
+    </select>
+
+    <!--
+      The catalogue places a set of loose references names: an activity's place_ref_id or
+      place_id, which holds the catalogue id or the Google place id.
+    -->
+    <select id="findIdsByReferences" resultType="java.util.UUID">
+        SELECT id FROM places
+        WHERE
+        <trim prefixOverrides="OR">
+            <if test="ids != null and ids.size() > 0">
+                id IN
+                <foreach item="id" collection="ids" open="(" separator="," close=")">#{id}</foreach>
+            </if>
+            <if test="googlePlaceIds != null and googlePlaceIds.size() > 0">
+                OR place_id IN
+                <foreach item="googlePlaceId" collection="googlePlaceIds" open="(" separator="," close=")">#{googlePlaceId}</foreach>
+            </if>
+        </trim>
+    </select>
+
+    <!-- Just the two usage counts (V225), for indexing a place object built without them. -->
+    <select id="findUsageCounts" resultMap="PlaceResultMap">
+        SELECT id, trip_use_count, checkin_count FROM places WHERE id = #{id}
     </select>
 
     <select id="findSearchIndexRow" resultMap="PlaceResultMap">

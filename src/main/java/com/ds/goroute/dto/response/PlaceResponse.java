@@ -43,6 +43,10 @@ public class PlaceResponse {
     private String googleMapsLink;
 
     private Integer reviewCount;
+    /** Trips that use the place (V225); recounted shortly after a trip changes. */
+    private Integer tripUseCount;
+    /** Check-ins on the place (V225); recounted shortly after a check-in. */
+    private Integer checkinCount;
     private BigDecimal reviewRating;
     private BigDecimal adjustedRating;
     private BigDecimal placeOverallScore;

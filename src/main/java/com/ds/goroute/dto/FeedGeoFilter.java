@@ -11,8 +11,12 @@ import java.math.BigDecimal;
  */
 public record FeedGeoFilter(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm) {
 
-    /** Beyond this "near you" stops meaning anything and the query scans the whole table. */
-    public static final BigDecimal MAX_RADIUS_KM = BigDecimal.valueOf(200);
+    /**
+     * The app's map zoomed out to several cities asks for the check-ins of the area in view, up
+     * to the length of Vietnam; that far the filter keeps out little and the query reads most
+     * of the table, as the unscoped feed does.
+     */
+    public static final BigDecimal MAX_RADIUS_KM = BigDecimal.valueOf(1000);
 
     /**
      * Null when the request named no point, which keeps the feed unscoped. A point with only

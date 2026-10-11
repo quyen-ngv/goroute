@@ -7,6 +7,7 @@ import com.ds.goroute.repository.PlaceRepository;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -96,6 +97,37 @@ public class PlaceRepositoryImpl implements PlaceRepository {
             return List.of();
         }
         return placeMapper.findListSummaryByIds(ids, publicOnly);
+    }
+
+    @Override
+    public List<Place> findMapPinsByIds(List<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        return placeMapper.findMapPinsByIds(ids);
+    }
+
+    @Override
+    public List<UUID> recomputeUsageCounts(List<UUID> placeIds) {
+        if (placeIds != null && placeIds.isEmpty()) {
+            return List.of();
+        }
+        return placeMapper.recomputeUsageCounts(placeIds);
+    }
+
+    @Override
+    public List<UUID> findIdsByReferences(Collection<UUID> ids, Collection<String> googlePlaceIds) {
+        List<UUID> catalogueIds = ids == null ? List.of() : ids.stream().distinct().toList();
+        List<String> googleIds = googlePlaceIds == null ? List.of() : googlePlaceIds.stream().distinct().toList();
+        if (catalogueIds.isEmpty() && googleIds.isEmpty()) {
+            return List.of();
+        }
+        return placeMapper.findIdsByReferences(catalogueIds, googleIds);
+    }
+
+    @Override
+    public Optional<Place> findUsageCounts(UUID id) {
+        return id == null ? Optional.empty() : Optional.ofNullable(placeMapper.findUsageCounts(id));
     }
 
     @Override

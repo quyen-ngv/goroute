@@ -13,6 +13,7 @@ import com.ds.goroute.service.PlaceTranslationService;
 import com.ds.goroute.type.PlaceGroup;
 import com.ds.goroute.type.PlaceVisibilityStatus;
 import com.ds.goroute.type.TranslationLocale;
+import com.ds.goroute.type.PlaceSearchSort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -141,7 +142,7 @@ class PlaceServiceImplListTest {
         when(placeRepository.findListSummaryByIds(List.of(place.getId()), true)).thenReturn(List.of(place));
 
         List<PlaceResponse> result = service.searchPlaces(null, BigDecimal.TEN, BigDecimal.valueOf(106),
-                BigDecimal.ONE, null, null, null, null, false, null, null, null, false, null, 0, 20);
+                BigDecimal.ONE, null, null, null, null, PlaceSearchSort.RELEVANCE, null, null, null, false, null, 0, 20);
 
         assertThat(result).hasSize(1);
         verify(placeRepository, never()).findByIds(any());

@@ -50,6 +50,22 @@ public interface PlaceMapper {
     List<Place> findListSummaryByIds(@Param("ids") List<UUID> ids,
                                      @Param("publicOnly") boolean publicOnly);
 
+    /** What a map pin shows, for the given ids: its address and photos too. Public places only. */
+    List<Place> findMapPinsByIds(@Param("ids") List<UUID> ids);
+
+    /**
+     * Recounts trip_use_count and checkin_count (V225) of {@code placeIds}, or of every place
+     * when null, and returns the ids whose counts changed.
+     */
+    List<UUID> recomputeUsageCounts(@Param("placeIds") List<UUID> placeIds);
+
+    /** Catalogue ids of the places named by catalogue id or by Google place id. */
+    List<UUID> findIdsByReferences(@Param("ids") List<UUID> ids,
+                                   @Param("googlePlaceIds") List<String> googlePlaceIds);
+
+    /** The place's id and usage counts only; null when there is no such place. */
+    Place findUsageCounts(@Param("id") UUID id);
+
     /** Newest places first, list columns only. */
     List<Place> findListPage(@Param("placeGroups") List<String> placeGroups,
                              @Param("publicOnly") boolean publicOnly,

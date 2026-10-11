@@ -63,7 +63,7 @@ public class MeetupController {
             @CurrentUser UUID userId,
             @RequestParam @DecimalMin("-90") @DecimalMax("90") BigDecimal lat,
             @RequestParam @DecimalMin("-180") @DecimalMax("180") BigDecimal lng,
-            @RequestParam(defaultValue = "30") @Min(1) @Max(100) int radiusKm,
+            @RequestParam(defaultValue = "30") @Min(1) @Max(1000) int radiusKm,
             @RequestParam(required = false) List<MeetupCategory> category,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size) {

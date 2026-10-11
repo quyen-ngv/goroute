@@ -5,6 +5,7 @@ import com.ds.goroute.entity.Place;
 import org.apache.ibatis.annotations.Param;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -47,6 +48,21 @@ public interface PlaceRepository {
      * places a guest may see (visibility and lifecycle ACTIVE).
      */
     List<Place> findListSummaryByIds(List<UUID> ids, boolean publicOnly);
+
+    /** Map-pin columns for the ids that a guest may see, in no particular order. */
+    List<Place> findMapPinsByIds(List<UUID> ids);
+
+    /**
+     * Recounts the usage counts (V225) of {@code placeIds}, or of every place when null, and
+     * returns the ids whose counts changed.
+     */
+    List<UUID> recomputeUsageCounts(List<UUID> placeIds);
+
+    /** Catalogue ids of the places named by catalogue id or by Google place id. */
+    List<UUID> findIdsByReferences(Collection<UUID> ids, Collection<String> googlePlaceIds);
+
+    /** The place's usage counts (V225); empty when there is no such place. */
+    Optional<Place> findUsageCounts(UUID id);
 
     /** Newest first ({@code created_at DESC, id DESC}), list-card columns only. */
     List<Place> findListPage(List<String> placeGroups, boolean publicOnly, int limit, int offset);

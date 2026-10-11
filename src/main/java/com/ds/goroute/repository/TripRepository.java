@@ -51,6 +51,12 @@ public interface TripRepository {
      */
     List<Trip> findFollowingTrips(UUID viewerId, int limit, int offset);
 
+    /**
+     * Ids of the public trips that have the catalogue place {@code placeId} in their
+     * itinerary, most recently shared first.
+     */
+    List<UUID> findPublicTripIdsByPlace(UUID placeId, int limit, int offset);
+
     void incrementViewCount(UUID id);
     
     void incrementCopyCount(UUID id);

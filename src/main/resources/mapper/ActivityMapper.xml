@@ -112,8 +112,12 @@
         </foreach>
     </select>
 
-    <select id="selectTripIdById" resultType="java.util.UUID">
-        SELECT trip_id FROM activities WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    <!-- The place references of a trip's activities, for recounting their usage (V225). -->
+    <select id="selectPlaceReferencesByTripId" resultMap="ActivityResultMap">
+        SELECT id, trip_id, place_id, place_ref_id
+        FROM activities
+        WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND (place_ref_id IS NOT NULL OR NULLIF(BTRIM(place_id), '') IS NOT NULL)
     </select>
 
     <select id="selectByTripIdAndDay" resultMap="ActivityResultMap">

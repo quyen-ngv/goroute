@@ -8,14 +8,18 @@ import com.ds.goroute.entity.UserCheckin;
 import com.ds.goroute.entity.UserCheckinLocationHistory;
 import com.ds.goroute.entity.UserCheckinPhoto;
 import com.ds.goroute.entity.CheckinLikeCount;
+import com.ds.goroute.event.PlaceUsageChangedEvent;
 import com.ds.goroute.mapper.UserCheckinMapper;
 import com.ds.goroute.repository.UserCheckinRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Repository
@@ -23,6 +27,7 @@ import java.util.UUID;
 public class UserCheckinRepositoryImpl implements UserCheckinRepository {
 
     private final UserCheckinMapper mapper;
+    private final ApplicationEventPublisher events;
 
     @Override
     public int insert(UserCheckin checkin) {
@@ -129,7 +134,11 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
 
     @Override
     public int attachPlaceToCluster(String locationKey, UUID placeId) {
-        return mapper.attachPlaceToCluster(locationKey, placeId);
+        int attached = mapper.attachPlaceToCluster(locationKey, placeId);
+        if (attached > 0) {
+            publishPlaceUsageChange(Set.of(placeId.toString()));
+        }
+        return attached;
     }
 
     @Override
@@ -256,7 +265,22 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
 
     @Override
     public int assignPlace(UUID id, UUID placeId, String locationKey, String provinceCode) {
-        return mapper.assignPlace(id, placeId, locationKey, provinceCode);
+        UserCheckin before = mapper.findById(id);
+        int assigned = mapper.assignPlace(id, placeId, locationKey, provinceCode);
+        if (assigned > 0) {
+            Set<String> places = new HashSet<>();
+            places.add(placeId.toString());
+            if (before != null && before.getPlaceId() != null) {
+                places.add(before.getPlaceId().toString());
+            }
+            publishPlaceUsageChange(places);
+        }
+        return assigned;
+    }
+
+    /** A check-in moved to a place changes the place's usage counts (V225). */
+    private void publishPlaceUsageChange(Set<String> places) {
+        events.publishEvent(new PlaceUsageChangedEvent(places));
     }
 
     @Override

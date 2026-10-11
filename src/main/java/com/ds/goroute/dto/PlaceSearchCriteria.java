@@ -1,5 +1,7 @@
 package com.ds.goroute.dto;
 
+import com.ds.goroute.type.PlaceSearchSort;
+
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
@@ -20,10 +22,14 @@ public record PlaceSearchCriteria(
         List<UUID> foodIds,
         Boolean excludeLinkedFoodPlaces,
         boolean includeInactive,
-        boolean sortByRating,
+        PlaceSearchSort sort,
         Float minLuceneScore,
         int page,
         int size) {
 
     public static final int MAX_PAGE_SIZE = 100;
+
+    public PlaceSearchCriteria {
+        sort = sort == null ? PlaceSearchSort.RELEVANCE : sort;
+    }
 }

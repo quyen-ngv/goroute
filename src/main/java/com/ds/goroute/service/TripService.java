@@ -74,6 +74,13 @@ public interface TripService {
     List<PublicTripResponse> getFollowingTrips(UUID viewerId, int page, int size);
 
     /**
+     * Public trips whose itinerary has the catalogue place {@code placeId}, as list cards,
+     * most recently shared first. Private, deleted and taken-down trips are left out, so
+     * this can be shorter than the place's {@code tripUseCount}.
+     */
+    List<PublicTripResponse> getPublicTripsWithPlace(UUID placeId, int page, int size, UUID viewerId);
+
+    /**
      * Recounts the public-search ranking inputs (activity and memory counts, V216) of every
      * trip whose stored numbers drifted. Returns the number of trips fixed.
      */

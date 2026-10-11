@@ -28,7 +28,8 @@ public interface ActivityMapper {
     /** Id, trip id and name only: enough to label photos with the stop they belong to. */
     List<Activity> selectNamesByIds(@Param("ids") List<UUID> ids);
 
-    UUID selectTripIdById(@Param("id") UUID id);
+    /** id, trip_id, place_id and place_ref_id of the trip's activities that name a place. */
+    List<Activity> selectPlaceReferencesByTripId(@Param("tripId") UUID tripId);
 
     List<Activity> selectByTripIdAndDay(@Param("tripId") UUID tripId, @Param("dayNumber") Integer dayNumber);
     
