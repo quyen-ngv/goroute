@@ -107,3 +107,17 @@ CREATE TABLE IF NOT EXISTS route_leg_cache (
 );
 
 CREATE INDEX IF NOT EXISTS idx_route_leg_cache_last_used ON route_leg_cache(last_used_at);
+
+-- 9. The Mapbox token the app draws tiles with. Empty = the app keeps the token built into it.
+--    Exposed through PUBLIC_CONFIG so rotating the token needs no app release (apps from the
+--    route-cache release on read it at start and use it for every map after).
+INSERT INTO config (label, key, value, description, is_active)
+VALUES ('MAPBOX', 'APP_TILE_TOKEN', '', 'Token Mapbox (pk.) app dung de ve ban do; de trong = dung token co san trong app', TRUE)
+ON CONFLICT (label, key) DO NOTHING;
+
+UPDATE config
+SET value = value || ', {label=''MAPBOX'',key=''APP_TILE_TOKEN''}',
+    data_version = data_version + 1,
+    updated_at = NOW()
+WHERE label = 'CONFIG' AND key = 'PUBLIC_CONFIG'
+  AND value NOT LIKE '%APP_TILE_TOKEN%';
