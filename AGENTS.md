@@ -149,7 +149,14 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `MAP_SEARCH` | `RATE_LIMIT_ENABLED` / `EXEMPT_ADMINS` | boolean | safe fallback true / true | private/admin |
 | `MAP_SEARCH` | `AUTOCOMPLETE_PER_MINUTE` / `PLACE_DETAIL_PER_MINUTE` | count/minute/user, 1..600 | safe fallback 30 / 30 | private/admin |
 | `MAP_SEARCH` | `AUTOCOMPLETE_PER_DAY` / `PLACE_DETAIL_PER_DAY` | count/day/user, 1..100000 | safe fallback 300 / 200 | private/admin |
+| `MAP_SEARCH` | `GEOCODE_PER_MINUTE` / `ROUTE_PER_MINUTE` | count/minute/user, 1..600 | safe fallback 20 / 30 | private/admin |
+| `MAP_SEARCH` | `GEOCODE_PER_DAY` / `ROUTE_PER_DAY` | count/day/user, 1..100000 | safe fallback 200 / 300 | private/admin |
 | `MAP_SEARCH` | `USAGE_RETENTION_DAYS` | days, 7..730 | safe fallback 90 | private/admin |
+| `MAP_PROVIDER` | `USER_PROVIDER` / `BETA_PROVIDER` | `GOONG` or `MAPBOX` | safe fallback GOONG / MAPBOX | private/admin |
+| `MAP_PROVIDER` | `FALLBACK_TO_GOONG` | boolean | safe fallback true | private/admin |
+| `MAP_BUDGET` | `ENABLED` | boolean | safe fallback true | private/admin |
+| `MAP_BUDGET` | `SEARCH_MONTHLY_CAP` / `GEOCODE_MONTHLY_CAP` / `DIRECTIONS_MONTHLY_CAP` | paid Mapbox calls/month, 0..100000000 | safe fallback 50000 / 100000 / 100000 | private/admin |
+| `MAP_BUDGET` | `DAILY_CAP_PERCENT` / `WARN_PERCENT` | percent, 1..100 | safe fallback 10 / 80 | private/admin |
 | `MODERATION` | `TEXT_FILTER_ENABLED` | boolean | safe fallback true | private/admin |
 | `MODERATION` | `AI_TEXT_ENABLED` | boolean | safe fallback false | private/admin |
 | `MODERATION` | `AI_TEXT_MAX_LENGTH` | characters, 200..20000 | safe fallback 4000 | private/admin |
