@@ -161,11 +161,11 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     }
 
     @Override
-    public List<Place> findFilteredPage(String search, List<String> placeGroups, List<String> subTypes,
+    public List<Place> findFilteredPage(String search, UUID searchId, List<String> placeGroups, List<String> subTypes,
                                         List<String> visibilityStatus,
                                         List<String> trustLevel, List<UUID> locationImageIds,
                                         String sort, boolean descending, int limit, int offset) {
-        return placeMapper.findFilteredPage(search, placeGroups, subTypes, visibilityStatus, trustLevel, locationImageIds,
+        return placeMapper.findFilteredPage(search, searchId, placeGroups, subTypes, visibilityStatus, trustLevel, locationImageIds,
                 sort, descending, limit, offset);
     }
 
@@ -176,10 +176,10 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     }
 
     @Override
-    public long countFiltered(String search, List<String> placeGroups, List<String> subTypes,
+    public long countFiltered(String search, UUID searchId, List<String> placeGroups, List<String> subTypes,
                               List<String> visibilityStatus,
                               List<String> trustLevel, List<UUID> locationImageIds) {
-        return placeMapper.countFiltered(search, placeGroups, subTypes, visibilityStatus, trustLevel, locationImageIds);
+        return placeMapper.countFiltered(search, searchId, placeGroups, subTypes, visibilityStatus, trustLevel, locationImageIds);
     }
 
     @Override
@@ -211,7 +211,23 @@ public class PlaceRepositoryImpl implements PlaceRepository {
         if (latitude == null || longitude == null || radiusKm == null || limit <= 0) {
             return List.of();
         }
-        return placeMapper.findActiveForAiWithinRadius(latitude, longitude, radiusKm, placeGroups, limit);
+        return placeMapper.findActiveForAiWithinRadius(latitude, longitude, radiusKm, null, null, null, null,
+                placeGroups, limit);
+    }
+
+    @Override
+    public List<Place> findActiveForAiInArea(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm,
+                                             com.ds.goroute.entity.LocationImage area, List<String> placeGroups,
+                                             int limit) {
+        if (area == null || area.getId() == null || area.getLatitude() == null || area.getLongitude() == null) {
+            return findActiveForAiWithinRadius(latitude, longitude, radiusKm, placeGroups, limit);
+        }
+        if (latitude == null || longitude == null || radiusKm == null || limit <= 0) {
+            return List.of();
+        }
+        BigDecimal areaRadius = area.getCoverageRadiusKm() == null ? BigDecimal.valueOf(30) : area.getCoverageRadiusKm();
+        return placeMapper.findActiveForAiWithinRadius(latitude, longitude, radiusKm, area.getId(),
+                area.getLatitude(), area.getLongitude(), areaRadius, placeGroups, limit);
     }
 
     @Override

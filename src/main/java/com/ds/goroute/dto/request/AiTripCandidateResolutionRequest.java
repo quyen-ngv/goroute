@@ -13,6 +13,9 @@ import java.util.List;
 public class AiTripCandidateResolutionRequest {
     @NotNull private BigDecimal latitude;
     @NotNull private BigDecimal longitude;
+    /** Tourist area of the destination; hits that resolve into another area are dropped. */
+    @com.fasterxml.jackson.databind.annotation.JsonDeserialize(using = com.ds.goroute.utils.json.LenientUuidDeserializer.class)
+    private java.util.UUID locationImageId;
     @NotNull @Valid private List<Candidate> candidates;
 
     @Data

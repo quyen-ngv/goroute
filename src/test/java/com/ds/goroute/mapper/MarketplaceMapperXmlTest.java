@@ -91,7 +91,7 @@ class MarketplaceMapperXmlTest {
         int start = xml.indexOf("<select id=\"findAdmin\"");
         String statement = xml.substring(start, xml.indexOf("</select>", start));
 
-        assertTrue(statement.contains("c.conversation_type NOT IN ('TRIP','MEETUP','EVENT')"));
+        assertTrue(statement.contains("c.conversation_type NOT IN ('TRIP','MEETUP','EVENT','ASSISTANT')"));
         assertTrue(statement.contains("NOT (c.conversation_type='DIRECT' AND c.organization_id IS NULL)"));
     }
 

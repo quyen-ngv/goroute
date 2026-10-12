@@ -24,6 +24,7 @@ import com.ds.goroute.service.UserBlockService;
 import com.ds.goroute.service.StorageService;
 import com.ds.goroute.service.WebSocketService;
 import com.ds.goroute.service.marketplace.ChatAttachmentValidator;
+import com.ds.goroute.service.marketplace.ChatShareValidator;
 import com.ds.goroute.entity.MarketplaceMemberInboxState;
 import com.ds.goroute.service.notification.ConversationNotifier;
 import com.ds.goroute.type.MarketplaceConversationStatus;
@@ -94,6 +95,9 @@ class MarketplaceChatServiceChatFeaturesTest {
     @Mock private UserBlockService userBlocks;
     @Mock private TripMemberRepository tripMembers;
     @Mock private StorageService storageService;
+    @Mock private ChatShareValidator shareValidator;
+    @Mock private org.springframework.context.ApplicationEventPublisher events;
+    @Mock private com.ds.goroute.service.ChatAssistantHooks assistantHooks;
 
     private MarketplaceChatServiceImpl service;
 
@@ -101,7 +105,8 @@ class MarketplaceChatServiceChatFeaturesTest {
     void setUp() {
         service = new MarketplaceChatServiceImpl(repo, chatMapper, hotelRepo, activityRepo, orgRepo, userRepo,
                 authorization, history, webSocketService, new ObjectMapper().registerModule(new JavaTimeModule()), businessConfig,
-                conversationNotifier, userBlocks, tripMembers, new ChatAttachmentValidator(storageService));
+                conversationNotifier, userBlocks, tripMembers, new ChatAttachmentValidator(storageService), shareValidator,
+                events, assistantHooks);
         when(storageService.urlFor(anyString())).thenAnswer(invocation -> CDN + invocation.getArgument(0));
         when(storageService.extractObjectKey(anyString())).thenAnswer(invocation -> {
             String url = invocation.getArgument(0);
@@ -319,6 +324,35 @@ class MarketplaceChatServiceChatFeaturesTest {
         }
 
         @Test
+        @DisplayName("tells the assistant about the message with the mentions as sent")
+        void publishesTheMessageWithTheRawMentionsForTheAssistant() {
+            SendMarketplaceMessageRequest request = send("@Pengoo ăn gì?");
+            request.setMentionedUserIds(List.of(com.ds.goroute.service.assistant.AssistantIdentity.BOT_USER_ID));
+            when(repo.findActiveMemberIds(CONVERSATION)).thenReturn(List.of(ME, FRIEND));
+
+            service.send(ME, CONVERSATION, request);
+
+            ArgumentCaptor<com.ds.goroute.event.ChatMessageCreatedEvent> event =
+                    ArgumentCaptor.forClass(com.ds.goroute.event.ChatMessageCreatedEvent.class);
+            verify(events).publishEvent(event.capture());
+            assertThat(event.getValue().requestedMentionIds())
+                    .containsExactly(com.ds.goroute.service.assistant.AssistantIdentity.BOT_USER_ID);
+            assertThat(event.getValue().senderUserId()).isEqualTo(ME);
+            // Pengoo is not a member row, so the push mention list stays empty
+            verify(conversationNotifier).notifyNewMessage(eq(CONVERSATION), eq(ME), any(), eq(List.of()));
+        }
+
+        @Test
+        @DisplayName("refuses a client posing as the assistant")
+        void refusesAssistantMessagesFromClients() {
+            SendMarketplaceMessageRequest request = send("hi");
+            request.setMessageType(MarketplaceMessageType.ASSISTANT);
+
+            assertThatThrownBy(() -> service.send(ME, CONVERSATION, request)).isInstanceOf(BusinessException.class);
+            verify(repo, never()).insertMessage(any());
+        }
+
+        @Test
         @DisplayName("answers a repeated client id with the message already stored")
         void isIdempotentOnTheClientId() {
             MarketplaceMessage already = MarketplaceMessage.builder()
@@ -372,6 +406,35 @@ class MarketplaceChatServiceChatFeaturesTest {
                     Map.<String, Object>of("url", CDN + "chat/" + CONVERSATION + "/a.webp")));
 
             assertThatThrownBy(() -> service.send(ME, CONVERSATION, request)).isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("stores a share as the reference the share validator returned")
+        void storesAShareReference() {
+            String targetId = UUID.randomUUID().toString();
+            SendMarketplaceMessageRequest request = send(null);
+            request.setMessageType(MarketplaceMessageType.SHARE);
+            request.setAttachments(List.of(Map.of("shareType", "PLACE", "targetId", targetId)));
+            when(shareValidator.validate(ME, request.getAttachments()))
+                    .thenReturn(List.of(Map.of("shareType", "PLACE", "targetId", targetId)));
+
+            service.send(ME, CONVERSATION, request);
+
+            ArgumentCaptor<MarketplaceMessage> captor = ArgumentCaptor.forClass(MarketplaceMessage.class);
+            verify(repo).insertMessage(captor.capture());
+            assertThat(captor.getValue().getMessageType()).isEqualTo("SHARE");
+            assertThat(captor.getValue().getAttachments()).contains(targetId).doesNotContain("url");
+        }
+
+        @Test
+        @DisplayName("refuses text on a share, which is sent as its own message")
+        void refusesTextOnAShare() {
+            SendMarketplaceMessageRequest request = send("look at this");
+            request.setMessageType(MarketplaceMessageType.SHARE);
+            request.setAttachments(List.of(Map.of("shareType", "PLACE", "targetId", UUID.randomUUID().toString())));
+
+            assertThatThrownBy(() -> service.send(ME, CONVERSATION, request)).isInstanceOf(BusinessException.class);
+            verify(repo, never()).insertMessage(any());
         }
 
         @Test

@@ -146,6 +146,25 @@ public enum BusinessConfigKey {
      */
     CHAT_DIRECT_ENABLED("CHAT", "DIRECT_ENABLED", true),
 
+    // --- Chat assistant (Pengoo) ------------------------------------------------------
+    /** Everyone may ask Pengoo; beta users (USER.BETA_USER) may ask while this is off. */
+    ASSISTANT_ENABLED("ASSISTANT", "ENABLED", false),
+    /** Questions per local (Vietnam) day for a FREE account. A failed answer is not counted. */
+    ASSISTANT_FREE_DAILY_QUESTIONS("ASSISTANT", "FREE_DAILY_QUESTIONS", 5, 0, 1000),
+    /** Questions per local (Vietnam) day for a PRO account. */
+    ASSISTANT_PRO_DAILY_QUESTIONS("ASSISTANT", "PRO_DAILY_QUESTIONS", 50, 0, 10000),
+    /**
+     * Whether prompts and answers are stored in ai_api_calls. On only during the beta: chat
+     * text is otherwise private, and the log is readable from the console.
+     */
+    ASSISTANT_LOG_PAYLOADS("ASSISTANT", "LOG_PAYLOADS", true),
+    /** Recent messages sent with each question as conversation context. */
+    ASSISTANT_HISTORY_MESSAGES("ASSISTANT", "HISTORY_MESSAGES", 20, 0, 50),
+    /** Pengoo greets a new trip's chat with suggestion chips (no model call, not counted). */
+    ASSISTANT_WELCOME_ENABLED("ASSISTANT", "WELCOME_ENABLED", true),
+    /** A turn still running after this many seconds is failed and the asker is told. */
+    ASSISTANT_TURN_TIMEOUT_SECONDS("ASSISTANT", "TURN_TIMEOUT_SECONDS", 150, 30, 900),
+
     // --- Media upload -----------------------------------------------------------------
     /**
      * Maximum number of files allowed in a single batch upload request.

@@ -68,6 +68,24 @@ class InternalApiAuthenticationFilterTest {
         verify(chain).doFilter(request, response);
     }
 
+    @Test
+    void assistantCallbacksUseTheAiWorkerTokenNotTheScrapeToken() throws Exception {
+        InternalApiAuthenticationFilter filter = filter("ai-secret", "scrape-secret");
+        MockHttpServletRequest withScrapeToken = request("/v1/api/internal/assistant/turns/123/reply");
+        withScrapeToken.addHeader("X-Internal-Token", "scrape-secret");
+        MockHttpServletResponse refused = new MockHttpServletResponse();
+        filter.doFilter(withScrapeToken, refused, mock(FilterChain.class));
+        assertThat(refused.getStatus()).isEqualTo(401);
+
+        MockHttpServletRequest withAiToken = request("/v1/api/internal/assistant/turns/123/reply");
+        withAiToken.addHeader("X-Internal-Token", "ai-secret");
+        MockHttpServletResponse accepted = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+        filter.doFilter(withAiToken, accepted, chain);
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getName()).isEqualTo("ai-trip-worker");
+        verify(chain).doFilter(withAiToken, accepted);
+    }
+
     private InternalApiAuthenticationFilter filter(String aiToken, String scrapeToken) {
         return new InternalApiAuthenticationFilter(
                 new InternalApiProperties(aiToken, scrapeToken),

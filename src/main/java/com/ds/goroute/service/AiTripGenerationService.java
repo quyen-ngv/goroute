@@ -52,6 +52,12 @@ public class AiTripGenerationService {
     /** Same as above: absent in hand-built tests, which then resolve with Goong as before. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.ds.goroute.service.mapsearch.MapProviderResolver mapProviderResolver;
+    /** Same as above: absent in hand-built tests, which then search the plain 50 km circle as before. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private LocationImageRepository locationImageRepository;
+    /** Outer bound of every candidate search; the destination's tourist area narrows it further. */
+    private static final BigDecimal CANDIDATE_RADIUS_KM = BigDecimal.valueOf(50);
+    private static final int MENU_ITEMS_FOR_AI = 8;
     private static final int EXTERNAL_SEARCH_RADIUS_METERS = 50_000;
     private static final int EXTERNAL_SEARCH_LIMIT = 5;
 
@@ -137,24 +143,38 @@ public class AiTripGenerationService {
     public List<Map<String,Object>> candidates(UUID jobId, String attemptId, AiTripCandidateQueryRequest request) {
         AiTripGenerationJob job = mapper.findById(jobId);
         verifyAttempt(job, attemptId);
-        List<Place> places = placeRepository.findActiveForAiWithinRadius(request.getLatitude(), request.getLongitude(),
-                BigDecimal.valueOf(50), PlaceGroup.normalizeCodes(request.getPlaceGroups()), request.getLimit());
+        LocationImage area = destinationArea(request.getLocationImageId(), request.getLatitude(), request.getLongitude());
+        List<Place> places = placeRepository.findActiveForAiInArea(request.getLatitude(), request.getLongitude(),
+                CANDIDATE_RADIUS_KM, area, PlaceGroup.normalizeCodes(request.getPlaceGroups()), request.getLimit());
         List<Map<String,Object>> result = new ArrayList<>();
-        for (Place p : places) {
-            Map<String,Object> row = new LinkedHashMap<>();
-            row.put("id", p.getId()); row.put("googlePlaceId", p.getPlaceId()); row.put("title", p.getTitle()); row.put("address", p.getAddress());
-            row.put("openHours", tree(p.getOpenHours()));
-            row.put("latitude", p.getLatitude()); row.put("longitude", p.getLongitude()); row.put("placeGroup", p.getPlaceGroup());
-            row.put("category", p.getCategory()); row.put("subTypes", p.getSubTypes() != null ? List.of(p.getSubTypes()) : List.of());
-            row.put("reviewCount", p.getReviewCount()); row.put("reviewRating", p.getReviewRating());
-            row.put("score", p.getPlaceOverallScore()); row.put("distanceKm", p.getDistance()); row.put("visitDurationMinutes", p.getVisitDurationMinutes());
-            row.put("description", localizedDescription(p, job.getLocale()));
-            row.put("attributes", valuedAttributes(p.getAttributes()));
-            row.put("menuHighlights", highlightTitles(p.getMenu()));
-            result.add(row);
-        }
-        log.info("AI trip candidates: job {} groups={} -> {} places", jobId, request.getPlaceGroups(), result.size());
+        for (Place p : places) result.add(catalogueRow(p));
+        log.info("AI trip candidates: job {} groups={} area={} -> {} places", jobId, request.getPlaceGroups(),
+                area == null ? null : area.getFullAddress(), result.size());
         return result;
+    }
+
+    /**
+     * The tourist area a destination belongs to: the area it was picked from, otherwise the area
+     * its coordinates fall in. Null outside every curated area (abroad), or in hand-built tests.
+     *
+     * <p>Planning inside one area rather than a radius is what keeps Hoi An out of a Da Nang trip:
+     * since the 2025 merger Hoi An is part of Da Nang city, but travellers treat it as a
+     * destination of its own, and the area table (not the province) encodes exactly that.
+     */
+    LocationImage destinationArea(UUID locationImageId, BigDecimal latitude, BigDecimal longitude) {
+        if (locationImageRepository == null) return null;
+        try {
+            if (locationImageId != null) {
+                Optional<LocationImage> picked = locationImageRepository.findById(locationImageId);
+                if (picked.isPresent()) return picked.get();
+            }
+            return locationImageRepository.findAreaIdForPoint(latitude, longitude)
+                    .flatMap(locationImageRepository::findById)
+                    .orElse(null);
+        } catch (RuntimeException e) {
+            log.warn("AI trip: could not resolve the tourist area of {},{}: {}", latitude, longitude, e.getMessage());
+            return null;
+        }
     }
 
     /**
@@ -170,14 +190,15 @@ public class AiTripGenerationService {
         if (request.getCandidates() == null || request.getCandidates().isEmpty()) return List.of();
         List<String> groups = PlaceGroup.normalizeCodes(request.getCandidates().stream()
                 .map(AiTripCandidateResolutionRequest.Candidate::getPlaceGroup).toList());
-        List<Place> catalogue = placeRepository.findActiveForAiWithinRadius(request.getLatitude(), request.getLongitude(),
-                BigDecimal.valueOf(50), groups, 500);
-        PlaceLookupProviderType lookup = lookupProviderFor(job.getUserId());
+        LocationImage area = destinationArea(request.getLocationImageId(), request.getLatitude(), request.getLongitude());
+        List<Place> catalogue = placeRepository.findActiveForAiInArea(request.getLatitude(), request.getLongitude(),
+                CANDIDATE_RADIUS_KM, area, groups, 500);
+        PlaceLookupProviderType lookup = lookupProviderFor(job.getUserId(), request.getLatitude(), request.getLongitude());
         List<Map<String, Object>> resolved = new ArrayList<>();
         for (AiTripCandidateResolutionRequest.Candidate candidate : request.getCandidates()) {
             String key = lookup + "|" + resolutionKey(request, candidate);
             Map<String, Object> value = candidateResolutionCache.get(key,
-                    ignored -> resolveCandidate(candidate, request.getLatitude(), request.getLongitude(), catalogue, job.getLocale(), lookup));
+                    ignored -> resolveCandidate(candidate, request.getLatitude(), request.getLongitude(), catalogue, area, lookup));
             Map<String, Object> row = new LinkedHashMap<>(value);
             row.put("candidateId", candidate.getCandidateId());
             resolved.add(row);
@@ -188,7 +209,7 @@ public class AiTripGenerationService {
     }
 
     private Map<String, Object> resolveCandidate(AiTripCandidateResolutionRequest.Candidate candidate, BigDecimal latitude,
-                                                   BigDecimal longitude, List<Place> catalogue, String locale,
+                                                   BigDecimal longitude, List<Place> catalogue, LocationImage area,
                                                    PlaceLookupProviderType lookup) {
         List<Place> exact = catalogue.stream()
                 .filter(place -> place.getPlaceGroup() == PlaceGroup.fromCode(candidate.getPlaceGroup()))
@@ -196,36 +217,88 @@ public class AiTripGenerationService {
                 .toList();
         if (exact.size() == 1) {
             Place place = exact.get(0);
-            Map<String, Object> row = catalogueRow(place, locale);
+            Map<String, Object> row = catalogueRow(place);
             row.put("resolvedBy", "CATALOGUE");
             row.put("resolutionStatus", "RESOLVED");
             row.put("externalResolutionVerified", false);
             return row;
         }
         Map<String, Object> external = resolveExternally(candidate, latitude, longitude, lookup);
-        if (external != null) return external;
+        if (external != null) {
+            return outsideArea(area, (BigDecimal) external.get("latitude"), (BigDecimal) external.get("longitude"))
+                    ? outOfAreaRow(candidate) : external;
+        }
         return unresolvedRow(candidate);
     }
 
-    private Map<String, Object> catalogueRow(Place p, String locale) {
+    /**
+     * Whether a map hit lies in another tourist area than the destination's. A point in no area
+     * at all still counts as inside when it is within the destination area's own radius.
+     */
+    private boolean outsideArea(LocationImage area, BigDecimal latitude, BigDecimal longitude) {
+        if (area == null || locationImageRepository == null || latitude == null || longitude == null) return false;
+        Optional<UUID> hitArea;
+        try {
+            hitArea = locationImageRepository.findAreaIdForPoint(latitude, longitude);
+        } catch (RuntimeException e) {
+            return false;
+        }
+        if (hitArea.isPresent()) return !hitArea.get().equals(area.getId());
+        if (area.getLatitude() == null || area.getLongitude() == null) return false;
+        double radius = area.getCoverageRadiusKm() == null ? 30 : area.getCoverageRadiusKm().doubleValue();
+        return haversineKm(area.getLatitude(), area.getLongitude(), latitude, longitude) > radius;
+    }
+
+    /** A Web discovery that resolved to another destination (Hoi An for a Da Nang trip); the worker drops it. */
+    private Map<String, Object> outOfAreaRow(AiTripCandidateResolutionRequest.Candidate candidate) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("title", candidate.getTitle()); row.put("placeGroup", candidate.getPlaceGroup());
+        row.put("resolutionStatus", "OUT_OF_AREA"); row.put("externalResolutionVerified", false);
+        return row;
+    }
+
+    /**
+     * One catalogue place as the planner reads it. Besides identity, location and ratings it
+     * carries the facts that decide a plan but used to be guessed from the name: a short price
+     * label, whitelisted "about" tags (breakfast, kids, wheelchair, veg, halal...) and dish names.
+     */
+    private Map<String, Object> catalogueRow(Place p) {
         Map<String,Object> row = new LinkedHashMap<>();
         row.put("id", p.getId()); row.put("googlePlaceId", p.getPlaceId()); row.put("title", p.getTitle()); row.put("address", p.getAddress());
         row.put("openHours", tree(p.getOpenHours())); row.put("latitude", p.getLatitude()); row.put("longitude", p.getLongitude());
         row.put("placeGroup", p.getPlaceGroup()); row.put("category", p.getCategory());
         row.put("subTypes", p.getSubTypes() != null ? List.of(p.getSubTypes()) : List.of()); row.put("reviewCount", p.getReviewCount());
         row.put("reviewRating", p.getReviewRating()); row.put("score", p.getPlaceOverallScore()); row.put("distanceKm", p.getDistance());
-        row.put("visitDurationMinutes", p.getVisitDurationMinutes()); row.put("description", localizedDescription(p, locale));
-        row.put("attributes", valuedAttributes(p.getAttributes())); row.put("menuHighlights", highlightTitles(p.getMenu()));
+        row.put("visitDurationMinutes", p.getVisitDurationMinutes());
+        // The free-text `descriptions` column is not sent: only the AI description.
+        row.put("aiDescription", aiDescription(p));
+        row.put("menuHighlights", com.ds.goroute.utils.PlaceAiFacts.menuHighlights(p.getMenu(), MENU_ITEMS_FOR_AI));
+        row.put("priceRange", com.ds.goroute.utils.PlaceAiFacts.priceLabel(p.getPriceRange(), p.getAttributes()));
+        row.put("tags", com.ds.goroute.utils.PlaceAiFacts.aboutTags(p.getAbout()));
         return row;
     }
 
-    /** The requester's map provider (beta users and everyone else are configured apart); Goong without a resolver. */
-    private PlaceLookupProviderType lookupProviderFor(UUID userId) {
+    /**
+     * Mapbox outside Vietnam (Goong has nothing there); otherwise the requester's map provider
+     * (beta users and everyone else are configured apart), Goong without a resolver.
+     */
+    private PlaceLookupProviderType lookupProviderFor(UUID userId, BigDecimal latitude, BigDecimal longitude) {
+        if (!inVietnam(latitude, longitude) && placeLookupProviders.isAvailable(PlaceLookupProviderType.MAPBOX)) {
+            return PlaceLookupProviderType.MAPBOX;
+        }
         if (mapProviderResolver == null) return PlaceLookupProviderType.GOONG;
         return mapProviderResolver.forUser(userId)
                 .map(provider -> provider == com.ds.goroute.type.MapProvider.MAPBOX
                         ? PlaceLookupProviderType.MAPBOX : PlaceLookupProviderType.GOONG)
                 .orElse(PlaceLookupProviderType.GOONG);
+    }
+
+    /** Vietnam's mainland and near islands, the same box map search uses. */
+    private static boolean inVietnam(BigDecimal latitude, BigDecimal longitude) {
+        if (latitude == null || longitude == null) return true;
+        double lat = latitude.doubleValue();
+        double lng = longitude.doubleValue();
+        return lat >= 8.0 && lat <= 23.5 && lng >= 102.0 && lng <= 110.5;
     }
 
     private Map<String, Object> resolveExternally(AiTripCandidateResolutionRequest.Candidate candidate,
@@ -340,8 +413,9 @@ public class AiTripGenerationService {
         TransportMode mode=null; if (i.getTransportMode()!=null) try { mode=TransportMode.valueOf(i.getTransportMode()); } catch(Exception e){ throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,"Invalid transport mode"); }
         // places.title is VARCHAR(500) but activities.name is VARCHAR(255): a long Google Maps
         // title (or a transport label built from it) must be truncated, not fail the whole commit.
+        // The worker names the resolver that verified the location (GOONG or MAPBOX).
         boolean unresolvedWebCandidate = i.getCandidateId() != null && i.getCandidateId().startsWith("web:")
-                && !"GOONG".equals(i.getExternalPlaceResolution());
+                && (i.getExternalPlaceResolution() == null || i.getExternalPlaceResolution().isBlank());
         String address = p != null && p.getAddress() != null && !p.getAddress().isBlank()
                 ? p.getAddress() : unresolvedWebCandidate ? null : i.getAddress();
         BigDecimal latitude = p != null && p.getLatitude() != null ? p.getLatitude() : unresolvedWebCandidate ? null : i.getLatitude();
@@ -423,12 +497,7 @@ public class AiTripGenerationService {
     private boolean terminal(String s){return Set.of("COMPLETED","FAILED","CANCELLED").contains(s);}
     private AiTripGenerationEvent event(AiTripGenerationJob j,String stage,String status,int progress,String key,Map<String,Object> params){AiTripGenerationEvent e=new AiTripGenerationEvent();e.setJobId(j.getId());e.setAttemptId(j.getAttemptId());e.setStage(stage);e.setStatus(status);e.setProgress(progress);e.setMessageKey(key);e.setParams(json(params));return e;}
     private String normalizeLocale(String s){return s!=null&&s.toLowerCase().startsWith("vi")?"vi":"en";}
-    private String localizedDescription(Place p,String locale){if(p.getAiDescription()!=null&&!p.getAiDescription().isBlank())return p.getAiDescription(); Object x=treeValue(p.getDescriptions(),locale);return x==null?null:String.valueOf(x);}
-    private Object valuedAttributes(String raw){Object x=prune(tree(raw));return x==null?Map.of():x;}
-    private Object prune(Object x){if(x==null)return null;if(x instanceof String s)return s.isBlank()?null:s;if(x instanceof Map<?,?> m){Map<String,Object> out=new LinkedHashMap<>();for(var e:m.entrySet()){Object v=prune(e.getValue());if(v!=null)out.put(String.valueOf(e.getKey()),v);}return out.isEmpty()?null:out;}if(x instanceof List<?> l){List<Object> out=l.stream().map(this::prune).filter(Objects::nonNull).toList();return out.isEmpty()?null:out;}return x;}
-    private List<String> highlightTitles(String raw){Object x=tree(raw);List<String> out=new ArrayList<>();collectTitles(x,out);return out.stream().filter(t->!t.matches("(?i)photo \\d+ of \\d+")).distinct().limit(30).toList();}
-    @SuppressWarnings("unchecked") private void collectTitles(Object x,List<String> out){if(x instanceof Map<?,?> m){Object h=m.get("highlightTitle");Object t=m.get("title");if(h!=null)out.add(String.valueOf(h));else if(t!=null)out.add(String.valueOf(t));for(Object v:m.values())collectTitles(v,out);}else if(x instanceof List<?> l)for(Object v:l)collectTitles(v,out);}
-    private Object treeValue(String raw,String key){Object x=tree(raw);return x instanceof Map<?,?>m?m.get(key):x;}
+    private String aiDescription(Place p){return p.getAiDescription()==null||p.getAiDescription().isBlank()?null:p.getAiDescription();}
     private Object tree(String raw){try{return raw==null?null:objectMapper.readValue(raw,new TypeReference<Object>(){});}catch(Exception e){return null;}}
     private <T>T read(String raw,Class<T> type){try{return objectMapper.readValue(raw,type);}catch(Exception e){throw new IllegalStateException(e);}}
     private String json(Object x){try{return objectMapper.writeValueAsString(x);}catch(Exception e){throw new IllegalStateException(e);}}

@@ -9,7 +9,9 @@ public enum MarketplaceConversationType {
     /** The group chat of one meetup; its members are the host and every JOINED participant. */
     MEETUP,
     /** The group chat of one local event; its members are everybody going to it. */
-    EVENT;
+    EVENT,
+    /** One person's private chat with the assistant (Pengoo); see {@code assistant_user_id}. */
+    ASSISTANT;
 
     /**
      * Threads nobody but their participants may read: the trip, meetup and event groups and
@@ -20,7 +22,8 @@ public enum MarketplaceConversationType {
      * endpoint cannot forget the rule.
      */
     public boolean isPrivate(java.util.UUID organizationId) {
-        return this == TRIP || this == MEETUP || this == EVENT || (this == DIRECT && organizationId == null);
+        return this == TRIP || this == MEETUP || this == EVENT || this == ASSISTANT
+                || (this == DIRECT && organizationId == null);
     }
 
     public static boolean isPrivate(String conversationType, java.util.UUID organizationId) {

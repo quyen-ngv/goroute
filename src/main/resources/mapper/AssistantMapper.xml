@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- Pengoo, the chat assistant (V228). -->
+<mapper namespace="com.ds.goroute.mapper.AssistantMapper">
+
+    <resultMap id="TurnMap" type="com.ds.goroute.entity.AssistantTurn">
+        <id property="id" column="id"/>
+        <result property="conversationId" column="conversation_id"/>
+        <result property="tripId" column="trip_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="triggerMessageId" column="trigger_message_id"/>
+        <result property="replyMessageId" column="reply_message_id"/>
+        <result property="status" column="status"/>
+        <result property="counted" column="counted"/>
+        <result property="locale" column="locale"/>
+        <result property="question" column="question"/>
+        <result property="steps" column="steps"/>
+        <result property="error" column="error"/>
+        <result property="inputTokens" column="input_tokens"/>
+        <result property="outputTokens" column="output_tokens"/>
+        <result property="startedAt" column="started_at"/>
+        <result property="finishedAt" column="finished_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="userName" column="user_name"/>
+    </resultMap>
+
+    <resultMap id="ProposalMap" type="com.ds.goroute.entity.AssistantProposal">
+        <id property="id" column="id"/>
+        <result property="conversationId" column="conversation_id"/>
+        <result property="turnId" column="turn_id"/>
+        <result property="messageId" column="message_id"/>
+        <result property="tripId" column="trip_id"/>
+        <result property="requestedBy" column="requested_by"/>
+        <result property="action" column="action"/>
+        <result property="payload" column="payload"/>
+        <result property="summary" column="summary"/>
+        <result property="status" column="status"/>
+        <result property="resolvedBy" column="resolved_by"/>
+        <result property="resolvedAt" column="resolved_at"/>
+        <result property="resultActivityId" column="result_activity_id"/>
+        <result property="failureReason" column="failure_reason"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="resolvedByName" column="resolved_by_name"/>
+    </resultMap>
+
+    <sql id="TurnColumns">
+        t.id, t.conversation_id, t.trip_id, t.user_id, t.trigger_message_id, t.reply_message_id, t.status,
+        t.counted, t.locale, t.question, t.steps::text AS steps, t.error, t.input_tokens, t.output_tokens,
+        t.started_at, t.finished_at, t.created_at, COALESCE(u.full_name, u.username) AS user_name
+    </sql>
+
+    <sql id="ProposalColumns">
+        p.id, p.conversation_id, p.turn_id, p.message_id, p.trip_id, p.requested_by, p.action,
+        p.payload::text AS payload, p.summary, p.status, p.resolved_by, p.resolved_at, p.result_activity_id,
+        p.failure_reason, p.created_at, COALESCE(u.full_name, u.username) AS resolved_by_name
+    </sql>
+
+    <insert id="insertTurn" parameterType="com.ds.goroute.entity.AssistantTurn">
+        INSERT INTO assistant_turns (id, conversation_id, trip_id, user_id, trigger_message_id, status, counted,
+                                     locale, question, steps, started_at, created_at)
+        VALUES (#{id}, #{conversationId}, #{tripId}, #{userId}, #{triggerMessageId}, #{status}, #{counted},
+                #{locale}, #{question}, COALESCE(#{steps}, '[]')::jsonb, #{startedAt}, #{createdAt})
+    </insert>
+
+    <select id="findTurn" resultMap="TurnMap">
+        SELECT <include refid="TurnColumns"/>
+        FROM assistant_turns t LEFT JOIN users u ON u.id = t.user_id
+        WHERE t.id = #{id}
+    </select>
+
+    <select id="findTurnForUpdate" resultMap="TurnMap">
+        SELECT t.id, t.conversation_id, t.trip_id, t.user_id, t.trigger_message_id, t.reply_message_id, t.status,
+               t.counted, t.locale, t.question, t.steps::text AS steps, t.error, t.input_tokens, t.output_tokens,
+               t.started_at, t.finished_at, t.created_at
+        FROM assistant_turns t
+        WHERE t.id = #{id}
+        FOR UPDATE
+    </select>
+
+    <select id="findRunningTurn" resultMap="TurnMap">
+        SELECT <include refid="TurnColumns"/>
+        FROM assistant_turns t LEFT JOIN users u ON u.id = t.user_id
+        WHERE t.conversation_id = #{conversationId} AND t.status = 'RUNNING'
+        ORDER BY t.started_at DESC
+        LIMIT 1
+    </select>
+
+    <select id="findNextQueuedTurn" resultMap="TurnMap">
+        SELECT <include refid="TurnColumns"/>
+        FROM assistant_turns t LEFT JOIN users u ON u.id = t.user_id
+        WHERE t.conversation_id = #{conversationId} AND t.status = 'QUEUED'
+        ORDER BY t.created_at, t.id
+        LIMIT 1
+    </select>
+
+    <select id="countOpenTurns" resultType="long">
+        SELECT COUNT(*) FROM assistant_turns
+        WHERE conversation_id = #{conversationId} AND status IN ('QUEUED', 'RUNNING')
+    </select>
+
+    <select id="countCountedTurnsSince" resultType="long">
+        SELECT COUNT(*) FROM assistant_turns
+        WHERE user_id = #{userId} AND counted = TRUE AND created_at &gt;= #{since}
+    </select>
+
+    <update id="markTurnRunning">
+        UPDATE assistant_turns SET status = 'RUNNING', started_at = #{startedAt}
+        WHERE id = #{id} AND status = 'QUEUED'
+    </update>
+
+    <update id="appendTurnStep">
+        UPDATE assistant_turns SET steps = steps || #{step}::jsonb
+        WHERE id = #{id} AND status = 'RUNNING'
+    </update>
+
+    <update id="completeTurn">
+        UPDATE assistant_turns
+        SET status = 'COMPLETED', reply_message_id = #{replyMessageId}, input_tokens = #{inputTokens},
+            output_tokens = #{outputTokens}, finished_at = #{finishedAt}
+        WHERE id = #{id} AND status = 'RUNNING'
+    </update>
+
+    <update id="failTurn">
+        UPDATE assistant_turns
+        SET status = 'FAILED', counted = FALSE, error = #{error}, reply_message_id = #{replyMessageId},
+            finished_at = #{finishedAt}
+        WHERE id = #{id} AND status IN ('QUEUED', 'RUNNING')
+    </update>
+
+    <select id="findStaleTurnIds" resultType="java.util.UUID">
+        SELECT id FROM assistant_turns
+        WHERE (status = 'RUNNING' AND started_at &lt; #{runningBefore})
+           OR (status = 'QUEUED' AND created_at &lt; #{queuedBefore})
+        ORDER BY created_at
+        LIMIT #{limit}
+    </select>
+
+    <!-- What the assistant reads for context: people's text, shares and its own answers. -->
+    <select id="findRecentMessages" resultType="com.ds.goroute.entity.AssistantHistoryMessage">
+        SELECT m.sender_user_id AS senderUserId, COALESCE(u.full_name, u.username) AS senderName,
+               m.message_type AS messageType, m.content, m.attachments::text AS attachments,
+               m.sequence_no AS sequenceNo
+        FROM marketplace_messages m
+        LEFT JOIN users u ON u.id = m.sender_user_id
+        WHERE m.conversation_id = #{conversationId}
+          AND m.sequence_no &lt; #{beforeSequence}
+          AND m.deleted_at IS NULL
+          AND m.message_type IN ('TEXT', 'SHARE', 'ASSISTANT')
+        ORDER BY m.sequence_no DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="findMessageSender" resultType="java.util.UUID">
+        SELECT sender_user_id FROM marketplace_messages WHERE id = #{messageId}
+    </select>
+
+    <select id="findMessageSequence" resultType="long">
+        SELECT sequence_no FROM marketplace_messages WHERE id = #{messageId}
+    </select>
+
+    <insert id="insertProposal" parameterType="com.ds.goroute.entity.AssistantProposal">
+        INSERT INTO assistant_proposals (id, conversation_id, turn_id, message_id, trip_id, requested_by, action,
+                                         payload, summary, status, created_at)
+        VALUES (#{id}, #{conversationId}, #{turnId}, #{messageId}, #{tripId}, #{requestedBy}, #{action},
+                COALESCE(#{payload}, '{}')::jsonb, #{summary}, #{status}, #{createdAt})
+    </insert>
+
+    <select id="findProposal" resultMap="ProposalMap">
+        SELECT <include refid="ProposalColumns"/>
+        FROM assistant_proposals p LEFT JOIN users u ON u.id = p.resolved_by
+        WHERE p.id = #{id}
+    </select>
+
+    <select id="findProposalForUpdate" resultMap="ProposalMap">
+        SELECT p.id, p.conversation_id, p.turn_id, p.message_id, p.trip_id, p.requested_by, p.action,
+               p.payload::text AS payload, p.summary, p.status, p.resolved_by, p.resolved_at,
+               p.result_activity_id, p.failure_reason, p.created_at
+        FROM assistant_proposals p
+        WHERE p.id = #{id}
+        FOR UPDATE
+    </select>
+
+    <update id="resolveProposal">
+        UPDATE assistant_proposals
+        SET status = #{status}, resolved_by = #{resolvedBy}, resolved_at = #{resolvedAt},
+            result_activity_id = #{resultActivityId}, failure_reason = #{failureReason}
+        WHERE id = #{id} AND status = 'PENDING'
+    </update>
+
+    <update id="attachProposalsToMessage">
+        UPDATE assistant_proposals SET message_id = #{messageId}
+        WHERE turn_id = #{turnId} AND message_id IS NULL
+    </update>
+</mapper>

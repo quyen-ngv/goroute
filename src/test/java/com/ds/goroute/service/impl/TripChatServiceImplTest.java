@@ -65,12 +65,14 @@ class TripChatServiceImplTest {
     private TripMemberRepository tripMembers;
     @Mock
     private UserRepository users;
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher events;
 
     private TripChatServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new TripChatServiceImpl(chatRepository, chatService, trips, tripMembers, users);
+        service = new TripChatServiceImpl(chatRepository, chatService, trips, tripMembers, users, events);
         when(trips.findById(TRIP)).thenReturn(Optional.of(Trip.builder().id(TRIP).name("Đà Lạt").build()));
         when(users.findById(any())).thenReturn(Optional.of(User.builder().id(FRIEND).fullName("Linh").build()));
     }

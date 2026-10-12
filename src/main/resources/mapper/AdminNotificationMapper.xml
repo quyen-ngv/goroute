@@ -19,6 +19,7 @@
         <where>
             u.deleted_at IS NULL
             AND u.account_status = 'ACTIVE'
+            AND u.account_type = 'HUMAN'
             <if test="audience == 'SPECIFIC_USERS'">
                 <choose>
                     <when test="userIds != null and userIds.size() > 0">

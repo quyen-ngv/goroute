@@ -36,6 +36,8 @@ public class MarketplaceConversation {
 
     /** Kept at the top of the thread for everyone; {@code null} when nothing is pinned. */
     private UUID pinnedMessageId;
+    /** Owner of an ASSISTANT conversation: the one person chatting with Pengoo. */
+    private UUID assistantUserId;
 
     /**
      * Enough of the last message to draw an inbox row without opening the thread: who said
@@ -44,6 +46,8 @@ public class MarketplaceConversation {
     private UUID lastMessageSenderId;
     private String lastMessageSenderName;
     private String lastMessageType;
+    /** What a SHARE last message points at ({@code ChatShareType}), so the row can say "shared a place". */
+    private String lastMessageShareType;
 
     /** How many people are in it, for the "N members" subtitle of a group. */
     private Long memberCount;

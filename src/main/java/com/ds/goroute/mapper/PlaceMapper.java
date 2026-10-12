@@ -85,6 +85,7 @@ public interface PlaceMapper {
     List<Place> findPage(@Param("limit") int limit, @Param("offset") int offset);
 
     List<Place> findFilteredPage(@Param("search") String search,
+                              @Param("searchId") UUID searchId,
                               @Param("placeGroups") List<String> placeGroups,
                               @Param("subTypes") List<String> subTypes,
                               @Param("visibilityStatus") List<String> visibilityStatus,
@@ -101,6 +102,7 @@ public interface PlaceMapper {
             @Param("limit") int limit);
 
     long countFiltered(@Param("search") String search,
+                    @Param("searchId") UUID searchId,
                     @Param("placeGroups") List<String> placeGroups,
                     @Param("subTypes") List<String> subTypes,
                     @Param("visibilityStatus") List<String> visibilityStatus,
@@ -124,6 +126,10 @@ public interface PlaceMapper {
     List<Place> findActiveForAiWithinRadius(@Param("latitude") BigDecimal latitude,
                                             @Param("longitude") BigDecimal longitude,
                                             @Param("radiusKm") BigDecimal radiusKm,
+                                            @Param("areaId") UUID areaId,
+                                            @Param("areaLatitude") BigDecimal areaLatitude,
+                                            @Param("areaLongitude") BigDecimal areaLongitude,
+                                            @Param("areaRadiusKm") BigDecimal areaRadiusKm,
                                             @Param("placeGroups") List<String> placeGroups,
                                             @Param("limit") int limit);
 

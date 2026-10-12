@@ -3,6 +3,7 @@ package com.ds.goroute.mapper;
 import com.ds.goroute.entity.LocationImage;
 import org.apache.ibatis.annotations.*;
 
+import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
@@ -38,6 +39,13 @@ public interface LocationImageMapper {
 
     @Select("SELECT * FROM location_images WHERE id = #{id}")
     LocationImage selectById(UUID id);
+
+    /**
+     * The tourist area a point belongs to: an area that lists the point's ward first, otherwise
+     * the nearest area whose own coverage radius reaches it (V163/V170). Null outside every area.
+     */
+    @Select("SELECT goroute_location_image_for_point(#{latitude}::numeric, #{longitude}::numeric)")
+    UUID selectAreaIdForPoint(@Param("latitude") BigDecimal latitude, @Param("longitude") BigDecimal longitude);
 
     @Select("""
         <script>

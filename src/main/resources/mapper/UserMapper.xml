@@ -177,6 +177,7 @@
                 GROUP BY user_id
             ) r ON r.user_id = u.id
             WHERE u.deleted_at IS NULL
+              AND u.account_type = 'HUMAN'
               AND u.id &lt;&gt; #{userId,javaType=java.util.UUID,jdbcType=OTHER}
               AND NOT EXISTS (
                   SELECT 1 FROM user_follows f

@@ -78,7 +78,8 @@ public interface PlaceRepository {
 
     List<Place> findPage(int limit, int offset);
 
-    List<Place> findFilteredPage(@Param("search") String search, @Param("placeGroups") List<String> placeGroups,
+    List<Place> findFilteredPage(@Param("search") String search, @Param("searchId") UUID searchId,
+                                 @Param("placeGroups") List<String> placeGroups,
                                  @Param("subTypes") List<String> subTypes,
                                  @Param("visibilityStatus") List<String> visibilityStatus, @Param("trustLevel") List<String> trustLevel,
                                  @Param("locationImageIds") List<UUID> locationImageIds,
@@ -88,7 +89,8 @@ public interface PlaceRepository {
     List<PlaceDetailRefreshCandidateResponse> findDetailRefreshCandidates(
             UUID placeId, boolean includeInactive, int limit);
 
-    long countFiltered(@Param("search") String search, @Param("placeGroups") List<String> placeGroups,
+    long countFiltered(@Param("search") String search, @Param("searchId") UUID searchId,
+                       @Param("placeGroups") List<String> placeGroups,
                        @Param("subTypes") List<String> subTypes,
                        @Param("visibilityStatus") List<String> visibilityStatus, @Param("trustLevel") List<String> trustLevel,
                        @Param("locationImageIds") List<UUID> locationImageIds);
@@ -102,6 +104,13 @@ public interface PlaceRepository {
 
     List<Place> findActiveForAiWithinRadius(BigDecimal latitude, BigDecimal longitude,
                                             BigDecimal radiusKm, List<String> placeGroups, int limit);
+
+    /**
+     * {@link #findActiveForAiWithinRadius} restricted to one tourist area; a null area means no
+     * area restriction (a destination outside every curated area, e.g. abroad).
+     */
+    List<Place> findActiveForAiInArea(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm,
+                                      com.ds.goroute.entity.LocationImage area, List<String> placeGroups, int limit);
 
     void delete(UUID id);
 

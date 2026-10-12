@@ -212,6 +212,12 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `MEETUP` | `EXACT_VISIBLE_HOURS` | hours after the start, capped at local midnight, 1..12 | safe fallback 3 | users via meetup context (`exactVisibleHours`) |
 | `MEETUP` | `MAX_OPEN_REQUESTS_PER_USER` | pending join requests on live meetups, 1..50 | safe fallback 5 | private/admin |
 | `MEETUP` | `MAX_RESUBMITS` | resubmits after a rejection, 0..10 | safe fallback 2 | host via meetup detail (`resubmitsLeft`) |
+| `ASSISTANT` | `ENABLED` | boolean (beta users always on); gates asking Pengoo | safe fallback false | users via `GET /v1/api/assistant/me` (`available`) |
+| `ASSISTANT` | `FREE_DAILY_QUESTIONS` / `PRO_DAILY_QUESTIONS` | questions per Vietnam day, 0..1000 / 0..10000 | safe fallback 5 / 50 | users via `/assistant/me` and the conversation `assistant` block |
+| `ASSISTANT` | `LOG_PAYLOADS` | boolean; prompts/answers kept in `ai_api_calls` (beta only) | safe fallback true | private/admin |
+| `ASSISTANT` | `HISTORY_MESSAGES` | chat lines sent with a question, 0..50 | safe fallback 20 | private/admin |
+| `ASSISTANT` | `WELCOME_ENABLED` | boolean | safe fallback true | private/admin |
+| `ASSISTANT` | `TURN_TIMEOUT_SECONDS` | seconds, 30..900 | safe fallback 150 | private/admin |
 
 ## Build note
 

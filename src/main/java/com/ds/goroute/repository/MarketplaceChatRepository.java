@@ -8,6 +8,8 @@ public interface MarketplaceChatRepository {int insertConversation(MarketplaceCo
 
  /** The group chat of one trip, if it has been created. */
  Optional<MarketplaceConversation> findByTrip(UUID tripId,UUID viewer);
+ /** A person's 1:1 conversation with the assistant. */
+ Optional<MarketplaceConversation> findByAssistantUser(UUID userId,UUID viewer);
 
  /** The group chat of one meetup, if it has been created. */
  Optional<MarketplaceConversation> findByMeetup(UUID meetupId,UUID viewer);

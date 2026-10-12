@@ -93,7 +93,14 @@ class ModeratedFieldCoverageTest {
             Map.entry("UpdateActivityBookingRequest.text", "Bulk supplier import, admin/API-key only"),
             Map.entry("UpdateActivityBookingRequest.content", "Bulk supplier import, admin/API-key only"),
             Map.entry("UpdateActivityBookingRequest.description", "Bulk supplier import, admin/API-key only"),
-            Map.entry("GorouteContributionReviewInput.text", "Internal import payload, not a user entry point"));
+            Map.entry("GorouteContributionReviewInput.text", "Internal import payload, not a user entry point"),
+
+            // Pengoo's own words, posted by the AI worker over the internal callback. Filtered
+            // field by field in AssistantTurnService before anything is shown: a blocked part is
+            // dropped, where a request-level block would throw away the whole answer.
+            Map.entry("AssistantStepRequest.text", "AI worker narration; filtered in AssistantTurnService"),
+            Map.entry("AssistantReplyRequest.note", "AI worker place note; filtered in AssistantTurnService"),
+            Map.entry("AssistantReplyRequest.summary", "AI worker proposal summary; filtered in AssistantTurnService"));
 
     @Test
     void everyFreeTextRequestFieldIsFilteredOrDeliberatelyExempt() {

@@ -38,6 +38,12 @@ public class LocationImageRepositoryImpl implements LocationImageRepository {
     }
 
     @Override
+    public Optional<UUID> findAreaIdForPoint(java.math.BigDecimal latitude, java.math.BigDecimal longitude) {
+        if (latitude == null || longitude == null) return Optional.empty();
+        return Optional.ofNullable(locationImageMapper.selectAreaIdForPoint(latitude, longitude));
+    }
+
+    @Override
     public List<LocationImage> findNamesByIds(java.util.Collection<UUID> ids) {
         return ids == null || ids.isEmpty() ? List.of() : locationImageMapper.selectNamesByIds(ids);
     }

@@ -14,6 +14,9 @@ public interface LocationImageRepository {
     List<LocationImage> findAllForList();
     Optional<LocationImage> findById(UUID id);
 
+    /** The tourist area a point falls in (ward link first, then nearest covering area); empty outside every area. */
+    Optional<UUID> findAreaIdForPoint(java.math.BigDecimal latitude, java.math.BigDecimal longitude);
+
     /** Only {@code id} and {@code fullAddress} are filled. */
     List<LocationImage> findNamesByIds(java.util.Collection<UUID> ids);
     void insert(LocationImage locationImage);

@@ -3,14 +3,18 @@ import com.ds.goroute.constant.ErrorConstant;import com.ds.goroute.dto.request.*
 import java.util.Locale;
 @Service @RequiredArgsConstructor @lombok.extern.slf4j.Slf4j
 public class MarketplaceChatServiceImpl implements MarketplaceChatService {
- private final MarketplaceChatRepository repo;private final com.ds.goroute.mapper.MarketplaceChatMapper chatMapper;private final HotelMarketplaceRepository hotelRepo;private final ActivityCommerceRepository activityRepo;private final HostOrganizationRepository orgRepo;private final UserRepository userRepo;private final PartnerAuthorizationService authorization;private final MarketplaceHistoryService history;private final WebSocketService webSocketService;private final ObjectMapper mapper;private final BusinessConfigService businessConfig;private final com.ds.goroute.service.notification.ConversationNotifier conversationNotifier;private final com.ds.goroute.service.UserBlockService userBlocks;private final TripMemberRepository tripMembers;private final com.ds.goroute.service.marketplace.ChatAttachmentValidator attachmentValidator;
- @Transactional public MarketplaceConversationResponse start(UUID actor,StartMarketplaceConversationRequest r){MarketplaceConversationType type=r.getConversationType();if(type==MarketplaceConversationType.TRIP)throw bad("A trip conversation is opened through its trip");if(type==MarketplaceConversationType.MEETUP)throw bad("A meetup conversation is opened through its meetup");if(type==MarketplaceConversationType.EVENT)throw bad("An event conversation is opened through its event");if(type==MarketplaceConversationType.HOTEL_BOOKING)return startHotel(actor,r.getHotelBookingId());if(type==MarketplaceConversationType.ACTIVITY_ORDER)return startActivity(actor,r.getActivityOrderId());return startDirect(actor,r);}
+ private final MarketplaceChatRepository repo;private final com.ds.goroute.mapper.MarketplaceChatMapper chatMapper;private final HotelMarketplaceRepository hotelRepo;private final ActivityCommerceRepository activityRepo;private final HostOrganizationRepository orgRepo;private final UserRepository userRepo;private final PartnerAuthorizationService authorization;private final MarketplaceHistoryService history;private final WebSocketService webSocketService;private final ObjectMapper mapper;private final BusinessConfigService businessConfig;private final com.ds.goroute.service.notification.ConversationNotifier conversationNotifier;private final com.ds.goroute.service.UserBlockService userBlocks;private final TripMemberRepository tripMembers;private final com.ds.goroute.service.marketplace.ChatAttachmentValidator attachmentValidator;private final com.ds.goroute.service.marketplace.ChatShareValidator shareValidator;
+ /** Lets the assistant react to a message after commit without the chat depending on it. */
+ private final org.springframework.context.ApplicationEventPublisher events;
+ /** Pengoo's view of a conversation for the one opening it; see {@link #get}. */
+ private final ChatAssistantHooks assistantHooks;
+ @Transactional public MarketplaceConversationResponse start(UUID actor,StartMarketplaceConversationRequest r){MarketplaceConversationType type=r.getConversationType();if(type==MarketplaceConversationType.TRIP)throw bad("A trip conversation is opened through its trip");if(type==MarketplaceConversationType.MEETUP)throw bad("A meetup conversation is opened through its meetup");if(type==MarketplaceConversationType.EVENT)throw bad("An event conversation is opened through its event");if(type==MarketplaceConversationType.ASSISTANT)throw bad("The assistant conversation is opened through /v1/api/assistant/conversation");if(type==MarketplaceConversationType.HOTEL_BOOKING)return startHotel(actor,r.getHotelBookingId());if(type==MarketplaceConversationType.ACTIVITY_ORDER)return startActivity(actor,r.getActivityOrderId());return startDirect(actor,r);}
  private MarketplaceConversationResponse startHotel(UUID actor,UUID id){if(id==null)throw bad("hotelBookingId is required");MarketplaceConversation existing=repo.findByHotelBooking(id,actor).orElse(null);if(existing!=null){require(existing.getId(),actor);return response(existing);}HotelBooking b=hotelRepo.findBooking(id).orElseThrow(()->notFound("Hotel booking not found"));if(!actor.equals(b.getUserId()))authorization.requireResourcePermission(b.getOrganizationId(),actor,"HOTEL",b.getHotelId(),"CHAT_WRITE");MarketplaceConversation c=create(MarketplaceConversationType.HOTEL_BOOKING,b.getOrganizationId(),b.getId(),null);if(b.getUserId()!=null)repo.addMember(c.getId(),b.getUserId(),"GUEST",c.getCreatedAt());if(!actor.equals(b.getUserId()))repo.addMember(c.getId(),actor,"HOST",c.getCreatedAt());history.record(b.getOrganizationId(),"CONVERSATION",c.getId(),"CREATED",c,List.of(),actor,"USER",null);return response(repo.find(c.getId(),actor).orElse(c));}
  private MarketplaceConversationResponse startActivity(UUID actor,UUID id){if(id==null)throw bad("activityOrderId is required");MarketplaceConversation existing=repo.findByActivityOrder(id,actor).orElse(null);if(existing!=null){require(existing.getId(),actor);return response(existing);}ActivityOrder o=activityRepo.findOrder(id).orElseThrow(()->notFound("Activity order not found"));if(!actor.equals(o.getUserId()))authorization.requireResourcePermission(o.getOrganizationId(),actor,"ACTIVITY",o.getActivityBookingId(),"CHAT_WRITE");MarketplaceConversation c=create(MarketplaceConversationType.ACTIVITY_ORDER,o.getOrganizationId(),null,o.getId());if(o.getUserId()!=null)repo.addMember(c.getId(),o.getUserId(),"GUEST",c.getCreatedAt());if(!actor.equals(o.getUserId()))repo.addMember(c.getId(),actor,"HOST",c.getCreatedAt());history.record(o.getOrganizationId(),"CONVERSATION",c.getId(),"CREATED",c,List.of(),actor,"USER",null);return response(repo.find(c.getId(),actor).orElse(c));}
  private MarketplaceConversation create(MarketplaceConversationType type,UUID org,UUID booking,UUID order){LocalDateTime n=LocalDateTime.now();MarketplaceConversation c=MarketplaceConversation.builder().id(UUID.randomUUID()).conversationType(type.name()).organizationId(org).hotelBookingId(booking).activityOrderId(order).status(MarketplaceConversationStatus.OPEN.name()).createdAt(n).updatedAt(n).build();try{repo.insertConversation(c);}catch(DataIntegrityViolationException ex){MarketplaceConversation found=booking!=null?repo.findByHotelBooking(booking,null).orElse(null):repo.findByActivityOrder(order,null).orElse(null);if(found!=null)return found;throw ex;}return c;}
  public List<MarketplaceConversationResponse> listMine(UUID a,List<String> types,int p,int s){Page r=page(p,s);return responses(repo.findForUser(a,conversationTypes(types),r.l,r.o));}
  public long unreadConversationCount(UUID a){return repo.countUnreadConversationsForUser(a);}
- public MarketplaceConversationResponse get(UUID a,UUID id){require(id,a);return response(conversation(id,a));}
+ public MarketplaceConversationResponse get(UUID a,UUID id){require(id,a);MarketplaceConversation c=conversation(id,a);MarketplaceConversationResponse out=response(c);out.setAssistant(assistantHooks.info(a,c));return out;}
  public List<MarketplaceMessageResponse> messages(UUID a,UUID id,Long after,int limit){require(id,a);return rawMessages(id,after,limit,a);}
 
     /** Why an inbox row moved, as {@code CONVERSATION_UPDATED.data.reason}. */
@@ -34,12 +38,21 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
         require(id, a);
         ensureConversationMember(id, a);
         ensureNotBlocked(id, a);
-        if (r.getMessageType() == MarketplaceMessageType.SYSTEM) throw forbidden();
+        if (r.getMessageType() == MarketplaceMessageType.SYSTEM || r.getMessageType() == MarketplaceMessageType.ASSISTANT) {
+            throw forbidden();
+        }
         if ((r.getContent() == null || r.getContent().isBlank())
                 && (r.getAttachments() == null || r.getAttachments().isEmpty())) {
             throw bad("Message content or attachment is required");
         }
-        List<Map<String, Object>> attachments = attachmentValidator.validate(id, r.getAttachments());
+        // A share is the reference alone; a note that goes with it is sent as its own message.
+        boolean isShare = r.getMessageType() == MarketplaceMessageType.SHARE;
+        if (isShare && r.getContent() != null && !r.getContent().isBlank()) {
+            throw bad("A share carries no text; send the note as its own message");
+        }
+        List<Map<String, Object>> attachments = isShare
+                ? shareValidator.validate(a, r.getAttachments())
+                : attachmentValidator.validate(id, r.getAttachments());
         UUID replyTo = replyTarget(id, r.getReplyToMessageId());
         MarketplaceMessage prior = repo.findMessageByClientId(id, a, r.getClientMessageId()).orElse(null);
         if (prior != null) return messageResponse(prior);
@@ -65,6 +78,9 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
         broadcastAfterCommit(id, a, "MESSAGE_CREATED", saved);
         notifyInboxAfterCommit(id, a, REASON_CREATED, null);
         conversationNotifier.notifyNewMessage(id, a, saved, mentionedMembers(id, r.getMentionedUserIds()));
+        events.publishEvent(new com.ds.goroute.event.ChatMessageCreatedEvent(id, saved.getId(), a, saved.getMessageType(),
+                saved.getContent(), r.getMentionedUserIds() == null ? List.of() : List.copyOf(r.getMentionedUserIds()),
+                replyTo, com.ds.goroute.config.filter.AcceptLanguageFilter.currentCode()));
         return saved;
     }
 
@@ -164,6 +180,7 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
                 .lastMessageSenderId(c.getLastMessageSenderId())
                 .lastMessageSenderName(c.getLastMessageSenderName())
                 .lastMessageType(c.getLastMessageType())
+                .lastMessageShareType(c.getLastMessageShareType())
                 .build();
     }
 
@@ -173,6 +190,9 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
      * people in it — viewer-independent on purpose, since the title is cached in an inbox row.
      */
     private String title(MarketplaceConversation c, List<MarketplaceConversationResponse.ConversationParticipantResponse> participants) {
+        if (MarketplaceConversationType.ASSISTANT.name().equals(c.getConversationType())) {
+            return com.ds.goroute.service.assistant.AssistantIdentity.NAME;
+        }
         if (c.getTripName() != null) return c.getTripName();
         if (c.getMeetupTitle() != null) return c.getMeetupTitle();
         if (c.getEventTitle() != null) return c.getEventTitle();
@@ -263,6 +283,10 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
         members = members.stream().distinct().toList();
         if (members.size() < 2 || members.size() > 20) throw bad("Direct conversation requires 2-20 participants");
         for (UUID member : members) {
+            // Pengoo answers in its own chat (/v1/api/assistant/conversation), never in a person-to-person one.
+            if (com.ds.goroute.service.assistant.AssistantIdentity.isAssistant(member)) {
+                throw bad("Chat with Pengoo through the assistant conversation");
+            }
             userRepo.findById(member).orElseThrow(() -> new BusinessException(ErrorConstant.USER_NOT_FOUND));
         }
         return members;
@@ -555,6 +579,39 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
      * event itself is stored beside it so an app can say it in the reader's own language.
      * Localising on the server would freeze one reader's language into a row everybody sees.
      */
+    @Override
+    @Transactional
+    public MarketplaceMessageResponse postAssistantMessage(UUID conversationId, String content,
+                                                           List<Map<String, Object>> blocks,
+                                                           UUID replyToMessageId, UUID notifyUserId,
+                                                           String idempotencyKey) {
+        UUID assistant = com.ds.goroute.service.assistant.AssistantIdentity.BOT_USER_ID;
+        String clientMessageId = idempotencyKey == null ? "assistant:" + UUID.randomUUID() : idempotencyKey;
+        repo.lock(conversationId);
+        MarketplaceMessage prior = repo.findMessageByClientId(conversationId, assistant, clientMessageId).orElse(null);
+        if (prior != null) return messageResponse(prior);
+        LocalDateTime now = LocalDateTime.now();
+        MarketplaceMessage message = MarketplaceMessage.builder()
+                .id(UUID.randomUUID())
+                .conversationId(conversationId)
+                .senderUserId(assistant)
+                .clientMessageId(clientMessageId)
+                .messageType(MarketplaceMessageType.ASSISTANT.name())
+                .content(content == null || content.isBlank() ? null : content.trim())
+                .attachments(json(blocks == null ? List.of() : blocks))
+                .sequenceNo(repo.nextSequence(conversationId))
+                .replyToMessageId(replyToMessageId)
+                .createdAt(now)
+                .build();
+        repo.insertMessage(message);
+        repo.updateLast(conversationId, now);
+        MarketplaceMessageResponse saved = messageResponse(repo.findMessage(message.getId()).orElse(message));
+        broadcastAfterCommit(conversationId, assistant, "MESSAGE_CREATED", saved);
+        notifyInboxAfterCommit(conversationId, assistant, REASON_CREATED, null);
+        if (notifyUserId != null) conversationNotifier.notifyOnly(conversationId, assistant, saved, notifyUserId);
+        return saved;
+    }
+
     @Transactional
     public MarketplaceMessageResponse postSystemMessage(UUID conversationId, String event,
                                                         UUID subjectUserId, String subjectName) {
@@ -608,6 +665,7 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
                 shared.put("reason", reason);
                 shared.put("lastMessageContent", conversation.getLastMessageContent());
                 shared.put("lastMessageType", conversation.getLastMessageType());
+                shared.put("lastMessageShareType", conversation.getLastMessageShareType());
                 shared.put("lastMessageSenderId", conversation.getLastMessageSenderId() == null
                         ? null : conversation.getLastMessageSenderId().toString());
                 shared.put("lastMessageSenderName", conversation.getLastMessageSenderName());

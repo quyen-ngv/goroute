@@ -56,7 +56,9 @@ class PlaceMapperXmlTest {
         radius.put("placeGroups", List.of("FOOD_AND_DRINK"));
         radius.put("limit", 50);
         String withinRadius = sql("findActiveForAiWithinRadius", radius);
-        assertThat(withinRadius).contains("ST_DWithin(goroute_point(p.latitude, p.longitude)").doesNotContain("acos(");
+        assertThat(withinRadius).contains("ST_DWithin(goroute_point(p.latitude, p.longitude)").doesNotContain("acos(")
+                .doesNotContain("p.*").doesNotContain("raw_data").doesNotContain("popular_times")
+                .doesNotContain("location_image_id = ?");
 
         Map<String, Object> destination = new HashMap<>();
         destination.put("citySlugJson", "[\"hanoi\"]");
@@ -66,6 +68,25 @@ class PlaceMapperXmlTest {
         destination.put("minRating", null);
         destination.put("limit", 50);
         assertThat(sql("findForAiByDestination", destination)).doesNotContain("acos(").endsWith("p.id LIMIT ?");
+    }
+
+    @Test
+    void aiCandidatesStayInsideTheDestinationTouristArea() {
+        Map<String, Object> params = new HashMap<>();
+        params.put("latitude", BigDecimal.TEN);
+        params.put("longitude", BigDecimal.ONE);
+        params.put("radiusKm", BigDecimal.valueOf(50));
+        params.put("areaId", UUID.randomUUID());
+        params.put("areaLatitude", BigDecimal.TEN);
+        params.put("areaLongitude", BigDecimal.ONE);
+        params.put("areaRadiusKm", BigDecimal.valueOf(30));
+        params.put("placeGroups", List.of("FOOD_AND_DRINK"));
+        params.put("limit", 50);
+
+        assertThat(sql("findActiveForAiWithinRadius", params))
+                .contains("p.location_image_id = ?")
+                .contains("p.location_image_id IS NULL")
+                .contains("p.price_range").contains("p.about").contains("p.menu");
     }
 
     @Test

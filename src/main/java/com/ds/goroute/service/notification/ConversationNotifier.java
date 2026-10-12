@@ -117,6 +117,48 @@ public class ConversationNotifier {
     }
 
     /**
+     * Announces a message to one member only, after commit: the assistant's answer goes to the
+     * person who asked, not to the whole group (everybody else just sees it unread).
+     */
+    public void notifyOnly(UUID conversationId, UUID senderId, MarketplaceMessageResponse message, UUID recipientId) {
+        Runnable announce = () -> {
+            try {
+                executor.execute(() -> deliverTo(conversationId, senderId, message, recipientId));
+            } catch (RuntimeException exception) {
+                log.warn("Could not queue the announcement of a message in {}: {}",
+                        conversationId, exception.getMessage());
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    announce.run();
+                }
+            });
+        } else {
+            announce.run();
+        }
+    }
+
+    void deliverTo(UUID conversationId, UUID senderId, MarketplaceMessageResponse message, UUID recipientId) {
+        try {
+            if (recipientId == null || recipientId.equals(senderId)) return;
+            MarketplaceConversation conversation = conversations.find(conversationId, null).orElse(null);
+            if (conversation == null) return;
+            if (!conversations.findNotifiableMemberIds(conversationId).contains(recipientId)) return;
+            if (hasAlreadyRead(readMarkers(conversationId), recipientId, message)) return;
+            boolean isPrivate = MarketplaceConversationType.isPrivate(
+                    conversation.getConversationType(), conversation.getOrganizationId());
+            String title = threadTitle(conversation);
+            inOwnTransaction(recipientId, conversationId,
+                    () -> notifyOne(recipientId, senderId, conversationId, message, isPrivate, title));
+        } catch (RuntimeException exception) {
+            log.warn("Could not notify {} of conversation {}: {}", recipientId, conversationId, exception.getMessage());
+        }
+    }
+
+    /**
      * The reader caught up with a conversation: its chat notifications are read too. Joins the
      * caller's transaction, since it is part of the same "I read this" action.
      */
