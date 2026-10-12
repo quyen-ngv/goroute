@@ -9,6 +9,7 @@ import com.ds.goroute.thirdparty.mapbox.MapboxClient;
 import com.ds.goroute.thirdparty.mapbox.MapboxException;
 import com.ds.goroute.type.MapBillingApi;
 import com.ds.goroute.type.MapProvider;
+import com.ds.goroute.type.MapSearchScope;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -81,7 +82,13 @@ class MapSearchServiceTest {
     }
 
     private MapSearchService.AutocompleteQuery query(String input, String location, Integer radiusKm) {
-        return new MapSearchService.AutocompleteQuery(input, location, radiusKm, 5, null, null, "vi-VN,vi;q=0.9");
+        return new MapSearchService.AutocompleteQuery(input, location, radiusKm, 5, null, null, "vi-VN,vi;q=0.9",
+                MapSearchScope.ALL);
+    }
+
+    private MapSearchService.AutocompleteQuery areaQuery(String input, String location) {
+        return new MapSearchService.AutocompleteQuery(input, location, 30, null, null, null, "vi-VN,vi;q=0.9",
+                MapSearchScope.AREA);
     }
 
     private JsonNode body(ResponseEntity<String> response) throws Exception {
@@ -110,6 +117,36 @@ class MapSearchServiceTest {
         verify(mapbox).forward("chợ bến", 10.77, 106.69, "vi", 5);
         verify(cache).upsertPlace(org.mockito.ArgumentMatchers.argThat(place -> "bentthanh1".equals(place.getProviderPlaceId())));
         verify(cache).upsertResponse(anyString(), eq("AUTOCOMPLETE"), eq("MAPBOX"), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("an area search asks Geocoding for areas only, ignores the radius and uses the geocode budget")
+    void areaSearchUsesGeocoding() throws Exception {
+        String areas = """
+                {"features":[{"geometry":{"coordinates":[103.8,1.35]},
+                  "properties":{"name":"Singapore","mapbox_id":"sg1","feature_type":"country",
+                    "coordinates":{"latitude":1.35,"longitude":103.8}}}]}""";
+        when(mapbox.geocodeAreas(anyString(), any(), any(), any(), anyInt())).thenReturn(objectMapper.readTree(areas));
+
+        JsonNode answer = body(service.autocomplete(user, areaQuery("singapore", "21.03,105.85")));
+
+        assertThat(answer.path("predictions")).hasSize(1);
+        assertThat(answer.path("predictions").get(0).path("place_id").asText()).isEqualTo("mapbox:sg1");
+        verify(mapbox).geocodeAreas("singapore", 21.03, 105.85, "vi", MapSearchService.AUTOCOMPLETE_DEFAULT_LIMIT);
+        verify(budget).tryAcquire(MapBillingApi.GEOCODE);
+        verify(mapbox, never()).forward(anyString(), any(), any(), any(), anyInt());
+        verify(cache, never()).searchPicked(anyString(), any(), any(), anyDouble(), anyInt());
+    }
+
+    @Test
+    @DisplayName("a failed area search inside Vietnam falls back to Goong")
+    void areaSearchFallsBackToGoong() {
+        when(mapbox.geocodeAreas(anyString(), any(), any(), any(), anyInt()))
+                .thenThrow(new MapboxException("boom", 500));
+
+        ResponseEntity<String> response = service.autocomplete(user, areaQuery("da lat", "11.94,108.45"));
+
+        assertThat(response.getBody()).contains("goong");
     }
 
     @Test

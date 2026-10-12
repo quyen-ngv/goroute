@@ -89,12 +89,18 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
         ensureSearchIndexPopulated();
     }
 
+    /**
+     * Rebuilt at every start. The index directory sits on a volume and outlives deploys, but
+     * its documents carry no schema version, so an index written by an older build (or before
+     * a migration touched activity_bookings) would otherwise be served as is. Before the volume
+     * every deploy started empty and rebuilt, so this keeps that behaviour.
+     */
     private void ensureSearchIndexPopulated() {
         try {
             IndexSearcher searcher = searcherManager.acquire();
             try {
-                if (searcher.getIndexReader().numDocs() == 0 && repository.countAll() > 0) {
-                    log.warn("Activity booking Lucene index is empty but DB has data — reindexing");
+                if (searcher.getIndexReader().numDocs() > 0 || repository.countAll() > 0) {
+                    log.info("Rebuilding the activity booking Lucene index from the database");
                     triggerReindex();
                 }
             } finally {

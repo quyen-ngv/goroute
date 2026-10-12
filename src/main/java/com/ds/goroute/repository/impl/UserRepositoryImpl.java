@@ -1,5 +1,6 @@
 package com.ds.goroute.repository.impl;
 
+import com.ds.goroute.config.cache.AuthSubjectCache;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.mapper.UserMapper;
 import com.ds.goroute.repository.UserRepository;
@@ -15,10 +16,13 @@ import java.util.UUID;
 public class UserRepositoryImpl implements UserRepository {
     
     private final UserMapper userMapper;
-    
+    /** Account existence and must_change_password feed the JWT filter's cached subject. */
+    private final AuthSubjectCache authSubjectCache;
+
     @Override
     public void insert(User user) {
         userMapper.insert(user);
+        authSubjectCache.evict(user.getId());
     }
     
     @Override
@@ -116,6 +120,7 @@ public class UserRepositoryImpl implements UserRepository {
     @Override
     public void updateById(User user) {
         userMapper.updateById(user);
+        authSubjectCache.evict(user.getId());
     }
 
     @Override
@@ -126,22 +131,27 @@ public class UserRepositoryImpl implements UserRepository {
     @Override
     public void update(User user) {
         userMapper.updateById(user);
+        authSubjectCache.evict(user.getId());
     }
-    
+
     @Override
     public void deleteById(UUID id) {
         userMapper.deleteById(id);
+        authSubjectCache.evict(id);
     }
-    
+
     @Override
     public void softDeleteById(UUID id) {
         userMapper.softDeleteById(id);
+        authSubjectCache.evict(id);
     }
 
     @Override
     public int updatePassword(UUID id, String passwordHash, boolean mustChangePassword,
                               java.time.LocalDateTime changedAt) {
-        return userMapper.updatePassword(id, passwordHash, mustChangePassword, changedAt);
+        int updated = userMapper.updatePassword(id, passwordHash, mustChangePassword, changedAt);
+        authSubjectCache.evict(id);
+        return updated;
     }
 
     @Override

@@ -9,6 +9,7 @@ import com.ds.goroute.thirdparty.mapbox.MapboxClient;
 import com.ds.goroute.thirdparty.mapbox.MapboxException;
 import com.ds.goroute.type.MapBillingApi;
 import com.ds.goroute.type.MapProvider;
+import com.ds.goroute.type.MapSearchScope;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -52,6 +53,8 @@ import java.util.regex.Pattern;
 public class MapSearchService {
 
     static final Duration AUTOCOMPLETE_TTL = Duration.ofDays(7);
+    /** Results when the app sends no limit; also Mapbox's maximum. Billed per request, so 10 costs what 5 did. */
+    static final int AUTOCOMPLETE_DEFAULT_LIMIT = 10;
     static final Duration REVERSE_TTL = Duration.ofDays(30);
     static final Duration GEOCODE_TTL = Duration.ofDays(90);
     /** Reverse answers are shared by everyone in a cell of 1/2000 degree (~55 m of latitude). */
@@ -96,7 +99,12 @@ public class MapSearchService {
 
     /** Parameters of an autocomplete call, as the app sends them to the Goong proxy. */
     public record AutocompleteQuery(String input, String location, Integer radiusKm, Integer limit,
-                                    String sessionToken, Boolean moreCompound, String language) {
+                                    String sessionToken, Boolean moreCompound, String language,
+                                    MapSearchScope scope) {
+
+        boolean areasOnly() {
+            return scope == MapSearchScope.AREA;
+        }
     }
 
     // --- autocomplete -------------------------------------------------------------------
@@ -120,16 +128,22 @@ public class MapSearchService {
         double[] point = parsePoint(query.location());
         Double latitude = point == null ? null : point[0];
         Double longitude = point == null ? null : point[1];
-        Integer radiusKm = query.radiusKm() != null && query.radiusKm() > 0 && point != null ? query.radiusKm() : null;
-        int limit = clamp(query.limit() == null ? 5 : query.limit(), 1, 10);
+        boolean areasOnly = query.areasOnly();
+        Integer radiusKm = !areasOnly && query.radiusKm() != null && query.radiusKm() > 0 && point != null
+                ? query.radiusKm() : null;
+        int limit = clamp(query.limit() == null ? AUTOCOMPLETE_DEFAULT_LIMIT : query.limit(), 1, 10);
         String language = language(query.language());
         String normalized = MapText.normalize(input);
-        String cacheKey = MapText.key("AUTOCOMPLETE", normalized.isEmpty() ? input.toLowerCase(Locale.ROOT) : normalized,
+        String cacheKey = MapText.key(areasOnly ? "AUTOCOMPLETE_AREA" : "AUTOCOMPLETE",
+                normalized.isEmpty() ? input.toLowerCase(Locale.ROOT) : normalized,
                 round(latitude, 2), round(longitude, 2), radiusKm, limit, language);
 
         Optional<String> cached = cachedResponse(cacheKey);
         if (cached.isPresent()) {
             return jsonText(cached.get());
+        }
+        if (areasOnly) {
+            return mapboxAreaAutocomplete(query, input, latitude, longitude, limit, language, cacheKey, catalogueOnly);
         }
         List<MapPlaceCacheEntry> picked = pickedPlaces(normalized, latitude, longitude, radiusKm, limit);
         if (picked.size() >= Math.min(limit, PICKED_ENOUGH) || catalogueOnly) {
@@ -165,12 +179,40 @@ public class MapSearchService {
         }
     }
 
+    /**
+     * Areas only (countries, states, cities) through Geocoding v6. Picked places are skipped:
+     * they are mostly venues and would crowd the areas out.
+     */
+    private ResponseEntity<String> mapboxAreaAutocomplete(AutocompleteQuery query, String input, Double latitude,
+                                                          Double longitude, int limit, String language,
+                                                          String cacheKey, boolean catalogueOnly) {
+        if (catalogueOnly) {
+            return json(shape.autocomplete(List.of()));
+        }
+        MapBudgetGuard.Decision decision = budget.tryAcquire(MapBillingApi.GEOCODE);
+        if (!decision.allowed()) {
+            return json(GoongShape.savingMode(shape.autocomplete(List.of()), decision.resumesAt()));
+        }
+        try {
+            List<MapPlaceCacheEntry> places = MapboxResults.clean(
+                    MapboxResults.places(mapbox.geocodeAreas(input, latitude, longitude, language, limit)), language);
+            places.forEach(this::rememberPlace);
+            ObjectNode answer = shape.autocomplete(places);
+            storeResponse(cacheKey, "AUTOCOMPLETE", answer, AUTOCOMPLETE_TTL);
+            return json(answer);
+        } catch (MapboxException exception) {
+            log.warn("Mapbox area autocomplete failed ({}); {}", exception.getMessage(),
+                    canFallBack(latitude, longitude) ? "asking Goong" : "no fallback");
+            return canFallBack(latitude, longitude) ? goongAutocomplete(query) : upstreamError();
+        }
+    }
+
     private ResponseEntity<String> goongAutocomplete(AutocompleteQuery query) {
         MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
         params.add("input", query.input());
         if (query.location() != null) params.add("location", query.location());
         if (query.radiusKm() != null) params.add("radius", String.valueOf(query.radiusKm()));
-        if (query.limit() != null) params.add("limit", String.valueOf(query.limit()));
+        params.add("limit", String.valueOf(query.limit() != null ? query.limit() : AUTOCOMPLETE_DEFAULT_LIMIT));
         if (query.sessionToken() != null) params.add("sessiontoken", query.sessionToken());
         if (query.moreCompound() != null) params.add("more_compound", String.valueOf(query.moreCompound()));
         return goong.forward("/Place/AutoComplete", params);

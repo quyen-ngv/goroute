@@ -200,26 +200,33 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         };
     }
 
+    /**
+     * Rebuilds the index in the background at every start, while the index already on disk
+     * keeps serving searches. The index lives on a volume and outlives deploys, but the
+     * database changes behind the app's back (a migration rewriting an indexed column, a
+     * manual fix): when every deploy started from an empty index those changes were picked
+     * up for free, and searches were empty until the rebuild finished.
+     */
     private void ensureSearchIndexPopulated() {
         try {
             IndexSearcher searcher = searcherManager.acquire();
             try {
                 int docCount = searcher.getIndexReader().numDocs();
-                if (docCount == 0 && placeRepository.countAll() > 0) {
-                    log.warn("Place Lucene index is empty but DB has data — reindexing");
-                    triggerReindex();
-                    return;
-                }
-                if (docCount > 0 && !isCurrentSchema(searcher)) {
-                    log.warn("Place Lucene index schema is outdated; reindexing");
-                    triggerReindex();
+                if (docCount == 0 && !recoveryPending && placeRepository.countAll() == 0) {
                     return;
                 }
                 if (recoveryPending) {
                     log.warn("Place Lucene index lost writes that were never committed (the previous run "
                             + "did not stop cleanly); reindexing");
-                    triggerReindex();
+                } else if (docCount == 0) {
+                    log.warn("Place Lucene index is empty but DB has data — reindexing");
+                } else if (!isCurrentSchema(searcher)) {
+                    log.warn("Place Lucene index schema is outdated; reindexing");
+                } else {
+                    log.info("Place Lucene index has {} places; refreshing it from the database in the background",
+                            docCount);
                 }
+                triggerReindex();
             } finally {
                 searcherManager.release(searcher);
             }

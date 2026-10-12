@@ -413,13 +413,14 @@ public class PlaceServiceImpl implements PlaceService {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 100);
         String normalizedSearch = blankToNull(search);
+        UUID searchId = normalizedSearch == null ? null : parseUuidOrNull(normalizedSearch);
         List<String> normalizedGroups = normalizedPlaceGroups(placeGroups);
         List<String> normalizedSubTypes = AdminListSort.codes(subTypes);
         List<String> normalizedVisibility = AdminListSort.codes(visibilityStatus);
         List<String> normalizedTrust = AdminListSort.codes(trustLevel);
         List<UUID> normalizedAreas = AdminListSort.ids(locationImageIds);
         List<Place> places = placeRepository
-                .findFilteredPage(normalizedSearch, normalizedGroups, normalizedSubTypes, normalizedVisibility, normalizedTrust, normalizedAreas,
+                .findFilteredPage(normalizedSearch, searchId, normalizedGroups, normalizedSubTypes, normalizedVisibility, normalizedTrust, normalizedAreas,
                         sort, descending, safeSize, safePage * safeSize);
         Map<UUID, List<PlaceTranslation>> translations = placeTranslationService.findByPlaceIds(
                 places.stream().map(Place::getId).toList());
@@ -428,7 +429,7 @@ public class PlaceServiceImpl implements PlaceService {
                 .collect(Collectors.toList());
         return AdminPlacePageResponse.builder()
                 .items(items)
-                .total(placeRepository.countFiltered(normalizedSearch, normalizedGroups, normalizedSubTypes, normalizedVisibility, normalizedTrust, normalizedAreas))
+                .total(placeRepository.countFiltered(normalizedSearch, searchId, normalizedGroups, normalizedSubTypes, normalizedVisibility, normalizedTrust, normalizedAreas))
                 .page(safePage)
                 .size(safeSize)
                 .build();

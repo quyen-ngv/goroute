@@ -22,6 +22,12 @@ public class PlaceLookupProviders {
         }
     }
 
+    /** Whether a provider of this type is registered and configured. */
+    public boolean isAvailable(PlaceLookupProviderType type) {
+        PlaceLookupProvider provider = providersByType.get(type);
+        return provider != null && provider.isAvailable();
+    }
+
     public PlaceLookupProvider get(PlaceLookupProviderType type) {
         PlaceLookupProvider provider = providersByType.get(type);
         if (provider == null) {

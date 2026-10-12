@@ -310,18 +310,27 @@ class PlaceSearchIndexServiceImplTest {
     }
 
     @Test
-    void aCommittedIndexIsNotRebuiltAfterACrash() throws Exception {
+    void aCommittedIndexKeepsServingWhileTheStartupRefreshRebuildsItFromTheDatabase() throws Exception {
         Place written = place("Committed cafe", "cafe", 10.0001, 106.0);
         searchService.indexPlace(written);
         searchService.commitPendingChanges();
         assertThat(tempDir.resolve("places.uncommitted")).doesNotExist();
         crash(searchService);
+        // While the app was down the database changed behind its back (a migration, a manual fix).
+        Place fresh = place("Fresh cafe", "cafe", 10.0002, 106.0);
+        CountDownLatch release = new CountDownLatch(1);
+        when(placeRepository.findSearchIndexPage(any(), anyInt())).thenAnswer(invocation -> {
+            release.await(5, TimeUnit.SECONDS);
+            return List.of(fresh);
+        });
 
         searchService = startService();
 
-        assertThat(searchService.isReindexRunning()).isFalse();
-        verify(placeRepository, never()).findSearchIndexPage(any(), anyInt());
+        assertThat(searchService.isReindexRunning()).isTrue();
         assertThat(searchService.searchPlaceIds(criteria(null, null, 2.0))).containsExactly(written.getId());
+        release.countDown();
+        awaitReindex(searchService);
+        assertThat(searchService.searchPlaceIds(criteria(null, null, 2.0))).containsExactly(fresh.getId());
     }
 
     @Test

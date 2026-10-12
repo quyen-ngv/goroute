@@ -5,6 +5,7 @@ import com.ds.goroute.service.MapSearchRateLimiter;
 import com.ds.goroute.service.mapsearch.MapSearchService;
 import com.ds.goroute.thirdparty.goong.GoongClient;
 import com.ds.goroute.type.MapSearchOperation;
+import com.ds.goroute.type.MapSearchScope;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -45,12 +46,13 @@ public class GoongController {
             @RequestParam(required = false) Integer limit,
             @RequestParam(required = false) String sessiontoken,
             @RequestParam(required = false) Boolean more_compound,
+            @RequestParam(defaultValue = "ALL") MapSearchScope scope,
             @RequestHeader(value = HttpHeaders.ACCEPT_LANGUAGE, required = false) String acceptLanguage,
             @CurrentUser UUID userId,
             Authentication authentication) {
         rateLimiter.acquire(userId, isAdmin(authentication), MapSearchOperation.AUTOCOMPLETE);
         return mapSearchService.autocomplete(userId, new MapSearchService.AutocompleteQuery(
-                input, location, radius, limit, sessiontoken, more_compound, acceptLanguage));
+                input, location, radius, limit, sessiontoken, more_compound, acceptLanguage, scope));
     }
 
     @GetMapping("/place-detail")

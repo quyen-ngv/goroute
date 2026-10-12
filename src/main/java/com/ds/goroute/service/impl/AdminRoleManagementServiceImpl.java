@@ -1,5 +1,6 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.config.cache.AuthSubjectCache;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.response.AdminRoleResponse;
 import com.ds.goroute.dto.response.AdminUserRolesResponse;
@@ -22,6 +23,8 @@ public class AdminRoleManagementServiceImpl implements AdminRoleManagementServic
 
     private final AdminRoleManagementMapper roleManagementMapper;
     private final AdminMapper adminMapper;
+    /** Holding any admin role is what grants ROLE_ADMIN in the JWT filter. */
+    private final AuthSubjectCache authSubjectCache;
 
     @Override
     public List<AdminRoleResponse> listAllRoles() {
@@ -78,6 +81,7 @@ public class AdminRoleManagementServiceImpl implements AdminRoleManagementServic
         if (!roleCodes.isEmpty()) {
             adminMapper.insertUserRoles(userId, new HashSet<>(roleCodes));
         }
+        authSubjectCache.evict(userId);
 
         log.info("Assigned roles {} to user {}", roleCodes, userId);
         return getUserRoles(userId);
@@ -87,6 +91,7 @@ public class AdminRoleManagementServiceImpl implements AdminRoleManagementServic
     @Transactional
     public AdminUserRolesResponse removeRole(UUID userId, String roleCode) {
         roleManagementMapper.deleteUserRole(userId, roleCode);
+        authSubjectCache.evict(userId);
         log.info("Removed role {} from user {}", roleCode, userId);
         return getUserRoles(userId);
     }
@@ -95,6 +100,7 @@ public class AdminRoleManagementServiceImpl implements AdminRoleManagementServic
     @Transactional
     public void removeAllRoles(UUID userId) {
         adminMapper.deleteUserRoles(userId);
+        authSubjectCache.evict(userId);
         log.info("Removed all admin roles from user {}", userId);
     }
 

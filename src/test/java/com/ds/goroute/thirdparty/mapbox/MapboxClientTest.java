@@ -57,6 +57,22 @@ class MapboxClientTest {
     }
 
     @Test
+    @DisplayName("area search asks Geocoding v6 for countries, states and cities only")
+    void geocodeAreas() {
+        server.expect(requestTo(startsWith("https://api.mapbox.test/search/geocode/v6/forward")))
+                .andExpect(queryParam("q", "singapore"))
+                .andExpect(queryParam("types", "country%2Cregion%2Cdistrict%2Cplace%2Clocality"))
+                .andExpect(queryParam("autocomplete", "true"))
+                .andExpect(queryParam("proximity", "105.850000,21.030000"))
+                .andExpect(queryParam("limit", "10"))
+                .andRespond(withSuccess("{\"features\":[]}", MediaType.APPLICATION_JSON));
+
+        client.geocodeAreas("singapore", 21.03, 105.85, "vi", 10);
+
+        server.verify();
+    }
+
+    @Test
     @DisplayName("directions puts every point in the path as lng,lat and asks for per-step geometry")
     void directions() {
         server.expect(requestTo(startsWith(

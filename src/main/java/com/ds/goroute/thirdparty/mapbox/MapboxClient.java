@@ -95,6 +95,23 @@ public class MapboxClient {
     }
 
     /**
+     * Type-ahead over areas only (country, state/province, district, city), for picking a trip
+     * destination. Geocoding v6 rather than Search Box, which ranks a shop named "Singapore"
+     * near the user above the country. Billed per request whatever the limit (at most 10).
+     */
+    public JsonNode geocodeAreas(String query, Double latitude, Double longitude, String language, int limit) {
+        MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
+        params.add("q", query);
+        params.add("limit", String.valueOf(limit));
+        params.add("autocomplete", "true");
+        params.add("types", "country,region,district,place,locality");
+        if (latitude != null && longitude != null) {
+            params.add("proximity", coordinate(longitude) + "," + coordinate(latitude));
+        }
+        return get("geocode", GEOCODING + "/forward", params, language);
+    }
+
+    /**
      * One route through every point in order, with a leg between each consecutive pair. Billed
      * as one request whatever the number of points (2 to 25).
      *

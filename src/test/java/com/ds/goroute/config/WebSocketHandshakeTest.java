@@ -71,6 +71,7 @@ class WebSocketHandshakeTest {
             WebSocketConfig.class,
             JwtUtils.class,
             JwtAuthenticationFilter.class,
+            com.ds.goroute.config.cache.AuthSubjectCache.class,
             ApiKeyAuthenticationFilter.class,
             com.ds.goroute.config.filter.AdminApiKeyAuthenticationFilter.class,
             InternalApiAuthenticationFilter.class,

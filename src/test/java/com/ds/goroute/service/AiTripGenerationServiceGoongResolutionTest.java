@@ -7,6 +7,10 @@ import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.AppConfigRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.placelookup.GoongPlaceLookupProvider;
+import com.ds.goroute.service.placelookup.PlaceHit;
+import com.ds.goroute.service.placelookup.PlaceLookupProvider;
+import com.ds.goroute.service.placelookup.PlaceLookupProviderType;
+import com.ds.goroute.service.placelookup.PlaceLookupQuery;
 import com.ds.goroute.service.placelookup.PlaceLookupProviders;
 import com.ds.goroute.thirdparty.goong.GoongClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -20,6 +24,7 @@ import org.springframework.util.MultiValueMap;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,13 +49,15 @@ class AiTripGenerationServiceGoongResolutionTest {
 
     private GoongClient goongClient;
     private AiTripGenerationService service;
+    private AiTripGenerationMapper mapper;
+    private ObjectMapper objectMapper;
     private UUID jobId;
 
     @BeforeEach
     void setUp() {
-        AiTripGenerationMapper mapper = mock(AiTripGenerationMapper.class);
+        mapper = mock(AiTripGenerationMapper.class);
         goongClient = mock(GoongClient.class);
-        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper = new ObjectMapper();
         service = new AiTripGenerationService(
                 mapper,
                 mock(AiTripQuotaService.class),
@@ -183,14 +190,40 @@ class AiTripGenerationServiceGoongResolutionTest {
         assertUnresolved(resolveOne("Pho Hoa"), "Pho Hoa");
     }
 
+    @Test
+    void resolvesWithMapboxOutsideVietnamWhereGoongHasNothing() {
+        PlaceHit hit = new PlaceHit(PlaceLookupProviderType.MAPBOX, "mapbox-1", "Pike Place Market",
+                "85 Pike St, Seattle", new BigDecimal("47.6097"), new BigDecimal("-122.3422"), "market", null);
+        PlaceLookupProvider mapbox = new PlaceLookupProvider() {
+            public PlaceLookupProviderType type() { return PlaceLookupProviderType.MAPBOX; }
+            public boolean isAvailable() { return true; }
+            public List<PlaceHit> searchText(PlaceLookupQuery query) { return List.of(hit); }
+            public Optional<PlaceHit> getDetails(String id) { return Optional.of(hit); }
+        };
+        service = new AiTripGenerationService(mapper, mock(AiTripQuotaService.class), mock(PlaceRepository.class),
+                mock(TripService.class), mock(ActivityRepository.class), objectMapper, mock(AiTripSseService.class),
+                mock(AppConfigRepository.class), mock(NotificationService.class),
+                new PlaceLookupProviders(List.of(new GoongPlaceLookupProvider(goongClient, objectMapper), mapbox)));
+
+        Map<String, Object> row = resolveOne("Pike Place Market", new BigDecimal("47.6062"), new BigDecimal("-122.3321"));
+
+        assertThat(row).contains(entry("googlePlaceId", "mapbox-1"), entry("address", "85 Pike St, Seattle"),
+                entry("resolvedBy", "MAPBOX"), entry("externalResolutionVerified", true));
+        verify(goongClient, never()).forward(any(), any());
+    }
+
     private Map<String, Object> resolveOne(String title) {
+        return resolveOne(title, CENTER_LAT, CENTER_LNG);
+    }
+
+    private Map<String, Object> resolveOne(String title, BigDecimal latitude, BigDecimal longitude) {
         AiTripCandidateResolutionRequest.Candidate candidate = new AiTripCandidateResolutionRequest.Candidate();
         candidate.setCandidateId("c1");
         candidate.setTitle(title);
         candidate.setPlaceGroup("FOOD");
         AiTripCandidateResolutionRequest request = new AiTripCandidateResolutionRequest();
-        request.setLatitude(CENTER_LAT);
-        request.setLongitude(CENTER_LNG);
+        request.setLatitude(latitude);
+        request.setLongitude(longitude);
         request.setCandidates(List.of(candidate));
         List<Map<String, Object>> rows = service.resolveCandidates(jobId, "attempt-1", request);
         assertThat(rows).hasSize(1);
