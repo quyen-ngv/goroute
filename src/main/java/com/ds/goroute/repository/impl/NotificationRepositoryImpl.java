@@ -71,6 +71,11 @@ public class NotificationRepositoryImpl implements NotificationRepository {
     }
 
     @Override
+    public Optional<Notification> findLatestConversationNotification(UUID userId, UUID conversationId) {
+        return Optional.ofNullable(notificationMapper.findLatestConversationNotification(userId, conversationId));
+    }
+
+    @Override
     public void updateSocialNotification(Notification notification) {
         notificationMapper.updateSocialNotification(notification);
     }

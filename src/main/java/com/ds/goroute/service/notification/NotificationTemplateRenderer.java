@@ -38,7 +38,8 @@ public class NotificationTemplateRenderer {
                     renderSocialPlacesExtracted(normalizedData, lang), lang);
         }
         if (type == NotificationType.AI_TRIP_CREATED) {
-            return withLocalizedPunctuation(renderAiTripCreated(lang), lang);
+            return withLocalizedPunctuation("VIDEO".equals(normalizedData.get("source"))
+                    ? renderAiTripCreated(lang) : renderAiTripPlanned(lang), lang);
         }
         if (type == NotificationType.SOCIAL_LIKE || type == NotificationType.SOCIAL_COMMENT) {
             return withLocalizedPunctuation(renderSocialInteraction(type, normalizedData, lang), lang);
@@ -215,6 +216,20 @@ public class NotificationTemplateRenderer {
             case "th" -> new NotificationMessage("สร้างกำหนดการเดินทางแล้ว", "สร้างกำหนดการจากวิดีโอแล้ว เปิดทริปเพื่อดูและแก้ไข");
             case "zh-TW" -> new NotificationMessage("行程已建立", "已從影片建立行程。開啟行程即可查看及編輯");
             default -> new NotificationMessage("Itinerary created", "Your itinerary from the video is ready. Open the trip to review it");
+        };
+    }
+
+    /** An AI plan from the trip form or a chat, not from a video. */
+    private NotificationMessage renderAiTripPlanned(String language) {
+        return switch (language) {
+            case "vi" -> new NotificationMessage("Đã tạo lịch trình", "Lịch trình AI của bạn đã sẵn sàng. Mở chuyến đi để xem và chỉnh sửa");
+            case "ja" -> new NotificationMessage("旅程を作成しました", "AIの旅程ができました。旅行を開いて確認・編集できます");
+            case "ko" -> new NotificationMessage("일정이 생성되었어요", "AI 여행 일정이 준비되었어요. 여행을 열어 확인하고 수정하세요");
+            case "hi" -> new NotificationMessage("यात्रा कार्यक्रम बनाया गया", "आपका AI यात्रा कार्यक्रम तैयार है। देखने और संपादित करने के लिए यात्रा खोलें");
+            case "ru" -> new NotificationMessage("Маршрут создан", "Ваш маршрут от ИИ готов. Откройте поездку, чтобы посмотреть и изменить его");
+            case "th" -> new NotificationMessage("สร้างกำหนดการเดินทางแล้ว", "กำหนดการจาก AI พร้อมแล้ว เปิดทริปเพื่อดูและแก้ไข");
+            case "zh-TW" -> new NotificationMessage("行程已建立", "AI 行程已準備好。開啟行程即可查看及編輯");
+            default -> new NotificationMessage("Itinerary created", "Your AI itinerary is ready. Open the trip to review and edit it");
         };
     }
 

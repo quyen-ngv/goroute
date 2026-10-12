@@ -389,10 +389,13 @@ public class AiTripGenerationService {
         AiTripGenerationEvent event = event(job, "COMPLETED", "COMPLETED", 100, "ai_trip.completed", Map.of("tripId", trip.getId()));
         mapper.insertEvent(event); sseService.publish(event);
         if (completed == 1) {
+            // "source" picks the wording: only a plan built from a social video says "from the video".
+            boolean fromVideo = original.getSocialContext() != null && !original.getSocialContext().isEmpty();
             notificationService.createNotification(
                     job.getUserId(), trip.getId(), NotificationType.AI_TRIP_CREATED,
                     null, null,
-                    Map.of("tripId", trip.getId().toString(), "deepLink", "/trip/" + trip.getId()),
+                    Map.of("tripId", trip.getId().toString(), "deepLink", "/trip/" + trip.getId(),
+                            "source", fromVideo ? "VIDEO" : "AI"),
                     null);
         }
         return trip.getId();

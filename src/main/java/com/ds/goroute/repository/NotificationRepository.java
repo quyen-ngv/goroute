@@ -26,6 +26,9 @@ public interface NotificationRepository {
     Optional<Notification> findRecentUnreadSocialNotification(
             UUID userId, NotificationType type, String targetType, UUID targetId);
 
+    /** The reader's message row for a conversation, read or unread, if one exists. */
+    Optional<Notification> findLatestConversationNotification(UUID userId, UUID conversationId);
+
     void updateSocialNotification(Notification notification);
 
     void updateById(Notification notification);

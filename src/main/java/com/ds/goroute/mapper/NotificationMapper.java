@@ -37,6 +37,9 @@ public interface NotificationMapper {
             @Param("targetType") String targetType,
             @Param("targetId") UUID targetId);
 
+    Notification findLatestConversationNotification(@Param("userId") UUID userId,
+                                                    @Param("conversationId") UUID conversationId);
+
     int updateSocialNotification(Notification notification);
     
     int updateById(Notification notification);

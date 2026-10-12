@@ -35,8 +35,9 @@ import java.util.stream.Collectors;
  * the time a message matters: the interesting case is the partner whose phone is in a pocket.
  * So a message also becomes a notification.
  *
- * <p>One row per conversation, not one per line: a conversation that is already waiting unread
- * has its existing row refreshed instead of a new one added. The push is not coalesced — every
+ * <p>One row per conversation, not one per line and not one per burst: the conversation's
+ * existing row — unread or already read — is refreshed and brought back unread to the top
+ * instead of a new one added. The push is not coalesced — every
  * message still rings, and the phone stacks them by conversation. Being mentioned by name gets
  * its own row, because that is the one a person is waiting for.
  *
@@ -228,8 +229,7 @@ public class ConversationNotifier {
         // Two messages announced at once must not both miss the unread row and add two.
         notifications.lockTarget(recipientId, NotificationType.MARKETPLACE_MESSAGE, TARGET_TYPE, conversationId);
         Notification existing = notifications
-                .findRecentUnreadSocialNotification(recipientId, NotificationType.MARKETPLACE_MESSAGE,
-                        TARGET_TYPE, conversationId)
+                .findLatestConversationNotification(recipientId, conversationId)
                 .orElse(null);
         if (existing == null) {
             NotificationMessage rendered = templateRenderer.render(
@@ -238,7 +238,8 @@ public class ConversationNotifier {
                     rendered.title(), rendered.body(), data, senderId);
             return;
         }
-        // Already waiting unread: the row shows the newest line, and this line still rings.
+        // The conversation's row, unread or already read: it comes back unread at the top with the
+        // newest line, and this line still rings.
         // Announcements run in parallel, so an older line arriving second keeps the newer text.
         Map<String, Object> stored = readData(existing.getData());
         boolean isOlder = sequenceOf(stored.get(SEQUENCE_NO)) > sequenceOf(message.getSequenceNo());

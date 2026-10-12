@@ -68,8 +68,7 @@ class ConversationNotifierPrivacyTest {
         when(users.findById(any())).thenReturn(Optional.empty());
         when(templateRenderer.render(any(), anyMap(), any()))
                 .thenReturn(new NotificationMessage("New message", "Somebody sent you a message"));
-        when(notifications.findRecentUnreadSocialNotification(any(), any(), anyString(), any()))
-                .thenReturn(Optional.empty());
+        when(notifications.findLatestConversationNotification(any(), any())).thenReturn(Optional.empty());
         when(conversations.findNotifiableMemberIds(CONVERSATION)).thenReturn(List.of(SENDER, READER));
     }
 

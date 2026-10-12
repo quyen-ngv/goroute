@@ -117,6 +117,17 @@
         LIMIT 1
     </select>
 
+    <!-- A conversation keeps one message row per reader, read or not, however old. -->
+    <select id="findLatestConversationNotification" resultMap="NotificationResultMap">
+        SELECT <include refid="notificationColumns"/>
+        FROM notifications
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND type = 'MARKETPLACE_MESSAGE'
+          AND data -&gt;&gt; 'conversationId' = CAST(#{conversationId,javaType=java.util.UUID,jdbcType=OTHER} AS TEXT)
+        ORDER BY created_at DESC
+        LIMIT 1
+    </select>
+
     <update id="updateSocialNotification" parameterType="com.ds.goroute.entity.Notification">
         UPDATE notifications SET
             body = #{body},

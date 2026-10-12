@@ -72,8 +72,7 @@ class ConversationNotifierDeliveryTest {
                 templateRenderer, users, new Gson(), transactionManager, Runnable::run);
         when(users.findById(any())).thenReturn(Optional.empty());
         when(templateRenderer.render(any(), anyMap(), any())).thenReturn(new NotificationMessage("t", "b"));
-        when(notifications.findRecentUnreadSocialNotification(any(), any(), anyString(), any()))
-                .thenReturn(Optional.empty());
+        when(notifications.findLatestConversationNotification(any(), any())).thenReturn(Optional.empty());
         when(conversations.find(CONVERSATION, null)).thenReturn(Optional.of(MarketplaceConversation.builder()
                 .id(CONVERSATION).conversationType(MarketplaceConversationType.TRIP.name())
                 .tripId(UUID.randomUUID()).tripName("Huế").build()));
@@ -119,12 +118,11 @@ class ConversationNotifierDeliveryTest {
     }
 
     @Test
-    @DisplayName("rings for every message, refreshing the waiting row instead of adding one")
+    @DisplayName("rings for every message, reviving the conversation's one row (even a read one) instead of adding one")
     void pushesEveryMessage() {
         Notification waiting = Notification.builder().id(UUID.randomUUID()).userId(READER)
-                .type(NotificationType.MARKETPLACE_MESSAGE).data("{\"sequenceNo\":2}").build();
-        when(notifications.findRecentUnreadSocialNotification(eq(READER), eq(NotificationType.MARKETPLACE_MESSAGE),
-                eq("CONVERSATION"), eq(CONVERSATION))).thenReturn(Optional.of(waiting));
+                .type(NotificationType.MARKETPLACE_MESSAGE).isRead(true).data("{\"sequenceNo\":2}").build();
+        when(notifications.findLatestConversationNotification(READER, CONVERSATION)).thenReturn(Optional.of(waiting));
 
         notifier.notifyNewMessage(CONVERSATION, SENDER, message(3L));
 

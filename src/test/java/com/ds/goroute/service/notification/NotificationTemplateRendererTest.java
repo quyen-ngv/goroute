@@ -30,6 +30,19 @@ class NotificationTemplateRendererTest {
     }
 
     @Test
+    void aiTripCreatedMentionsTheVideoOnlyWhenItCameFromOne() {
+        for (String language : SUPPORTED_LANGUAGES) {
+            String planned = renderer.render(NotificationType.AI_TRIP_CREATED, Map.of("source", "AI"), language).body();
+            String fromVideo = renderer.render(NotificationType.AI_TRIP_CREATED, Map.of("source", "VIDEO"), language).body();
+            assertThat(planned).as("%s wording", language).isNotEqualTo(fromVideo);
+        }
+        assertThat(renderer.render(NotificationType.AI_TRIP_CREATED, Map.of(), "en").body())
+                .doesNotContain("video");
+        assertThat(renderer.render(NotificationType.AI_TRIP_CREATED, Map.of("source", "VIDEO"), "en").body())
+                .contains("video");
+    }
+
+    @Test
     void scheduledSummaryIsLocalizedForEverySupportedAppLanguage() {
         Map<String, Object> data = completeData();
         Map<String, String> expectedFragments = Map.of(
