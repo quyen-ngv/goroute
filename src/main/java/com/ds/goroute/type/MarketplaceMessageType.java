@@ -10,7 +10,7 @@ public enum MarketplaceMessageType {
     SHARE,
     /**
      * An answer from the assistant (Pengoo): Markdown text plus blocks in the attachments
-     * (THINKING, PLACE, PROPOSAL, SUGGESTIONS, WELCOME, NOTICE). Only the server writes it.
+     * (THINKING, DESTINATION, PLACE, CARD, PROPOSAL, ACTION, SUGGESTIONS, WELCOME, NOTICE). Only the server writes it.
      */
     ASSISTANT
 }

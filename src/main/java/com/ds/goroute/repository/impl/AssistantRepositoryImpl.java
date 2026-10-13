@@ -126,4 +126,14 @@ public class AssistantRepositoryImpl implements AssistantRepository {
     public void attachProposalsToMessage(UUID turnId, UUID messageId) {
         mapper.attachProposalsToMessage(turnId, messageId);
     }
+
+    @Override
+    public Optional<String> findMemory(UUID conversationId) {
+        return Optional.ofNullable(mapper.findMemory(conversationId)).filter(text -> !text.isBlank());
+    }
+
+    @Override
+    public void saveMemory(UUID conversationId, String content, UUID turnId, LocalDateTime updatedAt) {
+        mapper.upsertMemory(conversationId, content, turnId, updatedAt);
+    }
 }

@@ -164,6 +164,8 @@ public enum BusinessConfigKey {
     ASSISTANT_WELCOME_ENABLED("ASSISTANT", "WELCOME_ENABLED", true),
     /** A turn still running after this many seconds is failed and the asker is told. */
     ASSISTANT_TURN_TIMEOUT_SECONDS("ASSISTANT", "TURN_TIMEOUT_SECONDS", 150, 30, 900),
+    /** Pengoo may search the web (once per turn) when the catalogue has nothing; the worker also needs a search API key. */
+    ASSISTANT_WEB_SEARCH_ENABLED("ASSISTANT", "WEB_SEARCH_ENABLED", true),
 
     // --- Media upload -----------------------------------------------------------------
     /**

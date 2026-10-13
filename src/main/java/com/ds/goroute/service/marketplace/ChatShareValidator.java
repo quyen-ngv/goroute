@@ -84,6 +84,21 @@ public class ChatShareValidator {
         return List.of(clean);
     }
 
+    /**
+     * Whether {@code viewerId} could share this item, for cards Pengoo puts under an answer:
+     * the same rule as a person's share, but a refusal is a quiet {@code false}.
+     */
+    public boolean isShareable(UUID viewerId, ChatShareType type, UUID id, String citySlug) {
+        if (type == null || id == null) return false;
+        if (type == ChatShareType.FOOD && (citySlug == null || !SLUG.matcher(citySlug).matches())) return false;
+        try {
+            requireShareable(viewerId, type, id, type == ChatShareType.FOOD ? citySlug : null);
+            return true;
+        } catch (BusinessException notShareable) {
+            return false;
+        }
+    }
+
     private void requireShareable(UUID senderId, ChatShareType type, UUID id, String citySlug) {
         boolean isShareable = switch (type) {
             case PLACE -> places.findById(id).isPresent();

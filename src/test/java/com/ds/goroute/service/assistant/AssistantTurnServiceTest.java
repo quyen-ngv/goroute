@@ -13,8 +13,10 @@ import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.MarketplaceChatService;
 import com.ds.goroute.service.TextModerationService;
 import com.ds.goroute.service.WebSocketService;
+import com.ds.goroute.service.marketplace.ChatShareValidator;
 import com.ds.goroute.service.moderation.ModerationVerdict;
 import com.ds.goroute.type.AssistantTurnStatus;
+import com.ds.goroute.type.ChatShareType;
 import com.ds.goroute.type.MarketplaceConversationType;
 import com.ds.goroute.type.ModerationAction;
 import com.ds.goroute.type.PlaceVisibilityStatus;
@@ -62,7 +64,9 @@ class AssistantTurnServiceTest {
     @Mock private MarketplaceChatService chatService;
     @Mock private AssistantAccessService access;
     @Mock private AssistantProposalService proposals;
+    @Mock private AssistantActionService actions;
     @Mock private PlaceRepository places;
+    @Mock private ChatShareValidator shareValidator;
     @Mock private TextModerationService moderation;
     @Mock private WebSocketService webSocketService;
     @Mock private ApplicationEventPublisher events;
@@ -73,7 +77,7 @@ class AssistantTurnServiceTest {
     void setUp() {
         ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
         service = new AssistantTurnService(repository, chatRepository, chatService, access,
-                new AssistantTurnSnapshots(mapper), proposals, places, moderation, webSocketService, events, mapper);
+                new AssistantTurnSnapshots(mapper), proposals, actions, places, shareValidator, moderation, webSocketService, events, mapper);
         when(chatRepository.find(eq(CONVERSATION), any())).thenReturn(Optional.of(tripConversation()));
         when(access.isAvailable(ASKER)).thenReturn(true);
         when(access.dailyLimit(ASKER)).thenReturn(5);
@@ -222,6 +226,57 @@ class AssistantTurnServiceTest {
         }
 
         @Test
+        void actionsAreAddedAndTheMemoryIsKept() {
+            Map<String, Object> action = Map.of("kind", "ACTION", "action", "CREATE_TRIP", "label", "Tạo chuyến Huế");
+            when(actions.blocks(any(), anyList(), any())).thenReturn(List.of(action));
+            AssistantReplyRequest reply = new AssistantReplyRequest();
+            reply.setMarkdown("Mình mở màn tạo chuyến cho bạn nhé");
+            reply.setMemory("  Khởi hành từ Đà Nẵng tối thứ Sáu.  ");
+
+            service.complete(turnId, reply);
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<Map<String, Object>>> blocks = ArgumentCaptor.forClass(List.class);
+            verify(chatService).postAssistantMessage(eq(CONVERSATION), anyString(), blocks.capture(),
+                    any(), any(), anyString());
+            assertThat(blocks.getValue()).contains(action);
+            verify(repository).saveMemory(eq(CONVERSATION), eq("Khởi hành từ Đà Nẵng tối thứ Sáu."), eq(turnId), any());
+        }
+
+        @Test
+        void onlyItemsTheAskerCouldShareBecomeItemCards() {
+            UUID publicTrip = UUID.randomUUID();
+            UUID privateTrip = UUID.randomUUID();
+            UUID place = UUID.randomUUID();
+            when(shareValidator.isShareable(ASKER, ChatShareType.TRIP, publicTrip, null)).thenReturn(true);
+            when(shareValidator.isShareable(ASKER, ChatShareType.TRIP, privateTrip, null)).thenReturn(false);
+            when(shareValidator.isShareable(eq(ASKER), eq(ChatShareType.PLACE), any(), any())).thenReturn(true);
+            AssistantReplyRequest reply = new AssistantReplyRequest();
+            reply.setMarkdown("Tham khảo lịch trình này nhé");
+            reply.setCards(List.of(card("TRIP", publicTrip), card("TRIP", privateTrip), card("TRIP", publicTrip),
+                    card("PLACE", place)));
+
+            service.complete(turnId, reply);
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<Map<String, Object>>> blocks = ArgumentCaptor.forClass(List.class);
+            verify(chatService).postAssistantMessage(eq(CONVERSATION), anyString(), blocks.capture(),
+                    any(), any(), anyString());
+            assertThat(blocks.getValue()).filteredOn(block -> "CARD".equals(block.get("kind")))
+                    .containsExactly(Map.of("kind", "CARD", "shareType", "TRIP", "targetId", publicTrip.toString()));
+        }
+
+        @Test
+        void noMemoryLeavesTheOldNotesAlone() {
+            AssistantReplyRequest reply = new AssistantReplyRequest();
+            reply.setMarkdown("ok");
+
+            service.complete(turnId, reply);
+
+            verify(repository, never()).saveMemory(any(), any(), any(), any());
+        }
+
+        @Test
         void aBlockedAnswerIsReplacedNotPosted() {
             when(moderation.evaluate(any(), anyString(), any(), anyString(), any()))
                     .thenReturn(ModerationVerdict.of(ModerationAction.BLOCK, null, null, "x"));
@@ -241,6 +296,13 @@ class AssistantTurnServiceTest {
             verify(chatService).postAssistantMessage(eq(CONVERSATION), anyString(), anyList(), eq(MESSAGE), eq(ASKER),
                     eq("turn:" + turnId));
             verify(repository).failTurn(eq(turnId), eq("timeout"), any(), any());
+        }
+
+        private AssistantReplyRequest.CardRef card(String type, UUID id) {
+            AssistantReplyRequest.CardRef card = new AssistantReplyRequest.CardRef();
+            card.setType(type);
+            card.setId(id.toString());
+            return card;
         }
 
         private AssistantReplyRequest.PlaceRef ref(UUID id, String note) {

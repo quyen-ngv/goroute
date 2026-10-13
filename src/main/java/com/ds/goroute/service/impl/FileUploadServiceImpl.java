@@ -1,6 +1,5 @@
 package com.ds.goroute.service.impl;
 
-import com.ds.goroute.utils.ErrorMessages;
 import com.ds.goroute.config.FileUploadProperties;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.exception.BusinessException;
@@ -10,7 +9,6 @@ import com.ds.goroute.service.ImageModerationService;
 import com.ds.goroute.service.ImageUploadOutcome;
 import com.ds.goroute.service.ImageUploadRequest;
 import com.ds.goroute.service.StorageService;
-import com.ds.goroute.service.moderation.ModerationVerdict;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.repository.AiTripRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -267,18 +265,11 @@ public class FileUploadServiceImpl implements FileUploadService {
     }
 
     /**
-     * Moderation runs before anything is written, so a rejected image never gets a URL.
-     * Storing first and checking after would leave a window in which the image is already
-     * shareable, and for the severe groups that window is the whole problem.
+     * Stores the image and hands it to moderation, which runs in the background: waiting
+     * for the provider here added seconds to every photo. A blocked image is hidden from
+     * every response afterwards and its uploader is told (see {@code ImageModerationService}).
      */
     private ImageUploadOutcome store(ImageUploadRequest request, ValidatedImage image, String filename) {
-        ModerationVerdict verdict = imageModerationService.inspect(
-                image.bytes(), image.contentType(), request.userId(), request.entryPoint());
-        if (verdict.blocks()) {
-            return ImageUploadOutcome.rejectedByModeration(filename, verdict.category(),
-                    ErrorMessages.of("moderation.category." + verdict.category().name()));
-        }
-
         // Stored as uploaded. Re-encoding through the ImagePress service was a synchronous
         // network round trip on every photo and made uploads slow enough to notice. The app
         // already caps photos (picker 1920px at quality 85, in-app camera ~1080p).
@@ -288,6 +279,8 @@ public class FileUploadServiceImpl implements FileUploadService {
                 new ByteArrayInputStream(image.bytes()),
                 image.contentType(),
                 image.bytes().length);
+        imageModerationService.submit(request.userId(), request.entryPoint(), objectKey, url,
+                image.bytes(), image.contentType());
         return ImageUploadOutcome.accepted(filename, url);
     }
 

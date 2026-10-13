@@ -116,13 +116,6 @@ public interface PlaceMapper {
 
     List<Place> findByPlaceIds(@Param("placeIds") List<String> placeIds);
 
-    List<Place> findForAiByDestination(@Param("citySlugJson") String citySlugJson,
-                                       @Param("latitude") BigDecimal latitude,
-                                       @Param("longitude") BigDecimal longitude,
-                                       @Param("placeGroup") String placeGroup,
-                                       @Param("minRating") BigDecimal minRating,
-                                       @Param("limit") int limit);
-
     List<Place> findActiveForAiWithinRadius(@Param("latitude") BigDecimal latitude,
                                             @Param("longitude") BigDecimal longitude,
                                             @Param("radiusKm") BigDecimal radiusKm,

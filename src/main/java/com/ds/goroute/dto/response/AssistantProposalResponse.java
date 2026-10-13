@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -29,6 +30,13 @@ public class AssistantProposalResponse {
     private UUID activityId;
     private String activityName;
     private String category;
+    /** PREPEND_DAYS: how many days come before day 1. */
+    private Integer days;
+    /** REMOVE_DAYS: how many activities the removed days hold (they are deleted with them). */
+    private Integer activityCount;
+    /** Day-changing actions: the trip's dates once applied, as of when it was proposed. */
+    private LocalDate newStartDate;
+    private LocalDate newEndDate;
     private UUID resolvedByUserId;
     private String resolvedByName;
     private LocalDateTime resolvedAt;

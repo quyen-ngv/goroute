@@ -59,15 +59,6 @@ class PlaceMapperXmlTest {
         assertThat(withinRadius).contains("ST_DWithin(goroute_point(p.latitude, p.longitude)").doesNotContain("acos(")
                 .doesNotContain("p.*").doesNotContain("raw_data").doesNotContain("popular_times")
                 .doesNotContain("location_image_id = ?");
-
-        Map<String, Object> destination = new HashMap<>();
-        destination.put("citySlugJson", "[\"hanoi\"]");
-        destination.put("latitude", BigDecimal.TEN);
-        destination.put("longitude", BigDecimal.ONE);
-        destination.put("placeGroup", "FOOD_AND_DRINK");
-        destination.put("minRating", null);
-        destination.put("limit", 50);
-        assertThat(sql("findForAiByDestination", destination)).doesNotContain("acos(").endsWith("p.id LIMIT ?");
     }
 
     @Test

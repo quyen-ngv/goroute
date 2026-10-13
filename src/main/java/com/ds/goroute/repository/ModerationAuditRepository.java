@@ -14,6 +14,12 @@ public interface ModerationAuditRepository {
 
     int insertImageResult(ImageModerationResult result);
 
+    int completeImageResult(ImageModerationResult result);
+
+    List<ImageModerationResult> findStalePendingImageResults(LocalDateTime before, int limit);
+
+    List<String> findHiddenImageKeys();
+
     List<Map<String, Object>> summarizeDecisions(LocalDateTime from, LocalDateTime to);
 
     Map<String, Object> summarizeQueue(LocalDateTime from, LocalDateTime to);

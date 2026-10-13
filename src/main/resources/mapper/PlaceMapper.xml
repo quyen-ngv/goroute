@@ -623,25 +623,6 @@
         DELETE FROM places WHERE id = #{id}
     </delete>
 
-    <select id="findForAiByDestination" resultMap="PlaceResultMap">
-        SELECT p.*,
-               ST_Distance(goroute_point(p.latitude, p.longitude),
-                           goroute_point(#{latitude}::float8, #{longitude}::float8)) / 1000.0 AS distance
-        FROM places p
-        WHERE p.visibility_status = 'ACTIVE'
-          AND p.destinations @&gt; #{citySlugJson}::jsonb
-          AND p.place_group = #{placeGroup}
-        <if test="minRating != null">
-            AND p.review_rating &gt;= #{minRating}
-        </if>
-        ORDER BY distance NULLS LAST,
-                 p.place_overall_score DESC NULLS LAST,
-                 p.adjusted_rating DESC NULLS LAST,
-                 p.review_count DESC NULLS LAST,
-                 p.id
-        LIMIT #{limit}
-    </select>
-
     <!-- AI inventory is geo-scoped deliberately: destination slugs and incomplete ratings are not filters. -->
     <!--
       Candidates for the AI planner and the chat assistant. Only the columns those callers read:
@@ -660,6 +641,7 @@
                     THEN jsonb_build_object('price_level', p.attributes -> 'price_level')::text
                END AS attributes,
                p.place_overall_score, p.adjusted_rating, p.thumbnail, p.location_image_id,
+               p.trip_use_count, p.checkin_count,
                ST_Distance(goroute_point(p.latitude, p.longitude),
                            goroute_point(#{latitude}::float8, #{longitude}::float8)) / 1000.0 AS distance
         FROM places p

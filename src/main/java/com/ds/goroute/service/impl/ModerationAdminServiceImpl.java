@@ -17,11 +17,13 @@ import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.ModerationAuditRepository;
 import com.ds.goroute.repository.ModerationFlagRepository;
 import com.ds.goroute.repository.ModerationTermRepository;
+import com.ds.goroute.service.HiddenImageService;
 import com.ds.goroute.service.ModerationAdminService;
 import com.ds.goroute.service.NotificationService;
 import com.ds.goroute.service.TextModerationService;
 import com.ds.goroute.service.moderation.ModerationVerdict;
 import com.ds.goroute.type.ContentReportStatus;
+import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.ModerationFlagStatus;
 import com.ds.goroute.type.ModerationVisibility;
 import com.ds.goroute.type.NotificationType;
@@ -50,17 +52,20 @@ public class ModerationAdminServiceImpl implements ModerationAdminService {
     private final ModerationAuditRepository auditRepository;
     private final TextModerationService textModerationService;
     private final NotificationService notificationService;
+    private final HiddenImageService hiddenImageService;
 
     public ModerationAdminServiceImpl(ModerationTermRepository termRepository,
                                       ModerationFlagRepository flagRepository,
                                       ModerationAuditRepository auditRepository,
                                       TextModerationService textModerationService,
-                                      NotificationService notificationService) {
+                                      NotificationService notificationService,
+                                      HiddenImageService hiddenImageService) {
         this.termRepository = termRepository;
         this.flagRepository = flagRepository;
         this.auditRepository = auditRepository;
         this.textModerationService = textModerationService;
         this.notificationService = notificationService;
+        this.hiddenImageService = hiddenImageService;
     }
 
     // --- MOD-02: the term list -------------------------------------------------------
@@ -207,6 +212,14 @@ public class ModerationAdminServiceImpl implements ModerationAdminService {
         if (request.getStatus() == ModerationFlagStatus.REMOVED) {
             takeDown(flag, actorId, request.getNote());
         }
+        if (flag.getContentType() == ModeratedContentType.IMAGE) {
+            // An image the background check hid automatically comes back when a person
+            // decides it is fine; either way the response filter has to learn the outcome.
+            if (request.getStatus() == ModerationFlagStatus.KEPT) {
+                flagRepository.restoreTakedown(flag.getContentType().name(), flag.getContentId(), actorId);
+            }
+            hiddenImageService.reload();
+        }
         if (request.getStatus() != ModerationFlagStatus.ESCALATED) {
             flagRepository.resolveReportsForFlag(flagId,
                     request.getStatus() == ModerationFlagStatus.REMOVED
@@ -223,6 +236,9 @@ public class ModerationAdminServiceImpl implements ModerationAdminService {
      * with nothing left to look at is not an appeal.
      */
     private void takeDown(ModerationFlag flag, UUID actorId, String note) {
+        // An image hidden automatically was already announced to its author.
+        boolean wasHidden = flagRepository.findActiveTakedown(
+                flag.getContentType().name(), flag.getContentId()).isPresent();
         flagRepository.insertTakedown(ContentTakedown.builder()
                 .id(UUID.randomUUID())
                 .contentType(flag.getContentType())
@@ -234,7 +250,7 @@ public class ModerationAdminServiceImpl implements ModerationAdminService {
                 .removedAt(LocalDateTime.now())
                 .build());
 
-        if (flag.getContentOwnerId() == null) {
+        if (flag.getContentOwnerId() == null || wasHidden) {
             return;
         }
         try {

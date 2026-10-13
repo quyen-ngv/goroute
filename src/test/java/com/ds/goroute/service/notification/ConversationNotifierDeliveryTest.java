@@ -137,8 +137,8 @@ class ConversationNotifierDeliveryTest {
     @Test
     @DisplayName("does not announce a message the reader already read")
     void skipsReadersWhoAlreadyReadIt() {
-        when(conversations.findMemberInboxStates(CONVERSATION)).thenReturn(List.of(
-                MarketplaceMemberInboxState.builder().userId(READER).readSequenceNo(3L).unreadCount(0L).build()));
+        when(conversations.findMemberReadSequences(CONVERSATION)).thenReturn(List.of(
+                MarketplaceMemberInboxState.builder().userId(READER).readSequenceNo(3L).build()));
 
         notifier.notifyNewMessage(CONVERSATION, SENDER, message(3L));
 

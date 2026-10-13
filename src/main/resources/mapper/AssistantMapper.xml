@@ -193,4 +193,15 @@
         UPDATE assistant_proposals SET message_id = #{messageId}
         WHERE turn_id = #{turnId} AND message_id IS NULL
     </update>
+
+    <select id="findMemory" resultType="string">
+        SELECT content FROM assistant_memories WHERE conversation_id = #{conversationId}
+    </select>
+
+    <insert id="upsertMemory">
+        INSERT INTO assistant_memories (conversation_id, content, turn_id, updated_at)
+        VALUES (#{conversationId}, #{content}, #{turnId}, #{updatedAt})
+        ON CONFLICT (conversation_id) DO UPDATE
+            SET content = EXCLUDED.content, turn_id = EXCLUDED.turn_id, updated_at = EXCLUDED.updated_at
+    </insert>
 </mapper>

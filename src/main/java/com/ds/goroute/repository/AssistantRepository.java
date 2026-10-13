@@ -55,4 +55,9 @@ public interface AssistantRepository {
                             UUID resultActivityId, String failureReason);
 
     void attachProposalsToMessage(UUID turnId, UUID messageId);
+
+    /** Pengoo's running notes for a conversation, if it kept any. */
+    Optional<String> findMemory(UUID conversationId);
+
+    void saveMemory(UUID conversationId, String content, UUID turnId, LocalDateTime updatedAt);
 }

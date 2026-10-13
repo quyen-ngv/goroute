@@ -33,9 +33,13 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -47,7 +51,8 @@ import java.util.regex.Pattern;
 /**
  * Pengoo's proposed changes to a trip. The assistant only ever writes a proposal; applying it is
  * a person's action, performed with that person's own permission (owner or editor) through the
- * normal activity service, so the trip's history, notifications and realtime events name them.
+ * normal activity and trip services, so the trip's history, notifications and realtime events
+ * name them.
  */
 @Slf4j
 @Service
@@ -56,12 +61,17 @@ public class AssistantProposalService {
 
     static final String EVENT_PROPOSAL_UPDATED = "ASSISTANT_PROPOSAL_UPDATED";
     private static final Pattern CATEGORY = Pattern.compile("[a-z_]{2,40}");
+    /** The most days one ADD_DAYS or PREPEND_DAYS proposal may add. */
+    static final int MAX_ADDED_DAYS = 7;
+    /** How far a SHIFT_DATES proposal may move a trip, either way. */
+    static final int MAX_SHIFT_DAYS = 730;
 
     private final AssistantRepository repository;
     private final TripRepository trips;
     private final ActivityRepository activities;
     private final PlaceRepository places;
     private final ActivityService activityService;
+    private final AssistantTripDays tripDays;
     private final TripAccessGuard tripAccessGuard;
     private final MarketplaceConversationAccessService conversationAccess;
     private final WebSocketService webSocketService;
@@ -71,6 +81,10 @@ public class AssistantProposalService {
      * Stores the valid proposals of one answer and returns their ids in order. Invalid ones are
      * dropped, never repaired: a proposal names a real activity of the trip, a real day, a real place.
      *
+     * <p>Day-changing proposals come first. A change that renumbers or re-dates the days goes
+     * alone: a second one, or an add/move by day number next to it, would be read against
+     * numbering that is gone once the first is applied, so those are dropped.
+     *
      * @param conversationTripId the trip of the thread (a trip chat); null in the 1:1 chat, where a
      *                           proposal names its own trip and the asker must be able to edit it
      */
@@ -78,18 +92,47 @@ public class AssistantProposalService {
     public List<UUID> createFromReply(AssistantTurn turn, UUID conversationTripId,
                                       List<AssistantReplyRequest.ProposalDraft> drafts) {
         if (drafts == null || drafts.isEmpty()) return List.of();
+        List<AssistantReplyRequest.ProposalDraft> ordered = new ArrayList<>(drafts);
+        ordered.sort(Comparator.comparingInt(draft -> order(action(draft))));
+        Map<UUID, Integer> extendedTo = new HashMap<>();
+        boolean reshaped = false;
         List<UUID> created = new ArrayList<>();
-        for (AssistantReplyRequest.ProposalDraft draft : drafts) {
+        for (AssistantReplyRequest.ProposalDraft draft : ordered) {
+            AssistantProposalAction action = action(draft);
+            if (action == null) continue;
+            boolean byDayNumber = action == AssistantProposalAction.ADD || action == AssistantProposalAction.MOVE
+                    || action == AssistantProposalAction.ADD_DAYS;
+            if (reshaped && (AssistantProposalAction.RESHAPES_DAYS.contains(action) || byDayNumber)) continue;
             try {
-                buildProposal(turn, conversationTripId, draft).ifPresent(proposal -> {
-                    repository.insertProposal(proposal);
-                    created.add(proposal.getId());
-                });
+                Optional<AssistantProposal> built = buildProposal(turn, conversationTripId, action, draft, extendedTo);
+                if (built.isEmpty()) continue;
+                AssistantProposal proposal = built.get();
+                repository.insertProposal(proposal);
+                created.add(proposal.getId());
+                if (action == AssistantProposalAction.ADD_DAYS) {
+                    extendedTo.merge(proposal.getTripId(), integer(payload(proposal).get("toDayNumber")), Math::max);
+                }
+                reshaped |= AssistantProposalAction.RESHAPES_DAYS.contains(action);
             } catch (RuntimeException e) {
                 log.info("Assistant turn {}: proposal dropped ({})", turn.getId(), e.getMessage());
             }
         }
         return created;
+    }
+
+    /** Day reshapes first, then the extension the adds may need, then everything else as given. */
+    private static int order(AssistantProposalAction action) {
+        if (action == null) return 3;
+        if (AssistantProposalAction.RESHAPES_DAYS.contains(action)) return 0;
+        return action == AssistantProposalAction.ADD_DAYS ? 1 : 2;
+    }
+
+    private static AssistantProposalAction action(AssistantReplyRequest.ProposalDraft draft) {
+        try {
+            return draft.getAction() == null ? null : AssistantProposalAction.valueOf(draft.getAction());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     @Transactional(readOnly = true)
@@ -101,7 +144,8 @@ public class AssistantProposalService {
 
     /**
      * Applies a pending proposal as the viewer. Idempotent: a proposal already resolved is returned
-     * as it is. A proposal whose activity is gone becomes STALE instead of failing the request.
+     * as it is. A proposal the trip has moved on from (its activity is gone, the days were
+     * renumbered since) becomes STALE instead of failing the request.
      */
     @Transactional
     public AssistantProposalResponse apply(UUID viewerId, UUID proposalId) {
@@ -114,14 +158,23 @@ public class AssistantProposalService {
         Map<String, Object> payload = payload(proposal);
         AssistantProposalAction action = AssistantProposalAction.valueOf(proposal.getAction());
         LocalDateTime now = LocalDateTime.now();
+        UUID tripId = proposal.getTripId();
         UUID activityId = uuid(payload.get("activityId"));
-        if (action != AssistantProposalAction.ADD && activityOfTrip(proposal.getTripId(), activityId).isEmpty()) {
+        if (AssistantProposalAction.NAMES_ACTIVITY.contains(action) && activityOfTrip(tripId, activityId).isEmpty()) {
             return resolve(proposal, AssistantProposalStatus.STALE, viewerId, now, null, "Activity no longer exists");
         }
+        String staleReason = staleDays(action, payload, trips.findById(tripId).orElseThrow(this::notFound));
+        if (staleReason != null) {
+            return resolve(proposal, AssistantProposalStatus.STALE, viewerId, now, null, staleReason);
+        }
         UUID resultActivityId = switch (action) {
-            case ADD -> addPlace(proposal, payload, viewerId);
+            case ADD -> {
+                ensureDays(tripId, integer(payload.get("dayNumber")), viewerId);
+                yield addPlace(proposal, payload, viewerId);
+            }
             case MOVE -> {
-                activityService.updateActivity(proposal.getTripId(), activityId, UpdateActivityRequest.builder()
+                ensureDays(tripId, integer(payload.get("toDayNumber")), viewerId);
+                activityService.updateActivity(tripId, activityId, UpdateActivityRequest.builder()
                         .dayNumber(integer(payload.get("toDayNumber")))
                         .startTime(time(payload.get("startTime")))
                         .endTime(time(payload.get("endTime")))
@@ -129,15 +182,39 @@ public class AssistantProposalService {
                 yield activityId;
             }
             case UPDATE_TIME -> {
-                activityService.updateActivity(proposal.getTripId(), activityId, UpdateActivityRequest.builder()
+                activityService.updateActivity(tripId, activityId, UpdateActivityRequest.builder()
                         .startTime(time(payload.get("startTime")))
                         .endTime(time(payload.get("endTime")))
                         .build(), viewerId);
                 yield activityId;
             }
             case REMOVE -> {
-                activityService.deleteActivity(proposal.getTripId(), activityId, viewerId);
+                activityService.deleteActivity(tripId, activityId, viewerId);
                 yield activityId;
+            }
+            case REPLACE -> {
+                replacePlace(tripId, activityId, payload, viewerId);
+                yield activityId;
+            }
+            case ADD_DAYS -> {
+                ensureDays(tripId, integer(payload.get("toDayNumber")), viewerId);
+                yield null;
+            }
+            case PREPEND_DAYS -> {
+                tripDays.prepend(tripId, integer(payload.get("days")), viewerId);
+                yield null;
+            }
+            case REMOVE_DAYS -> {
+                tripDays.removeDays(tripId, integer(payload.get("dayNumber")), integer(payload.get("toDayNumber")), viewerId);
+                yield null;
+            }
+            case SWAP_DAYS -> {
+                tripDays.swapDays(tripId, integer(payload.get("dayNumber")), integer(payload.get("toDayNumber")), viewerId);
+                yield null;
+            }
+            case SHIFT_DATES -> {
+                tripDays.shiftDates(tripId, LocalDate.parse(text(payload.get("startDate"))), viewerId);
+                yield null;
             }
         };
         return resolve(proposal, AssistantProposalStatus.APPLIED, viewerId, now, resultActivityId, null);
@@ -154,6 +231,32 @@ public class AssistantProposalService {
         return resolve(proposal, AssistantProposalStatus.DISMISSED, viewerId, LocalDateTime.now(), null, null);
     }
 
+    /**
+     * Why a proposal that counts days can no longer be applied, or null. Day numbers are read
+     * from the trip's start, so a trip that starts on another date than when it was proposed has
+     * other days under those numbers; a removal or swap must also still fit the trip.
+     */
+    private static String staleDays(AssistantProposalAction action, Map<String, Object> payload, Trip trip) {
+        if (!AssistantProposalAction.NUMBERS_DAYS.contains(action)) return null;
+        String base = text(payload.get("baseStartDate"));
+        if (base != null && !base.equals(String.valueOf(trip.getStartDate()))) return "The trip's days changed";
+        int days = AssistantTripSnapshots.dayCount(trip);
+        Integer from = integer(payload.get("dayNumber"));
+        Integer to = integer(payload.get("toDayNumber"));
+        return switch (action) {
+            case REMOVE_DAYS -> from == null || to == null || to > days || to - from + 1 >= days
+                    ? "Those days are no longer in the trip" : null;
+            case SWAP_DAYS -> from == null || to == null || from > days || to > days
+                    ? "Those days are no longer in the trip" : null;
+            default -> null;
+        };
+    }
+
+    /** Lengthens the trip at its end so it has {@code dayNumber}; see {@link AssistantTripDays#extendTo}. */
+    private void ensureDays(UUID tripId, Integer dayNumber, UUID viewerId) {
+        if (dayNumber != null) tripDays.extendTo(tripId, dayNumber, viewerId);
+    }
+
     private UUID addPlace(AssistantProposal proposal, Map<String, Object> payload, UUID viewerId) {
         UUID placeId = uuid(payload.get("placeId"));
         Place place = places.findById(placeId).orElseThrow(this::notFound);
@@ -167,8 +270,27 @@ public class AssistantProposalService {
                 .startTime(time(payload.get("startTime")))
                 .endTime(time(payload.get("endTime")))
                 .category(text(payload.get("category")))
+                .isAccommodation(place.getPlaceGroup() == PlaceGroup.ACCOMMODATION ? Boolean.TRUE : null)
                 .build(), viewerId);
         return created.getId();
+    }
+
+    /**
+     * Points the activity at another catalogue place and takes that place's name, address and
+     * category; its day, notes and expenses stay, and its time unless the proposal gives one.
+     */
+    private void replacePlace(UUID tripId, UUID activityId, Map<String, Object> payload, UUID viewerId) {
+        Place place = places.findById(uuid(payload.get("placeId"))).orElseThrow(this::notFound);
+        // place_ref_id wins over place_id when the app reads the link, so both move together.
+        activities.assignPlace(activityId, place.getId(), place.getLatitude(), place.getLongitude());
+        activityService.updateActivity(tripId, activityId, UpdateActivityRequest.builder()
+                .name(place.getTitle())
+                .address(place.getAddress())
+                .category(text(payload.get("category")))
+                .isAccommodation(place.getPlaceGroup() == PlaceGroup.ACCOMMODATION)
+                .startTime(time(payload.get("startTime")))
+                .endTime(time(payload.get("endTime")))
+                .build(), viewerId);
     }
 
     private AssistantProposalResponse resolve(AssistantProposal proposal, AssistantProposalStatus status, UUID viewerId,
@@ -183,9 +305,14 @@ public class AssistantProposalService {
         return response(repository.findProposal(proposalId).orElseThrow(this::notFound));
     }
 
+    /**
+     * @param extendedTo per trip, the last day an ADD_DAYS proposal of the same answer reaches;
+     *                   ADD and MOVE may target those days too
+     */
     private Optional<AssistantProposal> buildProposal(AssistantTurn turn, UUID conversationTripId,
-                                                      AssistantReplyRequest.ProposalDraft draft) {
-        AssistantProposalAction action = AssistantProposalAction.valueOf(draft.getAction());
+                                                      AssistantProposalAction action,
+                                                      AssistantReplyRequest.ProposalDraft draft,
+                                                      Map<UUID, Integer> extendedTo) {
         UUID tripId = conversationTripId != null ? conversationTripId : uuid(draft.getTripId());
         if (tripId == null) return Optional.empty();
         Trip trip = trips.findById(tripId).filter(t -> !Boolean.TRUE.equals(t.getIsDeleted())).orElse(null);
@@ -196,23 +323,23 @@ public class AssistantProposalService {
             return Optional.empty();
         }
         int days = AssistantTripSnapshots.dayCount(trip);
+        int lastDay = Math.max(days, extendedTo.getOrDefault(tripId, 0));
+        boolean dated = trip.getStartDate() != null && trip.getEndDate() != null;
+        Integer from = draft.getDayNumber();
+        Integer to = draft.getToDayNumber();
         Map<String, Object> payload = new LinkedHashMap<>();
         switch (action) {
             case ADD -> {
-                Place place = places.findById(uuid(draft.getPlaceId()))
-                        .filter(p -> p.getVisibilityStatus() == null || p.getVisibilityStatus() == PlaceVisibilityStatus.ACTIVE)
-                        .orElse(null);
-                if (place == null || !validDay(draft.getDayNumber(), days)) return Optional.empty();
-                payload.put("placeId", place.getId().toString());
-                payload.put("placeName", place.getTitle());
-                payload.put("dayNumber", draft.getDayNumber());
-                payload.put("category", category(draft.getCategory(), place));
+                Place place = activePlace(draft.getPlaceId());
+                if (place == null || !validDay(from, lastDay)) return Optional.empty();
+                putPlace(payload, place, draft.getCategory());
+                payload.put("dayNumber", from);
             }
             case MOVE -> {
                 Activity activity = activityOfTrip(tripId, uuid(draft.getActivityId())).orElse(null);
-                if (activity == null || !validDay(draft.getToDayNumber(), days)) return Optional.empty();
+                if (activity == null || !validDay(to, lastDay)) return Optional.empty();
                 putActivity(payload, activity);
-                payload.put("toDayNumber", draft.getToDayNumber());
+                payload.put("toDayNumber", to);
             }
             case UPDATE_TIME -> {
                 Activity activity = activityOfTrip(tripId, uuid(draft.getActivityId())).orElse(null);
@@ -224,9 +351,72 @@ public class AssistantProposalService {
                 if (activity == null) return Optional.empty();
                 putActivity(payload, activity);
             }
+            case REPLACE -> {
+                Activity activity = activityOfTrip(tripId, uuid(draft.getActivityId())).orElse(null);
+                Place place = activePlace(draft.getPlaceId());
+                if (activity == null || place == null || place.getId().equals(AssistantTripSnapshots.catalogueId(activity))) {
+                    return Optional.empty();
+                }
+                putActivity(payload, activity);
+                putPlace(payload, place, draft.getCategory());
+            }
+            case ADD_DAYS -> {
+                // Only at the end, only a few days at a time, and only on a trip with dates.
+                Integer target = to != null ? to : from;
+                if (!dated || target == null || target <= days
+                        || target > Math.min(days + MAX_ADDED_DAYS, AssistantActionService.MAX_TRIP_DAYS)) {
+                    return Optional.empty();
+                }
+                payload.put("dayNumber", days + 1);
+                payload.put("toDayNumber", target);
+                putDates(payload, trip.getStartDate(), trip.getStartDate().plusDays(target - 1L));
+            }
+            case PREPEND_DAYS -> {
+                Integer count = draft.getDays();
+                if (!dated || count == null || count < 1 || count > MAX_ADDED_DAYS
+                        || days + count > AssistantActionService.MAX_TRIP_DAYS) {
+                    return Optional.empty();
+                }
+                payload.put("days", count);
+                putDates(payload, trip.getStartDate().minusDays(count), trip.getEndDate());
+            }
+            case REMOVE_DAYS -> {
+                int last = to != null ? to : from == null ? 0 : from;
+                if (!dated || from == null || from < 1 || last < from || last > days || last - from + 1 >= days) {
+                    return Optional.empty();
+                }
+                int count = last - from + 1;
+                payload.put("dayNumber", from);
+                payload.put("toDayNumber", last);
+                payload.put("activityCount", activitiesOn(tripId, from, last));
+                if (from == 1) {
+                    putDates(payload, trip.getStartDate().plusDays(count), trip.getEndDate());
+                } else {
+                    putDates(payload, trip.getStartDate(), trip.getEndDate().minusDays(count));
+                }
+            }
+            case SWAP_DAYS -> {
+                if (!validDay(from, days) || !validDay(to, days) || from.equals(to)) return Optional.empty();
+                payload.put("dayNumber", Math.min(from, to));
+                payload.put("toDayNumber", Math.max(from, to));
+            }
+            case SHIFT_DATES -> {
+                LocalDate start = date(draft.getStartDate());
+                if (!dated || start == null || start.equals(trip.getStartDate())
+                        || Math.abs(ChronoUnit.DAYS.between(trip.getStartDate(), start)) > MAX_SHIFT_DAYS) {
+                    return Optional.empty();
+                }
+                payload.put("startDate", start.toString());
+                putDates(payload, start, start.plusDays(days - 1L));
+            }
         }
-        if (draft.getStartTime() != null) payload.put("startTime", draft.getStartTime());
-        if (draft.getEndTime() != null && draft.getStartTime() != null
+        if (AssistantProposalAction.NUMBERS_DAYS.contains(action) && trip.getStartDate() != null) {
+            payload.put("baseStartDate", trip.getStartDate().toString());
+        }
+        boolean timed = action == AssistantProposalAction.ADD || action == AssistantProposalAction.MOVE
+                || action == AssistantProposalAction.UPDATE_TIME || action == AssistantProposalAction.REPLACE;
+        if (timed && draft.getStartTime() != null) payload.put("startTime", draft.getStartTime());
+        if (timed && draft.getEndTime() != null && draft.getStartTime() != null
                 && time(draft.getEndTime()).isAfter(time(draft.getStartTime()))) {
             payload.put("endTime", draft.getEndTime());
         }
@@ -245,6 +435,23 @@ public class AssistantProposalService {
                 .build());
     }
 
+    private Place activePlace(String rawId) {
+        UUID placeId = uuid(rawId);
+        if (placeId == null) return null;
+        return places.findById(placeId)
+                .filter(p -> p.getVisibilityStatus() == null || p.getVisibilityStatus() == PlaceVisibilityStatus.ACTIVE)
+                .orElse(null);
+    }
+
+    private int activitiesOn(UUID tripId, int fromDay, int toDay) {
+        int count = 0;
+        for (Activity activity : activities.findByTripId(tripId)) {
+            Integer day = activity.getDayNumber();
+            if (day != null && day >= fromDay && day <= toDay) count++;
+        }
+        return count;
+    }
+
     private Optional<Activity> activityOfTrip(UUID tripId, UUID activityId) {
         if (activityId == null) return Optional.empty();
         return activities.findById(activityId).filter(a -> tripId.equals(a.getTripId()));
@@ -256,15 +463,27 @@ public class AssistantProposalService {
         payload.put("dayNumber", activity.getDayNumber());
     }
 
+    private static void putPlace(Map<String, Object> payload, Place place, String category) {
+        payload.put("placeId", place.getId().toString());
+        payload.put("placeName", place.getTitle());
+        payload.put("category", category(category, place));
+    }
+
+    private static void putDates(Map<String, Object> payload, LocalDate start, LocalDate end) {
+        payload.put("newStartDate", start.toString());
+        payload.put("newEndDate", end.toString());
+    }
+
     private static boolean validDay(Integer day, int days) {
         return day != null && day >= 1 && day <= days;
     }
 
-    /** The app's activity categories are lower-case words; a food place defaults to a restaurant. */
+    /** The app's activity categories are lower-case words; the place's group gives the default. */
     private static String category(String requested, Place place) {
         if (requested != null && CATEGORY.matcher(requested.trim().toLowerCase(Locale.ROOT)).matches()) {
             return requested.trim().toLowerCase(Locale.ROOT);
         }
+        if (place.getPlaceGroup() == PlaceGroup.ACCOMMODATION) return "hotel";
         return place.getPlaceGroup() == PlaceGroup.FOOD_AND_DRINK ? "restaurant" : "attraction";
     }
 
@@ -286,6 +505,10 @@ public class AssistantProposalService {
                 .activityId(uuid(payload.get("activityId")))
                 .activityName(text(payload.get("activityName")))
                 .category(text(payload.get("category")))
+                .days(integer(payload.get("days")))
+                .activityCount(integer(payload.get("activityCount")))
+                .newStartDate(date(text(payload.get("newStartDate"))))
+                .newEndDate(date(text(payload.get("newEndDate"))))
                 .resolvedByUserId(proposal.getResolvedBy())
                 .resolvedByName(proposal.getResolvedByName())
                 .resolvedAt(proposal.getResolvedAt())
@@ -351,6 +574,15 @@ public class AssistantProposalService {
         if (value == null || value.toString().isBlank()) return null;
         try {
             return LocalTime.parse(value.toString().trim());
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static LocalDate date(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return LocalDate.parse(value.trim());
         } catch (RuntimeException e) {
             return null;
         }

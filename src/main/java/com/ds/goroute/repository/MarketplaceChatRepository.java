@@ -6,6 +6,9 @@ public interface MarketplaceChatRepository {int insertConversation(MarketplaceCo
  /** Members of the given conversations, with the profile a client needs to title a thread. */
  List<MarketplaceConversationParticipant> findParticipants(List<UUID> conversationIds);
 
+ /** At most {@code perConversation} members of each conversation, for inbox rows. */
+ List<MarketplaceConversationParticipant> findParticipantPreviews(List<UUID> conversationIds, int perConversation);
+
  /** The group chat of one trip, if it has been created. */
  Optional<MarketplaceConversation> findByTrip(UUID tripId,UUID viewer);
  /** A person's 1:1 conversation with the assistant. */
@@ -28,6 +31,12 @@ public interface MarketplaceChatRepository {int insertConversation(MarketplaceCo
 
  /** Each current member's read marker and unread count, for per-person inbox updates. */
  List<MarketplaceMemberInboxState> findMemberInboxStates(UUID conversationId);
+
+ /** One member's read marker and unread count; empty when they are not a current member. */
+ List<MarketplaceMemberInboxState> findMemberInboxState(UUID conversationId, UUID userId);
+
+ /** Each current member's read marker, without unread counts. */
+ List<MarketplaceMemberInboxState> findMemberReadSequences(UUID conversationId);
 
  /** The same people, less the ones who muted it: who a new message is announced to. */
  List<UUID> findNotifiableMemberIds(UUID conversationId);

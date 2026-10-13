@@ -199,13 +199,6 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     }
 
     @Override
-    public List<Place> findForAiByDestination(String citySlugJson, BigDecimal latitude, BigDecimal longitude,
-                                              String placeGroup, BigDecimal minRating, int limit) {
-        return placeMapper.findForAiByDestination(
-                citySlugJson, latitude, longitude, placeGroup, minRating, limit);
-    }
-
-    @Override
     public List<Place> findActiveForAiWithinRadius(BigDecimal latitude, BigDecimal longitude,
                                                    BigDecimal radiusKm, List<String> placeGroups, int limit) {
         if (latitude == null || longitude == null || radiusKm == null || limit <= 0) {

@@ -2,6 +2,7 @@ package com.ds.goroute.repository;
 
 import com.ds.goroute.entity.TripDestination;
 
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -21,4 +22,7 @@ public interface TripDestinationRepository {
     void replaceForTrip(UUID tripId, List<TripDestination> destinations);
 
     void deleteByTripId(UUID tripId);
+
+    /** Changes one destination's date range only, keeping everything else on the row. */
+    void updateDates(UUID id, LocalDate startDate, LocalDate endDate);
 }

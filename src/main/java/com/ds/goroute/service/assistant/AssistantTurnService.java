@@ -16,8 +16,10 @@ import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.MarketplaceChatService;
 import com.ds.goroute.service.TextModerationService;
 import com.ds.goroute.service.WebSocketService;
+import com.ds.goroute.service.marketplace.ChatShareValidator;
 import com.ds.goroute.service.moderation.ModerationVerdict;
 import com.ds.goroute.type.AssistantTurnStatus;
+import com.ds.goroute.type.ChatShareType;
 import com.ds.goroute.type.MarketplaceConversationType;
 import com.ds.goroute.type.MarketplaceMessageType;
 import com.ds.goroute.type.ModeratedContentType;
@@ -63,7 +65,9 @@ public class AssistantTurnService {
 
     static final String EVENT_TURN = "ASSISTANT_TURN";
     static final int MAX_PLACE_CARDS = 8;
+    static final int MAX_ITEM_CARDS = 6;
     static final int MAX_SUGGESTIONS = 4;
+    static final int MAX_MEMORY_CHARS = 1500;
     private static final Pattern MENTION = Pattern.compile("(?i)@pengoo\\b[:,]?\\s*");
 
     private final AssistantRepository repository;
@@ -72,7 +76,9 @@ public class AssistantTurnService {
     private final AssistantAccessService access;
     private final AssistantTurnSnapshots snapshots;
     private final AssistantProposalService proposals;
+    private final AssistantActionService actions;
     private final PlaceRepository places;
+    private final ChatShareValidator shareValidator;
     private final TextModerationService moderation;
     private final WebSocketService webSocketService;
     private final ApplicationEventPublisher events;
@@ -137,7 +143,9 @@ public class AssistantTurnService {
 
         List<Map<String, Object>> blocks = new ArrayList<>();
         blocks.add(thinkingBlock(turn));
+        blocks.addAll(actions.destinationBlocks(reply.getDestinations(), this::allowed));
         placeBlocks(reply.getPlaces()).forEach(blocks::add);
+        blocks.addAll(cardBlocks(turn, reply.getCards()));
         UUID conversationTripId = MarketplaceConversationType.TRIP.name().equals(conversation.getConversationType())
                 ? conversation.getTripId() : null;
         if (reply.getProposals() != null) reply.getProposals().forEach(draft -> draft.setSummary(allowed(draft.getSummary())));
@@ -146,6 +154,7 @@ public class AssistantTurnService {
         }
         List<String> suggestions = suggestions(reply.getSuggestions()).stream()
                 .map(this::allowed).filter(java.util.Objects::nonNull).toList();
+        blocks.addAll(actions.blocks(turn, reply.getActions(), this::allowed));
         if (!suggestions.isEmpty()) blocks.add(Map.of("kind", "SUGGESTIONS", "items", suggestions));
 
         MarketplaceMessageResponse message = chatService.postAssistantMessage(conversation.getId(),
@@ -153,6 +162,7 @@ public class AssistantTurnService {
                 replyTarget(conversation, turn.getTriggerMessageId()), turn.getUserId(), "turn:" + turn.getId());
         repository.completeTurn(turnId, message.getId(), reply.getInputTokens(), reply.getOutputTokens(), access.now());
         repository.attachProposalsToMessage(turnId, message.getId());
+        saveMemory(turn, reply.getMemory());
         broadcastAfterCommit(turnId);
         startNext(conversation.getId());
         return message.getId();
@@ -288,6 +298,48 @@ public class AssistantTurnService {
             blocks.add(block);
         });
         return blocks;
+    }
+
+    /**
+     * Cards of public items (shared trips, events, meetups, check-ins, dishes), kept only when
+     * the asker could share them into a chat; readers load each live, like a person's share.
+     */
+    private List<Map<String, Object>> cardBlocks(AssistantTurn turn, List<AssistantReplyRequest.CardRef> refs) {
+        if (refs == null || refs.isEmpty()) return List.of();
+        List<Map<String, Object>> blocks = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (AssistantReplyRequest.CardRef ref : refs) {
+            if (blocks.size() >= MAX_ITEM_CARDS) break;
+            ChatShareType type = shareType(ref.getType());
+            UUID targetId = AssistantProposalService.uuid(ref.getId());
+            if (type == null || targetId == null || !seen.add(type + ":" + targetId)) continue;
+            String citySlug = type == ChatShareType.FOOD ? ref.getCitySlug() : null;
+            if (!shareValidator.isShareable(turn.getUserId(), type, targetId, citySlug)) continue;
+            Map<String, Object> block = new LinkedHashMap<>();
+            block.put("kind", "CARD");
+            block.put("shareType", type.name());
+            block.put("targetId", targetId.toString());
+            if (citySlug != null) block.put("citySlug", citySlug);
+            blocks.add(block);
+        }
+        return blocks;
+    }
+
+    private static ChatShareType shareType(String value) {
+        if (value == null) return null;
+        try {
+            ChatShareType type = ChatShareType.valueOf(value.trim().toUpperCase(java.util.Locale.ROOT));
+            // Places have their own cards with "add to trip".
+            return type == ChatShareType.PLACE ? null : type;
+        } catch (IllegalArgumentException unknown) {
+            return null;
+        }
+    }
+
+    /** The worker's notes replace the old ones; never shown to anyone, so only trimmed and capped. */
+    private void saveMemory(AssistantTurn turn, String memory) {
+        if (memory == null || memory.isBlank()) return;
+        repository.saveMemory(turn.getConversationId(), truncate(memory.trim(), MAX_MEMORY_CHARS), turn.getId(), access.now());
     }
 
     private static List<String> suggestions(List<String> raw) {

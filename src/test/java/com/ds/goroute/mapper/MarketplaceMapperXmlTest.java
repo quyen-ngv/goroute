@@ -113,7 +113,38 @@ class MarketplaceMapperXmlTest {
     void theInboxHidesArchivedThreads() throws Exception {
         String xml = chatMapperXml();
         int start = xml.indexOf("<select id=\"findForUser\"");
-        assertTrue(xml.substring(start, xml.indexOf("</select>", start)).contains("c.status &lt;&gt; 'ARCHIVED'"));
+        assertTrue(xml.substring(start, xml.indexOf("</select>", start)).contains("pc.status &lt;&gt; 'ARCHIVED'"));
+    }
+
+    /** The inbox picks its page before reading last messages and counts for it. */
+    @Test
+    void theInboxPagesBeforeItJoins() throws Exception {
+        String xml = chatMapperXml();
+        int start = xml.indexOf("<select id=\"findForUser\"");
+        String select = xml.substring(start, xml.indexOf("</select>", start));
+        assertTrue(select.indexOf("LIMIT #{limit} OFFSET #{offset}") < select.indexOf(") page"));
+        assertTrue(select.contains("ConversationRelatedJoins"));
+    }
+
+    /** Unread counts stop at 100: the app shows 99+ and a big unread group is not counted in full. */
+    @Test
+    void unreadCountsAreCapped() throws Exception {
+        String xml = chatMapperXml();
+        int fragment = xml.indexOf("<sql id=\"UnreadCount\">");
+        assertTrue(xml.substring(fragment, xml.indexOf("</sql>", fragment)).contains("LIMIT 100"));
+        int states = xml.indexOf("<select id=\"findMemberInboxStates\"");
+        String select = xml.substring(states, xml.indexOf("</select>", states));
+        assertTrue(select.contains("LIMIT 100"));
+        assertTrue(select.contains("AND cm.user_id=#{userId}"));
+    }
+
+    /** Re-adding a current member with the same role does not rewrite the row. */
+    @Test
+    void reAddingAnUnchangedMemberWritesNothing() throws Exception {
+        String xml = chatMapperXml();
+        int start = xml.indexOf("<insert id=\"insertMember\">");
+        assertTrue(xml.substring(start, xml.indexOf("</insert>", start))
+                .contains("WHERE marketplace_conversation_members.left_at IS NOT NULL"));
     }
 
     /** Read markers only ever move forward, so an old screen cannot un-read a thread. */

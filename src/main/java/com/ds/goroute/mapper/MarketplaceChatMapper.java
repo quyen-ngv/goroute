@@ -25,6 +25,10 @@ public interface MarketplaceChatMapper {
  /** Members of a conversation with their display profile, joined order. */
  java.util.List<MarketplaceConversationParticipant> findParticipants(@Param("conversationIds")java.util.List<UUID> conversationIds);
 
+ /** The first {@code perConversation} members of each conversation, joined order. */
+ List<MarketplaceConversationParticipant> findParticipantPreviews(@Param("conversationIds") List<UUID> conversationIds,
+                                                                  @Param("perConversation") int perConversation);
+
  /** The group chat of one trip, if it has been created. */
  MarketplaceConversation findByTrip(@Param("tripId")UUID tripId,@Param("viewerId")UUID viewerId);
  MarketplaceConversation findByAssistantUser(@Param("userId")UUID userId,@Param("viewerId")UUID viewerId);
@@ -45,7 +49,11 @@ public interface MarketplaceChatMapper {
  List<UUID> findActiveMemberIds(@Param("conversationId")UUID conversationId);
 
  /** Every current member's read marker and unread count, in one query for the whole thread. */
- List<com.ds.goroute.entity.MarketplaceMemberInboxState> findMemberInboxStates(@Param("conversationId")UUID conversationId);
+ List<com.ds.goroute.entity.MarketplaceMemberInboxState> findMemberInboxStates(@Param("conversationId") UUID conversationId,
+                                                                               @Param("userId") UUID userId);
+
+ /** Every current member's read marker alone, without the unread counts. */
+ List<com.ds.goroute.entity.MarketplaceMemberInboxState> findMemberReadSequences(@Param("conversationId") UUID conversationId);
 
  /** The same people, less the ones who muted the thread: who a new message is announced to. */
  List<UUID> findNotifiableMemberIds(@Param("conversationId")UUID conversationId);

@@ -75,4 +75,11 @@ public interface AssistantMapper {
                         @Param("failureReason") String failureReason);
 
     int attachProposalsToMessage(@Param("turnId") UUID turnId, @Param("messageId") UUID messageId);
+
+    String findMemory(@Param("conversationId") UUID conversationId);
+
+    int upsertMemory(@Param("conversationId") UUID conversationId,
+                     @Param("content") String content,
+                     @Param("turnId") UUID turnId,
+                     @Param("updatedAt") LocalDateTime updatedAt);
 }

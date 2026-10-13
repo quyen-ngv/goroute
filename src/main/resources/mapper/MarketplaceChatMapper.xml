@@ -12,13 +12,20 @@
  -->
  <sql id="ConversationSelect">SELECT c.*,o.display_name AS organization_name,hb.booking_code,ao.order_code,t.name AS trip_name,t.cover_image_url AS trip_cover_image_url,mt.title AS meetup_title,mt.category AS meetup_category,mt.host_user_id AS meetup_host_user_id,le.title AS event_title,le.cover_url AS event_cover_url,le.category AS event_category,lm.content AS last_message_content,lm.message_type AS last_message_type,lm.share_type AS last_message_share_type,lm.sender_user_id AS last_message_sender_id,lm.sender_name AS last_message_sender_name,(SELECT COUNT(*) FROM marketplace_conversation_members mc WHERE mc.conversation_id=c.id AND mc.left_at IS NULL) AS member_count</sql>
 
- <sql id="ConversationJoins">FROM marketplace_conversations c LEFT JOIN host_organizations o ON o.id=c.organization_id LEFT JOIN hotel_bookings hb ON hb.id=c.hotel_booking_id LEFT JOIN activity_orders ao ON ao.id=c.activity_order_id LEFT JOIN trips t ON t.id=c.trip_id LEFT JOIN meetups mt ON mt.id=c.meetup_id LEFT JOIN local_events le ON le.id=c.local_event_id LEFT JOIN LATERAL (SELECT m.content,m.message_type,CASE WHEN m.message_type='SHARE' THEN m.attachments-&gt;0-&gt;&gt;'shareType' END AS share_type,m.sender_user_id,lu.full_name AS sender_name FROM marketplace_messages m LEFT JOIN users lu ON lu.id=m.sender_user_id WHERE m.conversation_id=c.id AND m.deleted_at IS NULL ORDER BY m.sequence_no DESC LIMIT 1) lm ON TRUE</sql>
+ <sql id="ConversationJoins">FROM marketplace_conversations c <include refid="ConversationRelatedJoins"/></sql>
 
- <!-- Unread for one viewer: everything after their read marker that somebody else sent. -->
- <sql id="UnreadCount">(SELECT COUNT(*) FROM marketplace_messages um LEFT JOIN marketplace_messages rm ON rm.id=cm.last_read_message_id WHERE um.conversation_id=c.id AND um.deleted_at IS NULL AND um.sequence_no&gt;COALESCE(rm.sequence_no,0) AND um.sender_user_id IS DISTINCT FROM #{viewerId}) AS unread_count</sql>
+ <!-- Everything an inbox row reads besides the conversation itself, for queries that reach c another way. -->
+ <sql id="ConversationRelatedJoins">LEFT JOIN host_organizations o ON o.id=c.organization_id LEFT JOIN hotel_bookings hb ON hb.id=c.hotel_booking_id LEFT JOIN activity_orders ao ON ao.id=c.activity_order_id LEFT JOIN trips t ON t.id=c.trip_id LEFT JOIN meetups mt ON mt.id=c.meetup_id LEFT JOIN local_events le ON le.id=c.local_event_id LEFT JOIN LATERAL (SELECT m.content,m.message_type,CASE WHEN m.message_type='SHARE' THEN m.attachments-&gt;0-&gt;&gt;'shareType' END AS share_type,m.sender_user_id,lu.full_name AS sender_name FROM marketplace_messages m LEFT JOIN users lu ON lu.id=m.sender_user_id WHERE m.conversation_id=c.id AND m.deleted_at IS NULL ORDER BY m.sequence_no DESC LIMIT 1) lm ON TRUE</sql>
+
+ <!-- Unread for one viewer: everything after their read marker that somebody else sent.
+      Counted up to 100 and no further: the app shows "99+" above 99, and a busy group the
+      viewer never opened would otherwise be counted in full on every inbox read. -->
+ <sql id="UnreadCount">(SELECT COUNT(*) FROM (SELECT 1 FROM marketplace_messages um LEFT JOIN marketplace_messages rm ON rm.id=cm.last_read_message_id WHERE um.conversation_id=c.id AND um.deleted_at IS NULL AND um.sequence_no&gt;COALESCE(rm.sequence_no,0) AND um.sender_user_id IS DISTINCT FROM #{viewerId} LIMIT 100) unread) AS unread_count</sql>
 
  <insert id="insertConversation">INSERT INTO marketplace_conversations(id,conversation_type,organization_id,hotel_booking_id,activity_order_id,trip_id,meetup_id,local_event_id,assistant_user_id,status,assigned_member_id,last_message_at,created_at,updated_at) VALUES(#{id},#{conversationType},#{organizationId},#{hotelBookingId},#{activityOrderId},#{tripId},#{meetupId},#{localEventId},#{assistantUserId},#{status},#{assignedMemberId},#{lastMessageAt},#{createdAt},#{updatedAt})</insert>
- <insert id="insertMember">INSERT INTO marketplace_conversation_members(conversation_id,user_id,member_role,joined_at) VALUES(#{conversationId},#{userId},#{role},#{joinedAt}) ON CONFLICT(conversation_id,user_id) DO UPDATE SET left_at=NULL,member_role=EXCLUDED.member_role</insert>
+ <!-- Re-adding a current member with the same role writes nothing: marking a thread read
+      asks for membership every time, and an unconditional update rewrote the row on each read. -->
+ <insert id="insertMember">INSERT INTO marketplace_conversation_members(conversation_id,user_id,member_role,joined_at) VALUES(#{conversationId},#{userId},#{role},#{joinedAt}) ON CONFLICT(conversation_id,user_id) DO UPDATE SET left_at=NULL,member_role=EXCLUDED.member_role WHERE marketplace_conversation_members.left_at IS NOT NULL OR marketplace_conversation_members.member_role IS DISTINCT FROM EXCLUDED.member_role</insert>
 
  <!-- Leaving keeps the row: the read marker and the fact somebody was once here are both
       worth more than the space, and rejoining is then an update rather than a new start. -->
@@ -26,11 +33,23 @@
  <select id="findNotifiableMemberIds" resultType="java.util.UUID">SELECT user_id FROM marketplace_conversation_members WHERE conversation_id=#{conversationId} AND left_at IS NULL AND (muted_until IS NULL OR muted_until&lt;NOW())</select>
  <!-- One row per current member for the inbox fan-out: counted per member, but one round trip. -->
  <resultMap id="MemberInboxStateMap" type="com.ds.goroute.entity.MarketplaceMemberInboxState"><result property="userId" column="user_id"/><result property="readSequenceNo" column="read_sequence_no"/><result property="unreadCount" column="unread_count"/><result property="lastSequenceNo" column="last_sequence_no"/></resultMap>
+ <!-- userId narrows it to one member: a read concerns only the reader, and counting the
+      whole group to tell one person was the cost of every read in a big group. The count
+      stops at 100 for the same reason as UnreadCount. -->
  <select id="findMemberInboxStates" resultMap="MemberInboxStateMap">
   SELECT cm.user_id,
          COALESCE(rm.sequence_no,0) AS read_sequence_no,
-         (SELECT COUNT(*) FROM marketplace_messages um WHERE um.conversation_id=cm.conversation_id AND um.deleted_at IS NULL AND um.sequence_no&gt;COALESCE(rm.sequence_no,0) AND um.sender_user_id IS DISTINCT FROM cm.user_id) AS unread_count,
-         (SELECT MAX(lm.sequence_no) FROM marketplace_messages lm WHERE lm.conversation_id=cm.conversation_id) AS last_sequence_no
+         (SELECT COUNT(*) FROM (SELECT 1 FROM marketplace_messages um WHERE um.conversation_id=cm.conversation_id AND um.deleted_at IS NULL AND um.sequence_no&gt;COALESCE(rm.sequence_no,0) AND um.sender_user_id IS DISTINCT FROM cm.user_id LIMIT 100) unread) AS unread_count,
+         newest.sequence_no AS last_sequence_no
+  FROM marketplace_conversation_members cm
+  LEFT JOIN marketplace_messages rm ON rm.id=cm.last_read_message_id
+  CROSS JOIN (SELECT MAX(sequence_no) AS sequence_no FROM marketplace_messages WHERE conversation_id=#{conversationId}) newest
+  WHERE cm.conversation_id=#{conversationId} AND cm.left_at IS NULL
+  <if test="userId != null">AND cm.user_id=#{userId}</if>
+ </select>
+ <!-- Only how far each member has read: what deciding who still needs a notification takes. -->
+ <select id="findMemberReadSequences" resultMap="MemberInboxStateMap">
+  SELECT cm.user_id, COALESCE(rm.sequence_no,0) AS read_sequence_no
   FROM marketplace_conversation_members cm
   LEFT JOIN marketplace_messages rm ON rm.id=cm.last_read_message_id
   WHERE cm.conversation_id=#{conversationId} AND cm.left_at IS NULL
@@ -52,7 +71,24 @@
  <!-- Who may read an event group, asked of the attendee list itself: leaving takes the chat away at once. -->
  <select id="isEventAttendee" resultType="boolean">SELECT EXISTS(SELECT 1 FROM local_event_attendees WHERE event_id=#{eventId} AND user_id=#{userId})</select>
 
- <select id="findForUser" resultMap="ConversationMap"><include refid="ConversationSelect"/>,cm.muted_until,<include refid="UnreadCount"/> <include refid="ConversationJoins"/> JOIN marketplace_conversation_members cm ON cm.conversation_id=c.id AND cm.user_id=#{viewerId} AND cm.left_at IS NULL WHERE c.status &lt;&gt; 'ARCHIVED'<if test="conversationTypes != null and conversationTypes.size() > 0"> AND c.conversation_type IN<foreach item="item" collection="conversationTypes" open="(" separator="," close=")">#{item}</foreach></if> ORDER BY c.last_message_at DESC NULLS LAST,c.created_at DESC LIMIT #{limit} OFFSET #{offset}</select>
+ <!-- The page is chosen first, from the member index and the conversation row alone; the
+      last message, the related titles and the counts are then read for that page only,
+      instead of for every conversation the viewer has ever been in. -->
+ <select id="findForUser" resultMap="ConversationMap">
+  <include refid="ConversationSelect"/>,cm.muted_until,<include refid="UnreadCount"/>
+  FROM (
+   SELECT pc.id FROM marketplace_conversation_members pm
+   JOIN marketplace_conversations pc ON pc.id=pm.conversation_id
+   WHERE pm.user_id=#{viewerId} AND pm.left_at IS NULL AND pc.status &lt;&gt; 'ARCHIVED'
+   <if test="conversationTypes != null and conversationTypes.size() > 0"> AND pc.conversation_type IN<foreach item="item" collection="conversationTypes" open="(" separator="," close=")">#{item}</foreach></if>
+   ORDER BY pc.last_message_at DESC NULLS LAST,pc.created_at DESC,pc.id DESC
+   LIMIT #{limit} OFFSET #{offset}
+  ) page
+  JOIN marketplace_conversations c ON c.id=page.id
+  <include refid="ConversationRelatedJoins"/>
+  JOIN marketplace_conversation_members cm ON cm.conversation_id=c.id AND cm.user_id=#{viewerId} AND cm.left_at IS NULL
+  ORDER BY c.last_message_at DESC NULLS LAST,c.created_at DESC,c.id DESC
+ </select>
 
  <!-- The tab badge: how many threads are waiting, not how many lines. -->
  <select id="countUnreadConversationsForUser" resultType="long">SELECT COUNT(*) FROM marketplace_conversations c JOIN marketplace_conversation_members cm ON cm.conversation_id=c.id AND cm.user_id=#{viewerId} AND cm.left_at IS NULL LEFT JOIN marketplace_messages rm ON rm.id=cm.last_read_message_id WHERE c.status &lt;&gt; 'ARCHIVED' AND (cm.muted_until IS NULL OR cm.muted_until&lt;NOW()) AND EXISTS(SELECT 1 FROM marketplace_messages um WHERE um.conversation_id=c.id AND um.deleted_at IS NULL AND um.sequence_no&gt;COALESCE(rm.sequence_no,0) AND um.sender_user_id IS DISTINCT FROM #{viewerId})</select>
@@ -155,6 +191,23 @@
           AND m.conversation_id IN <foreach collection="conversationIds" item="conversationId" open="(" separator="," close=")">#{conversationId}</foreach>
         ORDER BY m.conversation_id, m.joined_at, m.user_id
         LIMIT 500
+    </select>
+
+    <!-- The first few members of each conversation on an inbox page: enough to name a
+         person-to-person thread and tell it from a group. One shared LIMIT across the page
+         let a large group use it up and leave the threads after it with nobody in them. -->
+    <select id="findParticipantPreviews" resultMap="ParticipantMap">
+        SELECT ranked.conversation_id, ranked.user_id, u.full_name, u.username, u.avatar_url, ranked.member_role
+        FROM (
+            SELECT m.conversation_id, m.user_id, m.member_role,
+                   ROW_NUMBER() OVER (PARTITION BY m.conversation_id ORDER BY m.joined_at, m.user_id) AS position
+            FROM marketplace_conversation_members m
+            WHERE m.left_at IS NULL
+              AND m.conversation_id IN <foreach collection="conversationIds" item="conversationId" open="(" separator="," close=")">#{conversationId}</foreach>
+        ) ranked
+        JOIN users u ON u.id = ranked.user_id
+        WHERE ranked.position &lt;= #{perConversation}
+        ORDER BY ranked.conversation_id, ranked.position
     </select>
 
 </mapper>

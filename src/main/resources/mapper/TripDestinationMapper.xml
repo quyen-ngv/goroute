@@ -58,4 +58,11 @@
         DELETE FROM trip_destinations
         WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
     </delete>
+
+    <!-- Only the date range: replaceForTrip re-inserts rows and would drop location_image_id. -->
+    <update id="updateDates">
+        UPDATE trip_destinations
+        SET start_date = #{startDate}, end_date = #{endDate}, updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
 </mapper>

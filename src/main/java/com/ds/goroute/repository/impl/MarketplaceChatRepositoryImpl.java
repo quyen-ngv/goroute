@@ -16,6 +16,12 @@ import com.ds.goroute.entity.*;import com.ds.goroute.mapper.MarketplaceChatMappe
     }
 
     @Override
+    public List<MarketplaceConversationParticipant> findParticipantPreviews(List<UUID> conversationIds, int perConversation) {
+        if (conversationIds == null || conversationIds.isEmpty()) return List.of();
+        return m.findParticipantPreviews(conversationIds.stream().distinct().toList(), perConversation);
+    }
+
+    @Override
     public Optional<MarketplaceConversation> findByTrip(UUID tripId,UUID viewer){
         return tripId==null?Optional.empty():Optional.ofNullable(m.findByTrip(tripId,viewer));
     }
@@ -49,7 +55,17 @@ import com.ds.goroute.entity.*;import com.ds.goroute.mapper.MarketplaceChatMappe
     public List<UUID> findActiveMemberIds(UUID conversationId){return m.findActiveMemberIds(conversationId);}
 
     @Override
-    public List<MarketplaceMemberInboxState> findMemberInboxStates(UUID conversationId){return m.findMemberInboxStates(conversationId);}
+    public List<MarketplaceMemberInboxState> findMemberInboxStates(UUID conversationId){return m.findMemberInboxStates(conversationId, null);}
+
+    @Override
+    public List<MarketplaceMemberInboxState> findMemberInboxState(UUID conversationId, UUID userId) {
+        return m.findMemberInboxStates(conversationId, userId);
+    }
+
+    @Override
+    public List<MarketplaceMemberInboxState> findMemberReadSequences(UUID conversationId) {
+        return m.findMemberReadSequences(conversationId);
+    }
 
     @Override
     public List<UUID> findNotifiableMemberIds(UUID conversationId){return m.findNotifiableMemberIds(conversationId);}

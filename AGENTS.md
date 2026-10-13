@@ -218,6 +218,7 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `ASSISTANT` | `HISTORY_MESSAGES` | chat lines sent with a question, 0..50 | safe fallback 20 | private/admin |
 | `ASSISTANT` | `WELCOME_ENABLED` | boolean | safe fallback true | private/admin |
 | `ASSISTANT` | `TURN_TIMEOUT_SECONDS` | seconds, 30..900 | safe fallback 150 | private/admin |
+| `ASSISTANT` | `WEB_SEARCH_ENABLED` | boolean; one web search per answer when the catalogue has nothing (worker also needs a provider) | safe fallback true | private/admin |
 
 ## Build note
 

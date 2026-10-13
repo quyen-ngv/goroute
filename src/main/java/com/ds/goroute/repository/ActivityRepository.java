@@ -58,4 +58,13 @@ public interface ActivityRepository {
 
     /** Points the activity at a catalogue place; returns the number of rows changed. */
     int assignPlace(UUID activityId, UUID placeId, BigDecimal lat, BigDecimal lng);
+
+    /**
+     * Renumbers the trip's activities from {@code fromDay} on by {@code dayDelta}; a starting
+     * point's date moves by {@code dateDeltaDays}. Returns the number of activities moved.
+     */
+    int shiftDays(UUID tripId, int fromDay, int dayDelta, int dateDeltaDays);
+
+    /** Exchanges the activities of two days of the trip. Returns the number of activities moved. */
+    int swapDays(UUID tripId, int firstDay, int secondDay);
 }

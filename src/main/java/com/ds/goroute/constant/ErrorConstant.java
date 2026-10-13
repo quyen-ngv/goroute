@@ -47,7 +47,6 @@ public class ErrorConstant {
     /**
      * An AI trip draft can no longer be confirmed.
      */
-    public static final int AI_TRIP_DRAFT_INACTIVE = 4000105;
 
     /**
      * The AI provider did not return a usable response for a required AI-trip decision.

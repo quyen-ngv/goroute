@@ -57,7 +57,7 @@ public class AiTripGenerationService {
     private LocationImageRepository locationImageRepository;
     /** Outer bound of every candidate search; the destination's tourist area narrows it further. */
     private static final BigDecimal CANDIDATE_RADIUS_KM = BigDecimal.valueOf(50);
-    private static final int MENU_ITEMS_FOR_AI = 8;
+    private static final int MENU_ITEMS_FOR_AI = 10;
     private static final int EXTERNAL_SEARCH_RADIUS_METERS = 50_000;
     private static final int EXTERNAL_SEARCH_LIMIT = 5;
 

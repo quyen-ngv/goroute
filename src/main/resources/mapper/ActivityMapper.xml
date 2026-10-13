@@ -246,4 +246,35 @@
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </update>
 
+    <!--
+        Moves every activity from day fromDay on by dayDelta days (multi-day ones keep their span);
+        a starting point's date moves by dateDeltaDays, the change of calendar date of those days.
+    -->
+    <update id="shiftDays">
+        UPDATE activities
+        SET day_number = day_number + #{dayDelta},
+            end_day_number = CASE WHEN end_day_number IS NULL THEN NULL ELSE end_day_number + #{dayDelta} END,
+            starting_point_date = CASE WHEN starting_point_date IS NULL THEN NULL
+                                       ELSE starting_point_date + (#{dateDeltaDays} * INTERVAL '1 day') END,
+            updated_at = NOW()
+        WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND day_number &gt;= #{fromDay}
+    </update>
+
+    <!-- Exchanges the activities of two days in one statement (CASE reads the old row values). -->
+    <update id="swapDays">
+        UPDATE activities
+        SET day_number = CASE WHEN day_number = #{firstDay} THEN #{secondDay} ELSE #{firstDay} END,
+            end_day_number = CASE WHEN end_day_number IS NULL THEN NULL
+                                  WHEN day_number = #{firstDay} THEN end_day_number + (#{secondDay} - #{firstDay})
+                                  ELSE end_day_number + (#{firstDay} - #{secondDay}) END,
+            starting_point_date = CASE WHEN starting_point_date IS NULL THEN NULL
+                                       WHEN day_number = #{firstDay}
+                                           THEN starting_point_date + ((#{secondDay} - #{firstDay}) * INTERVAL '1 day')
+                                       ELSE starting_point_date + ((#{firstDay} - #{secondDay}) * INTERVAL '1 day') END,
+            updated_at = NOW()
+        WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND day_number IN (#{firstDay}, #{secondDay})
+    </update>
+
 </mapper>

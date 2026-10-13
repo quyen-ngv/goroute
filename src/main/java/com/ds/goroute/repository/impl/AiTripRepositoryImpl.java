@@ -1,13 +1,11 @@
 package com.ds.goroute.repository.impl;
 
-import com.ds.goroute.entity.AiTripDraft;
 import com.ds.goroute.mapper.AiTripMapper;
 import com.ds.goroute.repository.AiTripRepository;
 import com.ds.goroute.service.UserSubscriptionBootstrapService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
-import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -77,25 +75,5 @@ public class AiTripRepositoryImpl implements AiTripRepository {
         // while the row is still unlocked.
         Integer used = aiTripMapper.getAiTripsUsed(userId);
         return used != null ? used : 0;
-    }
-
-    @Override
-    public void insertDraft(AiTripDraft draft) {
-        aiTripMapper.insertDraft(draft);
-    }
-
-    @Override
-    public Optional<AiTripDraft> findDraftForUpdate(UUID draftId, UUID userId) {
-        return Optional.ofNullable(aiTripMapper.findDraftForUpdate(draftId, userId));
-    }
-
-    @Override
-    public Optional<AiTripDraft> findDraft(UUID draftId, UUID userId) {
-        return Optional.ofNullable(aiTripMapper.findDraft(draftId, userId));
-    }
-
-    @Override
-    public void completeDraft(UUID draftId, UUID userId, String idempotencyKey, UUID tripId) {
-        aiTripMapper.completeDraft(draftId, userId, idempotencyKey, tripId);
     }
 }

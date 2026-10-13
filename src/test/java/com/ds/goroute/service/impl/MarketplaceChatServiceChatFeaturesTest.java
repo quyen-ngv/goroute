@@ -624,7 +624,7 @@ class MarketplaceChatServiceChatFeaturesTest {
         void aMessage() {
             when(repo.findMessage(MESSAGE)).thenReturn(Optional.of(MarketplaceMessage.builder()
                     .id(MESSAGE).conversationId(CONVERSATION).sequenceNo(9L).build()));
-            when(repo.findMemberInboxStates(CONVERSATION)).thenReturn(List.of(state(ME, 0), state(FRIEND, 3)));
+            when(repo.findMemberInboxState(CONVERSATION, ME)).thenReturn(List.of(state(ME, 0)));
         }
 
         @Test
@@ -657,6 +657,18 @@ class MarketplaceChatServiceChatFeaturesTest {
 
             assertThat(inboxUpdateFor(ME)).containsEntry("reason", "read").containsEntry("unreadCount", 0);
             verify(webSocketService, never()).broadcastToUser(eq(FRIEND), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("counts only the reader's unread, and reads the conversation once")
+        void readsOnlyWhatTheReaderNeeds() {
+            when(repo.markRead(CONVERSATION, ME, MESSAGE)).thenReturn(1);
+
+            service.markRead(ME, CONVERSATION, MESSAGE);
+
+            verify(repo).findMemberInboxState(CONVERSATION, ME);
+            verify(repo, never()).findMemberInboxStates(CONVERSATION);
+            verify(repo).find(CONVERSATION, ME);
         }
 
         @Test
@@ -707,6 +719,18 @@ class MarketplaceChatServiceChatFeaturesTest {
             service.listMine(ME, List.of("trip", "direct"), 0, 30);
 
             verify(repo).findForUser(ME, List.of("TRIP", "DIRECT"), 30, 0);
+        }
+
+        @Test
+        @DisplayName("carries a few members per row, not every member of every group")
+        void carriesAParticipantPreview() {
+            when(repo.findForUser(ME, List.of(), 30, 0)).thenReturn(List.of(tripConversation()));
+
+            service.listMine(ME, null, 0, 30);
+
+            verify(repo).findParticipantPreviews(List.of(CONVERSATION),
+                    MarketplaceChatServiceImpl.INBOX_PARTICIPANT_PREVIEW);
+            verify(repo, never()).findParticipants(anyList());
         }
 
         @Test

@@ -14,12 +14,43 @@
 
     <insert id="insertImageResult" parameterType="com.ds.goroute.entity.ImageModerationResult">
         INSERT INTO image_moderation_results
-            (id, object_key, checksum, user_id, entry_point, decision, category,
-             confidence, provider, raw_scores, created_at)
+            (id, object_key, url, mime_type, checksum, user_id, entry_point, status, decision,
+             category, confidence, provider, raw_scores, created_at, completed_at)
         VALUES
-            (#{id}, #{objectKey}, #{checksum}, #{userId}, #{entryPoint}, #{decision},
-             #{category}, #{confidence}, #{provider}, #{rawScores}::jsonb, #{createdAt})
+            (#{id}, #{objectKey}, #{url}, #{mimeType}, #{checksum}, #{userId}, #{entryPoint},
+             #{status}, #{decision}, #{category}, #{confidence}, #{provider},
+             #{rawScores}::jsonb, #{createdAt}, #{completedAt})
     </insert>
+
+    <!-- Only a PENDING row completes, so the worker and the retry job can never both
+         record (and flag) the same image. -->
+    <update id="completeImageResult" parameterType="com.ds.goroute.entity.ImageModerationResult">
+        UPDATE image_moderation_results
+        SET status = 'DONE',
+            decision = #{decision},
+            category = #{category},
+            confidence = #{confidence},
+            provider = #{provider},
+            raw_scores = #{rawScores}::jsonb,
+            completed_at = #{completedAt}
+        WHERE id = #{id} AND status = 'PENDING'
+    </update>
+
+    <select id="findStalePendingImageResults" resultType="com.ds.goroute.entity.ImageModerationResult">
+        SELECT id, object_key, url, mime_type, checksum, user_id, entry_point, status, created_at
+        FROM image_moderation_results
+        WHERE status = 'PENDING' AND created_at &lt; #{before}
+        ORDER BY created_at
+        LIMIT #{limit}
+    </select>
+
+    <!-- Every image currently hidden by a takedown, automatic or by an operator. -->
+    <select id="findHiddenImageKeys" resultType="java.lang.String">
+        SELECT r.object_key
+        FROM content_takedowns t
+        JOIN image_moderation_results r ON r.id = t.content_id
+        WHERE t.content_type = 'IMAGE' AND t.restored_at IS NULL AND r.object_key IS NOT NULL
+    </select>
 
     <select id="summarizeDecisions" resultType="java.util.LinkedHashMap">
         SELECT decision, layer, COUNT(*) AS total

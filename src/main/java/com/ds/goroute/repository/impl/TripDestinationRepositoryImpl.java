@@ -7,6 +7,7 @@ import com.google.common.collect.Lists;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -62,5 +63,10 @@ public class TripDestinationRepositoryImpl implements TripDestinationRepository 
     @Override
     public void deleteByTripId(UUID tripId) {
         tripDestinationMapper.deleteByTripId(tripId);
+    }
+
+    @Override
+    public void updateDates(UUID id, LocalDate startDate, LocalDate endDate) {
+        tripDestinationMapper.updateDates(id, startDate, endDate);
     }
 }

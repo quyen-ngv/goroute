@@ -1,6 +1,5 @@
 package com.ds.goroute.mapper;
 
-import com.ds.goroute.entity.AiTripDraft;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -21,15 +20,4 @@ public interface AiTripMapper {
     java.time.LocalDateTime getSubscriptionExpiresAt(@Param("userId") UUID userId);
 
     Integer getAiTripsUsed(@Param("userId") UUID userId);
-
-    int insertDraft(AiTripDraft draft);
-
-    AiTripDraft findDraftForUpdate(@Param("draftId") UUID draftId, @Param("userId") UUID userId);
-
-    AiTripDraft findDraft(@Param("draftId") UUID draftId, @Param("userId") UUID userId);
-
-    int completeDraft(@Param("draftId") UUID draftId,
-                      @Param("userId") UUID userId,
-                      @Param("idempotencyKey") String idempotencyKey,
-                      @Param("tripId") UUID tripId);
 }

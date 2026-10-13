@@ -212,4 +212,14 @@ public class ActivityRepositoryImpl implements ActivityRepository {
         }
         return changed;
     }
+
+    @Override
+    public int shiftDays(UUID tripId, int fromDay, int dayDelta, int dateDeltaDays) {
+        return activityMapper.shiftDays(tripId, fromDay, dayDelta, dateDeltaDays);
+    }
+
+    @Override
+    public int swapDays(UUID tripId, int firstDay, int secondDay) {
+        return activityMapper.swapDays(tripId, firstDay, secondDay);
+    }
 }

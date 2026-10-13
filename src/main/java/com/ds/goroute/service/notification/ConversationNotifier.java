@@ -210,7 +210,7 @@ public class ConversationNotifier {
      * a row and a banner for what they are looking at is noise.
      */
     private Map<UUID, Long> readMarkers(UUID conversationId) {
-        List<MarketplaceMemberInboxState> states = conversations.findMemberInboxStates(conversationId);
+        List<MarketplaceMemberInboxState> states = conversations.findMemberReadSequences(conversationId);
         if (states == null) return Map.of();
         return states.stream()
                 .filter(state -> state.getUserId() != null && state.getReadSequenceNo() != null)
