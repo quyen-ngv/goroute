@@ -12,7 +12,7 @@ import java.util.List;
 /**
  * Body of POST /v1/api/admin/events/import. Items stay raw JSON until each is read on its own,
  * so one malformed item fails alone (FAILED) instead of rejecting the whole batch. Unknown
- * top-level keys are ignored (CorsFilter adds request_id, x-api-key, x-api-secret and uri).
+ * top-level keys are ignored.
  */
 @Data
 @Builder
