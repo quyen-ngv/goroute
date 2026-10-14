@@ -35,10 +35,16 @@ public class ExchangeRateServiceImpl implements ExchangeRateService {
         return amount.multiply(rate).setScale(2, RoundingMode.HALF_UP);
     }
 
+    /**
+     * A failed or missing lookup falls back to 1, so the caller still gets an amount; that
+     * fallback must not be cached, or one upstream blip would price everything 1:1 for the
+     * cache's six hours. A genuine 1:1 pair is simply fetched again.
+     */
     @Override
     @Cacheable(value = "exchangeRates",
                key = "#fromCurrency.toLowerCase() + '_' + #toCurrency.toLowerCase()",
-               cacheManager = "exchangeRateCacheManager")
+               cacheManager = "exchangeRateCacheManager",
+               unless = "#result == null || #result.compareTo(T(java.math.BigDecimal).ONE) == 0")
     public BigDecimal getRate(String fromCurrency, String toCurrency) {
         if (fromCurrency == null || toCurrency == null) return BigDecimal.ONE;
         String from = fromCurrency.toLowerCase(Locale.ROOT);
