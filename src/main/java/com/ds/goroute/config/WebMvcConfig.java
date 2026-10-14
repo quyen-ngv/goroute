@@ -18,6 +18,7 @@ import java.util.List;
 @Configuration
 @EnableConfigurationProperties({
         ApiRequestLimitsProperties.class,
+        LoginLockoutProperties.class,
         ScrapeHttpClientProperties.class,
         AiTripWorkerProperties.class,
         FileUploadProperties.class,

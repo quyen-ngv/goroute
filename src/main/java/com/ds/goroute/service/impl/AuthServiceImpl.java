@@ -19,6 +19,7 @@ import com.ds.goroute.repository.ExpenseRepository;
 import com.ds.goroute.repository.ExpenseSplitRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.AuthService;
+import com.ds.goroute.service.LoginAttemptGuard;
 import com.ds.goroute.thirdparty.apple.AppleTokenInfo;
 import com.ds.goroute.thirdparty.apple.AppleTokenVerifier;
 import com.ds.goroute.thirdparty.google.GoogleTokenInfo;
@@ -47,6 +48,7 @@ import java.util.UUID;
 public class AuthServiceImpl implements AuthService {
 
     private final UserRepository userRepository;
+    private final LoginAttemptGuard loginAttemptGuard;
     private final RefreshTokenRepository refreshTokenRepository;
     private final TripMemberRepository tripMemberRepository;
     private final ExpenseSplitRepository expenseSplitRepository;
@@ -116,9 +118,12 @@ public class AuthServiceImpl implements AuthService {
                 .or(() -> userRepository.findByUsername(request.getEmail()))
                 .orElseThrow(() -> new BusinessException(ErrorConstant.UNAUTHORIZED, "Invalid email/username or password"));
 
+        loginAttemptGuard.requireNotLocked(user.getId());
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            loginAttemptGuard.recordFailure(user.getId());
             throw new BusinessException(ErrorConstant.UNAUTHORIZED, "Invalid email/username or password");
         }
+        loginAttemptGuard.recordSuccess(user.getId());
 
         log.info("User logged in: {}", user.getEmail());
         return generateAuthResponse(user);

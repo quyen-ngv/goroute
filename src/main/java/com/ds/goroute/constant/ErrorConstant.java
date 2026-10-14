@@ -346,6 +346,9 @@ public class ErrorConstant {
      * Write the error code prefixed with 429 below
      * 429
      */
+    /** Identity (epic 01): too many wrong passwords for this account; see LoginLockoutProperties. */
+    public static final int LOGIN_TEMPORARILY_LOCKED = 4290101;
+
     /** Map search (epic 06): too many Goong lookups in the current minute (MAP_SEARCH/*_PER_MINUTE). */
     public static final int MAP_SEARCH_MINUTE_LIMIT_REACHED = 4290601;
 

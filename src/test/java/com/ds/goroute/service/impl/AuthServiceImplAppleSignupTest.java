@@ -44,7 +44,7 @@ class AuthServiceImplAppleSignupTest {
     private final JwtUtils jwt = mock(JwtUtils.class);
 
     private final AuthServiceImpl service = new AuthServiceImpl(
-            users, mock(RefreshTokenRepository.class), tripMembers, mock(ExpenseSplitRepository.class),
+            users, mock(com.ds.goroute.service.LoginAttemptGuard.class), mock(RefreshTokenRepository.class), tripMembers, mock(ExpenseSplitRepository.class),
             mock(ExpenseRepository.class), jwt, mock(PasswordEncoder.class),
             mock(GoogleTokenVerifier.class), appleVerifier, animalNames);
 
