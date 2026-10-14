@@ -107,6 +107,12 @@ public enum BusinessConfigKey {
     // --- Epic 05: expenses ----------------------------------------------------------
     /** Reminders one payer may send the same person per day (Asia/Ho_Chi_Minh); each covers all picked splits. */
     EXPENSE_PAYMENT_REMINDER_DAILY_MAX("EXPENSE", "PAYMENT_REMINDER_DAILY_MAX", 2, 1, 20),
+    /** Everyone may scan a receipt into an expense; beta users (USER.BETA_USER) may while this is off. */
+    EXPENSE_RECEIPT_SCAN_ENABLED("EXPENSE", "RECEIPT_SCAN_ENABLED", false),
+    /** Receipt scans per local (Vietnam) day for a FREE account. */
+    EXPENSE_RECEIPT_SCAN_FREE_DAILY("EXPENSE", "RECEIPT_SCAN_FREE_DAILY", 10, 0, 1000),
+    /** Receipt scans per local (Vietnam) day for a PRO account. */
+    EXPENSE_RECEIPT_SCAN_PRO_DAILY("EXPENSE", "RECEIPT_SCAN_PRO_DAILY", 50, 0, 10000),
 
     // --- Epic 11: marketplace partner finance ---------------------------------------
     /**

@@ -37,6 +37,8 @@ public interface UserRepository {
     /** Discover page: the top {@code limit} candidates plus their four counts, in one query. */
     List<com.ds.goroute.dto.response.DiscoverUserResponse> findDiscoverUsers(UUID userId, int limit);
 
+    List<com.ds.goroute.dto.response.DiscoverUserResponse> searchUsers(UUID viewerId, String query, int limit);
+
     /** {@link #findFollowers} plus the four counts each card shows, in one query. */
     List<com.ds.goroute.dto.response.DiscoverUserResponse> findFollowerProfiles(UUID userId);
 

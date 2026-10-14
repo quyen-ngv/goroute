@@ -262,7 +262,7 @@ public class ExpenseServiceImpl implements ExpenseService {
         Expense expense = expenseRepository.findById(expenseId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found"));
 
-        if (!expense.getTripId().equals(tripId)) {
+        if (!tripId.equals(expense.getTripId())) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found");
         }
 
@@ -295,7 +295,7 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found"));
 
         // 2. Validate expense belongs to trip
-        if (!expense.getTripId().equals(tripId)) {
+        if (!tripId.equals(expense.getTripId())) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found");
         }
 
@@ -661,50 +661,7 @@ public class ExpenseServiceImpl implements ExpenseService {
      * first time somebody edited an unrelated field.
      */
     private void syncExpensePhotos(Expense expense, List<String> urls, UUID userId) {
-        if (urls == null) return;
-
-        List<String> wanted = urls.stream()
-                .filter(url -> url != null && !url.isBlank())
-                .map(String::trim)
-                .distinct()
-                .toList();
-
-        List<MediaAsset> existing =
-                mediaAssetRepository.findByEntity(EXPENSE_ENTITY_TYPE, expense.getId());
-        for (MediaAsset asset : existing) {
-            if (asset.getAssetRole() != null && !"PHOTO".equalsIgnoreCase(asset.getAssetRole())) {
-                continue;
-            }
-            if (!wanted.contains(asset.getUrl())) {
-                mediaAssetRepository.softDelete(asset.getId());
-            }
-        }
-
-        for (int index = 0; index < wanted.size(); index++) {
-            String url = wanted.get(index);
-            Optional<MediaAsset> existingAsset = existing.stream()
-                    .filter(asset -> ("PHOTO".equalsIgnoreCase(asset.getAssetRole())
-                            || asset.getAssetRole() == null)
-                            && url.equals(asset.getUrl()))
-                    .findFirst();
-            if (existingAsset.isPresent()) {
-                existingAsset.get().setPosition(index);
-                mediaAssetRepository.updatePosition(existingAsset.get());
-                continue;
-            }
-            mediaAssetRepository.insert(MediaAsset.builder()
-                    .id(UUID.randomUUID())
-                    .tripId(expense.getTripId())
-                    .activityId(expense.getActivityId())
-                    .entityType(EXPENSE_ENTITY_TYPE)
-                    .entityId(expense.getId())
-                    .mediaType("IMAGE")
-                    .assetRole("PHOTO")
-                    .position(index)
-                    .url(url)
-                    .uploadedBy(userId)
-                    .build());
-        }
+        ExpensePhotoSync.sync(mediaAssetRepository, expense, urls, userId);
     }
 
     private ExpenseResponse mapToExpenseResponse(Expense expense, List<MediaAsset> photos,
@@ -869,7 +826,7 @@ public class ExpenseServiceImpl implements ExpenseService {
         Expense expense = expenseRepository.findById(expenseId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found"));
 
-        if (!expense.getTripId().equals(tripId)) {
+        if (!tripId.equals(expense.getTripId())) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found");
         }
 
@@ -916,7 +873,7 @@ public class ExpenseServiceImpl implements ExpenseService {
         Expense expense = expenseRepository.findById(expenseId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found"));
 
-        if (!expense.getTripId().equals(tripId)) {
+        if (!tripId.equals(expense.getTripId())) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found");
         }
 

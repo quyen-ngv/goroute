@@ -47,6 +47,9 @@ public class NotificationTemplateRenderer {
         if (type == NotificationType.PAYMENT_REMINDER && expenseCount(normalizedData) > 1) {
             return withLocalizedPunctuation(renderGroupedPaymentReminder(normalizedData, lang), lang);
         }
+        if (type == NotificationType.EXPENSE_ADDED && "true".equals(stringValue(normalizedData.get("personal")))) {
+            return withLocalizedPunctuation(renderPersonalExpenseAdded(normalizedData, lang), lang);
+        }
 
         NotificationMessage template = templates
                 .getOrDefault(lang, templates.get(NotificationLanguage.DEFAULT))
@@ -171,6 +174,32 @@ public class NotificationTemplateRenderer {
      * One Wallet reminder covering several expenses of one person. The total is shown only
      * when they share a currency; otherwise the payload leaves {@code amount} empty.
      */
+    /** An expense outside any trip that someone split with the reader: there is no trip to name. */
+    private NotificationMessage renderPersonalExpenseAdded(Map<String, Object> data, String language) {
+        String actor = Objects.toString(stringValue(data.get("actorName")), "Someone");
+        String name = Objects.toString(stringValue(data.get("expenseName")), "");
+        String share = (Objects.toString(stringValue(data.get("shareAmount")), "") + " "
+                + Objects.toString(stringValue(data.get("currency")), "")).trim();
+        return switch (language) {
+            case "vi" -> new NotificationMessage("Có khoản chi chia với bạn",
+                    actor + " đã chia “" + name + "” với bạn, phần của bạn " + share);
+            case "hi" -> new NotificationMessage("आपके साथ खर्च बाँटा गया",
+                    actor + " ने “" + name + "” आपके साथ बाँटा, आपका हिस्सा " + share);
+            case "ja" -> new NotificationMessage("割り勘の支出",
+                    actor + "さんが「" + name + "」をあなたと割り勘にしました（あなたの分 " + share + "）");
+            case "ko" -> new NotificationMessage("함께 나눈 지출",
+                    actor + "님이 “" + name + "”을(를) 함께 나눴습니다. 내 몫 " + share);
+            case "ru" -> new NotificationMessage("Общий расход",
+                    actor + " разделил(а) с вами «" + name + "», ваша доля " + share);
+            case "th" -> new NotificationMessage("ค่าใช้จ่ายที่หารกับคุณ",
+                    actor + " หาร “" + name + "” กับคุณ ส่วนของคุณ " + share);
+            case "zh-TW" -> new NotificationMessage("與你分攤的支出",
+                    actor + " 與你分攤「" + name + "」，你的份額 " + share);
+            default -> new NotificationMessage("Expense shared with you",
+                    actor + " split “" + name + "” with you, your share is " + share);
+        };
+    }
+
     private NotificationMessage renderGroupedPaymentReminder(Map<String, Object> data, String language) {
         String actor = stringValue(data.get("actorName"));
         String count = String.valueOf(expenseCount(data));

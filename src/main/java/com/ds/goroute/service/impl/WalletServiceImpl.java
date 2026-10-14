@@ -22,6 +22,7 @@ import com.ds.goroute.repository.WalletRepository;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.WalletService;
+import com.ds.goroute.service.NotificationService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.MemberStatus;
@@ -56,6 +57,8 @@ public class WalletServiceImpl implements WalletService {
     private final TripAccessGuard tripAccessGuard;
     private final BusinessConfigService businessConfigService;
     private final NotificationHelper notificationHelper;
+    /** Personal expenses have no trip, so their reminders skip the trip event pipeline. */
+    private final NotificationService notificationService;
 
     @Override
     @Transactional(readOnly = true)
@@ -140,7 +143,8 @@ public class WalletServiceImpl implements WalletService {
         Map<UUID, Boolean> recipientCanOpenTrip = new HashMap<>();
         List<WalletReminderSplitRow> due = rows.stream()
                 .filter(row -> !Boolean.TRUE.equals(row.getIsSettled()))
-                .filter(row -> recipientCanOpenTrip.computeIfAbsent(row.getTripId(),
+                // A personal split's recipient is a participant by definition.
+                .filter(row -> row.getTripId() == null || recipientCanOpenTrip.computeIfAbsent(row.getTripId(),
                         tripId -> recipientCanStillOpenTrip(tripAccessGuard.requireAccess(tripId, userId), recipient)))
                 .toList();
         if (due.isEmpty()) {
@@ -172,8 +176,15 @@ public class WalletServiceImpl implements WalletService {
                     "This person was already reminded " + dailyMax + " times today");
         }
 
-        notificationHelper.emitGeneric(due.get(0).getTripId(), userId, NotificationType.PAYMENT_REMINDER,
-                reminderData(due, userId), List.of(recipient), null);
+        UUID anyTripId = due.stream().map(WalletReminderSplitRow::getTripId)
+                .filter(java.util.Objects::nonNull).findFirst().orElse(null);
+        if (anyTripId != null) {
+            notificationHelper.emitGeneric(anyTripId, userId, NotificationType.PAYMENT_REMINDER,
+                    reminderData(due, userId), List.of(recipient), null);
+        } else {
+            notificationService.createNotification(recipient, null, NotificationType.PAYMENT_REMINDER,
+                    null, null, reminderData(due, userId), userId);
+        }
         return reminders;
     }
 
@@ -207,7 +218,9 @@ public class WalletServiceImpl implements WalletService {
         }
         if (due.size() == 1) {
             data.put("expenseId", first.getExpenseId().toString());
-            data.put("deepLink", "/trip/" + first.getTripId() + "/expenses/" + first.getExpenseId());
+            data.put("deepLink", first.getTripId() == null
+                    ? "/wallet"
+                    : "/trip/" + first.getTripId() + "/expenses/" + first.getExpenseId());
         } else {
             data.put("deepLink", "/wallet");
         }

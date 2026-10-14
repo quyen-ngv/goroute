@@ -83,6 +83,15 @@ public class ErrorConstant {
     /** The payer already reminded this person EXPENSE.PAYMENT_REMINDER_DAILY_MAX times today. */
     public static final int EXPENSE_PAYMENT_REMINDER_RATE_LIMITED = 4001101;
 
+    /** Receipt scan: not open to this account (EXPENSE.RECEIPT_SCAN_ENABLED off and not a beta user). */
+    public static final int EXPENSE_RECEIPT_SCAN_UNAVAILABLE = 4001102;
+
+    /** Receipt scan: the upload is not a readable image or is over the size limit. */
+    public static final int EXPENSE_RECEIPT_SCAN_INVALID_IMAGE = 4001103;
+
+    /** Receipt scan: today's allowance (EXPENSE.RECEIPT_SCAN_FREE_DAILY / _PRO_DAILY) is used. */
+    public static final int EXPENSE_RECEIPT_SCAN_DAILY_LIMIT = 4001104;
+
     /**
      * Content moderation (epic 12). The blocked-content code carries the violated policy
      * group in its message so the app can tell the user what to fix instead of showing

@@ -29,10 +29,25 @@
           AND membership.status = 'ACCEPTED'
     </sql>
 
+    <!--
+         Trip expenses the user can open, plus personal expenses (trip_id IS NULL, V237) the
+         user added, paid, or has a share of. A personal expense split with friends produces
+         ordinary debts to its payer; one kept to oneself has a single settled split and counts
+         in my_share and my_paid only. The branches cannot overlap.
+    -->
     <sql id="AccessibleExpenses">
         SELECT e.*
         FROM expenses e
         INNER JOIN (<include refid="AccessibleTripIds"/>) accessible_trip ON accessible_trip.id = e.trip_id
+        UNION ALL
+        SELECT e.*
+        FROM expenses e
+        WHERE e.trip_id IS NULL
+          AND (e.created_by = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+               OR e.paid_by = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+               OR EXISTS (SELECT 1 FROM expense_splits own_split
+                          WHERE own_split.expense_id = e.id
+                            AND own_split.user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}))
     </sql>
 
     <resultMap id="CurrencySummaryMap" type="com.ds.goroute.entity.WalletCurrencySummaryRow">
@@ -169,7 +184,7 @@
                split_user.avatar_url AS counterpart_avatar_url,
                COALESCE(e.expense_date, e.created_at) AS created_at
         FROM accessible_expenses e
-        INNER JOIN trips t ON t.id = e.trip_id
+        LEFT JOIN trips t ON t.id = e.trip_id
         INNER JOIN expense_splits es ON es.expense_id = e.id
         LEFT JOIN users split_user ON split_user.id = es.user_id
         LEFT JOIN trip_members split_member ON split_member.id = es.guest_member_id
@@ -191,7 +206,7 @@
                paid_user.avatar_url AS counterpart_avatar_url,
                COALESCE(e.expense_date, e.created_at) AS created_at
         FROM accessible_expenses e
-        INNER JOIN trips t ON t.id = e.trip_id
+        LEFT JOIN trips t ON t.id = e.trip_id
         INNER JOIN expense_splits es ON es.expense_id = e.id
         LEFT JOIN users paid_user ON paid_user.id = e.paid_by AND e.paid_by_guest_member_id IS NULL
         LEFT JOIN trip_members payer_member ON payer_member.id = e.paid_by_guest_member_id
@@ -221,7 +236,7 @@
                split_user.avatar_url AS split_avatar_url, es.amount AS split_amount,
                es.is_settled AS split_settled, es.settled_at AS split_settled_at
         FROM paged_expenses e
-        INNER JOIN trips t ON t.id = e.trip_id
+        LEFT JOIN trips t ON t.id = e.trip_id
         LEFT JOIN users paid_user ON paid_user.id = e.paid_by AND e.paid_by_guest_member_id IS NULL
         LEFT JOIN trip_members payer_member ON payer_member.id = e.paid_by_guest_member_id
         LEFT JOIN expense_splits es ON es.expense_id = e.id

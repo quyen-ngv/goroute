@@ -45,6 +45,10 @@ public interface UserMapper {
     java.util.List<com.ds.goroute.dto.response.DiscoverUserResponse> selectFollowerProfiles(
             @Param("userId") UUID userId);
 
+    /** People matching {@code query} (lower case, LIKE-escaped), never the viewer or anyone blocked either way. */
+    java.util.List<com.ds.goroute.dto.response.DiscoverUserResponse> selectSearchUsers(
+            @Param("userId") UUID userId, @Param("query") String query, @Param("limit") int limit);
+
     java.util.List<com.ds.goroute.dto.response.DiscoverUserResponse> selectFollowingProfiles(
             @Param("userId") UUID userId);
 

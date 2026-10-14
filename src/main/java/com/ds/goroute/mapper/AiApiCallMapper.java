@@ -6,6 +6,7 @@ import com.ds.goroute.entity.AiApiCall;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,4 +25,8 @@ public interface AiApiCallMapper {
     List<String> distinctFeatures();
 
     List<String> distinctModels();
+
+    /** Successful calls one user made for one feature since a point in time (a daily allowance ledger). */
+    long countSucceededSince(@Param("userId") UUID userId, @Param("feature") String feature,
+                             @Param("since") LocalDateTime since);
 }

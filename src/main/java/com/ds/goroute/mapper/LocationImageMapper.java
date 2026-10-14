@@ -13,13 +13,16 @@ public interface LocationImageMapper {
 
     // `%` is "similarity above pg_trgm.similarity_threshold" (default 0.3) and can use the GIN trigram
     // index idx_location_images_normalized; the explicit > 0.3 keeps the cut-off fixed whatever the setting.
+    // An exact name wins, then the closest name; priority only breaks ties. Sorting by priority first
+    // sent "tay ninh" to Ninh Binh (a higher-priority area whose name shares the trigram "ninh").
     @Select("""
         SELECT id, image_url, priority FROM location_images
         WHERE normalized_address % #{searchTerm}
           AND similarity(normalized_address, #{searchTerm}) > 0.3
         ORDER BY
-            priority DESC,
+            (normalized_address = #{searchTerm}) DESC,
             similarity(normalized_address, #{searchTerm}) DESC,
+            priority DESC,
             id
         LIMIT 1
         """)

@@ -113,4 +113,14 @@
     <select id="distinctModels" resultType="string">
         SELECT DISTINCT model FROM ai_api_calls WHERE model IS NOT NULL ORDER BY 1 LIMIT 200
     </select>
+
+    <!-- Served by idx_ai_api_calls_user_created. -->
+    <select id="countSucceededSince" resultType="long">
+        SELECT COUNT(*)
+        FROM ai_api_calls
+        WHERE user_id = #{userId}
+          AND feature = #{feature}
+          AND status = 'SUCCEEDED'
+          AND created_at &gt;= #{since}
+    </select>
 </mapper>

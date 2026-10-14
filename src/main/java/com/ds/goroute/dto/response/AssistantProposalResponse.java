@@ -42,4 +42,9 @@ public class AssistantProposalResponse {
     private LocalDateTime resolvedAt;
     private UUID resultActivityId;
     private String failureReason;
+    /**
+     * Whether the reader may apply or dismiss it, i.e. edit its trip. Set only on the per-reader
+     * read: a Pengoo DM has no trip of its own, so the conversation cannot answer this.
+     */
+    private Boolean viewerCanEdit;
 }

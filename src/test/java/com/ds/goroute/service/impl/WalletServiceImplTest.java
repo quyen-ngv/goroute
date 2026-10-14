@@ -47,7 +47,8 @@ class WalletServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new WalletServiceImpl(walletRepository, members, accessGuard, config, notifications);
+        service = new WalletServiceImpl(walletRepository, members, accessGuard, config, notifications,
+                mock(com.ds.goroute.service.NotificationService.class));
     }
 
     @Test

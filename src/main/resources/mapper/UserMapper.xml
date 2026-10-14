@@ -167,6 +167,38 @@
          then newest first, which is the order selectAll produced before the stable
          sort by review count in the service.
     -->
+    <!--
+         People search for the app (user picker, Feed). The query arrives lower-cased with
+         % _ \ escaped. Username prefix is served by idx_users_username_lower_prefix (V238);
+         the name match is a contains, fine at the size of users. Ranked: exact username,
+         username prefix, then name, then by followers.
+    -->
+    <select id="selectSearchUsers" resultType="com.ds.goroute.dto.response.DiscoverUserResponse">
+        WITH candidates AS (
+            SELECT u.id, u.full_name, u.username, u.avatar_url, u.created_at,
+                   CASE WHEN lower(u.username) = #{query} THEN 0
+                        WHEN lower(u.username) LIKE #{query} || '%' THEN 1
+                        ELSE 2 END AS match_rank
+            FROM users u
+            WHERE u.deleted_at IS NULL
+              AND u.account_type = 'HUMAN'
+              AND u.id &lt;&gt; #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+              AND (lower(u.username) LIKE #{query} || '%'
+                   OR lower(u.full_name) LIKE '%' || #{query} || '%')
+              AND NOT EXISTS (
+                  SELECT 1 FROM user_blocks b
+                  WHERE (b.blocker_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER} AND b.blocked_id = u.id)
+                     OR (b.blocker_id = u.id AND b.blocked_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER})
+              )
+            ORDER BY match_rank, length(u.username), u.created_at DESC
+            LIMIT #{limit}
+        )
+        SELECT u.id, u.full_name, u.username, u.avatar_url,
+               <include refid="DiscoverCountColumns"/>
+        FROM candidates u
+        ORDER BY u.match_rank, followers_count DESC, length(u.username)
+    </select>
+
     <select id="selectDiscoverUsers" resultType="com.ds.goroute.dto.response.DiscoverUserResponse">
         WITH candidates AS (
             SELECT u.id, u.full_name, u.username, u.avatar_url, u.created_at

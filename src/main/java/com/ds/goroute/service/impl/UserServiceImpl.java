@@ -144,6 +144,18 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<DiscoverUserResponse> searchUsers(UUID userId, String query, int limit) {
+        String term = query == null ? "" : query.trim();
+        if (term.startsWith("@")) term = term.substring(1).trim();
+        if (term.length() < 2) return List.of();
+        if (term.length() > 50) term = term.substring(0, 50);
+        String escaped = term.toLowerCase(java.util.Locale.ROOT)
+                .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+        return userRepository.searchUsers(userId, escaped, Math.max(1, Math.min(limit, 30)));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<DiscoverUserResponse> getFollowers(UUID userId) {
         ensureUserExists(userId);
         return userRepository.findFollowerProfiles(userId);

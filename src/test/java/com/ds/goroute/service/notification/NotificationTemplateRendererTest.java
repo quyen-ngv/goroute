@@ -30,6 +30,17 @@ class NotificationTemplateRendererTest {
     }
 
     @Test
+    void aPersonalExpenseNamesTheShareAndNoTrip() {
+        Map<String, Object> data = Map.of("personal", true, "actorName", "An", "expenseName", "Lẩu",
+                "amount", 300000, "shareAmount", 100000, "currency", "VND");
+        for (String language : SUPPORTED_LANGUAGES) {
+            NotificationMessage message = renderer.render(NotificationType.EXPENSE_ADDED, data, language);
+            assertThat(message.body()).as("%s body", language).contains("An", "Lẩu", "100000 VND")
+                    .doesNotContain("{tripName}");
+        }
+    }
+
+    @Test
     void aiTripCreatedMentionsTheVideoOnlyWhenItCameFromOne() {
         for (String language : SUPPORTED_LANGUAGES) {
             String planned = renderer.render(NotificationType.AI_TRIP_CREATED, Map.of("source", "AI"), language).body();

@@ -15,6 +15,9 @@ public interface UserService {
     UserProfileResponse updateProfile(UUID userId, UpdateProfileRequest request);
     void updateSettings(UUID userId, UpdateSettingsRequest request);
     List<DiscoverUserResponse> discoverUsers(UUID userId, int limit);
+
+    /** Username prefix or name contains; a leading @ is ignored. Under two characters returns nothing. */
+    List<DiscoverUserResponse> searchUsers(UUID userId, String query, int limit);
     List<DiscoverUserResponse> getFollowers(UUID userId);
     List<DiscoverUserResponse> getFollowing(UUID userId);
     void followUser(UUID userId, UUID targetUserId);

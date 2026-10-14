@@ -139,7 +139,11 @@ public class AssistantProposalService {
     public AssistantProposalResponse get(UUID viewerId, UUID proposalId) {
         AssistantProposal proposal = repository.findProposal(proposalId).orElseThrow(this::notFound);
         conversationAccess.requireAccess(proposal.getConversationId(), viewerId);
-        return response(proposal);
+        AssistantProposalResponse response = response(proposal);
+        response.setViewerCanEdit(trips.findById(proposal.getTripId())
+                .map(trip -> tripAccessGuard.canEdit(trip, viewerId))
+                .orElse(false));
+        return response;
     }
 
     /**

@@ -67,6 +67,15 @@ public class UserController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(userService.discoverUsers(userId, limit)));
     }
 
+    /** People by username or name, for the user picker and the Feed's people search. */
+    @GetMapping("/search")
+    public ResponseEntity<BaseResponse<List<DiscoverUserResponse>>> searchUsers(
+            @RequestParam("q") String query,
+            @RequestParam(defaultValue = "20") int limit,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(userService.searchUsers(userId, query, limit)));
+    }
+
     @GetMapping("/me/followers")
     public ResponseEntity<BaseResponse<List<DiscoverUserResponse>>> getFollowers(
             @CurrentUser UUID userId) {

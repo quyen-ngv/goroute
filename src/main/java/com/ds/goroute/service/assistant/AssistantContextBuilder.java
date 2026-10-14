@@ -41,6 +41,12 @@ import java.util.UUID;
 public class AssistantContextBuilder {
 
     static final int MAX_HISTORY_TEXT = 600;
+    /**
+     * The history window slides in steps of this many messages, not one message per turn: the
+     * provider's prompt cache keys on the exact prefix, and a window that drops its oldest line
+     * every turn never matches the previous turn's prompt again.
+     */
+    static final int HISTORY_WINDOW_STEP = 10;
     static final int MAX_TOOL_CALLS = 6;
     static final int MAX_OUTPUT_TOKENS = 1800;
 
@@ -82,7 +88,8 @@ public class AssistantContextBuilder {
     private List<Map<String, Object>> history(MarketplaceConversation conversation, long beforeSequence) {
         int limit = businessConfig.getInt(BusinessConfigKey.ASSISTANT_HISTORY_MESSAGES);
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (AssistantHistoryMessage message : repository.findRecentMessages(conversation.getId(), beforeSequence, limit)) {
+        for (AssistantHistoryMessage message : stableWindow(
+                repository.findRecentMessages(conversation.getId(), beforeSequence, limit + HISTORY_WINDOW_STEP), limit)) {
             String text = text(message);
             if (text.isBlank()) continue;
             Map<String, Object> row = new LinkedHashMap<>();
@@ -96,6 +103,22 @@ public class AssistantContextBuilder {
         }
         nameShownPlaces(rows);
         return rows;
+    }
+
+    /**
+     * The newest {@code limit} messages plus the older ones back to the last sequence number that
+     * is a multiple of {@link #HISTORY_WINDOW_STEP}: the window's oldest message then changes only
+     * every ten messages, so consecutive turns share a prompt prefix. {@code recent} is newest first.
+     */
+    static List<AssistantHistoryMessage> stableWindow(List<AssistantHistoryMessage> recent, int limit) {
+        if (recent.size() <= limit || limit <= 0) return recent;
+        long boundary = recent.get(limit - 1).getSequenceNo() / HISTORY_WINDOW_STEP * HISTORY_WINDOW_STEP;
+        List<AssistantHistoryMessage> kept = new ArrayList<>();
+        for (AssistantHistoryMessage message : recent) {
+            if (kept.size() >= limit && message.getSequenceNo() < boundary) break;
+            kept.add(message);
+        }
+        return kept;
     }
 
     /** A share has no text: it is described by what it points at, so "this place" makes sense. */
