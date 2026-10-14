@@ -264,11 +264,45 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
-    <!-- The Home "Friends" tab: public posts by the people the viewer follows, newest
-         first. Blocks are checked in both directions because blocking does not remove a
-         follow, and a deleted account's posts go with it. -->
-    <select id="findFollowingFeed" resultMap="checkinMap">
-        SELECT <include refid="columns"/> FROM user_checkins
+    <resultMap id="followingCheckinMap" type="com.ds.goroute.entity.UserCheckin" extends="checkinMap">
+        <result property="focusRank" column="focus_rank"/>
+    </resultMap>
+
+    <!-- The Home "Friends" tab: public posts by the people the viewer follows. Blocks are
+         checked in both directions because blocking does not remove a follow, and a deleted
+         account's posts go with it.
+
+         With a focus point (the city Home is on) the posts rank by focus_rank first:
+         0 inside the province that covers the point (its ward's province, the stored code,
+         or the coordinates), then 1, 2, ... for each 100 km ring further out, and posts
+         without coordinates last; newest first inside each rank. Without one, or when no
+         province covers it, it is newest first throughout, as before. -->
+    <select id="findFollowingFeed" resultMap="followingCheckinMap">
+        SELECT <include refid="columns"/>,
+        <choose>
+            <when test="focusLat != null and focusLng != null">
+               CASE
+                   WHEN EXISTS (
+                       SELECT 1 FROM provinces fp
+                       WHERE fp.geom IS NOT NULL
+                         AND ST_Covers(fp.geom, ST_SetSRID(ST_MakePoint(#{focusLng}::float8, #{focusLat}::float8), 4326))
+                         AND (fp.code = COALESCE(
+                                  (SELECT w.province_code FROM wards w WHERE w.code = user_checkins.ward_code),
+                                  user_checkins.province_code)
+                              <!-- Qualified: provinces has latitude/longitude columns of its own. -->
+                              OR (user_checkins.latitude IS NOT NULL AND user_checkins.longitude IS NOT NULL
+                                  AND ST_Covers(fp.geom, ST_SetSRID(ST_MakePoint(
+                                          user_checkins.longitude::float8, user_checkins.latitude::float8), 4326)))))
+                       THEN 0
+                   WHEN latitude IS NULL OR longitude IS NULL THEN NULL
+                   ELSE 1 + FLOOR(ST_Distance(
+                                goroute_point(latitude::float8, longitude::float8),
+                                goroute_point(#{focusLat}::float8, #{focusLng}::float8)) / 100000)::int
+               END
+            </when>
+            <otherwise>NULL::int</otherwise>
+        </choose> AS focus_rank
+        FROM user_checkins
         WHERE user_id IN (
                 SELECT f.following_id
                 FROM user_follows f
@@ -284,7 +318,7 @@
               SELECT 1 FROM content_takedowns t
               WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
                 AND t.restored_at IS NULL)
-        ORDER BY created_at DESC, id DESC
+        ORDER BY focus_rank ASC NULLS LAST, created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 

@@ -98,6 +98,13 @@ public class UserCheckin {
      */
     private Boolean hasPhoto;
 
+    /**
+     * Read-only, filled only by the Home "Friends" query: 0 when the post is inside the
+     * province Home is on, 1, 2, ... per 100 km ring further out, null when it cannot be
+     * placed or no focus point was given.
+     */
+    private Integer focusRank;
+
     /** True when this check-in is attached to a row in the curated catalogue. */
     public boolean hasCataloguePlace() {
         return placeId != null;

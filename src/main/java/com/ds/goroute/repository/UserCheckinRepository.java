@@ -43,7 +43,7 @@ public interface UserCheckinRepository {
      * Public check-ins by the people {@code viewerId} follows, newest first, without
      * deleted authors, taken-down posts or blocks in either direction.
      */
-    List<UserCheckin> findFollowingFeed(UUID viewerId, int limit, int offset);
+    List<UserCheckin> findFollowingFeed(UUID viewerId, Double focusLat, Double focusLng, int limit, int offset);
 
     List<UserCheckin> findByUser(UUID userId, boolean includePrivate, int limit, int offset);
 

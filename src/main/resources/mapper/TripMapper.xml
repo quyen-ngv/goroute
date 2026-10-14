@@ -286,17 +286,45 @@
                 AND ct.restored_at IS NULL)
     </select>
 
-    <!-- The Home "Friends" tab: public trips owned by the people the viewer follows, most
-         recently shared first. Blocks are checked in both directions because blocking does
-         not remove a follow, and a deleted account's trips go with it. -->
-    <select id="findFollowingTrips" resultMap="TripResultMap">
+    <resultMap id="FollowingTripResultMap" type="com.ds.goroute.entity.Trip" extends="TripResultMap">
+        <result property="focusRank" column="focus_rank"/>
+    </resultMap>
+
+    <!-- The Home "Friends" tab: public trips owned by the people the viewer follows. Blocks
+         are checked in both directions because blocking does not remove a follow, and a
+         deleted account's trips go with it.
+
+         With a focus point (the city Home is on) the trips rank by focus_rank first, the
+         same ranks as findFollowingFeed in UserCheckinMapper.xml so the app can interleave
+         the two lists: 0 when the destination is inside the province that covers the
+         point, then 1, 2, ... per 100 km ring further out, trips without a destination
+         point last; most recently shared first inside each rank. Without one, or when no
+         province covers it, most recently shared first throughout, as before. -->
+    <select id="findFollowingTrips" resultMap="FollowingTripResultMap">
         SELECT t.id, t.name, t.cover_image_url, t.destination, t.destination_place_id,
                t.destination_lat, t.destination_lng, t.start_date, t.end_date, t.budget, t.currency,
                t.status, t.visibility, t.share_code, t.share_expenses, t.share_notes, t.description,
                t.timezone, t.owner_id, t.starting_point_name, t.starting_point_address,
                t.starting_point_lat, t.starting_point_lng, t.starting_point_time, t.view_count,
                t.copy_count, t.helpful_votes, t.unhelpful_votes, t.is_deleted, t.deleted_at,
-               t.public_shared_at, t.created_at, t.updated_at, t.location_image_id
+               t.public_shared_at, t.created_at, t.updated_at, t.location_image_id,
+        <choose>
+            <when test="focusLat != null and focusLng != null">
+               CASE
+                   WHEN t.destination_lat IS NULL OR t.destination_lng IS NULL THEN NULL
+                   WHEN EXISTS (
+                       SELECT 1 FROM provinces fp
+                       WHERE fp.geom IS NOT NULL
+                         AND ST_Covers(fp.geom, ST_SetSRID(ST_MakePoint(#{focusLng}::float8, #{focusLat}::float8), 4326))
+                         AND ST_Covers(fp.geom, ST_SetSRID(ST_MakePoint(t.destination_lng::float8, t.destination_lat::float8), 4326)))
+                       THEN 0
+                   ELSE 1 + FLOOR(ST_Distance(
+                                goroute_point(t.destination_lat::float8, t.destination_lng::float8),
+                                goroute_point(#{focusLat}::float8, #{focusLng}::float8)) / 100000)::int
+               END
+            </when>
+            <otherwise>NULL::int</otherwise>
+        </choose> AS focus_rank
         FROM trips t
         JOIN user_follows f
           ON f.following_id = t.owner_id
@@ -314,7 +342,7 @@
               SELECT 1 FROM content_takedowns ct
               WHERE ct.content_type = 'TRIP' AND ct.content_id = t.id
                 AND ct.restored_at IS NULL)
-        ORDER BY COALESCE(t.public_shared_at, t.created_at) DESC, t.id DESC
+        ORDER BY focus_rank ASC NULLS LAST, COALESCE(t.public_shared_at, t.created_at) DESC, t.id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 

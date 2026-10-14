@@ -2186,13 +2186,17 @@ public class TripServiceImpl implements TripService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<PublicTripResponse> getFollowingTrips(UUID viewerId, int page, int size) {
+    public List<PublicTripResponse> getFollowingTrips(UUID viewerId, Double focusLat, Double focusLng,
+                                                      int page, int size) {
         int limit = Math.max(1, Math.min(size, MAX_FOLLOWING_TRIPS_PAGE_SIZE));
         int offset = Math.max(0, page) * limit;
-        List<Trip> trips = tripRepository.findFollowingTrips(viewerId, limit, offset);
+        boolean focused = focusLat != null && focusLng != null;
+        List<Trip> trips = tripRepository.findFollowingTrips(viewerId,
+                focused ? focusLat : null, focused ? focusLng : null, limit, offset);
         List<PublicTripResponse> summaries = toPublicTripSummaries(trips, viewerId);
         for (int i = 0; i < summaries.size(); i++) {
             PublicTripResponse summary = summaries.get(i);
+            summary.setFocusRank(trips.get(i).getFocusRank());
             // The app orders the Friends tab on this. A trip made public before the
             // column existed has none, and its creation date is the honest stand-in --
             // the same one the query sorts by.

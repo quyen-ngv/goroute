@@ -12,6 +12,8 @@ import com.ds.goroute.dto.response.*;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.dto.BaseResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
@@ -221,14 +223,20 @@ public class TripController extends BaseController {
 
     /**
      * Public trips owned by the people the caller follows, most recently shared first: the
-     * Home "Friends" tab. Same summary shape as public trip search, so the app reuses its
-     * model. Lives here rather than under {@code /public} because it needs a signed-in user.
+     * Home "Friends" tab. With {@code latitude}/{@code longitude} (the city Home is on) they
+     * rank like GET /checkins/following -- that province first, then ring by ring -- each
+     * carrying its {@code focusRank}. Same summary shape as public trip search, so the app
+     * reuses its model. Lives here rather than under {@code /public} because it needs a
+     * signed-in user.
      */
     @GetMapping("/following")
     public ResponseEntity<BaseResponse<List<PublicTripResponse>>> getFollowingTrips(
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_FOLLOWING_PAGE_SIZE) int size,
+            @RequestParam(required = false) @DecimalMin("-90") @DecimalMax("90") Double latitude,
+            @RequestParam(required = false) @DecimalMin("-180") @DecimalMax("180") Double longitude,
             @CurrentUser UUID userId) {
-        return ResponseEntity.ok(ofSucceeded(tripService.getFollowingTrips(userId, page, size)));
+        return ResponseEntity.ok(ofSucceeded(
+                tripService.getFollowingTrips(userId, latitude, longitude, page, size)));
     }
 }

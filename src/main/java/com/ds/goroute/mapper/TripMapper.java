@@ -43,8 +43,13 @@ public interface TripMapper {
 
     int reconcileContentCounts();
 
-    /** Public trips owned by the people {@code viewerId} follows, most recently shared first. */
+    /**
+     * Public trips owned by the people {@code viewerId} follows, most recently shared first;
+     * with a focus point, those in its province first, then by 100 km ring (see the XML).
+     */
     List<Trip> findFollowingTrips(@Param("viewerId") UUID viewerId,
+                                  @Param("focusLat") Double focusLat,
+                                  @Param("focusLng") Double focusLng,
                                   @Param("limit") int limit,
                                   @Param("offset") int offset);
 

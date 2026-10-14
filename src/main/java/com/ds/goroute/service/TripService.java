@@ -68,10 +68,12 @@ public interface TripService {
                                                UUID excludeUserId);
 
     /**
-     * Public trips owned by the people {@code viewerId} follows, most recently shared first.
-     * Deleted owners, taken-down trips and blocks in either direction are left out.
+     * Public trips owned by the people {@code viewerId} follows, most recently shared first;
+     * with a focus point (both non-null) those whose destination is in its province first,
+     * then by 100 km ring outwards, each carrying its {@code focusRank}. Deleted owners,
+     * taken-down trips and blocks in either direction are left out.
      */
-    List<PublicTripResponse> getFollowingTrips(UUID viewerId, int page, int size);
+    List<PublicTripResponse> getFollowingTrips(UUID viewerId, Double focusLat, Double focusLng, int page, int size);
 
     /**
      * Public trips whose itinerary has the catalogue place {@code placeId}, as list cards,

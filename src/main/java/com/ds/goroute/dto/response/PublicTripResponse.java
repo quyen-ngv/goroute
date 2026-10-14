@@ -68,4 +68,6 @@ public class PublicTripResponse {
     /** Number of activities on the trip. Carried separately because list payloads leave { activities} out. */
     private Integer totalActivities;
     private LocalDateTime publicSharedAt;
+    /** Home "Friends" tab only (GET /trips/following); the same ranks as UserCheckinResponse#focusRank. */
+    private Integer focusRank;
 }

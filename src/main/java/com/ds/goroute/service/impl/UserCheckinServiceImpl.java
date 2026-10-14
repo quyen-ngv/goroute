@@ -541,9 +541,18 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserCheckinResponse> followingFeed(UUID viewerId, int page, int size) {
-        return toResponses(checkinRepository.findFollowingFeed(
-                viewerId, boundedSize(size), boundedPage(page) * boundedSize(size)), Set.of(), viewerId);
+    public List<UserCheckinResponse> followingFeed(UUID viewerId, Double focusLat, Double focusLng,
+                                                   int page, int size) {
+        boolean focused = focusLat != null && focusLng != null;
+        List<UserCheckin> checkins = checkinRepository.findFollowingFeed(viewerId,
+                focused ? focusLat : null, focused ? focusLng : null,
+                boundedSize(size), boundedPage(page) * boundedSize(size));
+        List<UserCheckinResponse> responses = toResponses(checkins, Set.of(), viewerId);
+        // toResponses keeps the order, so row i is response i.
+        for (int i = 0; i < responses.size(); i++) {
+            responses.get(i).setFocusRank(checkins.get(i).getFocusRank());
+        }
+        return responses;
     }
 
     @Override

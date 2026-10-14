@@ -10,6 +10,8 @@ import com.ds.goroute.dto.response.UserCheckinResponse;
 import com.ds.goroute.dto.response.CheckinLikeResponse;
 import com.ds.goroute.service.UserCheckinService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
@@ -133,16 +135,22 @@ public class UserCheckinController extends BaseController {
     }
 
     /**
-     * Public check-ins by the people the caller follows, newest first: the Home "Friends"
-     * tab. Signed-in only, since "people I follow" means nothing to a guest. Paged by number
-     * like {@link #feed}, so the client de-duplicates by id.
+     * Public check-ins by the people the caller follows: the Home "Friends" tab. With
+     * {@code latitude}/{@code longitude} (the city Home is on) those in that province come
+     * first, then the rest ring by ring outwards, newest first within each, every post
+     * carrying its {@code focusRank}; without them, newest first. Signed-in only, since
+     * "people I follow" means nothing to a guest. Paged by number like {@link #feed}, so
+     * the client de-duplicates by id.
      */
     @GetMapping("/following")
     public ResponseEntity<BaseResponse<List<UserCheckinResponse>>> following(
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
+            @RequestParam(required = false) @DecimalMin("-90") @DecimalMax("90") Double latitude,
+            @RequestParam(required = false) @DecimalMin("-180") @DecimalMax("180") Double longitude,
             @CurrentUser UUID userId) {
-        return ResponseEntity.ok(ofSucceeded(checkinService.followingFeed(userId, page, size)));
+        return ResponseEntity.ok(ofSucceeded(
+                checkinService.followingFeed(userId, latitude, longitude, page, size)));
     }
 
     @GetMapping("/users/{userId}")

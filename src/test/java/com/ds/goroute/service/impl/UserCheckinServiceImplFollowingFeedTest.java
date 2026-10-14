@@ -67,13 +67,13 @@ class UserCheckinServiceImplFollowingFeedTest {
     void pageAndSizeAreBoundedBeforeTheyReachTheQuery() {
         UUID viewerId = UUID.randomUUID();
 
-        assertThat(service.followingFeed(viewerId, -3, 500)).isEmpty();
-        service.followingFeed(viewerId, 2, 0);
-        service.followingFeed(viewerId, 3, 20);
+        assertThat(service.followingFeed(viewerId, null, null, -3, 500)).isEmpty();
+        service.followingFeed(viewerId, null, null, 2, 0);
+        service.followingFeed(viewerId, null, null, 3, 20);
 
-        verify(checkins).findFollowingFeed(viewerId, 50, 0);
-        verify(checkins).findFollowingFeed(viewerId, 1, 2);
-        verify(checkins).findFollowingFeed(viewerId, 20, 60);
+        verify(checkins).findFollowingFeed(viewerId, null, null, 50, 0);
+        verify(checkins).findFollowingFeed(viewerId, null, null, 1, 2);
+        verify(checkins).findFollowingFeed(viewerId, null, null, 20, 60);
     }
 
     @Test
@@ -87,13 +87,14 @@ class UserCheckinServiceImplFollowingFeedTest {
                 .userId(authorId)
                 .visibility(ContentVisibility.PUBLIC)
                 .createdAt(createdAt)
+                .focusRank(0)
                 .build();
-        when(checkins.findFollowingFeed(viewerId, 20, 0)).thenReturn(List.of(row));
+        when(checkins.findFollowingFeed(viewerId, 21.0, 105.8, 20, 0)).thenReturn(List.of(row));
         when(users.findByIds(java.util.Set.of(authorId))).thenReturn(List.of(
                 User.builder().id(authorId).fullName("Minh").avatarUrl("https://cdn/minh.jpg").build()));
         when(checkins.findLikedCheckinIds(viewerId, List.of(checkinId))).thenReturn(List.of(checkinId));
 
-        List<UserCheckinResponse> feed = service.followingFeed(viewerId, 0, 20);
+        List<UserCheckinResponse> feed = service.followingFeed(viewerId, 21.0, 105.8, 0, 20);
 
         assertThat(feed).singleElement().satisfies(post -> {
             assertThat(post.getId()).isEqualTo(checkinId);
@@ -102,7 +103,17 @@ class UserCheckinServiceImplFollowingFeedTest {
             assertThat(post.getUserAvatarUrl()).isEqualTo("https://cdn/minh.jpg");
             assertThat(post.isHasLiked()).as("liked state belongs to the viewer").isTrue();
             assertThat(post.getCreatedAt()).isEqualTo(createdAt);
+            assertThat(post.getFocusRank()).as("the app interleaves trips on it").isZero();
         });
+    }
+
+    @Test
+    void halfAFocusPointIsNoFocusPoint() {
+        UUID viewerId = UUID.randomUUID();
+
+        service.followingFeed(viewerId, 21.0, null, 0, 20);
+
+        verify(checkins).findFollowingFeed(viewerId, null, null, 20, 0);
     }
 
     @Test

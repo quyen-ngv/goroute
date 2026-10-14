@@ -136,4 +136,11 @@ public class UserCheckinResponse {
      * item's value back as {@code cursor} to get the page after it. Null outside that feed.
      */
     private String feedCursor;
+
+    /**
+     * Home "Friends" tab only (GET /checkins/following with a focus point): 0 inside the
+     * province Home is on, 1, 2, ... per 100 km ring further out, null when the post cannot
+     * be placed. The list is ordered by it (nulls last), then newest first. Null elsewhere.
+     */
+    private Integer focusRank;
 }

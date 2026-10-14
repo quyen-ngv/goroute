@@ -109,8 +109,9 @@ public class TripRepositoryImpl implements TripRepository {
     }
     
     @Override
-    public List<Trip> findFollowingTrips(UUID viewerId, int limit, int offset) {
-        return tripMapper.findFollowingTrips(viewerId, limit, offset);
+    public List<Trip> findFollowingTrips(UUID viewerId, Double focusLat, Double focusLng,
+                                         int limit, int offset) {
+        return tripMapper.findFollowingTrips(viewerId, focusLat, focusLng, limit, offset);
     }
 
     @Override

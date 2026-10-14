@@ -49,7 +49,7 @@ public interface TripRepository {
      * Public trips owned by the people {@code viewerId} follows, most recently shared first,
      * without deleted owners, taken-down trips or blocks in either direction.
      */
-    List<Trip> findFollowingTrips(UUID viewerId, int limit, int offset);
+    List<Trip> findFollowingTrips(UUID viewerId, Double focusLat, Double focusLng, int limit, int offset);
 
     /**
      * Ids of the public trips that have the catalogue place {@code placeId} in their

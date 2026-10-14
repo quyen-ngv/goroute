@@ -125,7 +125,7 @@ class TripServiceImplPublicTripCardsTest {
         Trip second = trip(ownerId, "Đà Lạt", null);
         Trip third = trip(viewerId, "Huế", "https://cdn/cover.jpg");
         List<Trip> trips = List.of(first, second, third);
-        when(tripRepository.findFollowingTrips(viewerId, 20, 0)).thenReturn(trips);
+        when(tripRepository.findFollowingTrips(viewerId, null, null, 20, 0)).thenReturn(trips);
         when(userRepository.findByIds(any())).thenReturn(List.of(
                 User.builder().id(ownerId).fullName("Linh").build()));
         when(tripHelpfulVoteRepository.findByTripIdsAndUserId(anyCollection(), eq(viewerId))).thenReturn(Map.of(
@@ -138,7 +138,7 @@ class TripServiceImplPublicTripCardsTest {
         when(activityRepository.findNamesByIds(anyCollection())).thenReturn(Map.of(activityId, "Hồ Xuân Hương"));
         when(locationImageService.getImageForDestination("Đà Lạt")).thenReturn("https://cdn/dalat.jpg");
 
-        List<PublicTripResponse> cards = service.getFollowingTrips(viewerId, 0, 20);
+        List<PublicTripResponse> cards = service.getFollowingTrips(viewerId, null, null, 0, 20);
 
         assertThat(cards).extracting(PublicTripResponse::getId)
                 .containsExactly(first.getId(), second.getId(), third.getId());

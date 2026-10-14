@@ -89,7 +89,12 @@ public interface UserCheckinService {
      * authors, taken-down posts and anyone blocked in either direction are left out:
      * blocking does not remove a follow, so the follow alone is not consent to be shown.
      */
-    List<UserCheckinResponse> followingFeed(UUID viewerId, int page, int size);
+    /**
+     * Public check-ins by the people the viewer follows. With a focus point (both non-null)
+     * the ones in its province come first, then the rest by 100 km ring outwards, newest
+     * first within each; each carries its {@code focusRank}. Without, newest first.
+     */
+    List<UserCheckinResponse> followingFeed(UUID viewerId, Double focusLat, Double focusLng, int page, int size);
 
     List<UserCheckinResponse> byUser(UUID viewerId, UUID userId, int page, int size);
 

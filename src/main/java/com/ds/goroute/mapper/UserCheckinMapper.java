@@ -52,8 +52,13 @@ public interface UserCheckinMapper {
                                @Param("limit") int limit,
                                @Param("offset") int offset);
 
-    /** Public check-ins by the people {@code viewerId} follows, newest first. */
+    /**
+     * Public check-ins by the people {@code viewerId} follows, newest first; with a focus
+     * point, those in its province first, then by 100 km ring (see the XML).
+     */
     List<UserCheckin> findFollowingFeed(@Param("viewerId") UUID viewerId,
+                                        @Param("focusLat") Double focusLat,
+                                        @Param("focusLng") Double focusLng,
                                         @Param("limit") int limit,
                                         @Param("offset") int offset);
 
