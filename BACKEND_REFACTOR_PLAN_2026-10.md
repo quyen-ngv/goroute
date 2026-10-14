@@ -348,11 +348,11 @@ Hiệu năng (Phase 5) chạy song song khi có người rảnh. Mỗi phase là
 ### Phase 0 — Sửa lỗi thật (3–4 ngày)
 
 - [ ] **0.1** V226: kiểm checksum trên mọi DB trước lần deploy tới (ISSUES A22).
-- [ ] **0.2** `CorsFilter`: bỏ parse/ghi lại body, request id qua header + MDC, không chép `X-API-SECRET`; đổi tên `RequestContextFilter`; gỡ json-simple (A23).
-- [ ] **0.3** `ReviewServiceImpl.isVerifiedLocation` đọc `CHECKIN_*`; xoá ternary chết (A24).
-- [ ] **0.4** IAE → thông báo chung + log; helper parse enum từ request ném `BusinessException(4000001)` (A25).
-- [ ] **0.5** Rate limit login/refresh/admin login ở nginx + khoá tạm theo tài khoản (A26).
-- [ ] **0.6** Tỉ giá: `unless` trên `@Cacheable`, không cache `BigDecimal.ONE` fallback (plan 09 A1, vẫn chưa làm).
+- [x] **0.2** `CorsFilter`: bỏ parse/ghi lại body, request id qua header + MDC, không chép `X-API-SECRET`; đổi tên `RequestContextFilter`; gỡ json-simple (A23).
+- [x] **0.3** `ReviewServiceImpl.isVerifiedLocation` đọc `CHECKIN_*`; xoá ternary chết (A24).
+- [x] **0.4** IAE do JDK/thư viện sinh → thông báo chung + log; message do code mình ném giữ nguyên vì client đang hiển thị (A25). Phần `TripStatus` chờ quyết định nghiệp vụ.
+- [x] **0.5** Khoá tạm theo tài khoản trong app (`LoginAttemptGuard`). Nginx: zone `goroute_login` + partner-register đã thêm vào `deployment/nginx/conf.d/vocaberry.conf` — **chưa deploy**.
+- [x] **0.6** Tỉ giá: `unless` trên `@Cacheable`, không cache `BigDecimal.ONE` fallback (plan 09 A1, vẫn chưa làm).
 - [ ] **0.7** Track `application.yaml` với placeholder, override ở `application-local.yaml` (B69).
 
 **Xong khi:** `mvnw test` xanh; test cho 0.2, 0.3, 0.4, 0.6.
