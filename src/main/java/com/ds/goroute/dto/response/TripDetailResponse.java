@@ -46,4 +46,6 @@ public class TripDetailResponse {
     private UserResponse owner;
     private List<TripMemberResponse> members;
     private TripStatsResponse stats;
+    /** The caller's role in this trip: OWNER, EDITOR or VIEWER. Same field as on TripResponse. */
+    private String userRole;
 }

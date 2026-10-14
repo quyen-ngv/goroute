@@ -393,6 +393,11 @@ public class TripServiceImpl implements TripService {
         if (!isOwner && !isAcceptedMember) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Access denied");
         }
+        // Without it the app treats a trip it opened by id (not yet in its own list, e.g. just
+        // after accepting an invite) as a read-only public trip.
+        String userRole = isOwner || member.get().getRole() == MemberRole.OWNER
+                ? MemberRole.OWNER.name()
+                : member.get().getRole().name();
 
         List<TripMember> members = tripMemberRepository.findByTripId(tripId);
         List<TripMemberResponse> memberResponses = members.stream()
@@ -440,6 +445,7 @@ public class TripServiceImpl implements TripService {
                 .owner(ownerResponse)
                 .members(memberResponses)
                 .stats(stats)
+                .userRole(userRole)
                 .build();
     }
 
