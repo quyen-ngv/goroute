@@ -21,6 +21,8 @@ import com.ds.goroute.service.ReviewService;
 import com.ds.goroute.service.ReviewScoringService;
 import com.ds.goroute.service.ReviewFraudDetectionService;
 import com.ds.goroute.service.StarService;
+import com.ds.goroute.service.checkin.CheckinVerifier;
+import com.ds.goroute.service.checkin.VerificationTarget;
 import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.utils.MediaAssetResponseMapper;
 import com.ds.goroute.type.MarketplaceBookingStatus;
@@ -73,6 +75,7 @@ public class ReviewServiceImpl implements ReviewService {
     private final SocialNotificationService socialNotificationService;
     private final ContentModerationService contentModerationService;
     private final ContentCommentRepository contentCommentRepository;
+    private final CheckinVerifier checkinVerifier;
 
     /**
      * Create a new review
@@ -104,7 +107,7 @@ public class ReviewServiceImpl implements ReviewService {
         if (placeId != null) {
             var place = placeRepository.findById(placeId)
                     .orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND, "Place not found"));
-            locationVerified = isVerifiedLocation(request, place.getLatitude(), place.getLongitude());
+            locationVerified = isVerifiedLocation(request, place);
         } else {
             activityBookingRepository.findById(activityBookingId)
                     .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity booking not found"));
@@ -281,25 +284,19 @@ public class ReviewServiceImpl implements ReviewService {
      * only controls the trust badge/reward eligibility, not whether the
      * review can be created.
      */
-    private boolean isVerifiedLocation(CreateReviewRequest request, BigDecimal placeLat, BigDecimal placeLng) {
+    boolean isVerifiedLocation(CreateReviewRequest request, Place place) {
         if (request.getCheckinLat() == null || request.getCheckinLng() == null || request.getCheckinAccuracy() == null) {
             return false;
         }
-        if (request.getCheckinAccuracy().doubleValue() > 100 || placeLat == null || placeLng == null
-                || distanceMeters(request.getCheckinLat().doubleValue(), request.getCheckinLng().doubleValue(),
-                placeLat.doubleValue(), placeLng.doubleValue()) > 200) {
-            return false;
-        }
-        return true;
-    }
-
-    private double distanceMeters(double lat1, double lng1, double lat2, double lng2) {
-        double dLat = Math.toRadians(lat2 - lat1);
-        double dLng = Math.toRadians(lng2 - lng1);
-        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
-                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-        return 6_371_000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        // Same accuracy limit, radius and drawn area as a check-in at this place, so the
+        // CHECKIN.* settings an operator edits govern both. No ward fallback: a review is
+        // either at the place or not verified.
+        VerificationTarget target = new VerificationTarget(place.getLatitude(), place.getLongitude(),
+                checkinVerifier.effectiveRadius(place), false, place.getId());
+        CheckinVerifier.Assessment assessment = checkinVerifier.assess(target,
+                request.getCheckinLat(), request.getCheckinLng(), request.getCheckinAccuracy());
+        return Boolean.TRUE.equals(assessment.accuracyAcceptable())
+                && Boolean.TRUE.equals(assessment.withinPlaceArea());
     }
 
     /**
@@ -598,7 +595,7 @@ public class ReviewServiceImpl implements ReviewService {
                         score.getGoogleScore().toString() :
                         (score.getTripmindScore() != null ? score.getTripmindScore().toString() : "N/A"))
                 .displayLabel(score.getReviewCount() < 10 ? "Preliminary" :
-                        (score.getReviewCount() < 50 ? "TripMind Score" : "TripMind Score"))
+                        "TripMind Score")
                 .useGoogleScore(useGoogle)
                 .lastCalculatedAt(score.getLastCalculatedAt())
                 .build();
