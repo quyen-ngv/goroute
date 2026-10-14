@@ -32,6 +32,8 @@ import java.util.List;
 @Slf4j
 public class CommonExceptionHandler {
 
+    private static final String OWN_PACKAGE_PREFIX = "com.ds.goroute.";
+
     private final HttpServletRequest httpServletRequest;
 
     public CommonExceptionHandler(HttpServletRequest httpServletRequest) {
@@ -111,12 +113,28 @@ public class CommonExceptionHandler {
         return invalidParameters(List.of(violation(null, "Request body is invalid")));
     }
 
+    /**
+     * Our own code throws IllegalArgumentException with a message written for the caller
+     * ("URL must be a TikTok or Instagram URL"), and clients show it. The JDK and libraries
+     * throw it too -- Enum.valueOf ("No enum constant com.ds.goroute.type..."), UUID.fromString,
+     * NumberFormatException -- and those messages name internal classes, so they are logged
+     * and answered with a generic text instead.
+     */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<BaseResponse<?>> handleIllegalArgument(IllegalArgumentException exception) {
-        String message = exception.getMessage() == null || exception.getMessage().isBlank()
-                ? "Invalid parameter"
-                : exception.getMessage();
+        String message = exception.getMessage();
+        if (message == null || message.isBlank()) {
+            message = "Invalid parameter";
+        } else if (!thrownByOurCode(exception)) {
+            log.debug("Rejected request with a library argument error: {}", message);
+            message = "Invalid parameter";
+        }
         return invalidParameters(List.of(violation(null, message)));
+    }
+
+    private static boolean thrownByOurCode(Throwable exception) {
+        StackTraceElement[] trace = exception.getStackTrace();
+        return trace.length > 0 && trace[0].getClassName().startsWith(OWN_PACKAGE_PREFIX);
     }
 
     @ExceptionHandler(AuthenticationException.class)

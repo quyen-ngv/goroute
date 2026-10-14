@@ -1,12 +1,16 @@
 package com.ds.goroute.exception;
 
 import com.ds.goroute.constant.ErrorConstant;
+import com.ds.goroute.dto.ErrorViolation;
+import com.ds.goroute.type.TripStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -52,5 +56,46 @@ class CommonExceptionHandlerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getMeta().getMessage()).isEqualTo("Internal server error");
+    }
+
+    @Test
+    void keepsTheMessageOfAnArgumentErrorWeThrew() {
+        var response = handler.handleIllegalArgument(
+                new IllegalArgumentException("URL must be a TikTok or Instagram URL"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().getMeta().getErrors())
+                .extracting(ErrorViolation::getDescription)
+                .containsExactly("URL must be a TikTok or Instagram URL");
+    }
+
+    @Test
+    void hidesTheJdkMessageOfAnUnknownEnumValue() {
+        IllegalArgumentException fromJdk = catchArgumentError(() -> TripStatus.valueOf("ARCHIVED"));
+
+        var response = handler.handleIllegalArgument(fromJdk);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().getMeta().getErrors())
+                .extracting(ErrorViolation::getDescription)
+                .containsExactly("Invalid parameter");
+    }
+
+    @Test
+    void hidesTheJdkMessageOfAMalformedUuid() {
+        IllegalArgumentException fromJdk = catchArgumentError(() -> UUID.fromString("not-a-uuid"));
+
+        assertThat(handler.handleIllegalArgument(fromJdk).getBody().getMeta().getErrors())
+                .extracting(ErrorViolation::getDescription)
+                .containsExactly("Invalid parameter");
+    }
+
+    private static IllegalArgumentException catchArgumentError(Runnable call) {
+        try {
+            call.run();
+        } catch (IllegalArgumentException e) {
+            return e;
+        }
+        throw new AssertionError("expected an IllegalArgumentException");
     }
 }
