@@ -307,12 +307,41 @@ Mẫu đã có sẵn: `PlaceLookupProviders` (EnumMap, fail-fast khi trùng). Á
 
 ### 4.4 Quyết định về tầng repository và interface
 
-Khuyến nghị (giữ nguyên khuyến nghị E2(a) của plan 09, nay có thêm dữ liệu):
+**Giữ tầng repository, nhưng chia theo aggregate thay vì một-một với mapper.**
 
-- **Mapper chính là repository** của một feature, đặt trong `persistence/` (package-private khi Modulith cho phép).
-  Chỉ viết class repository khi nó làm việc thật: ghép nhiều mapper, chia lô `IN`, cache, bọc `Optional`.
-- **Không thêm interface service một implementation cho code mới.** Interface chỉ dùng khi có ≥ 2 impl hoặc là port/hook.
-  Không xoá hàng loạt interface cũ — xoá khi chạm vào service đó.
+Vấn đề hiện tại không phải là "có repository", mà là repository đang được viết một-một với mapper:
+`ExpenseRepository` bọc `ExpenseMapper`, `ExpenseSplitRepository` bọc `ExpenseSplitMapper`, và
+474/783 method chỉ là `return xMapper.y(...)`. Vì thế service vẫn phải tự ghép nhiều bảng
+(`TripServiceImpl` giữ 16 repository), còn repository không gánh được việc gì.
+
+Quy tắc đề xuất — ba tầng, mỗi tầng một loại việc:
+
+| Tầng | Làm gì | Ví dụ |
+|---|---|---|
+| **Mapper** | SQL của một bảng/một truy vấn. Không logic | `ExpenseMapper.insert`, `ExpenseSplitMapper.insertBatch` |
+| **Repository** (theo aggregate) | Đọc/ghi **một khối dữ liệu đi cùng nhau**, có thể gọi nhiều mapper: ghi cha + con, nạp aggregate, chia lô `IN` 500, bọc `Optional`, evict cache, giữ bất biến lưu trữ (ví dụ "split luôn đi kèm expense"). **Không** có luật nghiệp vụ, không kiểm quyền, không gọi service | `ExpenseRepository.saveWithSplits(expense, splits)`, `TripRepository.loadWithMembers(tripId)` |
+| **Service** (use case) | Luật nghiệp vụ, quyền, transaction, gọi nhiều repository của nhiều aggregate, publish event | `ExpenseService.create(...)`: kiểm thành viên → tính chia → `expenseRepository.saveWithSplits` → event |
+| **Domain service / guard dùng chung** | Logic nghiệp vụ mà **nhiều service** cùng cần | `TripAccessGuard`, `MarketplaceBookingTransitioner`, `CheckinVerifier` |
+
+Trả lời câu "nghiệp vụ chung cần gọi nhiều mapper thì sao":
+
+- Nếu "chung" nghĩa là **cùng một khối dữ liệu** (expense + splits, trip + members + destinations) → một method trên
+  repository của aggregate đó gọi nhiều mapper. Đây chính là chỗ repository có giá trị nhất.
+- Nếu "chung" là **luật nghiệp vụ** dùng ở nhiều use case (kiểm quyền thành viên, chuyển trạng thái booking) →
+  domain service/guard, nó gọi repository. Không đặt luật vào repository.
+- Nếu là **một use case** chạm nhiều aggregate (tạo trip từ lịch AI: trip + activity + member) → service, gọi nhiều repository
+  trong một transaction.
+
+Áp dụng:
+
+- Service **chỉ phụ thuộc repository**, không import `mapper` (chặn bằng ArchUnit ở 1.3, baseline cho 56 service hiện tại).
+- Repository một-một với mapper cũ không cần viết lại ngay; khi chạm vào thì gộp về theo aggregate
+  (`ExpenseSplitRepository` nhập vào `ExpenseRepository`…). 38 mapper chưa có repository: thêm khi service cần dùng.
+- Repository là class cụ thể, **không cần interface + Impl** (một implementation, test mock trực tiếp class được).
+- Đặt trong `persistence/` của feature, cùng mapper; mapper để package-private khi Modulith cho phép.
+
+**Interface service.** Không thêm interface một implementation cho code mới; interface chỉ dùng khi có ≥ 2 impl hoặc là
+port/hook. Không xoá hàng loạt interface cũ — bỏ khi chạm vào service đó.
 
 ---
 
@@ -424,14 +453,23 @@ Thêm:
 - [ ] **6.6** Renovate hoặc Dependabot để không tụt version lần nữa.
 - [ ] **6.7** Cân nhắc virtual thread chỉ sau khi có `@ConcurrencyLimit` cho lời gọi AI và đo pool Hikari.
 
-### Phase 7 — Nhiều instance (quyết định hạ tầng, kế thừa plan 09 §F)
+### Phase 7 — Một instance (đã chốt 14/10/2026)
 
-Hiện có 30 `@Scheduled` (gấp đôi lúc audit 09), phần lớn không khoá; thêm state cục bộ mới:
-`ChatRealtimeController` typing cache, `TripRealtimeAccessCache`, `RealtimeSessionRegistry`, `MapSearchRateLimiter`.
+**Quyết định:** backend chạy **một instance** có chủ đích (chọn hướng (b) của plan 09 §F). Cache Caffeine cục bộ,
+simple STOMP broker, emitter SSE trong bộ nhớ, khoá sửa trong `Map`, 30 job `@Scheduled` không khoá — tất cả đều
+đúng trong ràng buộc này, không phải nợ cần trả.
 
-- [ ] **7.1** Dù chọn hướng nào: **ShedLock** (JDBC, `usingDbTime()`) cho mọi job chưa có claim/lease — rẻ, dứt điểm một loại sự cố.
-- [ ] **7.2** Chốt (a) khôi phục Redis/broker hay (b) chấp nhận một instance có chủ đích + kiểm tra khi khởi động. Nếu (a):
-      STOMP broker relay (RabbitMQ), fan-out SSE qua Postgres `LISTEN/NOTIFY` hoặc Redis pub/sub, khoá sửa ra khỏi `Map` cục bộ.
+- [ ] **7.1** Ghi ràng buộc vào `.agents/docs/00-system-architecture.md` và `goroute/AGENTS.md`: "một instance; muốn
+      thêm instance phải làm 7.3 trước". Nêu rõ các thành phần phụ thuộc vào nó (danh sách ở trên + `PlaceSearchIndexServiceImpl`
+      giữ `write.lock` của Lucene, `MapSearchRateLimiter`, `RealtimeSessionRegistry`, `TripRealtimeAccessCache`).
+- [ ] **7.2** Xoá scaffolding Redis chết: dependency comment trong `pom.xml`, khối `app.cache.redis` trong YAML, stub `RedisService`
+      và lời gọi của nó, `commons-pool2`, script Lua trong `resources/scripts` (trùng với 2.10).
+- [ ] **7.3** *(Chỉ khi cần scale ngang — chưa làm)* ShedLock cho job, STOMP broker relay, fan-out SSE qua Postgres
+      `LISTEN/NOTIFY`, khoá sửa và rate limiter ra DB/Redis, Lucene thành dịch vụ riêng hoặc chuyển sang Postgres FTS.
+
+Lưu ý khi deploy: `docker compose up -d` dừng container cũ trước khi chạy container mới nên không có hai instance chồng nhau.
+Nếu sau này chuyển sang deploy không downtime (blue/green, rolling), hai instance sẽ chạy cùng lúc vài chục giây — lúc đó
+cần 7.3 hoặc ít nhất ShedLock cho các job ghi dữ liệu.
 
 ---
 
@@ -442,7 +480,7 @@ Một feature mới (như meetup) chỉ được merge khi:
 1. Nằm trong một package feature theo §4.1; enum, `ConfigKey`, error code, job, mapper XML nằm trong feature.
 2. Không đọc `persistence` của feature khác; giao tiếp qua `api/` của feature đó hoặc qua event.
 3. Đăng ký vào hook (§4.2) thay vì sửa `switch` dùng chung.
-4. Không interface service một impl; mapper là repository trừ khi repository làm việc thật.
+4. Không interface service một impl; service chỉ gọi repository (theo aggregate, §4.4), không gọi mapper.
 5. Controller: `ResponseEntity<BaseResponse<Dto>>`, `@Valid`, `PageQuery`, `@CurrentUser`; không gọi mapper/thirdparty.
 6. Transaction không bọc I/O bên ngoài; side effect qua `@TransactionalEventListener`.
 7. Thời gian qua `Clock` + `AppZones`; chuỗi cho người dùng qua bundle i18n.
