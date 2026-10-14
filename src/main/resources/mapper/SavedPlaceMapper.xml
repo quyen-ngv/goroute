@@ -246,4 +246,59 @@
           AND LOWER(BTRIM(category)) = LOWER(BTRIM(#{category}))
     </delete>
 
+    <!-- placeIds holds at most 500 ids (RemoveSavedPlacesRequest). -->
+    <delete id="deletePlaceSaves">
+        DELETE FROM saved_places
+        WHERE user_id = #{userId}
+          AND item_type IN ('PLACE', 'FOOD')
+          AND place_id IN
+          <foreach collection="placeIds" item="placeId" open="(" separator="," close=")">
+              #{placeId}
+          </foreach>
+          <if test="category != null">
+          AND category IS NOT NULL
+          AND LOWER(BTRIM(category)) = LOWER(BTRIM(#{category}))
+          </if>
+    </delete>
+
+    <resultMap id="SavedPlaceMarkResultMap" type="com.ds.goroute.entity.SavedPlaceMark">
+        <id property="userId" column="user_id"/>
+        <id property="placeId" column="place_id"/>
+        <result property="visitedAt" column="visited_at"/>
+        <result property="removedAt" column="removed_at"/>
+    </resultMap>
+
+    <select id="findMarksByUserId" resultMap="SavedPlaceMarkResultMap">
+        SELECT user_id, place_id, visited_at, removed_at
+        FROM saved_place_marks
+        WHERE user_id = #{userId}
+    </select>
+
+    <insert id="markVisited">
+        INSERT INTO saved_place_marks (user_id, place_id, visited_at, updated_at)
+        VALUES (#{userId}, #{placeId}, #{visitedAt}, #{visitedAt})
+        ON CONFLICT (user_id, place_id) DO UPDATE
+        SET visited_at = COALESCE(saved_place_marks.visited_at, EXCLUDED.visited_at),
+            updated_at = EXCLUDED.updated_at
+    </insert>
+
+    <update id="clearVisited">
+        UPDATE saved_place_marks
+        SET visited_at = NULL,
+            updated_at = NOW()
+        WHERE user_id = #{userId}
+          AND place_id = #{placeId}
+    </update>
+
+    <insert id="markRemoved">
+        INSERT INTO saved_place_marks (user_id, place_id, removed_at, updated_at)
+        VALUES
+        <foreach collection="placeIds" item="placeId" separator=",">
+            (#{userId}, #{placeId}, #{removedAt}, #{removedAt})
+        </foreach>
+        ON CONFLICT (user_id, place_id) DO UPDATE
+        SET removed_at = EXCLUDED.removed_at,
+            updated_at = EXCLUDED.updated_at
+    </insert>
+
 </mapper>

@@ -1,10 +1,12 @@
 package com.ds.goroute.mapper;
 
 import com.ds.goroute.entity.SavedPlace;
+import com.ds.goroute.entity.SavedPlaceMark;
 import com.ds.goroute.entity.SocialLocationJob;
 import com.ds.goroute.dto.response.SavedItemTripResponse;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -63,4 +65,25 @@ public interface SavedPlaceMapper {
                        @Param("newCategory") String newCategory);
 
     int deleteByCategoryKey(@Param("userId") UUID userId, @Param("category") String category);
+
+    /**
+     * Deletes the user's place and food saves of these places: only those in {@code category}
+     * (matched ignoring case) when it is set, else all of them.
+     */
+    int deletePlaceSaves(@Param("userId") UUID userId,
+                         @Param("placeIds") List<String> placeIds,
+                         @Param("category") String category);
+
+    List<SavedPlaceMark> findMarksByUserId(@Param("userId") UUID userId);
+
+    /** Keeps the first time when the place was already marked. */
+    void markVisited(@Param("userId") UUID userId,
+                     @Param("placeId") String placeId,
+                     @Param("visitedAt") LocalDateTime visitedAt);
+
+    void clearVisited(@Param("userId") UUID userId, @Param("placeId") String placeId);
+
+    void markRemoved(@Param("userId") UUID userId,
+                     @Param("placeIds") List<String> placeIds,
+                     @Param("removedAt") LocalDateTime removedAt);
 }

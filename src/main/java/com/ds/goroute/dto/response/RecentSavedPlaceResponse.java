@@ -29,4 +29,6 @@ public class RecentSavedPlaceResponse {
     private String locationImageName;
     private List<SavedPlaceCategoryResponse> categories;
     private LocalDateTime savedAt;
+    /** When the user marked the place as been there; null while not. */
+    private LocalDateTime visitedAt;
 }

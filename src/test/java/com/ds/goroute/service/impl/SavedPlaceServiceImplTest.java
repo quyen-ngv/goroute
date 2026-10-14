@@ -9,6 +9,7 @@ import com.ds.goroute.entity.LocationImage;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.SavedCategory;
 import com.ds.goroute.entity.SavedPlace;
+import com.ds.goroute.entity.SavedPlaceMark;
 import com.ds.goroute.entity.SocialLocationJob;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.PlaceMapper;
@@ -206,6 +207,74 @@ class SavedPlaceServiceImplTest {
         SavedPlaceResponse saved = service.savePlace(userId, request("map_place", "Cà phê"));
 
         assertThat(saved.getItemType()).isEqualTo("MAP_PLACE");
+    }
+
+    @Test
+    void removingOffTheWholeListDeletesEverySaveAndKeepsVideoPlacesOff() {
+        service.removeFromList(userId, List.of(" place-1 ", "place-1", "place-2"), null);
+
+        verify(savedPlaceMapper).deletePlaceSaves(userId, List.of("place-1", "place-2"), null);
+        verify(savedPlaceMapper).markRemoved(eq(userId), eq(List.of("place-1", "place-2")), any());
+    }
+
+    @Test
+    void removingOutOfOneCategoryLeavesThePlaceOnTheList() {
+        service.removeFromList(userId, List.of("place-1"), " Ăn uống ");
+
+        verify(savedPlaceMapper).deletePlaceSaves(userId, List.of("place-1"), "Ăn uống");
+        verify(savedPlaceMapper, never()).markRemoved(any(), anyList(), any());
+    }
+
+    @Test
+    void videoPlaceRemovedAfterTheVideoStaysOffButANewerVideoBringsItBack() {
+        UUID removedId = UUID.randomUUID();
+        UUID laterId = UUID.randomUUID();
+        LocalDateTime removedAt = LocalDateTime.now().minusDays(1);
+        when(savedPlaceMapper.findMarksByUserId(userId)).thenReturn(List.of(
+                SavedPlaceMark.builder().userId(userId).placeId(removedId.toString()).removedAt(removedAt).build(),
+                SavedPlaceMark.builder().userId(userId).placeId(laterId.toString()).removedAt(removedAt).build()));
+        when(savedPlaceMapper.findSocialSavedPlacesByUserId(userId)).thenReturn(List.of(
+                videoJob(laterId, removedAt.plusHours(1)),
+                videoJob(removedId, removedAt.minusHours(1))));
+        when(placeMapper.findSavedSummaryByIds(anyList())).thenReturn(List.of());
+
+        List<RecentSavedPlaceResponse> places = service.getRecentSavedPlaces(userId);
+
+        assertThat(places).extracting(RecentSavedPlaceResponse::getPlaceId).containsExactly(laterId.toString());
+    }
+
+    @Test
+    void visitedPlaceCarriesWhenItWasMarked() {
+        UUID placeId = UUID.randomUUID();
+        LocalDateTime visitedAt = LocalDateTime.now().minusDays(2);
+        when(savedPlaceMapper.findAllByUserId(userId, SavedPlaceServiceImpl.MAX_LISTED_SAVED_ITEMS)).thenReturn(List.of(
+                saved(placeId.toString(), "Hồ Gươm", 21.03, 105.85)));
+        when(savedPlaceMapper.findMarksByUserId(userId)).thenReturn(List.of(
+                SavedPlaceMark.builder().userId(userId).placeId(placeId.toString()).visitedAt(visitedAt).build()));
+
+        RecentSavedPlaceResponse place = service.getRecentSavedPlaces(userId).get(0);
+
+        assertThat(place.getVisitedAt()).isEqualTo(visitedAt);
+    }
+
+    @Test
+    void markingAndUnmarkingVisited() {
+        service.setVisited(userId, " place-1 ", true);
+        service.setVisited(userId, "place-1", false);
+
+        verify(savedPlaceMapper).markVisited(eq(userId), eq("place-1"), any());
+        verify(savedPlaceMapper).clearVisited(userId, "place-1");
+    }
+
+    private SocialLocationJob videoJob(UUID placeId, LocalDateTime completedAt) {
+        return SocialLocationJob.builder()
+                .completedAt(completedAt)
+                .resultPayload("""
+                        {"extraction":{"candidates":[{"name":"Cầu Rồng",
+                          "mapSearch":{"candidates":[{"title":"Cầu Rồng",
+                            "placeMapping":{"placeId":"PLACE_ID"}}]}}]}}
+                        """.replace("PLACE_ID", placeId.toString()))
+                .build();
     }
 
     private SavePlaceRequest request(String itemType, String category) {

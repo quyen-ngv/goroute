@@ -10,6 +10,7 @@ import com.ds.goroute.entity.LocationImage;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.SavedCategory;
 import com.ds.goroute.entity.SavedPlace;
+import com.ds.goroute.entity.SavedPlaceMark;
 import com.ds.goroute.entity.SocialLocationJob;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.PlaceMapper;
@@ -32,6 +33,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -163,13 +165,15 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
                     savedPlace.getCreatedAt());
         }
 
+        Map<String, SavedPlaceMark> marks = savedPlaceMapper.findMarksByUserId(userId).stream()
+                .collect(Collectors.toMap(SavedPlaceMark::getPlaceId, mark -> mark, (first, second) -> first));
         for (SocialLocationJob job : savedPlaceMapper.findSocialSavedPlacesByUserId(userId)) {
-            mergeMappedSocialPlaces(places, job);
+            mergeMappedSocialPlaces(places, job, marks);
         }
         applyCatalog(places);
 
         return places.values().stream()
-                .map(RecentSavedPlaceAccumulator::toResponse)
+                .map(saved -> saved.toResponse(marks.get(saved.placeId)))
                 .sorted((first, second) -> compareDatesDescending(first.getSavedAt(), second.getSavedAt()))
                 .toList();
     }
@@ -193,6 +197,50 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
         return toResponse(updated);
     }
 
+    @Override
+    @Transactional
+    public void removeFromList(UUID userId, List<String> placeIds, String category) {
+        List<String> ids = placeIds.stream()
+                .map(this::normalizeText)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (ids.isEmpty()) {
+            return;
+        }
+        String categoryKey = normalizeText(category);
+        int deleted = savedPlaceMapper.deletePlaceSaves(userId, ids, categoryKey);
+        // A place from one of the user's videos has no save to delete; the mark keeps it off.
+        // Out of one category only, the place stays on the list, so its videos still count.
+        if (categoryKey == null) {
+            savedPlaceMapper.markRemoved(userId, ids, LocalDateTime.now());
+        }
+        log.info("Removed saved places: userId={}, places={}, category={}, rows={}",
+                userId, ids.size(), categoryKey, deleted);
+    }
+
+    @Override
+    @Transactional
+    public void setVisited(UUID userId, String placeId, boolean visited) {
+        String id = normalizeText(placeId);
+        if (id == null) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, HttpStatus.BAD_REQUEST);
+        }
+        if (visited) {
+            savedPlaceMapper.markVisited(userId, id, LocalDateTime.now());
+        } else {
+            savedPlaceMapper.clearVisited(userId, id);
+        }
+    }
+
+    /** A video's place stays off the list when the user removed it after the video was read. */
+    private static boolean isRemovedBefore(SavedPlaceMark mark, LocalDateTime savedAt) {
+        if (mark == null || mark.getRemovedAt() == null) {
+            return false;
+        }
+        return savedAt == null || !savedAt.isAfter(mark.getRemovedAt());
+    }
+
     private SavedPlace requireOwnedSavedPlace(UUID userId, UUID savedPlaceId) {
         SavedPlace savedPlace = savedPlaceMapper.findById(savedPlaceId);
         if (savedPlace == null) {
@@ -213,7 +261,8 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
 
     private void mergeMappedSocialPlaces(
             Map<String, RecentSavedPlaceAccumulator> places,
-            SocialLocationJob job) {
+            SocialLocationJob job,
+            Map<String, SavedPlaceMark> marks) {
         JsonNode result = parseJson(job.getResultPayload());
         JsonNode candidates = result == null ? null : result.path("extraction").path("candidates");
         if (candidates == null || !candidates.isArray()) {
@@ -230,7 +279,7 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
             }
             JsonNode mapping = mappedCandidate.path("placeMapping");
             String placeId = text(mapping, "placeId");
-            if (placeId == null) {
+            if (placeId == null || isRemovedBefore(marks.get(placeId), savedAt)) {
                 continue;
             }
 
@@ -483,7 +532,7 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
             return catalogValue == null || catalogValue.isBlank() ? savedValue : catalogValue.trim();
         }
 
-        private RecentSavedPlaceResponse toResponse() {
+        private RecentSavedPlaceResponse toResponse(SavedPlaceMark mark) {
             return RecentSavedPlaceResponse.builder()
                     .placeId(placeId)
                     .name(name == null ? placeId : name)
@@ -497,6 +546,7 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
                     .locationImageName(locationImageName)
                     .categories(List.copyOf(categories.values()))
                     .savedAt(savedAt)
+                    .visitedAt(mark == null ? null : mark.getVisitedAt())
                     .build();
         }
     }

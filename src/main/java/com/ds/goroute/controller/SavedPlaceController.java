@@ -1,6 +1,7 @@
 package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.BaseResponse;
+import com.ds.goroute.dto.request.RemoveSavedPlacesRequest;
 import com.ds.goroute.dto.request.SavePlaceRequest;
 import com.ds.goroute.dto.response.RecentSavedPlaceResponse;
 import com.ds.goroute.dto.response.SavedPlaceResponse;
@@ -9,6 +10,7 @@ import com.ds.goroute.service.SavedPlaceService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -95,6 +97,35 @@ public class SavedPlaceController {
         UUID userId = currentUserId(authentication);
         SavedPlaceResponse updated = savedPlaceService.updateTags(userId, savedPlaceId, tags);
         return ResponseEntity.ok(BaseResponse.ofSucceeded(updated));
+    }
+
+    /**
+     * Takes places off the saved list (or out of one category), whatever saves put them there:
+     * one save per category, or a video the place was found in.
+     */
+    @PostMapping("/remove")
+    public ResponseEntity<BaseResponse<Void>> removeFromList(
+            Authentication authentication,
+            @Valid @RequestBody RemoveSavedPlacesRequest request) {
+        UUID userId = currentUserId(authentication);
+        savedPlaceService.removeFromList(userId, request.getPlaceIds(), request.getCategory());
+        return ResponseEntity.ok(BaseResponse.ofSucceeded());
+    }
+
+    @PutMapping("/places/{placeId}/visited")
+    public ResponseEntity<BaseResponse<Void>> markVisited(
+            Authentication authentication,
+            @PathVariable @Size(max = 255) String placeId) {
+        savedPlaceService.setVisited(currentUserId(authentication), placeId, true);
+        return ResponseEntity.ok(BaseResponse.ofSucceeded());
+    }
+
+    @DeleteMapping("/places/{placeId}/visited")
+    public ResponseEntity<BaseResponse<Void>> unmarkVisited(
+            Authentication authentication,
+            @PathVariable @Size(max = 255) String placeId) {
+        savedPlaceService.setVisited(currentUserId(authentication), placeId, false);
+        return ResponseEntity.ok(BaseResponse.ofSucceeded());
     }
 
     private UUID currentUserId(Authentication authentication) {
