@@ -305,40 +305,35 @@ Mẫu đã có sẵn: `PlaceLookupProviders` (EnumMap, fail-fast khi trùng). Á
 - Side effect qua domain event + `@TransactionalEventListener`, không qua `registerSynchronization` viết tay,
   không publish từ repository.
 
-### 4.4 Quyết định về tầng repository và interface
+### 4.4 Quyết định về tầng repository và interface (chốt 14/10/2026)
 
-**Giữ tầng repository, nhưng chia theo aggregate thay vì một-một với mapper.**
+**Giữ repository riêng cho từng bảng/entity — một repository ứng với một mapper là mặc định.** Không gộp repository
+theo aggregate lớn: gộp nhiều sẽ kéo nghiệp vụ vào repository và repository lại phình to như service.
 
-Vấn đề hiện tại không phải là "có repository", mà là repository đang được viết một-một với mapper:
-`ExpenseRepository` bọc `ExpenseMapper`, `ExpenseSplitRepository` bọc `ExpenseSplitMapper`, và
-474/783 method chỉ là `return xMapper.y(...)`. Vì thế service vẫn phải tự ghép nhiều bảng
-(`TripServiceImpl` giữ 16 repository), còn repository không gánh được việc gì.
-
-Quy tắc đề xuất — ba tầng, mỗi tầng một loại việc:
-
-| Tầng | Làm gì | Ví dụ |
+| Tầng | Làm gì | Không làm |
 |---|---|---|
-| **Mapper** | SQL của một bảng/một truy vấn. Không logic | `ExpenseMapper.insert`, `ExpenseSplitMapper.insertBatch` |
-| **Repository** (theo aggregate) | Đọc/ghi **một khối dữ liệu đi cùng nhau**, có thể gọi nhiều mapper: ghi cha + con, nạp aggregate, chia lô `IN` 500, bọc `Optional`, evict cache, giữ bất biến lưu trữ (ví dụ "split luôn đi kèm expense"). **Không** có luật nghiệp vụ, không kiểm quyền, không gọi service | `ExpenseRepository.saveWithSplits(expense, splits)`, `TripRepository.loadWithMembers(tripId)` |
-| **Service** (use case) | Luật nghiệp vụ, quyền, transaction, gọi nhiều repository của nhiều aggregate, publish event | `ExpenseService.create(...)`: kiểm thành viên → tính chia → `expenseRepository.saveWithSplits` → event |
-| **Domain service / guard dùng chung** | Logic nghiệp vụ mà **nhiều service** cùng cần | `TripAccessGuard`, `MarketplaceBookingTransitioner`, `CheckinVerifier` |
+| **Mapper** | SQL của một bảng/một truy vấn | Logic |
+| **Repository** | Đọc/ghi entity của mình qua mapper của mình: bọc `Optional`, chia lô `IN` 500, evict cache | Luật nghiệp vụ, kiểm quyền, gọi service, publish event |
+| **Service** | Use case: luật, quyền, transaction, gọi nhiều repository | Gọi mapper trực tiếp |
+| **Domain service / guard** | Luật nghiệp vụ nhiều service cùng dùng (`TripAccessGuard`, `MarketplaceBookingTransitioner`) | — |
 
-Trả lời câu "nghiệp vụ chung cần gọi nhiều mapper thì sao":
+**Ngoại lệ — dữ liệu liên kết chặt.** Một repository được dùng mapper của bảng khác **chỉ để đọc dữ liệu luôn đi kèm
+entity của nó**, khi tách ra sẽ buộc service ghép tay lặp đi lặp lại. Ví dụ: `TripRepository.findWithExpenses(tripId)`
+dùng `TripMapper` + `ExpenseMapper`. Điều kiện:
 
-- Nếu "chung" nghĩa là **cùng một khối dữ liệu** (expense + splits, trip + members + destinations) → một method trên
-  repository của aggregate đó gọi nhiều mapper. Đây chính là chỗ repository có giá trị nhất.
-- Nếu "chung" là **luật nghiệp vụ** dùng ở nhiều use case (kiểm quyền thành viên, chuyển trạng thái booking) →
-  domain service/guard, nó gọi repository. Không đặt luật vào repository.
-- Nếu là **một use case** chạm nhiều aggregate (tạo trip từ lịch AI: trip + activity + member) → service, gọi nhiều repository
-  trong một transaction.
+- Chỉ là truy vấn ghép dữ liệu (batch theo id, không N+1), không có `if` nghiệp vụ.
+- Ghi vẫn đi qua repository của từng bảng (`ExpenseRepository`, `ExpenseSplitRepository` giữ nguyên).
+- Không dùng làm cớ để chuyển method của repository khác sang. Nếu một repository bắt đầu dùng mapper của ≥ 3 bảng khác,
+  đó là dấu hiệu cần một query service đọc riêng (read model) thay vì phình repository.
+
+**Nghiệp vụ chung cần nhiều bảng** thì đặt ở service hoặc domain service/guard, gọi nhiều repository — không đặt ở repository.
 
 Áp dụng:
 
-- Service **chỉ phụ thuộc repository**, không import `mapper` (chặn bằng ArchUnit ở 1.3, baseline cho 56 service hiện tại).
-- Repository một-một với mapper cũ không cần viết lại ngay; khi chạm vào thì gộp về theo aggregate
-  (`ExpenseSplitRepository` nhập vào `ExpenseRepository`…). 38 mapper chưa có repository: thêm khi service cần dùng.
-- Repository là class cụ thể, **không cần interface + Impl** (một implementation, test mock trực tiếp class được).
-- Đặt trong `persistence/` của feature, cùng mapper; mapper để package-private khi Modulith cho phép.
+- Service **chỉ phụ thuộc repository**, không import `mapper` (ArchUnit ở 1.3, baseline cho 56 service hiện tại, sửa dần khi chạm vào).
+- 38 mapper chưa có repository: thêm repository khi service cần dùng.
+- Repository mới đặt trong `persistence/` của feature, cùng mapper; giữ kiểu interface + Impl như các feature mới đang làm
+  hay viết class cụ thể đều được, nhưng thống nhất trong một feature.
 
 **Interface service.** Không thêm interface một implementation cho code mới; interface chỉ dùng khi có ≥ 2 impl hoặc là
 port/hook. Không xoá hàng loạt interface cũ — bỏ khi chạm vào service đó.
@@ -480,7 +475,7 @@ Một feature mới (như meetup) chỉ được merge khi:
 1. Nằm trong một package feature theo §4.1; enum, `ConfigKey`, error code, job, mapper XML nằm trong feature.
 2. Không đọc `persistence` của feature khác; giao tiếp qua `api/` của feature đó hoặc qua event.
 3. Đăng ký vào hook (§4.2) thay vì sửa `switch` dùng chung.
-4. Không interface service một impl; service chỉ gọi repository (theo aggregate, §4.4), không gọi mapper.
+4. Không interface service một impl; service chỉ gọi repository (một repository mỗi bảng, ngoại lệ đọc liên kết chặt — §4.4), không gọi mapper.
 5. Controller: `ResponseEntity<BaseResponse<Dto>>`, `@Valid`, `PageQuery`, `@CurrentUser`; không gọi mapper/thirdparty.
 6. Transaction không bọc I/O bên ngoài; side effect qua `@TransactionalEventListener`.
 7. Thời gian qua `Clock` + `AppZones`; chuỗi cho người dùng qua bundle i18n.

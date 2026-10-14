@@ -32,7 +32,15 @@ Use this dependency direction:
 - Services own use cases, object-level authorization, business validation,
   transactions, idempotency, orchestration, and entity/DTO mapping.
 - Repositories own persistence-facing operations and hide mapper details from
-  services where a repository already exists for the aggregate.
+  services. Keep one repository per table/entity, wrapping its own mapper; do
+  not merge repositories into large aggregates. A repository may use another
+  table's mapper only to read data tightly bound to its entity (for example
+  `TripRepository.findWithExpenses` using `ExpenseMapper`), batched, with no
+  business branching; writes still go through each table's own repository.
+  Repositories never hold business rules, authorization, service calls or
+  event publishing — shared multi-table business logic belongs in a service or
+  a domain guard that calls several repositories. New services must not import
+  `com.ds.goroute.mapper`.
 - MyBatis mapper interfaces and XML own SQL only. They must not encode access
   policy that is invisible to the service name or contract.
 - External clients live under `thirdparty`; wrap them behind a service when a
