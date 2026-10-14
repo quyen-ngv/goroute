@@ -1,5 +1,9 @@
 # Đánh giá backend và kế hoạch refactor — 2026-09-18
 
+> **14/10/2026:** tiến độ của plan này và thứ tự làm mới nằm ở
+> [`BACKEND_REFACTOR_PLAN_2026-10.md`](BACKEND_REFACTOR_PLAN_2026-10.md) (§2 đối chiếu, Phase 5 kế thừa các mục hiệu năng còn lại).
+> Nội dung chi tiết từng mục ở đây vẫn còn hiệu lực.
+
 Tài liệu này thay thế [`BACKEND_REFACTOR_PLAN.md`](BACKEND_REFACTOR_PLAN.md) (bản 2026-08-23).
 Bản cũ vẫn đúng ở phần Phase 0 nhưng đã lệch ở nhiều ô checkbox; phần đối chiếu nằm ở §7.
 
