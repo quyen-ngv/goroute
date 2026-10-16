@@ -75,4 +75,9 @@ public interface UserMapper {
     int updateBirthYear(@Param("id") UUID id,
                         @Param("birthYear") int birthYear,
                         @Param("updatedAt") java.time.LocalDateTime updatedAt);
+
+    /** IANA zone the user's device last reported; no-op when unchanged. */
+    int updateTimeZone(@Param("id") UUID id, @Param("timeZone") String timeZone);
+
+    String selectTimeZone(@Param("id") UUID id);
 }

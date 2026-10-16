@@ -125,6 +125,9 @@ public class UserCheckinResponse {
     private int likeCount;
     private boolean hasLiked;
 
+    /** The viewer saved this check-in to read later (saved_posts). Always false for guests. */
+    private boolean hasSaved;
+
     /**
      * Active comments on this check-in's thread, the number GET /content-comments/count
      * returns. 0 when the viewer cannot open the thread (not public, removed, taken down).

@@ -4,6 +4,7 @@ import com.ds.goroute.repository.AiTripRepository;
 import com.ds.goroute.repository.AssistantRepository;
 import com.ds.goroute.service.BetaAccessService;
 import com.ds.goroute.service.BusinessConfigService;
+import com.ds.goroute.service.time.UserTimeZones;
 import com.ds.goroute.type.BusinessConfigKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,12 +33,13 @@ class AssistantAccessServiceTest {
     @Mock private BetaAccessService betaAccess;
     @Mock private AiTripRepository subscriptions;
     @Mock private AssistantRepository repository;
+    @Mock private UserTimeZones userTimeZones;
 
     private AssistantAccessService service;
 
     @BeforeEach
     void setUp() {
-        service = new AssistantAccessService(businessConfig, betaAccess, subscriptions, repository);
+        service = new AssistantAccessService(businessConfig, betaAccess, subscriptions, repository, userTimeZones);
         when(businessConfig.getInt(BusinessConfigKey.ASSISTANT_FREE_DAILY_QUESTIONS)).thenReturn(5);
         when(businessConfig.getInt(BusinessConfigKey.ASSISTANT_PRO_DAILY_QUESTIONS)).thenReturn(50);
     }
@@ -61,10 +63,20 @@ class AssistantAccessServiceTest {
     }
 
     @Test
-    void theDayStartsAtMidnightInVietnamWhateverTheServerZone() {
+    void theDayStartsAtTheUsersMidnightWhateverTheServerZone() {
         // 2026-10-12 01:30 in Vietnam is 2026-10-11 18:30 UTC.
         service.clock = Clock.fixed(Instant.parse("2026-10-11T18:30:00Z"), ZoneId.of("UTC"));
+        when(userTimeZones.zoneFor(USER)).thenReturn(ZoneId.of("Asia/Ho_Chi_Minh"));
 
-        assertThat(service.startOfToday()).isEqualTo(LocalDateTime.of(2026, 10, 11, 17, 0));
+        assertThat(service.startOfToday(USER)).isEqualTo(LocalDateTime.of(2026, 10, 11, 17, 0));
+    }
+
+    @Test
+    void aTravellerAbroadGetsANewAllowanceAtTheirLocalMidnight() {
+        // 2026-10-11 18:30 UTC is 2026-10-11 11:30 in Los Angeles: the day began at 07:00 UTC.
+        service.clock = Clock.fixed(Instant.parse("2026-10-11T18:30:00Z"), ZoneId.of("UTC"));
+        when(userTimeZones.zoneFor(USER)).thenReturn(ZoneId.of("America/Los_Angeles"));
+
+        assertThat(service.startOfToday(USER)).isEqualTo(LocalDateTime.of(2026, 10, 11, 7, 0));
     }
 }

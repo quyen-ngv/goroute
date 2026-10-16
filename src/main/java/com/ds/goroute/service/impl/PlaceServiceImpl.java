@@ -705,7 +705,7 @@ public class PlaceServiceImpl implements PlaceService {
         place.setLongitude(request.getLongitude());
         place.setVerificationRadiusMeters(request.getVerificationRadiusMeters());
         place.setPlusCode(request.getPlusCode());
-        place.setTimezone(request.getTimezone());
+        place.setTimezone(preferNonBlank(request.getTimezone(), place.getTimezone()));
         place.setPhone(request.getPhone());
         place.setWebsite(request.getWebsite());
         place.setGoogleMapsLink(request.getGoogleMapsLink());
@@ -732,7 +732,10 @@ public class PlaceServiceImpl implements PlaceService {
         place.setAbout(request.getAbout());
         place.setOwner(request.getOwner());
         place.setEmails(request.getEmails());
-        place.setAttributes(serializeAttributes(request.getAttributes()));
+        // Absent keeps the stored attributes; an explicit JSON null arrives as NullNode and clears them.
+        if (request.getAttributes() != null) {
+            place.setAttributes(serializeAttributes(request.getAttributes()));
+        }
         place.setUpdatedAt(LocalDateTime.now());
 
         placeRepository.update(place);
@@ -1360,6 +1363,7 @@ public class PlaceServiceImpl implements PlaceService {
         response.setDataId(place.getDataId());
         response.setInputId(place.getInputId());
         response.setPlusCode(place.getPlusCode());
+        response.setTimezone(place.getTimezone());
         response.setVisitDurationMinutes(place.getVisitDurationMinutes());
         response.setStatus(place.getStatus());
         response.setReservations(place.getReservations());

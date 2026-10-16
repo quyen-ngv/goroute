@@ -56,6 +56,7 @@ import static org.mockito.Mockito.when;
 class UserCheckinServiceImplFeedTest {
 
     @Mock private UserCheckinRepository checkins;
+    @Mock private com.ds.goroute.mapper.SavedPostMapper savedPosts;
     @Mock private UserReviewRepository reviews;
     @Mock private MediaAssetRepository mediaAssets;
     @Mock private PlaceRepository places;

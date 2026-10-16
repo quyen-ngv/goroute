@@ -133,7 +133,8 @@ class SocialLocationJobServiceImplTest {
                 new com.ds.goroute.config.ScrapeHttpClientProperties(),
                 new InternalApiProperties("ai-token", "internal-token"),
                 candidateImageService,
-                internalPlaceSearchService
+                internalPlaceSearchService,
+                org.mockito.Mockito.mock(com.ds.goroute.service.time.UserTimeZones.class)
         );
         ReflectionTestUtils.setField(service, "dispatchTimeoutSeconds", 90L);
         ReflectionTestUtils.setField(service, "jobTimeoutMinutes", 15L);
@@ -220,7 +221,7 @@ class SocialLocationJobServiceImplTest {
                 .platform("tiktok")
                 .status(SocialLocationJobStatus.COMPLETED)
                 .resultPayload("""
-                        {"extraction":{"candidateValidation":{"policy":"AI_EVIDENCE_JUDGE_V2"}}}
+                        {"extraction":{"candidateValidation":{"policy":"AI_EVIDENCE_JUDGE_V3"}}}
                         """)
                 .build();
         when(jobMapper.findReusableByUserIdAndSourceKey(eq(userId), any())).thenReturn(currentJob);
@@ -272,7 +273,7 @@ class SocialLocationJobServiceImplTest {
         SocialLocationJob cached = SocialLocationJob.builder()
                 .id(jobId).userId(userId).sourceUrl(sourceUrl).sourceKey("tiktok:123")
                 .platform("tiktok").status(SocialLocationJobStatus.COMPLETED)
-                .resultPayload("{\"extraction\":{\"candidateValidation\":{\"policy\":\"AI_EVIDENCE_JUDGE_V2\"},\"candidates\":[]}}")
+                .resultPayload("{\"extraction\":{\"candidateValidation\":{\"policy\":\"AI_EVIDENCE_JUDGE_V3\"},\"candidates\":[]}}")
                 .build();
         when(jobMapper.findReusableByUserIdAndSourceKey(eq(userId), any())).thenReturn(cached);
 
@@ -327,9 +328,9 @@ class SocialLocationJobServiceImplTest {
                 .status(SocialLocationJobStatus.COMPLETED)
                 .resultPayload("""
                         {"extraction":{
-                          "candidateValidation":{"policy":"AI_EVIDENCE_JUDGE_V2"},
+                          "candidateValidation":{"policy":"AI_EVIDENCE_JUDGE_V3"},
                           "candidates":[
-                            {"name":"certain","verification":{"status":"VERIFIED","policy":"AI_EVIDENCE_JUDGE_V2"}},
+                            {"name":"certain","verification":{"status":"VERIFIED","policy":"AI_EVIDENCE_JUDGE_V3"}},
                             {"name":"unverified"}
                           ]
                         }}
@@ -362,11 +363,11 @@ class SocialLocationJobServiceImplTest {
                 .result(objectMapper.readTree("""
                         {"extraction":{
                           "usage":{"inputTokens":120,"outputTokens":30,"totalTokens":150},
-                          "candidateValidation":{"policy":"AI_EVIDENCE_JUDGE_V2"},
+                          "candidateValidation":{"policy":"AI_EVIDENCE_JUDGE_V3"},
                           "candidates":[
-                            {"name":"A","verification":{"status":"VERIFIED","policy":"AI_EVIDENCE_JUDGE_V2"}},
-                            {"name":"B","verification":{"status":"VERIFIED","policy":"AI_EVIDENCE_JUDGE_V2"}},
-                            {"name":"C","verification":{"status":"VERIFIED","policy":"AI_EVIDENCE_JUDGE_V2"}}
+                            {"name":"A","verification":{"status":"VERIFIED","policy":"AI_EVIDENCE_JUDGE_V3"}},
+                            {"name":"B","verification":{"status":"VERIFIED","policy":"AI_EVIDENCE_JUDGE_V3"}},
+                            {"name":"C","verification":{"status":"VERIFIED","policy":"AI_EVIDENCE_JUDGE_V3"}}
                           ]
                         }}
                         """))
@@ -422,7 +423,7 @@ class SocialLocationJobServiceImplTest {
         service.handleCallback(SocialLocationJobCallbackRequest.builder()
                 .gorouteJobId(jobId).status("COMPLETED")
                 .result(objectMapper.readTree("""
-                        {"extraction":{"contentType":"ITINERARY","candidateValidation":{"policy":"AI_EVIDENCE_JUDGE_V2"},"candidates":[{"name":"A"}]}}
+                        {"extraction":{"contentType":"ITINERARY","candidateValidation":{"policy":"AI_EVIDENCE_JUDGE_V3"},"candidates":[{"name":"A"}]}}
                         """))
                 .build());
 
@@ -467,12 +468,12 @@ class SocialLocationJobServiceImplTest {
                                 "success", true,
                                 "extraction", Map.of(
                                         "candidateValidation", Map.of(
-                                                "policy", "AI_EVIDENCE_JUDGE_V2"),
+                                                "policy", "AI_EVIDENCE_JUDGE_V3"),
                                         "candidates", List.of(Map.of(
                                                 "name", "A",
                                                 "verification", Map.of(
                                                         "status", "VERIFIED",
-                                                        "policy", "AI_EVIDENCE_JUDGE_V2"))))
+                                                        "policy", "AI_EVIDENCE_JUDGE_V3"))))
                         )
                 )
         ));
@@ -620,12 +621,12 @@ class SocialLocationJobServiceImplTest {
                           "extraction": {
                             "provider": "OPENAI",
                             "model": "gpt-5-mini",
-                            "candidateValidation": {"policy": "AI_EVIDENCE_JUDGE_V2"},
+                            "candidateValidation": {"policy": "AI_EVIDENCE_JUDGE_V3"},
                             "candidates": [{
                               "name": "Existing cafe",
                               "verification": {
                                 "status": "VERIFIED",
-                                "policy": "AI_EVIDENCE_JUDGE_V2"
+                                "policy": "AI_EVIDENCE_JUDGE_V3"
                               },
                               "mapSearch": {"candidates": [{"placeId": "google-place-1"}]}
                             }]

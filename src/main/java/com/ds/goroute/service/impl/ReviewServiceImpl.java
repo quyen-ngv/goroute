@@ -14,6 +14,7 @@ import com.ds.goroute.dto.response.MemoryImageResponse;
 import com.ds.goroute.entity.*;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.mapper.SavedPostMapper;
 import com.ds.goroute.repository.*;
 import com.ds.goroute.service.ContentModerationService;
 import com.ds.goroute.service.ImageStorageCleanupService;
@@ -27,6 +28,7 @@ import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.utils.MediaAssetResponseMapper;
 import com.ds.goroute.type.MarketplaceBookingStatus;
 import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.SavedPostType;
 import com.ds.goroute.type.UserTier;
 import com.ds.goroute.utils.JsonUtils;
 import lombok.RequiredArgsConstructor;
@@ -76,6 +78,7 @@ public class ReviewServiceImpl implements ReviewService {
     private final ContentModerationService contentModerationService;
     private final ContentCommentRepository contentCommentRepository;
     private final CheckinVerifier checkinVerifier;
+    private final SavedPostMapper savedPostMapper;
 
     /**
      * Create a new review
@@ -398,6 +401,21 @@ public class ReviewServiceImpl implements ReviewService {
 
     @Override
     @Transactional(readOnly = true)
+    public Map<UUID, UserReviewResponse> findVisibleByIds(UUID currentUserId, Collection<UUID> reviewIds) {
+        if (reviewIds.isEmpty()) {
+            return Map.of();
+        }
+        List<UUID> ids = List.copyOf(reviewIds);
+        Set<UUID> takenDown = contentModerationService.takenDownIds(ModeratedContentType.REVIEW, ids);
+        List<UserReview> visible = reviewRepository.findByIds(ids).stream()
+                .filter(review -> !takenDown.contains(review.getId()))
+                .toList();
+        return mapToResponses(visible, currentUserId).stream()
+                .collect(Collectors.toMap(UserReviewResponse::getId, Function.identity()));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<UserReviewResponse> getPlaceReviews(UUID placeId, UUID currentUserId, int page, int size) {
         List<UserReview> reviews = reviewRepository.findByPlaceId(placeId, boundedSize(size), offset(page, size));
 
@@ -694,15 +712,22 @@ public class ReviewServiceImpl implements ReviewService {
                         .collect(Collectors.toMap(ReviewHelpfulVote::getReviewId, ReviewHelpfulVote::isHelpful,
                                 (first, second) -> first));
 
+        Set<UUID> savedIds = currentUserId == null ? Set.of()
+                : new HashSet<>(savedPostMapper.findSavedIds(currentUserId, SavedPostType.REVIEW, reviewIds));
+
         return reviews.stream()
-                .map(review -> toResponse(review, currentUserId,
-                        photosByReview.getOrDefault(review.getId(), List.of()),
-                        commentCounts.getOrDefault(review.getId(), 0),
-                        users.get(review.getUserId()),
-                        profiles.get(review.getUserId()),
-                        review.getPlaceId() == null ? null : places.get(review.getPlaceId()),
-                        review.getActivityBookingId() == null ? null : bookings.get(review.getActivityBookingId()),
-                        votes.get(review.getId())))
+                .map(review -> {
+                    UserReviewResponse response = toResponse(review, currentUserId,
+                            photosByReview.getOrDefault(review.getId(), List.of()),
+                            commentCounts.getOrDefault(review.getId(), 0),
+                            users.get(review.getUserId()),
+                            profiles.get(review.getUserId()),
+                            review.getPlaceId() == null ? null : places.get(review.getPlaceId()),
+                            review.getActivityBookingId() == null ? null : bookings.get(review.getActivityBookingId()),
+                            votes.get(review.getId()));
+                    response.setHasSaved(savedIds.contains(review.getId()));
+                    return response;
+                })
                 .collect(Collectors.toList());
     }
 
@@ -725,10 +750,13 @@ public class ReviewServiceImpl implements ReviewService {
                 hasVotedHelpful = vote.isHelpful();
             }
         }
-        return toResponse(review, currentUserId,
+        UserReviewResponse response = toResponse(review, currentUserId,
                 mediaAssetRepository.findByEntity(USER_REVIEW_ENTITY_TYPE, review.getId()),
                 contentCommentRepository.countActiveByTarget(ModeratedContentType.REVIEW, review.getId()),
                 user, profile, place, activityBooking, hasVotedHelpful);
+        response.setHasSaved(currentUserId != null && !savedPostMapper
+                .findSavedIds(currentUserId, SavedPostType.REVIEW, List.of(review.getId())).isEmpty());
+        return response;
     }
 
     private UserReviewResponse toResponse(UserReview review, UUID currentUserId,

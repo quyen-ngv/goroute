@@ -77,6 +77,8 @@ public class UserReviewResponse {
     /** Active comments on this review's thread, the number GET /content-comments/count returns. */
     private int commentCount;
     private Boolean isOwnReview; // Current user is author
+    /** The viewer saved this review to read later (saved_posts). Always false for guests. */
+    private boolean hasSaved;
 
     // Marketplace stay/visit link
     private Boolean verifiedStay; // true when the review is tied to a completed hotel booking or activity order

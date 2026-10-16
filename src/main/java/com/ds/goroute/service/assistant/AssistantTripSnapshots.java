@@ -17,7 +17,6 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -43,7 +42,6 @@ public class AssistantTripSnapshots {
     static final int MAX_MEMBERS = 20;
     static final int MAX_NOTE = 80;
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
-    private static final ZoneId LOCAL_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
 
     private final ActivityRepository activities;
     private final TripDestinationRepository destinations;
@@ -57,7 +55,7 @@ public class AssistantTripSnapshots {
         out.put("startDate", trip.getStartDate());
         out.put("endDate", trip.getEndDate());
         out.put("dayCount", dayCount(trip));
-        todayRow(trip, LocalDate.now(LOCAL_ZONE)).ifPresent(today -> out.put("today", today));
+        todayRow(trip, LocalDate.now(com.ds.goroute.service.time.TripTimeZones.zoneOf(trip))).ifPresent(today -> out.put("today", today));
         out.put("destinations", destinationRows(trip));
         List<Map<String, Object>> people = memberRows(trip);
         if (!people.isEmpty()) out.put("members", people);

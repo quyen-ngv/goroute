@@ -81,4 +81,13 @@ public interface TripMapper {
 
     List<Trip> selectNotificationCandidates(@Param("fromDate") LocalDate fromDate,
                                             @Param("toDate") LocalDate toDate);
+
+    /** Trips with a destination point but no resolved zone yet, oldest change first. */
+    List<Trip> selectWithoutTimezone(@Param("limit") int limit);
+
+    /** Sets the zone only while the destination is still the one it was resolved for. */
+    int updateTimezone(@Param("id") UUID id,
+                       @Param("timezone") String timezone,
+                       @Param("destinationLat") java.math.BigDecimal destinationLat,
+                       @Param("destinationLng") java.math.BigDecimal destinationLng);
 }

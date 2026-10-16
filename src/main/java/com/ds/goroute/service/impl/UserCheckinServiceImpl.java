@@ -33,6 +33,7 @@ import com.ds.goroute.repository.UserCheckinRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.repository.UserReviewRepository;
 import com.ds.goroute.repository.MediaAssetRepository;
+import com.ds.goroute.mapper.SavedPostMapper;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.ContentModerationService;
 import com.ds.goroute.service.ImageStorageCleanupService;
@@ -54,6 +55,7 @@ import com.ds.goroute.type.CheckinPhotoSource;
 import com.ds.goroute.type.CheckinVerificationStatus;
 import com.ds.goroute.type.ContentVisibility;
 import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.SavedPostType;
 import com.ds.goroute.utils.GeoDistance;
 import com.ds.goroute.utils.JsonUtils;
 import com.ds.goroute.utils.MediaAssetResponseMapper;
@@ -67,6 +69,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -120,6 +123,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     private final CheckinVerifier verifier;
     private final com.ds.goroute.quest.service.QuestPlayService questPlayService;
     private final ContentCommentRepository contentCommentRepository;
+    private final SavedPostMapper savedPostMapper;
 
     @Override
     @Transactional(readOnly = true)
@@ -499,6 +503,25 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Map<UUID, UserCheckinResponse> findVisibleByIds(UUID viewerId, Collection<UUID> checkinIds) {
+        if (checkinIds.isEmpty()) {
+            return Map.of();
+        }
+        List<UserCheckin> live = checkinRepository.findByIds(checkinIds).stream()
+                .filter(checkin -> checkin.getVisibility() == ContentVisibility.PUBLIC
+                        && !Boolean.TRUE.equals(checkin.getIsRemoved()))
+                .toList();
+        Set<UUID> takenDown = contentModerationService.takenDownIds(ModeratedContentType.CHECKIN,
+                live.stream().map(UserCheckin::getId).toList());
+        List<UserCheckin> visible = live.stream()
+                .filter(checkin -> !takenDown.contains(checkin.getId()))
+                .toList();
+        return toResponses(visible, Set.of(), viewerId).stream()
+                .collect(Collectors.toMap(UserCheckinResponse::getId, response -> response));
+    }
+
+    @Override
     @Transactional
     public CheckinLikeResponse toggleLike(UUID userId, UUID checkinId) {
         UserCheckin checkin = checkinRepository.findById(checkinId)
@@ -565,13 +588,15 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserCheckinResponse> byPlace(UUID placeId, int page, int size) {
+    public List<UserCheckinResponse> byPlace(UUID viewerId, UUID placeId, int page, int size) {
         List<UserCheckin> checkins = checkinRepository.findByPlace(
                 placeId, boundedSize(size), boundedPage(page) * boundedSize(size));
         Set<UUID> latestReviewCheckinIds = checkinRepository.findLatestRatedPerUserForPlace(placeId).stream()
                 .map(UserCheckin::getId)
                 .collect(Collectors.toSet());
-        return toResponses(checkins, latestReviewCheckinIds, null);
+        List<UserCheckinResponse> responses = toResponses(checkins, latestReviewCheckinIds, null);
+        markSaved(responses, viewerId);
+        return responses;
     }
 
     @Override
@@ -582,9 +607,11 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserCheckinResponse> byLocationKey(String locationKey, int page, int size) {
-        return toResponses(checkinRepository.findByLocationKey(
+    public List<UserCheckinResponse> byLocationKey(UUID viewerId, String locationKey, int page, int size) {
+        List<UserCheckinResponse> responses = toResponses(checkinRepository.findByLocationKey(
                 locationKey, boundedSize(size), boundedPage(page) * boundedSize(size)), Set.of(), null);
+        markSaved(responses, viewerId);
+        return responses;
     }
 
     @Override
@@ -754,7 +781,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         Map<UUID, Place> places = loadPlaces(checkins);
         Map<UUID, Integer> commentCounts = commentCounts(checkins);
 
-        return checkins.stream()
+        List<UserCheckinResponse> responses = checkins.stream()
                 .map(checkin -> toResponse(checkin, photos.getOrDefault(checkin.getId(), List.of()),
                         authors.getOrDefault(checkin.getUserId(), null), latestReviewCheckinIds.contains(checkin.getId()),
                         linkedReviews.get(checkin.getReviewId()),
@@ -765,6 +792,18 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                         checkin.getPlaceId() == null ? null : places.get(checkin.getPlaceId()),
                         commentCounts.getOrDefault(checkin.getId(), 0)))
                 .toList();
+        markSaved(responses, viewerId);
+        return responses;
+    }
+
+    /** Sets {@code hasSaved} on the whole page with one query. Guests have saved nothing. */
+    private void markSaved(List<UserCheckinResponse> responses, UUID viewerId) {
+        if (viewerId == null || responses.isEmpty()) {
+            return;
+        }
+        Set<UUID> savedIds = new java.util.HashSet<>(savedPostMapper.findSavedIds(viewerId, SavedPostType.CHECKIN,
+                responses.stream().map(UserCheckinResponse::getId).toList()));
+        responses.forEach(response -> response.setHasSaved(savedIds.contains(response.getId())));
     }
 
     /**
@@ -823,10 +862,13 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 : placeRepository.findById(checkin.getPlaceId()).orElse(null);
         List<MediaAsset> linkedReviewMedia = linkedReview == null ? List.of()
                 : mediaAssetRepository.findByEntity("USER_REVIEW", linkedReview.getId());
-        return toResponse(checkin, photos, userRepository.findById(checkin.getUserId()).orElse(null), false,
+        UserCheckinResponse response = toResponse(checkin, photos,
+                userRepository.findById(checkin.getUserId()).orElse(null), false,
                 linkedReview, linkedReviewMedia, checkinRepository.countLikes(checkin.getId()),
                 viewerId != null && checkinRepository.hasLike(checkin.getId(), viewerId), place,
                 commentCounts(List.of(checkin)).getOrDefault(checkin.getId(), 0));
+        markSaved(List.of(response), viewerId);
+        return response;
     }
 
     private UserCheckinResponse toResponse(UserCheckin checkin, List<UserCheckinPhoto> photos, User author,

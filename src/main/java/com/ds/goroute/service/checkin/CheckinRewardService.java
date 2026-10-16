@@ -3,11 +3,12 @@ package com.ds.goroute.service.checkin;
 import com.ds.goroute.entity.UserCheckin;
 import com.ds.goroute.repository.UserCheckinRepository;
 import com.ds.goroute.service.StarService;
+import com.ds.goroute.service.time.UserTimeZones;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
+import java.time.Clock;
 import java.util.List;
 
 /**
@@ -28,6 +29,7 @@ public class CheckinRewardService {
     private final UserCheckinRepository checkinRepository;
     private final CheckinRewardCalculator calculator;
     private final StarService pointWallet;
+    private final UserTimeZones userTimeZones;
 
     /**
      * Works out this check-in's reward and stores it, unless it already has one.
@@ -53,7 +55,7 @@ public class CheckinRewardService {
         pointWallet.lockPoints(checkin.getUserId());
 
         int earnedToday = checkinRepository.sumRewardPointsSince(
-                checkin.getUserId(), LocalDate.now().atStartOfDay());
+                checkin.getUserId(), userTimeZones.startOfTodayUtc(checkin.getUserId(), Clock.systemUTC()));
         CheckinRewardCalculator.Reward reward = calculator.calculate(checkin, earnedToday);
 
         // Written even when the amount is zero: "you earned nothing, and here is why" is a far

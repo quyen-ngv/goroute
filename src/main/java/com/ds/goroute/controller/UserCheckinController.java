@@ -175,8 +175,9 @@ public class UserCheckinController extends BaseController {
     public ResponseEntity<BaseResponse<List<UserCheckinResponse>>> byPlace(
             @PathVariable UUID placeId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size) {
-        return ResponseEntity.ok(ofSucceeded(checkinService.byPlace(placeId, page, size)));
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
+            @CurrentUser(required = false) UUID viewerId) {
+        return ResponseEntity.ok(ofSucceeded(checkinService.byPlace(viewerId, placeId, page, size)));
     }
 
     /**
@@ -187,7 +188,8 @@ public class UserCheckinController extends BaseController {
     public ResponseEntity<BaseResponse<List<UserCheckinResponse>>> byLocation(
             @PathVariable String locationKey,
             @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size) {
-        return ResponseEntity.ok(ofSucceeded(checkinService.byLocationKey(locationKey, page, size)));
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
+            @CurrentUser(required = false) UUID viewerId) {
+        return ResponseEntity.ok(ofSucceeded(checkinService.byLocationKey(viewerId, locationKey, page, size)));
     }
 }

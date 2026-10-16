@@ -5,6 +5,7 @@ import com.ds.goroute.dto.response.ReceiptScanResponse;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.AiApiCallMapper;
 import com.ds.goroute.repository.AiTripRepository;
+import com.ds.goroute.service.time.UserTimeZones;
 import com.ds.goroute.thirdparty.openai.OpenAiVisionClient;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -46,13 +47,15 @@ class ReceiptScanServiceTest {
     @Mock private BetaAccessService betaAccess;
     @Mock private AiTripRepository subscriptions;
     @Mock private AiApiCallMapper aiApiCallMapper;
+    @Mock private UserTimeZones userTimeZones;
 
     private ReceiptScanService service;
 
     @BeforeEach
     void setUp() {
         service = new ReceiptScanService(visionClient, businessConfig, betaAccess, subscriptions,
-                aiApiCallMapper, new ObjectMapper());
+                aiApiCallMapper, new ObjectMapper(), userTimeZones);
+        when(userTimeZones.zoneFor(org.mockito.ArgumentMatchers.any())).thenReturn(ZoneId.of("Asia/Ho_Chi_Minh"));
         service.clock = Clock.fixed(Instant.parse("2026-10-13T05:00:00Z"), ZoneId.of("Asia/Ho_Chi_Minh"));
         when(visionClient.isConfigured()).thenReturn(true);
         when(businessConfig.getInt(BusinessConfigKey.EXPENSE_RECEIPT_SCAN_FREE_DAILY)).thenReturn(10);

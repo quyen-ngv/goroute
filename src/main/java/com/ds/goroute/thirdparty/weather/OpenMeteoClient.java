@@ -1,5 +1,6 @@
 package com.ds.goroute.thirdparty.weather;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -117,6 +118,25 @@ public class OpenMeteoClient {
 
         URI uri = builder.build().encode().toUri();
         return restClient.get().uri(uri).retrieve().body(OpenMeteoWeatherResponse.class);
+    }
+
+    /**
+     * The IANA zone of a point ({@code timezone=auto} resolves it upstream), or null when the
+     * answer carries none. Asks for no weather variables, so the call is cheap.
+     */
+    public String lookupTimeZone(BigDecimal latitude, BigDecimal longitude) {
+        URI uri = UriComponentsBuilder.fromUriString(baseUrl)
+            .path("/v1/forecast")
+            .queryParam("latitude", latitude.toPlainString())
+            .queryParam("longitude", longitude.toPlainString())
+            .queryParam("forecast_days", 1)
+            .queryParam("timezone", "auto")
+            .build()
+            .encode()
+            .toUri();
+        JsonNode body = restClient.get().uri(uri).retrieve().body(JsonNode.class);
+        String zone = body == null ? null : body.path("timezone").asText(null);
+        return zone == null || zone.isBlank() ? null : zone;
     }
 
     public OpenMeteoAirQualityResponse getAirQuality(BigDecimal latitude, BigDecimal longitude) {

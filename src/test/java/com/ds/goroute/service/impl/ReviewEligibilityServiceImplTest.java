@@ -61,7 +61,8 @@ class ReviewEligibilityServiceImplTest {
             mock(UserCheckinRepository.class), mock(ActivityBookingRepository.class), hotels, activities,
             mediaAssets, scoring, mock(ReviewFraudDetectionService.class), mock(ImageStorageCleanupService.class),
             mock(SocialNotificationService.class), mock(ContentModerationService.class),
-            mock(com.ds.goroute.repository.ContentCommentRepository.class), mock(com.ds.goroute.service.checkin.CheckinVerifier.class));
+            mock(com.ds.goroute.repository.ContentCommentRepository.class), mock(com.ds.goroute.service.checkin.CheckinVerifier.class),
+            mock(com.ds.goroute.mapper.SavedPostMapper.class));
 
     private final UUID user = UUID.randomUUID();
     private final UUID bookingId = UUID.randomUUID();
@@ -215,7 +216,8 @@ class ReviewEligibilityServiceImplTest {
                 mock(UserCheckinRepository.class), activityBookings, hotels, activities,
                 mediaAssets, scoring, mock(ReviewFraudDetectionService.class), mock(ImageStorageCleanupService.class),
                 mock(SocialNotificationService.class), mock(ContentModerationService.class),
-            mock(com.ds.goroute.repository.ContentCommentRepository.class), mock(com.ds.goroute.service.checkin.CheckinVerifier.class));
+            mock(com.ds.goroute.repository.ContentCommentRepository.class), mock(com.ds.goroute.service.checkin.CheckinVerifier.class),
+            mock(com.ds.goroute.mapper.SavedPostMapper.class));
 
         UserReviewResponse response = withBookings.createReview(user, request(null, orderId));
 

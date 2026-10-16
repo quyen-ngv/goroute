@@ -9,7 +9,9 @@ import com.ds.goroute.dto.response.ReviewScoreResponse;
 import com.ds.goroute.dto.response.UserReviewProfileResponse;
 import com.ds.goroute.dto.response.UserReviewResponse;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public interface ReviewService {
@@ -31,6 +33,12 @@ public interface ReviewService {
      * "someone liked your review" payload names.
      */
     UserReviewResponse getReview(UUID reviewId, UUID currentUserId);
+
+    /**
+     * The reviews among {@code reviewIds} that still exist and are not taken down, keyed by id;
+     * missing ids are not visible. Blocks are the caller's business.
+     */
+    Map<UUID, UserReviewResponse> findVisibleByIds(UUID currentUserId, Collection<UUID> reviewIds);
 
     List<UserReviewResponse> getPlaceReviews(UUID placeId, UUID currentUserId, int page, int size);
 

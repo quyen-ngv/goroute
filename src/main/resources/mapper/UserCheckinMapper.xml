@@ -199,6 +199,11 @@
         SELECT <include refid="columns"/> FROM user_checkins WHERE id = #{id}
     </select>
 
+    <select id="findByIds" resultMap="checkinMap">
+        SELECT <include refid="columns"/> FROM user_checkins WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
     <!-- "Have I already checked in here?"
 
          Answered from the columns the check-in was written with: activity_id is set

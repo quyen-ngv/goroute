@@ -28,6 +28,8 @@ public interface UserCheckinMapper {
 
     UserCheckin findById(@Param("id") UUID id);
 
+    List<UserCheckin> findByIds(@Param("ids") java.util.Collection<UUID> ids);
+
     /** Resolves a repeated submit of the same composition back to the row it created. */
     UserCheckin findMine(@Param("userId") UUID userId,
                          @Param("activityId") UUID activityId,

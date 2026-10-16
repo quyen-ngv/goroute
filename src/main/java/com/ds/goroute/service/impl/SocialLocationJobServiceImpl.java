@@ -69,7 +69,7 @@ import java.util.Locale;
 @Slf4j
 public class SocialLocationJobServiceImpl implements SocialLocationJobService {
 
-    private static final String CURRENT_CANDIDATE_POLICY = "AI_EVIDENCE_JUDGE_V2";
+    private static final String CURRENT_CANDIDATE_POLICY = "AI_EVIDENCE_JUDGE_V3";
 
     /** error_details marker for a trigger call that was accepted but never answered. */
     private static final String DISPATCH_OUTCOME_UNVERIFIED = "UNVERIFIED";
@@ -105,6 +105,8 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     private final SocialCandidateImageService candidateImageService;
 
     private final InternalPlaceSearchService internalPlaceSearchService;
+
+    private final com.ds.goroute.service.time.UserTimeZones userTimeZones;
 
     @Value("${social-location.dispatch-timeout-seconds:90}")
     private long dispatchTimeoutSeconds;
@@ -222,7 +224,8 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
 
     private void enforceDailyLimit(UUID userId, String sourceUrl) {
         int dailyJobLimit = socialConfig.dailyJobLimit(userId);
-        if (jobMapper.countCreatedByUserSince(userId, LocalDate.now().atStartOfDay()) < dailyJobLimit) {
+        if (jobMapper.countCreatedByUserSince(userId,
+                userTimeZones.startOfTodayUtc(userId, java.time.Clock.systemUTC())) < dailyJobLimit) {
             return;
         }
         audit(userId, null, sourceUrl, "REJECTED_DAILY_LIMIT", "DAILY_LIMIT_REACHED", null);

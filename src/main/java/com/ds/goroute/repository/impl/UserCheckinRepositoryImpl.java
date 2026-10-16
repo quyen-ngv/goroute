@@ -45,6 +45,11 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     }
 
     @Override
+    public List<UserCheckin> findByIds(java.util.Collection<UUID> ids) {
+        return ids.isEmpty() ? List.of() : mapper.findByIds(ids);
+    }
+
+    @Override
     public Optional<UserCheckin> findMine(UUID userId, UUID activityId, UUID placeId, UUID tripId) {
         return Optional.ofNullable(mapper.findMine(userId, activityId, placeId, tripId));
     }

@@ -53,7 +53,7 @@ class ReviewServiceImplLocationTest {
             mock(MediaAssetRepository.class), mock(ReviewScoringService.class),
             mock(ReviewFraudDetectionService.class), mock(ImageStorageCleanupService.class),
             mock(SocialNotificationService.class), mock(ContentModerationService.class),
-            mock(ContentCommentRepository.class), verifier);
+            mock(ContentCommentRepository.class), verifier, mock(com.ds.goroute.mapper.SavedPostMapper.class));
 
     private final Place place = new Place();
 

@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PlaceAttributeCatalogTest {
@@ -18,12 +19,14 @@ class PlaceAttributeCatalogTest {
     void defaultCatalogContainsAllSchemaFields() {
         JsonNode defaults = PlaceAttributeCatalog.defaultAttributes();
 
-        assertEquals(203, PlaceAttributeCatalog.definitions().size());
+        assertEquals(205, PlaceAttributeCatalog.definitions().size());
         assertTrue(defaults.has("finding_difficulty"));
         assertTrue(defaults.has("food_quality"));
         assertTrue(defaults.has("late_night_available"));
         assertTrue(defaults.has("smoking_exposure_level"));
         assertTrue(defaults.has("ambience"));
+        assertTrue(defaults.has("best_time_of_day"));
+        assertTrue(defaults.has("best_months"));
         assertTrue(defaults.get("finding_difficulty").get("value").isNull());
         assertTrue(defaults.get("finding_difficulty").get("description").isNull());
         assertFalse(defaults.get("finding_difficulty").get("source_found").asBoolean());
@@ -80,5 +83,31 @@ class PlaceAttributeCatalogTest {
 
         assertTrue(normalized.has("late_night_available"));
         assertFalse(normalized.has("late_night"));
+    }
+
+    @Test
+    void visitTimingKeysAcceptOnlyTheirOwnValues() throws Exception {
+        JsonNode valid = objectMapper.readTree("""
+                {
+                  "best_time_of_day": {"value": ["EARLY_MORNING", "AFTERNOON"], "source_found": true},
+                  "best_months": {"value": ["FEB", "MAR"], "source_found": true}
+                }
+                """);
+        JsonNode normalized = objectMapper.readTree(
+                PlaceAttributeCatalog.normalizeForStorage(valid, objectMapper));
+        assertEquals(2, normalized.get("best_time_of_day").get("value").size());
+        assertEquals(2, normalized.get("best_months").get("value").size());
+
+        JsonNode wrongValue = objectMapper.readTree("""
+                {"best_months": {"value": ["FEBRUARY"], "source_found": true}}
+                """);
+        assertThrows(IllegalArgumentException.class,
+                () -> PlaceAttributeCatalog.normalizeForStorage(wrongValue, objectMapper));
+
+        JsonNode notArray = objectMapper.readTree("""
+                {"best_time_of_day": {"value": "MORNING", "source_found": true}}
+                """);
+        assertThrows(IllegalArgumentException.class,
+                () -> PlaceAttributeCatalog.normalizeForStorage(notArray, objectMapper));
     }
 }

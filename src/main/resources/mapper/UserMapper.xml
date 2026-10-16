@@ -300,6 +300,17 @@
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
     </update>
 
+    <update id="updateTimeZone">
+        UPDATE users
+        SET time_zone = #{timeZone}
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
+          AND time_zone IS DISTINCT FROM #{timeZone}
+    </update>
+
+    <select id="selectTimeZone" resultType="java.lang.String">
+        SELECT time_zone FROM users WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
     <update id="updateBirthYear">
         UPDATE users
         SET birth_year = #{birthYear}, updated_at = #{updatedAt}

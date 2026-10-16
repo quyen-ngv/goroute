@@ -5,6 +5,7 @@ import com.ds.goroute.repository.AiTripRepository;
 import com.ds.goroute.repository.AssistantRepository;
 import com.ds.goroute.service.BetaAccessService;
 import com.ds.goroute.service.BusinessConfigService;
+import com.ds.goroute.service.time.UserTimeZones;
 import com.ds.goroute.type.BusinessConfigKey;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -19,14 +20,13 @@ import java.util.UUID;
 
 /**
  * Who may ask Pengoo and how much. A question counts against the asker's allowance for the
- * Vietnam calendar day; the ledger is {@code assistant_turns} itself (rows with
+ * asker's own calendar day (their device zone, see {@link UserTimeZones}); the ledger is {@code assistant_turns} itself (rows with
  * {@code counted = true}), so a failed answer, which un-counts its row, is free.
  */
 @Service
 @RequiredArgsConstructor
 public class AssistantAccessService {
 
-    static final ZoneId LOCAL_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     static final String TIER_PRO = "PRO";
     static final String TIER_FREE = "FREE";
 
@@ -34,6 +34,7 @@ public class AssistantAccessService {
     private final BetaAccessService betaAccess;
     private final AiTripRepository subscriptions;
     private final AssistantRepository repository;
+    private final UserTimeZones userTimeZones;
 
     /** Replaced in tests; turn timestamps are written with the same clock. */
     Clock clock = Clock.systemDefaultZone();
@@ -55,7 +56,7 @@ public class AssistantAccessService {
     }
 
     public int usedToday(UUID userId) {
-        return (int) repository.countCountedTurnsSince(userId, startOfToday());
+        return (int) repository.countCountedTurnsSince(userId, startOfToday(userId));
     }
 
     public AssistantMeResponse me(UUID userId) {
@@ -74,9 +75,10 @@ public class AssistantAccessService {
         return LocalDateTime.now(clock);
     }
 
-    /** Local midnight in Vietnam, expressed in the clock's zone (the zone timestamps are written in). */
-    LocalDateTime startOfToday() {
-        ZonedDateTime localMidnight = ZonedDateTime.now(clock.withZone(LOCAL_ZONE)).truncatedTo(ChronoUnit.DAYS);
+    /** The user's local midnight, expressed in the clock's zone (the zone timestamps are written in). */
+    LocalDateTime startOfToday(UUID userId) {
+        ZoneId zone = userTimeZones.zoneFor(userId);
+        ZonedDateTime localMidnight = ZonedDateTime.now(clock.withZone(zone)).truncatedTo(ChronoUnit.DAYS);
         return localMidnight.withZoneSameInstant(clock.getZone()).toLocalDateTime();
     }
 }

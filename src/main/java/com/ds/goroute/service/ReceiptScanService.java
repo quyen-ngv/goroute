@@ -12,6 +12,8 @@ import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.ExpenseCategory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ds.goroute.service.time.UserTimeZones;
+import com.ds.goroute.utils.AppZones;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -46,7 +48,6 @@ import java.util.regex.Pattern;
 public class ReceiptScanService {
 
     static final String FEATURE = "RECEIPT_SCAN";
-    static final ZoneId LOCAL_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     static final long MAX_IMAGE_BYTES = 6L * 1024 * 1024;
     private static final BigDecimal MAX_AMOUNT = new BigDecimal("1000000000000");
     private static final Pattern ISO_CURRENCY = Pattern.compile("[A-Z]{3}");
@@ -89,6 +90,7 @@ public class ReceiptScanService {
     private final AiTripRepository subscriptions;
     private final AiApiCallMapper aiApiCallMapper;
     private final ObjectMapper objectMapper;
+    private final UserTimeZones userTimeZones;
 
     /** Replaced in tests; ai_api_calls timestamps are written in the JVM default zone. */
     Clock clock = Clock.systemDefaultZone();
@@ -140,12 +142,13 @@ public class ReceiptScanService {
     }
 
     int usedToday(UUID userId) {
-        return (int) aiApiCallMapper.countSucceededSince(userId, FEATURE, startOfToday());
+        return (int) aiApiCallMapper.countSucceededSince(userId, FEATURE, startOfToday(userId));
     }
 
-    /** Local midnight in Vietnam, expressed in the clock's zone. */
-    LocalDateTime startOfToday() {
-        ZonedDateTime localMidnight = ZonedDateTime.now(clock.withZone(LOCAL_ZONE)).truncatedTo(ChronoUnit.DAYS);
+    /** The user's local midnight, expressed in the clock's zone. */
+    LocalDateTime startOfToday(UUID userId) {
+        ZoneId zone = userTimeZones.zoneFor(userId);
+        ZonedDateTime localMidnight = ZonedDateTime.now(clock.withZone(zone)).truncatedTo(ChronoUnit.DAYS);
         return localMidnight.withZoneSameInstant(clock.getZone()).toLocalDateTime();
     }
 
@@ -263,7 +266,8 @@ public class ReceiptScanService {
         if (value == null) return null;
         try {
             LocalDate date = LocalDate.parse(value.trim());
-            LocalDate today = LocalDate.now(clock.withZone(LOCAL_ZONE));
+            // UTC today plus one day of slack covers every zone the receipt could come from.
+            LocalDate today = LocalDate.now(clock.withZone(AppZones.UTC));
             return date.isAfter(today.plusDays(1)) || date.isBefore(today.minusYears(2)) ? null : date;
         } catch (Exception e) {
             return null;

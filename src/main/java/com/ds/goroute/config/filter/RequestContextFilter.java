@@ -32,7 +32,8 @@ import static com.ds.goroute.constant.RequestKeyConstant.X_REQUEST_ID;
  * The body is forwarded byte for byte; this filter used to parse it and write request
  * metadata (including the API secret header) back into it.
  */
-@Component
+// Explicit name: the default "requestContextFilter" collides with Spring Boot's own bean.
+@Component("goRouteRequestContextFilter")
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @Slf4j
 public class RequestContextFilter implements Filter {

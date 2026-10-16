@@ -28,6 +28,11 @@ public class TripResponse {
     private String routeSummary;
     private LocalDate startDate;
     private LocalDate endDate;
+    /**
+     * IANA zone of the destination; the itinerary's dates and times are wall-clock times there.
+     * Null while unknown (destination abroad and not looked up yet, or no destination).
+     */
+    private String timezone;
     private String status;
     private BigDecimal budget;
     private String currency;

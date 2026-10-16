@@ -20,6 +20,7 @@ public class AdminPlaceResponse extends PlaceResponse {
     private String dataId;
     private UUID inputId;
     private String plusCode;
+    private String timezone;
     private Integer visitDurationMinutes;
     private String status;
     private String reservations;

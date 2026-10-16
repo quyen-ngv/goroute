@@ -65,7 +65,8 @@ class ReviewServiceImplListTest {
             mock(UserCheckinRepository.class), bookings, mock(HotelMarketplaceRepository.class),
             mock(ActivityCommerceRepository.class), mediaAssets, mock(ReviewScoringService.class),
             mock(ReviewFraudDetectionService.class), mock(ImageStorageCleanupService.class),
-            mock(SocialNotificationService.class), mock(ContentModerationService.class), comments, mock(com.ds.goroute.service.checkin.CheckinVerifier.class));
+            mock(SocialNotificationService.class), mock(ContentModerationService.class), comments, mock(com.ds.goroute.service.checkin.CheckinVerifier.class),
+            mock(com.ds.goroute.mapper.SavedPostMapper.class));
 
     private final UUID viewerId = UUID.randomUUID();
     private final UUID placeId = UUID.randomUUID();

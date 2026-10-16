@@ -281,7 +281,8 @@ public class AssistantToolService {
      */
     private Map<String, Object> events(Trip trip, Map<String, Object> args) {
         Anchor anchor = anchor(trip, args);
-        LocalDate today = LocalDate.now(LOCAL_ZONE);
+        ZoneId zone = trip == null ? LOCAL_ZONE : com.ds.goroute.service.time.TripTimeZones.zoneOf(trip);
+        LocalDate today = LocalDate.now(zone);
         LocalDate from = firstNonNull(date(args.get("from")), anchor.date());
         LocalDate to = date(args.get("to"));
         if (from != null && from.isBefore(today)) from = today;
@@ -289,12 +290,12 @@ public class AssistantToolService {
         String categories = eventCategories(strings(args.get("categories")));
         String words = text(args.get("query"));
 
-        List<Map<String, Object>> rows = findEvents(anchor, from, to, categories, words);
+        List<Map<String, Object>> rows = findEvents(anchor, zone, from, to, categories, words);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("near", anchor.label());
         if (from != null) out.put("window", from + ".." + to);
         if (rows.isEmpty() && (from != null || categories != null || words != null)) {
-            List<Map<String, Object>> upcoming = findEvents(anchor, null, null, null, null);
+            List<Map<String, Object>> upcoming = findEvents(anchor, zone, null, null, null, null);
             out.put("events", List.of());
             out.put("upcomingInstead", upcoming);
             out.put("note", "Nothing matched the asked dates/filters; 'upcomingInstead' lists the next events nearby. Say so.");
@@ -305,9 +306,9 @@ public class AssistantToolService {
         return out;
     }
 
-    private List<Map<String, Object>> findEvents(Anchor anchor, LocalDate from, LocalDate to, String categories, String words) {
-        String fromAt = from == null ? null : from.atStartOfDay(LOCAL_ZONE).toInstant().toString();
-        String toAt = to == null ? null : to.plusDays(1).atStartOfDay(LOCAL_ZONE).toInstant().toString();
+    private List<Map<String, Object>> findEvents(Anchor anchor, ZoneId zone, LocalDate from, LocalDate to, String categories, String words) {
+        String fromAt = from == null ? null : from.atStartOfDay(zone).toInstant().toString();
+        String toAt = to == null ? null : to.plusDays(1).atStartOfDay(zone).toInstant().toString();
         String needle = words == null ? null : normalize(words);
         List<Map<String, Object>> rows = new ArrayList<>();
         for (LocalEventSummaryResponse event : eventService.search(anchor.lat().doubleValue(), anchor.lng().doubleValue(),
@@ -537,7 +538,7 @@ public class AssistantToolService {
         out.put("name", place.getTitle());
         out.put("kind", kindOf(place));
         putUsage(out, place);
-        out.put("recentCheckins", checkinService.byPlace(place.getId(), 0, MAX_COMMUNITY_ROWS).stream()
+        out.put("recentCheckins", checkinService.byPlace(null, place.getId(), 0, MAX_COMMUNITY_ROWS).stream()
                 .map(this::checkinRow)
                 .toList());
         List<Map<String, Object>> reviews = new ArrayList<>();

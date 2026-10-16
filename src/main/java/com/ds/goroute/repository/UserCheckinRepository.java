@@ -23,6 +23,8 @@ public interface UserCheckinRepository {
 
     Optional<UserCheckin> findById(UUID id);
 
+    List<UserCheckin> findByIds(java.util.Collection<UUID> ids);
+
     /**
      * The author's own check-in for a given activity, place or trip, newest first.
      *

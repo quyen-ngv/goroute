@@ -1034,6 +1034,7 @@ public class TripServiceImpl implements TripService {
                 .routeSummary(routeSummary(destinationResponses))
                 .startDate(trip.getStartDate())
                 .endDate(trip.getEndDate())
+                .timezone(com.ds.goroute.service.time.TripTimeZones.zoneIdOf(trip))
                 .status(trip.getStatus() != null ? trip.getStatus().toString() : null)
                 .budget(trip.getBudget())
                 .currency(trip.getCurrency())

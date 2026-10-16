@@ -8,7 +8,9 @@ import com.ds.goroute.dto.response.UserCheckinResponse;
 import com.ds.goroute.dto.response.CheckinLikeResponse;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -72,6 +74,13 @@ public interface UserCheckinService {
 
     UserCheckinResponse get(UUID viewerId, UUID checkinId);
 
+    /**
+     * The check-ins among {@code checkinIds} that someone other than the author may open:
+     * not removed, public and not taken down. Keyed by id; missing ids are not visible.
+     * Blocks are the caller's business.
+     */
+    Map<UUID, UserCheckinResponse> findVisibleByIds(UUID viewerId, Collection<UUID> checkinIds);
+
     CheckinLikeResponse toggleLike(UUID userId, UUID checkinId);
 
     /**
@@ -98,7 +107,8 @@ public interface UserCheckinService {
 
     List<UserCheckinResponse> byUser(UUID viewerId, UUID userId, int page, int size);
 
-    List<UserCheckinResponse> byPlace(UUID placeId, int page, int size);
+    /** {@code viewerId} (null for guests) only decides {@code hasSaved}. */
+    List<UserCheckinResponse> byPlace(UUID viewerId, UUID placeId, int page, int size);
 
     /**
      * Every public check-in written during one trip, oldest first.
@@ -109,7 +119,7 @@ public interface UserCheckinService {
     List<UserCheckinResponse> byTrip(UUID viewerId, UUID tripId);
 
     /** Everything at one uncatalogued spot, so its name is still tappable in the feed. */
-    List<UserCheckinResponse> byLocationKey(String locationKey, int page, int size);
+    List<UserCheckinResponse> byLocationKey(UUID viewerId, String locationKey, int page, int size);
 
     /** Wards this person has checked in at; private check-ins count only for the owner. */
     List<com.ds.goroute.dto.response.VisitedWardResponse> visitedWards(UUID viewerId, UUID userId);

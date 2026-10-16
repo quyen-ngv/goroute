@@ -15,6 +15,7 @@ import com.ds.goroute.type.PlaceVisibilityStatus;
 import com.ds.goroute.type.TranslationLocale;
 import com.ds.goroute.type.PlaceSearchSort;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.NullNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -200,6 +201,33 @@ class PlaceServiceImplListTest {
                 .title("Still").latitude(new BigDecimal("10.000")).longitude(BigDecimal.valueOf(106)).build());
 
         verify(placeRepository, never()).assignWard(any());
+    }
+
+    @Test
+    void anUpdateWithoutTimezoneOrAttributesKeepsTheStoredValues() {
+        Place place = place("Kept");
+        place.setTimezone("Asia/Ho_Chi_Minh");
+        place.setAttributes("{\"free_entry\":{\"value\":true}}");
+        when(placeRepository.findById(place.getId())).thenReturn(Optional.of(place));
+
+        service.updatePlace(place.getId(), UpdatePlaceRequest.builder()
+                .title("Kept").latitude(BigDecimal.TEN).longitude(BigDecimal.valueOf(106)).build());
+
+        assertThat(place.getTimezone()).isEqualTo("Asia/Ho_Chi_Minh");
+        assertThat(place.getAttributes()).isEqualTo("{\"free_entry\":{\"value\":true}}");
+    }
+
+    @Test
+    void anExplicitNullAttributesClearsThem() {
+        Place place = place("Cleared");
+        place.setAttributes("{\"free_entry\":{\"value\":true}}");
+        when(placeRepository.findById(place.getId())).thenReturn(Optional.of(place));
+
+        service.updatePlace(place.getId(), UpdatePlaceRequest.builder()
+                .title("Cleared").latitude(BigDecimal.TEN).longitude(BigDecimal.valueOf(106))
+                .attributes(NullNode.getInstance()).build());
+
+        assertThat(place.getAttributes()).isNull();
     }
 
     @Test

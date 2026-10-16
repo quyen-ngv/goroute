@@ -28,6 +28,10 @@ public enum PlaceAttributeType {
     AMBIENCE_TAG(List.of(
             "QUIET", "LIVELY", "COZY", "ROMANTIC", "CASUAL", "LUXURY", "LOCAL", "TRADITIONAL", "MODERN",
             "FAMILY_FRIENDLY", "WORK_FRIENDLY", "STREET_SIDE", "ROOFTOP", "GARDEN", "WATERFRONT", "SCENIC", "PARTY"),
+            Map.of(), true),
+    TIME_OF_DAY(List.of("EARLY_MORNING", "MORNING", "MIDDAY", "AFTERNOON", "SUNSET", "EVENING", "NIGHT"),
+            Map.of(), true),
+    MONTH(List.of("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"),
             Map.of(), true);
 
     private final List<String> allowedValues;

@@ -78,6 +78,11 @@
             cover_image_url = #{coverImageUrl},
             destination = #{destination},
             destination_place_id = #{destinationPlaceId},
+            -- A moved destination needs its zone looked up again (TripTimeZoneResolveJob).
+            timezone = CASE
+                WHEN destination_lat IS DISTINCT FROM #{destinationLat}
+                  OR destination_lng IS DISTINCT FROM #{destinationLng} THEN NULL
+                ELSE timezone END,
             destination_lat = #{destinationLat},
             destination_lng = #{destinationLng},
             start_date = #{startDate},
@@ -511,6 +516,23 @@
         WHERE counted.id = t.id
           AND (t.activity_count, t.memory_count)
               IS DISTINCT FROM (counted.activity_count, counted.memory_count)
+    </update>
+
+    <select id="selectWithoutTimezone" resultMap="TripResultMap">
+        SELECT id, destination_lat, destination_lng
+        FROM trips
+        WHERE timezone IS NULL
+          AND destination_lat IS NOT NULL AND destination_lng IS NOT NULL
+          AND is_deleted IS NOT TRUE
+        ORDER BY updated_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <update id="updateTimezone">
+        UPDATE trips SET timezone = #{timezone}
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+          AND destination_lat = #{destinationLat}
+          AND destination_lng = #{destinationLng}
     </update>
 
 </mapper>
