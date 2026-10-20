@@ -42,6 +42,17 @@
         ORDER BY updated_at DESC
     </select>
 
+    <!-- Active devices of many people at once (follower fan-out); callers pass at most one chunk. -->
+    <select id="findActiveByUserIds" resultMap="UserDeviceResultMap">
+        SELECT * FROM user_devices
+        WHERE is_active = true
+          AND fcm_token IS NOT NULL
+          AND user_id IN
+        <foreach collection="userIds" item="userId" open="(" separator="," close=")">
+            #{userId}
+        </foreach>
+    </select>
+
     <select id="findByUserIdAndToken" resultMap="UserDeviceResultMap">
         SELECT * FROM user_devices
         WHERE user_id = #{userId} AND fcm_token = #{fcmToken}

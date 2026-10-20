@@ -93,6 +93,7 @@ public class TripServiceImpl implements TripService {
     private final UserCheckinService userCheckinService;
     private final Executor applicationTaskExecutor;
     private final ContentCommentRepository contentCommentRepository;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     private List<TripDestination> buildDestinationsForTrip(
             UUID tripId,
@@ -522,6 +523,10 @@ public class TripServiceImpl implements TripService {
 
         tripRepository.updateById(trip);
         log.info("Trip updated: {}", tripId);
+
+        if (trip.getVisibility() == TripVisibility.PUBLIC && previousVisibility != TripVisibility.PUBLIC) {
+            eventPublisher.publishEvent(new com.ds.goroute.event.TripSharedPublicEvent(tripId, trip.getOwnerId()));
+        }
 
         if (tripCurrencyChanged) {
             expenseService.recalculateForTripCurrency(tripId);
@@ -2216,6 +2221,22 @@ public class TripServiceImpl implements TripService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<PublicTripResponse> getPublicTripCards(UUID viewerId, List<UUID> tripIds) {
+        if (tripIds == null || tripIds.isEmpty()) {
+            return List.of();
+        }
+        List<Trip> trips = loadPublicTripsInOrder(tripIds.stream().distinct().toList());
+        List<PublicTripResponse> summaries = toPublicTripSummaries(trips, viewerId);
+        for (int i = 0; i < summaries.size(); i++) {
+            if (summaries.get(i).getPublicSharedAt() == null) {
+                summaries.get(i).setPublicSharedAt(trips.get(i).getCreatedAt());
+            }
+        }
+        return summaries;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<PublicTripResponse> getPublicTripsWithPlace(UUID placeId, int page, int size, UUID viewerId) {
         if (placeId == null) {
             return List.of();
@@ -2575,10 +2596,18 @@ public class TripServiceImpl implements TripService {
         // The owner's own trips (their thread is readable to them) or someone else's public
         // trips (readable to anyone): every count here is what the comments endpoint gives.
         Map<UUID, Integer> commentCounts = tripCommentCounts(trips);
+        // The real viewer's votes, never mapViewerId's: for a guest that falls back to the
+        // profile owner, whose own hearts must not show as the guest's.
+        Map<UUID, TripHelpfulVote> viewerVotes = viewerId == null || trips.isEmpty()
+                ? Map.of()
+                : tripHelpfulVoteRepository.findByTripIdsAndUserId(
+                        trips.stream().map(Trip::getId).toList(), viewerId);
         return trips.stream()
                 .map(trip -> {
                     TripResponse response = mapToTripResponse(trip, mapViewerId, profileOwner, viewerMembership);
                     response.setCommentCount(commentCounts.getOrDefault(trip.getId(), 0));
+                    TripHelpfulVote vote = viewerVotes.get(trip.getId());
+                    response.setHasVotedHelpful(vote == null ? null : vote.isHelpful());
                     return response;
                 })
                 .collect(Collectors.toList());

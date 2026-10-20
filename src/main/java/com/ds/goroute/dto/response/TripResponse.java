@@ -51,6 +51,11 @@ public class TripResponse {
     private Integer helpfulVotes;
     private Integer unhelpfulVotes;
     /**
+     * The signed-in viewer's own vote: true helpful, false unhelpful, null none (or a
+     * guest). Filled by GET /users/{userId}/trips, whose cards draw the heart from it.
+     */
+    private Boolean hasVotedHelpful;
+    /**
      * Active comments on this trip's thread. Filled only by the lists that render trips as
      * posts (GET /trips, GET /users/{userId}/trips); null on every other trip response.
      */

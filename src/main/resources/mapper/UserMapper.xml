@@ -284,6 +284,35 @@
         )
     </select>
 
+    <!-- Follower fan-out (epic 12): the next chunk of an author's followers who may be told,
+         keyset by follower_id on idx_user_follows_following_follower (V242). Skips deleted,
+         locked and non-human accounts, and anyone in a block with the author either way.
+         betaUsernames, when given, narrows the chunk to the beta list (lower-cased). -->
+    <select id="selectFollowerIdChunk" resultType="java.util.UUID">
+        SELECT f.follower_id
+        FROM user_follows f
+        JOIN users u ON u.id = f.follower_id
+        WHERE f.following_id = #{authorId,javaType=java.util.UUID,jdbcType=OTHER}
+          <if test="afterFollowerId != null">
+              AND f.follower_id &gt; #{afterFollowerId,javaType=java.util.UUID,jdbcType=OTHER}
+          </if>
+          AND u.deleted_at IS NULL
+          AND u.account_status = 'ACTIVE'
+          AND u.account_type = 'HUMAN'
+          <if test="betaUsernames != null">
+              AND LOWER(TRIM(u.username)) IN
+              <foreach collection="betaUsernames" item="username" open="(" separator="," close=")">
+                  #{username}
+              </foreach>
+          </if>
+          AND NOT EXISTS (
+              SELECT 1 FROM user_blocks b
+              WHERE (b.blocker_id = f.follower_id AND b.blocked_id = f.following_id)
+                 OR (b.blocker_id = f.following_id AND b.blocked_id = f.follower_id))
+        ORDER BY f.follower_id
+        LIMIT #{limit}
+    </select>
+
     <delete id="deleteById" parameterType="java.util.UUID">
         DELETE FROM users WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </delete>

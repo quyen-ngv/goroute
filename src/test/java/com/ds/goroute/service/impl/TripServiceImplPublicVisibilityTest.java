@@ -88,7 +88,8 @@ class TripServiceImplPublicVisibilityTest {
                 // Same-thread executor: the fire-and-forget view counter has to have run
                 // by the time the assertions look at it.
                 Runnable::run,
-                mock(com.ds.goroute.repository.ContentCommentRepository.class));
+                mock(com.ds.goroute.repository.ContentCommentRepository.class),
+                mock(org.springframework.context.ApplicationEventPublisher.class));
     }
 
     @Test

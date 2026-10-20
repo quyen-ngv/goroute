@@ -80,6 +80,30 @@ public class AsyncConfig implements AsyncConfigurer {
         return executor;
     }
 
+    /**
+     * Telling an author's followers about a new post (FollowerFanoutListener). Its own small pool so
+     * that one author with ten thousand followers walks them chunk by chunk without taking threads
+     * from trip, chat and booking notifications.
+     *
+     * <p>Never CallerRuns: the caller is the after-commit hook of a check-in or trip update, and
+     * running a fan-out there would hold that HTTP request for the whole walk. A full queue drops
+     * the fan-out with an error log instead; the post itself is already saved.
+     */
+    @Bean(name = "followerFanoutExecutor")
+    public Executor followerFanoutExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(500);
+        executor.setThreadNamePrefix("follower-fanout-");
+        executor.setRejectedExecutionHandler((task, pool) ->
+                log.error("FOLLOWER_FANOUT_REJECTED queue full ({} queued); a post's followers were not told",
+                        pool.getQueue().size()));
+        executor.initialize();
+        log.info("Follower fan-out executor initialized: core=1, max=2, queue=500");
+        return executor;
+    }
+
     @Bean(name = "placeImportJobExecutor")
     public Executor placeImportJobExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();

@@ -50,7 +50,14 @@ public interface UserRepository {
     void unfollow(UUID followerId, UUID followingId);
 
     boolean isFollowing(UUID followerId, UUID followingId);
-    
+
+    /**
+     * The next {@code limit} followers of {@code authorId} after {@code afterFollowerId}, in id
+     * order, who may be told about the author's posts: active human accounts with no block
+     * either way. {@code betaUsernames} non-null narrows them to the beta list.
+     */
+    List<UUID> findNotifiableFollowerIds(UUID authorId, UUID afterFollowerId,
+                                         java.util.Collection<String> betaUsernames, int limit);    
     void updateById(User user);
 
     void updateLastLoginAt(UUID id);

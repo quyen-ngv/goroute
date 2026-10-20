@@ -39,6 +39,8 @@ public interface TripMapper {
 
     int refreshActivityCount(@Param("tripId") UUID tripId);
 
+    int claimFollowersNotification(@Param("tripId") UUID tripId);
+
     int refreshMemoryCount(@Param("tripId") UUID tripId);
 
     int reconcileContentCounts();

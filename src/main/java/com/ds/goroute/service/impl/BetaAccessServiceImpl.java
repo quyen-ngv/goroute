@@ -30,4 +30,9 @@ public class BetaAccessServiceImpl implements BetaAccessService {
                 .map(username -> allowed.contains(username.trim().toLowerCase(Locale.ROOT)))
                 .orElse(false);
     }
+
+    @Override
+    public Set<String> betaUsernames() {
+        return store.usernames();
+    }
 }

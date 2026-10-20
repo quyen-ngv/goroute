@@ -94,7 +94,8 @@ class TripServiceImplCollaborationTest {
                 mock(SocialNotificationService.class),
                 mock(UserCheckinService.class),
                 Runnable::run,
-                mock(com.ds.goroute.repository.ContentCommentRepository.class));
+                mock(com.ds.goroute.repository.ContentCommentRepository.class),
+                mock(org.springframework.context.ApplicationEventPublisher.class));
     }
 
     @Test

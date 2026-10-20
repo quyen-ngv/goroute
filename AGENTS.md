@@ -227,6 +227,10 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `ASSISTANT` | `WELCOME_ENABLED` | boolean | safe fallback true | private/admin |
 | `ASSISTANT` | `TURN_TIMEOUT_SECONDS` | seconds, 30..900 | safe fallback 150 | private/admin |
 | `ASSISTANT` | `WEB_SEARCH_ENABLED` | boolean; one web search per answer when the catalogue has nothing (worker also needs a provider) | safe fallback true | private/admin |
+| `SOCIAL` | `FOLLOWER_FANOUT_ENABLED` | boolean (beta followers always told) | safe fallback false | users via `GET /v1/api/following/moments` (`enabled`) |
+| `SOCIAL` | `FOLLOWER_PUSH_COOLDOWN_MINUTES` / `FOLLOWER_PUSH_DAILY_MAX` | minutes per author 0..1440 / pushes per recipient per 24 h 0..100 | safe fallback 30 / 10 | private/admin |
+| `SOCIAL` | `FOLLOWER_FANOUT_BATCH_SIZE` / `FOLLOWER_FANOUT_PAUSE_MS` | followers per chunk 50..500 / ms between chunks 0..5000 | safe fallback 500 / 100 | private/admin |
+| `SOCIAL` | `MOMENTS_WINDOW_HOURS` | hours, 1..336 | safe fallback 72 | private/admin |
 
 ## Build note
 

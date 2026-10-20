@@ -20,6 +20,8 @@ public class UserCheckinResponse {
     private UUID id;
     private UUID userId;
     private String userDisplayName;
+    /** The author's handle, which the map names them by. */
+    private String userUsername;
     private String userAvatarUrl;
 
     private UUID tripId;

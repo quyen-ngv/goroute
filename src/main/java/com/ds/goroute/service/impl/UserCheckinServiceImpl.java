@@ -909,6 +909,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .id(checkin.getId())
                 .userId(checkin.getUserId())
                 .userDisplayName(author == null ? null : author.getFullName())
+                .userUsername(author == null ? null : author.getUsername())
                 .userAvatarUrl(author == null ? null : author.getAvatarUrl())
                 .tripId(checkin.getTripId())
                 .activityId(checkin.getActivityId())

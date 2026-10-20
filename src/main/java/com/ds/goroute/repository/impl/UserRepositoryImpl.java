@@ -121,7 +121,15 @@ public class UserRepositoryImpl implements UserRepository {
     public boolean isFollowing(UUID followerId, UUID followingId) {
         return userMapper.existsFollow(followerId, followingId);
     }
-    
+
+    @Override
+    public List<UUID> findNotifiableFollowerIds(UUID authorId, UUID afterFollowerId,
+                                                java.util.Collection<String> betaUsernames, int limit) {
+        if (betaUsernames != null && betaUsernames.isEmpty()) {
+            return List.of();
+        }
+        return userMapper.selectFollowerIdChunk(authorId, afterFollowerId, betaUsernames, limit);
+    }    
     @Override
     public void updateById(User user) {
         userMapper.updateById(user);

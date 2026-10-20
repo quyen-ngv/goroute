@@ -39,6 +39,9 @@ public interface TripRepository {
     /** Recounts {@code trips.activity_count} (V216) for one trip. */
     void refreshActivityCount(UUID tripId);
 
+    /** Stamps followers_notified_at once; true only for the call that stamped it on a public trip. */
+    boolean claimFollowersNotification(UUID tripId);
+
     /** Recounts {@code trips.memory_count} (V216) for one trip. */
     void refreshMemoryCount(UUID tripId);
 

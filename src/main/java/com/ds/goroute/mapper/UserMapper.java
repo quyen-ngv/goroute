@@ -57,7 +57,11 @@ public interface UserMapper {
     int deleteFollow(@Param("followerId") UUID followerId, @Param("followingId") UUID followingId);
 
     boolean existsFollow(@Param("followerId") UUID followerId, @Param("followingId") UUID followingId);
-    
+
+    java.util.List<UUID> selectFollowerIdChunk(@Param("authorId") UUID authorId,
+                                               @Param("afterFollowerId") UUID afterFollowerId,
+                                               @Param("betaUsernames") java.util.Collection<String> betaUsernames,
+                                               @Param("limit") int limit);    
     int updateById(User user);
 
     int updateLastLoginAt(@Param("id") UUID id);

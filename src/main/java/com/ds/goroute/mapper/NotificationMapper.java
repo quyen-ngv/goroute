@@ -58,4 +58,21 @@ public interface NotificationMapper {
                        @Param("targetId") UUID targetId);
     
     int deleteByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
+
+    List<UUID> insertFollowerNotifications(@Param("recipientIds") List<UUID> recipientIds,
+                                           @Param("type") String type,
+                                           @Param("data") String data,
+                                           @Param("actorId") UUID actorId,
+                                           @Param("dedupeKey") String dedupeKey);
+
+    List<UUID> findOverFollowingDailyCap(@Param("userIds") List<UUID> userIds,
+                                         @Param("hours") int hours,
+                                         @Param("cap") int cap);
+
+    List<Notification> findUnreadFollowingPosts(@Param("userId") UUID userId,
+                                                @Param("hours") int hours,
+                                                @Param("limit") int limit);
+
+    int markFollowingPostsRead(@Param("userId") UUID userId,
+                               @Param("dedupeKeys") java.util.Collection<String> dedupeKeys);
 }

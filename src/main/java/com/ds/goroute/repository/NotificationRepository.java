@@ -49,4 +49,20 @@ public interface NotificationRepository {
      * miss the row and insert two. Must be called inside a transaction.
      */
     void lockTarget(UUID userId, NotificationType type, String targetType, UUID targetId);
+
+    /**
+     * One follower-post row per recipient, keyed by {@code dedupeKey}; recipients that already
+     * have that key get nothing. Returns the recipients that got a new row.
+     */
+    List<UUID> insertFollowerNotifications(List<UUID> recipientIds, NotificationType type,
+                                           String data, UUID actorId, String dedupeKey);
+
+    /** Of {@code userIds}, those with more than {@code cap} follower-post rows in the last {@code hours}. */
+    List<UUID> findOverFollowingDailyCap(List<UUID> userIds, int hours, int cap);
+
+    /** Unread follower-post rows of one reader in the last {@code hours}, newest first. */
+    List<Notification> findUnreadFollowingPosts(UUID userId, int hours, int limit);
+
+    /** Marks the reader's follower-post rows with these keys read. */
+    int markFollowingPostsRead(UUID userId, java.util.Collection<String> dedupeKeys);
 }

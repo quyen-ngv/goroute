@@ -171,4 +171,56 @@
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </update>
 
+    <!-- Follower fan-out (epic 12): one row per recipient of a chunk, in one statement.
+         The partial unique index (user_id, dedupe_key) of V242 makes a replay insert nothing;
+         RETURNING names only the recipients that actually got a new row, and only those are
+         pushed. Title and body stay NULL: they are rendered in the reader's language. -->
+    <select id="insertFollowerNotifications" resultType="java.util.UUID" flushCache="true" useCache="false">
+        INSERT INTO notifications (id, user_id, trip_id, type, title, body, data, actor_id, is_read, created_at, dedupe_key)
+        VALUES
+        <foreach collection="recipientIds" item="recipientId" separator=",">
+            (gen_random_uuid(), #{recipientId,javaType=java.util.UUID,jdbcType=OTHER}, NULL, #{type}, NULL, NULL,
+             CAST(#{data} AS jsonb), #{actorId,javaType=java.util.UUID,jdbcType=OTHER}, FALSE, NOW(), #{dedupeKey})
+        </foreach>
+        ON CONFLICT (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING
+        RETURNING user_id
+    </select>
+
+    <!-- Recipients that already have more than `cap` follower-post rows in the last `hours`; the row
+         just written counts. Served by idx (user_id, created_at DESC) of V114. -->
+    <select id="findOverFollowingDailyCap" resultType="java.util.UUID">
+        SELECT user_id
+        FROM notifications
+        WHERE user_id IN
+        <foreach collection="userIds" item="userId" open="(" separator="," close=")">
+            #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+        </foreach>
+          AND type IN ('FOLLOWING_CHECKIN', 'FOLLOWING_TRIP_SHARED')
+          AND created_at &gt;= NOW() - make_interval(hours =&gt; #{hours})
+        GROUP BY user_id
+        HAVING COUNT(*) &gt; #{cap}
+    </select>
+
+    <!-- The moments popup: unread follower-post rows of one reader, newest first. -->
+    <select id="findUnreadFollowingPosts" resultMap="NotificationResultMap">
+        SELECT <include refid="notificationColumns"/>
+        FROM notifications
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND is_read = FALSE
+          AND type IN ('FOLLOWING_CHECKIN', 'FOLLOWING_TRIP_SHARED')
+          AND created_at &gt;= NOW() - make_interval(hours =&gt; #{hours})
+        ORDER BY created_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <update id="markFollowingPostsRead">
+        UPDATE notifications SET is_read = TRUE
+        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND is_read = FALSE
+          AND dedupe_key IN
+        <foreach collection="dedupeKeys" item="dedupeKey" open="(" separator="," close=")">
+            #{dedupeKey}
+        </foreach>
+    </update>
+
 </mapper>

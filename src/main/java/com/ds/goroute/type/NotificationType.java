@@ -62,7 +62,13 @@ public enum NotificationType {
     // target to prevent a busy post from producing a push for every single action.
     SOCIAL_LIKE,
     SOCIAL_COMMENT,
-    
+
+    // Someone the recipient follows posted (epic 12). Sent by FollowerFanoutService to every
+    // follower, one row per follower per post (notifications.dedupe_key). Data: postType, postId,
+    // authorId, actorName, placeName / tripTitle, postCount, imageUrl, deepLink.
+    FOLLOWING_CHECKIN,
+    FOLLOWING_TRIP_SHARED,
+
     // Other
     ROUTE_OPTIMIZED,
     TRIP_REMINDER,

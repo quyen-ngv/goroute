@@ -44,6 +44,12 @@ public class NotificationTemplateRenderer {
         if (type == NotificationType.SOCIAL_LIKE || type == NotificationType.SOCIAL_COMMENT) {
             return withLocalizedPunctuation(renderSocialInteraction(type, normalizedData, lang), lang);
         }
+        if (type == NotificationType.FOLLOWING_CHECKIN) {
+            return withLocalizedPunctuation(renderFollowingCheckin(normalizedData, lang), lang);
+        }
+        if (type == NotificationType.FOLLOWING_TRIP_SHARED) {
+            return withLocalizedPunctuation(renderFollowingTripShared(normalizedData, lang), lang);
+        }
         if (type == NotificationType.PAYMENT_REMINDER && expenseCount(normalizedData) > 1) {
             return withLocalizedPunctuation(renderGroupedPaymentReminder(normalizedData, lang), lang);
         }
@@ -360,6 +366,88 @@ public class NotificationTemplateRenderer {
                 default -> "comment";
             };
         };
+    }
+
+    /**
+     * "Minh — checked in at Hồ Gươm". The title is the author, as a friend's post reads on a lock
+     * screen. {@code postCount} > 1 means earlier posts were held back by the author's cooldown and
+     * this push announces them together.
+     */
+    private NotificationMessage renderFollowingCheckin(Map<String, Object> data, String language) {
+        String actor = followingActor(data, language);
+        String place = stringValue(data.get("placeName"));
+        int count = Math.max(1, intValue(data.get("postCount")));
+        String body = switch (language) {
+            case "vi" -> count > 1
+                    ? "Vừa check-in " + count + " nơi" + (place == null ? "" : ", mới nhất tại " + place)
+                    : place == null ? "Vừa check-in một nơi mới" : "Vừa check-in tại " + place;
+            case "hi" -> count > 1
+                    ? count + " जगहों पर चेक-इन किया" + (place == null ? "" : ", सबसे नया " + place + " में")
+                    : place == null ? "एक नई जगह पर चेक-इन किया" : place + " में चेक-इन किया";
+            case "ja" -> count > 1
+                    ? count + "か所にチェックインしました" + (place == null ? "" : "（最新：" + place + "）")
+                    : place == null ? "新しい場所にチェックインしました" : place + "にチェックインしました";
+            case "ko" -> count > 1
+                    ? count + "곳에 체크인했어요" + (place == null ? "" : " (최근: " + place + ")")
+                    : place == null ? "새로운 곳에 체크인했어요" : place + "에 체크인했어요";
+            case "ru" -> count > 1
+                    ? "Отметился в " + count + " местах" + (place == null ? "" : ", последнее — " + place)
+                    : place == null ? "Отметился в новом месте" : "Отметился: " + place;
+            case "th" -> count > 1
+                    ? "เพิ่งเช็กอิน " + count + " แห่ง" + (place == null ? "" : " ล่าสุดที่ " + place)
+                    : place == null ? "เพิ่งเช็กอินที่ใหม่" : "เพิ่งเช็กอินที่ " + place;
+            case "zh-TW" -> count > 1
+                    ? "剛在 " + count + " 個地點打卡" + (place == null ? "" : "，最新在" + place)
+                    : place == null ? "剛在新地點打卡" : "剛在" + place + "打卡";
+            default -> count > 1
+                    ? "Checked in at " + count + " places" + (place == null ? "" : ", latest at " + place)
+                    : place == null ? "Checked in somewhere new" : "Checked in at " + place;
+        };
+        return new NotificationMessage(actor, body);
+    }
+
+    private NotificationMessage renderFollowingTripShared(Map<String, Object> data, String language) {
+        String actor = followingActor(data, language);
+        String trip = stringValue(data.get("tripTitle"));
+        String body = switch (language) {
+            case "vi" -> trip == null ? "Vừa chia sẻ một lịch trình mới" : "Vừa chia sẻ lịch trình " + trip;
+            case "hi" -> trip == null ? "एक नई यात्रा योजना साझा की" : "यात्रा योजना साझा की: " + trip;
+            case "ja" -> trip == null ? "新しい旅程を公開しました" : "旅程「" + trip + "」を公開しました";
+            case "ko" -> trip == null ? "새 여행 일정을 공유했어요" : "여행 일정 '" + trip + "'을 공유했어요";
+            case "ru" -> trip == null ? "Поделился новым маршрутом" : "Поделился маршрутом «" + trip + "»";
+            case "th" -> trip == null ? "เพิ่งแชร์แผนเที่ยวใหม่" : "เพิ่งแชร์แผนเที่ยว " + trip;
+            case "zh-TW" -> trip == null ? "剛分享了新的行程" : "剛分享了行程「" + trip + "」";
+            default -> trip == null ? "Shared a new trip plan" : "Shared the trip plan " + trip;
+        };
+        return new NotificationMessage(actor, body);
+    }
+
+    private String followingActor(Map<String, Object> data, String language) {
+        String actor = stringValue(data.get("actorName"));
+        if (actor != null) {
+            return actor;
+        }
+        return switch (language) {
+            case "vi" -> "Người bạn theo dõi";
+            case "hi" -> "जिसे आप फ़ॉलो करते हैं";
+            case "ja" -> "フォロー中の人";
+            case "ko" -> "팔로우 중인 사람";
+            case "ru" -> "Ваша подписка";
+            case "th" -> "คนที่คุณติดตาม";
+            case "zh-TW" -> "你追蹤的人";
+            default -> "Someone you follow";
+        };
+    }
+
+    private int intValue(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return value == null ? 0 : Integer.parseInt(String.valueOf(value).trim());
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
     }
 
     private String stringValue(Object value) {

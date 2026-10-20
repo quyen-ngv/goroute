@@ -76,6 +76,13 @@ public interface TripService {
     List<PublicTripResponse> getFollowingTrips(UUID viewerId, Double focusLat, Double focusLng, int page, int size);
 
     /**
+     * The trips among {@code tripIds} that are still public, not deleted and not taken down, as
+     * list cards for {@code viewerId}, in the order of the ids. No block check: callers that need
+     * one filter on {@code ownerId}.
+     */
+    List<PublicTripResponse> getPublicTripCards(UUID viewerId, List<UUID> tripIds);
+
+    /**
      * Public trips whose itinerary has the catalogue place {@code placeId}, as list cards,
      * most recently shared first. Private, deleted and taken-down trips are left out, so
      * this can be shorter than the place's {@code tripUseCount}.

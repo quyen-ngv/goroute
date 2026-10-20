@@ -482,6 +482,17 @@
         ORDER BY start_date, id
     </select>
 
+    <!-- Followers hear about a trip once (V242): the first caller to stamp the column wins, and only
+         while the trip is still public. -->
+    <update id="claimFollowersNotification">
+        UPDATE trips
+        SET followers_notified_at = NOW()
+        WHERE id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND followers_notified_at IS NULL
+          AND visibility = 'PUBLIC'
+          AND is_deleted = FALSE
+    </update>
+
     <!-- Recount the ranking input of V216 for one trip after its activities changed. -->
     <update id="refreshActivityCount">
         UPDATE trips

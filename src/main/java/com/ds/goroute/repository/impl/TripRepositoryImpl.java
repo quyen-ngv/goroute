@@ -90,6 +90,11 @@ public class TripRepositoryImpl implements TripRepository {
     }
 
     @Override
+    public boolean claimFollowersNotification(UUID tripId) {
+        return tripId != null && tripMapper.claimFollowersNotification(tripId) == 1;
+    }
+
+    @Override
     public void refreshActivityCount(UUID tripId) {
         if (tripId != null) {
             tripMapper.refreshActivityCount(tripId);

@@ -98,7 +98,8 @@ class TripServiceImplRealtimeTest {
                 mock(SocialNotificationService.class),
                 mock(UserCheckinService.class),
                 Runnable::run,
-                mock(com.ds.goroute.repository.ContentCommentRepository.class));
+                mock(com.ds.goroute.repository.ContentCommentRepository.class),
+                mock(org.springframework.context.ApplicationEventPublisher.class));
         // Notification payloads are immutable maps, which refuse the null a bare mock returns.
         when(notificationHelper.actorName(any())).thenReturn("Someone");
         when(notificationHelper.tripName(any())).thenReturn("Trip");

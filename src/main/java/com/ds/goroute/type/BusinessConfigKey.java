@@ -311,6 +311,17 @@ public enum BusinessConfigKey {
     // A catalogue place this close (m) to an off-plan stop names it; otherwise Goong does.
     TRACKER_OFFPLAN_NAME_RADIUS_M("TRACKER", "OFFPLAN_NAME_RADIUS_M", 60, 10, 500),
 
+    // --- Epic 12: telling followers about a new check-in or public trip ------------------
+    // Off: only followers on USER/BETA_USER are told. Pushes are throttled per author
+    // (cooldown) and per recipient (daily max); the in-app row is written either way.
+    SOCIAL_FOLLOWER_FANOUT_ENABLED("SOCIAL", "FOLLOWER_FANOUT_ENABLED", false),
+    SOCIAL_FOLLOWER_PUSH_COOLDOWN_MINUTES("SOCIAL", "FOLLOWER_PUSH_COOLDOWN_MINUTES", 30, 0, 1440),
+    SOCIAL_FOLLOWER_PUSH_DAILY_MAX("SOCIAL", "FOLLOWER_PUSH_DAILY_MAX", 10, 0, 100),
+    SOCIAL_FOLLOWER_FANOUT_BATCH_SIZE("SOCIAL", "FOLLOWER_FANOUT_BATCH_SIZE", 500, 50, 500),
+    SOCIAL_FOLLOWER_FANOUT_PAUSE_MS("SOCIAL", "FOLLOWER_FANOUT_PAUSE_MS", 100, 0, 5000),
+    /** The "moments" popup only offers unread follower posts this recent. */
+    SOCIAL_MOMENTS_WINDOW_HOURS("SOCIAL", "MOMENTS_WINDOW_HOURS", 72, 1, 336),
+
     // --- Epic 17: local events --------------------------------------------------------
     // Event data is public, so reads are never gated; the app shows the Home "Sự kiện" tab when
     // this is on (read through PUBLIC_CONFIG) or the user is a beta user. Joining an event and its
