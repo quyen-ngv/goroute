@@ -1,5 +1,6 @@
 package com.ds.goroute.repository;
 
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.PublicTripSearchCriteria;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.entity.TripRankRow;
@@ -52,7 +53,8 @@ public interface TripRepository {
      * Public trips owned by the people {@code viewerId} follows, most recently shared first,
      * without deleted owners, taken-down trips or blocks in either direction.
      */
-    List<Trip> findFollowingTrips(UUID viewerId, Double focusLat, Double focusLng, int limit, int offset);
+    List<Trip> findFollowingTrips(UUID viewerId, Double focusLat, Double focusLng, FeedPlaceKind kind,
+                                  int limit, int offset);
 
     /**
      * Ids of the public trips that have the catalogue place {@code placeId} in their

@@ -1,5 +1,6 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.ExpenseSplitCount;
 import com.ds.goroute.dto.PublicTripSearchCriteria;
@@ -2108,13 +2109,14 @@ public class TripServiceImpl implements TripService {
                                                        String randomSeed,
                                                        boolean preferImages,
                                                        boolean recommended,
+                                                       FeedPlaceKind placeKind,
                                                        int page,
                                                        int size,
                                                        UUID viewerId,
                                                        UUID excludeUserId) {
         PublicTripSearchCriteria criteria = PublicTripSearchCriteria.of(
                 latitude, longitude, radiusKm, destination, keyword,
-                allPublic, randomSeed, preferImages, recommended);
+                allPublic, randomSeed, preferImages, recommended, placeKind);
         int limit = Math.max(1, Math.min(size, MAX_PUBLIC_TRIP_SEARCH_PAGE_SIZE));
         int offset = Math.max(0, page) * limit;
 
@@ -2199,12 +2201,12 @@ public class TripServiceImpl implements TripService {
     @Override
     @Transactional(readOnly = true)
     public List<PublicTripResponse> getFollowingTrips(UUID viewerId, Double focusLat, Double focusLng,
-                                                      int page, int size) {
+                                                      FeedPlaceKind kind, int page, int size) {
         int limit = Math.max(1, Math.min(size, MAX_FOLLOWING_TRIPS_PAGE_SIZE));
         int offset = Math.max(0, page) * limit;
         boolean focused = focusLat != null && focusLng != null;
         List<Trip> trips = tripRepository.findFollowingTrips(viewerId,
-                focused ? focusLat : null, focused ? focusLng : null, limit, offset);
+                focused ? focusLat : null, focused ? focusLng : null, kind, limit, offset);
         List<PublicTripResponse> summaries = toPublicTripSummaries(trips, viewerId);
         for (int i = 0; i < summaries.size(); i++) {
             PublicTripResponse summary = summaries.get(i);

@@ -1,5 +1,6 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.response.PublicTripResponse;
 import com.ds.goroute.dto.response.TripVoteResponse;
@@ -78,6 +79,10 @@ public class PublicTripController extends BaseController {
             // The Feed's ranking: trips with many stops and photos, recent ones first.
             // Replaces randomSeed and distance ordering when set.
             @RequestParam(defaultValue = "false") boolean recommended,
+            // The Feed's place-kind chips: PlaceGroup and PlaceSubType codes. A post matches
+            // through its catalogue place, a trip through any of its stops.
+            @RequestParam(required = false) List<String> placeGroups,
+            @RequestParam(required = false) List<String> subTypes,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_SEARCH_PAGE_SIZE) int size,
             @CurrentUser(required = false) UUID userId
@@ -93,6 +98,7 @@ public class PublicTripController extends BaseController {
                 randomSeed,
                 preferImages,
                 recommended,
+                FeedPlaceKind.of(placeGroups, subTypes),
                 page,
                 size,
                 userId,

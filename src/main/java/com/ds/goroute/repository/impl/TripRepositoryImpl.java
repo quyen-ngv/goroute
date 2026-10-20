@@ -1,5 +1,6 @@
 package com.ds.goroute.repository.impl;
 
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.PublicTripSearchCriteria;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.entity.TripRankRow;
@@ -115,8 +116,8 @@ public class TripRepositoryImpl implements TripRepository {
     
     @Override
     public List<Trip> findFollowingTrips(UUID viewerId, Double focusLat, Double focusLng,
-                                         int limit, int offset) {
-        return tripMapper.findFollowingTrips(viewerId, focusLat, focusLng, limit, offset);
+                                         FeedPlaceKind kind, int limit, int offset) {
+        return tripMapper.findFollowingTrips(viewerId, focusLat, focusLng, kind, limit, offset);
     }
 
     @Override

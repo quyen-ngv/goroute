@@ -1,6 +1,7 @@
 package com.ds.goroute.service;
 
 import com.ds.goroute.dto.FeedGeoFilter;
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.request.CreateReviewRequest;
 import com.ds.goroute.dto.request.UpdateReviewRequest;
 import com.ds.goroute.dto.response.PlaceScoreResponse;
@@ -52,15 +53,16 @@ public interface ReviewService {
      * Reviews for the Feed, without the viewer's own and without those a public check-in
      * already shows. {@code geo} limits them to an area; null means everywhere.
      */
-    List<UserReviewResponse> getFeedReviews(UUID currentUserId, FeedGeoFilter geo, int page, int size, String randomSeed);
+    List<UserReviewResponse> getFeedReviews(UUID currentUserId, FeedGeoFilter geo, FeedPlaceKind kind,
+                                            int page, int size, String randomSeed);
 
     /**
-     * {@link #getFeedReviews(UUID, FeedGeoFilter, int, int, String)} resuming after
+     * {@link #getFeedReviews(UUID, FeedGeoFilter, FeedPlaceKind, int, int, String)} resuming after
      * {@code cursor}, the {@code feedCursor} of the last review the client holds; {@code page}
      * is then ignored. A shuffled order ({@code randomSeed}) always pages by number.
      */
-    List<UserReviewResponse> getFeedReviews(UUID currentUserId, FeedGeoFilter geo, int page, int size,
-                                            String randomSeed, String cursor);
+    List<UserReviewResponse> getFeedReviews(UUID currentUserId, FeedGeoFilter geo, FeedPlaceKind kind,
+                                            int page, int size, String randomSeed, String cursor);
 
     UserReviewResponse voteHelpful(UUID userId, UUID reviewId);
 

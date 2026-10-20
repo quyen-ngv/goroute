@@ -16,6 +16,8 @@ import java.util.Locale;
  *       they are dropped and every caller shares one ranking.</li>
  *   <li>{@code recommended} overrides the random seed, so the seed is dropped with it.</li>
  *   <li>Text filters are trimmed and lower-cased; the query compares them lower-cased.</li>
+ *   <li>{@code placeKind}, the Feed's place-kind chip, is part of the key: a trip with no
+ *       stop of that kind is not in that ranking at all.</li>
  * </ul>
  *
  * @param latitude     rounded search point, null when {@code allPublic}
@@ -31,7 +33,8 @@ public record PublicTripSearchCriteria(
         boolean allPublic,
         String randomSeed,
         boolean preferImages,
-        boolean recommended) {
+        boolean recommended,
+        FeedPlaceKind placeKind) {
 
     private static final int POINT_DECIMALS = 2;
 
@@ -44,6 +47,20 @@ public record PublicTripSearchCriteria(
                                               String randomSeed,
                                               boolean preferImages,
                                               boolean recommended) {
+        return of(latitude, longitude, radiusKm, destination, keyword,
+                allPublic, randomSeed, preferImages, recommended, null);
+    }
+
+    public static PublicTripSearchCriteria of(BigDecimal latitude,
+                                              BigDecimal longitude,
+                                              BigDecimal radiusKm,
+                                              String destination,
+                                              String keyword,
+                                              boolean allPublic,
+                                              String randomSeed,
+                                              boolean preferImages,
+                                              boolean recommended,
+                                              FeedPlaceKind placeKind) {
         Double roundedLatitude = allPublic ? null : round(latitude);
         Double roundedLongitude = allPublic ? null : round(longitude);
         Double radiusMeters = null;
@@ -62,7 +79,8 @@ public record PublicTripSearchCriteria(
                 allPublic,
                 recommended ? null : normalizeSeed(randomSeed),
                 preferImages,
-                recommended);
+                recommended,
+                placeKind);
     }
 
     /**

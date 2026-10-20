@@ -2,6 +2,7 @@ package com.ds.goroute.repository.impl;
 
 import com.ds.goroute.dto.FeedCursor;
 import com.ds.goroute.dto.FeedGeoFilter;
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.entity.UserReview;
 import com.ds.goroute.entity.MediaAsset;
 import com.ds.goroute.mapper.UserReviewMapper;
@@ -102,7 +103,7 @@ public class UserReviewRepositoryImpl implements UserReviewRepository {
     }
 
     @Override
-    public List<UserReview> findFeedReviews(UUID excludeUserId, FeedGeoFilter geo, FeedCursor after,
+    public List<UserReview> findFeedReviews(UUID excludeUserId, FeedGeoFilter geo, FeedPlaceKind kind, FeedCursor after,
                                             int limit, int offset, String randomSeed) {
         boolean shuffled = randomSeed != null && !randomSeed.isEmpty();
         FeedCursor keyset = shuffled ? null : after;
@@ -110,6 +111,7 @@ public class UserReviewRepositoryImpl implements UserReviewRepository {
                 geo == null ? null : geo.latitude(),
                 geo == null ? null : geo.longitude(),
                 geo == null ? null : geo.radiusKm(),
+                kind,
                 keyset == null ? null : keyset.hasPhoto(),
                 keyset == null ? null : keyset.createdAt(),
                 keyset == null ? null : keyset.id(),

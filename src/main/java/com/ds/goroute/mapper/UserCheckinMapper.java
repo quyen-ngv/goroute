@@ -1,5 +1,6 @@
 package com.ds.goroute.mapper;
 
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.entity.CheckinCluster;
 import com.ds.goroute.entity.CheckinClusterDecision;
 import com.ds.goroute.entity.UserCheckin;
@@ -48,6 +49,7 @@ public interface UserCheckinMapper {
                                @Param("latitude") BigDecimal latitude,
                                @Param("longitude") BigDecimal longitude,
                                @Param("radiusKm") BigDecimal radiusKm,
+                               @Param("kind") FeedPlaceKind kind,
                                @Param("cursorHasPhoto") Boolean cursorHasPhoto,
                                @Param("cursorCreatedAt") LocalDateTime cursorCreatedAt,
                                @Param("cursorId") UUID cursorId,
@@ -61,6 +63,7 @@ public interface UserCheckinMapper {
     List<UserCheckin> findFollowingFeed(@Param("viewerId") UUID viewerId,
                                         @Param("focusLat") Double focusLat,
                                         @Param("focusLng") Double focusLng,
+                                        @Param("kind") FeedPlaceKind kind,
                                         @Param("limit") int limit,
                                         @Param("offset") int offset);
 

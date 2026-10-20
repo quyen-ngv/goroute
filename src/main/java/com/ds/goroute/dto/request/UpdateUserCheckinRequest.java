@@ -1,6 +1,7 @@
 package com.ds.goroute.dto.request;
 
 import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.type.CheckinFrameStyle;
 import com.ds.goroute.type.ContentVisibility;
 import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.ModerationVisibility;
@@ -30,6 +31,12 @@ public class UpdateUserCheckinRequest {
     @Size(max = 5000)
     @ModeratedText(contentType = ModeratedContentType.CHECKIN, visibility = ModerationVisibility.PUBLIC)
     private String caption;
+
+    /**
+     * The frame the photos are shown in. The edit saves the visit whole, like the caption:
+     * absent clears it, so the editor always sends the one it shows.
+     */
+    private CheckinFrameStyle frameStyle;
 
     @Size(max = 300)
     @ModeratedText(contentType = ModeratedContentType.CHECKIN, visibility = ModerationVisibility.PUBLIC)

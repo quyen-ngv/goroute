@@ -3,6 +3,7 @@ package com.ds.goroute.dto.request;
 import com.ds.goroute.annotations.ModeratedText;
 import com.ds.goroute.type.CheckinLocationSource;
 import com.ds.goroute.type.CheckinPhotoSource;
+import com.ds.goroute.type.CheckinFrameStyle;
 import com.ds.goroute.type.ContentVisibility;
 import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.ModerationVisibility;
@@ -94,6 +95,9 @@ public class CreateUserCheckinRequest {
     @Size(max = 5000)
     @ModeratedText(contentType = ModeratedContentType.CHECKIN, visibility = ModerationVisibility.PUBLIC)
     private String caption;
+
+    /** Optional. The frame the photos are shown in; absent shows them plainly. */
+    private CheckinFrameStyle frameStyle;
 
     /**
      * The day of the visit, for someone posting after they got home. Absent means now.

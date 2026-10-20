@@ -1,5 +1,6 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.request.CloneTripRequest;
 import com.ds.goroute.dto.request.CreateTripRequest;
@@ -235,8 +236,12 @@ public class TripController extends BaseController {
             @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_FOLLOWING_PAGE_SIZE) int size,
             @RequestParam(required = false) @DecimalMin("-90") @DecimalMax("90") Double latitude,
             @RequestParam(required = false) @DecimalMin("-180") @DecimalMax("180") Double longitude,
+            // The Feed's place-kind chips: PlaceGroup and PlaceSubType codes. A post matches
+            // through its catalogue place, a trip through any of its stops.
+            @RequestParam(required = false) List<String> placeGroups,
+            @RequestParam(required = false) List<String> subTypes,
             @CurrentUser UUID userId) {
-        return ResponseEntity.ok(ofSucceeded(
-                tripService.getFollowingTrips(userId, latitude, longitude, page, size)));
+        return ResponseEntity.ok(ofSucceeded(tripService.getFollowingTrips(
+                userId, latitude, longitude, FeedPlaceKind.of(placeGroups, subTypes), page, size)));
     }
 }

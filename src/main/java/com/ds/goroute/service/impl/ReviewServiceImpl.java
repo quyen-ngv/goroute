@@ -2,6 +2,7 @@ package com.ds.goroute.service.impl;
 
 import com.ds.goroute.dto.FeedCursor;
 import com.ds.goroute.dto.FeedGeoFilter;
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.request.CreateReviewRequest;
 import com.ds.goroute.dto.request.UpdateReviewRequest;
 import com.ds.goroute.dto.response.PlaceScoreResponse;
@@ -456,17 +457,18 @@ public class ReviewServiceImpl implements ReviewService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserReviewResponse> getFeedReviews(UUID currentUserId, FeedGeoFilter geo, int page, int size, String randomSeed) {
-        return getFeedReviews(currentUserId, geo, page, size, randomSeed, null);
+    public List<UserReviewResponse> getFeedReviews(UUID currentUserId, FeedGeoFilter geo, FeedPlaceKind kind,
+                                                   int page, int size, String randomSeed) {
+        return getFeedReviews(currentUserId, geo, kind, page, size, randomSeed, null);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserReviewResponse> getFeedReviews(UUID currentUserId, FeedGeoFilter geo, int page, int size,
-                                                   String randomSeed, String cursor) {
+    public List<UserReviewResponse> getFeedReviews(UUID currentUserId, FeedGeoFilter geo, FeedPlaceKind kind,
+                                                   int page, int size, String randomSeed, String cursor) {
         boolean shuffled = randomSeed != null && !randomSeed.isEmpty();
         FeedCursor after = shuffled ? null : FeedCursor.decode(cursor);
-        List<UserReview> reviews = reviewRepository.findFeedReviews(currentUserId, geo, after,
+        List<UserReview> reviews = reviewRepository.findFeedReviews(currentUserId, geo, kind, after,
                 boundedSize(size), after != null ? 0 : offset(page, size), randomSeed);
 
         List<UserReviewResponse> responses = mapToResponses(reviews, currentUserId);

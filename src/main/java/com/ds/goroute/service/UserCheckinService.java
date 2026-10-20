@@ -1,6 +1,7 @@
 package com.ds.goroute.service;
 
 import com.ds.goroute.dto.FeedGeoFilter;
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.request.CreateUserCheckinRequest;
 import com.ds.goroute.dto.request.UpdateUserCheckinRequest;
 import com.ds.goroute.dto.response.CheckinContextResponse;
@@ -89,9 +90,11 @@ public interface UserCheckinService {
      *
      * <p>{@code cursor} is the {@code feedCursor} of the last post the client holds; when
      * present the page after it is returned and {@code page} is ignored. Without it the feed
-     * pages by number, as builds that predate the cursor expect.
+     * pages by number, as builds that predate the cursor expect. {@code kind} keeps the
+     * check-ins at a place of that kind; null means every check-in.
      */
-    List<UserCheckinResponse> feed(UUID viewerId, FeedGeoFilter geo, int page, int size, String cursor);
+    List<UserCheckinResponse> feed(UUID viewerId, FeedGeoFilter geo, FeedPlaceKind kind,
+                                   int page, int size, String cursor);
 
     /**
      * Public check-ins by the people {@code viewerId} follows, newest first. Deleted
@@ -102,8 +105,10 @@ public interface UserCheckinService {
      * Public check-ins by the people the viewer follows. With a focus point (both non-null)
      * the ones in its province come first, then the rest by 100 km ring outwards, newest
      * first within each; each carries its {@code focusRank}. Without, newest first.
+     * {@code kind} keeps the check-ins at a place of that kind; null means all of them.
      */
-    List<UserCheckinResponse> followingFeed(UUID viewerId, Double focusLat, Double focusLng, int page, int size);
+    List<UserCheckinResponse> followingFeed(UUID viewerId, Double focusLat, Double focusLng, FeedPlaceKind kind,
+                                            int page, int size);
 
     List<UserCheckinResponse> byUser(UUID viewerId, UUID userId, int page, int size);
 

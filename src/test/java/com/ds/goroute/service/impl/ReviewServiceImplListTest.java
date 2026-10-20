@@ -142,35 +142,35 @@ class ReviewServiceImplListTest {
         LocalDateTime createdAt = LocalDateTime.of(2026, 10, 7, 9, 30, 1, 5_000);
         UserReview last = review(authorA, placeId, null, true, createdAt);
         FeedCursor sent = new FeedCursor(true, createdAt.plusHours(1), UUID.randomUUID());
-        when(reviews.findFeedReviews(eq(viewerId), isNull(), eq(sent), eq(20), eq(0), isNull()))
+        when(reviews.findFeedReviews(eq(viewerId), isNull(), isNull(), eq(sent), eq(20), eq(0), isNull()))
                 .thenReturn(List.of(last));
 
-        List<UserReviewResponse> page = service.getFeedReviews(viewerId, null, 7, 20, null, sent.encode());
+        List<UserReviewResponse> page = service.getFeedReviews(viewerId, null, null, 7, 20, null, sent.encode());
 
         assertThat(page).singleElement().satisfies(item -> assertThat(FeedCursor.decode(item.getFeedCursor()))
                 .isEqualTo(new FeedCursor(true, createdAt, last.getId())));
-        verify(reviews).findFeedReviews(viewerId, null, sent, 20, 0, null);
+        verify(reviews).findFeedReviews(viewerId, null, null, sent, 20, 0, null);
     }
 
     @Test
     void withoutACursorTheFeedStillPagesByNumber() {
-        when(reviews.findFeedReviews(any(), any(), any(), anyInt(), anyInt(), any())).thenReturn(List.of());
+        when(reviews.findFeedReviews(any(), any(), any(), any(), anyInt(), anyInt(), any())).thenReturn(List.of());
 
-        service.getFeedReviews(viewerId, null, 3, 20, null);
+        service.getFeedReviews(viewerId, null, null, 3, 20, null);
 
-        verify(reviews).findFeedReviews(viewerId, null, null, 20, 60, null);
+        verify(reviews).findFeedReviews(viewerId, null, null, null, 20, 60, null);
     }
 
     @Test
     void theShuffledFeedIgnoresCursorsAndHandsNoneOut() {
         UserReview row = review(authorA, placeId, null, true, LocalDateTime.now());
-        when(reviews.findFeedReviews(any(), any(), any(), anyInt(), anyInt(), eq("seed"))).thenReturn(List.of(row));
+        when(reviews.findFeedReviews(any(), any(), isNull(), any(), anyInt(), anyInt(), eq("seed"))).thenReturn(List.of(row));
         String cursor = new FeedCursor(true, LocalDateTime.now(), UUID.randomUUID()).encode();
 
-        List<UserReviewResponse> page = service.getFeedReviews(viewerId, null, 2, 20, "seed", cursor);
+        List<UserReviewResponse> page = service.getFeedReviews(viewerId, null, null, 2, 20, "seed", cursor);
 
         assertThat(page).extracting(UserReviewResponse::getFeedCursor).containsOnlyNulls();
-        verify(reviews).findFeedReviews(viewerId, null, null, 20, 40, "seed");
+        verify(reviews).findFeedReviews(viewerId, null, null, null, 20, 40, "seed");
     }
 
     @Test

@@ -156,7 +156,7 @@ class AssistantToolServiceTest {
     void publicTripsLeaveOutThisTripAndTheAskersOwn() {
         UUID other = UUID.randomUUID();
         when(tripService.searchPublicTrips(any(), any(), any(), isNull(), isNull(), eq(false), isNull(), eq(false),
-                eq(true), eq(0), anyInt(), eq(ASKER), eq(ASKER))).thenReturn(List.of(
+                eq(true), isNull(), eq(0), anyInt(), eq(ASKER), eq(ASKER))).thenReturn(List.of(
                 PublicTripResponse.builder().id(TRIP).name("Chuyến này").build(),
                 PublicTripResponse.builder().id(UUID.randomUUID()).name("Của mình").isOwnTrip(true).build(),
                 PublicTripResponse.builder().id(other).name("Đà Lạt 3 ngày").ownerName("Chi")

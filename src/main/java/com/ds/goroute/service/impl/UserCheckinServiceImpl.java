@@ -3,6 +3,7 @@ package com.ds.goroute.service.impl;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.FeedCursor;
 import com.ds.goroute.dto.FeedGeoFilter;
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.request.CreateUserCheckinRequest;
 import com.ds.goroute.dto.request.UpdateUserCheckinRequest;
 import com.ds.goroute.dto.response.CheckinContextResponse;
@@ -245,6 +246,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                         ? locationKeyFactory.forPlace(place.getId())
                         : locationKeyFactory.forCoordinates(request.getLatitude(), request.getLongitude()))
                 .caption(blankToNull(request.getCaption()))
+                .frameStyle(request.getFrameStyle())
                 .overallRating(request.getOverallRating())
                 .foodRating(request.getFoodRating())
                 .priceRating(request.getPriceRating())
@@ -377,6 +379,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         }
 
         checkin.setCaption(blankToNull(request.getCaption()));
+        checkin.setFrameStyle(request.getFrameStyle());
         checkin.setCustomName(blankToNull(request.getCustomName()));
         checkin.setOverallRating(request.getOverallRating());
         checkin.setFoodRating(request.getFoodRating());
@@ -548,9 +551,10 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserCheckinResponse> feed(UUID viewerId, FeedGeoFilter geo, int page, int size, String cursor) {
+    public List<UserCheckinResponse> feed(UUID viewerId, FeedGeoFilter geo, FeedPlaceKind kind,
+                                          int page, int size, String cursor) {
         FeedCursor after = FeedCursor.decode(cursor);
-        List<UserCheckin> checkins = checkinRepository.findFeed(viewerId, geo, after,
+        List<UserCheckin> checkins = checkinRepository.findFeed(viewerId, geo, kind, after,
                 boundedSize(size), after != null ? 0 : boundedPage(page) * boundedSize(size));
         List<UserCheckinResponse> responses = toResponses(checkins, Set.of(), viewerId);
         // Same order as the rows, so each post carries the key the next page resumes after.
@@ -565,10 +569,10 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     @Override
     @Transactional(readOnly = true)
     public List<UserCheckinResponse> followingFeed(UUID viewerId, Double focusLat, Double focusLng,
-                                                   int page, int size) {
+                                                   FeedPlaceKind kind, int page, int size) {
         boolean focused = focusLat != null && focusLng != null;
         List<UserCheckin> checkins = checkinRepository.findFollowingFeed(viewerId,
-                focused ? focusLat : null, focused ? focusLng : null,
+                focused ? focusLat : null, focused ? focusLng : null, kind,
                 boundedSize(size), boundedPage(page) * boundedSize(size));
         List<UserCheckinResponse> responses = toResponses(checkins, Set.of(), viewerId);
         // toResponses keeps the order, so row i is response i.
@@ -934,6 +938,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .placeLatitude(place == null ? null : place.getLatitude())
                 .placeLongitude(place == null ? null : place.getLongitude())
                 .caption(checkin.getCaption())
+                .frameStyle(checkin.getFrameStyle())
                 .overallRating(checkin.getOverallRating())
                 .foodRating(checkin.getFoodRating())
                 .priceRating(checkin.getPriceRating())

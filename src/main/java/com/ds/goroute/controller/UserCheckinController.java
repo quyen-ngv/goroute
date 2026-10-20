@@ -3,6 +3,7 @@ package com.ds.goroute.controller;
 import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.FeedGeoFilter;
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.request.CreateUserCheckinRequest;
 import com.ds.goroute.dto.request.UpdateUserCheckinRequest;
 import com.ds.goroute.dto.response.CheckinContextResponse;
@@ -129,9 +130,14 @@ public class UserCheckinController extends BaseController {
             @RequestParam(required = false) BigDecimal longitude,
             @RequestParam(defaultValue = "50") BigDecimal radiusKm,
             @RequestParam(required = false) @Size(max = 200) String cursor,
+            // The Feed's place-kind chips: PlaceGroup and PlaceSubType codes. A post matches
+            // through its catalogue place, a trip through any of its stops.
+            @RequestParam(required = false) List<String> placeGroups,
+            @RequestParam(required = false) List<String> subTypes,
             @CurrentUser(required = false) UUID userId) {
         return ResponseEntity.ok(ofSucceeded(checkinService.feed(
-                userId, FeedGeoFilter.of(latitude, longitude, radiusKm), page, size, cursor)));
+                userId, FeedGeoFilter.of(latitude, longitude, radiusKm),
+                FeedPlaceKind.of(placeGroups, subTypes), page, size, cursor)));
     }
 
     /**
@@ -148,9 +154,13 @@ public class UserCheckinController extends BaseController {
             @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
             @RequestParam(required = false) @DecimalMin("-90") @DecimalMax("90") Double latitude,
             @RequestParam(required = false) @DecimalMin("-180") @DecimalMax("180") Double longitude,
+            // The Feed's place-kind chips: PlaceGroup and PlaceSubType codes. A post matches
+            // through its catalogue place, a trip through any of its stops.
+            @RequestParam(required = false) List<String> placeGroups,
+            @RequestParam(required = false) List<String> subTypes,
             @CurrentUser UUID userId) {
-        return ResponseEntity.ok(ofSucceeded(
-                checkinService.followingFeed(userId, latitude, longitude, page, size)));
+        return ResponseEntity.ok(ofSucceeded(checkinService.followingFeed(
+                userId, latitude, longitude, FeedPlaceKind.of(placeGroups, subTypes), page, size)));
     }
 
     @GetMapping("/users/{userId}")

@@ -1,5 +1,6 @@
 package com.ds.goroute.service;
 
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.request.*;
 import com.ds.goroute.dto.response.*;
 
@@ -63,6 +64,7 @@ public interface TripService {
                                                String randomSeed,
                                                boolean preferImages,
                                                boolean recommended,
+                                               FeedPlaceKind placeKind,
                                                int page, int size,
                                                UUID viewerId,
                                                UUID excludeUserId);
@@ -71,9 +73,11 @@ public interface TripService {
      * Public trips owned by the people {@code viewerId} follows, most recently shared first;
      * with a focus point (both non-null) those whose destination is in its province first,
      * then by 100 km ring outwards, each carrying its {@code focusRank}. Deleted owners,
-     * taken-down trips and blocks in either direction are left out.
+     * taken-down trips and blocks in either direction are left out. {@code kind} keeps the
+     * trips with a stop of that kind; null means all of them.
      */
-    List<PublicTripResponse> getFollowingTrips(UUID viewerId, Double focusLat, Double focusLng, int page, int size);
+    List<PublicTripResponse> getFollowingTrips(UUID viewerId, Double focusLat, Double focusLng, FeedPlaceKind kind,
+                                               int page, int size);
 
     /**
      * The trips among {@code tripIds} that are still public, not deleted and not taken down, as

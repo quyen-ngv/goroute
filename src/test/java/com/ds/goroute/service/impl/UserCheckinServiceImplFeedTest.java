@@ -90,23 +90,23 @@ class UserCheckinServiceImplFeedTest {
     void withoutACursorTheFeedPagesByNumberAsOlderBuildsExpect() {
         FeedGeoFilter geo = FeedGeoFilter.of(BigDecimal.valueOf(21.03), BigDecimal.valueOf(105.85), BigDecimal.TEN);
 
-        assertThat(service.feed(viewerId, geo, 2, 20, null)).isEmpty();
+        assertThat(service.feed(viewerId, geo, null, 2, 20, null)).isEmpty();
 
-        verify(checkins).findFeed(viewerId, geo, null, 20, 40);
+        verify(checkins).findFeed(viewerId, geo, null, null, 20, 40);
     }
 
     @Test
     void aCursorResumesAfterItsKeyAndIgnoresThePageNumber() {
         FeedCursor sent = new FeedCursor(false, LocalDateTime.of(2026, 10, 1, 8, 0), UUID.randomUUID());
 
-        service.feed(viewerId, null, 9, 500, sent.encode());
+        service.feed(viewerId, null, null, 9, 500, sent.encode());
 
-        verify(checkins).findFeed(viewerId, null, sent, 50, 0);
+        verify(checkins).findFeed(viewerId, null, null, sent, 50, 0);
     }
 
     @Test
     void aForgedCursorIsRejectedBeforeAnyQuery() {
-        assertThatThrownBy(() -> service.feed(viewerId, null, 0, 20, "not-a-cursor!"))
+        assertThatThrownBy(() -> service.feed(viewerId, null, null, 0, 20, "not-a-cursor!"))
                 .isInstanceOf(BusinessException.class);
         verifyNoInteractions(checkins);
     }
@@ -117,9 +117,9 @@ class UserCheckinServiceImplFeedTest {
         LocalDateTime createdAt = LocalDateTime.of(2026, 10, 7, 11, 59, 59, 999_999_000);
         UserCheckin withPhoto = post(author, true, createdAt, null);
         UserCheckin withoutPhoto = post(author, false, createdAt.plusHours(1), null);
-        when(checkins.findFeed(viewerId, null, null, 20, 0)).thenReturn(List.of(withPhoto, withoutPhoto));
+        when(checkins.findFeed(viewerId, null, null, null, 20, 0)).thenReturn(List.of(withPhoto, withoutPhoto));
 
-        List<UserCheckinResponse> page = service.feed(viewerId, null, 0, 20, null);
+        List<UserCheckinResponse> page = service.feed(viewerId, null, null, 0, 20, null);
 
         assertThat(page).extracting(item -> FeedCursor.decode(item.getFeedCursor())).containsExactly(
                 new FeedCursor(true, createdAt, withPhoto.getId()),
@@ -137,7 +137,7 @@ class UserCheckinServiceImplFeedTest {
                 post(authorA, true, now, reviewOne),
                 post(authorB, true, now.minusMinutes(1), reviewTwo),
                 post(authorA, false, now.minusMinutes(2), null));
-        when(checkins.findFeed(viewerId, null, null, 20, 0)).thenReturn(rows);
+        when(checkins.findFeed(viewerId, null, null, null, 20, 0)).thenReturn(rows);
         when(users.findByIds(Set.of(authorA, authorB))).thenReturn(List.of(
                 User.builder().id(authorA).fullName("An").build(),
                 User.builder().id(authorB).fullName("Binh").build()));
@@ -149,7 +149,7 @@ class UserCheckinServiceImplFeedTest {
                 MediaAsset.builder().id(UUID.randomUUID()).entityType("USER_REVIEW").entityId(reviewTwo)
                         .mediaType("IMAGE").url("https://cdn/two.jpg").build()));
 
-        List<UserCheckinResponse> page = service.feed(viewerId, null, 0, 20, null);
+        List<UserCheckinResponse> page = service.feed(viewerId, null, null, 0, 20, null);
 
         assertThat(page).extracting(UserCheckinResponse::getUserDisplayName).containsExactly("An", "Binh", "An");
         assertThat(page.get(0).getLinkedReview().getPhotos()).isEmpty();
@@ -165,9 +165,9 @@ class UserCheckinServiceImplFeedTest {
 
     @Test
     void anEmptyPageQueriesNothingElse() {
-        when(checkins.findFeed(any(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(checkins.findFeed(any(), any(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
 
-        assertThat(service.feed(viewerId, null, 0, 20, null)).isEmpty();
+        assertThat(service.feed(viewerId, null, null, 0, 20, null)).isEmpty();
 
         verifyNoInteractions(users, mediaAssets, reviews);
     }

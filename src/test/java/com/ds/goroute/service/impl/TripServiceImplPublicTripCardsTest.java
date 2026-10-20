@@ -126,7 +126,7 @@ class TripServiceImplPublicTripCardsTest {
         Trip second = trip(ownerId, "Đà Lạt", null);
         Trip third = trip(viewerId, "Huế", "https://cdn/cover.jpg");
         List<Trip> trips = List.of(first, second, third);
-        when(tripRepository.findFollowingTrips(viewerId, null, null, 20, 0)).thenReturn(trips);
+        when(tripRepository.findFollowingTrips(viewerId, null, null, null, 20, 0)).thenReturn(trips);
         when(userRepository.findByIds(any())).thenReturn(List.of(
                 User.builder().id(ownerId).fullName("Linh").build()));
         when(tripHelpfulVoteRepository.findByTripIdsAndUserId(anyCollection(), eq(viewerId))).thenReturn(Map.of(
@@ -139,7 +139,7 @@ class TripServiceImplPublicTripCardsTest {
         when(activityRepository.findNamesByIds(anyCollection())).thenReturn(Map.of(activityId, "Hồ Xuân Hương"));
         when(locationImageService.getImageForDestination("Đà Lạt")).thenReturn("https://cdn/dalat.jpg");
 
-        List<PublicTripResponse> cards = service.getFollowingTrips(viewerId, null, null, 0, 20);
+        List<PublicTripResponse> cards = service.getFollowingTrips(viewerId, null, null, null, 0, 20);
 
         assertThat(cards).extracting(PublicTripResponse::getId)
                 .containsExactly(first.getId(), second.getId(), third.getId());
@@ -189,7 +189,7 @@ class TripServiceImplPublicTripCardsTest {
         when(tripRepository.findPublicByIds(List.of(trip.getId()))).thenReturn(List.of(trip));
 
         PublicTripResponse card = service.searchPublicTrips(null, null, null, null, null, true, null,
-                false, true, 0, 20, null, null).get(0);
+                false, true, null, 0, 20, null, null).get(0);
 
         assertThat(card.getHasVotedHelpful()).isNull();
         assertThat(card.getIsOwnTrip()).isFalse();
@@ -199,7 +199,7 @@ class TripServiceImplPublicTripCardsTest {
     @Test
     void withoutTheCacheTheDatabaseRanksExcludesAndBoundsThePage() {
         service.searchPublicTrips(BigDecimal.valueOf(21), BigDecimal.valueOf(105), BigDecimal.valueOf(1000),
-                null, null, false, null, false, false, 2, 500, viewerId, viewerId);
+                null, null, false, null, false, false, null, 2, 500, viewerId, viewerId);
 
         verify(tripRepository).searchPublicTripRanking(any(PublicTripSearchCriteria.class), eq(viewerId), eq(50), eq(100));
     }
@@ -212,7 +212,7 @@ class TripServiceImplPublicTripCardsTest {
                 new TripRankRow(first.getId(), first.getOwnerId()), new TripRankRow(second.getId(), second.getOwnerId())));
         when(tripRepository.findPublicByIds(anyList())).thenReturn(List.of(second, first));
 
-        assertThat(service.searchPublicTrips(null, null, null, null, null, true, null, false, false,
+        assertThat(service.searchPublicTrips(null, null, null, null, null, true, null, false, false, null,
                 0, 20, null, null))
                 .extracting(PublicTripResponse::getId)
                 .containsExactly(first.getId(), second.getId());
@@ -268,7 +268,7 @@ class TripServiceImplPublicTripCardsTest {
 
         @Test
         void aPageBeyondTheWindowGoesToTheDatabase() {
-            service.searchPublicTrips(null, null, null, null, null, true, null, true, true,
+            service.searchPublicTrips(null, null, null, null, null, true, null, true, true, null,
                     PublicTripRankingCache.WINDOW / 20, 20, viewerId, viewerId);
 
             verify(tripRepository).searchPublicTripRanking(any(), eq(viewerId), eq(20), eq(PublicTripRankingCache.WINDOW));
@@ -288,7 +288,7 @@ class TripServiceImplPublicTripCardsTest {
         }
 
         private List<PublicTripResponse> search(UUID viewer, int page) {
-            return service.searchPublicTrips(null, null, null, null, null, true, null, true, true,
+            return service.searchPublicTrips(null, null, null, null, null, true, null, true, true, null,
                     page, 20, viewer, viewer);
         }
     }

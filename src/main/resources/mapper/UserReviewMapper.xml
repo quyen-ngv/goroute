@@ -42,6 +42,19 @@
         each public list (place, activity booking, feed, mine) shows it without a second query.
         LATERAL + LIMIT 1 keeps one row per review even if more than one organization answered.
     -->
+    <!-- The Feed's place-kind chips (FeedPlaceKind, as the parameter "kind") on a place
+         aliased kp: in one of the groups, and with any of the sub types. The same fragment
+         sits in UserCheckinMapper.xml and TripMapper.xml: each mapper is parsed on its own. -->
+    <sql id="feedPlaceKind">
+        <if test="kind.placeGroups != null and kind.placeGroups.size() > 0">
+            AND kp.place_group IN
+            <foreach item="kindGroup" collection="kind.placeGroups" open="(" separator="," close=")">#{kindGroup}</foreach>
+        </if>
+        <if test="kind.subTypes != null and kind.subTypes.size() > 0">
+            AND kp.sub_types &amp;&amp; ARRAY[<foreach item="kindSubType" collection="kind.subTypes" separator=",">#{kindSubType}</foreach>]::varchar[]
+        </if>
+    </sql>
+
     <sql id="ReviewSelect">
         SELECT r.*,
                pr.response_text AS partner_response_text,
@@ -206,6 +219,12 @@
                                  goroute_point(#{latitude}, #{longitude}), #{radiusKm} * 1000))
         </if>
         AND (NULLIF(TRIM(COALESCE(r.text, '')), '') IS NOT NULL OR r.has_photo)
+        <if test="kind != null">
+            AND EXISTS (
+                SELECT 1 FROM places kp
+                WHERE kp.id = r.place_id
+                <include refid="feedPlaceKind"/>)
+        </if>
         <choose>
             <when test="randomSeed != null and randomSeed != ''">
                 ORDER BY MD5(r.id::text || #{randomSeed}), r.id

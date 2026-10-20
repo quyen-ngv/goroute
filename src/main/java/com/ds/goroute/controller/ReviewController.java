@@ -2,6 +2,7 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.FeedGeoFilter;
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.request.CreateReviewRequest;
 import com.ds.goroute.dto.request.UpdateReviewRequest;
 import com.ds.goroute.dto.response.PlaceScoreResponse;
@@ -126,9 +127,14 @@ public class ReviewController extends BaseController {
             @RequestParam(required = false) BigDecimal longitude,
             @RequestParam(defaultValue = "50") BigDecimal radiusKm,
             @RequestParam(required = false) @Size(max = 200) String cursor,
+            // The Feed's place-kind chips: PlaceGroup and PlaceSubType codes. A post matches
+            // through its catalogue place, a trip through any of its stops.
+            @RequestParam(required = false) List<String> placeGroups,
+            @RequestParam(required = false) List<String> subTypes,
             @CurrentUser(required = false) UUID userId) {
         List<UserReviewResponse> reviews = reviewService.getFeedReviews(
-                userId, FeedGeoFilter.of(latitude, longitude, radiusKm), page, size, randomSeed, cursor);
+                userId, FeedGeoFilter.of(latitude, longitude, radiusKm), FeedPlaceKind.of(placeGroups, subTypes),
+                page, size, randomSeed, cursor);
         return ResponseEntity.ok(ofSucceeded(reviews));
     }
 

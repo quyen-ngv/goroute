@@ -1,5 +1,6 @@
 package com.ds.goroute.mapper;
 
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.PublicTripSearchCriteria;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.entity.TripRankRow;
@@ -52,6 +53,7 @@ public interface TripMapper {
     List<Trip> findFollowingTrips(@Param("viewerId") UUID viewerId,
                                   @Param("focusLat") Double focusLat,
                                   @Param("focusLng") Double focusLng,
+                                  @Param("kind") FeedPlaceKind kind,
                                   @Param("limit") int limit,
                                   @Param("offset") int offset);
 

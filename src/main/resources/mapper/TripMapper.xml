@@ -114,6 +114,38 @@
     </select>
 
     <!-- A trip's memory photos, as the gallery and the ranking count them. -->
+    <!-- The Feed's place-kind chips (FeedPlaceKind, as the parameter "kind") on a place
+         aliased kp: in one of the groups, and with any of the sub types. The same fragment
+         sits in UserCheckinMapper.xml and UserReviewMapper.xml: each mapper is parsed on its own. -->
+    <sql id="feedPlaceKind">
+        <if test="kind.placeGroups != null and kind.placeGroups.size() > 0">
+            AND kp.place_group IN
+            <foreach item="kindGroup" collection="kind.placeGroups" open="(" separator="," close=")">#{kindGroup}</foreach>
+        </if>
+        <if test="kind.subTypes != null and kind.subTypes.size() > 0">
+            AND kp.sub_types &amp;&amp; ARRAY[<foreach item="kindSubType" collection="kind.subTypes" separator=",">#{kindSubType}</foreach>]::varchar[]
+        </if>
+    </sql>
+
+    <!-- A trip with at least one stop of the kind. A stop names its place by place_ref_id
+         or, from before that column, by the place's Google id in place_id; rejected
+         suggestions are not stops. -->
+    <sql id="tripHasStopOfKind">
+        AND (EXISTS (
+                SELECT 1 FROM activities ka
+                JOIN places kp ON kp.id = ka.place_ref_id
+                WHERE ka.trip_id = t.id
+                  AND COALESCE(ka.status, '') &lt;&gt; 'REJECTED'
+                <include refid="feedPlaceKind"/>)
+             OR EXISTS (
+                SELECT 1 FROM activities ka
+                JOIN places kp ON kp.place_id = ka.place_id
+                WHERE ka.trip_id = t.id
+                  AND ka.place_ref_id IS NULL
+                  AND COALESCE(ka.status, '') &lt;&gt; 'REJECTED'
+                <include refid="feedPlaceKind"/>))
+    </sql>
+
     <sql id="tripMemoryPredicate">
         ma.entity_type IN ('TRIP_MEMORY', 'TRIP_ACTIVITY_MEMORY')
         AND (ma.asset_role IS NULL OR ma.asset_role = 'MEMORY')
@@ -168,6 +200,7 @@
         Ranking inputs come from the columns of V216, not from a count per row.
     -->
     <select id="searchPublicTripRanking" resultType="com.ds.goroute.entity.TripRankRow">
+        <bind name="kind" value="criteria.placeKind()"/>
         SELECT t.id, t.owner_id
         FROM trips t
         <if test="!criteria.allPublic()">
@@ -217,6 +250,9 @@
                   WHERE tm.trip_id = t.id
                     AND tm.user_id = #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
                     AND tm.status = 'ACCEPTED')
+          </if>
+          <if test="kind != null">
+              <include refid="tripHasStopOfKind"/>
           </if>
           <if test="criteria.destination() != null">
               AND (
@@ -343,6 +379,9 @@
                      AND b.blocked_id = t.owner_id)
                  OR (b.blocker_id = t.owner_id
                      AND b.blocked_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER}))
+          <if test="kind != null">
+              <include refid="tripHasStopOfKind"/>
+          </if>
           AND NOT EXISTS (
               SELECT 1 FROM content_takedowns ct
               WHERE ct.content_type = 'TRIP' AND ct.content_id = t.id

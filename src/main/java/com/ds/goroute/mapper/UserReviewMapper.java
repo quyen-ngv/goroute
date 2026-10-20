@@ -1,5 +1,6 @@
 package com.ds.goroute.mapper;
 
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.entity.UserReview;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -47,6 +48,7 @@ public interface UserReviewMapper {
                                      @Param("latitude") BigDecimal latitude,
                                      @Param("longitude") BigDecimal longitude,
                                      @Param("radiusKm") BigDecimal radiusKm,
+                                     @Param("kind") FeedPlaceKind kind,
                                      @Param("cursorHasPhoto") Boolean cursorHasPhoto,
                                      @Param("cursorCreatedAt") LocalDateTime cursorCreatedAt,
                                      @Param("cursorId") UUID cursorId,

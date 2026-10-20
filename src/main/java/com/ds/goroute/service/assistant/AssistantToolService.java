@@ -492,7 +492,7 @@ public class AssistantToolService {
             Anchor anchor = anchor(trip, args);
             out.put("near", anchor.label());
             found = tripService.searchPublicTrips(anchor.lat(), anchor.lng(), BigDecimal.valueOf(PUBLIC_TRIP_RADIUS_KM),
-                    null, words, false, null, false, words == null, 0, limit + 1, turn.getUserId(), turn.getUserId());
+                    null, words, false, null, false, words == null, null, 0, limit + 1, turn.getUserId(), turn.getUserId());
         }
         UUID ownTripId = trip == null ? null : trip.getId();
         List<Map<String, Object>> rows = found.stream()

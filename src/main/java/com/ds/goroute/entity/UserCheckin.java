@@ -4,6 +4,7 @@ import com.ds.goroute.type.CheckinLocationSource;
 import com.ds.goroute.type.CheckinPhotoSource;
 import com.ds.goroute.type.CheckinVerificationScope;
 import com.ds.goroute.type.CheckinVerificationStatus;
+import com.ds.goroute.type.CheckinFrameStyle;
 import com.ds.goroute.type.ContentVisibility;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -61,6 +62,9 @@ public class UserCheckin {
     private String locationKey;
 
     private String caption;
+
+    /** The frame the photos are shown in; null is none. */
+    private CheckinFrameStyle frameStyle;
 
     private Integer overallRating;
     private Integer foodRating;

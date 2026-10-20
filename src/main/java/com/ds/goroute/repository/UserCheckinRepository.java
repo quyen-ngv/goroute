@@ -2,6 +2,7 @@ package com.ds.goroute.repository;
 
 import com.ds.goroute.dto.FeedCursor;
 import com.ds.goroute.dto.FeedGeoFilter;
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.entity.CheckinCluster;
 import com.ds.goroute.entity.CheckinClusterDecision;
 import com.ds.goroute.entity.UserCheckin;
@@ -39,13 +40,15 @@ public interface UserCheckinRepository {
      * {@code geo} limits the feed to an area; null means everywhere. {@code after} resumes
      * after a post's sort key (keyset paging); null pages by {@code offset}.
      */
-    List<UserCheckin> findFeed(UUID excludeUserId, FeedGeoFilter geo, FeedCursor after, int limit, int offset);
+    List<UserCheckin> findFeed(UUID excludeUserId, FeedGeoFilter geo, FeedPlaceKind kind, FeedCursor after,
+                               int limit, int offset);
 
     /**
      * Public check-ins by the people {@code viewerId} follows, newest first, without
      * deleted authors, taken-down posts or blocks in either direction.
      */
-    List<UserCheckin> findFollowingFeed(UUID viewerId, Double focusLat, Double focusLng, int limit, int offset);
+    List<UserCheckin> findFollowingFeed(UUID viewerId, Double focusLat, Double focusLng, FeedPlaceKind kind,
+                                        int limit, int offset);
 
     List<UserCheckin> findByUser(UUID userId, boolean includePrivate, int limit, int offset);
 
