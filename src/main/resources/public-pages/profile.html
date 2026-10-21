@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="{{LANG}}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#F5F0EB">
+<title>{{TITLE}}</title>
+{{META}}
+{{JSON_LD}}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+    /* Same palette as ondetour.html, the trip page these profiles link to. */
+    :root {
+        --pink: #F4538A;
+        --pink-dark: #D63D72;
+        --pink-mist: #FDEBF1;
+        --cream: #F5F0EB;
+        --cream-deep: #ECE1D2;
+        --paper: #FFFFFF;
+        --ink: #2B2420;
+        --ink-soft: #7A6E62;
+        --ink-faint: #B2A798;
+        --line: #E7DCCC;
+        --amber: #F5A623;
+        --shadow-sm: 0 2px 10px rgba(43, 32, 20, .07);
+        --shadow-md: 0 10px 28px rgba(43, 32, 20, .10);
+        --radius-s: 10px;
+        --radius-m: 18px;
+        --radius-pill: 999px;
+        --font-display: 'Fraunces', Georgia, serif;
+        --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+        margin: 0; background: var(--cream); color: var(--ink);
+        font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+        padding-bottom: calc(84px + env(safe-area-inset-bottom));
+    }
+    img { max-width: 100%; display: block; }
+    button { font: inherit; border: none; background: none; cursor: pointer; color: inherit; padding: 0; }
+    a { color: inherit; text-decoration: none; }
+    h1, h2, h3 { margin: 0; font-family: var(--font-display); }
+    p { margin: 0; }
+    :focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
+
+    .page { max-width: 720px; margin: 0 auto; padding: 0 16px; }
+    .brand {
+        display: flex; align-items: center; gap: 8px; padding: 16px 0 4px;
+        font-weight: 700; font-size: 15px; color: var(--ink);
+    }
+    .brand img { width: 26px; height: 26px; border-radius: 7px; }
+
+    /* ---------- header (server-rendered) ---------- */
+    .profile {
+        display: flex; flex-direction: column; align-items: center; text-align: center;
+        padding: 24px 8px 20px; gap: 6px;
+    }
+    .avatar {
+        width: 96px; height: 96px; border-radius: 50%; object-fit: cover;
+        border: 3px solid var(--paper); box-shadow: var(--shadow-md); background: var(--cream-deep);
+    }
+    .name { font-size: 26px; line-height: 1.2; margin-top: 8px; overflow-wrap: anywhere; }
+    .handle { color: var(--ink-soft); font-weight: 600; font-size: 14px; }
+    .bio { max-width: 520px; white-space: pre-line; margin-top: 6px; overflow-wrap: anywhere; }
+    .stats { list-style: none; display: flex; gap: 28px; margin: 14px 0 0; padding: 0; }
+    .stats li { display: flex; flex-direction: column; align-items: center; }
+    .stats strong { font-size: 19px; }
+    .stats span { font-size: 12.5px; color: var(--ink-soft); }
+
+    /* ---------- tabs ---------- */
+    .tabs {
+        display: flex; gap: 6px; background: var(--cream-deep); padding: 4px;
+        border-radius: var(--radius-pill); margin: 4px 0 18px;
+    }
+    .tab {
+        flex: 1; padding: 9px 12px; border-radius: var(--radius-pill);
+        font-weight: 600; font-size: 14px; color: var(--ink-soft);
+    }
+    .tab[aria-selected="true"] { background: var(--paper); color: var(--ink); box-shadow: var(--shadow-sm); }
+
+    /* ---------- check-in grid ---------- */
+    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    @media (min-width: 560px) { .grid { grid-template-columns: repeat(3, 1fr); } }
+    .card {
+        background: var(--paper); border-radius: var(--radius-m); overflow: hidden;
+        box-shadow: var(--shadow-sm); text-align: left; display: flex; flex-direction: column;
+    }
+    .card-photo { position: relative; aspect-ratio: 4 / 5; background: var(--cream-deep); }
+    .card-photo img { width: 100%; height: 100%; object-fit: cover; }
+    .card-photo .count {
+        position: absolute; top: 8px; right: 8px; background: rgba(0, 0, 0, .55); color: #fff;
+        font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-pill);
+    }
+    .card-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 3px; }
+    .card-title { font-weight: 600; font-size: 14px; line-height: 1.3; overflow: hidden;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .card-meta { font-size: 12.5px; color: var(--ink-soft); }
+    .card-caption { font-size: 13px; color: var(--ink); overflow: hidden;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .stars { color: var(--amber); letter-spacing: 1px; font-size: 13px; }
+    .placeholder-photo {
+        width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+        color: var(--pink-dark); background: var(--pink-mist); font-family: var(--font-display);
+        font-size: 28px;
+    }
+
+    /* ---------- trips ---------- */
+    .trips { display: flex; flex-direction: column; gap: 12px; }
+    .trip { display: flex; gap: 12px; background: var(--paper); border-radius: var(--radius-m);
+        padding: 10px; box-shadow: var(--shadow-sm); align-items: center; }
+    .trip-cover { width: 92px; height: 92px; border-radius: var(--radius-s); overflow: hidden;
+        flex-shrink: 0; background: var(--cream-deep); }
+    .trip-cover img { width: 100%; height: 100%; object-fit: cover; }
+    .trip-name { font-family: var(--font-display); font-size: 17px; line-height: 1.25; }
+    .trip-meta { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+
+    .state { text-align: center; color: var(--ink-soft); padding: 36px 16px; }
+    .state h2 { color: var(--ink); font-size: 21px; margin-bottom: 6px; }
+    .more { display: flex; justify-content: center; margin: 18px 0 8px; }
+    .btn {
+        display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+        padding: 11px 20px; border-radius: var(--radius-pill); font-weight: 600; font-size: 14px;
+    }
+    .btn-primary { background: var(--pink); color: #fff; }
+    .btn-primary:hover { background: var(--pink-dark); }
+    .btn-outline { background: var(--paper); border: 1px solid var(--line); color: var(--ink); }
+    .spinner {
+        width: 28px; height: 28px; border-radius: 50%; margin: 28px auto;
+        border: 3px solid var(--pink-mist); border-top-color: var(--pink); animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ---------- app bar ---------- */
+    .app-bar {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+        background: rgba(255, 255, 255, .94); backdrop-filter: blur(10px);
+        border-top: 1px solid var(--line);
+        padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    }
+    .app-bar-inner { max-width: 720px; margin: 0 auto; display: flex; align-items: center; gap: 12px; }
+    .app-bar p { flex: 1; font-size: 13.5px; color: var(--ink-soft); }
+    .app-bar strong { color: var(--ink); }
+
+    /* ---------- viewer ---------- */
+    .viewer {
+        position: fixed; inset: 0; z-index: 20; background: rgba(20, 14, 10, .82);
+        display: none; align-items: center; justify-content: center; padding: 16px;
+    }
+    .viewer.open { display: flex; }
+    .viewer-card {
+        background: var(--paper); border-radius: var(--radius-m); overflow: hidden;
+        width: min(520px, 100%); max-height: 100%; display: flex; flex-direction: column;
+    }
+    .viewer-photo { position: relative; background: #000; aspect-ratio: 4 / 5; max-height: 62vh; }
+    .viewer-photo img { width: 100%; height: 100%; object-fit: contain; }
+    .viewer-nav {
+        position: absolute; top: 50%; transform: translateY(-50%); width: 36px; height: 36px;
+        border-radius: 50%; background: rgba(255, 255, 255, .85); color: var(--ink); font-size: 18px;
+    }
+    .viewer-nav.prev { left: 10px; }
+    .viewer-nav.next { right: 10px; }
+    .viewer-close {
+        position: absolute; top: 10px; right: 10px; width: 34px; height: 34px; border-radius: 50%;
+        background: rgba(0, 0, 0, .55); color: #fff; font-size: 18px;
+    }
+    .viewer-body { padding: 14px 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+    .viewer-body .caption { white-space: pre-line; overflow-wrap: anywhere; }
+</style>
+</head>
+<body data-username="{{USERNAME}}" data-found="{{FOUND}}">
+<main class="page">
+    <a class="brand" href="#" data-store-link>
+        <img src="https://onestudy.id.vn/resource/vietdetour/admin-media/06a38eef-3fb4-4139-9c5e-3240ea368c66-app_icon.png" alt="" width="26" height="26">
+        Vietdetour
+    </a>
+    <section class="profile" id="profile">
+{{HEADER}}
+    </section>
+    <div id="content"></div>
+</main>
+
+<div class="app-bar" id="app-bar">
+    <div class="app-bar-inner">
+        <p id="app-bar-text"></p>
+        <a class="btn btn-primary" id="open-app" href="#"></a>
+    </div>
+</div>
+
+<div class="viewer" id="viewer" role="dialog" aria-modal="true">
+    <div class="viewer-card">
+        <div class="viewer-photo">
+            <img id="viewer-img" alt="">
+            <button class="viewer-nav prev" id="viewer-prev" aria-label="Previous">&#8249;</button>
+            <button class="viewer-nav next" id="viewer-next" aria-label="Next">&#8250;</button>
+            <button class="viewer-close" id="viewer-close" aria-label="Close">&#215;</button>
+        </div>
+        <div class="viewer-body" id="viewer-body"></div>
+    </div>
+</div>
+
+<script>
+    // Served by the backend, so the API is at the same origin; the reverse proxy mounts the
+    // app under /goroute, which the path reveals. The literal is for opening the file locally.
+    const PREFIX = window.location.pathname.startsWith('/goroute/') ? '/goroute' : '';
+    const API_BASE = window.location.protocol.startsWith('http')
+        ? window.location.origin + PREFIX
+        : 'https://onestudy.id.vn/goroute';
+    const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=app.ondetour';
+    const APP_STORE_URL = 'https://apps.apple.com/us/app/ondetour/id6775022752';
+    const ANDROID_PACKAGE = 'app.ondetour';
+    const PAGE_SIZE = 12;
+
+    const LANG = document.documentElement.lang === 'vi' ? 'vi' : 'en';
+    const TEXT = {
+        vi: {
+            checkins: 'Check-in', trips: 'Lịch trình', more: 'Xem thêm',
+            noCheckins: 'Chưa có check-in công khai nào.', noTrips: 'Chưa có lịch trình công khai nào.',
+            loadError: 'Không tải được. Vui lòng thử lại.', retry: 'Thử lại',
+            notFoundTitle: 'Không tìm thấy người dùng',
+            notFoundMessage: 'Tài khoản này không tồn tại hoặc đã bị xoá.',
+            appBar: '<strong>Xem đầy đủ trên Vietdetour</strong> — theo dõi, bình luận và lưu địa điểm.',
+            openApp: 'Mở ứng dụng', getApp: 'Tải ứng dụng', photos: 'ảnh',
+            days: n => n + ' ngày',
+        },
+        en: {
+            checkins: 'Check-ins', trips: 'Trips', more: 'Show more',
+            noCheckins: 'No public check-ins yet.', noTrips: 'No public trips yet.',
+            loadError: 'Could not load. Please try again.', retry: 'Try again',
+            notFoundTitle: 'User not found',
+            notFoundMessage: 'This account does not exist or has been deleted.',
+            appBar: '<strong>See everything on Vietdetour</strong> — follow, comment and save places.',
+            openApp: 'Open the app', getApp: 'Get the app', photos: 'photos',
+            days: n => n + (n === 1 ? ' day' : ' days'),
+        },
+    }[LANG];
+
+    const USERNAME = document.body.dataset.username;
+    const FOUND = document.body.dataset.found === 'true';
+    const DATE_FORMAT = new Intl.DateTimeFormat(LANG === 'vi' ? 'vi-VN' : 'en-US',
+        { day: 'numeric', month: 'short', year: 'numeric' });
+
+    const state = {
+        tab: 'checkins',
+        checkins: { items: [], page: 0, done: false, loading: false, error: false },
+        trips: { items: [], page: 0, done: false, loading: false, error: false },
+        viewer: { photos: [], index: 0 },
+    };
+
+    /* ============ helpers ============ */
+    function escapeHtml(value) {
+        if (value == null) return '';
+        return String(value)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    /** Only http(s) URLs reach an attribute. */
+    function safeUrl(url) {
+        return typeof url === 'string' && /^https?:\/\//i.test(url) ? escapeHtml(url) : '';
+    }
+
+    /** Server timestamps carry no offset and are UTC. */
+    function formatDate(value) {
+        if (!value) return '';
+        const hasZone = /[zZ]|[+-]\d\d:?\d\d$/.test(value);
+        const date = new Date(hasZone ? value : value + 'Z');
+        return isNaN(date) ? '' : DATE_FORMAT.format(date);
+    }
+
+    function formatDay(value) {
+        if (!value) return '';
+        const date = new Date(value + 'T00:00:00');
+        return isNaN(date) ? '' : DATE_FORMAT.format(date);
+    }
+
+    function stars(rating) {
+        const value = Math.max(0, Math.min(5, Math.round(rating || 0)));
+        return value ? '<span class="stars" aria-label="' + value + '/5">' + '★'.repeat(value) + '☆'.repeat(5 - value) + '</span>' : '';
+    }
+
+    function initial(text) {
+        return escapeHtml((text || '?').trim().charAt(0).toUpperCase() || '?');
+    }
+
+    async function fetchPage(kind, page) {
+        const url = `${API_BASE}/v1/api/public/users/${encodeURIComponent(USERNAME)}/${kind}?page=${page}&size=${PAGE_SIZE}`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const body = await response.json();
+        return Array.isArray(body.data) ? body.data : [];
+    }
+
+    /* ============ app links ============ */
+    function isAndroid() { return /android/i.test(navigator.userAgent); }
+    function isIos() { return /iphone|ipad|ipod/i.test(navigator.userAgent); }
+
+    /** Android opens the app on this very URL when installed, else the Play Store. */
+    function openAppHref() {
+        if (isAndroid()) {
+            return `intent://${window.location.host}${window.location.pathname}#Intent;scheme=https;package=${ANDROID_PACKAGE};S.browser_fallback_url=${encodeURIComponent(PLAY_STORE_URL)};end`;
+        }
+        return isIos() ? APP_STORE_URL : PLAY_STORE_URL;
+    }
+
+    function setupAppBar() {
+        document.getElementById('app-bar-text').innerHTML = TEXT.appBar;
+        const button = document.getElementById('open-app');
+        button.textContent = isAndroid() ? TEXT.openApp : TEXT.getApp;
+        button.href = openAppHref();
+        document.querySelectorAll('[data-store-link]').forEach(link => {
+            link.href = isIos() ? APP_STORE_URL : PLAY_STORE_URL;
+        });
+    }
+
+    /* ============ rendering ============ */
+    function render() {
+        const content = document.getElementById('content');
+        if (!FOUND) {
+            content.innerHTML = `<div class="state"><h2>${escapeHtml(TEXT.notFoundTitle)}</h2><p>${escapeHtml(TEXT.notFoundMessage)}</p></div>`;
+            return;
+        }
+        const tabs = `
+            <div class="tabs" role="tablist">
+                <button class="tab" role="tab" data-tab="checkins" aria-selected="${state.tab === 'checkins'}">${escapeHtml(TEXT.checkins)}</button>
+                <button class="tab" role="tab" data-tab="trips" aria-selected="${state.tab === 'trips'}">${escapeHtml(TEXT.trips)}</button>
+            </div>`;
+        content.innerHTML = tabs + `<div id="list"></div>`;
+        content.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => selectTab(tab.dataset.tab)));
+        renderList();
+    }
+
+    function renderList() {
+        const list = document.getElementById('list');
+        const feed = state[state.tab];
+        let html = '';
+        if (feed.items.length === 0 && feed.done) {
+            html = `<div class="state"><p>${escapeHtml(state.tab === 'checkins' ? TEXT.noCheckins : TEXT.noTrips)}</p></div>`;
+        } else if (state.tab === 'checkins') {
+            html = `<div class="grid">${feed.items.map(checkinCard).join('')}</div>`;
+        } else {
+            html = `<div class="trips">${feed.items.map(tripCard).join('')}</div>`;
+        }
+        if (feed.loading) {
+            html += '<div class="spinner" aria-hidden="true"></div>';
+        } else if (feed.error) {
+            html += `<div class="state"><p>${escapeHtml(TEXT.loadError)}</p><div class="more"><button class="btn btn-outline" id="retry">${escapeHtml(TEXT.retry)}</button></div></div>`;
+        } else if (!feed.done) {
+            html += `<div class="more"><button class="btn btn-outline" id="more">${escapeHtml(TEXT.more)}</button></div>`;
+        }
+        list.innerHTML = html;
+        const more = document.getElementById('more') || document.getElementById('retry');
+        if (more) more.addEventListener('click', () => loadMore(state.tab));
+        list.querySelectorAll('[data-checkin]').forEach(card =>
+            card.addEventListener('click', () => openViewer(card.dataset.checkin)));
+    }
+
+    function checkinCard(checkin) {
+        const photos = checkin.photoUrls || [];
+        const photo = safeUrl(photos[0]);
+        const meta = [checkin.province, formatDate(checkin.visitedAt || checkin.createdAt)].filter(Boolean).join(' · ');
+        return `
+            <button class="card" data-checkin="${escapeHtml(checkin.id)}">
+                <div class="card-photo">
+                    ${photo ? `<img src="${photo}" alt="${escapeHtml(checkin.placeName)}" loading="lazy">` : `<div class="placeholder-photo">${initial(checkin.placeName)}</div>`}
+                    ${photos.length > 1 ? `<span class="count">${photos.length} ${escapeHtml(TEXT.photos)}</span>` : ''}
+                </div>
+                <div class="card-body">
+                    <span class="card-title">${escapeHtml(checkin.placeName || '')}</span>
+                    ${stars(checkin.overallRating)}
+                    ${meta ? `<span class="card-meta">${escapeHtml(meta)}</span>` : ''}
+                    ${checkin.caption ? `<span class="card-caption">${escapeHtml(checkin.caption)}</span>` : ''}
+                </div>
+            </button>`;
+    }
+
+    function tripCard(trip) {
+        const cover = safeUrl(trip.coverImageUrl);
+        const meta = [trip.destination, tripDates(trip)].filter(Boolean).join(' · ');
+        return `
+            <a class="trip" href="${PREFIX}/ondetour/${encodeURIComponent(trip.id)}">
+                <div class="trip-cover">${cover ? `<img src="${cover}" alt="" loading="lazy">` : `<div class="placeholder-photo">${initial(trip.name)}</div>`}</div>
+                <div>
+                    <h3 class="trip-name">${escapeHtml(trip.name || '')}</h3>
+                    ${meta ? `<p class="trip-meta">${escapeHtml(meta)}</p>` : ''}
+                </div>
+            </a>`;
+    }
+
+    function tripDates(trip) {
+        if (!trip.startDate) return '';
+        const start = new Date(trip.startDate + 'T00:00:00');
+        const end = trip.endDate ? new Date(trip.endDate + 'T00:00:00') : start;
+        const days = Math.round((end - start) / 86400000) + 1;
+        return formatDay(trip.startDate) + (days > 0 ? ' · ' + TEXT.days(days) : '');
+    }
+
+    /* ============ loading ============ */
+    async function loadMore(kind) {
+        const feed = state[kind];
+        if (feed.loading || feed.done) return;
+        feed.loading = true;
+        feed.error = false;
+        if (state.tab === kind) renderList();
+        try {
+            const items = await fetchPage(kind, feed.page);
+            feed.items = feed.items.concat(items);
+            feed.page += 1;
+            feed.done = items.length < PAGE_SIZE;
+        } catch (error) {
+            feed.error = true;
+        } finally {
+            feed.loading = false;
+            if (state.tab === kind) renderList();
+        }
+    }
+
+    function selectTab(tab) {
+        if (state.tab === tab) return;
+        state.tab = tab;
+        render();
+        if (state[tab].page === 0 && !state[tab].done) loadMore(tab);
+    }
+
+    /* ============ viewer ============ */
+    function openViewer(checkinId) {
+        const checkin = state.checkins.items.find(item => item.id === checkinId);
+        if (!checkin) return;
+        state.viewer = { photos: (checkin.photoUrls || []).filter(safeUrl), index: 0 };
+        const meta = [checkin.province, formatDate(checkin.visitedAt || checkin.createdAt)].filter(Boolean).join(' · ');
+        document.getElementById('viewer-body').innerHTML = `
+            <h2>${escapeHtml(checkin.placeName || '')}</h2>
+            ${stars(checkin.overallRating)}
+            ${meta ? `<p class="card-meta">${escapeHtml(meta)}</p>` : ''}
+            ${checkin.caption ? `<p class="caption">${escapeHtml(checkin.caption)}</p>` : ''}`;
+        showViewerPhoto();
+        document.getElementById('viewer').classList.add('open');
+    }
+
+    function showViewerPhoto() {
+        const { photos, index } = state.viewer;
+        const image = document.getElementById('viewer-img');
+        document.querySelector('.viewer-photo').style.display = photos.length ? '' : 'none';
+        if (photos.length) image.src = photos[index];
+        document.getElementById('viewer-prev').style.display = photos.length > 1 ? '' : 'none';
+        document.getElementById('viewer-next').style.display = photos.length > 1 ? '' : 'none';
+    }
+
+    function stepViewer(delta) {
+        const { photos } = state.viewer;
+        if (photos.length < 2) return;
+        state.viewer.index = (state.viewer.index + delta + photos.length) % photos.length;
+        showViewerPhoto();
+    }
+
+    function closeViewer() { document.getElementById('viewer').classList.remove('open'); }
+
+    document.getElementById('viewer-prev').addEventListener('click', () => stepViewer(-1));
+    document.getElementById('viewer-next').addEventListener('click', () => stepViewer(1));
+    document.getElementById('viewer-close').addEventListener('click', closeViewer);
+    document.getElementById('viewer').addEventListener('click', event => {
+        if (event.target.id === 'viewer') closeViewer();
+    });
+    document.addEventListener('keydown', event => {
+        if (!document.getElementById('viewer').classList.contains('open')) return;
+        if (event.key === 'Escape') closeViewer();
+        if (event.key === 'ArrowLeft') stepViewer(-1);
+        if (event.key === 'ArrowRight') stepViewer(1);
+    });
+
+    setupAppBar();
+    render();
+    if (FOUND) loadMore('checkins');
+</script>
+</body>
+</html>

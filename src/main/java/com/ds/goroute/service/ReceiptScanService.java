@@ -7,7 +7,7 @@ import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.AiApiCallMapper;
 import com.ds.goroute.repository.AiTripRepository;
 import com.ds.goroute.thirdparty.ai.AiCallScope;
-import com.ds.goroute.thirdparty.openai.OpenAiVisionClient;
+import com.ds.goroute.thirdparty.ai.VisionAiClient;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.ExpenseCategory;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -84,7 +84,7 @@ public class ReceiptScanService {
             "merchant":string|null,"date":string|null,"category":string|null,\
             "candidates":[{"label":string,"amount":number}]}""";
 
-    private final OpenAiVisionClient visionClient;
+    private final VisionAiClient visionClient;
     private final BusinessConfigService businessConfig;
     private final BetaAccessService betaAccess;
     private final AiTripRepository subscriptions;

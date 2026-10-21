@@ -98,6 +98,14 @@ public class UserRepositoryImpl implements UserRepository {
     }
 
     @Override
+    public List<com.ds.goroute.dto.response.TopActiveUserResponse> findTopActiveUsers(
+            UUID viewerId, java.time.LocalDateTime since, int checkinPoints, int checkinWithReviewPoints,
+            int minTripActivities, int maxTripPoints, int limit) {
+        return userMapper.selectTopActiveUsers(viewerId, since, checkinPoints, checkinWithReviewPoints,
+                minTripActivities, maxTripPoints, limit);
+    }
+
+    @Override
     public List<com.ds.goroute.dto.response.DiscoverUserResponse> findFollowerProfiles(UUID userId) {
         return userMapper.selectFollowerProfiles(userId);
     }

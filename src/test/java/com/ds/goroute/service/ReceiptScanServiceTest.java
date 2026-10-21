@@ -6,7 +6,7 @@ import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.AiApiCallMapper;
 import com.ds.goroute.repository.AiTripRepository;
 import com.ds.goroute.service.time.UserTimeZones;
-import com.ds.goroute.thirdparty.openai.OpenAiVisionClient;
+import com.ds.goroute.thirdparty.ai.VisionAiClient;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,7 +42,7 @@ class ReceiptScanServiceTest {
     private static final UUID USER = UUID.randomUUID();
     private static final byte[] JPEG = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 0};
 
-    @Mock private OpenAiVisionClient visionClient;
+    @Mock private VisionAiClient visionClient;
     @Mock private BusinessConfigService businessConfig;
     @Mock private BetaAccessService betaAccess;
     @Mock private AiTripRepository subscriptions;

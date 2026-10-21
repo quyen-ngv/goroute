@@ -54,8 +54,12 @@ public class AiCallLoggingInterceptor {
         };
     }
 
-    private void record(String provider, String feature, String operation, byte[] requestBody, byte[] responseBody,
-                        int httpStatus, Exception failure, long latencyMs) {
+    /**
+     * Writes the row for a call made without RestClient (the Anthropic SDK): the request and response
+     * as the provider's JSON, the HTTP status (0 when none came back) and the failure, if any.
+     */
+    public void record(String provider, String feature, String operation, byte[] requestBody, byte[] responseBody,
+                       int httpStatus, Exception failure, long latencyMs) {
         AiCallScope.Tag tag = AiCallScope.current();
         JsonNode request = parse(requestBody);
         JsonNode response = parse(responseBody);

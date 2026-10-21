@@ -39,6 +39,11 @@ public interface UserRepository {
 
     List<com.ds.goroute.dto.response.DiscoverUserResponse> searchUsers(UUID viewerId, String query, int limit);
 
+    /** Highest scorers first; see {@code UserMapper.selectTopActiveUsers} for what scores. */
+    List<com.ds.goroute.dto.response.TopActiveUserResponse> findTopActiveUsers(
+            UUID viewerId, java.time.LocalDateTime since, int checkinPoints, int checkinWithReviewPoints,
+            int minTripActivities, int maxTripPoints, int limit);
+
     /** {@link #findFollowers} plus the four counts each card shows, in one query. */
     List<com.ds.goroute.dto.response.DiscoverUserResponse> findFollowerProfiles(UUID userId);
 

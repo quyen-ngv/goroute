@@ -1,9 +1,11 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.dto.PublicTripSearchCriteria;
 import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.response.PublicTripResponse;
 import com.ds.goroute.dto.response.TripVoteResponse;
+import com.ds.goroute.service.PublicPageService;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.dto.BaseResponse;
 import jakarta.validation.constraints.DecimalMax;
@@ -12,16 +14,12 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.StreamUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
-import java.io.IOException;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
@@ -34,9 +32,11 @@ public class PublicTripController extends BaseController {
     static final int MAX_SEARCH_PAGE_SIZE = 50;
     
     private final TripService tripService;
+    private final PublicPageService publicPageService;
 
-    public PublicTripController(TripService tripService) {
+    public PublicTripController(TripService tripService, PublicPageService publicPageService) {
         this.tripService = tripService;
+        this.publicPageService = publicPageService;
     }
 
     @GetMapping("/v1/api/public/trips/{tripId}")
@@ -83,12 +83,17 @@ public class PublicTripController extends BaseController {
             // through its catalogue place, a trip through any of its stops.
             @RequestParam(required = false) List<String> placeGroups,
             @RequestParam(required = false) List<String> subTypes,
+            // Only trips with memory photos (the Feed's "All" chip).
+            @RequestParam(defaultValue = "false") boolean photosOnly,
+            // Trips with memory photos first, then the most stops (the Feed's "Trips" chip).
+            // Replaces every other order when set.
+            @RequestParam(defaultValue = "false") boolean photosThenStops,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_SEARCH_PAGE_SIZE) int size,
             @CurrentUser(required = false) UUID userId
     ) {
         UUID excludedUserId = excludeUserTrips ? userId : null;
-        List<PublicTripResponse> trips = tripService.searchPublicTrips(
+        PublicTripSearchCriteria criteria = PublicTripSearchCriteria.of(
                 latitude,
                 longitude,
                 radiusKm,
@@ -98,7 +103,10 @@ public class PublicTripController extends BaseController {
                 randomSeed,
                 preferImages,
                 recommended,
-                FeedPlaceKind.of(placeGroups, subTypes),
+                FeedPlaceKind.of(placeGroups, subTypes)
+        ).withPhotoRules(photosOnly, photosThenStops);
+        List<PublicTripResponse> trips = tripService.searchPublicTrips(
+                criteria,
                 page,
                 size,
                 userId,
@@ -125,13 +133,25 @@ public class PublicTripController extends BaseController {
      * The Ondetour web page. One file backs both the public-trip list and a
      * single trip; the browser decides which to render from the path, so every
      * route here returns the same HTML. /share/{tripId} is the legacy link
-     * shape and stays mapped so links already shared keep resolving.
+     * shape and stays mapped so links already shared keep resolving. A public
+     * trip's link carries its own preview tags (title, cover) for Zalo,
+     * Messenger and search engines; the page still loads the trip itself.
      */
     @GetMapping(value = {"/share/{tripId}", "/ondetour", "/ondetour/{tripId}"},
             produces = MediaType.TEXT_HTML_VALUE)
-    public ResponseEntity<String> getSharePage() throws IOException {
-        ClassPathResource resource = new ClassPathResource("static/ondetour.html");
-        String html = StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
-        return ResponseEntity.ok(html);
+    public ResponseEntity<String> getSharePage(@PathVariable(required = false) String tripId) {
+        return ResponseEntity.ok(publicPageService.tripPage(parseTripId(tripId)).html());
+    }
+
+    /** Anything that is not a UUID is the list view, as the page's own script decides. */
+    private static UUID parseTripId(String tripId) {
+        if (tripId == null || tripId.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(tripId.replaceFirst("\\.html$", ""));
+        } catch (IllegalArgumentException notATripId) {
+            return null;
+        }
     }
 }

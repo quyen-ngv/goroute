@@ -116,6 +116,29 @@ class TripSearchMapperXmlTest {
     }
 
     @Test
+    void photosOnlyKeepsTripsWithMemoryPhotos() {
+        PublicTripSearchCriteria criteria = criteria(true, null, true, true).withPhotoRules(true, false);
+
+        assertThat(collapse(ranking(criteria, null).getSql()))
+                .contains("AND t.memory_count > 0 ORDER BY");
+    }
+
+    @Test
+    void photosThenStopsRanksPhotosThenStopsThenNewest() {
+        // Near, so without the rule this would be the nearest-first order.
+        PublicTripSearchCriteria criteria = criteria(false, null, false, false).withPhotoRules(false, true);
+
+        String sql = collapse(ranking(criteria, null).getSql());
+
+        assertThat(criteria.orderedByDistance()).isFalse();
+        assertThat(sql)
+                .doesNotContain("distance_m")
+                .doesNotContain("t.memory_count > 0 ORDER BY")
+                .endsWith("ORDER BY (t.memory_count > 0) DESC, t.activity_count DESC, "
+                        + "COALESCE(t.public_shared_at, t.created_at) DESC, t.id LIMIT ? OFFSET ?");
+    }
+
+    @Test
     void textFiltersMatchTheTripOrAnyOfItsDestinations() {
         PublicTripSearchCriteria criteria = PublicTripSearchCriteria.of(
                 null, null, null, " Đà Lạt ", "Hồ", true, null, false, false);

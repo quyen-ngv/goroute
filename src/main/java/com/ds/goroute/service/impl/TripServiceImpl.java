@@ -2117,6 +2117,16 @@ public class TripServiceImpl implements TripService {
         PublicTripSearchCriteria criteria = PublicTripSearchCriteria.of(
                 latitude, longitude, radiusKm, destination, keyword,
                 allPublic, randomSeed, preferImages, recommended, placeKind);
+        return searchPublicTrips(criteria, page, size, viewerId, excludeUserId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PublicTripResponse> searchPublicTrips(PublicTripSearchCriteria criteria,
+                                                       int page,
+                                                       int size,
+                                                       UUID viewerId,
+                                                       UUID excludeUserId) {
         int limit = Math.max(1, Math.min(size, MAX_PUBLIC_TRIP_SEARCH_PAGE_SIZE));
         int offset = Math.max(0, page) * limit;
 

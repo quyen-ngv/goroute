@@ -1,151 +1,50 @@
 package com.ds.goroute.thirdparty.claude;
 
+import com.anthropic.models.messages.MessageCreateParams;
+import com.anthropic.models.messages.OutputConfig;
+import com.ds.goroute.config.ClaudeProperties;
 import com.ds.goroute.thirdparty.ai.AiClient;
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import com.ds.goroute.thirdparty.ai.AiCallLoggingInterceptor;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.client.ClientHttpRequestInterceptor;
-import org.springframework.web.client.RestClient;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
+/** Text completions on Claude ({@code ai.provider=claude}); today only AI text moderation calls it. */
 @Component
 @ConditionalOnProperty(prefix = "ai", name = "provider", havingValue = "claude")
 @RequiredArgsConstructor
 @Slf4j
 public class ClaudeClient implements AiClient {
 
-    private final RestClient.Builder restClientBuilder;
-
-    /** Optional so unit tests can build the client by hand; writes the ai_api_calls row. */
-    @Autowired(required = false)
-    private AiCallLoggingInterceptor aiCallLogging;
-
-    private void addCallLogging(java.util.List<ClientHttpRequestInterceptor> interceptors) {
-        if (aiCallLogging != null) {
-            interceptors.add(aiCallLogging.forProvider("anthropic", "AI_TEXT", "COMPLETE_JSON"));
-        }
-    }
-
-    @Value("${AI_CONNECT_TIMEOUT_SECONDS:10}")
-    private int connectTimeoutSeconds;
-
-    @Value("${AI_READ_TIMEOUT_SECONDS:90}")
-    private int readTimeoutSeconds;
-
-    /** The default RestClient has NO read timeout; a stalled AI call must fail, not hang a thread. */
-    private org.springframework.http.client.ClientHttpRequestFactory aiRequestFactory() {
-        org.springframework.http.client.SimpleClientHttpRequestFactory factory =
-                new org.springframework.http.client.SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(connectTimeoutSeconds * 1000);
-        factory.setReadTimeout(readTimeoutSeconds * 1000);
-        return factory;
-    }
-
-    @Value("${AI_API_KEY:}")
-    private String apiKey;
-
-    @Value("${AI_MODEL:claude-3-5-haiku-20241022}")
-    private String model;
-
-    @Value("${AI_API_URL:https://api.anthropic.com/v1/messages}")
-    private String apiUrl;
-
-    @Value("${claude.anthropic-version:2023-06-01}")
-    private String anthropicVersion;
-
-    @Value("${AI_MAX_TOKENS:2500}")
-    private int maxTokens;
+    private final ClaudeProperties properties;
+    private final ClaudeMessages messages;
 
     @Override
     public Optional<String> completeJson(String systemPrompt, String userPrompt) {
-        if (apiKey == null || apiKey.isBlank()) {
-            log.warn("AI_API_KEY is not configured for Claude; using local AI-trip fallback");
+        if (!properties.isConfigured()) {
+            log.warn("ANTHROPIC_API_KEY is not configured; Claude text calls return nothing");
             return Optional.empty();
         }
-
-        try {
-            ClaudeMessageRequest request = ClaudeMessageRequest.builder()
-                    .model(model)
-                    .maxTokens(maxTokens)
-                    .system(systemPrompt)
-                    .messages(List.of(ClaudeChatMessage.builder()
-                            .role("user")
-                            .content(userPrompt)
-                            .build()))
-                    .build();
-
-            ClaudeMessageResponse response = restClientBuilder.clone().requestFactory(aiRequestFactory()).requestInterceptors(this::addCallLogging).build()
-                    .post()
-                    .uri(apiUrl)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .header("x-api-key", apiKey)
-                    .header("anthropic-version", anthropicVersion)
-                    .body(request)
-                    .retrieve()
-                    .body(ClaudeMessageResponse.class);
-
-            if (response == null || response.getContent() == null || response.getContent().isEmpty()) {
-                return Optional.empty();
-            }
-
-            return response.getContent().stream()
-                    .filter(item -> "text".equals(item.getType()))
-                    .map(ClaudeContentBlock::getText)
-                    .filter(text -> text != null && !text.isBlank())
-                    .findFirst();
-        } catch (Exception e) {
-            log.warn("Claude request failed: {}", e.getMessage(), e);
-            return Optional.empty();
-        }
-    }
-
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    private static class ClaudeMessageRequest {
-        private String model;
-        @JsonProperty("max_tokens")
-        private Integer maxTokens;
-        private String system;
-        private List<ClaudeChatMessage> messages;
-    }
-
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    private static class ClaudeChatMessage {
-        private String role;
-        private String content;
-    }
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    private static class ClaudeMessageResponse {
-        private List<ClaudeContentBlock> content;
-    }
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    private static class ClaudeContentBlock {
-        private String type;
-        private String text;
+        String system = "Return one valid JSON object only. " + systemPrompt;
+        MessageCreateParams params = MessageCreateParams.builder()
+                .model(properties.getTextModel())
+                .maxTokens(properties.getTextMaxTokens())
+                .system(system)
+                .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.of(properties.getTextEffort())).build())
+                .addUserMessage(userPrompt)
+                .build();
+        Map<String, Object> logRequest = new LinkedHashMap<>();
+        logRequest.put("model", properties.getTextModel());
+        logRequest.put("max_tokens", properties.getTextMaxTokens());
+        logRequest.put("system", system);
+        logRequest.put("output_config", Map.of("effort", properties.getTextEffort()));
+        logRequest.put("messages", List.of(Map.of("role", "user", "content", userPrompt)));
+        return messages.complete(properties.getApiKey(), properties.getBaseUrl(), properties.getTextTimeout(),
+                "AI_TEXT", "COMPLETE_JSON", params, logRequest);
     }
 }

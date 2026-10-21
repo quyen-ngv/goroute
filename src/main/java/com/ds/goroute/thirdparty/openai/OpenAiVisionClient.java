@@ -1,11 +1,13 @@
 package com.ds.goroute.thirdparty.openai;
 
 import com.ds.goroute.thirdparty.ai.AiCallLoggingInterceptor;
+import com.ds.goroute.thirdparty.ai.VisionAiClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
@@ -20,13 +22,15 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * One image plus instructions in, one JSON object out. Always OpenAI, whatever {@code ai.provider}
- * says: the text provider (DeepSeek by default) cannot read images.
+ * One image plus instructions in, one JSON object out, on OpenAI. The receipt scan uses it unless
+ * {@code goroute.receipt-scan.provider=claude}; {@code ai.provider} does not apply, since the text
+ * provider (DeepSeek by default) cannot read images.
  */
 @Component
+@ConditionalOnProperty(prefix = "goroute.receipt-scan", name = "provider", havingValue = "openai", matchIfMissing = true)
 @RequiredArgsConstructor
 @Slf4j
-public class OpenAiVisionClient {
+public class OpenAiVisionClient implements VisionAiClient {
 
     private final RestClient.Builder restClientBuilder;
 
@@ -53,11 +57,12 @@ public class OpenAiVisionClient {
     @Value("${RECEIPT_SCAN_READ_TIMEOUT_SECONDS:45}")
     private int readTimeoutSeconds;
 
+    @Override
     public boolean isConfigured() {
         return apiKey != null && !apiKey.isBlank();
     }
 
-    /** Empty when the key is missing, the call fails, or the model returns nothing. */
+    @Override
     public Optional<String> completeJson(String systemPrompt, String userPrompt, byte[] image, String mimeType) {
         if (!isConfigured()) {
             log.warn("RECEIPT_SCAN_API_KEY/OPENAI_API_KEY is not configured; receipt scan unavailable");

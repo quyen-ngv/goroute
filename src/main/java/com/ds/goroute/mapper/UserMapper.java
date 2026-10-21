@@ -52,6 +52,19 @@ public interface UserMapper {
     java.util.List<com.ds.goroute.dto.response.DiscoverUserResponse> selectFollowingProfiles(
             @Param("userId") UUID userId);
 
+    /**
+     * Feed ranking by public check-ins and long public trips posted at or after {@code since}
+     * (UTC); {@code viewerId} may be null for guests.
+     */
+    java.util.List<com.ds.goroute.dto.response.TopActiveUserResponse> selectTopActiveUsers(
+            @Param("viewerId") UUID viewerId,
+            @Param("since") java.time.LocalDateTime since,
+            @Param("checkinPoints") int checkinPoints,
+            @Param("checkinWithReviewPoints") int checkinWithReviewPoints,
+            @Param("minTripActivities") int minTripActivities,
+            @Param("maxTripPoints") int maxTripPoints,
+            @Param("limit") int limit);
+
     int insertFollow(@Param("followerId") UUID followerId, @Param("followingId") UUID followingId);
 
     int deleteFollow(@Param("followerId") UUID followerId, @Param("followingId") UUID followingId);

@@ -1,5 +1,6 @@
 package com.ds.goroute.service;
 
+import com.ds.goroute.dto.PublicTripSearchCriteria;
 import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.request.*;
 import com.ds.goroute.dto.response.*;
@@ -65,6 +66,12 @@ public interface TripService {
                                                boolean preferImages,
                                                boolean recommended,
                                                FeedPlaceKind placeKind,
+                                               int page, int size,
+                                               UUID viewerId,
+                                               UUID excludeUserId);
+
+    /** One page of public trips ranked as {@code criteria} says. */
+    List<PublicTripResponse> searchPublicTrips(PublicTripSearchCriteria criteria,
                                                int page, int size,
                                                UUID viewerId,
                                                UUID excludeUserId);

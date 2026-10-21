@@ -48,7 +48,14 @@ public class UserServiceImpl implements UserService {
             new RankTier("local_guide", 700),
             new RankTier("super_traveller", 1500)
     );
-    
+    // Feed "Top active users" scoring, set by product: a check-in is worth 1, or 2 with a
+    // review; a public trip scores only past 5 activities, 1 per activity, capped at 10.
+    private static final int TOP_ACTIVE_CHECKIN_POINTS = 1;
+    private static final int TOP_ACTIVE_CHECKIN_WITH_REVIEW_POINTS = 2;
+    private static final int TOP_ACTIVE_MIN_TRIP_ACTIVITIES = 5;
+    private static final int TOP_ACTIVE_MAX_TRIP_POINTS = 10;
+    private static final int TOP_ACTIVE_MAX_LIMIT = 20;
+
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final UserGuideService guideService;
@@ -140,6 +147,20 @@ public class UserServiceImpl implements UserService {
         // count desc, then newest first, which is what the stable sort over the
         // created_at DESC read produced), same counts — one statement.
         return userRepository.findDiscoverUsers(userId, resolvedLimit);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<com.ds.goroute.dto.response.TopActiveUserResponse> getTopActiveUsers(
+            UUID viewerId, com.ds.goroute.type.TopActivePeriod period, int limit) {
+        return userRepository.findTopActiveUsers(
+                viewerId,
+                period.startUtc(java.time.Instant.now()),
+                TOP_ACTIVE_CHECKIN_POINTS,
+                TOP_ACTIVE_CHECKIN_WITH_REVIEW_POINTS,
+                TOP_ACTIVE_MIN_TRIP_ACTIVITIES,
+                TOP_ACTIVE_MAX_TRIP_POINTS,
+                Math.max(1, Math.min(limit, TOP_ACTIVE_MAX_LIMIT)));
     }
 
     @Override

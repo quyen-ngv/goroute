@@ -254,6 +254,9 @@
           <if test="kind != null">
               <include refid="tripHasStopOfKind"/>
           </if>
+          <if test="criteria.photosOnly()">
+              AND t.memory_count > 0
+          </if>
           <if test="criteria.destination() != null">
               AND (
                   LOWER(t.destination) LIKE LOWER(CONCAT('%', #{criteria.destination}, '%'))
@@ -281,6 +284,14 @@
                 (NULLIF(TRIM(COALESCE(t.cover_image_url, '')), '') IS NOT NULL OR t.memory_count > 0) DESC,
             </if>
             <choose>
+                <when test="criteria.photosThenStops()">
+                    <!-- The Feed's Trips chip: trips with photos first, then the fullest
+                         itineraries, then the newest. -->
+                    (t.memory_count > 0) DESC,
+                    t.activity_count DESC,
+                    COALESCE(t.public_shared_at, t.created_at) DESC,
+                    t.id
+                </when>
                 <when test="criteria.recommended()">
                     <!-- The Feed's ranking. Stops and photos are what make an itinerary
                          worth opening; capped so one huge trip cannot outrank a week of new

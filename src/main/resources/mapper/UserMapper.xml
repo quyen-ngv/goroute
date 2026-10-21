@@ -225,6 +225,63 @@
         ORDER BY review_count DESC, u.created_at DESC
     </select>
 
+    <!--
+         Feed "Top active users" for the period starting at `since` (UTC). Only what others
+         can see scores: a public check-in posted since then earns checkinWithReviewPoints
+         when it carries a review, else checkinPoints; a trip made public since then
+         (public_shared_at, created_at for old rows) with more than minTripActivities
+         activities earns one point per activity, at most maxTripPoints. Anyone blocked
+         either way is left out; the viewer is not, so they can find themselves on the board.
+    -->
+    <select id="selectTopActiveUsers" resultType="com.ds.goroute.dto.response.TopActiveUserResponse">
+        WITH checkin_points AS (
+            SELECT c.user_id,
+                   COUNT(*) AS checkin_count,
+                   SUM(CASE WHEN c.review_id IS NOT NULL THEN #{checkinWithReviewPoints}
+                            ELSE #{checkinPoints} END) AS points
+            FROM user_checkins c
+            WHERE c.visibility = 'PUBLIC'
+              AND c.is_removed = FALSE
+              AND c.created_at &gt;= #{since}
+            GROUP BY c.user_id
+        ),
+        trip_scores AS (
+            SELECT t.owner_id AS user_id,
+                   LEAST(COUNT(*), #{maxTripPoints}) AS points
+            FROM trips t
+            JOIN activities a ON a.trip_id = t.id
+            WHERE t.visibility = 'PUBLIC'
+              AND t.is_deleted = FALSE
+              AND COALESCE(t.public_shared_at, t.created_at) &gt;= #{since}
+            GROUP BY t.owner_id, t.id
+            HAVING COUNT(*) &gt; #{minTripActivities}
+        ),
+        trip_points AS (
+            SELECT user_id, COUNT(*) AS trip_count, SUM(points) AS points
+            FROM trip_scores
+            GROUP BY user_id
+        )
+        SELECT u.id, u.full_name, u.username, u.avatar_url,
+               COALESCE(cp.checkin_count, 0) AS checkin_count,
+               COALESCE(tp.trip_count, 0) AS trip_count,
+               COALESCE(cp.points, 0) + COALESCE(tp.points, 0) AS score
+        FROM users u
+        LEFT JOIN checkin_points cp ON cp.user_id = u.id
+        LEFT JOIN trip_points tp ON tp.user_id = u.id
+        WHERE u.deleted_at IS NULL
+          AND u.account_type = 'HUMAN'
+          AND (cp.user_id IS NOT NULL OR tp.user_id IS NOT NULL)
+          <if test="viewerId != null">
+              AND NOT EXISTS (
+                  SELECT 1 FROM user_blocks b
+                  WHERE (b.blocker_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER} AND b.blocked_id = u.id)
+                     OR (b.blocker_id = u.id AND b.blocked_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER})
+              )
+          </if>
+        ORDER BY score DESC, checkin_count DESC, u.created_at
+        LIMIT #{limit}
+    </select>
+
     <select id="selectFollowerProfiles" resultType="com.ds.goroute.dto.response.DiscoverUserResponse">
         SELECT u.id, u.full_name, u.username, u.avatar_url,
                <include refid="DiscoverCountColumns"/>

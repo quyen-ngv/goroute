@@ -5,10 +5,12 @@ import com.ds.goroute.dto.request.UpdateProfileRequest;
 import com.ds.goroute.dto.request.UpdateSettingsRequest;
 import com.ds.goroute.dto.response.DiscoverUserResponse;
 import com.ds.goroute.dto.response.PublicUserProfileResponse;
+import com.ds.goroute.dto.response.TopActiveUserResponse;
 import com.ds.goroute.dto.response.UserProfileResponse;
 import com.ds.goroute.dto.response.UserReviewResponse;
 import com.ds.goroute.dto.response.TripResponse;
 import com.ds.goroute.service.UserService;
+import com.ds.goroute.type.TopActivePeriod;
 import com.ds.goroute.service.ReviewService;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.dto.BaseResponse;
@@ -65,6 +67,18 @@ public class UserController extends BaseController {
             @RequestParam(defaultValue = "10") int limit,
             @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(userService.discoverUsers(userId, limit)));
+    }
+
+    /**
+     * Feed "Top active users" board for the current day, week, month or year (Vietnam time);
+     * open to guests, who see it unfiltered by blocks.
+     */
+    @GetMapping("/top-active")
+    public ResponseEntity<BaseResponse<List<TopActiveUserResponse>>> getTopActiveUsers(
+            @RequestParam(defaultValue = "WEEK") TopActivePeriod period,
+            @RequestParam(defaultValue = "10") @Min(1) @Max(20) int limit,
+            @CurrentUser(required = false) UUID viewerId) {
+        return ResponseEntity.ok(ofSucceeded(userService.getTopActiveUsers(viewerId, period, limit)));
     }
 
     /** People by username or name, for the user picker and the Feed's people search. */

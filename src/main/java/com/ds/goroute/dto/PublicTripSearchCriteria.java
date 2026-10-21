@@ -20,9 +20,16 @@ import java.util.Locale;
  *       stop of that kind is not in that ranking at all.</li>
  * </ul>
  *
- * @param latitude     rounded search point, null when {@code allPublic}
- * @param longitude    rounded search point, null when {@code allPublic}
- * @param radiusMeters radius around the point, null when {@code allPublic}
+ * <p>"Photos" are a trip's memory photos ({@code trips.memory_count}), the list the trip
+ * card shows; the cover does not count, since every card gets one (the destination's
+ * stock image when the trip has none).
+ *
+ * @param latitude        rounded search point, null when {@code allPublic}
+ * @param longitude       rounded search point, null when {@code allPublic}
+ * @param radiusMeters    radius around the point, null when {@code allPublic}
+ * @param photosOnly      only trips with at least one photo (the Feed's "All" chip)
+ * @param photosThenStops trips with photos first, then the most stops, then the newest
+ *                        (the Feed's "Trips" chip); overrides every other order
  */
 public record PublicTripSearchCriteria(
         Double latitude,
@@ -34,7 +41,9 @@ public record PublicTripSearchCriteria(
         String randomSeed,
         boolean preferImages,
         boolean recommended,
-        FeedPlaceKind placeKind) {
+        FeedPlaceKind placeKind,
+        boolean photosOnly,
+        boolean photosThenStops) {
 
     private static final int POINT_DECIMALS = 2;
 
@@ -80,7 +89,15 @@ public record PublicTripSearchCriteria(
                 recommended ? null : normalizeSeed(randomSeed),
                 preferImages,
                 recommended,
-                placeKind);
+                placeKind,
+                false,
+                false);
+    }
+
+    /** This search with the photo rules set; see the record's parameters. */
+    public PublicTripSearchCriteria withPhotoRules(boolean photosOnly, boolean photosThenStops) {
+        return new PublicTripSearchCriteria(latitude, longitude, radiusMeters, destination, keyword,
+                allPublic, randomSeed, preferImages, recommended, placeKind, photosOnly, photosThenStops);
     }
 
     /**
@@ -88,7 +105,7 @@ public record PublicTripSearchCriteria(
      * distance rather than just "within the radius".
      */
     public boolean orderedByDistance() {
-        return !allPublic && !recommended && randomSeed == null;
+        return !allPublic && !recommended && randomSeed == null && !photosThenStops;
     }
 
     private static Double round(BigDecimal coordinate) {

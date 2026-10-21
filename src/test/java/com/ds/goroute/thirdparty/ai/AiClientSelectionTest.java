@@ -1,9 +1,14 @@
 package com.ds.goroute.thirdparty.ai;
 
 import com.ds.goroute.config.AiClientFallbackConfig;
+import com.ds.goroute.config.ClaudeProperties;
 import com.ds.goroute.thirdparty.claude.ClaudeClient;
+import com.ds.goroute.thirdparty.claude.ClaudeMessages;
+import com.ds.goroute.thirdparty.claude.ClaudeVisionClient;
 import com.ds.goroute.thirdparty.deepseek.DeepSeekClient;
 import com.ds.goroute.thirdparty.openai.OpenAiClient;
+import com.ds.goroute.thirdparty.openai.OpenAiVisionClient;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -15,7 +20,10 @@ class AiClientSelectionTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withBean(RestClient.Builder.class, RestClient::builder)
+            .withBean(ObjectMapper.class, ObjectMapper::new)
+            .withBean(ClaudeProperties.class, ClaudeProperties::new)
             .withUserConfiguration(
+                    ClaudeMessages.class,
                     ClaudeClient.class,
                     DeepSeekClient.class,
                     OpenAiClient.class,
@@ -39,10 +47,35 @@ class AiClientSelectionTest {
                 .run(context -> {
                     assertThat(context).hasSingleBean(AiClient.class);
                     assertThat(context.getBean(AiClient.class)).isInstanceOf(ClaudeClient.class);
-                    assertThat(ReflectionTestUtils.getField(context.getBean(AiClient.class), "model"))
-                            .isEqualTo("claude-3-5-haiku-20241022");
-                    assertThat(ReflectionTestUtils.getField(context.getBean(AiClient.class), "apiUrl"))
-                            .isEqualTo("https://api.anthropic.com/v1/messages");
+                    assertThat(context.getBean(ClaudeProperties.class).getTextModel()).isEqualTo("claude-haiku-5-5");
+                    assertThat(context.getBean(ClaudeProperties.class).getBaseUrl())
+                            .isEqualTo("https://api.anthropic.com");
+                });
+    }
+
+    @Test
+    void claudeWithoutKeyReturnsNothingInsteadOfCalling() {
+        contextRunner.withPropertyValues("ai.provider=claude")
+                .run(context -> assertThat(context.getBean(AiClient.class).completeJson("system", "user")).isEmpty());
+    }
+
+    @Test
+    void receiptScanUsesOpenAiVisionByDefault() {
+        contextRunner.withUserConfiguration(OpenAiVisionClient.class, ClaudeVisionClient.class)
+                .run(context -> {
+                    assertThat(context).hasSingleBean(VisionAiClient.class);
+                    assertThat(context.getBean(VisionAiClient.class)).isInstanceOf(OpenAiVisionClient.class);
+                });
+    }
+
+    @Test
+    void receiptScanUsesClaudeVisionFromProperty() {
+        contextRunner.withUserConfiguration(OpenAiVisionClient.class, ClaudeVisionClient.class)
+                .withPropertyValues("goroute.receipt-scan.provider=CLAUDE")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(VisionAiClient.class);
+                    assertThat(context.getBean(VisionAiClient.class)).isInstanceOf(ClaudeVisionClient.class);
+                    assertThat(context.getBean(VisionAiClient.class).isConfigured()).isFalse();
                 });
     }
 

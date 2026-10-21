@@ -105,6 +105,7 @@ public class SecurityConfig {
                         .requestMatchers("/v1/api/internal/**").hasAuthority("ROLE_INTERNAL")
                         .requestMatchers("/v1/api/notifications/admin/**").hasAuthority("ROLE_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/v1/api/checkins/feed").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/v1/api/users/top-active").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/checkins/places/*",
                                 "/v1/api/checkins/locations/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/api/contributions/check").permitAll()
@@ -128,6 +129,14 @@ public class SecurityConfig {
                                 "/goroute/ondetour",
                                 "/goroute/ondetour/*"
                         ).permitAll()
+                        // A shared profile link: the page itself. Its reads are under
+                        // /v1/api/public/users/**, already open above.
+                        .requestMatchers(HttpMethod.GET, "/u/*").permitAll()
+                        // App Links / Universal Links association files; the proxy forwards
+                        // them from the root of the domain.
+                        .requestMatchers(HttpMethod.GET,
+                                "/.well-known/assetlinks.json",
+                                "/.well-known/apple-app-site-association").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(apiKeyAuthenticationFilter, JwtAuthenticationFilter.class)
