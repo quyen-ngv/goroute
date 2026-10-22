@@ -611,6 +611,13 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<UserCheckinResponse> byTripForMember(UUID userId, UUID tripId) {
+        tripAccessGuard.requireAccess(tripId, userId);
+        return byTrip(userId, tripId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<UserCheckinResponse> byLocationKey(UUID viewerId, String locationKey, int page, int size) {
         List<UserCheckinResponse> responses = toResponses(checkinRepository.findByLocationKey(
                 locationKey, boundedSize(size), boundedPage(page) * boundedSize(size)), Set.of(), null);

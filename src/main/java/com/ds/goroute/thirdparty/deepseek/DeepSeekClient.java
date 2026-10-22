@@ -55,10 +55,10 @@ public class DeepSeekClient implements AiClient {
         return factory;
     }
 
-    @Value("${AI_API_KEY:}")
+    @Value("${DEEPSEEK_API_KEY:${AI_API_KEY:}}")
     private String apiKey;
 
-    @Value("${AI_MODEL:deepseek-v4-flash}")
+    @Value("${DEEPSEEK_CHEAP_MODEL:${DEEPSEEK_MODEL:${AI_MODEL:deepseek-v4-flash}}}")
     private String model;
 
     @Value("${AI_API_URL:https://api.deepseek.com/chat/completions}")
@@ -70,7 +70,7 @@ public class DeepSeekClient implements AiClient {
     @Override
     public Optional<String> completeJson(String systemPrompt, String userPrompt) {
         if (apiKey == null || apiKey.isBlank()) {
-            log.warn("AI_API_KEY is not configured for DeepSeek; using local AI-trip fallback");
+            log.warn("DEEPSEEK_API_KEY is not configured; DeepSeek text calls return nothing");
             return Optional.empty();
         }
 

@@ -7,7 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
@@ -23,11 +23,11 @@ import java.util.Optional;
 
 /**
  * One image plus instructions in, one JSON object out, on OpenAI. The receipt scan uses it unless
- * {@code goroute.receipt-scan.provider=claude}; {@code ai.provider} does not apply, since the text
- * provider (DeepSeek by default) cannot read images.
+ * {@code goroute.receipt-scan.provider} (RECEIPT_SCAN_PROVIDER, else AI_PROVIDER) is {@code claude}.
  */
 @Component
-@ConditionalOnProperty(prefix = "goroute.receipt-scan", name = "provider", havingValue = "openai", matchIfMissing = true)
+// Any provider but Claude: DeepSeek, the text default, cannot read images.
+@ConditionalOnExpression("!'${goroute.receipt-scan.provider:openai}'.equalsIgnoreCase('claude')")
 @RequiredArgsConstructor
 @Slf4j
 public class OpenAiVisionClient implements VisionAiClient {
@@ -41,7 +41,7 @@ public class OpenAiVisionClient implements VisionAiClient {
     @Value("${RECEIPT_SCAN_API_KEY:${OPENAI_API_KEY:}}")
     private String apiKey;
 
-    @Value("${RECEIPT_SCAN_MODEL:gpt-5-mini}")
+    @Value("${RECEIPT_SCAN_MODEL:${OPENAI_MODEL:gpt-5-mini}}")
     private String model;
 
     @Value("${RECEIPT_SCAN_API_URL:https://api.openai.com/v1/chat/completions}")

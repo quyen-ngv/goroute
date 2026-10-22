@@ -4,7 +4,8 @@ import java.util.Optional;
 
 /**
  * One image plus instructions in, one JSON object out (the receipt scan). Chosen by
- * {@code goroute.receipt-scan.provider}: {@code openai} (default) or {@code claude}.
+ * {@code goroute.receipt-scan.provider} (RECEIPT_SCAN_PROVIDER, else AI_PROVIDER): {@code claude}
+ * picks Claude, anything else OpenAI.
  */
 public interface VisionAiClient {
 

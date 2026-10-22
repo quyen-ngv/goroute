@@ -69,6 +69,13 @@ class AiClientSelectionTest {
     }
 
     @Test
+    void receiptScanKeepsOpenAiVisionWhenTheSwitchIsDeepSeek() {
+        contextRunner.withUserConfiguration(OpenAiVisionClient.class, ClaudeVisionClient.class)
+                .withPropertyValues("goroute.receipt-scan.provider=deepseek")
+                .run(context -> assertThat(context.getBean(VisionAiClient.class)).isInstanceOf(OpenAiVisionClient.class));
+    }
+
+    @Test
     void receiptScanUsesClaudeVisionFromProperty() {
         contextRunner.withUserConfiguration(OpenAiVisionClient.class, ClaudeVisionClient.class)
                 .withPropertyValues("goroute.receipt-scan.provider=CLAUDE")

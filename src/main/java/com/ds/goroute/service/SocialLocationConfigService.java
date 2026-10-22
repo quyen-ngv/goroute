@@ -32,7 +32,8 @@ public class SocialLocationConfigService {
     public int firstBlockMinutes() { return positive("FIRST_BLOCK_MINUTES", 10); }
     public int secondBlockHours() { return positive("SECOND_BLOCK_HOURS", 24); }
     public int permanentBlockStrikes() { return positive("PERMANENT_BLOCK_STRIKES", 3); }
-    public String aiProvider() { return text("AI_PROVIDER", "OPENAI").toUpperCase(); }
+    /** Empty unless the admin pins one: the worker then uses its AI_PROVIDER switch. */
+    public String aiProvider() { return text("AI_PROVIDER", "").toUpperCase(); }
     public String aiModel() { return text("AI_MODEL", ""); }
     public String aiBaseUrl() { return text("AI_BASE_URL", ""); }
 

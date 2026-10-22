@@ -181,6 +181,17 @@ public class UserCheckinController extends BaseController {
                 checkinService.visitedWards(viewerId, userId == null ? viewerId : userId)));
     }
 
+    /**
+     * The public check-ins written during one trip, oldest first, for its members: the
+     * itinerary map lists them under their stops. Same rows as the shared-trip page.
+     */
+    @GetMapping("/trips/{tripId}")
+    public ResponseEntity<BaseResponse<List<UserCheckinResponse>>> byTrip(
+            @PathVariable UUID tripId,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(checkinService.byTripForMember(userId, tripId)));
+    }
+
     @GetMapping("/places/{placeId}")
     public ResponseEntity<BaseResponse<List<UserCheckinResponse>>> byPlace(
             @PathVariable UUID placeId,

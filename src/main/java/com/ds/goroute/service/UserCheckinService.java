@@ -123,6 +123,12 @@ public interface UserCheckinService {
      */
     List<UserCheckinResponse> byTrip(UUID viewerId, UUID tripId);
 
+    /**
+     * {@link #byTrip} for the trip's own members, whatever the trip's visibility: the
+     * itinerary map shows each stop's public check-ins. Refuses anyone without access.
+     */
+    List<UserCheckinResponse> byTripForMember(UUID userId, UUID tripId);
+
     /** Everything at one uncatalogued spot, so its name is still tappable in the feed. */
     List<UserCheckinResponse> byLocationKey(UUID viewerId, String locationKey, int page, int size);
 

@@ -300,9 +300,10 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                         .frameIntervalSeconds(interval)
                         .imageMaxWidth(socialConfig.imageMaxWidth())
                         .imageJpegQuality(socialConfig.imageJpegQuality())
-                        .aiProvider(socialConfig.aiProvider())
-                        .aiModel(socialConfig.aiModel())
-                        .aiBaseUrl(socialConfig.aiBaseUrl())
+                        // Blank means "the worker's AI_PROVIDER"; the worker rejects an empty provider name.
+                        .aiProvider(blankToNull(socialConfig.aiProvider()))
+                        .aiModel(blankToNull(socialConfig.aiModel()))
+                        .aiBaseUrl(blankToNull(socialConfig.aiBaseUrl()))
                         .includeMapSearch(true)
                         .mapSearchLimit(1)
                         .mapSearchProvider(backendMapSearch
@@ -1258,5 +1259,9 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         } catch (NumberFormatException ignored) {
             return null;
         }
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 }

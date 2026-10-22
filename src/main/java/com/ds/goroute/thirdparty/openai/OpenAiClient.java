@@ -55,10 +55,10 @@ public class OpenAiClient implements AiClient {
         return factory;
     }
 
-    @Value("${AI_API_KEY:${OPENAI_API_KEY:}}")
+    @Value("${OPENAI_API_KEY:${AI_API_KEY:}}")
     private String apiKey;
 
-    @Value("${AI_MODEL:gpt-5-mini}")
+    @Value("${OPENAI_CHEAP_MODEL:${OPENAI_MODEL:${AI_MODEL:gpt-5-mini}}}")
     private String model;
 
     @Value("${AI_API_URL:https://api.openai.com/v1/chat/completions}")
@@ -70,7 +70,7 @@ public class OpenAiClient implements AiClient {
     @Override
     public Optional<String> completeJson(String systemPrompt, String userPrompt) {
         if (apiKey == null || apiKey.isBlank()) {
-            log.warn("OPENAI_API_KEY/AI_API_KEY is not configured; using local AI-trip fallback");
+            log.warn("OPENAI_API_KEY is not configured; OpenAI text calls return nothing");
             return Optional.empty();
         }
 
