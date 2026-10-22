@@ -200,4 +200,16 @@ public interface UserCheckinMapper {
 
     /** Which of these check-ins an operator has already moved, for the list badge. */
     List<UUID> findReassignedCheckinIds(@Param("checkinIds") List<UUID> checkinIds);
+
+    /** Feed search index: the next {@code limit} findable check-ins after {@code afterId}, by id. */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> selectSearchIndexPage(@Param("afterId") UUID afterId,
+                                                                          @Param("limit") int limit);
+
+    /** Feed search index: check-ins changed after the cursor, findable or not, oldest change first. */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> selectSearchIndexChanges(
+            @Param("afterUpdatedAt") java.time.LocalDateTime afterUpdatedAt,
+            @Param("afterId") UUID afterId,
+            @Param("limit") int limit);
+
+    java.time.LocalDateTime selectSearchIndexMaxUpdatedAt();
 }

@@ -381,7 +381,13 @@ public enum BusinessConfigKey {
     /** One day may spend at most this share of the month, so one bad day cannot use it all. */
     MAP_BUDGET_DAILY_CAP_PERCENT("MAP_BUDGET", "DAILY_CAP_PERCENT", 10, 1, 100),
     /** Operators are told when a month's count crosses this share of its cap. */
-    MAP_BUDGET_WARN_PERCENT("MAP_BUDGET", "WARN_PERCENT", 80, 1, 100);
+    MAP_BUDGET_WARN_PERCENT("MAP_BUDGET", "WARN_PERCENT", 80, 1, 100),
+
+    // --- Epic 12: Feed ranking (.docs/FEED_RANKING_PLAN_2026-10-22.md) -------------------
+    /** feed_impressions rows older than this are deleted every night (V245). */
+    FEED_IMPRESSION_RETENTION_DAYS("FEED", "IMPRESSION_RETENTION_DAYS", 90, 7, 365),
+    /** "Hide posts from this person" lasts this long. */
+    FEED_HIDE_AUTHOR_DAYS("FEED", "HIDE_AUTHOR_DAYS", 30, 1, 365);
 
     /** Value shapes the configuration layer knows how to validate. */
     public enum ValueType {

@@ -37,6 +37,7 @@ import com.ds.goroute.repository.MediaAssetRepository;
 import com.ds.goroute.mapper.SavedPostMapper;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.ContentModerationService;
+import com.ds.goroute.service.FeedImpressionService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.ReviewScoringService;
 import com.ds.goroute.service.ReviewService;
@@ -55,6 +56,7 @@ import com.ds.goroute.type.NotificationType;
 import com.ds.goroute.type.CheckinPhotoSource;
 import com.ds.goroute.type.CheckinVerificationStatus;
 import com.ds.goroute.type.ContentVisibility;
+import com.ds.goroute.type.FeedItemType;
 import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.SavedPostType;
 import com.ds.goroute.utils.GeoDistance;
@@ -125,6 +127,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     private final com.ds.goroute.quest.service.QuestPlayService questPlayService;
     private final ContentCommentRepository contentCommentRepository;
     private final SavedPostMapper savedPostMapper;
+    private final FeedImpressionService feedImpressionService;
 
     @Override
     @Transactional(readOnly = true)
@@ -575,9 +578,13 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 focused ? focusLat : null, focused ? focusLng : null, kind,
                 boundedSize(size), boundedPage(page) * boundedSize(size));
         List<UserCheckinResponse> responses = toResponses(checkins, Set.of(), viewerId);
+        // The Friends tab keeps its order and marks what the viewer has not seen yet.
+        Set<UUID> seen = feedImpressionService.seenIds(viewerId, FeedItemType.CHECKIN,
+                checkins.stream().map(UserCheckin::getId).toList());
         // toResponses keeps the order, so row i is response i.
         for (int i = 0; i < responses.size(); i++) {
             responses.get(i).setFocusRank(checkins.get(i).getFocusRank());
+            responses.get(i).setSeen(seen.contains(checkins.get(i).getId()));
         }
         return responses;
     }

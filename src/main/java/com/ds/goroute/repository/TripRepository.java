@@ -27,10 +27,13 @@ public interface TripRepository {
     /**
      * Ranked public trips (id and owner) for one slice of a search, without deleted or
      * taken-down trips and, when {@code excludeUserId} is set, without the trips that user
-     * owns or is an accepted member of.
+     * owns or is an accepted member of. With {@code viewerId} it also drops trips hidden
+     * from that viewer: blocks either way and their feed_feedback hides. The shared ranking
+     * cache passes null for both.
      */
     List<TripRankRow> searchPublicTripRanking(PublicTripSearchCriteria criteria,
                                               UUID excludeUserId,
+                                              UUID viewerId,
                                               int limit,
                                               int offset);
 
@@ -81,4 +84,15 @@ public interface TripRepository {
     int sumHelpfulVotesByOwnerId(UUID ownerId);
 
     List<Trip> findNotificationCandidates(LocalDate fromDate, LocalDate toDate);
+
+    // --- Feed search index -----------------------------------------------------------
+
+    /** The next {@code limit} trips anyone may find, after {@code afterId} (null: from the start). */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexPage(UUID afterId, int limit);
+
+    /** Trips changed after ({@code afterUpdatedAt}, {@code afterId}), each saying whether it is still findable. */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexChanges(
+            java.time.LocalDateTime afterUpdatedAt, UUID afterId, int limit);
+
+    Optional<java.time.LocalDateTime> findSearchIndexMaxUpdatedAt();
 }

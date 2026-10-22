@@ -243,6 +243,11 @@
               SELECT 1 FROM content_takedowns ct
               WHERE ct.content_type = 'TRIP' AND ct.content_id = t.id
                 AND ct.restored_at IS NULL)
+          <!-- A deleted account's trips leave every listing with it. Viewer-independent, so
+               the shared PublicTripRankingCache window carries it too. -->
+          AND EXISTS (
+              SELECT 1 FROM users au
+              WHERE au.id = t.owner_id AND au.deleted_at IS NULL)
           <if test="excludeUserId != null">
               AND t.owner_id != #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
               AND NOT EXISTS (
@@ -250,6 +255,22 @@
                   WHERE tm.trip_id = t.id
                     AND tm.user_id = #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
                     AND tm.status = 'ACCEPTED')
+          </if>
+          <if test="viewerId != null">
+              <!-- Blocks in both directions (D9) and the viewer's feed_feedback hides (V245).
+                   Never set when filling the shared cache; TripServiceImpl applies the same
+                   rule to the cached window in Java. -->
+              AND NOT EXISTS (
+                  SELECT 1 FROM user_blocks b
+                  WHERE (b.blocker_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER} AND b.blocked_id = t.owner_id)
+                     OR (b.blocker_id = t.owner_id AND b.blocked_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER}))
+              AND NOT EXISTS (
+                  SELECT 1 FROM feed_feedback ff
+                  WHERE ff.user_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER}
+                    AND ff.revoked_at IS NULL
+                    AND ((ff.kind = 'HIDE_POST' AND ff.item_type = 'TRIP' AND ff.item_id = t.id)
+                      OR (ff.kind = 'HIDE_AUTHOR' AND ff.target_user_id = t.owner_id
+                          AND ff.expires_at &gt; NOW())))
           </if>
           <if test="kind != null">
               <include refid="tripHasStopOfKind"/>
@@ -397,6 +418,13 @@
               SELECT 1 FROM content_takedowns ct
               WHERE ct.content_type = 'TRIP' AND ct.content_id = t.id
                 AND ct.restored_at IS NULL)
+          AND NOT EXISTS (
+              SELECT 1 FROM feed_feedback ff
+              WHERE ff.user_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER}
+                AND ff.revoked_at IS NULL
+                AND ((ff.kind = 'HIDE_POST' AND ff.item_type = 'TRIP' AND ff.item_id = t.id)
+                  OR (ff.kind = 'HIDE_AUTHOR' AND ff.target_user_id = t.owner_id
+                      AND ff.expires_at &gt; NOW())))
         ORDER BY focus_rank ASC NULLS LAST, COALESCE(t.public_shared_at, t.created_at) DESC, t.id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
@@ -595,5 +623,57 @@
           AND destination_lat = #{destinationLat}
           AND destination_lng = #{destinationLng}
     </update>
+
+    <!--
+         Feed search index (epic 12 §4.3): a trip is found by its name and destinations, then
+         by description, starting point and up to 60 stops, and ranks higher with more helpful
+         votes and copies. Findable while public, not deleted and by a live account; takedowns
+         are checked when results are read. Stops changed later reach the index with the next
+         change to the trip row or the nightly rebuild.
+    -->
+    <sql id="SearchIndexRowColumns">
+        t.id, t.owner_id,
+        concat_ws(' ', t.name, NULLIF(t.destination, ''),
+            (SELECT string_agg(d.name, ' ' ORDER BY d.order_index)
+             FROM trip_destinations d WHERE d.trip_id = t.id)) AS title,
+        NULL AS handle,
+        concat_ws(' ', t.description, NULLIF(t.starting_point_name, ''),
+            (SELECT string_agg(s.name, ' ')
+             FROM (SELECT a.name FROM activities a
+                   WHERE a.trip_id = t.id AND a.status IS DISTINCT FROM 'REJECTED'
+                   ORDER BY a.day_number, a.sort_order NULLS LAST
+                   LIMIT 60) s)) AS body,
+        (COALESCE(t.helpful_votes, 0) + COALESCE(t.copy_count, 0)) AS popularity,
+        COALESCE(t.public_shared_at, t.created_at) AS published_at, t.updated_at,
+        (t.visibility = 'PUBLIC' AND t.is_deleted = FALSE AND u.deleted_at IS NULL) AS eligible
+    </sql>
+
+    <select id="selectSearchIndexPage" resultType="com.ds.goroute.entity.SocialSearchIndexRow">
+        SELECT <include refid="SearchIndexRowColumns"/>
+        FROM trips t
+        JOIN users u ON u.id = t.owner_id
+        WHERE t.visibility = 'PUBLIC'
+          AND t.is_deleted = FALSE
+          AND u.deleted_at IS NULL
+          <if test="afterId != null">
+              AND t.id &gt; #{afterId,javaType=java.util.UUID,jdbcType=OTHER}
+          </if>
+        ORDER BY t.id
+        LIMIT #{limit}
+    </select>
+
+    <!-- Served by idx_trips_updated_at (V246). -->
+    <select id="selectSearchIndexChanges" resultType="com.ds.goroute.entity.SocialSearchIndexRow">
+        SELECT <include refid="SearchIndexRowColumns"/>
+        FROM trips t
+        JOIN users u ON u.id = t.owner_id
+        WHERE (t.updated_at, t.id) &gt; (#{afterUpdatedAt}, #{afterId,javaType=java.util.UUID,jdbcType=OTHER})
+        ORDER BY t.updated_at, t.id
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectSearchIndexMaxUpdatedAt" resultType="java.time.LocalDateTime">
+        SELECT MAX(updated_at) FROM trips
+    </select>
 
 </mapper>

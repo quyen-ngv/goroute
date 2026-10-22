@@ -286,6 +286,25 @@
               SELECT 1 FROM content_takedowns t
               WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
                 AND t.restored_at IS NULL)
+          <!-- A deleted account's posts go with it, as on the Friends tab. -->
+          AND EXISTS (
+              SELECT 1 FROM users au
+              WHERE au.id = user_checkins.user_id AND au.deleted_at IS NULL)
+          <if test="excludeUserId != null">
+              <!-- Blocks hide posts in both directions (D9), and so do the viewer's own
+                   "hide this post" / "hide posts from this person" (feed_feedback, V245). -->
+              AND NOT EXISTS (
+                  SELECT 1 FROM user_blocks b
+                  WHERE (b.blocker_id = #{excludeUserId} AND b.blocked_id = user_checkins.user_id)
+                     OR (b.blocker_id = user_checkins.user_id AND b.blocked_id = #{excludeUserId}))
+              AND NOT EXISTS (
+                  SELECT 1 FROM feed_feedback ff
+                  WHERE ff.user_id = #{excludeUserId}
+                    AND ff.revoked_at IS NULL
+                    AND ((ff.kind = 'HIDE_POST' AND ff.item_type = 'CHECKIN' AND ff.item_id = user_checkins.id)
+                      OR (ff.kind = 'HIDE_AUTHOR' AND ff.target_user_id = user_checkins.user_id
+                          AND ff.expires_at &gt; NOW())))
+          </if>
         ORDER BY has_photo DESC, created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
@@ -350,6 +369,13 @@
               SELECT 1 FROM content_takedowns t
               WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
                 AND t.restored_at IS NULL)
+          AND NOT EXISTS (
+              SELECT 1 FROM feed_feedback ff
+              WHERE ff.user_id = #{viewerId}
+                AND ff.revoked_at IS NULL
+                AND ((ff.kind = 'HIDE_POST' AND ff.item_type = 'CHECKIN' AND ff.item_id = user_checkins.id)
+                  OR (ff.kind = 'HIDE_AUTHOR' AND ff.target_user_id = user_checkins.user_id
+                      AND ff.expires_at &gt; NOW())))
         ORDER BY focus_rank ASC NULLS LAST, created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
@@ -795,5 +821,53 @@
         SELECT DISTINCT checkin_id FROM user_checkin_location_history
         WHERE checkin_id IN
         <foreach collection="checkinIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <!--
+         Feed search index (epic 12 §4.3): a check-in is found by its place (the author's own
+         name, the catalogue title, the reverse-geocoded name), then by caption and area, and
+         ranks higher with more likes. Findable while public, not removed and by a live account;
+         takedowns are checked when results are read.
+    -->
+    <sql id="searchIndexRowColumns">
+        c.id, c.user_id AS owner_id,
+        concat_ws(' ', NULLIF(c.custom_name, ''), p.title, NULLIF(c.location_name, '')) AS title,
+        NULL AS handle,
+        concat_ws(' ', c.caption, c.ward, c.district, c.province) AS body,
+        (SELECT COUNT(*) FROM user_checkin_likes l WHERE l.checkin_id = c.id) AS popularity,
+        c.created_at AS published_at, c.updated_at,
+        (c.visibility = 'PUBLIC' AND c.is_removed = FALSE AND u.deleted_at IS NULL) AS eligible
+    </sql>
+
+    <sql id="searchIndexRowSource">
+        FROM user_checkins c
+        JOIN users u ON u.id = c.user_id
+        LEFT JOIN places p ON p.id = c.place_id
+    </sql>
+
+    <select id="selectSearchIndexPage" resultType="com.ds.goroute.entity.SocialSearchIndexRow">
+        SELECT <include refid="searchIndexRowColumns"/>
+        <include refid="searchIndexRowSource"/>
+        WHERE c.visibility = 'PUBLIC'
+          AND c.is_removed = FALSE
+          AND u.deleted_at IS NULL
+          <if test="afterId != null">
+              AND c.id &gt; #{afterId}
+          </if>
+        ORDER BY c.id
+        LIMIT #{limit}
+    </select>
+
+    <!-- Served by idx_user_checkins_updated_at (V246). -->
+    <select id="selectSearchIndexChanges" resultType="com.ds.goroute.entity.SocialSearchIndexRow">
+        SELECT <include refid="searchIndexRowColumns"/>
+        <include refid="searchIndexRowSource"/>
+        WHERE (c.updated_at, c.id) &gt; (#{afterUpdatedAt}, #{afterId})
+        ORDER BY c.updated_at, c.id
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectSearchIndexMaxUpdatedAt" resultType="java.time.LocalDateTime">
+        SELECT MAX(updated_at) FROM user_checkins
     </select>
 </mapper>

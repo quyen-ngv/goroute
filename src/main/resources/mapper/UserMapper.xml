@@ -403,4 +403,54 @@
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
     </update>
 
+    <!-- Feed search result cards: the people the index found, with the four discover counts. -->
+    <select id="selectDiscoverProfilesByIds" resultType="com.ds.goroute.dto.response.DiscoverUserResponse">
+        SELECT u.id, u.full_name, u.username, u.avatar_url,
+               <include refid="DiscoverCountColumns"/>
+        FROM users u
+        WHERE u.deleted_at IS NULL
+          AND u.account_type = 'HUMAN'
+          AND u.id IN
+          <foreach collection="ids" item="id" open="(" separator="," close=")">
+              #{id,javaType=java.util.UUID,jdbcType=OTHER}
+          </foreach>
+    </select>
+
+    <!--
+         Feed search index (epic 12 §4.3): a person is found by name, username and bio, and
+         ranks higher with more followers. Findable while the account is a live human one,
+         the same people the user search lists.
+    -->
+    <sql id="SearchIndexRowColumns">
+        u.id, u.id AS owner_id, u.full_name AS title, u.username AS handle, u.bio AS body,
+        (SELECT COUNT(*) FROM user_follows f WHERE f.following_id = u.id) AS popularity,
+        u.created_at AS published_at, u.updated_at,
+        (u.deleted_at IS NULL AND u.account_type = 'HUMAN') AS eligible
+    </sql>
+
+    <select id="selectSearchIndexPage" resultType="com.ds.goroute.entity.SocialSearchIndexRow">
+        SELECT <include refid="SearchIndexRowColumns"/>
+        FROM users u
+        WHERE u.deleted_at IS NULL
+          AND u.account_type = 'HUMAN'
+          <if test="afterId != null">
+              AND u.id &gt; #{afterId,javaType=java.util.UUID,jdbcType=OTHER}
+          </if>
+        ORDER BY u.id
+        LIMIT #{limit}
+    </select>
+
+    <!-- Served by idx_users_updated_at (V246). -->
+    <select id="selectSearchIndexChanges" resultType="com.ds.goroute.entity.SocialSearchIndexRow">
+        SELECT <include refid="SearchIndexRowColumns"/>
+        FROM users u
+        WHERE (u.updated_at, u.id) &gt; (#{afterUpdatedAt}, #{afterId,javaType=java.util.UUID,jdbcType=OTHER})
+        ORDER BY u.updated_at, u.id
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectSearchIndexMaxUpdatedAt" resultType="java.time.LocalDateTime">
+        SELECT MAX(updated_at) FROM users
+    </select>
+
 </mapper>

@@ -60,7 +60,7 @@ public class PublicTripRankingCache {
      */
     public List<TripRankRow> window(PublicTripSearchCriteria criteria) {
         return cache.get(criteria,
-                key -> List.copyOf(tripRepository.searchPublicTripRanking(key, null, WINDOW, 0)));
+                key -> List.copyOf(tripRepository.searchPublicTripRanking(key, null, null, WINDOW, 0)));
     }
 
     /** Drops one ranking, so the next read recomputes it. */

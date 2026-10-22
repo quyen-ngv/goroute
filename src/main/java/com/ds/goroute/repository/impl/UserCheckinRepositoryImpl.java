@@ -315,4 +315,20 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     public List<com.ds.goroute.dto.response.VisitedWardResponse> findVisitedWards(UUID userId, boolean includePrivate) {
         return mapper.findVisitedWards(userId, includePrivate);
     }
+
+    @Override
+    public List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexPage(UUID afterId, int limit) {
+        return mapper.selectSearchIndexPage(afterId, limit);
+    }
+
+    @Override
+    public List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexChanges(
+            LocalDateTime afterUpdatedAt, UUID afterId, int limit) {
+        return mapper.selectSearchIndexChanges(afterUpdatedAt, afterId, limit);
+    }
+
+    @Override
+    public Optional<LocalDateTime> findSearchIndexMaxUpdatedAt() {
+        return Optional.ofNullable(mapper.selectSearchIndexMaxUpdatedAt());
+    }
 }

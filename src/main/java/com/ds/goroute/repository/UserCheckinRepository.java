@@ -157,4 +157,15 @@ public interface UserCheckinRepository {
     int updateVerification(UserCheckin checkin);
 
     List<com.ds.goroute.dto.response.VisitedWardResponse> findVisitedWards(UUID userId, boolean includePrivate);
+
+    // --- Feed search index -----------------------------------------------------------
+
+    /** The next {@code limit} check-ins anyone may find, after {@code afterId} (null: from the start). */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexPage(UUID afterId, int limit);
+
+    /** Check-ins changed after ({@code afterUpdatedAt}, {@code afterId}), each saying whether it is still findable. */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexChanges(
+            LocalDateTime afterUpdatedAt, UUID afterId, int limit);
+
+    Optional<LocalDateTime> findSearchIndexMaxUpdatedAt();
 }

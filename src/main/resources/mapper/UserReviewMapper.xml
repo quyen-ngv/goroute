@@ -219,6 +219,25 @@
                                  goroute_point(#{latitude}, #{longitude}), #{radiusKm} * 1000))
         </if>
         AND (NULLIF(TRIM(COALESCE(r.text, '')), '') IS NOT NULL OR r.has_photo)
+        <!-- A deleted account's reviews leave the feed with it. -->
+        AND EXISTS (
+            SELECT 1 FROM users au
+            WHERE au.id = r.user_id AND au.deleted_at IS NULL)
+        <if test="excludeUserId != null">
+            <!-- Blocks hide reviews in both directions (D9), and so do the viewer's own
+                 "hide this post" / "hide posts from this person" (feed_feedback, V245). -->
+            AND NOT EXISTS (
+                SELECT 1 FROM user_blocks b
+                WHERE (b.blocker_id = #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER} AND b.blocked_id = r.user_id)
+                   OR (b.blocker_id = r.user_id AND b.blocked_id = #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}))
+            AND NOT EXISTS (
+                SELECT 1 FROM feed_feedback ff
+                WHERE ff.user_id = #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
+                  AND ff.revoked_at IS NULL
+                  AND ((ff.kind = 'HIDE_POST' AND ff.item_type = 'REVIEW' AND ff.item_id = r.id)
+                    OR (ff.kind = 'HIDE_AUTHOR' AND ff.target_user_id = r.user_id
+                        AND ff.expires_at &gt; NOW())))
+        </if>
         <if test="kind != null">
             AND EXISTS (
                 SELECT 1 FROM places kp

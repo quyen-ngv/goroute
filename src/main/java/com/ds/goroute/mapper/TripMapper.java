@@ -31,6 +31,7 @@ public interface TripMapper {
     List<TripRankRow> searchPublicTripRanking(
         @Param("criteria") PublicTripSearchCriteria criteria,
         @Param("excludeUserId") UUID excludeUserId,
+        @Param("viewerId") UUID viewerId,
         @Param("limit") int limit,
         @Param("offset") int offset
     );
@@ -94,4 +95,16 @@ public interface TripMapper {
                        @Param("timezone") String timezone,
                        @Param("destinationLat") java.math.BigDecimal destinationLat,
                        @Param("destinationLng") java.math.BigDecimal destinationLng);
+
+    /** Feed search index: the next {@code limit} findable trips after {@code afterId}, by id. */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> selectSearchIndexPage(@Param("afterId") UUID afterId,
+                                                                          @Param("limit") int limit);
+
+    /** Feed search index: trips changed after the cursor, findable or not, oldest change first. */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> selectSearchIndexChanges(
+            @Param("afterUpdatedAt") java.time.LocalDateTime afterUpdatedAt,
+            @Param("afterId") UUID afterId,
+            @Param("limit") int limit);
+
+    java.time.LocalDateTime selectSearchIndexMaxUpdatedAt();
 }

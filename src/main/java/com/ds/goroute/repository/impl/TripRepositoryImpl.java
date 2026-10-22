@@ -73,9 +73,10 @@ public class TripRepositoryImpl implements TripRepository {
     @Override
     public List<TripRankRow> searchPublicTripRanking(PublicTripSearchCriteria criteria,
                                                      UUID excludeUserId,
+                                                     UUID viewerId,
                                                      int limit,
                                                      int offset) {
-        return tripMapper.searchPublicTripRanking(criteria, excludeUserId, limit, offset);
+        return tripMapper.searchPublicTripRanking(criteria, excludeUserId, viewerId, limit, offset);
     }
 
     @Override
@@ -173,5 +174,21 @@ public class TripRepositoryImpl implements TripRepository {
     @Override
     public List<Trip> findNotificationCandidates(LocalDate fromDate, LocalDate toDate) {
         return tripMapper.selectNotificationCandidates(fromDate, toDate);
+    }
+
+    @Override
+    public List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexPage(UUID afterId, int limit) {
+        return tripMapper.selectSearchIndexPage(afterId, limit);
+    }
+
+    @Override
+    public List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexChanges(
+            java.time.LocalDateTime afterUpdatedAt, UUID afterId, int limit) {
+        return tripMapper.selectSearchIndexChanges(afterUpdatedAt, afterId, limit);
+    }
+
+    @Override
+    public Optional<java.time.LocalDateTime> findSearchIndexMaxUpdatedAt() {
+        return Optional.ofNullable(tripMapper.selectSearchIndexMaxUpdatedAt());
     }
 }

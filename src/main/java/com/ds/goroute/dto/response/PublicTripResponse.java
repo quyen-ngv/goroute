@@ -70,4 +70,6 @@ public class PublicTripResponse {
     private LocalDateTime publicSharedAt;
     /** Home "Friends" tab only (GET /trips/following); the same ranks as UserCheckinResponse#focusRank. */
     private Integer focusRank;
+    /** Feed "Friends" tab only (GET /trips/following); the same meaning as UserCheckinResponse#seen. */
+    private Boolean seen;
 }

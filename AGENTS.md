@@ -231,6 +231,8 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `SOCIAL` | `FOLLOWER_PUSH_COOLDOWN_MINUTES` / `FOLLOWER_PUSH_DAILY_MAX` | minutes per author 0..1440 / pushes per recipient per 24 h 0..100 | safe fallback 30 / 10 | private/admin |
 | `SOCIAL` | `FOLLOWER_FANOUT_BATCH_SIZE` / `FOLLOWER_FANOUT_PAUSE_MS` | followers per chunk 50..500 / ms between chunks 0..5000 | safe fallback 500 / 100 | private/admin |
 | `SOCIAL` | `MOMENTS_WINDOW_HOURS` | hours, 1..336 | safe fallback 72 | private/admin |
+| `FEED` | `IMPRESSION_RETENTION_DAYS` | days `feed_impressions` rows are kept, 7..365 | safe fallback 90 | private/admin |
+| `FEED` | `HIDE_AUTHOR_DAYS` | days "hide posts from this person" lasts, 1..365 | safe fallback 30 | users via `POST /v1/api/feed/feedback` (`expiresAt`) |
 
 ## Build note
 

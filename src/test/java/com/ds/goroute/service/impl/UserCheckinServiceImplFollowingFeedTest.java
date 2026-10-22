@@ -42,6 +42,7 @@ class UserCheckinServiceImplFollowingFeedTest {
 
     @Mock private UserCheckinRepository checkins;
     @Mock private com.ds.goroute.mapper.SavedPostMapper savedPosts;
+    @Mock private com.ds.goroute.service.FeedImpressionService feedImpressions;
     @Mock private UserReviewRepository reviews;
     @Mock private PlaceRepository places;
     @Mock private UserRepository users;

@@ -179,4 +179,29 @@ public class UserRepositoryImpl implements UserRepository {
     public int updateBirthYear(UUID id, int birthYear, java.time.LocalDateTime updatedAt) {
         return userMapper.updateBirthYear(id, birthYear, updatedAt);
     }
+
+    @Override
+    public List<com.ds.goroute.dto.response.DiscoverUserResponse> findDiscoverProfilesByIds(
+            java.util.Collection<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        return userMapper.selectDiscoverProfilesByIds(ids);
+    }
+
+    @Override
+    public List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexPage(UUID afterId, int limit) {
+        return userMapper.selectSearchIndexPage(afterId, limit);
+    }
+
+    @Override
+    public List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexChanges(
+            java.time.LocalDateTime afterUpdatedAt, UUID afterId, int limit) {
+        return userMapper.selectSearchIndexChanges(afterUpdatedAt, afterId, limit);
+    }
+
+    @Override
+    public Optional<java.time.LocalDateTime> findSearchIndexMaxUpdatedAt() {
+        return Optional.ofNullable(userMapper.selectSearchIndexMaxUpdatedAt());
+    }
 }

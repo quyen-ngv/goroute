@@ -152,4 +152,11 @@ public class UserCheckinResponse {
      * be placed. The list is ordered by it (nulls last), then newest first. Null elsewhere.
      */
     private Integer focusRank;
+
+    /**
+     * Feed "Friends" tab only (GET /checkins/following): whether the viewer already had this
+     * post on screen or opened it (feed_impressions, V245). The app marks the unseen ones;
+     * the order does not change. Null elsewhere.
+     */
+    private Boolean seen;
 }

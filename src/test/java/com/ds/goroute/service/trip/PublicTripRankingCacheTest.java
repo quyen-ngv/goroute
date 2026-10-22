@@ -32,7 +32,7 @@ class PublicTripRankingCacheTest {
     @BeforeEach
     void setUp() {
         cache = new PublicTripRankingCache(tripRepository, nanos::get);
-        when(tripRepository.searchPublicTripRanking(any(), isNull(), eq(PublicTripRankingCache.WINDOW), eq(0)))
+        when(tripRepository.searchPublicTripRanking(any(), isNull(), isNull(), eq(PublicTripRankingCache.WINDOW), eq(0)))
                 .thenReturn(List.of(new TripRankRow(UUID.randomUUID(), UUID.randomUUID())));
     }
 
@@ -40,19 +40,19 @@ class PublicTripRankingCacheTest {
     void oneQueryServesEveryReaderUntilTheEntryExpires() {
         cache.window(everywhere);
         cache.window(everywhere);
-        verify(tripRepository, times(1)).searchPublicTripRanking(everywhere, null, PublicTripRankingCache.WINDOW, 0);
+        verify(tripRepository, times(1)).searchPublicTripRanking(everywhere, null, null, PublicTripRankingCache.WINDOW, 0);
 
         nanos.addAndGet(PublicTripRankingCache.TTL.plus(Duration.ofSeconds(1)).toNanos());
         cache.window(everywhere);
 
-        verify(tripRepository, times(2)).searchPublicTripRanking(everywhere, null, PublicTripRankingCache.WINDOW, 0);
+        verify(tripRepository, times(2)).searchPublicTripRanking(everywhere, null, null, PublicTripRankingCache.WINDOW, 0);
     }
 
     @Test
     void theRankingIsAskedForWithoutAnyViewer() {
         assertThat(cache.window(everywhere)).hasSize(1);
 
-        verify(tripRepository).searchPublicTripRanking(everywhere, null, PublicTripRankingCache.WINDOW, 0);
+        verify(tripRepository).searchPublicTripRanking(everywhere, null, null, PublicTripRankingCache.WINDOW, 0);
     }
 
     @Test
@@ -64,6 +64,6 @@ class PublicTripRankingCacheTest {
         cache.invalidateAllAfterCommit();
         cache.window(everywhere);
 
-        verify(tripRepository, times(3)).searchPublicTripRanking(everywhere, null, PublicTripRankingCache.WINDOW, 0);
+        verify(tripRepository, times(3)).searchPublicTripRanking(everywhere, null, null, PublicTripRankingCache.WINDOW, 0);
     }
 }

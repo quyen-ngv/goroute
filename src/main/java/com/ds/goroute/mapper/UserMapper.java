@@ -97,4 +97,20 @@ public interface UserMapper {
     int updateTimeZone(@Param("id") UUID id, @Param("timeZone") String timeZone);
 
     String selectTimeZone(@Param("id") UUID id);
+
+    /** People cards (discover counts) for these ids; deleted and non-human accounts are absent. */
+    java.util.List<com.ds.goroute.dto.response.DiscoverUserResponse> selectDiscoverProfilesByIds(
+            @Param("ids") java.util.Collection<UUID> ids);
+
+    /** Feed search index: the next {@code limit} findable people after {@code afterId}, by id. */
+    java.util.List<com.ds.goroute.entity.SocialSearchIndexRow> selectSearchIndexPage(
+            @Param("afterId") UUID afterId, @Param("limit") int limit);
+
+    /** Feed search index: accounts changed after the cursor, findable or not, oldest change first. */
+    java.util.List<com.ds.goroute.entity.SocialSearchIndexRow> selectSearchIndexChanges(
+            @Param("afterUpdatedAt") java.time.LocalDateTime afterUpdatedAt,
+            @Param("afterId") UUID afterId,
+            @Param("limit") int limit);
+
+    java.time.LocalDateTime selectSearchIndexMaxUpdatedAt();
 }

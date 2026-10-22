@@ -157,7 +157,7 @@ class TripServiceImplFollowingTripsTest {
     void searchStillReportsAMissingShareDateAndTheViewersOwnTrip() {
         UUID viewerId = UUID.randomUUID();
         Trip ownTrip = trip(viewerId, null, LocalDateTime.of(2026, 9, 1, 8, 0));
-        when(tripRepository.searchPublicTripRanking(any(), any(), anyInt(), anyInt()))
+        when(tripRepository.searchPublicTripRanking(any(), any(), any(), anyInt(), anyInt()))
                 .thenReturn(List.of(new TripRankRow(ownTrip.getId(), viewerId)));
         when(tripRepository.findPublicByIds(List.of(ownTrip.getId()))).thenReturn(List.of(ownTrip));
 

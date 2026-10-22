@@ -184,7 +184,7 @@ class TripServiceImplPublicTripCardsTest {
     @Test
     void anAnonymousViewerCostsNoVoteQuery() {
         Trip trip = trip(UUID.randomUUID(), "Huế", null);
-        when(tripRepository.searchPublicTripRanking(any(), isNull(), anyInt(), anyInt()))
+        when(tripRepository.searchPublicTripRanking(any(), isNull(), any(), anyInt(), anyInt()))
                 .thenReturn(List.of(new TripRankRow(trip.getId(), trip.getOwnerId())));
         when(tripRepository.findPublicByIds(List.of(trip.getId()))).thenReturn(List.of(trip));
 
@@ -201,14 +201,14 @@ class TripServiceImplPublicTripCardsTest {
         service.searchPublicTrips(BigDecimal.valueOf(21), BigDecimal.valueOf(105), BigDecimal.valueOf(1000),
                 null, null, false, null, false, false, null, 2, 500, viewerId, viewerId);
 
-        verify(tripRepository).searchPublicTripRanking(any(PublicTripSearchCriteria.class), eq(viewerId), eq(50), eq(100));
+        verify(tripRepository).searchPublicTripRanking(any(PublicTripSearchCriteria.class), eq(viewerId), any(), eq(50), eq(100));
     }
 
     @Test
     void pageOrderFollowsTheRankingNotTheLoadOrder() {
         Trip first = trip(UUID.randomUUID(), "A", "x");
         Trip second = trip(UUID.randomUUID(), "B", "y");
-        when(tripRepository.searchPublicTripRanking(any(), any(), anyInt(), anyInt())).thenReturn(List.of(
+        when(tripRepository.searchPublicTripRanking(any(), any(), any(), anyInt(), anyInt())).thenReturn(List.of(
                 new TripRankRow(first.getId(), first.getOwnerId()), new TripRankRow(second.getId(), second.getOwnerId())));
         when(tripRepository.findPublicByIds(anyList())).thenReturn(List.of(second, first));
 
@@ -229,7 +229,7 @@ class TripServiceImplPublicTripCardsTest {
             cache = new PublicTripRankingCache(tripRepository);
             ReflectionTestUtils.setField(service, "publicTripRankingCache", cache);
             IntStream.range(0, 30).forEach(index -> ranked.add(trip(UUID.randomUUID(), "City " + index, "c")));
-            when(tripRepository.searchPublicTripRanking(any(), isNull(), eq(PublicTripRankingCache.WINDOW), eq(0)))
+            when(tripRepository.searchPublicTripRanking(any(), isNull(), isNull(), eq(PublicTripRankingCache.WINDOW), eq(0)))
                     .thenAnswer(invocation -> ranked.stream()
                             .map(trip -> new TripRankRow(trip.getId(), trip.getOwnerId()))
                             .toList());
@@ -245,7 +245,7 @@ class TripServiceImplPublicTripCardsTest {
             search(UUID.randomUUID(), 1);
             search(null, 0);
 
-            verify(tripRepository, times(1)).searchPublicTripRanking(any(), any(), anyInt(), anyInt());
+            verify(tripRepository, times(1)).searchPublicTripRanking(any(), any(), any(), anyInt(), anyInt());
         }
 
         @Test
@@ -271,7 +271,7 @@ class TripServiceImplPublicTripCardsTest {
             service.searchPublicTrips(null, null, null, null, null, true, null, true, true, null,
                     PublicTripRankingCache.WINDOW / 20, 20, viewerId, viewerId);
 
-            verify(tripRepository).searchPublicTripRanking(any(), eq(viewerId), eq(20), eq(PublicTripRankingCache.WINDOW));
+            verify(tripRepository).searchPublicTripRanking(any(), eq(viewerId), any(), eq(20), eq(PublicTripRankingCache.WINDOW));
         }
 
         @Test
@@ -284,7 +284,7 @@ class TripServiceImplPublicTripCardsTest {
             List<PublicTripResponse> page = search(null, 0);
 
             assertThat(page).hasSize(20).extracting(PublicTripResponse::getId).doesNotContain(gone.getId());
-            verify(tripRepository, times(2)).searchPublicTripRanking(any(), any(), anyInt(), anyInt());
+            verify(tripRepository, times(2)).searchPublicTripRanking(any(), any(), any(), anyInt(), anyInt());
         }
 
         private List<PublicTripResponse> search(UUID viewer, int page) {

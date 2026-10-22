@@ -77,4 +77,18 @@ public interface UserRepository {
 
     /** Rows changed: 1, or 0 when the user does not exist or is deleted. */
     int updateBirthYear(UUID id, int birthYear, java.time.LocalDateTime updatedAt);
+
+    /** Discover cards (with the four counts) of these people; deleted and non-human accounts are absent. */
+    List<com.ds.goroute.dto.response.DiscoverUserResponse> findDiscoverProfilesByIds(java.util.Collection<UUID> ids);
+
+    // --- Feed search index -----------------------------------------------------------
+
+    /** The next {@code limit} people anyone may find, after {@code afterId} (null: from the start). */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexPage(UUID afterId, int limit);
+
+    /** Accounts changed after ({@code afterUpdatedAt}, {@code afterId}), each saying whether it is still findable. */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexChanges(
+            java.time.LocalDateTime afterUpdatedAt, UUID afterId, int limit);
+
+    Optional<java.time.LocalDateTime> findSearchIndexMaxUpdatedAt();
 }

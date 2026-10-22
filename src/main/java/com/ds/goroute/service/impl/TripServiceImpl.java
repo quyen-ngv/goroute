@@ -66,6 +66,17 @@ public class TripServiceImpl implements TripService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private PublicTripRankingCache publicTripRankingCache;
 
+    // Feed signals (V245). Optional like the two above, so the unit tests that build this
+    // service by hand keep compiling; without them nothing is hidden and nothing reads seen.
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.ds.goroute.service.FeedFeedbackService feedFeedbackService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.ds.goroute.service.FeedImpressionService feedImpressionService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.ds.goroute.service.UserBlockService userBlockService;
+
     private final TripRepository tripRepository;
     private final TripAccessGuard tripAccessGuard;
     private final com.ds.goroute.service.TripChatService tripChatService;
@@ -2130,14 +2141,14 @@ public class TripServiceImpl implements TripService {
         int limit = Math.max(1, Math.min(size, MAX_PUBLIC_TRIP_SEARCH_PAGE_SIZE));
         int offset = Math.max(0, page) * limit;
 
-        List<UUID> pageIds = rankedPublicTripIds(criteria, excludeUserId, offset, limit);
+        List<UUID> pageIds = rankedPublicTripIds(criteria, excludeUserId, viewerId, offset, limit);
         List<Trip> trips = loadPublicTripsInOrder(pageIds);
         if (trips.size() < pageIds.size() && publicTripRankingCache != null) {
             // A trip in the cached ranking went private, was deleted or taken down since it
             // was ranked. Rank again once rather than hand back a short page, which the app
             // reads as the end of the list.
             publicTripRankingCache.evict(criteria);
-            pageIds = rankedPublicTripIds(criteria, excludeUserId, offset, limit);
+            pageIds = rankedPublicTripIds(criteria, excludeUserId, viewerId, offset, limit);
             trips = loadPublicTripsInOrder(pageIds);
         }
         return toPublicTripSummaries(trips, viewerId);
@@ -2148,14 +2159,19 @@ public class TripServiceImpl implements TripService {
      * its window, after dropping the trips {@code excludeUserId} owns or has joined -- the
      * same rows the query's own exclusion removes, so the slice equals what the query would
      * return. Deeper pages, and services built without the cache, ask the database.
+     *
+     * <p>Trips hidden from {@code viewerId} -- a block either way, or the viewer's own "hide"
+     * (feed_feedback) -- leave both paths: in SQL for the database, in Java for the cached
+     * window, which is shared by every viewer.
      */
     private List<UUID> rankedPublicTripIds(PublicTripSearchCriteria criteria,
                                            UUID excludeUserId,
+                                           UUID viewerId,
                                            int offset,
                                            int limit) {
         if (publicTripRankingCache != null && offset + limit <= PublicTripRankingCache.WINDOW) {
             List<TripRankRow> window = publicTripRankingCache.window(criteria);
-            List<TripRankRow> visible = withoutTripsOf(window, excludeUserId);
+            List<TripRankRow> visible = withoutHiddenFrom(withoutTripsOf(window, excludeUserId), viewerId);
             boolean wholeRanking = window.size() < PublicTripRankingCache.WINDOW;
             if (wholeRanking || offset + limit <= visible.size()) {
                 return visible.stream()
@@ -2165,8 +2181,27 @@ public class TripServiceImpl implements TripService {
                         .toList();
             }
         }
-        return tripRepository.searchPublicTripRanking(criteria, excludeUserId, limit, offset).stream()
+        return tripRepository.searchPublicTripRanking(criteria, excludeUserId, viewerId, limit, offset).stream()
                 .map(TripRankRow::getId)
+                .toList();
+    }
+
+    /** {@code ranking} without trips hidden from {@code viewerId}: blocks either way and feed hides. */
+    private List<TripRankRow> withoutHiddenFrom(List<TripRankRow> ranking, UUID viewerId) {
+        if (viewerId == null || ranking.isEmpty()) {
+            return ranking;
+        }
+        Set<UUID> blocked = userBlockService == null ? Set.of()
+                : userBlockService.blockedAmong(viewerId, ranking.stream().map(TripRankRow::getOwnerId).toList());
+        com.ds.goroute.service.FeedFeedbackService.Hidden hidden = feedFeedbackService == null
+                ? com.ds.goroute.service.FeedFeedbackService.Hidden.NONE
+                : feedFeedbackService.hiddenFor(viewerId);
+        if (blocked.isEmpty() && hidden == com.ds.goroute.service.FeedFeedbackService.Hidden.NONE) {
+            return ranking;
+        }
+        return ranking.stream()
+                .filter(row -> !blocked.contains(row.getOwnerId()))
+                .filter(row -> !hidden.hides(com.ds.goroute.type.FeedItemType.TRIP, row.getId(), row.getOwnerId()))
                 .toList();
     }
 
@@ -2218,9 +2253,14 @@ public class TripServiceImpl implements TripService {
         List<Trip> trips = tripRepository.findFollowingTrips(viewerId,
                 focused ? focusLat : null, focused ? focusLng : null, kind, limit, offset);
         List<PublicTripResponse> summaries = toPublicTripSummaries(trips, viewerId);
+        // The Friends tab keeps its order and marks what the viewer has not seen yet.
+        Set<UUID> seen = feedImpressionService == null ? Set.of()
+                : feedImpressionService.seenIds(viewerId, com.ds.goroute.type.FeedItemType.TRIP,
+                        trips.stream().map(Trip::getId).toList());
         for (int i = 0; i < summaries.size(); i++) {
             PublicTripResponse summary = summaries.get(i);
             summary.setFocusRank(trips.get(i).getFocusRank());
+            summary.setSeen(seen.contains(trips.get(i).getId()));
             // The app orders the Friends tab on this. A trip made public before the
             // column existed has none, and its creation date is the honest stand-in --
             // the same one the query sorts by.
