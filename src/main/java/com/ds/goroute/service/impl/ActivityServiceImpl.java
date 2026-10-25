@@ -33,6 +33,7 @@ import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.repository.MediaAssetRepository;
 import com.ds.goroute.dto.response.MemoryImageResponse;
 import com.ds.goroute.utils.MediaAssetResponseMapper;
+import com.ds.goroute.utils.PlaceDisplayRating;
 import com.ds.goroute.service.redis.RedisService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.ActivityStatus;
@@ -390,10 +391,8 @@ public class ActivityServiceImpl implements ActivityService {
         if (place == null) {
             return fallback;
         }
-        if (place.getAdjustedRating() != null) {
-            return place.getAdjustedRating();
-        }
-        return place.getReviewRating() != null ? place.getReviewRating() : fallback;
+        BigDecimal displayRating = PlaceDisplayRating.of(place);
+        return displayRating != null ? displayRating : fallback;
     }
 
     private String firstNonBlank(String preferred, String fallback) {

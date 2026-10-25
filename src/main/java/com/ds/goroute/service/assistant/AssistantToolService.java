@@ -159,7 +159,11 @@ public class AssistantToolService {
 
         List<String> relaxed = new ArrayList<>();
         Map<UUID, Place> found = new LinkedHashMap<>();
+        // Rows whose name holds the asked words; the padding rows below are marked so the model
+        // does not take a same-kind place for one that serves the asked dish.
+        Set<UUID> byName = new LinkedHashSet<>();
         collect(found, findPlaces(anchor, request.words(), request, radius, sort, limit), anchor, limit);
+        byName.addAll(found.keySet());
         if (found.size() < limit && request.words() != null && request.hasKinds()) {
             int before = found.size();
             collect(found, findPlaces(anchor, null, request, radius, sort, limit), anchor, limit);
@@ -168,16 +172,23 @@ public class AssistantToolService {
         if (found.isEmpty() && radius < MAX_RADIUS_KM) {
             radius = MAX_RADIUS_KM;
             collect(found, findPlaces(anchor, request.words(), request, radius, sort, limit), anchor, limit);
+            byName.addAll(found.keySet());
             if (found.isEmpty() && request.words() != null && request.hasKinds()) {
                 collect(found, findPlaces(anchor, null, request, radius, sort, limit), anchor, limit);
             }
             if (!found.isEmpty()) relaxed.add("widened the radius to " + (int) MAX_RADIUS_KM + " km");
         }
 
-        List<Map<String, Object>> rows = found.values().stream().map(place -> placeRow(place, anchor)).toList();
+        // Hours for the asked day, else today: "is it open now / this morning" needs no second call.
+        LocalDate hoursOn = anchor.date() != null ? anchor.date()
+                : LocalDate.now(trip == null ? LOCAL_ZONE : com.ds.goroute.service.time.TripTimeZones.zoneOf(trip));
+        List<Map<String, Object>> rows = found.values().stream()
+                .map(place -> placeRow(place, anchor, hoursOn, request.words() != null && !byName.contains(place.getId())))
+                .toList();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("near", anchor.label());
         out.put("radiusKm", radius);
+        out.put("hoursOn", hoursOn);
         Map<String, Object> searched = new LinkedHashMap<>();
         putIfPresent(searched, "nameWords", request.words());
         putIfPresent(searched, "types", request.subTypes());
@@ -829,12 +840,13 @@ public class AssistantToolService {
 
     // ---------------------------------------------------------------- rows
 
-    private Map<String, Object> placeRow(Place place, Anchor anchor) {
+    private Map<String, Object> placeRow(Place place, Anchor anchor, LocalDate hoursOn, boolean padding) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id", place.getId());
         row.put("name", place.getTitle());
         boolean food = place.getPlaceGroup() == PlaceGroup.FOOD_AND_DRINK;
         row.put("kind", kindOf(place));
+        if (padding) row.put("nameMatch", false);
         if (place.getSubTypes() != null && place.getSubTypes().length > 0) {
             row.put("types", List.of(place.getSubTypes()).subList(0, Math.min(3, place.getSubTypes().length)));
         }
@@ -843,7 +855,7 @@ public class AssistantToolService {
         putUsage(row, place);
         putIfPresent(row, "price", PlaceAiFacts.priceLabel(place.getPriceRange(), place.getAttributes()));
         putIfPresent(row, "tags", emptyToNull(PlaceAiFacts.aboutTags(place.getAbout())));
-        putIfPresent(row, "hours", dayHours(place.getOpenHours(), anchor.date()));
+        putIfPresent(row, "hours", dayHours(place.getOpenHours(), hoursOn));
         if (place.getLatitude() != null && place.getLongitude() != null) {
             row.put("distanceKm", round(haversineKm(anchor.lat(), anchor.lng(), place.getLatitude(), place.getLongitude()), 1));
         }

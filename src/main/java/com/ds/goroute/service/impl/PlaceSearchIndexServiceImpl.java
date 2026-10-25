@@ -480,6 +480,27 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     }
 
     @Override
+    public int countPlacesByName(String keyword, List<String> placeGroups) throws IOException {
+        if (keyword == null || keyword.isBlank()) {
+            return 0;
+        }
+        BooleanQuery.Builder query = new BooleanQuery.Builder();
+        try {
+            query.add(LuceneTitleQueryBuilder.build(keyword.trim(), analyzer), BooleanClause.Occur.MUST);
+        } catch (IllegalArgumentException noSearchableText) {
+            return 0;
+        }
+        query.add(new TermQuery(new Term(VISIBILITY_FIELD, "ACTIVE")), BooleanClause.Occur.FILTER);
+        addTermSetFilter(query, PLACE_GROUP_FIELD, normalizeUpper(placeGroups));
+        IndexSearcher searcher = searcherManager.acquire();
+        try {
+            return searcher.count(query.build());
+        } finally {
+            searcherManager.release(searcher);
+        }
+    }
+
+    @Override
     public List<UUID> searchPlaceIdsByName(String keyword, List<String> placeGroups, boolean includeInactive,
                                            int page, int size) throws IOException {
         if (keyword == null || keyword.isBlank()) {

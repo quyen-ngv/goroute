@@ -23,6 +23,19 @@ public interface LocalEventMapper {
 
     LocalEvent findPublishedById(@Param("id") UUID id);
 
+    List<LocalEvent> findPublicSummariesByIds(@Param("ids") Collection<UUID> ids, @Param("now") LocalDateTime now);
+
+    // --- Feed search index ----------------------------------------------------------------
+    List<com.ds.goroute.entity.SocialSearchIndexRow> selectSearchIndexPage(@Param("afterId") UUID afterId,
+                                                                          @Param("limit") int limit);
+
+    List<com.ds.goroute.entity.SocialSearchIndexRow> selectSearchIndexChanges(
+            @Param("afterUpdatedAt") LocalDateTime afterUpdatedAt,
+            @Param("afterId") UUID afterId,
+            @Param("limit") int limit);
+
+    LocalDateTime selectSearchIndexMaxUpdatedAt();
+
     // --- admin ----------------------------------------------------------------------------
     List<LocalEvent> findForAdmin(@Param("p") LocalEventAdminSearchParams params);
 

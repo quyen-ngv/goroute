@@ -11,7 +11,13 @@ public enum UserRealtimeEventType {
     /** The server refused a SUBSCRIBE. Payload: destination. The client should stop watching it. */
     SUBSCRIPTION_DENIED("subscription.denied"),
     /** A notification row was created or changed for this person. Payload: notificationId, type. */
-    NOTIFICATION_CHANGED("notification.changed");
+    NOTIFICATION_CHANGED("notification.changed"),
+    /**
+     * The AI credit balance moved (charge, refund, refill, adjustment). Payload: balance,
+     * planBalance, purchasedBalance, delta, type, feature, traceId. Clients set the balance from
+     * it directly and refetch after a reconnect.
+     */
+    CREDIT_CHANGED("credit.changed");
 
     private final String wireValue;
 

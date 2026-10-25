@@ -6,9 +6,10 @@ import com.ds.goroute.type.SocialSearchType;
 import java.util.UUID;
 
 /**
- * The Feed search (epic 12 §4.3): people, public check-ins and public trips by keyword, ranked
- * by Lucene ({@link SocialSearchIndexService}) and checked against the database before they are
- * shown — public, not removed or taken down, author still has an account, no block either way.
+ * The Feed search (epic 12 §4.4): people, public check-ins and trips, tours and events by keyword,
+ * ranked by Lucene ({@link SocialSearchIndexService}), plus catalogue places and stays from the
+ * place index. Every hit is checked against the database before it is shown — public, not
+ * removed or taken down, author still has an account, no block either way, event not over.
  */
 public interface SocialSearchService {
 

@@ -116,6 +116,15 @@
       AND o.verification_status='VERIFIED'
       AND (a.place_ref_id IS NULL OR p.lifecycle_status='ACTIVE')
   </select>
+  <!-- Feed search cards: these ids, under the public rule of findPublicProduct. -->
+  <select id="findPublicProductsByIds" resultMap="ProductMap">
+    <include refid="ProductSelect"/> JOIN host_organizations o ON o.id=a.host_organization_id
+    WHERE a.id IN <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+      AND a.host_organization_id IS NOT NULL AND a.product_status='ENABLED'
+      AND a.inventory_mode='INTERNAL' AND o.operational_status='ENABLED'
+      AND o.verification_status='VERIFIED'
+      AND (a.place_ref_id IS NULL OR p.lifecycle_status='ACTIVE')
+  </select>
   <select id="findProductsByOrganization" resultMap="ProductMap"><include refid="ProductSelect"/> WHERE a.host_organization_id=#{organizationId} ORDER BY a.created_at DESC</select>
   <select id="findProductsPublic" resultMap="ProductMap">
     <include refid="ProductSelect"/> JOIN host_organizations o ON o.id=a.host_organization_id

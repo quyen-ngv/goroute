@@ -18,6 +18,7 @@ import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.CityStoryService;
 import com.ds.goroute.service.CityWeatherService;
 import com.ds.goroute.service.ImageStorageCleanupService;
+import com.ds.goroute.utils.PlaceDisplayRating;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.RequiredArgsConstructor;
@@ -379,7 +380,7 @@ public class CityStoryServiceImpl implements CityStoryService {
                 .thumbnail(place.getThumbnail())
                 .address(place.getAddress())
                 .reviewRating(place.getReviewRating())
-                .adjustedRating(place.getAdjustedRating())
+                .adjustedRating(PlaceDisplayRating.of(place))
                 .reviewCount(place.getReviewCount())
                 .build();
     }

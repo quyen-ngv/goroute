@@ -2,6 +2,8 @@ package com.ds.goroute.service.impl;
 
 import com.ds.goroute.dto.SocialSearchHits;
 import com.ds.goroute.entity.SocialSearchIndexRow;
+import com.ds.goroute.localevent.persistence.LocalEventRepository;
+import com.ds.goroute.repository.ActivityBookingRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.UserCheckinRepository;
 import com.ds.goroute.repository.UserRepository;
@@ -103,6 +105,8 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
     private static final String POPULARITY_FEATURE = "popularity";
     /** Marks the documents of one rebuild, so it can drop every document it did not write. */
     private static final String GENERATION_FIELD = "generation";
+    /** A tour's source (CATALOGUE or MARKETPLACE); other kinds have none. */
+    private static final String VARIANT_FIELD = "variant";
 
     // Text: a match in the name outweighs one in the caption; a whole username wins outright.
     private static final float HANDLE_EXACT_BOOST = 20f;
@@ -124,11 +128,14 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
     private static final long FRESHNESS_PIVOT_MILLIS = TimeUnit.DAYS.toMillis(30);
 
     private static final List<SocialSearchType> INDEXED_KINDS =
-            List.of(SocialSearchType.USER, SocialSearchType.CHECKIN, SocialSearchType.TRIP);
+            List.of(SocialSearchType.USER, SocialSearchType.CHECKIN, SocialSearchType.TRIP,
+                    SocialSearchType.TOUR, SocialSearchType.EVENT);
 
     private final UserRepository userRepository;
     private final UserCheckinRepository checkinRepository;
     private final TripRepository tripRepository;
+    private final ActivityBookingRepository activityBookingRepository;
+    private final LocalEventRepository localEventRepository;
 
     @Value("${goroute.search.social-index-path:data/lucene-index/social}")
     private String indexPath;
@@ -207,7 +214,7 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
 
     @Override
     public SocialSearchHits search(String keyword, Set<SocialSearchType> kinds, UUID excludeUserId,
-                                   int offset, int limit) throws IOException {
+                                   String tourVariant, int offset, int limit) throws IOException {
         if (kinds == null || kinds.isEmpty() || offset < 0 || limit < 1 || offset >= MAX_RESULT_WINDOW) {
             return SocialSearchHits.EMPTY;
         }
@@ -216,7 +223,7 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
             return SocialSearchHits.EMPTY;
         }
         int wanted = Math.min(offset + limit, MAX_RESULT_WINDOW);
-        Query query = withRanking(filtered(text, kinds, excludeUserId));
+        Query query = withRanking(filtered(text, kinds, excludeUserId, tourVariant));
 
         IndexSearcher searcher = searcherManager.acquire();
         try {
@@ -236,7 +243,8 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
     }
 
     @Override
-    public Map<SocialSearchType, Integer> countByKind(String keyword, UUID excludeUserId) throws IOException {
+    public Map<SocialSearchType, Integer> countByKind(String keyword, UUID excludeUserId, String tourVariant)
+            throws IOException {
         Map<SocialSearchType, Integer> counts = new LinkedHashMap<>();
         INDEXED_KINDS.forEach(kind -> counts.put(kind, 0));
         Query text = textQuery(keyword);
@@ -246,7 +254,7 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
         IndexSearcher searcher = searcherManager.acquire();
         try {
             for (SocialSearchType kind : INDEXED_KINDS) {
-                counts.put(kind, searcher.count(filtered(text, Set.of(kind), excludeUserId)));
+                counts.put(kind, searcher.count(filtered(text, Set.of(kind), excludeUserId, tourVariant)));
             }
             return counts;
         } finally {
@@ -318,7 +326,7 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
         builder.add(new BoostQuery(query, boost), BooleanClause.Occur.SHOULD);
     }
 
-    private static Query filtered(Query text, Set<SocialSearchType> kinds, UUID excludeUserId) {
+    private static Query filtered(Query text, Set<SocialSearchType> kinds, UUID excludeUserId, String tourVariant) {
         BooleanQuery.Builder query = new BooleanQuery.Builder()
                 .add(text, BooleanClause.Occur.MUST)
                 .add(new TermInSetQuery(TYPE_FIELD, kinds.stream().map(kind -> new BytesRef(kind.name())).toList()),
@@ -326,6 +334,18 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
         if (excludeUserId != null) {
             query.add(new TermQuery(new Term(KEY_FIELD, key(SocialSearchType.USER, excludeUserId))),
                     BooleanClause.Occur.MUST_NOT);
+        }
+        if (tourVariant != null && kinds.contains(SocialSearchType.TOUR)) {
+            // Tours of the other source are left out; every other kind passes.
+            query.add(new BooleanQuery.Builder()
+                            .add(new TermQuery(new Term(VARIANT_FIELD, tourVariant)), BooleanClause.Occur.SHOULD)
+                            .add(new BooleanQuery.Builder()
+                                    .add(new MatchAllDocsQuery(), BooleanClause.Occur.MUST)
+                                    .add(new TermQuery(new Term(TYPE_FIELD, SocialSearchType.TOUR.name())),
+                                            BooleanClause.Occur.MUST_NOT)
+                                    .build(), BooleanClause.Occur.SHOULD)
+                            .build(),
+                    BooleanClause.Occur.FILTER);
         }
         return query.build();
     }
@@ -514,7 +534,9 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
             case USER -> userRepository.findSearchIndexPage(afterId, BATCH_SIZE);
             case CHECKIN -> checkinRepository.findSearchIndexPage(afterId, BATCH_SIZE);
             case TRIP -> tripRepository.findSearchIndexPage(afterId, BATCH_SIZE);
-            case ALL -> List.of();
+            case TOUR -> activityBookingRepository.findSearchIndexPage(afterId, BATCH_SIZE);
+            case EVENT -> localEventRepository.findSearchIndexPage(afterId, BATCH_SIZE);
+            case ALL, PLACE, STAY -> List.of();
         };
     }
 
@@ -523,7 +545,9 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
             case USER -> userRepository.findSearchIndexChanges(afterUpdatedAt, afterId, BATCH_SIZE);
             case CHECKIN -> checkinRepository.findSearchIndexChanges(afterUpdatedAt, afterId, BATCH_SIZE);
             case TRIP -> tripRepository.findSearchIndexChanges(afterUpdatedAt, afterId, BATCH_SIZE);
-            case ALL -> List.of();
+            case TOUR -> activityBookingRepository.findSearchIndexChanges(afterUpdatedAt, afterId, BATCH_SIZE);
+            case EVENT -> localEventRepository.findSearchIndexChanges(afterUpdatedAt, afterId, BATCH_SIZE);
+            case ALL, PLACE, STAY -> List.of();
         };
     }
 
@@ -532,7 +556,9 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
             case USER -> userRepository.findSearchIndexMaxUpdatedAt();
             case CHECKIN -> checkinRepository.findSearchIndexMaxUpdatedAt();
             case TRIP -> tripRepository.findSearchIndexMaxUpdatedAt();
-            case ALL -> Optional.empty();
+            case TOUR -> activityBookingRepository.findSearchIndexMaxUpdatedAt();
+            case EVENT -> localEventRepository.findSearchIndexMaxUpdatedAt();
+            case ALL, PLACE, STAY -> Optional.empty();
         };
     }
 
@@ -542,6 +568,9 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
         doc.add(new StringField(TYPE_FIELD, kind.name(), Field.Store.YES));
         doc.add(new StoredField(ID_FIELD, row.getId().toString()));
         doc.add(new StringField(GENERATION_FIELD, generation, Field.Store.NO));
+        if (row.getVariant() != null && !row.getVariant().isBlank()) {
+            doc.add(new StringField(VARIANT_FIELD, row.getVariant(), Field.Store.NO));
+        }
         addText(doc, TITLE_FIELD, row.getTitle());
         addText(doc, BODY_FIELD, truncate(row.getBody()));
         String handle = normalizeHandle(row.getHandle());

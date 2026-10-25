@@ -61,6 +61,7 @@ class AiTripGenerationServiceGoongResolutionTest {
         service = new AiTripGenerationService(
                 mapper,
                 mock(AiTripQuotaService.class),
+                mock(AiCreditService.class),
                 mock(PlaceRepository.class),
                 mock(TripService.class),
                 mock(ActivityRepository.class),
@@ -200,7 +201,8 @@ class AiTripGenerationServiceGoongResolutionTest {
             public List<PlaceHit> searchText(PlaceLookupQuery query) { return List.of(hit); }
             public Optional<PlaceHit> getDetails(String id) { return Optional.of(hit); }
         };
-        service = new AiTripGenerationService(mapper, mock(AiTripQuotaService.class), mock(PlaceRepository.class),
+        service = new AiTripGenerationService(mapper, mock(AiTripQuotaService.class), mock(AiCreditService.class),
+                mock(PlaceRepository.class),
                 mock(TripService.class), mock(ActivityRepository.class), objectMapper, mock(AiTripSseService.class),
                 mock(AppConfigRepository.class), mock(NotificationService.class),
                 new PlaceLookupProviders(List.of(new GoongPlaceLookupProvider(goongClient, objectMapper), mapbox)));

@@ -61,8 +61,29 @@ public final class CitySlugResolver {
         return normalized;
     }
 
+    /**
+     * JSON array of every slug that names this city in {@code places.destinations}: the
+     * canonical slug plus its aliases. Places were tagged with an alias in some imports (TP.HCM
+     * places carry {@code "hcm"} while foods use {@code "hcmc"}), so the food filters match any
+     * of them ({@code jsonb_exists_any}) rather than requiring the canonical slug.
+     */
     public static String toJsonbFilter(String citySlug) {
-        return "[\"" + normalizeRequired(citySlug) + "\"]";
+        String normalized = normalizeRequired(citySlug);
+        java.util.LinkedHashSet<String> slugs = new java.util.LinkedHashSet<>();
+        slugs.add(normalized);
+        for (AliasEntry entry : ALIASES) {
+            if (entry.city().getSlug().equals(normalized)) {
+                slugs.addAll(entry.aliases());
+            }
+        }
+        StringBuilder json = new StringBuilder("[");
+        for (String slug : slugs) {
+            if (json.length() > 1) {
+                json.append(',');
+            }
+            json.append('"').append(slug).append('"');
+        }
+        return json.append(']').toString();
     }
 
     public static Optional<CitySlug> fromSlug(String citySlug) {

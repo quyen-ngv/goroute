@@ -27,20 +27,10 @@ class UserQuotaPolicyServiceTest {
     }
 
     @Test
-    void aNullOverrideInheritsTheGlobalAiQuota() {
-        when(repository.findByUserId(userId)).thenReturn(Optional.of(UserQuotaOverride.builder()
-                .aiTripFreeQuota(null).build()));
-        when(businessConfig.getInt(BusinessConfigKey.AI_TRIP_FREE_QUOTA)).thenReturn(3);
+    void withoutAnOverrideTheGlobalFreeTripQuotaApplies() {
+        when(repository.findByUserId(userId)).thenReturn(Optional.empty());
+        when(businessConfig.getInt(BusinessConfigKey.TRIP_FREE_CREATION_QUOTA)).thenReturn(3);
 
-        assertThat(service.aiTripQuota(userId, "FREE")).isEqualTo(3);
-    }
-
-    @Test
-    void aUserCanHaveDifferentAiLimitsByTier() {
-        when(repository.findByUserId(userId)).thenReturn(Optional.of(UserQuotaOverride.builder()
-                .aiTripFreeQuota(2).aiTripProQuota(20).build()));
-
-        assertThat(service.aiTripQuota(userId, "FREE")).isEqualTo(2);
-        assertThat(service.aiTripQuota(userId, "PRO")).isEqualTo(20);
+        assertThat(service.freeTripQuota(userId)).isEqualTo(3);
     }
 }

@@ -151,6 +151,61 @@
           AND e.external_id = #{externalId}
     </select>
 
+    <!-- Feed search cards: these ids, published, in person and not yet over at `now` (UTC). -->
+    <select id="findPublicSummariesByIds" resultType="com.ds.goroute.localevent.domain.LocalEvent">
+        SELECT <include refid="SummaryColumns"/>
+        FROM local_events e
+        WHERE e.id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">#{id}</foreach>
+          AND e.is_deleted = FALSE
+          AND e.publish_status = 'PUBLISHED'
+          AND e.attendance_mode &lt;&gt; 'ONLINE'
+          AND e.event_status &lt;&gt; 'MOVED_ONLINE'
+          AND e.end_at &gt; #{now}
+    </select>
+
+    <!--
+         Feed search index (epic 12 §4.4, epic 17): an event is found by its title, then by
+         summary, venue, address, organiser and description; nearer start dates rank higher.
+         Findable while it would be in the public list: published, in person, not over yet.
+         An event that ends leaves the index at the next rebuild; results are re-checked.
+    -->
+    <sql id="SearchIndexRowColumns">
+        e.id, NULL AS owner_id, e.title AS title, NULL AS handle,
+        concat_ws(' ', e.summary, e.venue_name, e.address, e.organizer_name, left(e.description, 2000)) AS body,
+        0 AS popularity, e.start_at AS published_at, e.updated_at, NULL AS variant,
+        (e.is_deleted = FALSE AND e.publish_status = 'PUBLISHED' AND e.attendance_mode &lt;&gt; 'ONLINE'
+         AND e.event_status &lt;&gt; 'MOVED_ONLINE' AND e.end_at &gt; (NOW() AT TIME ZONE 'UTC')) AS eligible
+    </sql>
+
+    <select id="selectSearchIndexPage" resultType="com.ds.goroute.entity.SocialSearchIndexRow">
+        SELECT <include refid="SearchIndexRowColumns"/>
+        FROM local_events e
+        WHERE e.is_deleted = FALSE
+          AND e.publish_status = 'PUBLISHED'
+          AND e.attendance_mode &lt;&gt; 'ONLINE'
+          AND e.event_status &lt;&gt; 'MOVED_ONLINE'
+          AND e.end_at &gt; (NOW() AT TIME ZONE 'UTC')
+          <if test="afterId != null">
+              AND e.id &gt; #{afterId}
+          </if>
+        ORDER BY e.id
+        LIMIT #{limit}
+    </select>
+
+    <!-- Served by idx_local_events_updated_id (V252). -->
+    <select id="selectSearchIndexChanges" resultType="com.ds.goroute.entity.SocialSearchIndexRow">
+        SELECT <include refid="SearchIndexRowColumns"/>
+        FROM local_events e
+        WHERE (e.updated_at, e.id) &gt; (#{afterUpdatedAt}, #{afterId})
+        ORDER BY e.updated_at, e.id
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectSearchIndexMaxUpdatedAt" resultType="java.time.LocalDateTime">
+        SELECT MAX(updated_at) FROM local_events
+    </select>
+
     <select id="findSummariesByIds" resultType="com.ds.goroute.localevent.domain.LocalEvent">
         SELECT <include refid="SummaryColumns"/>
         FROM local_events e

@@ -30,4 +30,7 @@ public class AdminUnlinkedActivityResponse {
     private String placeId;
     private UUID customPlaceId;
     private LocalDateTime createdAt;
+    private LocalDateTime dismissedAt;
+    private UUID dismissedBy;
+    private String dismissedByName;
 }

@@ -33,23 +33,4 @@ public class UserQuotaPolicyService {
         return findOverride(userId).map(UserQuotaOverride::getFreeTripQuota)
                 .orElseGet(() -> businessConfig.getInt(BusinessConfigKey.TRIP_FREE_CREATION_QUOTA));
     }
-
-    public int aiTripQuota(UUID userId, String tier) {
-        boolean pro = "PRO".equalsIgnoreCase(tier);
-        Optional<UserQuotaOverride> override = findOverride(userId);
-        if (pro && override.isPresent() && override.get().getAiTripProQuota() != null) {
-            return override.get().getAiTripProQuota();
-        }
-        if (!pro && override.isPresent() && override.get().getAiTripFreeQuota() != null) {
-            return override.get().getAiTripFreeQuota();
-        }
-        return businessConfig.getInt(pro
-                ? BusinessConfigKey.AI_TRIP_PRO_QUOTA
-                : BusinessConfigKey.AI_TRIP_FREE_QUOTA);
-    }
-
-    public int socialLocationDailyLimit(UUID userId) {
-        return findOverride(userId).map(UserQuotaOverride::getSocialLocationDailyLimit)
-                .orElseGet(() -> businessConfig.getInt(BusinessConfigKey.SOCIAL_LOCATION_DAILY_JOB_LIMIT));
-    }
 }

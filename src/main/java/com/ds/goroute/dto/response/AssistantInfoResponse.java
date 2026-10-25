@@ -9,7 +9,7 @@ import java.util.UUID;
 
 /**
  * Pengoo as seen by one viewer of one conversation. Only set on a TRIP or ASSISTANT conversation
- * opened on its own (not in inbox lists), because the allowance is per viewer.
+ * opened on its own (not in inbox lists), because availability is per viewer.
  */
 @Data
 @Builder
@@ -22,8 +22,6 @@ public class AssistantInfoResponse {
     private String avatarUrl;
     /** The viewer may ask (feature on, or a beta user). */
     private boolean available;
-    private int dailyLimit;
-    private int usedToday;
     /** The viewer may apply proposals to the conversation's trip. */
     private boolean canEditTrip;
     /** The question being answered (or waiting) right now, so a thread opened mid-turn shows it. */

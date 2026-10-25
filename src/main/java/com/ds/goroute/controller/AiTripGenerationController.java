@@ -39,12 +39,22 @@ public class AiTripGenerationController extends BaseController {
             if ("QUEUED".equals(job.getStatus())) dispatcher.dispatch(job);
             return actualEmitter;
         } catch (Exception exception) {
-            // Send error as SSE event instead of throwing (which would try to return BaseResponse)
-            log.error("Could not create AI trip generation stream for user {}", userId, exception);
+            // Send error as SSE event instead of throwing (which would try to return BaseResponse).
+            // A business refusal (no credit, a run already going, no trip slot) keeps its code and
+            // data so the app can say why; anything else stays generic.
+            Map<String, Object> error = new java.util.LinkedHashMap<>();
+            error.put("message", STREAM_ERROR_MESSAGE);
+            if (exception instanceof com.ds.goroute.exception.BusinessException refused) {
+                log.info("AI trip generation refused for user {}: code {}", userId, refused.getError().getCode());
+                error.put("code", refused.getError().getCode());
+                if (refused.getError().getData() != null) error.put("data", refused.getError().getData());
+            } else {
+                log.error("Could not create AI trip generation stream for user {}", userId, exception);
+            }
             try {
                 emitter.send(SseEmitter.event()
                     .name("error")
-                    .data(Map.of("message", STREAM_ERROR_MESSAGE), MediaType.APPLICATION_JSON));
+                    .data(error, MediaType.APPLICATION_JSON));
             } catch (Exception sendException) {
                 log.error("Could not send AI trip generation stream error event", sendException);
             } finally {

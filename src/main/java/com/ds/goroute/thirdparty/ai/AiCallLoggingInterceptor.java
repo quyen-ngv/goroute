@@ -70,11 +70,19 @@ public class AiCallLoggingInterceptor {
         if (cached == null && usage != null) {
             cached = firstInt(usage.path("prompt_tokens_details"), "cached_tokens");
         }
+        Integer cacheWrite5m = null;
+        Integer cacheWrite1h = null;
         Integer anthropicCacheRead = firstInt(usage, "cache_read_input_tokens");
-        if (anthropicCacheRead != null) {
-            // Anthropic counts cache reads outside input_tokens; the log's input includes them.
-            cached = anthropicCacheRead;
-            input = (input == null ? 0 : input) + anthropicCacheRead;
+        Integer anthropicCacheWrite = firstInt(usage, "cache_creation_input_tokens");
+        if (anthropicCacheRead != null || anthropicCacheWrite != null) {
+            // Anthropic counts cache reads and writes outside input_tokens; the log's input includes them.
+            int read = anthropicCacheRead == null ? 0 : anthropicCacheRead;
+            int write = anthropicCacheWrite == null ? 0 : anthropicCacheWrite;
+            Integer oneHour = firstInt(usage.path("cache_creation"), "ephemeral_1h_input_tokens");
+            cacheWrite1h = Math.min(oneHour == null ? 0 : oneHour, write);
+            cacheWrite5m = write - cacheWrite1h;
+            cached = read;
+            input = (input == null ? 0 : input) + read + write;
         }
         Integer output = firstInt(usage, "completion_tokens", "output_tokens");
         String error = ok ? null : json(Map.of(
@@ -94,6 +102,8 @@ public class AiCallLoggingInterceptor {
                 .errorPayload(error)
                 .inputTokens(input)
                 .cachedInputTokens(cached)
+                .cacheWrite5mTokens(cacheWrite5m)
+                .cacheWrite1hTokens(cacheWrite1h)
                 .outputTokens(output)
                 .latencyMs(latencyMs)
                 .build());

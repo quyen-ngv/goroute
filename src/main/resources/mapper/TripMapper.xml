@@ -625,7 +625,7 @@
     </update>
 
     <!--
-         Feed search index (epic 12 §4.3): a trip is found by its name and destinations, then
+         Feed search index (epic 12 §4.4): a trip is found by its name and destinations, then
          by description, starting point and up to 60 stops, and ranks higher with more helpful
          votes and copies. Findable while public, not deleted and by a live account; takedowns
          are checked when results are read. Stops changed later reach the index with the next

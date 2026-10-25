@@ -4,15 +4,13 @@ import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.response.ReceiptScanAccessResponse;
 import com.ds.goroute.dto.response.ReceiptScanResponse;
 import com.ds.goroute.exception.BusinessException;
-import com.ds.goroute.mapper.AiApiCallMapper;
-import com.ds.goroute.repository.AiTripRepository;
 import com.ds.goroute.thirdparty.ai.AiCallScope;
 import com.ds.goroute.thirdparty.ai.VisionAiClient;
+import com.ds.goroute.type.AiCreditFeature;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.ExpenseCategory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.ds.goroute.service.time.UserTimeZones;
 import com.ds.goroute.utils.AppZones;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,10 +23,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Currency;
 import java.util.List;
@@ -39,8 +33,8 @@ import java.util.regex.Pattern;
 
 /**
  * Reads a receipt photo into the fields of a new expense. Nothing is stored: the app shows the
- * result for the user to correct and saves the expense itself. The daily allowance is counted
- * from ai_api_calls (feature {@value #FEATURE}, status SUCCEEDED), so a provider failure is free.
+ * result for the user to correct and saves the expense itself. The scan is charged in AI credits
+ * when its model call is logged; it needs AI_CREDIT.MIN_BALANCE_RECEIPT_SCAN to start.
  */
 @Slf4j
 @Service
@@ -87,19 +81,15 @@ public class ReceiptScanService {
     private final VisionAiClient visionClient;
     private final BusinessConfigService businessConfig;
     private final BetaAccessService betaAccess;
-    private final AiTripRepository subscriptions;
-    private final AiApiCallMapper aiApiCallMapper;
+    private final AiCreditService credits;
     private final ObjectMapper objectMapper;
-    private final UserTimeZones userTimeZones;
 
-    /** Replaced in tests; ai_api_calls timestamps are written in the JVM default zone. */
+    /** Replaced in tests. */
     Clock clock = Clock.systemDefaultZone();
 
     public ReceiptScanAccessResponse access(UUID userId) {
         return ReceiptScanAccessResponse.builder()
                 .available(isAvailable(userId))
-                .dailyLimit(dailyLimit(userId))
-                .usedToday(usedToday(userId))
                 .build();
     }
 
@@ -111,10 +101,7 @@ public class ReceiptScanService {
         if (!isAvailable(userId)) {
             throw new BusinessException(ErrorConstant.EXPENSE_RECEIPT_SCAN_UNAVAILABLE, HttpStatus.FORBIDDEN);
         }
-        int limit = dailyLimit(userId);
-        if (usedToday(userId) >= limit) {
-            throw new BusinessException(ErrorConstant.EXPENSE_RECEIPT_SCAN_DAILY_LIMIT, HttpStatus.TOO_MANY_REQUESTS);
-        }
+        credits.ensureCanStart(userId, AiCreditFeature.RECEIPT_SCAN);
         byte[] image = readImage(file);
         String mimeType = mimeTypeOf(image);
         String hint = normalizeCurrency(currencyHint);
@@ -122,34 +109,12 @@ public class ReceiptScanService {
         Optional<String> raw = AiCallScope.call(FEATURE, "SCAN", userId, null,
                 () -> visionClient.completeJson(SYSTEM_PROMPT, userPrompt(hint), image, mimeType));
 
-        ReceiptScanResponse result = raw.map(json -> parse(json, hint)).orElseGet(ReceiptScanService::unreadable);
-        result.setDailyLimit(limit);
-        result.setUsedToday(usedToday(userId));
-        return result;
+        return raw.map(json -> parse(json, hint)).orElseGet(ReceiptScanService::unreadable);
     }
 
     boolean isAvailable(UUID userId) {
         if (userId == null || !visionClient.isConfigured()) return false;
         return businessConfig.getBoolean(BusinessConfigKey.EXPENSE_RECEIPT_SCAN_ENABLED) || betaAccess.isBetaUser(userId);
-    }
-
-    int dailyLimit(UUID userId) {
-        String tier = subscriptions.getSubscriptionTier(userId);
-        boolean pro = tier != null && "PRO".equals(tier.trim().toUpperCase(Locale.ROOT));
-        return businessConfig.getInt(pro
-                ? BusinessConfigKey.EXPENSE_RECEIPT_SCAN_PRO_DAILY
-                : BusinessConfigKey.EXPENSE_RECEIPT_SCAN_FREE_DAILY);
-    }
-
-    int usedToday(UUID userId) {
-        return (int) aiApiCallMapper.countSucceededSince(userId, FEATURE, startOfToday(userId));
-    }
-
-    /** The user's local midnight, expressed in the clock's zone. */
-    LocalDateTime startOfToday(UUID userId) {
-        ZoneId zone = userTimeZones.zoneFor(userId);
-        ZonedDateTime localMidnight = ZonedDateTime.now(clock.withZone(zone)).truncatedTo(ChronoUnit.DAYS);
-        return localMidnight.withZoneSameInstant(clock.getZone()).toLocalDateTime();
     }
 
     static String userPrompt(String currencyHint) {

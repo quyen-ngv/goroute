@@ -10,6 +10,8 @@ import java.util.UUID;
 
 public interface ActivityCommerceService {
  List<MarketplaceActivityResponse> listPublic(String query,String kind,int page,int size);
+ /** Public list cards of the bookable products among these ids, any order. */
+ List<MarketplaceActivityResponse> listPublicByIds(java.util.Collection<UUID> ids);
  /** Other public products of the same kind (tour or ticket), nearest first. */
  List<MarketplaceActivityResponse> listSimilarPublic(UUID id,int size);
  /** Bookable dates of a public product across its enabled packages, for the date chips. */

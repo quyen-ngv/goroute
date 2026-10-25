@@ -73,6 +73,8 @@ class SocialLocationJobServiceImplTest {
     private StorageService storageService;
     private ObjectMapper objectMapper;
     private InternalPlaceSearchService internalPlaceSearchService;
+    private com.ds.goroute.service.AiCreditService credits;
+    private com.ds.goroute.service.AiTripQuotaService aiTripQuota;
     private SocialLocationJobServiceImpl service;
 
     /**
@@ -114,6 +116,8 @@ class SocialLocationJobServiceImplTest {
         storageService = mock(StorageService.class);
         candidateImageService = new SocialCandidateImageServiceImpl(storageService);
         internalPlaceSearchService = mock(InternalPlaceSearchService.class);
+        credits = mock(com.ds.goroute.service.AiCreditService.class);
+        aiTripQuota = mock(com.ds.goroute.service.AiTripQuotaService.class);
         objectMapper = new ObjectMapper();
         service = new SocialLocationJobServiceImpl(
                 jobMapper,
@@ -134,7 +138,8 @@ class SocialLocationJobServiceImplTest {
                 new InternalApiProperties("ai-token", "internal-token"),
                 candidateImageService,
                 internalPlaceSearchService,
-                org.mockito.Mockito.mock(com.ds.goroute.service.time.UserTimeZones.class)
+                credits,
+                aiTripQuota
         );
         ReflectionTestUtils.setField(service, "dispatchTimeoutSeconds", 90L);
         ReflectionTestUtils.setField(service, "jobTimeoutMinutes", 15L);
@@ -163,7 +168,6 @@ class SocialLocationJobServiceImplTest {
                 .build();
         when(jobMapper.findReusableByUserIdAndSourceKey(eq(userId), any())).thenReturn(legacyJob);
         when(jobMapper.markDeletedByIdAndUserId(legacyJobId, userId)).thenReturn(1);
-        when(socialConfigService.dailyJobLimit(userId)).thenReturn(10);
         when(socialConfigService.maxQueuedJobs()).thenReturn(100);
         when(socialConfigService.maxVideoSeconds("FREE")).thenReturn(180);
         when(aiTripRepository.getSubscriptionTier(userId)).thenReturn("FREE");
@@ -177,11 +181,10 @@ class SocialLocationJobServiceImplTest {
         verify(jobMapper).insert(inserted.capture());
         assertThat(inserted.getValue().getId()).isNotEqualTo(legacyJobId);
         assertThat(inserted.getValue().getStatus()).isEqualTo(SocialLocationJobStatus.QUEUED);
-        verify(jobMapper, never()).countCreatedByUserSince(eq(userId), any());
     }
 
     @Test
-    void saveSpotsStillChecksQuotaWhenAnOldCandidatePolicyMustBeReprocessed() {
+    void saveSpotsStillChecksCreditsWhenAnOldCandidatePolicyMustBeReprocessed() {
         UUID userId = UUID.randomUUID();
         UUID legacyJobId = UUID.randomUUID();
         String sourceUrl = "https://www.tiktok.com/@user/video/legacy";
@@ -195,8 +198,8 @@ class SocialLocationJobServiceImplTest {
                 .resultPayload("{\"extraction\":{\"candidates\":[]}}")
                 .build();
         when(jobMapper.findReusableByUserIdAndSourceKey(eq(userId), any())).thenReturn(legacyJob);
-        when(socialConfigService.dailyJobLimit(userId)).thenReturn(1);
-        when(jobMapper.countCreatedByUserSince(eq(userId), any())).thenReturn(1);
+        org.mockito.Mockito.doThrow(new BusinessException(com.ds.goroute.constant.ErrorConstant.AI_CREDIT_INSUFFICIENT, (Object) null))
+                .when(credits).ensureCanStart(userId, com.ds.goroute.type.AiCreditFeature.SOCIAL_LOCATION);
 
         assertThatThrownBy(() -> service.create(userId, CreateSocialLocationJobRequest.builder()
                 .url(sourceUrl)
@@ -204,7 +207,7 @@ class SocialLocationJobServiceImplTest {
                 .build()))
                 .isInstanceOf(BusinessException.class);
 
-        verify(jobMapper).countCreatedByUserSince(eq(userId), any());
+        verify(credits).ensureCanStart(userId, com.ds.goroute.type.AiCreditFeature.SOCIAL_LOCATION);
         verify(jobMapper, never()).insert(any());
     }
 
@@ -236,13 +239,11 @@ class SocialLocationJobServiceImplTest {
     }
 
     @Test
-    void saveSpotsChecksSocialQuotaButItineraryDoesNot() {
+    void saveSpotsChecksCreditsAndItineraryAlsoChecksTheTripNeeds() {
         UUID userId = UUID.randomUUID();
         String sourceUrl = "https://www.instagram.com/reel/123";
         when(jobMapper.findReusableByUserIdAndSourceKey(eq(userId), any())).thenReturn(null);
-        when(jobMapper.countCreatedByUserSince(eq(userId), any())).thenReturn(0);
         when(jobMapper.countQueued()).thenReturn(0);
-        when(socialConfigService.dailyJobLimit(userId)).thenReturn(5);
         when(socialConfigService.maxQueuedJobs()).thenReturn(100);
         when(socialConfigService.maxVideoSeconds("FREE")).thenReturn(180);
         when(aiTripRepository.getSubscriptionTier(userId)).thenReturn("FREE");
@@ -250,7 +251,7 @@ class SocialLocationJobServiceImplTest {
         service.create(userId, CreateSocialLocationJobRequest.builder()
                 .url(sourceUrl).operation(SocialLocationOperation.SAVE_SPOTS).build());
 
-        verify(jobMapper).countCreatedByUserSince(eq(userId), any());
+        verify(credits).ensureCanStart(userId, com.ds.goroute.type.AiCreditFeature.SOCIAL_LOCATION);
         ArgumentCaptor<SocialLocationJob> saveJob = ArgumentCaptor.forClass(SocialLocationJob.class);
         verify(jobMapper).insert(saveJob.capture());
         assertThat(saveJob.getValue().getOperation()).isEqualTo(SocialLocationOperation.SAVE_SPOTS);
@@ -262,7 +263,7 @@ class SocialLocationJobServiceImplTest {
                 .url("https://www.instagram.com/reel/456")
                 .operation(SocialLocationOperation.GEN_ITINERARY).build());
 
-        verify(jobMapper, never()).countCreatedByUserSince(any(), any());
+        verify(aiTripQuota).ensureCanGenerate(userId, com.ds.goroute.type.AiCreditFeature.SOCIAL_LOCATION);
     }
 
     @Test
@@ -282,7 +283,7 @@ class SocialLocationJobServiceImplTest {
 
         assertThat(response.getOperation()).isEqualTo(SocialLocationOperation.SAVE_SPOTS);
         verify(completionService).handleCompleted(eq(cached), any(JsonNode.class));
-        verify(jobMapper, never()).countCreatedByUserSince(any(), any());
+        verifyNoInteractions(credits);
         verify(jobMapper, never()).insert(any());
         verifyNoInteractions(scrapeServiceClient);
     }
@@ -306,7 +307,7 @@ class SocialLocationJobServiceImplTest {
         assertThat(response.getOperation()).isEqualTo(SocialLocationOperation.SAVE_SPOTS);
         assertThat(running.getOperation()).isEqualTo(SocialLocationOperation.SAVE_SPOTS);
         verify(jobMapper).update(running);
-        verify(jobMapper, never()).countCreatedByUserSince(any(), any());
+        verifyNoInteractions(credits);
         verify(jobMapper, never()).insert(any());
         verifyNoInteractions(scrapeServiceClient);
     }

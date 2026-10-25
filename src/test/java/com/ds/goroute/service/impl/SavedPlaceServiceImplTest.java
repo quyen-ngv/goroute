@@ -93,7 +93,7 @@ class SavedPlaceServiceImplTest {
         assertThat(place.getAddress()).isEqualTo("Hoà Vang, Đà Nẵng");
         assertThat(place.getLat()).isEqualTo(15.9977);
         assertThat(place.getLng()).isEqualTo(107.9886);
-        assertThat(place.getRating()).isEqualTo(4.6);
+        assertThat(place.getRating()).as("Google rating, not the recalculated one").isEqualTo(4.4);
         assertThat(place.getPhotoUrl()).isEqualTo("https://img/ba-na.jpg");
         assertThat(place.getPlaceCategory()).isEqualTo("Theme park");
         assertThat(place.getLocationImageId()).isEqualTo(areaId);

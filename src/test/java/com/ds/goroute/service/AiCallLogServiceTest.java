@@ -28,6 +28,7 @@ class AiCallLogServiceTest {
     private final AiApiCallMapper mapper = mock(AiApiCallMapper.class);
     private final AppConfigRepository configs = mock(AppConfigRepository.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final AiCreditService credits = mock(AiCreditService.class);
     private AiCallLogService service;
 
     @BeforeEach
@@ -35,9 +36,12 @@ class AiCallLogServiceTest {
         AppConfig price = new AppConfig();
         price.setKey("DeepSeek-Chat");
         price.setValue("{\"input\":0.28,\"cachedInput\":0.028,\"output\":0.42,\"webSearchPer1k\":10}");
+        AppConfig claude = new AppConfig();
+        claude.setKey("claude-sonnet-5-5");
+        claude.setValue("{\"input\":2,\"cachedInput\":0.1,\"cacheWrite1h\":5,\"output\":10}");
         when(configs.findAdmin(eq(null), eq(AiCallLogService.PRICING_LABEL), anyBoolean(), anyInt(), anyInt()))
-                .thenReturn(List.of(price));
-        service = new AiCallLogService(mapper, configs, objectMapper);
+                .thenReturn(List.of(price, claude));
+        service = new AiCallLogService(mapper, configs, objectMapper, credits);
     }
 
     @Test
@@ -52,6 +56,17 @@ class AiCallLogServiceTest {
         assertThat(saved.getTotalTokens()).isEqualTo(1_100_000);
         assertThat(saved.getId()).isNotNull();
         assertThat(saved.getCreatedAt()).isNotNull();
+    }
+
+    @Test
+    void pricesCacheWritesWithTheirOwnRateOrTheAnthropicMultiplier() {
+        service.record(AiApiCall.builder().feature("ASSISTANT").operation("ASSISTANT_TURN").model("claude-sonnet-5-5")
+                .status("SUCCEEDED").inputTokens(1_000_000).cachedInputTokens(400_000)
+                .cacheWrite5mTokens(200_000).cacheWrite1hTokens(100_000).outputTokens(10_000).build());
+
+        // 300k fresh * 2 + 400k read * 0.1 + 200k 5m write * 2.5 (1.25x, no price) + 100k 1h write * 5
+        // + 10k out * 10 = 0.6 + 0.04 + 0.5 + 0.5 + 0.1
+        assertThat(captured().getCostUsd()).isEqualByComparingTo("1.74");
     }
 
     @Test
@@ -98,6 +113,18 @@ class AiCallLogServiceTest {
         assertThat(stats.get(0).getCostUsd()).isEqualByComparingTo("1.28");
         assertThat(stats.get(0).isMissingPrice()).isFalse();
         assertThat(stats.get(1).isMissingPrice()).isTrue();
+    }
+
+    @Test
+    void statsPriceUnpricedCacheWrites() {
+        AiApiCallStatResponse row = new AiApiCallStatResponse();
+        row.setModel("claude-sonnet-5-5");
+        row.setStoredCostUsd(BigDecimal.ZERO);
+        row.setUnpricedInputTokens(1_000_000);
+        row.setUnpricedCacheWrite1hTokens(1_000_000);
+        when(mapper.stats(any())).thenReturn(List.of(row));
+
+        assertThat(service.stats(new AiApiCallFilter()).get(0).getCostUsd()).isEqualByComparingTo("5");
     }
 
     private AiApiCall captured() {

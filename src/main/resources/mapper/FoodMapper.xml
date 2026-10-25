@@ -95,6 +95,7 @@
         <result property="title" column="title"/>
         <result property="thumbnail" column="thumbnail"/>
         <result property="adjustedRating" column="adjusted_rating"/>
+        <result property="reviewRating" column="review_rating"/>
         <result property="priceRange" column="price_range"/>
         <result property="address" column="address"/>
         <result property="latitude" column="latitude"/>
@@ -287,7 +288,7 @@
         INNER JOIN place_foods pf ON pf.place_id = p.id
         WHERE pf.food_id = #{foodId}
         <if test="citySlugJson != null">
-            AND p.destinations @&gt; #{citySlugJson}::jsonb
+            AND jsonb_exists_any(p.destinations, ARRAY(SELECT jsonb_array_elements_text(CAST(#{citySlugJson} AS jsonb))))
         </if>
     </select>
 
@@ -296,7 +297,7 @@
         INNER JOIN place_foods pf ON pf.place_id = p.id
         WHERE pf.food_id = #{foodId}
         <if test="citySlugJson != null">
-            AND p.destinations @&gt; #{citySlugJson}::jsonb
+            AND jsonb_exists_any(p.destinations, ARRAY(SELECT jsonb_array_elements_text(CAST(#{citySlugJson} AS jsonb))))
         </if>
     </sql>
 
@@ -304,7 +305,7 @@
         <choose>
             <when test="useDistance">
                 SELECT * FROM (
-                    SELECT p.id, p.title, p.thumbnail, p.adjusted_rating, p.price_range, p.address,
+                    SELECT p.id, p.title, p.thumbnail, p.adjusted_rating, p.review_rating, p.price_range, p.address,
                            p.latitude, p.longitude,
                            ST_Distance(
                                goroute_point(p.latitude, p.longitude),
@@ -315,7 +316,7 @@
                 ORDER BY distance_meters ASC NULLS LAST, id
             </when>
             <otherwise>
-                SELECT p.id, p.title, p.thumbnail, p.adjusted_rating, p.price_range, p.address,
+                SELECT p.id, p.title, p.thumbnail, p.adjusted_rating, p.review_rating, p.price_range, p.address,
                        p.latitude, p.longitude, NULL::float8 AS distance_meters
                 <include refid="foodPlacesBase"/>
                 ORDER BY p.adjusted_rating DESC NULLS LAST, p.id
@@ -330,7 +331,7 @@
     </select>
 
     <select id="findLinkedPlacesAdmin" resultMap="FoodPlaceRowMap">
-        SELECT p.id, p.title, p.thumbnail, p.adjusted_rating, p.price_range, p.address,
+        SELECT p.id, p.title, p.thumbnail, p.adjusted_rating, p.review_rating, p.price_range, p.address,
                p.latitude, p.longitude, NULL::float8 AS distance_meters
         <include refid="foodPlacesBase"/>
         ORDER BY p.title, p.id
@@ -358,6 +359,26 @@
         LEFT JOIN food_city_scores fcs ON fcs.food_id = f.id AND fcs.city_slug = #{citySlug}
         WHERE pf.place_id = #{placeId}
         ORDER BY fcs.score DESC NULLS LAST, f.name_en ASC
+    </select>
+
+    <resultMap id="FoodAssetUsageRowMap" type="com.ds.goroute.entity.FoodAssetUsageRow">
+        <result property="assetId" column="asset_id"/>
+        <result property="foodId" column="food_id"/>
+        <result property="nameVi" column="name_vi"/>
+        <result property="nameEn" column="name_en"/>
+    </resultMap>
+
+    <!-- Foods whose core_ingredients name one of the given library assets (asset_library). -->
+    <select id="findIngredientAssetUsages" resultMap="FoodAssetUsageRowMap">
+        SELECT DISTINCT CAST(ingredient->>'assetId' AS uuid) AS asset_id, f.id AS food_id, f.name_vi, f.name_en
+        FROM foods f
+        CROSS JOIN LATERAL jsonb_array_elements(
+            CASE WHEN jsonb_typeof(f.core_ingredients::jsonb) = 'array'
+                 THEN f.core_ingredients::jsonb ELSE '[]'::jsonb END) AS ingredient
+        WHERE f.core_ingredients IS NOT NULL
+          AND ingredient->>'assetId' IN
+        <foreach collection="assetIds" item="id" open="(" separator="," close=")">CAST(#{id} AS text)</foreach>
+        ORDER BY f.name_en
     </select>
 
 </mapper>

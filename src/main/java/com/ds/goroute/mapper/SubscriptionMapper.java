@@ -45,4 +45,7 @@ public interface SubscriptionMapper {
 
     /** Position in this user's own sequence of grants, used to build a repeatable reference key. */
     int countGrants(@Param("userId") UUID userId);
+
+    int updatePlanAiCredits(@Param("code") String code, @Param("creditsPerRefill") java.math.BigDecimal creditsPerRefill,
+                            @Param("refillMonths") int refillMonths);
 }

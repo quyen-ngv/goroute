@@ -20,6 +20,18 @@ public interface LocalEventRepository {
 
     Optional<LocalEvent> findPublishedById(UUID id);
 
+    /** Of these ids, the events the public list would show at {@code nowUtc}; any order. */
+    List<LocalEvent> findPublicSummariesByIds(Collection<UUID> ids, LocalDateTime nowUtc);
+
+    /** Feed search index: the next {@code limit} findable events after {@code afterId} (null: from the start). */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexPage(UUID afterId, int limit);
+
+    /** Feed search index: events changed after the cursor, each saying whether it is still findable. */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexChanges(
+            LocalDateTime afterUpdatedAt, UUID afterId, int limit);
+
+    Optional<LocalDateTime> findSearchIndexMaxUpdatedAt();
+
     List<LocalEvent> findForAdmin(LocalEventAdminSearchParams params);
 
     long countForAdmin(LocalEventAdminSearchParams params);

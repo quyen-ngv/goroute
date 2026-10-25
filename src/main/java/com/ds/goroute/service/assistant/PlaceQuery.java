@@ -56,7 +56,9 @@ record PlaceQuery(String words, List<String> subTypes, List<String> groups) {
         kind(List.of("PARK"), "cong vien", "park", "vuon");
         kind(List.of("NATURE"), "thac", "nui", "rung", "waterfall", "mountain", "nature", "trekking");
         kind(List.of("VIEWPOINT"), "ngam canh", "view point", "viewpoint", "hoang hon", "sunset", "ngam hoang hon");
-        kind(List.of("MARKET"), "cho dem", "cho truyen thong", "market", "night market");
+        // A bare "cho" is also the verb "give" ("cho mình"), so only market phrases count.
+        kind(List.of("MARKET"), "cho dem", "cho truyen thong", "market", "night market", "cho sang", "cho ca",
+                "cho hai san", "cho bien", "cho que", "cho phien", "cho noi", "fish market", "morning market");
         kind(List.of("SHOPPING"), "mua sam", "shopping", "mall", "trung tam thuong mai", "qua luu niem");
         kind(List.of("ENTERTAINMENT"), "board game", "boardgame", "karaoke", "bowling", "giai tri", "entertainment",
                 "escape room", "phong game", "billiard", "bida");
@@ -141,7 +143,9 @@ record PlaceQuery(String words, List<String> subTypes, List<String> groups) {
 
     /** The place group from the explicit kind, else from the sub types when they all share one. */
     private static List<String> groups(String kind, Set<String> subTypes) {
-        if (kind != null) {
+        // The types decide when there are any: "kind food" with MARKET (a sight) used to filter the
+        // market out before the search ran (prod 2026-10-25, "chợ buổi sáng ở bãi biển").
+        if (kind != null && subTypes.isEmpty()) {
             switch (kind.toLowerCase(Locale.ROOT)) {
                 case "food" -> {
                     return List.of(PlaceGroup.FOOD_AND_DRINK.name());

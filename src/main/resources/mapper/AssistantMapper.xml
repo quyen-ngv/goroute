@@ -100,9 +100,11 @@
         WHERE conversation_id = #{conversationId} AND status IN ('QUEUED', 'RUNNING')
     </select>
 
-    <select id="countCountedTurnsSince" resultType="long">
+    <!-- One question per asker at a time across conversations, so credit cannot run far below zero. -->
+    <select id="countOpenTurnsOfUserElsewhere" resultType="long">
         SELECT COUNT(*) FROM assistant_turns
-        WHERE user_id = #{userId} AND counted = TRUE AND created_at &gt;= #{since}
+        WHERE user_id = #{userId} AND conversation_id &lt;&gt; #{conversationId}
+          AND status IN ('QUEUED', 'RUNNING')
     </select>
 
     <update id="markTurnRunning">

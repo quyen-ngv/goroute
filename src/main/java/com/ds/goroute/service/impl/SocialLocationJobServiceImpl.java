@@ -14,6 +14,8 @@ import com.ds.goroute.mapper.PlaceImportJobMapper;
 import com.ds.goroute.mapper.PlaceMapper;
 import com.ds.goroute.mapper.SocialLocationJobMapper;
 import com.ds.goroute.entity.Place;
+import com.ds.goroute.service.AiCreditService;
+import com.ds.goroute.service.AiTripQuotaService;
 import com.ds.goroute.service.SocialLocationJobService;
 import com.ds.goroute.service.PlaceImportJobService;
 import com.ds.goroute.service.PlaceSocialVideoService;
@@ -22,6 +24,7 @@ import com.ds.goroute.service.NotificationService;
 import com.ds.goroute.service.SocialLocationCompletionService;
 import com.ds.goroute.service.SocialCandidateImageService;
 import com.ds.goroute.service.InternalPlaceSearchService;
+import com.ds.goroute.type.AiCreditFeature;
 import com.ds.goroute.type.SocialMapSearchProvider;
 import com.ds.goroute.repository.AiTripRepository;
 import com.ds.goroute.repository.SocialLocationRestrictionRepository;
@@ -106,7 +109,8 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
 
     private final InternalPlaceSearchService internalPlaceSearchService;
 
-    private final com.ds.goroute.service.time.UserTimeZones userTimeZones;
+    private final AiCreditService credits;
+    private final AiTripQuotaService aiTripQuota;
 
     @Value("${social-location.dispatch-timeout-seconds:90}")
     private long dispatchTimeoutSeconds;
@@ -171,9 +175,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
             return toResponse(reusableJob);
         }
 
-        if (requestedOperation == SocialLocationOperation.SAVE_SPOTS) {
-            enforceDailyLimit(userId, sourceUrl);
-        }
+        ensureCredits(userId, sourceUrl, requestedOperation);
         if (jobMapper.countQueued() >= socialConfig.maxQueuedJobs()) {
             audit(userId, null, sourceUrl, "REJECTED_QUEUE_FULL", "QUEUE_FULL", null);
             throw new BusinessException(ErrorConstant.SOCIAL_LOCATION_QUEUE_FULL,
@@ -222,15 +224,31 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         return toResponse(job);
     }
 
-    private void enforceDailyLimit(UUID userId, String sourceUrl) {
-        int dailyJobLimit = socialConfig.dailyJobLimit(userId);
-        if (jobMapper.countCreatedByUserSince(userId,
-                userTimeZones.startOfTodayUtc(userId, java.time.Clock.systemUTC())) < dailyJobLimit) {
-            return;
+    /**
+     * Extraction is charged in AI credits. An itinerary request also needs what an AI trip needs
+     * (credits and a trip slot) before the video is analysed, so the extraction is not paid for
+     * a plan that could never be made.
+     */
+    private void ensureCredits(UUID userId, String sourceUrl, SocialLocationOperation operation) {
+        try {
+            if (operation == SocialLocationOperation.GEN_ITINERARY) {
+                aiTripQuota.ensureCanGenerate(userId, AiCreditFeature.SOCIAL_LOCATION);
+            } else {
+                credits.ensureCanStart(userId, AiCreditFeature.SOCIAL_LOCATION);
+            }
+        } catch (BusinessException refused) {
+            audit(userId, null, sourceUrl, "REJECTED_CREDIT", "INSUFFICIENT_CREDIT_OR_TRIP_SLOT", null);
+            throw refused;
         }
-        audit(userId, null, sourceUrl, "REJECTED_DAILY_LIMIT", "DAILY_LIMIT_REACHED", null);
-        throw new BusinessException(ErrorConstant.SOCIAL_LOCATION_DAILY_LIMIT_REACHED,
-                Map.of("dailyLimit", dailyJobLimit));
+    }
+
+    /**
+     * A job that failed or timed out on our side gives its credits back. A social job costs a few
+     * credits at most, so it is never stopped mid-way for credit; the start check is enough.
+     */
+    private void refundIfFailed(SocialLocationJob job, SocialLocationJobStatus status) {
+        if (status != SocialLocationJobStatus.FAILED && status != SocialLocationJobStatus.TIMED_OUT) return;
+        credits.refundTask(job.getUserId(), job.getId().toString(), "Social video job " + status.name().toLowerCase(java.util.Locale.ROOT));
     }
 
     /**
@@ -547,10 +565,12 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
             job.setStatus(SocialLocationJobStatus.TIMED_OUT);
             job.setNextAttemptAt(null);
             job.setCompletedAt(now);
+            refundIfFailed(job, SocialLocationJobStatus.TIMED_OUT);
         } else {
             job.setStatus(SocialLocationJobStatus.FAILED);
             job.setNextAttemptAt(null);
             job.setCompletedAt(now);
+            refundIfFailed(job, SocialLocationJobStatus.FAILED);
         }
         job.setUpdatedAt(now);
     }
@@ -696,6 +716,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         job.setUpdatedAt(LocalDateTime.now());
         jobMapper.update(job);
         recordAiApiCall(job, request, status);
+        refundIfFailed(job, status);
         if (status == SocialLocationJobStatus.REJECTED_TOPIC) {
             recordTopicViolation(job, request.getError());
         } else if (status == SocialLocationJobStatus.REJECTED_DURATION) {

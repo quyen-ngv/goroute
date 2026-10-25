@@ -2,6 +2,7 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.AiApiCallLogRequest;
+import com.ds.goroute.dto.response.AiCreditStatus;
 import com.ds.goroute.entity.SocialLocationJob;
 import com.ds.goroute.mapper.SocialLocationJobMapper;
 import com.ds.goroute.service.AiCallLogService;
@@ -28,9 +29,8 @@ public class InternalAiCallController extends BaseController {
     private final SocialLocationJobMapper socialJobMapper;
 
     @PostMapping
-    public ResponseEntity<BaseResponse<Void>> record(@Valid @RequestBody AiApiCallLogRequest request) {
-        service.record(request, ownerOf(request));
-        return ResponseEntity.ok(ofSucceeded(null));
+    public ResponseEntity<BaseResponse<AiCreditStatus>> record(@Valid @RequestBody AiApiCallLogRequest request) {
+        return ResponseEntity.ok(ofSucceeded(service.record(request, ownerOf(request))));
     }
 
     /** The social worker reports with traceId = backend job id; attach that job's user. */

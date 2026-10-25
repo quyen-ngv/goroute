@@ -147,14 +147,24 @@ class PublicPageServiceImplTest {
     }
 
     @Test
-    void aTripThatIsNotPublicKeepsTheGenericPage() {
+    void aLinkOnlyTripPreviewsButStaysOutOfSearch() {
         Trip shared = trip(TripVisibility.SHARED);
-        Trip takenDown = trip(TripVisibility.PUBLIC);
         when(trips.findById(shared.getId())).thenReturn(Optional.of(shared));
+
+        assertThat(service.tripPage(shared.getId()).html())
+                .contains("<title>Đà Lạt 3N2Đ · Vietdetour</title>")
+                .contains("<meta name=\"robots\" content=\"noindex\">");
+    }
+
+    @Test
+    void aTripNobodyMayReadByLinkKeepsTheGenericPage() {
+        Trip privateTrip = trip(TripVisibility.PRIVATE);
+        Trip takenDown = trip(TripVisibility.PUBLIC);
+        when(trips.findById(privateTrip.getId())).thenReturn(Optional.of(privateTrip));
         when(trips.findById(takenDown.getId())).thenReturn(Optional.of(takenDown));
         when(moderation.isTakenDown(ModeratedContentType.TRIP, takenDown.getId())).thenReturn(true);
 
-        assertThat(service.tripPage(shared.getId()).html()).contains(PublicPageServiceImpl.TRIP_TITLE_TAG)
+        assertThat(service.tripPage(privateTrip.getId()).html()).contains(PublicPageServiceImpl.TRIP_TITLE_TAG)
                 .doesNotContain("Đà Lạt 3N2Đ");
         assertThat(service.tripPage(takenDown.getId()).html()).contains(PublicPageServiceImpl.TRIP_TITLE_TAG)
                 .doesNotContain("Đà Lạt 3N2Đ");

@@ -4,6 +4,7 @@ import com.ds.goroute.config.filter.AcceptLanguageFilter;
 import com.ds.goroute.dto.response.FoodSummaryResponse;
 import com.ds.goroute.entity.FoodWithScoreRow;
 import com.ds.goroute.repository.FoodRepository;
+import com.ds.goroute.repository.LibraryAssetRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.ExchangeRateService;
 import com.ds.goroute.service.FoodService;
@@ -53,7 +54,8 @@ class FoodServiceImplCacheKeyTest {
         @Bean
         FoodService foodService(FoodRepository foodRepository) {
             return new FoodServiceImpl(foodRepository, mock(PlaceRepository.class), mock(ExchangeRateService.class),
-                    mock(ImageStorageCleanupService.class), mock(PlaceSearchIndexService.class));
+                    mock(ImageStorageCleanupService.class), mock(PlaceSearchIndexService.class),
+                    mock(LibraryAssetRepository.class));
         }
     }
 

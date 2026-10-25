@@ -109,6 +109,9 @@ public class ClaudeMessages {
         tokens.put("output_tokens", usage.outputTokens());
         usage.cacheReadInputTokens().ifPresent(v -> tokens.put("cache_read_input_tokens", v));
         usage.cacheCreationInputTokens().ifPresent(v -> tokens.put("cache_creation_input_tokens", v));
+        usage.cacheCreation().ifPresent(v -> tokens.put("cache_creation", Map.of(
+                "ephemeral_5m_input_tokens", v.ephemeral5mInputTokens(),
+                "ephemeral_1h_input_tokens", v.ephemeral1hInputTokens())));
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", message.model().asString());
         body.put("stop_reason", message.stopReason().map(StopReason::asString).orElse(null));

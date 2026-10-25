@@ -40,11 +40,6 @@ public class ErrorConstant {
     public static final int PRO_VIDEO_UPLOAD_REQUIRED = 4000107;
 
     /**
-     * The user's subscription has no remaining AI trip generations.
-     */
-    public static final int AI_TRIP_QUOTA_EXHAUSTED = 4000104;
-
-    /**
      * An AI trip draft can no longer be confirmed.
      */
 
@@ -75,7 +70,6 @@ public class ErrorConstant {
      */
     public static final int TRIP_GUEST_HAS_EXPENSES = 4000503;
 
-    public static final int SOCIAL_LOCATION_DAILY_LIMIT_REACHED = 4000601;
     public static final int SOCIAL_LOCATION_QUEUE_FULL = 4000602;
     public static final int SOCIAL_LOCATION_TEMPORARILY_BLOCKED = 4000603;
     public static final int SOCIAL_LOCATION_PERMANENTLY_BLOCKED = 4000604;
@@ -88,9 +82,6 @@ public class ErrorConstant {
 
     /** Receipt scan: the upload is not a readable image or is over the size limit. */
     public static final int EXPENSE_RECEIPT_SCAN_INVALID_IMAGE = 4001103;
-
-    /** Receipt scan: today's allowance (EXPENSE.RECEIPT_SCAN_FREE_DAILY / _PRO_DAILY) is used. */
-    public static final int EXPENSE_RECEIPT_SCAN_DAILY_LIMIT = 4001104;
 
     /**
      * Content moderation (epic 12). The blocked-content code carries the violated policy
@@ -276,6 +267,9 @@ public class ErrorConstant {
     /** The user has no participant row in this meetup. */
     public static final int MEETUP_PARTICIPANT_NOT_FOUND = 4041602;
 
+    /** Asset library (epic 06 §2.5b): no such library asset. */
+    public static final int ASSET_LIBRARY_NOT_FOUND = 4040611;
+
     /** Local events (epic 17): no such event, or (publicly) not published. */
     public static final int LOCAL_EVENT_NOT_FOUND = 4041501;
     public static final int LOCAL_EVENT_IMPORT_BATCH_NOT_FOUND = 4041502;
@@ -296,11 +290,26 @@ public class ErrorConstant {
     /** Saved categories (epic 06): renaming onto a name another of the user's categories has. */
     public static final int SAVED_CATEGORY_NAME_TAKEN = 4090601;
 
+    /** Asset library (epic 06 §2.5b): another asset of the collection already has this key. */
+    public static final int ASSET_LIBRARY_KEY_TAKEN = 4090611;
+
+    /** Asset library: the asset is still referenced (for example by a food ingredient), so it cannot be deleted. */
+    public static final int ASSET_LIBRARY_IN_USE = 4090612;
+
     /** Meetups (epic 18): hosting or joining needs a declared birth year first. */
     public static final int MEETUP_BIRTH_YEAR_REQUIRED = 4091601;
 
     /** The host already has MEETUP/MAX_ACTIVE_PER_HOST meetups pending or live. */
     public static final int MEETUP_HOST_LIMIT = 4091602;
+
+    /**
+     * AI credits (V254): the balance is below what the feature needs to start
+     * (AI_CREDIT.MIN_BALANCE_*). Data: {@code {feature, balance, required}}. HTTP 402.
+     */
+    public static final int AI_CREDIT_INSUFFICIENT = 4020101;
+
+    /** The user already has an AI task of this kind running (one at a time per user). */
+    public static final int AI_TASK_ALREADY_RUNNING = 4090701;
 
     /** The user already has MEETUP/MAX_OPEN_REQUESTS_PER_USER join requests waiting. */
     public static final int MEETUP_REQUEST_LIMIT = 4091603;

@@ -1466,7 +1466,7 @@ public class TripServiceImpl implements TripService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
 
-        if (!canViewPublicTrip(trip, viewerId)) {
+        if (!canViewPublicTrip(trip)) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Trip is not shared");
         }
 
@@ -1655,21 +1655,18 @@ public class TripServiceImpl implements TripService {
     }
 
     /**
-     * Whether {@code viewerId} may read this trip through the anonymous public endpoint.
+     * Whether this trip may be read through the anonymous public endpoint.
      *
-     * <p>PUBLIC is open to anyone. SHARED means "members only", not "anyone with the
-     * link" -- it must never fall through to open access just because it is not PRIVATE,
-     * which is the mistake this method exists to make impossible to repeat. PRIVATE is
-     * never viewable here at all.
+     * <p>PUBLIC is open to anyone and listed. SHARED is the share dialog's "Link only": anyone
+     * holding the link may read it, it is just never listed or searchable -- the trip id is the
+     * unguessable part. Restricting SHARED to members broke every shared link, because the
+     * people a link is sent to are by definition not members yet. PRIVATE is never viewable
+     * here, not even by its owner. Mirrors {@code TripAccessGuard.requirePublicView}.
      */
-    boolean canViewPublicTrip(Trip trip, UUID viewerId) {
-        return switch (trip.getVisibility()) {
-            case PUBLIC -> true;
-            case SHARED -> viewerId != null
-                    && (trip.getOwnerId().equals(viewerId)
-                            || tripMemberRepository.findByTripIdAndUserId(trip.getId(), viewerId)
-                                    .filter(member -> member.getStatus() == MemberStatus.ACCEPTED)
-                                    .isPresent());
+    boolean canViewPublicTrip(Trip trip) {
+        TripVisibility visibility = trip.getVisibility() == null ? TripVisibility.PRIVATE : trip.getVisibility();
+        return switch (visibility) {
+            case PUBLIC, SHARED -> true;
             case PRIVATE -> false;
         };
     }

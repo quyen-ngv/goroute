@@ -1,6 +1,7 @@
 package com.ds.goroute.repository.impl;
 
 import com.ds.goroute.entity.Food;
+import com.ds.goroute.entity.FoodAssetUsageRow;
 import com.ds.goroute.entity.FoodCityScore;
 import com.ds.goroute.entity.FoodPlaceRow;
 import com.ds.goroute.entity.FoodTagRow;
@@ -11,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -148,5 +150,13 @@ public class FoodRepositoryImpl implements FoodRepository {
     @Override
     public List<FoodWithScoreRow> findFoodsByPlaceId(UUID placeId, String citySlug) {
         return foodMapper.findFoodsByPlaceId(placeId, citySlug);
+    }
+
+    @Override
+    public List<FoodAssetUsageRow> findIngredientAssetUsages(Collection<UUID> assetIds) {
+        if (assetIds == null || assetIds.isEmpty()) {
+            return List.of();
+        }
+        return foodMapper.findIngredientAssetUsages(assetIds);
     }
 }

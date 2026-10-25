@@ -27,6 +27,9 @@ public class AiApiCallLogRequest {
     private JsonNode error;
     @PositiveOrZero private Integer inputTokens;
     @PositiveOrZero private Integer cachedInputTokens;
+    /** Prompt-cache writes, part of inputTokens like cachedInputTokens. */
+    @PositiveOrZero private Integer cacheWrite5mTokens;
+    @PositiveOrZero private Integer cacheWrite1hTokens;
     @PositiveOrZero private Integer outputTokens;
     @PositiveOrZero private Integer webSearchCalls;
     @PositiveOrZero private Long latencyMs;

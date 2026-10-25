@@ -17,6 +17,7 @@ public class FoodPlaceRow {
     private String title;
     private String thumbnail;
     private BigDecimal adjustedRating;
+    private BigDecimal reviewRating;
     private String priceRange;
     private String address;
     private BigDecimal latitude;

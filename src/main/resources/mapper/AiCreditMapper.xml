@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ds.goroute.mapper.AiCreditMapper">
+
+    <sql id="walletColumns">
+        user_id AS userId, plan_balance AS planBalance, purchased_balance AS purchasedBalance,
+        plan_code AS planCode, plan_period_start AS planPeriodStart, plan_period_end AS planPeriodEnd,
+        lifetime_spent AS lifetimeSpent, created_at AS createdAt, updated_at AS updatedAt
+    </sql>
+
+    <sql id="transactionColumns">
+        id, user_id AS userId, transaction_type AS transactionType, amount,
+        plan_amount AS planAmount, purchased_amount AS purchasedAmount,
+        plan_balance_after AS planBalanceAfter, purchased_balance_after AS purchasedBalanceAfter,
+        reference_key AS referenceKey, feature, trace_id AS traceId, ai_api_call_id AS aiApiCallId,
+        cost_usd AS costUsd, reverses_transaction_id AS reversesTransactionId, note,
+        created_by AS createdBy, created_at AS createdAt
+    </sql>
+
+    <insert id="insertWalletIfAbsent">
+        INSERT INTO ai_credit_wallets (user_id) VALUES (#{userId})
+        ON CONFLICT (user_id) DO NOTHING
+    </insert>
+
+    <!-- Every write for one user is serialised behind this row lock. -->
+    <select id="findWalletForUpdate" resultType="com.ds.goroute.entity.AiCreditWallet">
+        SELECT <include refid="walletColumns"/>
+        FROM ai_credit_wallets
+        WHERE user_id = #{userId}
+        FOR UPDATE
+    </select>
+
+    <update id="updateWallet">
+        UPDATE ai_credit_wallets
+        SET plan_balance = #{wallet.planBalance},
+            purchased_balance = #{wallet.purchasedBalance},
+            plan_code = #{wallet.planCode},
+            plan_period_start = #{wallet.planPeriodStart},
+            plan_period_end = #{wallet.planPeriodEnd},
+            lifetime_spent = #{wallet.lifetimeSpent},
+            updated_at = NOW()
+        WHERE user_id = #{wallet.userId}
+    </update>
+
+    <select id="countReference" resultType="long">
+        SELECT COUNT(*) FROM ai_credit_transactions WHERE reference_key = #{referenceKey}
+    </select>
+
+    <insert id="insertTransaction">
+        INSERT INTO ai_credit_transactions (
+            id, user_id, transaction_type, amount, plan_amount, purchased_amount,
+            plan_balance_after, purchased_balance_after, reference_key, feature, trace_id,
+            ai_api_call_id, cost_usd, reverses_transaction_id, note, created_by
+        ) VALUES (
+            #{tx.id}, #{tx.userId}, #{tx.transactionType}, #{tx.amount}, #{tx.planAmount}, #{tx.purchasedAmount},
+            #{tx.planBalanceAfter}, #{tx.purchasedBalanceAfter}, #{tx.referenceKey}, #{tx.feature}, #{tx.traceId},
+            #{tx.aiApiCallId}, #{tx.costUsd}, #{tx.reversesTransactionId}, #{tx.note}, #{tx.createdBy}
+        )
+    </insert>
+
+    <!-- Served by idx_ai_credit_transactions_trace. -->
+    <select id="findOpenCharges" resultType="com.ds.goroute.entity.AiCreditTransaction">
+        SELECT <include refid="transactionColumns"/>
+        FROM ai_credit_transactions t
+        WHERE t.trace_id = #{traceId}
+          AND t.user_id = #{userId}
+          AND t.transaction_type = 'CHARGE'
+          AND NOT EXISTS (
+              SELECT 1 FROM ai_credit_transactions r WHERE r.reverses_transaction_id = t.id
+          )
+        ORDER BY t.created_at
+    </select>
+
+    <!-- Served by idx_ai_credit_transactions_user_created. -->
+    <select id="findTransactions" resultType="com.ds.goroute.entity.AiCreditTransaction">
+        SELECT <include refid="transactionColumns"/>
+        FROM ai_credit_transactions
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC, id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countTransactions" resultType="long">
+        SELECT COUNT(*) FROM ai_credit_transactions WHERE user_id = #{userId}
+    </select>
+
+    <select id="findPlan" resultType="com.ds.goroute.entity.AiCreditPlan">
+        SELECT us.tier, us.plan_code AS planCode, us.started_at AS startedAt, us.expires_at AS expiresAt,
+               sp.ai_credits_per_refill AS creditsPerRefill, sp.ai_credit_refill_months AS refillMonths
+        FROM user_subscriptions us
+        LEFT JOIN subscription_plans sp ON sp.code = us.plan_code
+        WHERE us.user_id = #{userId}
+    </select>
+
+    <select id="findPlanByCode" resultType="com.ds.goroute.entity.AiCreditPlan">
+        SELECT tier, code AS planCode, ai_credits_per_refill AS creditsPerRefill,
+               ai_credit_refill_months AS refillMonths
+        FROM subscription_plans
+        WHERE code = #{planCode}
+    </select>
+</mapper>

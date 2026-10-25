@@ -11,9 +11,17 @@
         <result column="price_currency" property="priceCurrency"/>
         <result column="is_active" property="isActive"/>
         <result column="sort_order" property="sortOrder"/>
+        <result column="ai_credits_per_refill" property="aiCreditsPerRefill"/>
+        <result column="ai_credit_refill_months" property="aiCreditRefillMonths"/>
         <result column="created_at" property="createdAt"/>
         <result column="updated_at" property="updatedAt"/>
     </resultMap>
+
+    <update id="updatePlanAiCredits">
+        UPDATE subscription_plans
+        SET ai_credits_per_refill = #{creditsPerRefill}, ai_credit_refill_months = #{refillMonths}, updated_at = NOW()
+        WHERE code = #{code}
+    </update>
 
     <resultMap id="GrantResultMap" type="com.ds.goroute.entity.UserSubscriptionGrant">
         <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>

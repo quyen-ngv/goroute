@@ -7,15 +7,13 @@ import lombok.NoArgsConstructor;
 
 import java.util.UUID;
 
-/** Whether the caller may talk to Pengoo, and how many questions are left today. */
+/** Whether the caller may talk to Pengoo. What a question costs is in GET /me/ai-credits. */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class AssistantMeResponse {
     private boolean available;
-    private int dailyLimit;
-    private int usedToday;
     private String tier;
     private UUID botUserId;
     private String name;

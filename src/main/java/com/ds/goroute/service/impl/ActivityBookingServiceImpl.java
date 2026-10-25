@@ -329,6 +329,11 @@ public class ActivityBookingServiceImpl implements ActivityBookingService {
     }
 
     @Override
+    public List<ActivityBookingResponse> listCatalogueByIds(java.util.Collection<UUID> ids) {
+        return repository.findCatalogueByIds(ids).stream().map(this::mapToResponse).toList();
+    }
+
+    @Override
     public ActivityBookingResponse getById(UUID id, String targetCurrency) {
         ActivityBooking booking = repository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity booking not found"));

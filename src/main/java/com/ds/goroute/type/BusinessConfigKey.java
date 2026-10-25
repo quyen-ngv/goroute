@@ -36,12 +36,22 @@ public enum BusinessConfigKey {
     MODERATION_STRICTNESS_PRIVATE("MODERATION", "STRICTNESS_PRIVATE", "OFF"),
     MODERATION_POLICY_VERSION("MODERATION", "POLICY_VERSION", "1.0.0"),
 
-    // --- Epic 03: AI trip generation -----------------------------------------------
-    AI_TRIP_FREE_QUOTA("AI_TRIP_QUOTA", "FREE_TRIP_QUOTA", 3, 0, 1000),
-    AI_TRIP_PRO_QUOTA("AI_TRIP_QUOTA", "PRO_TRIP_QUOTA", 10, 0, 1000),
-
-    // --- Epic 09: social-location extraction ---------------------------------------
-    SOCIAL_LOCATION_DAILY_JOB_LIMIT("SOCIAL_LOCATION", "DAILY_JOB_LIMIT_DEFAULT", 5, 0, 1000),
+    // --- AI credits (V254): every user-triggered model call is charged its cost ---------
+    /** Credits charged = cost_usd x MARKUP / USD_PER_CREDIT; 1.2 is a 20% margin. */
+    AI_CREDIT_MARKUP("AI_CREDIT", "MARKUP", 1.2d, 1d, 10d),
+    /** Sale price of one credit, USD. */
+    AI_CREDIT_USD_PER_CREDIT("AI_CREDIT", "USD_PER_CREDIT", 0.001d, 0.00001d, 1d),
+    /** Plan credits a FREE account gets each month; PRO plans set theirs in subscription_plans. */
+    AI_CREDIT_FREE_MONTHLY_CREDITS("AI_CREDIT", "FREE_MONTHLY_CREDITS", 1000, 0, 1_000_000),
+    /** How far below zero a running AI task may go before it is stopped (non-beta users). */
+    AI_CREDIT_NEGATIVE_FLOOR("AI_CREDIT", "NEGATIVE_FLOOR", 5, 0, 1000),
+    /** Balance needed to start each AI feature; beta users are never refused. */
+    AI_CREDIT_MIN_BALANCE_ASSISTANT("AI_CREDIT", "MIN_BALANCE_ASSISTANT", 20, 0, 100_000),
+    AI_CREDIT_MIN_BALANCE_AI_TRIP("AI_CREDIT", "MIN_BALANCE_AI_TRIP", 100, 0, 100_000),
+    AI_CREDIT_MIN_BALANCE_RECEIPT_SCAN("AI_CREDIT", "MIN_BALANCE_RECEIPT_SCAN", 10, 0, 100_000),
+    AI_CREDIT_MIN_BALANCE_SOCIAL_LOCATION("AI_CREDIT", "MIN_BALANCE_SOCIAL_LOCATION", 10, 0, 100_000),
+    /** Charged for a call whose model has no AI_PRICING row, so a missing price is never free. */
+    AI_CREDIT_FALLBACK_CREDITS_PER_CALL("AI_CREDIT", "FALLBACK_CREDITS_PER_CALL", 20, 0, 100_000),
 
     // --- Social video itinerary defaults --------------------------------------------
     SOCIAL_START_OFFSET_DAYS("AI_TRIP", "SOCIAL_START_OFFSET_DAYS", 5, 0, 30),
@@ -109,10 +119,6 @@ public enum BusinessConfigKey {
     EXPENSE_PAYMENT_REMINDER_DAILY_MAX("EXPENSE", "PAYMENT_REMINDER_DAILY_MAX", 2, 1, 20),
     /** Everyone may scan a receipt into an expense; beta users (USER.BETA_USER) may while this is off. */
     EXPENSE_RECEIPT_SCAN_ENABLED("EXPENSE", "RECEIPT_SCAN_ENABLED", false),
-    /** Receipt scans per local (Vietnam) day for a FREE account. */
-    EXPENSE_RECEIPT_SCAN_FREE_DAILY("EXPENSE", "RECEIPT_SCAN_FREE_DAILY", 10, 0, 1000),
-    /** Receipt scans per local (Vietnam) day for a PRO account. */
-    EXPENSE_RECEIPT_SCAN_PRO_DAILY("EXPENSE", "RECEIPT_SCAN_PRO_DAILY", 50, 0, 10000),
 
     // --- Epic 11: marketplace partner finance ---------------------------------------
     /**
@@ -155,10 +161,10 @@ public enum BusinessConfigKey {
     // --- Chat assistant (Pengoo) ------------------------------------------------------
     /** Everyone may ask Pengoo; beta users (USER.BETA_USER) may ask while this is off. */
     ASSISTANT_ENABLED("ASSISTANT", "ENABLED", false),
-    /** Questions per local (Vietnam) day for a FREE account. A failed answer is not counted. */
-    ASSISTANT_FREE_DAILY_QUESTIONS("ASSISTANT", "FREE_DAILY_QUESTIONS", 5, 0, 1000),
-    /** Questions per local (Vietnam) day for a PRO account. */
-    ASSISTANT_PRO_DAILY_QUESTIONS("ASSISTANT", "PRO_DAILY_QUESTIONS", 50, 0, 10000),
+    /** Tool calls Pengoo may make for one question from a FREE account (each parallel call counts). */
+    ASSISTANT_FREE_MAX_TOOL_CALLS("ASSISTANT", "FREE_MAX_TOOL_CALLS", 6, 1, 30),
+    /** Tool calls Pengoo may make for one question from a PRO account. */
+    ASSISTANT_PRO_MAX_TOOL_CALLS("ASSISTANT", "PRO_MAX_TOOL_CALLS", 20, 1, 50),
     /**
      * Whether prompts and answers are stored in ai_api_calls. On only during the beta: chat
      * text is otherwise private, and the log is readable from the console.
@@ -169,7 +175,7 @@ public enum BusinessConfigKey {
     /** Pengoo greets a new trip's chat with suggestion chips (no model call, not counted). */
     ASSISTANT_WELCOME_ENABLED("ASSISTANT", "WELCOME_ENABLED", true),
     /** A turn still running after this many seconds is failed and the asker is told. */
-    ASSISTANT_TURN_TIMEOUT_SECONDS("ASSISTANT", "TURN_TIMEOUT_SECONDS", 150, 30, 900),
+    ASSISTANT_TURN_TIMEOUT_SECONDS("ASSISTANT", "TURN_TIMEOUT_SECONDS", 300, 30, 900),
     /** Pengoo may search the web (once per turn) when the catalogue has nothing; the worker also needs a search API key. */
     ASSISTANT_WEB_SEARCH_ENABLED("ASSISTANT", "WEB_SEARCH_ENABLED", true),
 
@@ -387,7 +393,16 @@ public enum BusinessConfigKey {
     /** feed_impressions rows older than this are deleted every night (V245). */
     FEED_IMPRESSION_RETENTION_DAYS("FEED", "IMPRESSION_RETENTION_DAYS", 90, 7, 365),
     /** "Hide posts from this person" lasts this long. */
-    FEED_HIDE_AUTHOR_DAYS("FEED", "HIDE_AUTHOR_DAYS", 30, 1, 365);
+    FEED_HIDE_AUTHOR_DAYS("FEED", "HIDE_AUTHOR_DAYS", 30, 1, 365),
+    /** The ranked "For you" feed for everyone (V249). Off: only USER.BETA_USER and FEED_RANKING_PERCENT. */
+    FEED_RANKING_ENABLED("FEED", "RANKING_ENABLED", false),
+    /** Share of users, by a hash of their id, on the ranked feed while it is not on for everyone. */
+    FEED_RANKING_PERCENT("FEED", "RANKING_PERCENT", 0, 0, 100),
+    /**
+     * JSON overriding the ranking weights; keys left out keep the defaults in
+     * {@code feed/feed-ranking-defaults.json}. Shape: .docs/FEED_RANKING_DESIGN_2026-10-22.md §3.7.
+     */
+    FEED_RANKING_WEIGHTS("FEED", "RANKING_WEIGHTS", "{}");
 
     /** Value shapes the configuration layer knows how to validate. */
     public enum ValueType {

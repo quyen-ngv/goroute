@@ -784,6 +784,12 @@ public class ImageStorageCleanupService {
                         """,
                         "SELECT e.cover_url, i.url FROM local_events e LEFT JOIN local_event_images i ON i.event_id = e.id WHERE e.id = ?",
                         "events/"),
+                // The shared image library (epic 06 §2.5b). Consumers reference assets by id, so
+                // this is the only column naming the file; a replaced image is freed by the sweep.
+                spec("ASSET_LIBRARY",
+                        "SELECT image_url FROM asset_library WHERE image_url IS NOT NULL",
+                        "SELECT image_url FROM asset_library WHERE id = ? AND image_url IS NOT NULL",
+                        "asset-library/"),
                 spec("ROOM_TYPE",
                         "SELECT images FROM room_types WHERE images IS NOT NULL",
                         "SELECT images FROM room_types WHERE id = ? AND images IS NOT NULL",

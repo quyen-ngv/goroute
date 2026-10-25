@@ -62,6 +62,7 @@ import com.ds.goroute.type.SavedPostType;
 import com.ds.goroute.utils.GeoDistance;
 import com.ds.goroute.utils.JsonUtils;
 import com.ds.goroute.utils.MediaAssetResponseMapper;
+import com.ds.goroute.utils.PlaceDisplayRating;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -948,7 +949,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .placeThumbnail(place == null ? null : place.getThumbnail())
                 .placeReviewCount(place == null ? null : place.getReviewCount())
                 .placeReviewRating(place == null ? null : place.getReviewRating())
-                .placeAdjustedRating(place == null ? null : place.getAdjustedRating())
+                .placeAdjustedRating(PlaceDisplayRating.of(place))
                 .placeLatitude(place == null ? null : place.getLatitude())
                 .placeLongitude(place == null ? null : place.getLongitude())
                 .caption(checkin.getCaption())

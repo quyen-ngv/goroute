@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.FeedViewerMapper">
+
+    <resultMap id="FollowedMap" type="com.ds.goroute.feed.model.FeedViewerRows$Followed">
+        <result property="userId" column="user_id"/>
+        <result property="mutual" column="mutual"/>
+    </resultMap>
+
+    <resultMap id="AffinityMap" type="com.ds.goroute.feed.model.FeedViewerRows$Affinity">
+        <result property="authorId" column="author_id"/>
+        <result property="score" column="score"/>
+    </resultMap>
+
+    <resultMap id="ContextTripMap" type="com.ds.goroute.feed.model.FeedViewerRows$ContextTrip">
+        <result property="tripId" column="trip_id"/>
+        <result property="name" column="name"/>
+        <result property="startDate" column="start_date"/>
+        <result property="endDate" column="end_date"/>
+    </resultMap>
+
+    <resultMap id="ContextDestinationMap" type="com.ds.goroute.feed.model.FeedViewerRows$ContextDestination">
+        <result property="tripId" column="trip_id"/>
+        <result property="startDate" column="start_date"/>
+        <result property="endDate" column="end_date"/>
+        <result property="primary" column="is_primary"/>
+        <result property="provinceCode" column="province_code"/>
+    </resultMap>
+
+    <resultMap id="SeenMap" type="com.ds.goroute.feed.model.FeedViewerRows$Seen">
+        <result property="itemType" column="item_type"/>
+        <result property="itemId" column="item_id"/>
+        <result property="seenCount" column="seen_count"/>
+        <result property="opened" column="opened"/>
+        <result property="lastSeenAt" column="last_seen_at"/>
+    </resultMap>
+
+    <resultMap id="SocialProofMap" type="com.ds.goroute.feed.model.FeedViewerRows$SocialProof">
+        <result property="itemType" column="item_type"/>
+        <result property="itemId" column="item_id"/>
+        <result property="people" column="people"/>
+    </resultMap>
+
+    <select id="selectFollowing" resultMap="FollowedMap">
+        SELECT f.following_id AS user_id,
+               EXISTS (
+                   SELECT 1 FROM user_follows back
+                   WHERE back.follower_id = f.following_id AND back.following_id = #{viewerId}) AS mutual
+        FROM user_follows f
+        JOIN users u ON u.id = f.following_id AND u.deleted_at IS NULL
+        LEFT JOIN user_author_affinity a ON a.viewer_id = #{viewerId} AND a.author_id = f.following_id
+        WHERE f.follower_id = #{viewerId}
+        ORDER BY a.score DESC NULLS LAST, f.created_at DESC NULLS LAST
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectAffinity" resultMap="AffinityMap">
+        SELECT author_id, score
+        FROM user_author_affinity
+        WHERE viewer_id = #{viewerId}
+        ORDER BY score DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectContextTrips" resultMap="ContextTripMap">
+        SELECT t.id AS trip_id, t.name, t.start_date, t.end_date
+        FROM trips t
+        WHERE t.is_deleted = FALSE
+          AND t.start_date IS NOT NULL
+          AND t.end_date IS NOT NULL
+          AND t.end_date &gt;= #{today}
+          AND t.start_date &lt;= #{until}
+          AND (t.owner_id = #{viewerId}
+               OR EXISTS (
+                   SELECT 1 FROM trip_members m
+                   WHERE m.trip_id = t.id AND m.user_id = #{viewerId} AND m.status = 'ACCEPTED'))
+        ORDER BY t.start_date, t.id
+        LIMIT 5
+    </select>
+
+    <!-- A trip without a destination that has coordinates falls back to its own point. -->
+    <select id="selectContextDestinations" resultMap="ContextDestinationMap">
+        SELECT d.trip_id, d.start_date, d.end_date, COALESCE(d.is_primary, FALSE) AS is_primary,
+               goroute_province_at(d.lat, d.lng) AS province_code
+        FROM trip_destinations d
+        WHERE d.trip_id IN
+              <foreach collection="tripIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+          AND d.lat IS NOT NULL AND d.lng IS NOT NULL
+        UNION ALL
+        SELECT t.id, t.start_date, t.end_date, TRUE,
+               goroute_province_at(t.destination_lat, t.destination_lng)
+        FROM trips t
+        WHERE t.id IN
+              <foreach collection="tripIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+          AND t.destination_lat IS NOT NULL AND t.destination_lng IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM trip_destinations d
+              WHERE d.trip_id = t.id AND d.lat IS NOT NULL AND d.lng IS NOT NULL)
+    </select>
+
+    <select id="selectItineraryPlaceIds" resultType="java.util.UUID">
+        SELECT DISTINCT a.place_ref_id
+        FROM activities a
+        WHERE a.trip_id IN
+              <foreach collection="tripIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+          AND a.place_ref_id IS NOT NULL
+          AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectRelatedProvinces" resultType="java.lang.String">
+        SELECT w.province_code
+        FROM passport_province_wishes w
+        WHERE w.user_id = #{viewerId} AND w.province_code IS NOT NULL
+        UNION
+        SELECT recent.code
+        FROM (
+            SELECT COALESCE((SELECT wd.province_code FROM wards wd WHERE wd.code = c.ward_code),
+                            c.province_code) AS code
+            FROM user_checkins c
+            WHERE c.user_id = #{viewerId} AND c.is_removed = FALSE
+            ORDER BY c.created_at DESC
+            LIMIT #{recentCheckins}
+        ) recent
+        WHERE recent.code IS NOT NULL
+    </select>
+
+    <select id="selectProvinceAt" resultType="java.lang.String">
+        SELECT goroute_province_at(#{latitude}::numeric, #{longitude}::numeric)
+    </select>
+
+    <select id="selectProvinceName" resultType="java.lang.String">
+        SELECT name FROM provinces WHERE code = #{code}
+    </select>
+
+    <select id="selectSeenSince" resultMap="SeenMap">
+        SELECT item_type, item_id, seen_count, opened, last_seen_at
+        FROM feed_impressions
+        WHERE user_id = #{viewerId} AND last_seen_at &gt; #{since}
+        ORDER BY last_seen_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- Likes (a check-in heart, a helpful vote on a review or trip), comments and saves of
+         the people the viewer follows: GraphJet's "what your people engaged with", in SQL. -->
+    <select id="selectSocialProof" resultMap="SocialProofMap">
+        SELECT item_type, item_id, COUNT(DISTINCT user_id) AS people
+        FROM (
+            SELECT 'CHECKIN'::varchar AS item_type, l.checkin_id AS item_id, l.user_id
+            FROM user_checkin_likes l
+            WHERE l.user_id IN <foreach collection="userIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+              AND l.created_at &gt; #{since}
+            UNION ALL
+            SELECT 'REVIEW'::varchar, v.review_id, v.user_id
+            FROM review_helpful_votes v
+            WHERE v.user_id IN <foreach collection="userIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+              AND v.is_helpful AND v.created_at &gt; #{since}
+            UNION ALL
+            SELECT 'TRIP'::varchar, v.trip_id, v.user_id
+            FROM trip_helpful_votes v
+            WHERE v.user_id IN <foreach collection="userIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+              AND v.is_helpful AND v.created_at &gt; #{since}
+            UNION ALL
+            SELECT c.content_type::varchar, c.content_id, c.user_id
+            FROM content_comments c
+            WHERE c.user_id IN <foreach collection="userIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+              AND c.is_deleted = FALSE
+              AND c.content_type IN ('CHECKIN', 'REVIEW', 'TRIP')
+              AND c.created_at &gt; #{since}
+            UNION ALL
+            SELECT s.post_type::varchar, s.post_id, s.user_id
+            FROM saved_posts s
+            WHERE s.user_id IN <foreach collection="userIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+              AND s.created_at &gt; #{since}
+        ) touched
+        GROUP BY item_type, item_id
+        ORDER BY people DESC, item_id
+        LIMIT #{limit}
+    </select>
+
+    <!-- ================================================================================
+         Affinity rebuild
+         ================================================================================ -->
+
+    <delete id="deleteAllAffinity">
+        DELETE FROM user_author_affinity
+    </delete>
+
+    <insert id="insertAffinity">
+        INSERT INTO user_author_affinity (viewer_id, author_id, score, updated_at)
+        SELECT viewer_id, author_id, score, NOW()
+        FROM (
+            SELECT viewer_id, author_id, score,
+                   ROW_NUMBER() OVER (PARTITION BY viewer_id ORDER BY score DESC) AS rank_in_viewer
+            FROM (
+                SELECT x.viewer_id, fi.author_id,
+                       SUM(x.weight * POWER(0.5, EXTRACT(EPOCH FROM (NOW() - x.at)) / 86400.0
+                                                 / #{halfLifeDays}::float8)) AS score
+                FROM (
+                    SELECT l.user_id AS viewer_id, 'CHECKIN'::varchar AS item_type, l.checkin_id AS item_id,
+                           #{likeWeight}::float8 AS weight, l.created_at AS at
+                    FROM user_checkin_likes l WHERE l.created_at &gt; #{since}
+                    UNION ALL
+                    SELECT v.user_id, 'REVIEW'::varchar, v.review_id, #{likeWeight}::float8, v.created_at
+                    FROM review_helpful_votes v WHERE v.is_helpful AND v.created_at &gt; #{since}
+                    UNION ALL
+                    SELECT v.user_id, 'TRIP'::varchar, v.trip_id, #{likeWeight}::float8, v.created_at
+                    FROM trip_helpful_votes v WHERE v.is_helpful AND v.created_at &gt; #{since}
+                    UNION ALL
+                    SELECT c.user_id, c.content_type::varchar, c.content_id, #{commentWeight}::float8, c.created_at
+                    FROM content_comments c WHERE c.is_deleted = FALSE AND c.created_at &gt; #{since}
+                    UNION ALL
+                    SELECT s.user_id, s.post_type::varchar, s.post_id, #{saveWeight}::float8, s.created_at
+                    FROM saved_posts s WHERE s.created_at &gt; #{since}
+                    UNION ALL
+                    SELECT i.user_id, i.item_type::varchar, i.item_id, #{openWeight}::float8, i.last_seen_at
+                    FROM feed_impressions i WHERE i.opened AND i.last_seen_at &gt; #{since}
+                    UNION ALL
+                    SELECT i.user_id, i.item_type::varchar, i.item_id, #{dwellWeight}::float8, i.last_seen_at
+                    FROM feed_impressions i WHERE i.max_dwell_ms &gt;= #{dwellMs} AND i.last_seen_at &gt; #{since}
+                ) x
+                JOIN feed_items fi ON fi.item_type = x.item_type AND fi.item_id = x.item_id
+                JOIN users viewer ON viewer.id = x.viewer_id
+                WHERE fi.author_id &lt;&gt; x.viewer_id
+                GROUP BY x.viewer_id, fi.author_id
+            ) pairs
+            WHERE score &gt;= #{minScore}::float8
+        ) ranked
+        WHERE rank_in_viewer &lt;= #{perViewer}
+    </insert>
+</mapper>

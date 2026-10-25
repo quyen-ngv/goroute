@@ -83,7 +83,9 @@ public enum NotificationType {
     TRIP_STARTED,
     ITINERARY_ITEM_PREPARATION,
     ITINERARY_ITEM_UPCOMING,
+    /** No longer scheduled (one TRIP_DAY_ENDED per day replaced it); kept so stored rows still parse. */
     ITINERARY_ITEM_COMPLETED,
+    TRIP_DAY_ENDED,
     TRIP_ENDED,
     TRIP_SUMMARY,
 

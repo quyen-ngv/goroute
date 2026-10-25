@@ -3,10 +3,8 @@ package com.ds.goroute.service;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.response.ReceiptScanResponse;
 import com.ds.goroute.exception.BusinessException;
-import com.ds.goroute.mapper.AiApiCallMapper;
-import com.ds.goroute.repository.AiTripRepository;
-import com.ds.goroute.service.time.UserTimeZones;
 import com.ds.goroute.thirdparty.ai.VisionAiClient;
+import com.ds.goroute.type.AiCreditFeature;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,21 +43,15 @@ class ReceiptScanServiceTest {
     @Mock private VisionAiClient visionClient;
     @Mock private BusinessConfigService businessConfig;
     @Mock private BetaAccessService betaAccess;
-    @Mock private AiTripRepository subscriptions;
-    @Mock private AiApiCallMapper aiApiCallMapper;
-    @Mock private UserTimeZones userTimeZones;
+    @Mock private AiCreditService credits;
 
     private ReceiptScanService service;
 
     @BeforeEach
     void setUp() {
-        service = new ReceiptScanService(visionClient, businessConfig, betaAccess, subscriptions,
-                aiApiCallMapper, new ObjectMapper(), userTimeZones);
-        when(userTimeZones.zoneFor(org.mockito.ArgumentMatchers.any())).thenReturn(ZoneId.of("Asia/Ho_Chi_Minh"));
+        service = new ReceiptScanService(visionClient, businessConfig, betaAccess, credits, new ObjectMapper());
         service.clock = Clock.fixed(Instant.parse("2026-10-13T05:00:00Z"), ZoneId.of("Asia/Ho_Chi_Minh"));
         when(visionClient.isConfigured()).thenReturn(true);
-        when(businessConfig.getInt(BusinessConfigKey.EXPENSE_RECEIPT_SCAN_FREE_DAILY)).thenReturn(10);
-        when(businessConfig.getInt(BusinessConfigKey.EXPENSE_RECEIPT_SCAN_PRO_DAILY)).thenReturn(50);
     }
 
     @Test
@@ -73,22 +65,15 @@ class ReceiptScanServiceTest {
     }
 
     @Test
-    void proGetsTheProAllowance() {
-        when(subscriptions.getSubscriptionTier(USER)).thenReturn("pro");
-        assertThat(service.dailyLimit(USER)).isEqualTo(50);
-        when(subscriptions.getSubscriptionTier(USER)).thenReturn("FREE");
-        assertThat(service.dailyLimit(USER)).isEqualTo(10);
-    }
-
-    @Test
-    void aSpentAllowanceRejectsBeforeCallingTheModel() {
+    void tooFewCreditsRejectsBeforeCallingTheModel() {
         when(businessConfig.getBoolean(BusinessConfigKey.EXPENSE_RECEIPT_SCAN_ENABLED)).thenReturn(true);
-        when(aiApiCallMapper.countSucceededSince(eq(USER), eq("RECEIPT_SCAN"), any())).thenReturn(10L);
+        org.mockito.Mockito.doThrow(new BusinessException(ErrorConstant.AI_CREDIT_INSUFFICIENT, (Object) null))
+                .when(credits).ensureCanStart(USER, AiCreditFeature.RECEIPT_SCAN);
 
         assertThatThrownBy(() -> service.scan(USER, new MockMultipartFile("file", JPEG), "VND"))
                 .isInstanceOf(BusinessException.class)
                 .extracting("error.code")
-                .isEqualTo(ErrorConstant.EXPENSE_RECEIPT_SCAN_DAILY_LIMIT);
+                .isEqualTo(ErrorConstant.AI_CREDIT_INSUFFICIENT);
         verify(visionClient, never()).completeJson(anyString(), anyString(), any(), anyString());
     }
 
@@ -111,7 +96,6 @@ class ReceiptScanServiceTest {
 
         assertThat(result.isReadable()).isFalse();
         assertThat(result.getAmount()).isNull();
-        assertThat(result.getDailyLimit()).isEqualTo(10);
     }
 
     @Test

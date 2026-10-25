@@ -47,8 +47,12 @@ public class AssistantContextBuilder {
      * every turn never matches the previous turn's prompt again.
      */
     static final int HISTORY_WINDOW_STEP = 10;
-    static final int MAX_TOOL_CALLS = 6;
     static final int MAX_OUTPUT_TOKENS = 1800;
+    /**
+     * The worker stops this long before the turn timeout job would fail the turn, so a slow answer
+     * ends as the worker's own failure (told to the asker once) rather than racing the job.
+     */
+    static final int WORKER_TIMEOUT_MARGIN_SECONDS = 15;
 
     private final AssistantRepository repository;
     private final MarketplaceChatRepository chatRepository;
@@ -57,6 +61,7 @@ public class AssistantContextBuilder {
     private final AssistantTripSnapshots tripSnapshots;
     private final BusinessConfigService businessConfig;
     private final AiTripWorkerProperties workerProperties;
+    private final AssistantAccessService access;
     private final ObjectMapper objectMapper;
 
     @Transactional(readOnly = true)
@@ -79,8 +84,11 @@ public class AssistantContextBuilder {
         payload.put("question", turn.getQuestion() == null ? "" : turn.getQuestion());
         payload.put("callbackBaseUrl", workerProperties.getInternalBaseUrl());
         payload.put("memory", repository.findMemory(conversation.getId()).orElse(null));
-        payload.put("limits", Map.of("maxToolCalls", MAX_TOOL_CALLS, "maxOutputTokens", MAX_OUTPUT_TOKENS,
-                "webSearch", businessConfig.getBoolean(BusinessConfigKey.ASSISTANT_WEB_SEARCH_ENABLED)));
+        int turnTimeout = businessConfig.getInt(BusinessConfigKey.ASSISTANT_TURN_TIMEOUT_SECONDS);
+        payload.put("limits", Map.of("maxToolCalls", access.maxToolCalls(turn.getUserId()),
+                "maxOutputTokens", MAX_OUTPUT_TOKENS,
+                "webSearch", businessConfig.getBoolean(BusinessConfigKey.ASSISTANT_WEB_SEARCH_ENABLED),
+                "timeoutSeconds", Math.max(30, turnTimeout - WORKER_TIMEOUT_MARGIN_SECONDS)));
         payload.put("logPayloads", businessConfig.getBoolean(BusinessConfigKey.ASSISTANT_LOG_PAYLOADS));
         return payload;
     }

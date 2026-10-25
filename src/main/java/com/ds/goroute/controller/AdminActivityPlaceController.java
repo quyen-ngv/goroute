@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -42,11 +43,28 @@ public class AdminActivityPlaceController extends BaseController {
     @PreAuthorize("@adminAuthorization.can(authentication,'places','get')")
     public ResponseEntity<BaseResponse<PageResponse<AdminUnlinkedActivityResponse>>> listUnlinked(
             @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "false") boolean dismissed,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "50") @Min(1) @Max(MAX_PAGE_SIZE) int size) {
-        List<AdminUnlinkedActivityResponse> items = service.listUnlinked(search, page, size);
-        long total = service.countUnlinked(search);
+        List<AdminUnlinkedActivityResponse> items = service.listUnlinked(search, dismissed, page, size);
+        long total = service.countUnlinked(search, dismissed);
         return ResponseEntity.ok(ofSucceeded(PageResponse.of(items, total, page, size)));
+    }
+
+    /** Takes the activity out of the queue when there is nothing to link it to. */
+    @PostMapping("/{activityId}/dismiss")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
+    public ResponseEntity<BaseResponse<Void>> dismiss(@PathVariable UUID activityId, @CurrentUser UUID adminId) {
+        service.dismiss(adminId, activityId);
+        return ResponseEntity.ok(ofSucceeded(null));
+    }
+
+    /** Puts a dismissed activity back in the queue. */
+    @DeleteMapping("/{activityId}/dismiss")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
+    public ResponseEntity<BaseResponse<Void>> restore(@PathVariable UUID activityId, @CurrentUser UUID adminId) {
+        service.restore(adminId, activityId);
+        return ResponseEntity.ok(ofSucceeded(null));
     }
 
     /** Links the activity to the catalogue place its address describes. */

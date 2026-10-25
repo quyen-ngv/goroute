@@ -26,6 +26,8 @@ public class SocialSearchIndexRow {
     /** When it was posted, for the freshness boost. */
     private LocalDateTime publishedAt;
     private LocalDateTime updatedAt;
+    /** A tour's source, {@code CATALOGUE} or {@code MARKETPLACE}, which decides who may find it; null otherwise. */
+    private String variant;
     /** Whether anyone but the author may find it now; a changed row that is not leaves the index. */
     private Boolean eligible;
 }

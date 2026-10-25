@@ -29,8 +29,6 @@ public class ReceiptScanResponse {
     private String category;
     /** Other printed amounts that could be the one paid (subtotal, before/after tip); never the chosen one. */
     private List<Candidate> candidates;
-    private int dailyLimit;
-    private int usedToday;
 
     @Data
     @Builder

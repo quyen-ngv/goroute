@@ -42,8 +42,6 @@ public interface SocialLocationJobMapper {
             @Param("limit") int limit,
             @Param("offset") int offset);
 
-    int countCreatedByUserSince(@Param("userId") UUID userId, @Param("since") LocalDateTime since);
-
     boolean lockUserSubmission(@Param("userId") UUID userId);
 
     boolean lockSubmissionQueue();

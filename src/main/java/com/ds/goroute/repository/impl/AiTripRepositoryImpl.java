@@ -35,16 +35,6 @@ public class AiTripRepositoryImpl implements AiTripRepository {
         subscriptionBootstrap.ensureExists(userId);
     }
 
-    @Override
-    public int consumeAiTripQuota(UUID userId, int limit) {
-        return aiTripMapper.consumeAiTripQuota(userId, limit);
-    }
-
-    @Override
-    public int releaseAiTripQuota(UUID userId) {
-        return aiTripMapper.releaseAiTripQuota(userId);
-    }
-
     /**
      * The hot read path: social submit, check-in and quota reserve all call it from inside their
      * own transaction. Reading before bootstrapping keeps that to the one connection the caller
@@ -63,17 +53,5 @@ public class AiTripRepositoryImpl implements AiTripRepository {
     @Override
     public java.time.LocalDateTime getSubscriptionExpiresAt(UUID userId) {
         return aiTripMapper.getSubscriptionExpiresAt(userId);
-    }
-
-    @Override
-    public int getAiTripsUsed(UUID userId) {
-        // Deliberately NO ensureSubscription() here. ensureExists runs REQUIRES_NEW on a second
-        // connection; when the caller's transaction has already locked the user's row (quota
-        // consume UPDATE in AiTripQuotaService.reserve), that nested INSERT ... ON CONFLICT waits
-        // on our own lock forever — a self-deadlock Postgres cannot detect. Callers that may run
-        // before the row exists (getUsage/reserve) call ensureSubscription() explicitly first,
-        // while the row is still unlocked.
-        Integer used = aiTripMapper.getAiTripsUsed(userId);
-        return used != null ? used : 0;
     }
 }

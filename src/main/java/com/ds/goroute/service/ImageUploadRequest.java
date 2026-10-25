@@ -58,6 +58,9 @@ public record ImageUploadRequest(UUID userId,
          */
         public static final String LOCAL_EVENT = "admin-local-event";
 
+        /** Operators: images of the shared asset library (ingredient icons, banners, promotions). */
+        public static final String ASSET_LIBRARY = "admin-asset-library";
+
         private ImageEntryPoint() {
         }
     }

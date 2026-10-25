@@ -39,6 +39,7 @@ import java.util.concurrent.TimeUnit;
 public class AiTripGenerationService {
     private final AiTripGenerationMapper mapper;
     private final AiTripQuotaService quotaService;
+    private final AiCreditService credits;
     private final PlaceRepository placeRepository;
     private final TripService tripService;
     private final ActivityRepository activityRepository;
@@ -60,6 +61,8 @@ public class AiTripGenerationService {
     private static final int MENU_ITEMS_FOR_AI = 10;
     private static final int EXTERNAL_SEARCH_RADIUS_METERS = 50_000;
     private static final int EXTERNAL_SEARCH_LIMIT = 5;
+    /** Error prefix the worker reports when it stopped a run because the user ran out of AI credits. */
+    static final String CREDIT_EXHAUSTED = "CREDIT_EXHAUSTED";
 
     private final PlaceLookupProviders placeLookupProviders;
     /** Local cache only: it reduces repeated resolver calls; it is never a source of truth. */
@@ -68,7 +71,7 @@ public class AiTripGenerationService {
 
     /**
      * Creates the durable AI job in its own transaction. Social-video completion first stores
-     * the extracted spots and then calls this method; an exhausted AI quota must not roll back
+     * the extracted spots and then calls this method; running out of AI credits must not roll back
      * those already-useful saved spots in the surrounding social-job transaction.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -85,7 +88,10 @@ public class AiTripGenerationService {
             if (!existing.getRequestHash().equals(hash)) throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Idempotency key was already used for another request");
             return existing;
         }
-        quotaService.reserve(userId);
+        if (mapper.findActiveByUser(userId) != null) {
+            throw new BusinessException(ErrorConstant.AI_TASK_ALREADY_RUNNING, "An AI itinerary is already being generated");
+        }
+        quotaService.ensureCanGenerate(userId);
         AiTripGenerationJob job = new AiTripGenerationJob();
         job.setId(UUID.randomUUID()); job.setUserId(userId); job.setIdempotencyKey(key); job.setRequestHash(hash);
         job.setRequestPayload(payload); job.setLocale(normalizeLocale(locale)); job.setAttemptId(UUID.randomUUID().toString());
@@ -406,8 +412,16 @@ public class AiTripGenerationService {
 
     private void terminal(AiTripGenerationJob job, String status, String error) {
         log.info("AI trip terminal: job {} -> {}{}", job.getId(), status, error == null ? "" : " (" + error + ")");
-        if (mapper.markTerminalAndRelease(job.getId(), status, error) == 1) quotaService.release(job.getUserId());
-        AiTripGenerationEvent event=event(job,status,status,job.getProgress(),"ai_trip."+status.toLowerCase(Locale.ROOT),Map.of());
+        // A run that failed on our side, or that the user cancelled, gives its credits back; one the
+        // worker stopped because the user ran out of credit (CREDIT_EXHAUSTED) keeps the charges.
+        if (mapper.markTerminalAndRelease(job.getId(), status, error) == 1
+                && (error == null || !error.startsWith(CREDIT_EXHAUSTED))) {
+            credits.refundTask(job.getUserId(), job.getId().toString(), "AI trip " + status.toLowerCase(Locale.ROOT));
+        }
+        // The app tells "credit ran out" apart from a failure by this reason, without fetching the job.
+        Map<String, Object> params = error != null && error.startsWith(CREDIT_EXHAUSTED)
+                ? Map.of("reason", CREDIT_EXHAUSTED) : Map.of();
+        AiTripGenerationEvent event=event(job,status,status,job.getProgress(),"ai_trip."+status.toLowerCase(Locale.ROOT),params);
         mapper.insertEvent(event); sseService.publish(event);
     }
     private Activity toActivity(AiTripCommitRequest.Item i, UUID tripId, UUID userId) {

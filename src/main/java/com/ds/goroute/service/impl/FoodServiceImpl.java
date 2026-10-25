@@ -9,20 +9,25 @@ import com.ds.goroute.entity.Food;
 import com.ds.goroute.entity.FoodCityScore;
 import com.ds.goroute.entity.FoodPlaceRow;
 import com.ds.goroute.entity.FoodWithScoreRow;
+import com.ds.goroute.entity.LibraryAsset;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.FoodRepository;
+import com.ds.goroute.repository.LibraryAssetRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.ExchangeRateService;
 import com.ds.goroute.service.FoodService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.PlaceSearchIndexService;
+import com.ds.goroute.type.AssetCollection;
 import com.ds.goroute.utils.CitySlugResolver;
 import com.ds.goroute.utils.FoodNameResolver;
 import com.ds.goroute.utils.FoodScoreLabelResolver;
 import com.ds.goroute.utils.FoodSubtitleResolver;
 import com.ds.goroute.utils.FoodTaglineResolver;
 import com.ds.goroute.utils.JsonUtils;
+import com.ds.goroute.utils.LibraryAssetNameResolver;
 import com.ds.goroute.utils.AddressDistrictParser;
+import com.ds.goroute.utils.PlaceDisplayRating;
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
@@ -46,6 +51,7 @@ public class FoodServiceImpl implements FoodService {
     private final ExchangeRateService exchangeRateService;
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final PlaceSearchIndexService placeSearchIndexService;
+    private final LibraryAssetRepository libraryAssetRepository;
 
     @Override
     @Cacheable(
@@ -424,7 +430,7 @@ public class FoodServiceImpl implements FoodService {
                 .priceMin(food.getPriceMin())
                 .priceMax(food.getPriceMax())
                 .priceCurrency(food.getPriceCurrency())
-                .coreIngredients(parseCoreIngredients(food.getCoreIngredients()))
+                .coreIngredients(resolveIngredientAssets(parseCoreIngredients(food.getCoreIngredients()), false))
                 .varieties(parseVarieties(food.getVarieties()))
                 .historyOrigin(blankToNull(food.getHistoryOrigin()))
                 .ingredientsPreparation(blankToNull(food.getIngredientsPreparation()))
@@ -503,7 +509,7 @@ public class FoodServiceImpl implements FoodService {
                 .priceMin(priceMin)
                 .priceMax(priceMax)
                 .priceCurrency(resolveDisplayCurrency(row.getPriceCurrency(), targetCurrency))
-                .coreIngredients(parseCoreIngredients(row.getCoreIngredients()))
+                .coreIngredients(resolveIngredientAssets(parseCoreIngredients(row.getCoreIngredients()), true))
                 .varieties(parseVarieties(row.getVarieties()))
                 .historyOrigin(blankToNull(row.getHistoryOrigin()))
                 .ingredientsPreparation(blankToNull(row.getIngredientsPreparation()))
@@ -526,7 +532,7 @@ public class FoodServiceImpl implements FoodService {
                 .id(row.getId())
                 .title(row.getTitle())
                 .thumbnail(row.getThumbnail())
-                .adjustedRating(row.getAdjustedRating())
+                .adjustedRating(PlaceDisplayRating.of(row.getReviewRating()))
                 .priceRange(row.getPriceRange())
                 .address(row.getAddress())
                 .district(AddressDistrictParser.extractDistrict(row.getAddress()))
@@ -689,11 +695,77 @@ public class FoodServiceImpl implements FoodService {
         return JsonUtils.fromJson(json, new TypeReference<List<FoodCoreIngredientDto>>() {});
     }
 
+    /**
+     * Ingredients linked to the asset library are stored without a copied image URL: the
+     * image is read from the asset when the food is served, so replacing the asset's image
+     * updates every food, and the replaced file is no longer pinned by this column.
+     */
     private String toCoreIngredientsJson(List<FoodCoreIngredientDto> ingredients) {
         if (ingredients == null || ingredients.isEmpty()) {
             return null;
         }
-        return JsonUtils.toJson(ingredients);
+        requireIngredientAssets(ingredients);
+        List<FoodCoreIngredientDto> stored = ingredients.stream()
+                .map(item -> item.getAssetId() == null
+                        ? item
+                        : FoodCoreIngredientDto.builder()
+                                .assetId(item.getAssetId())
+                                .name(item.getName())
+                                .description(item.getDescription())
+                                .build())
+                .collect(Collectors.toList());
+        return JsonUtils.toJson(stored);
+    }
+
+    /** Every referenced asset must exist and be an ingredient icon. */
+    private void requireIngredientAssets(List<FoodCoreIngredientDto> ingredients) {
+        Set<UUID> assetIds = ingredients.stream()
+                .map(FoodCoreIngredientDto::getAssetId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (assetIds.isEmpty()) {
+            return;
+        }
+        Map<UUID, LibraryAsset> assets = libraryAssetRepository.findByIds(assetIds);
+        for (UUID assetId : assetIds) {
+            LibraryAsset asset = assets.get(assetId);
+            if (asset == null || !AssetCollection.INGREDIENT.name().equals(asset.getCollection())) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                        "coreIngredients assetId " + assetId + " is not an ingredient in the asset library");
+            }
+        }
+    }
+
+    /**
+     * Fills linked ingredients from the asset library: the asset's current image always, and
+     * for the app its name in the request language. The console keeps the stored name, which
+     * is the per-dish fallback it edits. An asset without an image leaves the icon empty.
+     */
+    private List<FoodCoreIngredientDto> resolveIngredientAssets(List<FoodCoreIngredientDto> ingredients,
+                                                                boolean useAssetName) {
+        if (ingredients == null || ingredients.isEmpty()) {
+            return ingredients;
+        }
+        Set<UUID> assetIds = ingredients.stream()
+                .map(FoodCoreIngredientDto::getAssetId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (assetIds.isEmpty()) {
+            return ingredients;
+        }
+        Map<UUID, LibraryAsset> assets = libraryAssetRepository.findByIds(assetIds);
+        for (FoodCoreIngredientDto item : ingredients) {
+            LibraryAsset asset = item.getAssetId() == null ? null : assets.get(item.getAssetId());
+            if (asset == null) {
+                continue;
+            }
+            item.setImage(blankToNull(asset.getImageUrl()));
+            String assetName = useAssetName ? LibraryAssetNameResolver.resolveName(asset) : null;
+            if (assetName != null) {
+                item.setName(assetName);
+            }
+        }
+        return ingredients;
     }
 
     private List<FoodVarietyDto> parseVarieties(String json) {

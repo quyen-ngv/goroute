@@ -192,13 +192,23 @@ public class ActivityRepositoryImpl implements ActivityRepository {
     }
 
     @Override
-    public List<UnlinkedActivityRow> findUnlinkedForAdmin(String search, int limit, int offset) {
-        return activityMapper.selectUnlinkedForAdmin(search, limit, offset);
+    public List<UnlinkedActivityRow> findUnlinkedForAdmin(String search, boolean dismissed, int limit, int offset) {
+        return activityMapper.selectUnlinkedForAdmin(search, dismissed, limit, offset);
     }
 
     @Override
-    public long countUnlinkedForAdmin(String search) {
-        return activityMapper.countUnlinkedForAdmin(search);
+    public long countUnlinkedForAdmin(String search, boolean dismissed) {
+        return activityMapper.countUnlinkedForAdmin(search, dismissed);
+    }
+
+    @Override
+    public int dismissPlaceReview(UUID activityId, UUID adminId) {
+        return activityMapper.dismissPlaceReview(activityId, adminId);
+    }
+
+    @Override
+    public int restorePlaceReview(UUID activityId) {
+        return activityMapper.restorePlaceReview(activityId);
     }
 
     @Override

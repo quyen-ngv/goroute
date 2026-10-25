@@ -2,6 +2,7 @@ package com.ds.goroute.service.assistant;
 
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.AiApiCallLogRequest;
+import com.ds.goroute.dto.response.AiCreditStatus;
 import com.ds.goroute.entity.AssistantTurn;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.AssistantRepository;
@@ -28,7 +29,8 @@ public class AssistantCallLogService {
     private final AiCallLogService aiCallLogService;
     private final BusinessConfigService businessConfig;
 
-    public void record(UUID turnId, AiApiCallLogRequest call) {
+    /** Returns the asker's credit status after the charge, or null when nothing was charged. */
+    public AiCreditStatus record(UUID turnId, AiApiCallLogRequest call) {
         AssistantTurn turn = repository.findTurn(turnId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Assistant turn not found"));
         call.setFeature(FEATURE);
@@ -38,6 +40,6 @@ public class AssistantCallLogService {
             call.setResponse(null);
             call.setError(null);
         }
-        aiCallLogService.record(call, turn.getUserId());
+        return aiCallLogService.record(call, turn.getUserId());
     }
 }

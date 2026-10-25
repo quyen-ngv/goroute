@@ -1,12 +1,14 @@
 package com.ds.goroute.repository;
 
 import com.ds.goroute.entity.Food;
+import com.ds.goroute.entity.FoodAssetUsageRow;
 import com.ds.goroute.entity.FoodCityScore;
 import com.ds.goroute.entity.FoodPlaceRow;
 import com.ds.goroute.entity.FoodTagRow;
 import com.ds.goroute.entity.FoodWithScoreRow;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -63,4 +65,7 @@ public interface FoodRepository {
     List<FoodTagRow> findFoodTagsByPlaceIds(List<UUID> placeIds);
 
     List<FoodWithScoreRow> findFoodsByPlaceId(UUID placeId, String citySlug);
+
+    /** Foods listing any of these library assets as a core ingredient; empty input gives an empty list. */
+    List<FoodAssetUsageRow> findIngredientAssetUsages(Collection<UUID> assetIds);
 }

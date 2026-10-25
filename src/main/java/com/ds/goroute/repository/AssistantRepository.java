@@ -25,7 +25,8 @@ public interface AssistantRepository {
 
     boolean hasOpenTurn(UUID conversationId);
 
-    long countCountedTurnsSince(UUID userId, LocalDateTime since);
+    /** The asker has a question queued or running in another conversation. */
+    boolean hasOpenTurnOfUserElsewhere(UUID userId, UUID conversationId);
 
     boolean markTurnRunning(UUID turnId, LocalDateTime startedAt);
 

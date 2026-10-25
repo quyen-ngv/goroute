@@ -5,6 +5,7 @@ import com.ds.goroute.dto.request.AiApiCallLogRequest;
 import com.ds.goroute.dto.request.AssistantFailRequest;
 import com.ds.goroute.dto.request.AssistantReplyRequest;
 import com.ds.goroute.dto.request.AssistantStepRequest;
+import com.ds.goroute.dto.response.AiCreditStatus;
 import com.ds.goroute.service.assistant.AssistantCallLogService;
 import com.ds.goroute.service.assistant.AssistantToolService;
 import com.ds.goroute.service.assistant.AssistantTurnService;
@@ -65,10 +66,10 @@ public class InternalAssistantController {
         return ResponseEntity.ok(BaseResponse.ofSucceeded(null));
     }
 
+    /** Logs and charges one model call; the answer tells the worker whether to stop for credit. */
     @PostMapping("/ai-calls")
-    public ResponseEntity<BaseResponse<Void>> aiCall(@PathVariable UUID turnId,
-                                                     @Valid @RequestBody AiApiCallLogRequest request) {
-        callLogService.record(turnId, request);
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(null));
+    public ResponseEntity<BaseResponse<AiCreditStatus>> aiCall(@PathVariable UUID turnId,
+                                                               @Valid @RequestBody AiApiCallLogRequest request) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(callLogService.record(turnId, request)));
     }
 }

@@ -140,17 +140,20 @@ public class PublicPageServiceImpl implements PublicPageService {
                 ? trip.getDescription().trim()
                 : tripSummary(trip));
         String tags = "<title>" + html(title) + "</title>\n"
-                + metaTags(title, description, visibleImage(cover), canonicalUrl, "article", true);
+                // A link-only trip previews in chat apps like a public one, but stays out of search.
+                + metaTags(title, description, visibleImage(cover), canonicalUrl, "article",
+                        trip.getVisibility() == TripVisibility.PUBLIC);
         return new PublicPage(true, page.replace(TRIP_TITLE_TAG, tags));
     }
 
     /**
-     * Only a PUBLIC, live, not taken down trip is described: the preview is read by a
-     * crawler with no account, so SHARED (members only) gets the generic tags like PRIVATE.
+     * Only a trip anyone holding its link may read -- PUBLIC, or SHARED ("Link only") -- that is
+     * live and not taken down is described; PRIVATE gets the generic tags.
      */
     private Trip publicTrip(UUID tripId) {
         return tripRepository.findById(tripId)
-                .filter(trip -> trip.getVisibility() == TripVisibility.PUBLIC)
+                .filter(trip -> trip.getVisibility() == TripVisibility.PUBLIC
+                        || trip.getVisibility() == TripVisibility.SHARED)
                 .filter(trip -> !Boolean.TRUE.equals(trip.getIsDeleted()))
                 .filter(trip -> !contentModerationService.isTakenDown(ModeratedContentType.TRIP, trip.getId()))
                 .orElse(null);

@@ -10,11 +10,13 @@ import com.ds.goroute.event.ChatMessageCreatedEvent;
 import com.ds.goroute.repository.AssistantRepository;
 import com.ds.goroute.repository.MarketplaceChatRepository;
 import com.ds.goroute.repository.PlaceRepository;
+import com.ds.goroute.service.AiCreditService;
 import com.ds.goroute.service.MarketplaceChatService;
 import com.ds.goroute.service.TextModerationService;
 import com.ds.goroute.service.WebSocketService;
 import com.ds.goroute.service.marketplace.ChatShareValidator;
 import com.ds.goroute.service.moderation.ModerationVerdict;
+import com.ds.goroute.type.AiCreditFeature;
 import com.ds.goroute.type.AssistantTurnStatus;
 import com.ds.goroute.type.ChatShareType;
 import com.ds.goroute.type.MarketplaceConversationType;
@@ -63,6 +65,7 @@ class AssistantTurnServiceTest {
     @Mock private MarketplaceChatRepository chatRepository;
     @Mock private MarketplaceChatService chatService;
     @Mock private AssistantAccessService access;
+    @Mock private AiCreditService credits;
     @Mock private AssistantProposalService proposals;
     @Mock private AssistantActionService actions;
     @Mock private PlaceRepository places;
@@ -76,12 +79,11 @@ class AssistantTurnServiceTest {
     @BeforeEach
     void setUp() {
         ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
-        service = new AssistantTurnService(repository, chatRepository, chatService, access,
+        service = new AssistantTurnService(repository, chatRepository, chatService, access, credits,
                 new AssistantTurnSnapshots(mapper), proposals, actions, places, shareValidator, moderation, webSocketService, events, mapper);
         when(chatRepository.find(eq(CONVERSATION), any())).thenReturn(Optional.of(tripConversation()));
         when(access.isAvailable(ASKER)).thenReturn(true);
-        when(access.dailyLimit(ASKER)).thenReturn(5);
-        when(access.usedToday(ASKER)).thenReturn(1);
+        when(credits.canStart(ASKER, AiCreditFeature.ASSISTANT)).thenReturn(true);
         when(access.now()).thenReturn(LocalDateTime.of(2026, 10, 12, 10, 0));
         when(moderation.evaluate(any(), anyString(), any(), anyString(), any())).thenReturn(ModerationVerdict.allowed());
         when(chatService.postAssistantMessage(any(), any(), anyList(), any(), any(), anyString()))
@@ -157,8 +159,8 @@ class AssistantTurnServiceTest {
         }
 
         @Test
-        void anExhaustedAllowanceIsAnsweredWithoutTheModel() {
-            when(access.usedToday(ASKER)).thenReturn(5);
+        void tooFewCreditsIsAnsweredWithoutTheModel() {
+            when(credits.canStart(ASKER, AiCreditFeature.ASSISTANT)).thenReturn(false);
 
             service.onMessage(message(List.of(BOT), null));
 
@@ -170,7 +172,24 @@ class AssistantTurnServiceTest {
             ArgumentCaptor<List<Map<String, Object>>> blocks = ArgumentCaptor.forClass(List.class);
             verify(chatService).postAssistantMessage(eq(CONVERSATION), anyString(), blocks.capture(), eq(MESSAGE),
                     eq(ASKER), anyString());
-            assertThat(blocks.getValue().get(0)).containsEntry("code", "QUOTA_EXHAUSTED").containsEntry("limit", 5);
+            assertThat(blocks.getValue().get(0)).containsEntry("code", "CREDIT_EXHAUSTED");
+            verify(events, never()).publishEvent(any());
+        }
+
+        @Test
+        void aQuestionRunningElsewhereMakesTheNextOneWait() {
+            when(repository.hasOpenTurnOfUserElsewhere(ASKER, CONVERSATION)).thenReturn(true);
+
+            service.onMessage(message(List.of(BOT), null));
+
+            ArgumentCaptor<AssistantTurn> turn = ArgumentCaptor.forClass(AssistantTurn.class);
+            verify(repository).insertTurn(turn.capture());
+            assertThat(turn.getValue().getStatus()).isEqualTo(AssistantTurnStatus.REJECTED.name());
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<Map<String, Object>>> blocks = ArgumentCaptor.forClass(List.class);
+            verify(chatService).postAssistantMessage(eq(CONVERSATION), anyString(), blocks.capture(), eq(MESSAGE),
+                    eq(ASKER), anyString());
+            assertThat(blocks.getValue().get(0)).containsEntry("code", "BUSY");
             verify(events, never()).publishEvent(any());
         }
 
@@ -290,12 +309,30 @@ class AssistantTurnServiceTest {
         }
 
         @Test
-        void aFailureApologisesAndUncountsTheQuestion() {
+        void aFailureApologisesAndRefundsTheTurn() {
             service.fail(turnId, "timeout");
 
             verify(chatService).postAssistantMessage(eq(CONVERSATION), anyString(), anyList(), eq(MESSAGE), eq(ASKER),
                     eq("turn:" + turnId));
             verify(repository).failTurn(eq(turnId), eq("timeout"), any(), any());
+            verify(credits).refundTask(eq(ASKER), eq(turnId.toString()), anyString());
+        }
+
+        @Test
+        void anAnswerCutShortForCreditCarriesTheNotice() {
+            AssistantReplyRequest reply = new AssistantReplyRequest();
+            reply.setMarkdown("");
+            reply.setStopReason("CREDIT_EXHAUSTED");
+
+            service.complete(turnId, reply);
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<Map<String, Object>>> blocks = ArgumentCaptor.forClass(List.class);
+            verify(chatService).postAssistantMessage(eq(CONVERSATION),
+                    eq("Bạn đã hết credit AI nên câu trả lời này chưa hoàn chỉnh."), blocks.capture(),
+                    eq(MESSAGE), eq(ASKER), eq("turn:" + turnId));
+            assertThat(blocks.getValue()).anySatisfy(block -> assertThat(block)
+                    .containsEntry("code", "CREDIT_EXHAUSTED").containsEntry("partial", true));
         }
 
         private AssistantReplyRequest.CardRef card(String type, UUID id) {

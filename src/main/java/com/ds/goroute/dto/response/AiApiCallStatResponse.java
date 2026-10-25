@@ -16,6 +16,8 @@ public class AiApiCallStatResponse {
     private long failedCalls;
     private long inputTokens;
     private long cachedInputTokens;
+    private long cacheWrite5mTokens;
+    private long cacheWrite1hTokens;
     private long outputTokens;
     private long webSearchCalls;
     private double avgLatencyMs;
@@ -27,6 +29,8 @@ public class AiApiCallStatResponse {
     @JsonIgnore private BigDecimal storedCostUsd;
     @JsonIgnore private long unpricedInputTokens;
     @JsonIgnore private long unpricedCachedInputTokens;
+    @JsonIgnore private long unpricedCacheWrite5mTokens;
+    @JsonIgnore private long unpricedCacheWrite1hTokens;
     @JsonIgnore private long unpricedOutputTokens;
     @JsonIgnore private long unpricedWebSearchCalls;
 }

@@ -7,6 +7,7 @@ import com.ds.goroute.dto.request.AiTripCandidateQueryRequest;
 import com.ds.goroute.dto.request.AiTripCandidateResolutionRequest;
 import com.ds.goroute.dto.request.AiTripCommitRequest;
 import com.ds.goroute.dto.request.AiTripJobEventRequest;
+import com.ds.goroute.dto.response.AiCreditStatus;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.service.AiCallLogService;
 import com.ds.goroute.service.AiTripGenerationService;
@@ -59,12 +60,11 @@ public class InternalAiTripGenerationController extends BaseController {
 
     /** One AI provider call made by the worker for this job (prompt, response, usage). */
     @PostMapping("/{jobId}/ai-calls")
-    public ResponseEntity<BaseResponse<Void>> aiCall(
+    public ResponseEntity<BaseResponse<AiCreditStatus>> aiCall(
             @PathVariable UUID jobId,
             @Valid @RequestBody AiApiCallLogRequest request) {
         if (request.getTraceId() == null) request.setTraceId(jobId.toString());
-        aiCallLogService.record(request, service.jobUserId(jobId));
-        return ResponseEntity.ok(ofSucceeded(null));
+        return ResponseEntity.ok(ofSucceeded(aiCallLogService.record(request, service.jobUserId(jobId))));
     }
 
     @GetMapping("/{jobId}/config")

@@ -17,10 +17,22 @@ final class AssistantNotices {
         return language != null && language.toLowerCase(Locale.ROOT).startsWith("vi");
     }
 
-    static String quotaExhausted(String language, int limit) {
+    static String creditExhausted(String language) {
         return isVietnamese(language)
-                ? "Hôm nay bạn đã dùng hết " + limit + " câu hỏi với Pengoo. Hẹn bạn ngày mai nhé!"
-                : "You have used all " + limit + " of today's questions for Pengoo. See you tomorrow!";
+                ? "Bạn đã hết credit AI nên Pengoo chưa trả lời được. Credit sẽ được nạp lại ở kỳ tới, hoặc bạn có thể mua thêm."
+                : "You are out of AI credits, so Pengoo can't answer yet. Your credits refill next period, or you can buy more.";
+    }
+
+    static String creditStopped(String language) {
+        return isVietnamese(language)
+                ? "Bạn đã hết credit AI nên câu trả lời này chưa hoàn chỉnh."
+                : "You ran out of AI credits, so this answer is incomplete.";
+    }
+
+    static String busy(String language) {
+        return isVietnamese(language)
+                ? "Pengoo đang trả lời một câu khác của bạn. Đợi câu đó xong rồi hỏi tiếp nhé."
+                : "Pengoo is still answering another question of yours. Ask again once it's done.";
     }
 
     static String failed(String language) {

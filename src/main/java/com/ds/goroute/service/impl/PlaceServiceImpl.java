@@ -44,6 +44,7 @@ import com.ds.goroute.utils.FoodNameResolver;
 import com.ds.goroute.utils.AdminListSort;
 import com.ds.goroute.utils.GeoDistance;
 import com.ds.goroute.utils.JsonUtils;
+import com.ds.goroute.utils.PlaceDisplayRating;
 import com.ds.goroute.utils.PlaceIdentityMatcher;
 import com.ds.goroute.type.PlaceSearchSort;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -1255,7 +1256,7 @@ public class PlaceServiceImpl implements PlaceService {
                 .tripUseCount(place.getTripUseCount())
                 .checkinCount(place.getCheckinCount())
                 .reviewRating(place.getReviewRating())
-                .adjustedRating(place.getAdjustedRating())
+                .adjustedRating(PlaceDisplayRating.of(place))
                 .placeOverallScore(place.getPlaceOverallScore())
                 .scoreSampleCount(place.getScoreSampleCount())
                 .scoreSource(place.getScoreSource())
@@ -1377,6 +1378,8 @@ public class PlaceServiceImpl implements PlaceService {
         response.setSpikeDetected(place.getIsSpikeDetected());
         response.setAuthenticLowStarCount(place.getAuthenticLowStarCount());
         response.setAvgAuthenticityScore(place.getAvgAuthenticityScore());
+        // The app is sent the display rating in this field; operators still see the recalculated one.
+        response.setAdjustedRating(place.getAdjustedRating());
         response.setScoreCalculatedAt(place.getScoreCalculatedAt());
         response.setAttributes(PlaceAttributeCatalog.adminAttributes(parseJsonNode(place.getAttributes())));
         return response;

@@ -1,0 +1,535 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.FeedItemMapper">
+
+    <resultMap id="FeedKeyMap" type="com.ds.goroute.feed.model.FeedKey">
+        <result property="itemType" column="item_type"/>
+        <result property="itemId" column="item_id"/>
+        <result property="queuedAt" column="queued_at"/>
+    </resultMap>
+
+    <resultMap id="FeedItemRowMap" type="com.ds.goroute.feed.model.FeedItemRow">
+        <result property="itemType" column="item_type"/>
+        <result property="itemId" column="item_id"/>
+        <result property="authorId" column="author_id"/>
+        <result property="publishedAt" column="published_at"/>
+        <result property="provinceCode" column="province_code"/>
+        <result property="placeId" column="place_id"/>
+        <result property="placeGroup" column="place_group"/>
+        <result property="subTypes" column="sub_types" typeHandler="org.apache.ibatis.type.ArrayTypeHandler"/>
+        <result property="latitude" column="latitude"/>
+        <result property="longitude" column="longitude"/>
+        <result property="hasPhoto" column="has_photo"/>
+        <result property="photoCount" column="photo_count"/>
+        <result property="textLen" column="text_len"/>
+        <result property="authorTrust" column="author_trust"/>
+        <result property="stopCount" column="stop_count"/>
+        <result property="linkedStopCount" column="linked_stop_count"/>
+        <result property="dayCount" column="day_count"/>
+        <result property="hasCover" column="has_cover"/>
+        <result property="hasCost" column="has_cost"/>
+        <result property="tripEndDate" column="trip_end_date"/>
+        <result property="stopKindCounts" column="stop_kind_counts"/>
+        <result property="likeCount" column="like_count"/>
+        <result property="commentCount" column="comment_count"/>
+        <result property="saveCount" column="save_count"/>
+        <result property="copyCount" column="copy_count"/>
+        <result property="impressionCount" column="impression_count"/>
+        <result property="hideCount" column="hide_count"/>
+        <result property="reportCount" column="report_count"/>
+        <result property="qualityScore" column="quality_score"/>
+        <result property="engagementScore" column="engagement_score"/>
+        <result property="eligible" column="eligible"/>
+        <result property="recommendOk" column="recommend_ok"/>
+    </resultMap>
+
+    <sql id="itemColumns">
+        fi.item_type, fi.item_id, fi.author_id, fi.published_at, fi.province_code, fi.place_id,
+        fi.place_group, fi.sub_types,
+        CASE WHEN fi.point IS NULL THEN NULL ELSE ST_Y(fi.point::geometry) END AS latitude,
+        CASE WHEN fi.point IS NULL THEN NULL ELSE ST_X(fi.point::geometry) END AS longitude,
+        fi.has_photo, fi.photo_count, fi.text_len, fi.author_trust, fi.stop_count,
+        fi.linked_stop_count, fi.day_count, fi.has_cover, fi.has_cost, fi.trip_end_date,
+        fi.stop_kind_counts::text AS stop_kind_counts, fi.like_count, fi.comment_count,
+        fi.save_count, fi.copy_count, fi.impression_count, fi.hide_count, fi.report_count,
+        fi.quality_score, fi.engagement_score, fi.eligible, fi.recommend_ok
+    </sql>
+
+    <sql id="keyList">
+        <foreach collection="keys" item="k" open="(" separator="," close=")">
+            (#{k.itemType}, #{k.itemId})
+        </foreach>
+    </sql>
+
+    <sql id="idList">
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </sql>
+
+    <!-- ================================================================================
+         Queue
+         ================================================================================ -->
+
+    <select id="selectQueued" resultMap="FeedKeyMap">
+        SELECT item_type, item_id, queued_at
+        FROM feed_index_queue
+        ORDER BY queued_at
+        LIMIT #{limit}
+    </select>
+
+    <!-- queued_at guards a post written again while the job indexed it: its newer queue
+         row stays, so the next run reads it again. -->
+    <delete id="deleteQueued">
+        DELETE FROM feed_index_queue q
+        USING (VALUES
+            <foreach collection="keys" item="k" separator=",">
+                (#{k.itemType}::varchar, #{k.itemId}::uuid, #{k.queuedAt}::timestamp)
+            </foreach>
+        ) AS v(item_type, item_id, queued_at)
+        WHERE q.item_type = v.item_type
+          AND q.item_id = v.item_id
+          AND q.queued_at &lt;= v.queued_at
+    </delete>
+
+    <select id="countQueued" resultType="int">
+        SELECT COUNT(*) FROM feed_index_queue
+    </select>
+
+    <!-- ================================================================================
+         Indexer: one statement per kind, the same SELECT as the backfill. Every write
+         marks the row stats_dirty so its counts and scores follow.
+         ================================================================================ -->
+
+    <insert id="upsertCheckins">
+        INSERT INTO feed_items (item_type, item_id, author_id, published_at, province_code, place_id,
+                                place_group, sub_types, point, has_photo, photo_count, text_len,
+                                author_trust, eligible, stats_dirty, indexed_at)
+        SELECT 'CHECKIN', c.id, c.user_id, c.created_at,
+               COALESCE((SELECT w.province_code FROM wards w WHERE w.code = c.ward_code),
+                        p.province_code,
+                        c.province_code,
+                        goroute_province_at(COALESCE(p.latitude, c.latitude), COALESCE(p.longitude, c.longitude))),
+               c.place_id,
+               p.place_group,
+               COALESCE(p.sub_types, '{}'::varchar[]),
+               CASE
+                   WHEN p.latitude IS NOT NULL AND p.longitude IS NOT NULL THEN goroute_point(p.latitude, p.longitude)
+                   WHEN c.latitude IS NOT NULL AND c.longitude IS NOT NULL THEN goroute_point(c.latitude, c.longitude)
+               END,
+               c.has_photo,
+               (SELECT COUNT(*) FROM media_assets ma
+                WHERE ma.entity_type = 'USER_CHECKIN' AND ma.entity_id = c.id
+                  AND (ma.asset_role IS NULL OR ma.asset_role = 'PHOTO')
+                  AND ma.deleted_at IS NULL),
+               COALESCE(LENGTH(TRIM(c.caption)), 0),
+               COALESCE((SELECT urp.trust_score FROM user_review_profiles urp WHERE urp.user_id = c.user_id), 50),
+               (c.visibility = 'PUBLIC'
+                   AND c.is_removed = FALSE
+                   AND u.deleted_at IS NULL
+                   AND NOT EXISTS (
+                       SELECT 1 FROM content_takedowns t
+                       WHERE t.content_type = 'CHECKIN' AND t.content_id = c.id AND t.restored_at IS NULL)),
+               TRUE,
+               NOW()
+        FROM user_checkins c
+        JOIN users u ON u.id = c.user_id
+        LEFT JOIN places p ON p.id = c.place_id
+        WHERE c.id IN <include refid="idList"/>
+        ON CONFLICT (item_type, item_id) DO UPDATE SET
+            author_id     = EXCLUDED.author_id,
+            published_at  = EXCLUDED.published_at,
+            province_code = EXCLUDED.province_code,
+            place_id      = EXCLUDED.place_id,
+            place_group   = EXCLUDED.place_group,
+            sub_types     = EXCLUDED.sub_types,
+            point         = EXCLUDED.point,
+            has_photo     = EXCLUDED.has_photo,
+            photo_count   = EXCLUDED.photo_count,
+            text_len      = EXCLUDED.text_len,
+            author_trust  = EXCLUDED.author_trust,
+            eligible      = EXCLUDED.eligible,
+            stats_dirty   = TRUE,
+            indexed_at    = NOW()
+    </insert>
+
+    <!-- A review rides inside a public check-in when one carries it: then it is not a post
+         of its own (the old review feed's rule). A review with neither text nor photo has
+         nothing to show. -->
+    <insert id="upsertReviews">
+        INSERT INTO feed_items (item_type, item_id, author_id, published_at, province_code, place_id,
+                                place_group, sub_types, point, has_photo, photo_count, text_len,
+                                author_trust, eligible, stats_dirty, indexed_at)
+        SELECT 'REVIEW', r.id, r.user_id, r.created_at,
+               COALESCE(p.province_code,
+                        goroute_province_at(COALESCE(p.latitude, r.checkin_lat), COALESCE(p.longitude, r.checkin_lng))),
+               r.place_id,
+               p.place_group,
+               COALESCE(p.sub_types, '{}'::varchar[]),
+               CASE
+                   WHEN p.latitude IS NOT NULL AND p.longitude IS NOT NULL THEN goroute_point(p.latitude, p.longitude)
+                   WHEN r.checkin_lat IS NOT NULL AND r.checkin_lng IS NOT NULL THEN goroute_point(r.checkin_lat, r.checkin_lng)
+               END,
+               r.has_photo,
+               (SELECT COUNT(*) FROM media_assets ma
+                WHERE ma.entity_type = 'USER_REVIEW' AND ma.entity_id = r.id AND ma.deleted_at IS NULL),
+               COALESCE(LENGTH(TRIM(r.text)), 0),
+               COALESCE((SELECT urp.trust_score FROM user_review_profiles urp WHERE urp.user_id = r.user_id), 50),
+               (u.deleted_at IS NULL
+                   AND (NULLIF(TRIM(COALESCE(r.text, '')), '') IS NOT NULL OR r.has_photo)
+                   AND NOT EXISTS (
+                       SELECT 1 FROM content_takedowns t
+                       WHERE t.content_type = 'REVIEW' AND t.content_id = r.id AND t.restored_at IS NULL)
+                   AND NOT EXISTS (
+                       SELECT 1 FROM user_checkins c
+                       WHERE c.review_id = r.id AND c.visibility = 'PUBLIC' AND c.is_removed = FALSE)),
+               TRUE,
+               NOW()
+        FROM user_reviews r
+        JOIN users u ON u.id = r.user_id
+        LEFT JOIN places p ON p.id = r.place_id
+        WHERE r.id IN <include refid="idList"/>
+        ON CONFLICT (item_type, item_id) DO UPDATE SET
+            author_id     = EXCLUDED.author_id,
+            published_at  = EXCLUDED.published_at,
+            province_code = EXCLUDED.province_code,
+            place_id      = EXCLUDED.place_id,
+            place_group   = EXCLUDED.place_group,
+            sub_types     = EXCLUDED.sub_types,
+            point         = EXCLUDED.point,
+            has_photo     = EXCLUDED.has_photo,
+            photo_count   = EXCLUDED.photo_count,
+            text_len      = EXCLUDED.text_len,
+            author_trust  = EXCLUDED.author_trust,
+            eligible      = EXCLUDED.eligible,
+            stats_dirty   = TRUE,
+            indexed_at    = NOW()
+    </insert>
+
+    <!-- A trip sits at its primary destination (else the first with coordinates, else the
+         trip's own destination point). stop_kind_counts counts the stops that point at a
+         catalogue place, by place group and by sub type, for the place chips. -->
+    <insert id="upsertTrips">
+        INSERT INTO feed_items (item_type, item_id, author_id, published_at, province_code, place_id,
+                                place_group, sub_types, point, has_photo, photo_count, text_len,
+                                author_trust, stop_count, linked_stop_count, day_count, has_cover,
+                                has_cost, trip_end_date, stop_kind_counts, copy_count, eligible,
+                                stats_dirty, indexed_at)
+        SELECT 'TRIP', t.id, t.owner_id, COALESCE(t.public_shared_at, t.created_at),
+               goroute_province_at(pt.lat, pt.lng),
+               NULL,
+               NULL,
+               '{}'::varchar[],
+               CASE WHEN pt.lat IS NOT NULL AND pt.lng IS NOT NULL THEN goroute_point(pt.lat, pt.lng) END,
+               COALESCE(t.memory_count, 0) > 0,
+               COALESCE(t.memory_count, 0),
+               COALESCE(LENGTH(TRIM(t.description)), 0),
+               COALESCE((SELECT urp.trust_score FROM user_review_profiles urp WHERE urp.user_id = t.owner_id), 50),
+               stops.stop_count,
+               stops.linked_count,
+               CASE WHEN t.start_date IS NOT NULL AND t.end_date IS NOT NULL
+                    THEN GREATEST(1, t.end_date - t.start_date + 1) ELSE 0 END,
+               NULLIF(TRIM(COALESCE(t.cover_image_url, '')), '') IS NOT NULL,
+               (COALESCE(t.budget, 0) > 0 OR EXISTS (SELECT 1 FROM expenses e WHERE e.trip_id = t.id)),
+               t.end_date,
+               kinds.counts,
+               COALESCE(t.copy_count, 0),
+               (t.visibility = 'PUBLIC'
+                   AND t.is_deleted = FALSE
+                   AND u.deleted_at IS NULL
+                   AND NOT EXISTS (
+                       SELECT 1 FROM content_takedowns ct
+                       WHERE ct.content_type = 'TRIP' AND ct.content_id = t.id AND ct.restored_at IS NULL)),
+               TRUE,
+               NOW()
+        FROM trips t
+        JOIN users u ON u.id = t.owner_id
+        LEFT JOIN LATERAL (
+            SELECT d.lat, d.lng
+            FROM trip_destinations d
+            WHERE d.trip_id = t.id AND d.lat IS NOT NULL AND d.lng IS NOT NULL
+            ORDER BY d.is_primary DESC NULLS LAST, d.order_index NULLS LAST
+            LIMIT 1
+        ) dest ON TRUE
+        CROSS JOIN LATERAL (
+            SELECT COALESCE(dest.lat, t.destination_lat) AS lat,
+                   COALESCE(dest.lng, t.destination_lng) AS lng
+        ) pt
+        CROSS JOIN LATERAL (
+            SELECT COUNT(*) AS stop_count, COUNT(a.place_ref_id) AS linked_count
+            FROM activities a
+            WHERE a.trip_id = t.id AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+        ) stops
+        LEFT JOIN LATERAL (
+            SELECT jsonb_object_agg(grouped.kind, grouped.n) AS counts
+            FROM (
+                SELECT kind, COUNT(*) AS n
+                FROM (
+                    SELECT p.place_group AS kind
+                    FROM activities a
+                    JOIN places p ON p.id = a.place_ref_id
+                    WHERE a.trip_id = t.id
+                      AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+                      AND p.place_group IS NOT NULL
+                    UNION ALL
+                    SELECT unnest(p.sub_types) AS kind
+                    FROM activities a
+                    JOIN places p ON p.id = a.place_ref_id
+                    WHERE a.trip_id = t.id
+                      AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+                ) every_kind
+                GROUP BY kind
+            ) grouped
+        ) kinds ON TRUE
+        WHERE t.id IN <include refid="idList"/>
+        ON CONFLICT (item_type, item_id) DO UPDATE SET
+            author_id         = EXCLUDED.author_id,
+            published_at      = EXCLUDED.published_at,
+            province_code     = EXCLUDED.province_code,
+            point             = EXCLUDED.point,
+            has_photo         = EXCLUDED.has_photo,
+            photo_count       = EXCLUDED.photo_count,
+            text_len          = EXCLUDED.text_len,
+            author_trust      = EXCLUDED.author_trust,
+            stop_count        = EXCLUDED.stop_count,
+            linked_stop_count = EXCLUDED.linked_stop_count,
+            day_count         = EXCLUDED.day_count,
+            has_cover         = EXCLUDED.has_cover,
+            has_cost          = EXCLUDED.has_cost,
+            trip_end_date     = EXCLUDED.trip_end_date,
+            stop_kind_counts  = EXCLUDED.stop_kind_counts,
+            copy_count        = EXCLUDED.copy_count,
+            eligible          = EXCLUDED.eligible,
+            stats_dirty       = TRUE,
+            indexed_at        = NOW()
+    </insert>
+
+    <delete id="deleteOrphans">
+        DELETE FROM feed_items fi
+        WHERE fi.item_type = #{itemType}
+          AND fi.item_id IN <include refid="idList"/>
+          AND NOT EXISTS (
+              <choose>
+                  <when test="itemType == 'CHECKIN'">SELECT 1 FROM user_checkins s WHERE s.id = fi.item_id</when>
+                  <when test="itemType == 'REVIEW'">SELECT 1 FROM user_reviews s WHERE s.id = fi.item_id</when>
+                  <otherwise>SELECT 1 FROM trips s WHERE s.id = fi.item_id</otherwise>
+              </choose>)
+    </delete>
+
+    <!-- ================================================================================
+         Counts and scores
+         ================================================================================ -->
+
+    <update id="markImpressionsDirty">
+        UPDATE feed_items fi SET stats_dirty = TRUE
+        FROM (
+            SELECT DISTINCT item_type, item_id
+            FROM feed_impressions
+            WHERE last_seen_at &gt; #{since}
+        ) seen
+        WHERE fi.item_type = seen.item_type
+          AND fi.item_id = seen.item_id
+          AND NOT fi.stats_dirty
+    </update>
+
+    <select id="selectDirty" resultMap="FeedKeyMap">
+        SELECT item_type, item_id, NULL AS queued_at
+        FROM feed_items
+        WHERE stats_dirty
+        ORDER BY indexed_at
+        LIMIT #{limit}
+    </select>
+
+    <!-- stats_dirty clears here, before the scores are computed: an interaction landing
+         between this and updateScores marks the row again and is not lost.
+         A "like" is the post's heart: a check-in like, or a helpful vote on a review or a
+         trip. Comments count distinct people other than the author. -->
+    <update id="refreshCounts">
+        UPDATE feed_items fi SET
+            like_count = CASE fi.item_type
+                WHEN 'CHECKIN' THEN (SELECT COUNT(*) FROM user_checkin_likes l WHERE l.checkin_id = fi.item_id)
+                WHEN 'REVIEW' THEN (SELECT COUNT(*) FROM review_helpful_votes v
+                                    WHERE v.review_id = fi.item_id AND v.is_helpful)
+                ELSE (SELECT COUNT(*) FROM trip_helpful_votes v WHERE v.trip_id = fi.item_id AND v.is_helpful)
+            END,
+            comment_count = (SELECT COUNT(DISTINCT cc.user_id) FROM content_comments cc
+                             WHERE cc.content_type = fi.item_type AND cc.content_id = fi.item_id
+                               AND cc.is_deleted = FALSE AND cc.user_id &lt;&gt; fi.author_id),
+            save_count = (SELECT COUNT(*) FROM saved_posts sp
+                          WHERE sp.post_type = fi.item_type AND sp.post_id = fi.item_id),
+            impression_count = (SELECT COUNT(*) FROM feed_impressions i
+                                 WHERE i.item_type = fi.item_type AND i.item_id = fi.item_id),
+            hide_count = (SELECT COUNT(*) FROM feed_feedback ff
+                          WHERE ff.kind = 'HIDE_POST' AND ff.item_type = fi.item_type
+                            AND ff.item_id = fi.item_id AND ff.revoked_at IS NULL),
+            report_count = (SELECT COUNT(DISTINCT r.reporter_id) FROM content_reports r
+                            WHERE r.content_type = fi.item_type AND r.content_id = fi.item_id
+                              AND COALESCE(r.status, '') &lt;&gt; 'DISMISSED'),
+            stats_dirty = FALSE,
+            stats_updated_at = NOW()
+        WHERE (fi.item_type, fi.item_id) IN <include refid="keyList"/>
+    </update>
+
+    <select id="selectByKeys" resultMap="FeedItemRowMap">
+        SELECT <include refid="itemColumns"/>
+        FROM feed_items fi
+        WHERE (fi.item_type, fi.item_id) IN <include refid="keyList"/>
+    </select>
+
+    <update id="updateScores">
+        UPDATE feed_items fi SET
+            quality_score = v.q,
+            engagement_score = v.e,
+            recommend_ok = v.ok
+        FROM (VALUES
+            <foreach collection="rows" item="r" separator=",">
+                (#{r.itemType}::varchar, #{r.itemId}::uuid, #{r.qualityScore}::real,
+                 #{r.engagementScore}::real, #{r.recommendOk}::boolean)
+            </foreach>
+        ) AS v(item_type, item_id, q, e, ok)
+        WHERE fi.item_type = v.item_type AND fi.item_id = v.item_id
+    </update>
+
+    <insert id="enqueueForReconcile">
+        INSERT INTO feed_index_queue (item_type, item_id, queued_at)
+        SELECT item_type, item_id, NOW()
+        FROM feed_items
+        WHERE published_at &gt; #{recentSince}
+           OR stats_updated_at IS NULL
+           OR stats_updated_at &lt; #{staleBefore}
+        ON CONFLICT (item_type, item_id) DO UPDATE SET queued_at = EXCLUDED.queued_at
+    </insert>
+
+    <!-- ================================================================================
+         Candidates: one statement for every source. The viewer's exclusions and the
+         request's filters are the same for all; each source sets one selector and an order.
+         ================================================================================ -->
+
+    <sql id="chipKinds">
+        <choose>
+            <when test="q.subTypes != null and !q.subTypes.isEmpty()">
+                <foreach collection="q.subTypes" item="kind" open="ARRAY[" separator="," close="]::varchar[]">#{kind}</foreach>
+            </when>
+            <otherwise>
+                <foreach collection="q.placeGroups" item="kind" open="ARRAY[" separator="," close="]::varchar[]">#{kind}</foreach>
+            </otherwise>
+        </choose>
+    </sql>
+
+    <select id="selectCandidates" resultMap="FeedItemRowMap">
+        SELECT <include refid="itemColumns"/>
+        FROM feed_items fi
+        WHERE fi.eligible
+        <if test="!q.ignoreRecommendGate">
+            <choose>
+                <when test="q.relaxedRecommendGate">
+                    AND (fi.recommend_ok OR fi.item_type &lt;&gt; 'TRIP' OR fi.has_photo OR fi.stop_count &gt;= 2)
+                </when>
+                <otherwise>AND fi.recommend_ok</otherwise>
+            </choose>
+        </if>
+        <if test="q.viewerId != null">
+            AND fi.author_id &lt;&gt; #{q.viewerId}
+            AND NOT EXISTS (
+                SELECT 1 FROM user_blocks b
+                WHERE (b.blocker_id = #{q.viewerId} AND b.blocked_id = fi.author_id)
+                   OR (b.blocker_id = fi.author_id AND b.blocked_id = #{q.viewerId}))
+            AND NOT EXISTS (
+                SELECT 1 FROM feed_feedback ff
+                WHERE ff.user_id = #{q.viewerId}
+                  AND ff.revoked_at IS NULL
+                  AND ((ff.kind = 'HIDE_POST' AND ff.item_type = fi.item_type AND ff.item_id = fi.item_id)
+                    OR (ff.kind = 'HIDE_AUTHOR' AND ff.target_user_id = fi.author_id AND ff.expires_at &gt; NOW())))
+            AND NOT (fi.item_type = 'TRIP' AND EXISTS (
+                SELECT 1 FROM trip_members tm
+                WHERE tm.trip_id = fi.item_id AND tm.user_id = #{q.viewerId} AND tm.status = 'ACCEPTED'))
+        </if>
+        <if test="q.itemTypes != null and !q.itemTypes.isEmpty()">
+            AND fi.item_type IN
+            <foreach collection="q.itemTypes" item="type" open="(" separator="," close=")">#{type}</foreach>
+        </if>
+        <if test="(q.placeGroups != null and !q.placeGroups.isEmpty()) or (q.subTypes != null and !q.subTypes.isEmpty())">
+            AND (
+                (fi.item_type &lt;&gt; 'TRIP'
+                <if test="q.placeGroups != null and !q.placeGroups.isEmpty()">
+                    AND fi.place_group IN
+                    <foreach collection="q.placeGroups" item="group" open="(" separator="," close=")">#{group}</foreach>
+                </if>
+                <if test="q.subTypes != null and !q.subTypes.isEmpty()">
+                    AND fi.sub_types &amp;&amp;
+                    <foreach collection="q.subTypes" item="subType" open="ARRAY[" separator="," close="]::varchar[]">#{subType}</foreach>
+                </if>
+                )
+                <if test="q.chipTripMinStops != null">
+                    <!-- A trip about the kind: enough of its stops are that kind, and they are a
+                         real share of the trip, so one cafe on a ten-stop trip does not count. -->
+                    OR (fi.item_type = 'TRIP'
+                        AND fi.stop_kind_counts IS NOT NULL
+                        AND (SELECT COALESCE(SUM((fi.stop_kind_counts ->> kind)::int), 0)
+                             FROM unnest(<include refid="chipKinds"/>) AS kind) &gt;= #{q.chipTripMinStops}
+                        AND (SELECT COALESCE(SUM((fi.stop_kind_counts ->> kind)::int), 0)
+                             FROM unnest(<include refid="chipKinds"/>) AS kind)
+                            &gt;= #{q.chipTripMinRatio} * GREATEST(fi.stop_count, 1))
+                </if>
+            )
+        </if>
+        <if test="q.radiusLat != null and q.radiusLng != null and q.radiusMeters != null">
+            AND fi.point IS NOT NULL
+            AND ST_DWithin(fi.point, goroute_point(#{q.radiusLat}, #{q.radiusLng}), #{q.radiusMeters})
+        </if>
+        <!-- selectors -->
+        <if test="q.authorIds != null">
+            <choose>
+                <when test="q.authorIds.isEmpty()">AND FALSE</when>
+                <otherwise>
+                    AND fi.author_id IN
+                    <foreach collection="q.authorIds" item="author" open="(" separator="," close=")">#{author}</foreach>
+                </otherwise>
+            </choose>
+        </if>
+        <if test="q.provinceCodes != null">
+            <choose>
+                <when test="q.provinceCodes.isEmpty()">AND FALSE</when>
+                <otherwise>
+                    AND fi.province_code IN
+                    <foreach collection="q.provinceCodes" item="province" open="(" separator="," close=")">#{province}</foreach>
+                </otherwise>
+            </choose>
+        </if>
+        <if test="q.placeIds != null">
+            <choose>
+                <when test="q.placeIds.isEmpty()">AND FALSE</when>
+                <otherwise>
+                    <!-- Posts about one of the places, and trips that share two or more of them. -->
+                    AND (fi.place_id IN
+                         <foreach collection="q.placeIds" item="place" open="(" separator="," close=")">#{place}</foreach>
+                         OR (fi.item_type = 'TRIP' AND (
+                             SELECT COUNT(DISTINCT a.place_ref_id) FROM activities a
+                             WHERE a.trip_id = fi.item_id
+                               AND a.place_ref_id IN
+                               <foreach collection="q.placeIds" item="place" open="(" separator="," close=")">#{place}</foreach>
+                         ) &gt;= 2))
+                </otherwise>
+            </choose>
+        </if>
+        <if test="q.nearLat != null and q.nearLng != null and q.nearMeters != null">
+            AND fi.point IS NOT NULL
+            AND ST_DWithin(fi.point, goroute_point(#{q.nearLat}, #{q.nearLng}), #{q.nearMeters})
+        </if>
+        <if test="q.keys != null">
+            <choose>
+                <when test="q.keys.isEmpty()">AND FALSE</when>
+                <otherwise>
+                    AND (fi.item_type, fi.item_id) IN
+                    <foreach collection="q.keys" item="k" open="(" separator="," close=")">(#{k.itemType}, #{k.itemId})</foreach>
+                </otherwise>
+            </choose>
+        </if>
+        <if test="q.since != null">AND fi.published_at &gt; #{q.since}</if>
+        <if test="q.maxImpressions != null">AND fi.impression_count &lt; #{q.maxImpressions}</if>
+        <choose>
+            <when test="q.orderByEngagement">ORDER BY fi.engagement_score DESC, fi.published_at DESC</when>
+            <otherwise>ORDER BY fi.published_at DESC</otherwise>
+        </choose>
+        LIMIT #{q.limit}
+    </select>
+</mapper>

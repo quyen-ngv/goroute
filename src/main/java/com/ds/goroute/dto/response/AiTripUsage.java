@@ -6,13 +6,11 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * What an AI trip generation would cost the user, both halves of it.
+ * Whether an AI trip generation may start, and why not.
  *
- * <p>An AI generation spends two different allowances: a generation slot up front, and a
- * trip-creation slot at the end when the itinerary is saved as a real trip. Reporting only the
- * first is what let somebody start a generation they could never finish -- the AI slot gone, the
- * model bill paid, and a refusal at the last step. The client needs both numbers to say so before
- * anything is spent.
+ * <p>A generation needs AI credits up front and a trip-creation slot at the end, when the
+ * itinerary is saved as a real trip. Reporting only the first is what let somebody start a
+ * generation they could never finish. The client needs both answers before anything is spent.
  */
 @Data
 @Builder
@@ -20,14 +18,12 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class AiTripUsage {
     private String tier;
-    private Integer used;
-    private Integer limit;
 
-    /** True only when both allowances have room. */
+    /** True only when both credits and a trip-creation slot are there. */
     private Boolean eligible;
 
-    /** Generation slots alone, ignoring the trip-creation side. */
-    private Boolean aiQuotaAvailable;
+    /** The balance covers AI_CREDIT.MIN_BALANCE_AI_TRIP (always true for beta users). */
+    private Boolean creditAvailable;
 
     /** Trip-creation slots alone: a free slot left, or an unlocked one not yet used. */
     private Boolean tripQuotaAvailable;

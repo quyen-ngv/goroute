@@ -5,6 +5,7 @@ import com.ds.goroute.dto.request.AiApiCallFilter;
 import com.ds.goroute.dto.request.AiApiCallLogRequest;
 import com.ds.goroute.dto.response.AiApiCallPageResponse;
 import com.ds.goroute.dto.response.AiApiCallStatResponse;
+import com.ds.goroute.dto.response.AiCreditStatus;
 import com.ds.goroute.entity.AiApiCall;
 import com.ds.goroute.entity.AppConfig;
 import com.ds.goroute.exception.BusinessException;
@@ -32,8 +33,9 @@ import java.util.UUID;
  *
  * Writing never fails the caller: a broken log row must not break an AI trip or a moderation.
  * Cost comes from config label {@value #PRICING_LABEL}; key = model id in lower case, value JSON
- * {@code {"input":..,"cachedInput":..,"output":..,"webSearchPer1k":..}} in USD per 1M tokens
- * (per 1,000 calls for web search).
+ * {@code {"input":..,"cachedInput":..,"cacheWrite5m":..,"cacheWrite1h":..,"output":..,"webSearchPer1k":..}}
+ * in USD per 1M tokens (per 1,000 calls for web search). Cache reads and writes are subsets of the
+ * input tokens; a missing cache-write price falls back to Anthropic's 1.25x / 2x of the input price.
  */
 @Slf4j
 @Service
@@ -48,16 +50,28 @@ public class AiCallLogService {
     private final AiApiCallMapper mapper;
     private final AppConfigRepository configRepository;
     private final ObjectMapper objectMapper;
+    private final AiCreditService aiCreditService;
 
-    public record Price(BigDecimal input, BigDecimal cachedInput, BigDecimal output, BigDecimal webSearchPer1k) {
-        BigDecimal cost(long input, long cached, long output, long searches) {
-            long uncached = Math.max(0, input - cached);
+    public record Price(BigDecimal input, BigDecimal cachedInput, BigDecimal cacheWrite5m, BigDecimal cacheWrite1h,
+                        BigDecimal output, BigDecimal webSearchPer1k) {
+        private static final BigDecimal WRITE_5M_FACTOR = new BigDecimal("1.25");
+        private static final BigDecimal WRITE_1H_FACTOR = BigDecimal.valueOf(2);
+
+        BigDecimal cost(Usage usage) {
+            long read = Math.min(usage.cached(), usage.input());
+            long write5m = Math.min(usage.cacheWrite5m(), usage.input() - read);
+            long write1h = Math.min(usage.cacheWrite1h(), usage.input() - read - write5m);
+            long uncached = Math.max(0, usage.input() - read - write5m - write1h);
             BigDecimal cachedRate = cachedInput != null ? cachedInput : this.input;
+            BigDecimal write5mRate = cacheWrite5m != null ? cacheWrite5m : rate(this.input).multiply(WRITE_5M_FACTOR);
+            BigDecimal write1hRate = cacheWrite1h != null ? cacheWrite1h : rate(this.input).multiply(WRITE_1H_FACTOR);
             return rate(this.input).multiply(BigDecimal.valueOf(uncached))
-                    .add(rate(cachedRate).multiply(BigDecimal.valueOf(Math.min(cached, input))))
-                    .add(rate(this.output).multiply(BigDecimal.valueOf(output)))
+                    .add(rate(cachedRate).multiply(BigDecimal.valueOf(read)))
+                    .add(write5mRate.multiply(BigDecimal.valueOf(write5m)))
+                    .add(write1hRate.multiply(BigDecimal.valueOf(write1h)))
+                    .add(rate(this.output).multiply(BigDecimal.valueOf(usage.output())))
                     .divide(MILLION, 8, RoundingMode.HALF_UP)
-                    .add(rate(webSearchPer1k).multiply(BigDecimal.valueOf(searches)).divide(THOUSAND, 8, RoundingMode.HALF_UP))
+                    .add(rate(webSearchPer1k).multiply(BigDecimal.valueOf(usage.searches())).divide(THOUSAND, 8, RoundingMode.HALF_UP))
                     .setScale(6, RoundingMode.HALF_UP);
         }
 
@@ -66,9 +80,16 @@ public class AiCallLogService {
         }
     }
 
-    /** Reported by a worker. {@code userId} is used when the report does not name a user. */
-    public void record(AiApiCallLogRequest r, UUID userId) {
-        record(AiApiCall.builder()
+    /** Token counts to price; cached and the cache writes are parts of {@code input}. */
+    public record Usage(long input, long cached, long cacheWrite5m, long cacheWrite1h, long output, long searches) {
+    }
+
+    /**
+     * Reported by a worker. {@code userId} is used when the report does not name a user. Returns
+     * the credit status after the charge, which the worker reads to stop a task out of credit.
+     */
+    public AiCreditStatus record(AiApiCallLogRequest r, UUID userId) {
+        return record(AiApiCall.builder()
                 .userId(r.getUserId() != null ? r.getUserId() : userId)
                 .feature(r.getFeature())
                 .operation(r.getOperation())
@@ -82,6 +103,8 @@ public class AiCallLogService {
                 .errorPayload(json(r.getError()))
                 .inputTokens(r.getInputTokens())
                 .cachedInputTokens(r.getCachedInputTokens())
+                .cacheWrite5mTokens(r.getCacheWrite5mTokens())
+                .cacheWrite1hTokens(r.getCacheWrite1hTokens())
                 .outputTokens(r.getOutputTokens())
                 .webSearchCalls(r.getWebSearchCalls())
                 .latencyMs(r.getLatencyMs())
@@ -89,7 +112,11 @@ public class AiCallLogService {
                 .build());
     }
 
-    public void record(AiApiCall call) {
+    /**
+     * Writes the row, then charges it to the user's AI credits when its feature is billed.
+     * Returns null when nothing was charged or the write failed.
+     */
+    public AiCreditStatus record(AiApiCall call) {
         try {
             LocalDateTime now = LocalDateTime.now();
             if (call.getId() == null) call.setId(UUID.randomUUID());
@@ -104,8 +131,9 @@ public class AiCallLogService {
             if (call.getCostUsd() == null) {
                 Price price = prices().get(key(call.getModel()));
                 if (price != null) {
-                    call.setCostUsd(price.cost(nz(call.getInputTokens()), nz(call.getCachedInputTokens()),
-                            nz(call.getOutputTokens()), nz(call.getWebSearchCalls())));
+                    call.setCostUsd(price.cost(new Usage(nz(call.getInputTokens()), nz(call.getCachedInputTokens()),
+                            nz(call.getCacheWrite5mTokens()), nz(call.getCacheWrite1hTokens()),
+                            nz(call.getOutputTokens()), nz(call.getWebSearchCalls()))));
                 }
             }
             call.setRequestPayload(cap(call.getRequestPayload()));
@@ -115,6 +143,14 @@ public class AiCallLogService {
         } catch (Exception e) {
             log.warn("AI call log failed for {}/{} model={}: {}", call.getFeature(), call.getOperation(),
                     call.getModel(), e.getMessage());
+            return null;
+        }
+        try {
+            return aiCreditService.charge(call);
+        } catch (Exception e) {
+            log.warn("AI credit charge failed for {}/{} user={}: {}", call.getFeature(), call.getOperation(),
+                    call.getUserId(), e.getMessage());
+            return null;
         }
     }
 
@@ -147,8 +183,9 @@ public class AiCallLogService {
             boolean unpriced = row.getUnpricedInputTokens() + row.getUnpricedOutputTokens() + row.getUnpricedWebSearchCalls() > 0;
             Price price = prices.get(key(row.getModel()));
             if (unpriced && price != null) {
-                cost = cost.add(price.cost(row.getUnpricedInputTokens(), row.getUnpricedCachedInputTokens(),
-                        row.getUnpricedOutputTokens(), row.getUnpricedWebSearchCalls()));
+                cost = cost.add(price.cost(new Usage(row.getUnpricedInputTokens(), row.getUnpricedCachedInputTokens(),
+                        row.getUnpricedCacheWrite5mTokens(), row.getUnpricedCacheWrite1hTokens(),
+                        row.getUnpricedOutputTokens(), row.getUnpricedWebSearchCalls())));
             }
             row.setCostUsd(cost.setScale(6, RoundingMode.HALF_UP));
             row.setMissingPrice(unpriced && price == null);
@@ -163,6 +200,7 @@ public class AiCallLogService {
             try {
                 JsonNode v = objectMapper.readTree(row.getValue());
                 out.put(key(row.getKey()), new Price(decimal(v, "input"), decimal(v, "cachedInput"),
+                        decimal(v, "cacheWrite5m"), decimal(v, "cacheWrite1h"),
                         decimal(v, "output"), decimal(v, "webSearchPer1k")));
             } catch (Exception e) {
                 log.warn("AI_PRICING row {} is not valid JSON: {}", row.getKey(), e.getMessage());

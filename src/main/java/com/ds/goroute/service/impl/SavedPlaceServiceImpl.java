@@ -18,6 +18,7 @@ import com.ds.goroute.mapper.SavedCategoryMapper;
 import com.ds.goroute.mapper.SavedPlaceMapper;
 import com.ds.goroute.repository.LocationImageRepository;
 import com.ds.goroute.service.SavedPlaceService;
+import com.ds.goroute.utils.PlaceDisplayRating;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.Lists;
@@ -507,9 +508,7 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
                 lat = place.getLatitude().doubleValue();
                 lng = place.getLongitude().doubleValue();
             }
-            BigDecimal catalogRating = place.getAdjustedRating() != null
-                    ? place.getAdjustedRating()
-                    : place.getReviewRating();
+            BigDecimal catalogRating = PlaceDisplayRating.of(place);
             if (catalogRating != null) {
                 rating = catalogRating.doubleValue();
             }

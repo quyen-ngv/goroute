@@ -13,11 +13,13 @@ import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.AssistantRepository;
 import com.ds.goroute.repository.MarketplaceChatRepository;
 import com.ds.goroute.repository.PlaceRepository;
+import com.ds.goroute.service.AiCreditService;
 import com.ds.goroute.service.MarketplaceChatService;
 import com.ds.goroute.service.TextModerationService;
 import com.ds.goroute.service.WebSocketService;
 import com.ds.goroute.service.marketplace.ChatShareValidator;
 import com.ds.goroute.service.moderation.ModerationVerdict;
+import com.ds.goroute.type.AiCreditFeature;
 import com.ds.goroute.type.AssistantTurnStatus;
 import com.ds.goroute.type.ChatShareType;
 import com.ds.goroute.type.MarketplaceConversationType;
@@ -52,8 +54,9 @@ import java.util.regex.Pattern;
  *   <li>A trip chat asks by mentioning Pengoo or replying to one of its messages; the 1:1 chat
  *       asks with every message.</li>
  *   <li>One turn per conversation runs at a time; later questions wait (QUEUED) in order.</li>
- *   <li>A question counts against the asker's daily allowance when it is accepted; a failure
- *       takes it back, so a broken answer is never paid for.</li>
+ *   <li>Asking needs AI_CREDIT.MIN_BALANCE_ASSISTANT credits; each model call is charged as the
+ *       worker logs it. A failure refunds the turn, so a broken answer is never paid for. One
+ *       question per asker at a time, across conversations.</li>
  *   <li>Every state change is pushed to the thread as {@code ASSISTANT_TURN} so the app can show
  *       what Pengoo is doing right now.</li>
  * </ul>
@@ -64,6 +67,8 @@ import java.util.regex.Pattern;
 public class AssistantTurnService {
 
     static final String EVENT_TURN = "ASSISTANT_TURN";
+    static final String NOTICE_CREDIT_EXHAUSTED = "CREDIT_EXHAUSTED";
+    static final String NOTICE_BUSY = "BUSY";
     static final int MAX_PLACE_CARDS = 8;
     static final int MAX_ITEM_CARDS = 6;
     static final int MAX_SUGGESTIONS = 4;
@@ -74,6 +79,7 @@ public class AssistantTurnService {
     private final MarketplaceChatRepository chatRepository;
     private final MarketplaceChatService chatService;
     private final AssistantAccessService access;
+    private final AiCreditService credits;
     private final AssistantTurnSnapshots snapshots;
     private final AssistantProposalService proposals;
     private final AssistantActionService actions;
@@ -99,13 +105,13 @@ public class AssistantTurnService {
         LocalDateTime now = access.now();
         String question = question(message.content());
         String language = message.language();
-        if (access.usedToday(askerId) >= access.dailyLimit(askerId)) {
-            AssistantTurn rejected = newTurn(conversation, message, AssistantTurnStatus.REJECTED, false, now, question, language);
-            repository.insertTurn(rejected);
-            int limit = access.dailyLimit(askerId);
-            chatService.postAssistantMessage(conversation.getId(), AssistantNotices.quotaExhausted(language, limit),
-                    List.of(Map.of("kind", "NOTICE", "code", "QUOTA_EXHAUSTED", "limit", limit)),
-                    replyTarget(conversation, message.messageId()), askerId, "turn:" + rejected.getId());
+        if (!credits.canStart(askerId, AiCreditFeature.ASSISTANT)) {
+            reject(conversation, message, now, question, language,
+                    NOTICE_CREDIT_EXHAUSTED, AssistantNotices.creditExhausted(language));
+            return;
+        }
+        if (repository.hasOpenTurnOfUserElsewhere(askerId, conversation.getId())) {
+            reject(conversation, message, now, question, language, NOTICE_BUSY, AssistantNotices.busy(language));
             return;
         }
         boolean busy = repository.hasOpenTurn(conversation.getId());
@@ -114,6 +120,16 @@ public class AssistantTurnService {
         repository.insertTurn(turn);
         broadcastAfterCommit(turn.getId());
         if (!busy) events.publishEvent(new AssistantTurnDispatchEvent(turn.getId()));
+    }
+
+    /** Stores the question as REJECTED and answers with a fixed notice; nothing is charged. */
+    private void reject(MarketplaceConversation conversation, ChatMessageCreatedEvent message, LocalDateTime now,
+                        String question, String language, String code, String text) {
+        AssistantTurn rejected = newTurn(conversation, message, AssistantTurnStatus.REJECTED, false, now, question, language);
+        repository.insertTurn(rejected);
+        chatService.postAssistantMessage(conversation.getId(), text,
+                List.of(Map.of("kind", "NOTICE", "code", code)),
+                replyTarget(conversation, message.messageId()), message.senderUserId(), "turn:" + rejected.getId());
     }
 
     /** A step the worker reports; ignored once the turn is over (a late step after a timeout). */
@@ -156,9 +172,14 @@ public class AssistantTurnService {
                 .map(this::allowed).filter(java.util.Objects::nonNull).toList();
         blocks.addAll(actions.blocks(turn, reply.getActions(), this::allowed));
         if (!suggestions.isEmpty()) blocks.add(Map.of("kind", "SUGGESTIONS", "items", suggestions));
+        boolean stoppedForCredit = NOTICE_CREDIT_EXHAUSTED.equals(reply.getStopReason());
+        if (stoppedForCredit) blocks.add(Map.of("kind", "NOTICE", "code", NOTICE_CREDIT_EXHAUSTED, "partial", true));
+        String text = stoppedForCredit && (reply.getMarkdown() == null || reply.getMarkdown().isBlank())
+                ? AssistantNotices.creditStopped(turn.getLocale())
+                : answerText(reply.getMarkdown(), turn.getLocale());
 
         MarketplaceMessageResponse message = chatService.postAssistantMessage(conversation.getId(),
-                answerText(reply.getMarkdown(), turn.getLocale()), blocks,
+                text, blocks,
                 replyTarget(conversation, turn.getTriggerMessageId()), turn.getUserId(), "turn:" + turn.getId());
         repository.completeTurn(turnId, message.getId(), reply.getInputTokens(), reply.getOutputTokens(), access.now());
         repository.attachProposalsToMessage(turnId, message.getId());
@@ -168,7 +189,7 @@ public class AssistantTurnService {
         return message.getId();
     }
 
-    /** Ends an open turn with an apology to the asker; the question is not counted. */
+    /** Ends an open turn with an apology to the asker; the credits it used are refunded. */
     @Transactional
     public void fail(UUID turnId, String error) {
         AssistantTurn turn = repository.lockTurn(turnId).orElse(null);
@@ -183,6 +204,7 @@ public class AssistantTurnService {
             replyId = message.getId();
         }
         repository.failTurn(turnId, truncate(error, 1000), replyId, access.now());
+        credits.refundTask(turn.getUserId(), turnId.toString(), "Pengoo turn failed");
         log.info("Assistant turn {} failed: {}", turnId, truncate(error, 200));
         broadcastAfterCommit(turnId);
         if (conversation != null) startNext(conversation.getId());

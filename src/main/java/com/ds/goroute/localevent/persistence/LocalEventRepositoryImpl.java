@@ -37,6 +37,30 @@ public class LocalEventRepositoryImpl implements LocalEventRepository {
     }
 
     @Override
+    public List<LocalEvent> findPublicSummariesByIds(Collection<UUID> ids, LocalDateTime nowUtc) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        return mapper.findPublicSummariesByIds(ids, nowUtc);
+    }
+
+    @Override
+    public List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexPage(UUID afterId, int limit) {
+        return mapper.selectSearchIndexPage(afterId, limit);
+    }
+
+    @Override
+    public List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexChanges(
+            LocalDateTime afterUpdatedAt, UUID afterId, int limit) {
+        return mapper.selectSearchIndexChanges(afterUpdatedAt, afterId, limit);
+    }
+
+    @Override
+    public Optional<LocalDateTime> findSearchIndexMaxUpdatedAt() {
+        return Optional.ofNullable(mapper.selectSearchIndexMaxUpdatedAt());
+    }
+
+    @Override
     public List<LocalEvent> findForAdmin(LocalEventAdminSearchParams params) {
         return mapper.findForAdmin(params);
     }

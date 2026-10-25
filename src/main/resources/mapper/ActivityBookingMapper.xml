@@ -134,6 +134,17 @@
         FROM activity_bookings WHERE external_id = #{externalId}
     </select>
 
+    <!-- Feed search cards: imported catalogue rows only, never a partner's product in any status. -->
+    <select id="findCatalogueByIds" resultMap="ActivityBookingResultMap">
+        SELECT <include refid="ActivityBookingColumns"/>
+        FROM activity_bookings
+        WHERE host_organization_id IS NULL
+          AND id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
     <select id="findByIds" resultMap="ActivityBookingResultMap">
         SELECT <include refid="ActivityBookingColumns"/>
         FROM activity_bookings
@@ -236,5 +247,59 @@
     <delete id="delete">
         DELETE FROM activity_bookings WHERE id = #{id}
     </delete>
+
+    <!--
+         Feed search index (epic 12 §4.4): a tour is found by its title, then by address,
+         departure point, destinations, linked place and description; more booked and reviewed
+         ranks higher. Two variants in one table: CATALOGUE (imported, no organisation) is always
+         findable; MARKETPLACE (a partner's product) only under the public rule of
+         ActivityCommerceMapper.findPublicProduct. Hard-deleted rows leave at the next rebuild.
+    -->
+    <sql id="SearchIndexRowColumns">
+        a.id, a.host_organization_id AS owner_id, a.title AS title, NULL AS handle,
+        concat_ws(' ', NULLIF(a.activity_address, ''), NULLIF(a.departing_from, ''),
+            (SELECT string_agg(d.value, ' ') FROM jsonb_array_elements_text(COALESCE(a.destinations, '[]'::jsonb)) AS d(value)),
+            p.title, left(a.description, 2000)) AS body,
+        (COALESCE(a.booked_count, 0) + COALESCE(a.review_count, 0)) AS popularity,
+        a.created_at AS published_at, a.updated_at,
+        CASE WHEN a.host_organization_id IS NULL THEN 'CATALOGUE' ELSE 'MARKETPLACE' END AS variant,
+        (a.host_organization_id IS NULL
+         OR (a.product_status = 'ENABLED' AND a.inventory_mode = 'INTERNAL'
+             AND o.operational_status = 'ENABLED' AND o.verification_status = 'VERIFIED'
+             AND (a.place_ref_id IS NULL OR p.lifecycle_status = 'ACTIVE'))) AS eligible
+    </sql>
+
+    <sql id="SearchIndexRowSource">
+        FROM activity_bookings a
+        LEFT JOIN host_organizations o ON o.id = a.host_organization_id
+        LEFT JOIN places p ON p.id = a.place_ref_id
+    </sql>
+
+    <select id="selectSearchIndexPage" resultType="com.ds.goroute.entity.SocialSearchIndexRow">
+        SELECT <include refid="SearchIndexRowColumns"/>
+        <include refid="SearchIndexRowSource"/>
+        WHERE (a.host_organization_id IS NULL
+               OR (a.product_status = 'ENABLED' AND a.inventory_mode = 'INTERNAL'
+                   AND o.operational_status = 'ENABLED' AND o.verification_status = 'VERIFIED'
+                   AND (a.place_ref_id IS NULL OR p.lifecycle_status = 'ACTIVE')))
+          <if test="afterId != null">
+              AND a.id &gt; #{afterId}
+          </if>
+        ORDER BY a.id
+        LIMIT #{limit}
+    </select>
+
+    <!-- Served by idx_activity_bookings_updated_at (V252). -->
+    <select id="selectSearchIndexChanges" resultType="com.ds.goroute.entity.SocialSearchIndexRow">
+        SELECT <include refid="SearchIndexRowColumns"/>
+        <include refid="SearchIndexRowSource"/>
+        WHERE (a.updated_at, a.id) &gt; (#{afterUpdatedAt}, #{afterId})
+        ORDER BY a.updated_at, a.id
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectSearchIndexMaxUpdatedAt" resultType="java.time.LocalDateTime">
+        SELECT MAX(updated_at) FROM activity_bookings
+    </select>
 
 </mapper>

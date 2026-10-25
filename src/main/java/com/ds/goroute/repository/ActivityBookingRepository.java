@@ -17,6 +17,18 @@ public interface ActivityBookingRepository {
 
     List<ActivityBooking> findByIds(List<UUID> ids);
 
+    /** Imported catalogue rows among these ids (no partner organisation); any order. */
+    List<ActivityBooking> findCatalogueByIds(java.util.Collection<UUID> ids);
+
+    /** Feed search index: the next {@code limit} findable tours after {@code afterId} (null: from the start). */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexPage(UUID afterId, int limit);
+
+    /** Feed search index: tours changed after the cursor, each saying whether it is still findable. */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexChanges(
+            java.time.LocalDateTime afterUpdatedAt, UUID afterId, int limit);
+
+    Optional<java.time.LocalDateTime> findSearchIndexMaxUpdatedAt();
+
     Optional<ActivityBooking> findByExternalId(String externalId);
 
     List<ActivityBooking> findPage(int limit, int offset);

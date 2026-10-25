@@ -52,8 +52,8 @@ public class AssistantRepositoryImpl implements AssistantRepository {
     }
 
     @Override
-    public long countCountedTurnsSince(UUID userId, LocalDateTime since) {
-        return userId == null ? 0 : mapper.countCountedTurnsSince(userId, since);
+    public boolean hasOpenTurnOfUserElsewhere(UUID userId, UUID conversationId) {
+        return userId != null && mapper.countOpenTurnsOfUserElsewhere(userId, conversationId) > 0;
     }
 
     @Override

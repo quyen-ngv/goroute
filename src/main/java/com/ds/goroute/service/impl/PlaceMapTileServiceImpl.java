@@ -15,6 +15,7 @@ import com.ds.goroute.service.PlaceTranslationService;
 import com.ds.goroute.type.PlaceGroup;
 import com.ds.goroute.utils.JsonUtils;
 import com.ds.goroute.utils.MapTile;
+import com.ds.goroute.utils.PlaceDisplayRating;
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -151,7 +152,7 @@ public class PlaceMapTileServiceImpl implements PlaceMapTileService {
                     .thumbnail(place.getThumbnail())
                     .images(firstImages(place.getImages()))
                     .reviewRating(place.getReviewRating())
-                    .adjustedRating(place.getAdjustedRating())
+                    .adjustedRating(PlaceDisplayRating.of(place))
                     .reviewCount(place.getReviewCount())
                     .tripUseCount(place.getTripUseCount())
                     .checkinCount(place.getCheckinCount())

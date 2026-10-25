@@ -44,21 +44,23 @@ public class ActivityPlaceAdminServiceImpl implements ActivityPlaceAdminService 
 
     @Override
     @Transactional(readOnly = true)
-    public List<AdminUnlinkedActivityResponse> listUnlinked(String search, int page, int size) {
+    public List<AdminUnlinkedActivityResponse> listUnlinked(String search, boolean dismissed, int page, int size) {
         int boundedSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
         List<UnlinkedActivityRow> rows = activityRepository.findUnlinkedForAdmin(
-                blankToNull(search), boundedSize, Math.max(0, page) * boundedSize);
+                blankToNull(search), dismissed, boundedSize, Math.max(0, page) * boundedSize);
         if (rows.isEmpty()) {
             return List.of();
         }
-        Map<UUID, User> owners = userRepository.findByIds(rows.stream()
-                        .map(UnlinkedActivityRow::getOwnerId)
+        // Trip owners and the operators who dismissed rows, in one lookup.
+        Map<UUID, User> users = userRepository.findByIds(rows.stream()
+                        .flatMap(row -> Stream.of(row.getOwnerId(), row.getDismissedBy()))
                         .filter(Objects::nonNull)
                         .distinct()
                         .toList()).stream()
                 .collect(Collectors.toMap(User::getId, user -> user, (first, second) -> first));
         return rows.stream().map(row -> {
-            User owner = owners.get(row.getOwnerId());
+            User owner = users.get(row.getOwnerId());
+            User dismisser = row.getDismissedBy() == null ? null : users.get(row.getDismissedBy());
             return AdminUnlinkedActivityResponse.builder()
                     .id(row.getId())
                     .tripId(row.getTripId())
@@ -75,14 +77,42 @@ public class ActivityPlaceAdminServiceImpl implements ActivityPlaceAdminService 
                     .placeId(row.getPlaceId())
                     .customPlaceId(row.getCustomPlaceId())
                     .createdAt(row.getCreatedAt())
+                    .dismissedAt(row.getDismissedAt())
+                    .dismissedBy(row.getDismissedBy())
+                    .dismissedByName(dismisser == null ? null : dismisser.getFullName())
                     .build();
         }).toList();
     }
 
     @Override
     @Transactional(readOnly = true)
-    public long countUnlinked(String search) {
-        return activityRepository.countUnlinkedForAdmin(blankToNull(search));
+    public long countUnlinked(String search, boolean dismissed) {
+        return activityRepository.countUnlinkedForAdmin(blankToNull(search), dismissed);
+    }
+
+    @Override
+    @Transactional
+    public void dismiss(UUID adminId, UUID activityId) {
+        activityRepository.findById(activityId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity not found"));
+        // Another operator may have dismissed it since the queue loaded.
+        if (activityRepository.dismissPlaceReview(activityId, adminId) != 1) {
+            throw new BusinessException(ErrorConstant.ALREADY_PROCESSED,
+                    "This activity is already out of the queue");
+        }
+        log.info("Admin {} dismissed activity {} from the unlinked queue", adminId, activityId);
+    }
+
+    @Override
+    @Transactional
+    public void restore(UUID adminId, UUID activityId) {
+        activityRepository.findById(activityId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Activity not found"));
+        if (activityRepository.restorePlaceReview(activityId) != 1) {
+            throw new BusinessException(ErrorConstant.ALREADY_PROCESSED,
+                    "This activity is already in the queue");
+        }
+        log.info("Admin {} restored activity {} to the unlinked queue", adminId, activityId);
     }
 
     @Override

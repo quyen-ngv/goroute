@@ -75,6 +75,17 @@ public class LocalEventPublicService {
         return PageResponse.of(items, total, page, size);
     }
 
+    /**
+     * List cards of the events among {@code eventIds} the public list would show now (Feed
+     * search, epic 12 §4.4); the others are absent. Any order.
+     */
+    @Transactional(readOnly = true)
+    public List<LocalEventSummaryResponse> visibleSummaries(java.util.Collection<UUID> eventIds) {
+        return repository.findPublicSummariesByIds(eventIds, LocalEventTimes.toUtc(clock.instant())).stream()
+                .map(responses::summary)
+                .toList();
+    }
+
     @Transactional(readOnly = true)
     public LocalEventDetailResponse detail(UUID eventId) {
         LocalEvent event = repository.findPublishedById(eventId)

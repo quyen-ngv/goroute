@@ -62,6 +62,20 @@ class PlaceQueryTest {
     }
 
     @Test
+    void theTypesWinOverAKindThatWouldFilterThemOut() {
+        PlaceQuery query = PlaceQuery.of(null, List.of("SEAFOOD", "MARKET"), "food");
+
+        assertThat(query.subTypes()).containsExactly("SEAFOOD", "MARKET");
+        assertThat(query.groups()).isNull();
+    }
+
+    @Test
+    void aMorningFishMarketIsAMarketButChoMinhIsNot() {
+        assertThat(PlaceQuery.of("chợ cá buổi sáng", null, null).subTypes()).containsExactly("MARKET");
+        assertThat(PlaceQuery.of("cho mình quán phở", null, null).subTypes()).isNull();
+    }
+
+    @Test
     void aPlainNameIsSearchedAsIs() {
         PlaceQuery query = PlaceQuery.of("Cộng", null, null);
 

@@ -10,21 +10,7 @@
         ON CONFLICT (user_id) DO NOTHING
     </insert>
 
-    <update id="consumeAiTripQuota">
-        UPDATE user_subscriptions
-        SET ai_trips_used = ai_trips_used + 1,
-            updated_at = NOW()
-        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
-          AND ai_trips_used &lt; #{limit}
-    </update>
 
-    <update id="releaseAiTripQuota">
-        UPDATE user_subscriptions
-        SET ai_trips_used = GREATEST(ai_trips_used - 1, 0),
-            updated_at = NOW()
-        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
-          AND ai_trips_used &gt; 0
-    </update>
 
     <!--
       The effective tier, not the stored one. `expires_at` has been on this table since V041 and
@@ -53,10 +39,5 @@
           AND (expires_at IS NULL OR expires_at &gt; NOW())
     </select>
 
-    <select id="getAiTripsUsed" resultType="int">
-        SELECT ai_trips_used
-        FROM user_subscriptions
-        WHERE user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
-    </select>
 
 </mapper>

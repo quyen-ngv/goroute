@@ -37,8 +37,6 @@ public class AssistantChatHooksImpl implements ChatAssistantHooks {
                 .name(AssistantIdentity.NAME)
                 .username(AssistantIdentity.USERNAME)
                 .available(access.isAvailable(viewerId))
-                .dailyLimit(access.dailyLimit(viewerId))
-                .usedToday(access.usedToday(viewerId))
                 .canEditTrip(isTrip && canEdit(conversation.getTripId(), viewerId))
                 .activeTurn(active == null ? null : snapshots.snapshot(active))
                 .build();

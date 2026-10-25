@@ -43,6 +43,12 @@ public class AssistantReplyRequest {
     private Integer inputTokens;
     @PositiveOrZero
     private Integer outputTokens;
+    /**
+     * Why the answer ended early: {@code CREDIT_EXHAUSTED} when the asker ran out of AI credits
+     * mid-answer, so the text is what was ready by then. Null for a normal answer.
+     */
+    @Pattern(regexp = "CREDIT_EXHAUSTED")
+    private String stopReason;
 
     @Data
     public static class PlaceRef {

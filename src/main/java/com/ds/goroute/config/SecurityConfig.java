@@ -105,6 +105,8 @@ public class SecurityConfig {
                         .requestMatchers("/v1/api/internal/**").hasAuthority("ROLE_INTERNAL")
                         .requestMatchers("/v1/api/notifications/admin/**").hasAuthority("ROLE_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/v1/api/checkins/feed").permitAll()
+                        // The ranked feed answers guests too (enabled only once it is on for everyone).
+                        .requestMatchers(HttpMethod.GET, "/v1/api/feed/for-you").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/users/top-active").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/checkins/places/*",
                                 "/v1/api/checkins/locations/*").permitAll()

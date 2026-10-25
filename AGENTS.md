@@ -152,8 +152,11 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `PLACE_REVIEW` | `DEFAULT_REFRESH_MAX_REVIEWS` | count, 1..200 | safe fallback 200 | private/admin |
 | `TRIP_MEMORY` | `FREE_TRIP_MEMORY_LIMIT` | count, 1..1000 | safe fallback 50 | private/admin |
 | `EXPENSE` | `PAYMENT_REMINDER_COOLDOWN_MINUTES` | minutes, 1..10080 | safe fallback 1440 | private/admin |
-| `AI_TRIP_QUOTA` | `FREE_TRIP_QUOTA` / `PRO_TRIP_QUOTA` | count, 0..1000 | safe fallback 3 / 10 | private/admin |
-| `SOCIAL_LOCATION` | `DAILY_JOB_LIMIT_DEFAULT` | count/day/user, 0..1000 | safe fallback 5 | private/admin |
+| `AI_CREDIT` | `MARKUP` / `USD_PER_CREDIT` | multiplier 1..10 / USD per credit 0.00001..1 | safe fallback 1.2 / 0.001 | private/admin |
+| `AI_CREDIT` | `FREE_MONTHLY_CREDITS` | credits per month, 0..1000000 (PRO plans: `subscription_plans.ai_credits_per_refill`) | safe fallback 1000 | users via `GET /v1/api/me/ai-credits` (`planCredits`) |
+| `AI_CREDIT` | `NEGATIVE_FLOOR` | credits below zero a running task may reach, 0..1000 | safe fallback 5 | users via `/me/ai-credits` (`negativeFloor`) |
+| `AI_CREDIT` | `MIN_BALANCE_ASSISTANT` / `_AI_TRIP` / `_RECEIPT_SCAN` / `_SOCIAL_LOCATION` | credits needed to start, 0..100000 | safe fallback 20 / 100 / 10 / 10 | users via `/me/ai-credits` (`minBalance`) |
+| `AI_CREDIT` | `FALLBACK_CREDITS_PER_CALL` | credits for a model call with no AI_PRICING row, 0..100000 | safe fallback 20 | private/admin |
 | `MAP_SEARCH` | `RATE_LIMIT_ENABLED` / `EXEMPT_ADMINS` | boolean | safe fallback true / true | private/admin |
 | `MAP_SEARCH` | `AUTOCOMPLETE_PER_MINUTE` / `PLACE_DETAIL_PER_MINUTE` | count/minute/user, 1..600 | safe fallback 30 / 30 | private/admin |
 | `MAP_SEARCH` | `AUTOCOMPLETE_PER_DAY` / `PLACE_DETAIL_PER_DAY` | count/day/user, 1..100000 | safe fallback 300 / 200 | private/admin |
@@ -221,11 +224,11 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `MEETUP` | `MAX_OPEN_REQUESTS_PER_USER` | pending join requests on live meetups, 1..50 | safe fallback 5 | private/admin |
 | `MEETUP` | `MAX_RESUBMITS` | resubmits after a rejection, 0..10 | safe fallback 2 | host via meetup detail (`resubmitsLeft`) |
 | `ASSISTANT` | `ENABLED` | boolean (beta users always on); gates asking Pengoo | safe fallback false | users via `GET /v1/api/assistant/me` (`available`) |
-| `ASSISTANT` | `FREE_DAILY_QUESTIONS` / `PRO_DAILY_QUESTIONS` | questions per Vietnam day, 0..1000 / 0..10000 | safe fallback 5 / 50 | users via `/assistant/me` and the conversation `assistant` block |
 | `ASSISTANT` | `LOG_PAYLOADS` | boolean; prompts/answers kept in `ai_api_calls` (beta only) | safe fallback true | private/admin |
 | `ASSISTANT` | `HISTORY_MESSAGES` | chat lines sent with a question, 0..50 | safe fallback 20 | private/admin |
 | `ASSISTANT` | `WELCOME_ENABLED` | boolean | safe fallback true | private/admin |
-| `ASSISTANT` | `TURN_TIMEOUT_SECONDS` | seconds, 30..900 | safe fallback 150 | private/admin |
+| `ASSISTANT` | `FREE_MAX_TOOL_CALLS` / `PRO_MAX_TOOL_CALLS` | tool calls per question, 1..30 / 1..50 | safe fallback 6 / 20 | private/admin |
+| `ASSISTANT` | `TURN_TIMEOUT_SECONDS` | seconds, 30..900 | safe fallback 300 | private/admin |
 | `ASSISTANT` | `WEB_SEARCH_ENABLED` | boolean; one web search per answer when the catalogue has nothing (worker also needs a provider) | safe fallback true | private/admin |
 | `SOCIAL` | `FOLLOWER_FANOUT_ENABLED` | boolean (beta followers always told) | safe fallback false | users via `GET /v1/api/following/moments` (`enabled`) |
 | `SOCIAL` | `FOLLOWER_PUSH_COOLDOWN_MINUTES` / `FOLLOWER_PUSH_DAILY_MAX` | minutes per author 0..1440 / pushes per recipient per 24 h 0..100 | safe fallback 30 / 10 | private/admin |
@@ -233,6 +236,9 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `SOCIAL` | `MOMENTS_WINDOW_HOURS` | hours, 1..336 | safe fallback 72 | private/admin |
 | `FEED` | `IMPRESSION_RETENTION_DAYS` | days `feed_impressions` rows are kept, 7..365 | safe fallback 90 | private/admin |
 | `FEED` | `HIDE_AUTHOR_DAYS` | days "hide posts from this person" lasts, 1..365 | safe fallback 30 | users via `POST /v1/api/feed/feedback` (`expiresAt`) |
+| `FEED` | `RANKING_ENABLED` | boolean (beta users always on) | safe fallback false | users via `GET /v1/api/feed/for-you` (`enabled`) |
+| `FEED` | `RANKING_PERCENT` | share of signed-in users on the ranked feed, 0..100 | safe fallback 0 | users via `GET /v1/api/feed/for-you` (`enabled`) |
+| `FEED` | `RANKING_WEIGHTS` | JSON overriding `feed/feed-ranking-defaults.json` key by key | safe fallback `{}` (defaults) | private/admin |
 
 ## Build note
 

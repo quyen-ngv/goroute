@@ -72,15 +72,15 @@ class TripAccessGuardTest {
     @Test
     void publicViewFollowsTheTripVisibility() {
         Trip trip = trip();
-        when(tripMemberRepository.findByTripIdAndUserId(tripId, otherId)).thenReturn(Optional.empty());
 
         trip.setVisibility(TripVisibility.PUBLIC);
         assertThat(guard.requirePublicView(tripId, null)).isSameAs(trip);
 
+        // "Link only": anyone holding the link, signed in or not, member or not.
         trip.setVisibility(TripVisibility.SHARED);
         assertThat(guard.requirePublicView(tripId, ownerId)).isSameAs(trip);
-        assertThatThrownBy(() -> guard.requirePublicView(tripId, null)).isInstanceOf(BusinessException.class);
-        assertThatThrownBy(() -> guard.requirePublicView(tripId, otherId)).isInstanceOf(BusinessException.class);
+        assertThat(guard.requirePublicView(tripId, null)).isSameAs(trip);
+        assertThat(guard.requirePublicView(tripId, otherId)).isSameAs(trip);
 
         trip.setVisibility(TripVisibility.PRIVATE);
         assertThatThrownBy(() -> guard.requirePublicView(tripId, ownerId))

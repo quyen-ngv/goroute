@@ -65,4 +65,7 @@ public interface PlaceSearchIndexService {
      */
     List<UUID> searchPlaceIdsByName(String keyword, List<String> placeGroups, boolean includeInactive,
                                     int page, int size) throws IOException;
+
+    /** How many ACTIVE places {@link #searchPlaceIdsByName} finds for {@code keyword} in these groups. */
+    int countPlacesByName(String keyword, List<String> placeGroups) throws IOException;
 }

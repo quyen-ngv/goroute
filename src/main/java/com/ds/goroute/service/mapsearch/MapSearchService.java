@@ -156,7 +156,8 @@ public class MapSearchService {
         try {
             int asked = radiusKm == null ? limit : 10;
             List<MapPlaceCacheEntry> places = MapboxResults.clean(
-                    MapboxResults.places(mapbox.forward(input, latitude, longitude, language, asked)), language);
+                    MapboxResults.places(mapbox.forward(input, latitude, longitude, language, asked), this::area),
+                    language);
             if (radiusKm != null) {
                 double maxMeters = radiusKm * 1000.0;
                 places = places.stream()
@@ -245,7 +246,8 @@ public class MapSearchService {
                 return json(GoongShape.savingMode(shape.emptyDetail(), decision.resumesAt()));
             }
             try {
-                List<MapPlaceCacheEntry> found = MapboxResults.places(mapbox.retrieve(id, language(acceptLanguage)));
+                List<MapPlaceCacheEntry> found = MapboxResults.places(
+                        mapbox.retrieve(id, language(acceptLanguage)), this::area);
                 if (found.isEmpty()) {
                     return json(shape.emptyDetail());
                 }
@@ -309,7 +311,7 @@ public class MapSearchService {
         }
         try {
             List<MapPlaceCacheEntry> places = MapboxResults.clean(
-                    MapboxResults.places(mapbox.reverse(cellLat, cellLng, language, size)), language);
+                    MapboxResults.places(mapbox.reverse(cellLat, cellLng, language, size), this::area), language);
             if (places.isEmpty() && canFallBack(latitude, longitude)) {
                 return fallback.get();
             }
@@ -423,6 +425,26 @@ public class MapSearchService {
         try {
             return geoService.resolveWard(BigDecimal.valueOf(latitude), BigDecimal.valueOf(longitude))
                     .map(MapSearchService::compoundOf)
+                    .orElse(null);
+        } catch (RuntimeException exception) {
+            log.warn("Ward lookup failed: {}", exception.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Ward (with its unit: "Phường Kinh Bắc") and province that Mapbox addresses in Vietnam are
+     * rebuilt with; null outside Vietnam or before the boundary dataset is loaded.
+     */
+    private MapboxResults.Area area(double latitude, double longitude) {
+        if (!inVietnam(latitude, longitude)) {
+            return null;
+        }
+        try {
+            return geoService.resolveWard(BigDecimal.valueOf(latitude), BigDecimal.valueOf(longitude))
+                    .map(ward -> new MapboxResults.Area(
+                            ward.getFullName() != null ? ward.getFullName() : ward.getName(),
+                            ward.getProvinceName()))
                     .orElse(null);
         } catch (RuntimeException exception) {
             log.warn("Ward lookup failed: {}", exception.getMessage());

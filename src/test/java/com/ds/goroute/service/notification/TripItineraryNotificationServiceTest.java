@@ -147,6 +147,7 @@ class TripItineraryNotificationServiceTest {
                 .name("Train to Ayutthaya")
                 .category("transport")
                 .transportMode(TransportMode.TRAIN)
+                .placeId("place-bang-sue")
                 .address("Bang Sue Station")
                 .endAddress("Ayutthaya Station")
                 .build();
@@ -192,6 +193,7 @@ class TripItineraryNotificationServiceTest {
                 .name("Train to Ayutthaya")
                 .category("transport")
                 .transportMode(TransportMode.TRAIN)
+                .placeId("place-bang-sue")
                 .build();
         when(activityRepository.findByTripId(trip.getId())).thenReturn(List.of(transport));
         when(tripMemberRepository.findByTripId(trip.getId())).thenReturn(List.of());
@@ -235,6 +237,7 @@ class TripItineraryNotificationServiceTest {
                 .name("Grand Palace guided tour")
                 .bookingId(bookingId)
                 .bookingSource("KLOOK")
+                .placeId("place-grand-palace")
                 .build();
         when(activityRepository.findByTripId(trip.getId())).thenReturn(List.of(tour));
         when(tripMemberRepository.findByTripId(trip.getId())).thenReturn(List.of());
@@ -308,7 +311,7 @@ class TripItineraryNotificationServiceTest {
         when(trackSharingService.distanceByUser(trip.getId())).thenReturn(Map.of(memberId, 14_100L));
         Instant now = ZonedDateTime.of(
                 trip.getEndDate(),
-                LocalTime.of(20, 5),
+                LocalTime.of(21, 5),
                 ZoneId.of("Asia/Bangkok")
         ).toInstant();
 
@@ -335,6 +338,110 @@ class TripItineraryNotificationServiceTest {
         assertThat(dataCaptor.getAllValues())
                 .anySatisfy(data -> assertThat(data.get("distanceKm")).isEqualTo("14.1"))
                 .anySatisfy(data -> assertThat(data).doesNotContainKey("distanceKm"));
+    }
+
+    @Test
+    void skipsActivityWithoutPlace() {
+        Trip trip = trip(LocalDate.of(2026, 8, 20));
+        Activity freeText = Activity.builder()
+                .id(UUID.randomUUID())
+                .tripId(trip.getId())
+                .dayNumber(1)
+                .startTime(LocalTime.of(10, 0))
+                .endTime(LocalTime.of(11, 0))
+                .name("Rest at the hotel")
+                .build();
+        when(activityRepository.findByTripId(trip.getId())).thenReturn(List.of(freeText));
+        when(tripMemberRepository.findByTripId(trip.getId())).thenReturn(List.of());
+
+        assertThat(service.processTrip(trip, bangkok(trip.getStartDate(), 9, 46))).isZero();
+        assertThat(service.processTrip(trip, bangkok(trip.getStartDate(), 21, 1))).isZero();
+        org.mockito.Mockito.verifyNoInteractions(sender);
+    }
+
+    @Test
+    void sendsOneDayWrapUpAtNinePmInsteadOfAPushAfterEveryStop() {
+        Trip trip = trip(LocalDate.of(2026, 8, 20));
+        Activity morning = placeActivity(trip, 1, LocalTime.of(10, 0), LocalTime.of(11, 0));
+        Activity afternoon = placeActivity(trip, 1, LocalTime.of(14, 0), LocalTime.of(15, 0));
+        when(activityRepository.findByTripId(trip.getId())).thenReturn(List.of(morning, afternoon));
+        when(tripMemberRepository.findByTripId(trip.getId())).thenReturn(List.of());
+
+        assertThat(service.processTrip(trip, bangkok(trip.getStartDate(), 11, 1))).isZero();
+        assertThat(service.processTrip(trip, bangkok(trip.getStartDate(), 15, 1))).isZero();
+        org.mockito.Mockito.verifyNoInteractions(sender);
+
+        when(sender.sendOnce(any(), any(), any(), any(), any(), any())).thenReturn(true);
+        assertThat(service.processTrip(trip, bangkok(trip.getStartDate(), 21, 1))).isEqualTo(1);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> dataCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(sender).sendOnce(
+                eq(trip.getOwnerId()),
+                eq(trip.getId()),
+                eq(NotificationType.TRIP_DAY_ENDED),
+                eq(trip.getId() + ":TRIP_DAY_ENDED:" + trip.getId() + ":" + trip.getStartDate()),
+                any(),
+                dataCaptor.capture()
+        );
+        assertThat(dataCaptor.getValue()).containsEntry("dayNumber", 1L);
+    }
+
+    @Test
+    void waitsForTheLastStopWhenItEndsAfterNinePm() {
+        Trip trip = trip(LocalDate.of(2026, 8, 20));
+        Activity nightMarket = placeActivity(trip, 1, LocalTime.of(20, 0), LocalTime.of(22, 30));
+        when(activityRepository.findByTripId(trip.getId())).thenReturn(List.of(nightMarket));
+        when(tripMemberRepository.findByTripId(trip.getId())).thenReturn(List.of());
+
+        assertThat(service.processTrip(trip, bangkok(trip.getStartDate(), 21, 1))).isZero();
+        org.mockito.Mockito.verifyNoInteractions(sender);
+
+        when(sender.sendOnce(any(), any(), any(), any(), any(), any())).thenReturn(true);
+        assertThat(service.processTrip(trip, bangkok(trip.getStartDate(), 22, 31))).isEqualTo(1);
+        verify(sender).sendOnce(
+                eq(trip.getOwnerId()),
+                eq(trip.getId()),
+                eq(NotificationType.TRIP_DAY_ENDED),
+                any(),
+                any(),
+                any(Map.class)
+        );
+    }
+
+    @Test
+    void lastDayGetsTripEndedInsteadOfADayWrapUp() {
+        Trip trip = trip(LocalDate.of(2026, 8, 20));
+        Activity lastStop = placeActivity(trip, 3, LocalTime.of(16, 0), LocalTime.of(17, 0));
+        when(activityRepository.findByTripId(trip.getId())).thenReturn(List.of(lastStop));
+        when(tripMemberRepository.findByTripId(trip.getId())).thenReturn(List.of());
+        when(sender.sendOnce(any(), any(), any(), any(), any(), any())).thenReturn(true);
+
+        assertThat(service.processTrip(trip, bangkok(trip.getEndDate(), 21, 1))).isEqualTo(1);
+        verify(sender).sendOnce(
+                eq(trip.getOwnerId()),
+                eq(trip.getId()),
+                eq(NotificationType.TRIP_ENDED),
+                any(),
+                any(),
+                any(Map.class)
+        );
+        org.mockito.Mockito.verifyNoMoreInteractions(sender);
+    }
+
+    private Activity placeActivity(Trip trip, int dayNumber, LocalTime start, LocalTime end) {
+        return Activity.builder()
+                .id(UUID.randomUUID())
+                .tripId(trip.getId())
+                .dayNumber(dayNumber)
+                .startTime(start)
+                .endTime(end)
+                .name("Stop " + start)
+                .placeId("place-" + start)
+                .build();
+    }
+
+    private Instant bangkok(LocalDate date, int hour, int minute) {
+        return ZonedDateTime.of(date, LocalTime.of(hour, minute), ZoneId.of("Asia/Bangkok")).toInstant();
     }
 
     private Trip trip(LocalDate startDate) {

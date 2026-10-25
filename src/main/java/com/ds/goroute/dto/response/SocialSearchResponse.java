@@ -6,7 +6,7 @@ import lombok.Data;
 
 import java.util.List;
 
-/** One page of the Feed search (epic 12 §4.3). */
+/** One page of the Feed search (epic 12 §4.4). */
 @Data
 @Builder
 public class SocialSearchResponse {
@@ -21,6 +21,11 @@ public class SocialSearchResponse {
     private SocialSearchCountsResponse counts;
     /** {@code ALL}, page 0 only: the best few people, shown above the posts. Empty otherwise. */
     private List<DiscoverUserResponse> users;
-    /** People for {@code USER}; check-ins and/or trips otherwise, best match first. */
+    /** {@code ALL}, page 0 only: the best few of each other kind, one row each. Empty otherwise. */
+    private List<SocialSearchItemResponse> places;
+    private List<SocialSearchItemResponse> stays;
+    private List<SocialSearchItemResponse> tours;
+    private List<SocialSearchItemResponse> events;
+    /** Results of {@code type}; check-ins and trips mixed for {@code ALL}. Best match first. */
     private List<SocialSearchItemResponse> items;
 }

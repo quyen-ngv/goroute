@@ -1,10 +1,8 @@
 package com.ds.goroute.service.assistant;
 
 import com.ds.goroute.repository.AiTripRepository;
-import com.ds.goroute.repository.AssistantRepository;
 import com.ds.goroute.service.BetaAccessService;
 import com.ds.goroute.service.BusinessConfigService;
-import com.ds.goroute.service.time.UserTimeZones;
 import com.ds.goroute.type.BusinessConfigKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,10 +12,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,16 +26,14 @@ class AssistantAccessServiceTest {
     @Mock private BusinessConfigService businessConfig;
     @Mock private BetaAccessService betaAccess;
     @Mock private AiTripRepository subscriptions;
-    @Mock private AssistantRepository repository;
-    @Mock private UserTimeZones userTimeZones;
 
     private AssistantAccessService service;
 
     @BeforeEach
     void setUp() {
-        service = new AssistantAccessService(businessConfig, betaAccess, subscriptions, repository, userTimeZones);
-        when(businessConfig.getInt(BusinessConfigKey.ASSISTANT_FREE_DAILY_QUESTIONS)).thenReturn(5);
-        when(businessConfig.getInt(BusinessConfigKey.ASSISTANT_PRO_DAILY_QUESTIONS)).thenReturn(50);
+        service = new AssistantAccessService(businessConfig, betaAccess, subscriptions);
+        when(businessConfig.getInt(BusinessConfigKey.ASSISTANT_FREE_MAX_TOOL_CALLS)).thenReturn(6);
+        when(businessConfig.getInt(BusinessConfigKey.ASSISTANT_PRO_MAX_TOOL_CALLS)).thenReturn(20);
     }
 
     @Test
@@ -55,28 +47,10 @@ class AssistantAccessServiceTest {
     }
 
     @Test
-    void proGetsTheProAllowanceAndAnythingElseIsFree() {
+    void proGetsTheDeeperSearchAndAnythingElseIsFree() {
         when(subscriptions.getSubscriptionTier(USER)).thenReturn("pro");
-        assertThat(service.dailyLimit(USER)).isEqualTo(50);
+        assertThat(service.maxToolCalls(USER)).isEqualTo(20);
         when(subscriptions.getSubscriptionTier(USER)).thenReturn(null);
-        assertThat(service.dailyLimit(USER)).isEqualTo(5);
-    }
-
-    @Test
-    void theDayStartsAtTheUsersMidnightWhateverTheServerZone() {
-        // 2026-10-12 01:30 in Vietnam is 2026-10-11 18:30 UTC.
-        service.clock = Clock.fixed(Instant.parse("2026-10-11T18:30:00Z"), ZoneId.of("UTC"));
-        when(userTimeZones.zoneFor(USER)).thenReturn(ZoneId.of("Asia/Ho_Chi_Minh"));
-
-        assertThat(service.startOfToday(USER)).isEqualTo(LocalDateTime.of(2026, 10, 11, 17, 0));
-    }
-
-    @Test
-    void aTravellerAbroadGetsANewAllowanceAtTheirLocalMidnight() {
-        // 2026-10-11 18:30 UTC is 2026-10-11 11:30 in Los Angeles: the day began at 07:00 UTC.
-        service.clock = Clock.fixed(Instant.parse("2026-10-11T18:30:00Z"), ZoneId.of("UTC"));
-        when(userTimeZones.zoneFor(USER)).thenReturn(ZoneId.of("America/Los_Angeles"));
-
-        assertThat(service.startOfToday(USER)).isEqualTo(LocalDateTime.of(2026, 10, 11, 7, 0));
+        assertThat(service.maxToolCalls(USER)).isEqualTo(6);
     }
 }

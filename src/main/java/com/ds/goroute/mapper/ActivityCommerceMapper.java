@@ -14,6 +14,7 @@ public interface ActivityCommerceMapper {
     int insertProduct(MarketplaceActivityProduct product); int updateProduct(MarketplaceActivityProduct product);
     MarketplaceActivityProduct findProduct(@Param("id") UUID id);
     MarketplaceActivityProduct findPublicProduct(@Param("id") UUID id);
+    List<MarketplaceActivityProduct> findPublicProductsByIds(@Param("ids") java.util.Collection<UUID> ids);
     List<MarketplaceActivityProduct> findProductsByOrganization(@Param("organizationId") UUID organizationId);
     List<MarketplaceActivityProduct> findProductsPublic(@Param("query") String query,@Param("activityTypes") List<String> activityTypes,@Param("limit")int limit,@Param("offset")int offset);
     List<MarketplaceActivityProduct> findSimilarProductsPublic(@Param("excludeId") UUID excludeId,@Param("activityTypes") List<String> activityTypes,@Param("lat") Double lat,@Param("lng") Double lng,@Param("limit") int limit);

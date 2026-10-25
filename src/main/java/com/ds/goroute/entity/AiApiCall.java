@@ -32,6 +32,9 @@ public class AiApiCall {
     private Integer outputTokens;
     private Integer totalTokens;
     private Integer cachedInputTokens;
+    /** Prompt-cache writes (Claude), part of inputTokens; billed above the input price. */
+    private Integer cacheWrite5mTokens;
+    private Integer cacheWrite1hTokens;
     private Integer webSearchCalls;
     /** USD; null when the model had no price in config AI_PRICING at insert time. */
     private BigDecimal costUsd;

@@ -27,7 +27,7 @@ public interface AssistantMapper {
 
     long countOpenTurns(@Param("conversationId") UUID conversationId);
 
-    long countCountedTurnsSince(@Param("userId") UUID userId, @Param("since") LocalDateTime since);
+    long countOpenTurnsOfUserElsewhere(@Param("userId") UUID userId, @Param("conversationId") UUID conversationId);
 
     int markTurnRunning(@Param("id") UUID id, @Param("startedAt") LocalDateTime startedAt);
 

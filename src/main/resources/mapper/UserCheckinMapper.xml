@@ -824,7 +824,7 @@
     </select>
 
     <!--
-         Feed search index (epic 12 §4.3): a check-in is found by its place (the author's own
+         Feed search index (epic 12 §4.4): a check-in is found by its place (the author's own
          name, the catalogue title, the reverse-geocoded name), then by caption and area, and
          ranks higher with more likes. Findable while public, not removed and by a live account;
          takedowns are checked when results are read.

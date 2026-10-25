@@ -30,6 +30,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -38,6 +39,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 
 @Service
@@ -47,7 +49,9 @@ public class TripItineraryNotificationService {
 
     static final ZoneId DEFAULT_TRIP_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     static final LocalTime DEFAULT_TRIP_START_TIME = LocalTime.of(9, 0);
-    static final LocalTime DEFAULT_TRIP_END_TIME = LocalTime.of(20, 0);
+    /** A day's wrap-up (and the trip's end) goes out at 21:00, or after the last stop when that runs later. */
+    static final LocalTime DAY_END_TIME = LocalTime.of(21, 0);
+    static final Duration DEFAULT_ITEM_DURATION = Duration.ofHours(1);
     static final Duration DELIVERY_GRACE = Duration.ofMinutes(10);
     static final Duration UPCOMING_LEAD = Duration.ofMinutes(15);
     static final Duration TRANSPORT_PREPARATION_LEAD = Duration.ofMinutes(30);
@@ -102,7 +106,7 @@ public class TripItineraryNotificationService {
         List<Activity> activities = activityRepository.findByTripId(trip.getId());
         List<ScheduledItem> items = buildScheduledItems(trip, zone, activities);
         ZonedDateTime tripStart = resolveTripStart(trip, items, zone);
-        ZonedDateTime tripEnd = resolveTripEnd(trip, items, zone);
+        ZonedDateTime tripEnd = resolveDayEnd(trip.getEndDate(), items, zone);
         Set<UUID> recipients = resolveRecipients(trip);
         if (recipients.isEmpty()) {
             return 0;
@@ -139,7 +143,6 @@ public class TripItineraryNotificationService {
         for (int index = 0; index < items.size(); index++) {
             ScheduledItem item = items.get(index);
             ScheduledItem nextItem = index + 1 < items.size() ? items.get(index + 1) : null;
-            ZonedDateTime completedAt = resolveItemEnd(item, nextItem, tripEnd);
             Map<String, Object> itemData = itemData(trip, item, nextItem);
 
             Duration preparationLead = preparationLead(item.activity());
@@ -165,18 +168,9 @@ public class TripItineraryNotificationService {
                     itemData,
                     item.activity().getId()
             );
-            if (!isTransport(item.activity())) {
-                delivered += dispatchToRecipients(
-                        trip,
-                        recipients,
-                        NotificationType.ITINERARY_ITEM_COMPLETED,
-                        completedAt,
-                        now,
-                        itemData,
-                        item.activity().getId()
-                );
-            }
         }
+
+        delivered += dispatchDayEnds(trip, recipients, items, zone, now);
 
         delivered += dispatchToRecipients(
                 trip,
@@ -243,6 +237,42 @@ public class TripItineraryNotificationService {
         return delivered;
     }
 
+    /**
+     * One wrap-up per itinerary day instead of a push after every stop. The last day gets
+     * TRIP_ENDED instead, so it never receives two end-of-day pushes.
+     */
+    private int dispatchDayEnds(Trip trip,
+                                Set<UUID> recipients,
+                                List<ScheduledItem> items,
+                                ZoneId zone,
+                                Instant now) {
+        Set<LocalDate> days = new TreeSet<>();
+        for (ScheduledItem item : items) {
+            LocalDate day = item.startsAt().toLocalDate();
+            if (!day.isBefore(trip.getStartDate()) && day.isBefore(trip.getEndDate())) {
+                days.add(day);
+            }
+        }
+
+        int delivered = 0;
+        for (LocalDate day : days) {
+            ZonedDateTime dayEnd = resolveDayEnd(day, items, zone);
+            if (!isDue(dayEnd, now)) {
+                continue;
+            }
+            Map<String, Object> data = tripData(trip, "/trip/" + trip.getId());
+            data.put("dayNumber", ChronoUnit.DAYS.between(trip.getStartDate(), day) + 1);
+            for (UUID recipientId : recipients) {
+                // Keyed by date, not time: moving the day's last stop must not send a second wrap-up.
+                if (sendOnce(trip, recipientId, NotificationType.TRIP_DAY_ENDED, dayEnd, data,
+                        trip.getId().toString(), day.toString())) {
+                    delivered++;
+                }
+            }
+        }
+        return delivered;
+    }
+
     private boolean sendOnce(Trip trip,
                              UUID recipientId,
                              NotificationType type,
@@ -250,12 +280,23 @@ public class TripItineraryNotificationService {
                              Map<String, Object> data,
                              UUID activityId) {
         String subject = activityId != null ? activityId.toString() : trip.getId().toString();
+        return sendOnce(trip, recipientId, type, scheduledAt, data, subject,
+                String.valueOf(scheduledAt.toInstant().getEpochSecond()));
+    }
+
+    private boolean sendOnce(Trip trip,
+                             UUID recipientId,
+                             NotificationType type,
+                             ZonedDateTime scheduledAt,
+                             Map<String, Object> data,
+                             String subject,
+                             String occurrence) {
         String eventKey = String.join(
                 ":",
                 trip.getId().toString(),
                 type.name(),
                 subject,
-                String.valueOf(scheduledAt.toInstant().getEpochSecond())
+                occurrence
         );
         return notificationSender.sendOnce(
                 recipientId,
@@ -306,7 +347,15 @@ public class TripItineraryNotificationService {
     private boolean isNotifiableItineraryItem(Activity activity) {
         return activity.getDayNumber() != null
                 && activity.getStartTime() != null
-                && !Boolean.TRUE.equals(activity.getIsStartingPoint());
+                && !Boolean.TRUE.equals(activity.getIsStartingPoint())
+                && hasPlace(activity);
+    }
+
+    /** Only stops picked as a place notify; free-text items and bare transport legs stay silent. */
+    private boolean hasPlace(Activity activity) {
+        return (activity.getPlaceId() != null && !activity.getPlaceId().isBlank())
+                || activity.getCustomPlaceId() != null
+                || activity.getPlaceRefId() != null;
     }
 
     private Duration preparationLead(Activity activity) {
@@ -360,28 +409,27 @@ public class TripItineraryNotificationService {
         return ZonedDateTime.of(trip.getStartDate(), DEFAULT_TRIP_START_TIME, zone);
     }
 
-    private ZonedDateTime resolveTripEnd(Trip trip, List<ScheduledItem> items, ZoneId zone) {
-        ZonedDateTime end = ZonedDateTime.of(trip.getEndDate(), DEFAULT_TRIP_END_TIME, zone);
+    /**
+     * 21:00 on {@code day}, or the end of that day's last stop when it finishes later. A stop
+     * that runs past midnight (an overnight stay) counts from its start, so it cannot push the
+     * wrap-up into the next morning.
+     */
+    private ZonedDateTime resolveDayEnd(LocalDate day, List<ScheduledItem> items, ZoneId zone) {
+        ZonedDateTime end = ZonedDateTime.of(day, DAY_END_TIME, zone);
+        ZonedDateTime nextMidnight = day.plusDays(1).atStartOfDay(zone);
         for (ScheduledItem item : items) {
-            if (item.explicitEndsAt() != null && item.explicitEndsAt().isAfter(end)) {
-                end = item.explicitEndsAt();
+            if (!item.startsAt().toLocalDate().equals(day)) {
+                continue;
             }
-        }
-        return end;
-    }
-
-    private ZonedDateTime resolveItemEnd(ScheduledItem item,
-                                         ScheduledItem nextItem,
-                                         ZonedDateTime tripEnd) {
-        ZonedDateTime end = item.explicitEndsAt();
-        if (end == null && nextItem != null) {
-            end = nextItem.startsAt();
-        }
-        if (end == null) {
-            end = item.startsAt().plusHours(1);
-        }
-        if (end.isAfter(tripEnd)) {
-            return tripEnd;
+            ZonedDateTime itemEnd = item.explicitEndsAt() != null
+                    ? item.explicitEndsAt()
+                    : item.startsAt().plus(DEFAULT_ITEM_DURATION);
+            if (itemEnd.isAfter(nextMidnight)) {
+                itemEnd = item.startsAt();
+            }
+            if (itemEnd.isAfter(end)) {
+                end = itemEnd;
+            }
         }
         return end;
     }

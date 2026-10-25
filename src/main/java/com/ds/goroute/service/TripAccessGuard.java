@@ -87,9 +87,9 @@ public class TripAccessGuard {
     }
 
     /**
-     * The public trip page's rule, for things shown next to it (the public route): PUBLIC is
-     * open to anyone, SHARED to its owner and accepted members, PRIVATE to nobody. Mirrors
-     * {@code TripServiceImpl.canViewPublicTrip}; keep the two in step.
+     * The public trip page's rule, for things shown next to it (the public route): PUBLIC and
+     * SHARED ("Link only": unlisted, but anyone holding the link) are open to anyone, PRIVATE to
+     * nobody. Mirrors {@code TripServiceImpl.canViewPublicTrip}; keep the two in step.
      *
      * @param viewerId null for an anonymous visitor
      * @throws BusinessException 404 when the trip is gone, 403 when it is not shared with the viewer
@@ -98,8 +98,7 @@ public class TripAccessGuard {
         Trip trip = requireTrip(tripId);
         TripVisibility visibility = trip.getVisibility() == null ? TripVisibility.PRIVATE : trip.getVisibility();
         boolean isVisible = switch (visibility) {
-            case PUBLIC -> true;
-            case SHARED -> viewerId != null && hasAccess(trip, viewerId);
+            case PUBLIC, SHARED -> true;
             case PRIVATE -> false;
         };
         if (!isVisible) {

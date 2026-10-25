@@ -51,10 +51,19 @@ public interface ActivityRepository {
      */
     Set<String> tripPlaceReferences(UUID tripId);
 
-    /** Activities with an address that resolves to no catalogue place, newest first. */
-    List<UnlinkedActivityRow> findUnlinkedForAdmin(String search, int limit, int offset);
+    /**
+     * Activities with an address that resolves to no catalogue place: still in the admin queue,
+     * newest first, or ({@code dismissed}) taken out of it, most recently dismissed first.
+     */
+    List<UnlinkedActivityRow> findUnlinkedForAdmin(String search, boolean dismissed, int limit, int offset);
 
-    long countUnlinkedForAdmin(String search);
+    long countUnlinkedForAdmin(String search, boolean dismissed);
+
+    /** Takes the activity out of the admin queue; 0 when it is missing or already out. */
+    int dismissPlaceReview(UUID activityId, UUID adminId);
+
+    /** Puts a dismissed activity back in the admin queue; 0 when it is missing or not dismissed. */
+    int restorePlaceReview(UUID activityId);
 
     /** Points the activity at a catalogue place; returns the number of rows changed. */
     int assignPlace(UUID activityId, UUID placeId, BigDecimal lat, BigDecimal lng);

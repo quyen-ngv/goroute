@@ -172,13 +172,6 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
-    <select id="countCreatedByUserSince" resultType="int">
-        SELECT COUNT(*) FROM social_location_jobs
-        WHERE user_id = #{userId}
-          AND created_at &gt;= #{since}
-          AND (operation IS NULL OR operation = 'SAVE_SPOTS')
-    </select>
-
     <select id="lockUserSubmission" resultType="boolean">
         SELECT TRUE FROM pg_advisory_xact_lock(hashtextextended(CAST(#{userId} AS text), 0))
     </select>

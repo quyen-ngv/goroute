@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "caps": {
+    "IN_NETWORK": 300,
+    "SOCIAL": 150,
+    "GEO": 300,
+    "ITINERARY": 150,
+    "NEAR_ME": 200,
+    "TRENDING": 200,
+    "FRESH": 100,
+    "maxCandidates": 1400,
+    "minCandidates": 120,
+    "sessionSize": 500,
+    "followingLimit": 500,
+    "socialFollowingLimit": 200,
+    "socialInteractions": 2000
+  },
+  "windowsDays": {
+    "IN_NETWORK": 30,
+    "SOCIAL": 14,
+    "GEO": 30,
+    "ITINERARY": 365,
+    "NEAR_ME": 180,
+    "TRENDING": 7,
+    "FRESH": 1
+  },
+  "fillLadder": {
+    "windowMultiplier": 6,
+    "seenPenalty": 0.3,
+    "freshMaxImpressions": 30
+  },
+  "engagement": {
+    "like": 1.0,
+    "comment": 4.0,
+    "save": 6.0,
+    "copy": 3.0,
+    "priorRate": 0.05,
+    "priorImpressions": 20,
+    "rateScale": 30.0,
+    "minImpressionsForRate": 20,
+    "max": 6.0
+  },
+  "quality": {
+    "photo": 0.3,
+    "photoEach": 0.1,
+    "photoMax": 3,
+    "text40": 0.1,
+    "hasPlace": 0.2,
+    "trustDivisor": 500,
+    "trip": {
+      "memoryEach": 0.06,
+      "memoryMax": 10,
+      "activityEach": 0.05,
+      "activityMax": 12,
+      "multiDay": 0.15,
+      "description": 0.1,
+      "descriptionChars": 80,
+      "linkedStops": 0.1,
+      "linkedStopsShare": 0.5,
+      "hasCost": 0.1,
+      "copyMax": 0.2,
+      "copyCap": 5,
+      "noImagePenalty": -0.3
+    },
+    "byGroup": {}
+  },
+  "freshness": {
+    "halfLifeHoursCheckin": 48,
+    "halfLifeHoursReview": 48,
+    "halfLifeHoursTrip": 168,
+    "floor": 0.15,
+    "contextFloor": 0.5
+  },
+  "affinity": {
+    "follow": 1.0,
+    "mutual": 0.3,
+    "logScale": 0.5
+  },
+  "affinityJob": {
+    "windowDays": 90,
+    "halfLifeDays": 30,
+    "like": 1.0,
+    "comment": 3.0,
+    "save": 4.0,
+    "open": 0.5,
+    "dwell": 0.3,
+    "dwellMs": 5000,
+    "minScore": 0.5,
+    "perViewer": 300
+  },
+  "context": {
+    "itineraryPlace": 1.2,
+    "todayDestination": 0.8,
+    "nearDevice": 0.6,
+    "nearDeviceKm": 30,
+    "upcomingTrip": 0.5,
+    "upcomingDays": 14,
+    "relatedProvince": 0.3,
+    "nearReviewBoost": 1.2,
+    "recentCheckins": 10
+  },
+  "social": {
+    "perFollower": 0.2,
+    "maxFollowers": 3
+  },
+  "negative": {
+    "hide": 0.5,
+    "report": 2.0
+  },
+  "seen": {
+    "windowDays": 14,
+    "maxTimesInWindow": 2,
+    "excludeWindowDays": 3,
+    "onceFactor": 0.25,
+    "openedFactor": 0.15,
+    "chipFactor": 0.7,
+    "limit": 5000
+  },
+  "rerank": {
+    "lookahead": 60,
+    "authorDecay": 0.5,
+    "authorMaxPer10": 2,
+    "typeRunPenalty": 0.7,
+    "sameProvincePenalty": 0.85,
+    "photolessTripPer10": 1,
+    "photolessTripNoTop": 3,
+    "contextPer10": 4,
+    "samePlacePer10": 2,
+    "inNetworkMaxRatio": 0.5,
+    "inNetworkMinFollows": 3,
+    "explorationSlot": 4
+  },
+  "tripGate": {
+    "minMemories": 1,
+    "minStops": 3,
+    "minStopsWithDescription": 2,
+    "descriptionChars": 80
+  },
+  "chipTrips": {
+    "minStops": 3,
+    "minRatio": 0.4,
+    "per10": 2
+  }
+}

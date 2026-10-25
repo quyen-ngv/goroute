@@ -29,4 +29,7 @@ public class UnlinkedActivityRow {
     private String placeId;
     private UUID customPlaceId;
     private LocalDateTime createdAt;
+    /** Set when an operator took the activity out of the queue (V248). */
+    private LocalDateTime dismissedAt;
+    private UUID dismissedBy;
 }

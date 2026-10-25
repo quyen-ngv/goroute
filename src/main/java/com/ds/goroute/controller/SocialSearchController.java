@@ -18,7 +18,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
-/** The Feed search (epic 12 §4.3): people, public check-ins and public trips. Signed-in only. */
+/**
+ * The Feed search (epic 12 §4.4): people, public check-ins and trips, catalogue places and
+ * stays, tours and events. Signed-in only.
+ */
 @RestController
 @Validated
 @RequestMapping("/v1/api/search")
@@ -32,7 +35,8 @@ public class SocialSearchController extends BaseController {
 
     /**
      * {@code type} ALL (default) lists check-ins and trips mixed by relevance, with the best few
-     * people on page 0; USER, CHECKIN and TRIP list that kind only.
+     * people and a row each of places, stays, tours and events on page 0; any other type lists
+     * that kind only.
      */
     @GetMapping
     public ResponseEntity<BaseResponse<SocialSearchResponse>> search(

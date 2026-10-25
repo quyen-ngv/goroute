@@ -44,9 +44,14 @@ public interface ActivityMapper {
     int updateSortOrder(@Param("id") UUID id, @Param("sortOrder") Integer sortOrder);
 
     List<UnlinkedActivityRow> selectUnlinkedForAdmin(
-            @Param("search") String search, @Param("limit") int limit, @Param("offset") int offset);
+            @Param("search") String search, @Param("dismissed") boolean dismissed,
+            @Param("limit") int limit, @Param("offset") int offset);
 
-    long countUnlinkedForAdmin(@Param("search") String search);
+    long countUnlinkedForAdmin(@Param("search") String search, @Param("dismissed") boolean dismissed);
+
+    int dismissPlaceReview(@Param("id") UUID id, @Param("adminId") UUID adminId);
+
+    int restorePlaceReview(@Param("id") UUID id);
 
     int assignPlace(@Param("id") UUID id, @Param("placeId") String placeId, @Param("placeRefId") UUID placeRefId,
                     @Param("lat") BigDecimal lat, @Param("lng") BigDecimal lng);

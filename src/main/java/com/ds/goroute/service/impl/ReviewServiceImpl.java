@@ -32,6 +32,7 @@ import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.SavedPostType;
 import com.ds.goroute.type.UserTier;
 import com.ds.goroute.utils.JsonUtils;
+import com.ds.goroute.utils.PlaceDisplayRating;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -779,7 +780,7 @@ public class ReviewServiceImpl implements ReviewService {
                 .placeThumbnail(place != null ? place.getThumbnail() : null)
                 .placeReviewCount(place != null ? place.getReviewCount() : null)
                 .placeReviewRating(place != null ? place.getReviewRating() : null)
-                .placeAdjustedRating(place != null ? place.getAdjustedRating() : null)
+                .placeAdjustedRating(PlaceDisplayRating.of(place))
                 .placeCategory(place != null ? place.getCategory() : null)
                 .placeGroup(place != null ? place.getPlaceGroup() : null)
                 .placeLatitude(place != null ? place.getLatitude() : null)

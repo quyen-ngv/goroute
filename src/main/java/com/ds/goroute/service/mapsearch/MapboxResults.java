@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Reads Mapbox Search Box and Geocoding v6 features into {@link MapPlaceCacheEntry} rows, and
@@ -19,18 +20,39 @@ public final class MapboxResults {
     /** Two results with the same name closer than this are one place listed twice. */
     static final double DUPLICATE_RADIUS_M = 30;
     private static final Set<String> CJK_LANGUAGES = Set.of("ja", "ko", "zh");
+    /** Feature types that sit at one spot; a ward lookup on a city or province would name its centre. */
+    private static final Set<String> POINT_TYPES = Set.of("poi", "address", "street");
+    private static final Pattern VN_POSTCODE = Pattern.compile("\\d{5,6}");
+
+    /** Ward and province of a point from our own boundary data; null where there is none. */
+    public record Area(String ward, String province) {
+    }
+
+    /** Looks up the {@link Area} of a point in Vietnam. */
+    @FunctionalInterface
+    public interface AreaLookup {
+        Area find(double latitude, double longitude);
+    }
 
     private MapboxResults() {
     }
 
     public static List<MapPlaceCacheEntry> places(JsonNode featureCollection) {
+        return places(featureCollection, null);
+    }
+
+    /**
+     * Features as cache rows; Vietnamese points get their address rebuilt with the ward and
+     * province from {@code areas} (see {@link #vietnamAddress}).
+     */
+    public static List<MapPlaceCacheEntry> places(JsonNode featureCollection, AreaLookup areas) {
         List<MapPlaceCacheEntry> places = new ArrayList<>();
         JsonNode features = featureCollection == null ? null : featureCollection.path("features");
         if (features == null || !features.isArray()) {
             return places;
         }
         for (JsonNode feature : features) {
-            MapPlaceCacheEntry place = place(feature);
+            MapPlaceCacheEntry place = place(feature, areas);
             if (place != null) {
                 places.add(place);
             }
@@ -40,6 +62,10 @@ public final class MapboxResults {
 
     /** One feature as a cache row; null when it lacks an ID, a name or a position. */
     public static MapPlaceCacheEntry place(JsonNode feature) {
+        return place(feature, null);
+    }
+
+    private static MapPlaceCacheEntry place(JsonNode feature, AreaLookup areas) {
         JsonNode properties = feature.path("properties");
         String id = text(properties, "mapbox_id");
         String name = text(properties, "name");
@@ -53,18 +79,22 @@ public final class MapboxResults {
         if (id == null || name == null || latitude == null || longitude == null) {
             return null;
         }
+        String countryCode = upper(text(properties.path("context").path("country"), "country_code"));
+        String address = "VN".equals(countryCode)
+                ? vietnamAddress(properties, name, latitude, longitude, areas)
+                : address(properties, name);
         return MapPlaceCacheEntry.builder()
                 .provider(MapProvider.MAPBOX.name())
                 .providerPlaceId(id)
                 .name(name)
                 .nameNormalized(MapText.normalize(name))
-                .address(address(properties, name))
+                .address(address)
                 .latitude(latitude)
                 .longitude(longitude)
                 .categories(categories(properties))
                 .phone(text(properties.path("metadata"), "phone"))
                 .website(text(properties.path("metadata"), "website"))
-                .countryCode(upper(text(properties.path("context").path("country"), "country_code")))
+                .countryCode(countryCode)
                 .pickedCount(0)
                 .build();
     }
@@ -108,6 +138,76 @@ public final class MapboxResults {
         }
         String formatted = text(properties, "place_formatted");
         return formatted == null ? null : name + ", " + formatted;
+    }
+
+    /**
+     * Mapbox has no province for Vietnam and puts a postcode in its place ("Núi Kho, Vũ Ninh,
+     * 16100, Việt Nam"), with ward names from before the 2025 merger. A point gets the street
+     * part of Mapbox's address followed by our ward and province ("Núi Kho, Phường Kinh Bắc,
+     * Bắc Ninh, Việt Nam"); without an area, Mapbox's address minus the postcode.
+     */
+    private static String vietnamAddress(JsonNode properties, String name, double latitude, double longitude,
+                                         AreaLookup areas) {
+        String full = address(properties, name);
+        Area area = areas != null && POINT_TYPES.contains(text(properties, "feature_type"))
+                ? areas.find(latitude, longitude) : null;
+        JsonNode context = properties.path("context");
+        String country = text(context.path("country"), "name");
+        if (area == null || area.province() == null) {
+            return withoutPostcode(full, text(context.path("postcode"), "name"));
+        }
+        List<String> parts = new ArrayList<>();
+        addDistinct(parts, streetLine(properties, name));
+        addDistinct(parts, area.ward());
+        addDistinct(parts, area.province());
+        addDistinct(parts, country == null ? "Việt Nam" : country);
+        return String.join(", ", parts);
+    }
+
+    /**
+     * The part of Mapbox's address before its area names: "Núi Kho" of "Núi Kho, Vũ Ninh,
+     * 16100, Việt Nam", whose {@code place_formatted} is "Vũ Ninh, 16100, Việt Nam".
+     */
+    private static String streetLine(JsonNode properties, String name) {
+        String full = text(properties, "full_address");
+        String formatted = text(properties, "place_formatted");
+        String street = null;
+        if (full != null && formatted != null && full.endsWith(formatted) && full.length() > formatted.length()) {
+            street = full.substring(0, full.length() - formatted.length()).replaceAll("[,\\s]+$", "");
+        }
+        if (street == null || street.isEmpty()) {
+            JsonNode context = properties.path("context");
+            street = text(context.path("address"), "name");
+            if (street == null) {
+                street = text(context.path("street"), "name");
+            }
+        }
+        return street == null || MapText.normalize(street).equals(MapText.normalize(name)) ? null : street;
+    }
+
+    /** The address without its postcode part. */
+    private static String withoutPostcode(String address, String postcode) {
+        if (address == null) {
+            return null;
+        }
+        List<String> parts = new ArrayList<>();
+        for (String part : address.split(",")) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty() && !trimmed.equals(postcode) && !VN_POSTCODE.matcher(trimmed).matches()) {
+                parts.add(trimmed);
+            }
+        }
+        return String.join(", ", parts);
+    }
+
+    private static void addDistinct(List<String> parts, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        String key = MapText.normalize(value);
+        if (parts.stream().noneMatch(part -> MapText.normalize(part).equals(key))) {
+            parts.add(value.trim());
+        }
     }
 
     /** POI categories when there are any, otherwise the feature type ("place", "street"). */
