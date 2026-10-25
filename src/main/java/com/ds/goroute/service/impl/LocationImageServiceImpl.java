@@ -14,6 +14,7 @@ import com.ds.goroute.repository.LocationImageRepository;
 import com.ds.goroute.service.CityWeatherService;
 import com.ds.goroute.service.LocationImageService;
 import com.ds.goroute.utils.CitySlugResolver;
+import com.ds.goroute.utils.LocationAreaMatcher;
 import com.ds.goroute.service.FileUploadService;
 import com.ds.goroute.service.ImageUploadOutcome;
 import com.ds.goroute.service.ImageUploadRequest;
@@ -33,6 +34,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.math.BigDecimal;
 import java.text.Normalizer;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -155,6 +157,17 @@ public class LocationImageServiceImpl implements LocationImageService {
             : mapToResponse(locationImage);
         response.setWardCodes(locationImageRepository.findWardCodes(id));
         return response;
+    }
+
+    @Override
+    public Optional<BigDecimal> findCoverageRadiusKm(UUID locationImageId, BigDecimal latitude, BigDecimal longitude,
+                                                     List<String> texts) {
+        List<LocationImage> areas = catalogCache.get(Boolean.TRUE, ignored -> loadCatalog()).rows();
+        Optional<LocationImage> linked = locationImageId == null
+                ? Optional.empty()
+                : areas.stream().filter(area -> locationImageId.equals(area.getId())).findFirst();
+        return linked.or(() -> LocationAreaMatcher.match(areas, latitude, longitude, texts))
+                .map(LocationImage::getCoverageRadiusKm);
     }
 
     private CatalogSnapshot loadCatalog() {

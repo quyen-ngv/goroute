@@ -22,6 +22,8 @@ public class TripDetailResponse {
     private String destination;
     private BigDecimal lat;
     private BigDecimal lng;
+    /** Coverage radius of the tourist area at the trip's main destination; null when no area matches. */
+    private BigDecimal coverageRadiusKm;
     private List<TripDestinationResponse> destinations;
     private String routeSummary;
     private LocalDate startDate;

@@ -253,7 +253,17 @@ public class TripServiceImpl implements TripService {
                 .startDate(destination.getStartDate())
                 .endDate(destination.getEndDate())
                 .isPrimary(destination.getIsPrimary())
+                .coverageRadiusKm(locationImageService.findCoverageRadiusKm(
+                        destination.getLocationImageId(), destination.getLat(), destination.getLng(),
+                        Arrays.asList(destination.getAddress(), destination.getName())).orElse(null))
                 .build();
+    }
+
+    /** The trip-level counterpart of a destination's coverage radius, from its main destination. */
+    private BigDecimal tripCoverageRadiusKm(Trip trip) {
+        return locationImageService.findCoverageRadiusKm(
+                trip.getLocationImageId(), trip.getDestinationLat(), trip.getDestinationLng(),
+                Arrays.asList(trip.getDestination())).orElse(null);
     }
 
     private String routeSummary(List<TripDestinationResponse> destinations) {
@@ -438,6 +448,7 @@ public class TripServiceImpl implements TripService {
                 .destination(trip.getDestination())
                 .lat(trip.getDestinationLat())
                 .lng(trip.getDestinationLng())
+                .coverageRadiusKm(tripCoverageRadiusKm(trip))
                 .destinations(destinationResponses)
                 .routeSummary(routeSummary(destinationResponses))
                 .startDate(trip.getStartDate())
@@ -1047,6 +1058,7 @@ public class TripServiceImpl implements TripService {
                 .destination(trip.getDestination())
                 .lat(trip.getDestinationLat())
                 .lng(trip.getDestinationLng())
+                .coverageRadiusKm(tripCoverageRadiusKm(trip))
                 .destinations(destinationResponses)
                 .routeSummary(routeSummary(destinationResponses))
                 .startDate(trip.getStartDate())
