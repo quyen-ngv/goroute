@@ -244,9 +244,9 @@ public class TrackSharingServiceImpl implements TrackSharingService {
         if (gpxDays.isEmpty()) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Nothing recorded to export");
         }
-        String trackName = (trip.getName() == null ? "Vietdetour" : trip.getName())
+        String trackName = (trip.getName() == null ? "Pengoo" : trip.getName())
                 + (date == null ? "" : " " + date);
-        String fileName = "vietdetour-" + tripId.toString().substring(0, TRIP_ID_PREFIX) + "-"
+        String fileName = "pengoo-" + tripId.toString().substring(0, TRIP_ID_PREFIX) + "-"
                 + (date == null ? "all" : date.toString()) + ".gpx";
         return new GpxExport(fileName, GpxWriter.write(trackName, gpxDays).getBytes(StandardCharsets.UTF_8));
     }

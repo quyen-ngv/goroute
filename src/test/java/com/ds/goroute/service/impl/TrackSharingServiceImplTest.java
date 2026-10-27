@@ -190,7 +190,7 @@ class TrackSharingServiceImplTest {
 
         TrackSharingService.GpxExport raw = service.exportGpx(OWNER, TRIP_ID, DAY2);
         String rawXml = new String(raw.content(), StandardCharsets.UTF_8);
-        assertThat(raw.fileName()).isEqualTo("vietdetour-" + TRIP_ID.toString().substring(0, 8) + "-2026-10-02.gpx");
+        assertThat(raw.fileName()).isEqualTo("pengoo-" + TRIP_ID.toString().substring(0, 8) + "-2026-10-02.gpx");
         assertThat(rawXml.split("<trkpt ", -1)).hasSize(31);
         assertThat(rawXml).contains("<time>2026-10-02T02:00:00Z</time>").contains("<ele>1500</ele>");
 

@@ -129,7 +129,9 @@ public class SecurityConfig {
                                 "/ondetour",
                                 "/ondetour/*",
                                 "/goroute/ondetour",
-                                "/goroute/ondetour/*"
+                                "/goroute/ondetour/*",
+                                "/pengoo-logo.png",
+                                "/goroute/pengoo-logo.png"
                         ).permitAll()
                         // A shared profile link: the page itself. Its reads are under
                         // /v1/api/public/users/**, already open above.

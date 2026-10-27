@@ -33,7 +33,7 @@ public class PlaceScoreResponse {
     
     // Display logic
     private String displayScore; // "4.3" or "Not enough reviews"
-    private String displayLabel; // "TripMind Score" or "Preliminary"
+    private String displayLabel; // "Pengoo Score" or "Preliminary"
     private Boolean useGoogleScore; // True if < 10 reviews
     
     private LocalDateTime lastCalculatedAt;

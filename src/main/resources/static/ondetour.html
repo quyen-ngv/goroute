@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#F5F0EB">
     <meta name="agd-partner-manual-verification" />
-    <title>Shared Trip - Ondetour</title>
+    <title>Shared Trip - Pengoo</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -697,7 +697,7 @@
         const content = document.getElementById('content');
         content.innerHTML = `
             <header class="explore-head">
-                <span class="explore-brand">${ICON_PIN_LOGO}<span>Ondetour</span></span>
+                <span class="explore-brand">${ICON_PIN_LOGO}<span>Pengoo</span></span>
                 <h1 class="explore-title">Trips people actually took</h1>
                 <p class="explore-sub">Real itineraries shared by travellers — day by day, stop by stop, with the photos they brought home.</p>
                 <div class="explore-search">
@@ -894,7 +894,7 @@
                 grid.insertAdjacentHTML('afterend', `
                     <div class="explore-empty" id="explore-empty">
                         <h3>Could not load trips</h3>
-                        <p>Something went wrong reaching Ondetour. Check your connection and try again.</p>
+                        <p>Something went wrong reaching Pengoo. Check your connection and try again.</p>
                     </div>
                 `);
             }
@@ -905,7 +905,7 @@
     async function loadList() {
         resetPage();
         document.getElementById('loading').style.display = 'none';
-        document.title = 'Explore public trips | Ondetour';
+        document.title = 'Explore public trips | Pengoo';
         listState = { page: 0, keyword: listState.keyword, trips: [], loading: false, exhausted: false, token: listState.token + 1 };
         renderListShell();
         await loadTrips();
@@ -1442,7 +1442,7 @@
                 <button type="button" class="hero-back" onclick="goToList()" aria-label="Back to all trips">
                     ${ICON_CHEV_L}<span>All trips</span>
                 </button>
-                <div class="hero-brand">${ICON_PIN_LOGO}<span>Ondetour</span></div>
+                <div class="hero-brand">${ICON_PIN_LOGO}<span>Pengoo</span></div>
                 <div class="hero-content">
                     <h1 class="hero-title">${escapeHtml(tripTitle)}</h1>
                     <span class="hero-dates">${formatDateRange(trip.startDate, trip.endDate)}</span>
@@ -1516,7 +1516,7 @@
         return `
             <section class="app-banner reveal">
                 <span class="app-banner-badge">Available on iOS</span>
-                <h3>Plan your own Vietnam trip with Ondetour</h3>
+                <h3>Plan your own Vietnam trip with Pengoo</h3>
                 <p>Build day-by-day itineraries, track expenses, and save memories — all from your iPhone.</p>
                 ${APP_STORE_BTN}
                 <p class="app-banner-note">Android coming soon</p>
@@ -1527,7 +1527,7 @@
     function renderFooter(trip) {
         return `
             <footer class="share-footer">
-                <div class="footer-brand">${ICON_PIN_LOGO}<span>Ondetour</span></div>
+                <div class="footer-brand">${ICON_PIN_LOGO}<span>Pengoo</span></div>
                 ${trip.ownerName ? `
                     <div class="footer-credit">
                         ${trip.ownerAvatarUrl ? `<img src="${escapeHtml(trip.ownerAvatarUrl)}" alt="">` : ''}
@@ -1544,7 +1544,7 @@
                 <div class="sticky-app-bar-inner">
                     <span class="sticky-app-bar-icon">${ICON_PIN_LOGO}</span>
                     <div class="sticky-app-bar-text">
-                        <strong>Ondetour</strong>
+                        <strong>Pengoo</strong>
                         <span>Available on iOS</span>
                     </div>
                     ${APP_STORE_BTN}
@@ -1634,7 +1634,7 @@
         const tripTitle = trip.destination ? `${trip.destination} ${parseLocalDate(trip.startDate).getFullYear()}` : trip.name;
         activeDay = dayNumbers[0];
 
-        document.title = `${tripTitle} | Ondetour`;
+        document.title = `${tripTitle} | Pengoo`;
 
         content.innerHTML = `
             ${renderHero(trip, tripTitle, dayCount)}
@@ -1669,7 +1669,7 @@
     async function loadTrip(tripId) {
         resetPage();
         document.getElementById('loading').style.display = 'flex';
-        document.title = 'Loading trip… | Ondetour';
+        document.title = 'Loading trip… | Pengoo';
         try {
             const response = await fetch(`${API_BASE_URL}/v1/api/public/trips/${tripId}`);
             if (!response.ok) throw new Error('Trip not found');

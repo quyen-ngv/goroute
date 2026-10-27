@@ -203,7 +203,7 @@ public class AwsService implements StorageService {
         connection.setInstanceFollowRedirects(false);
         connection.setConnectTimeout(Math.toIntExact(remoteFileDownloadProperties.getConnectTimeout().toMillis()));
         connection.setReadTimeout(Math.toIntExact(remoteFileDownloadProperties.getReadTimeout().toMillis()));
-        connection.setRequestProperty("User-Agent", "GoRoute remote media importer");
+        connection.setRequestProperty("User-Agent", "Pengoo remote media importer");
         if (bearerToken != null
                 && !bearerToken.isBlank()
                 && RemoteFileUrlPolicy.isSameOrigin(originalUri, currentUri)) {

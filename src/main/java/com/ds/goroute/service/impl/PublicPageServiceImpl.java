@@ -39,16 +39,15 @@ public class PublicPageServiceImpl implements PublicPageService {
     static final String TRIP_TEMPLATE = "static/ondetour.html";
 
     /** The line in ondetour.html the trip's preview tags replace. */
-    static final String TRIP_TITLE_TAG = "<title>Shared Trip - Ondetour</title>";
+    static final String TRIP_TITLE_TAG = "<title>Shared Trip - Pengoo</title>";
 
     /**
-     * The app icon, for previews of a profile without an avatar and of a trip without a
-     * cover. The same file the admin console uses as its brand logo ({@code BRAND_LOGO_URL}).
+     * The Pengoo app icon ({@code static/pengoo-logo.png}), for previews of a profile without an
+     * avatar and of a trip without a cover. Served next to these pages, under the public base URL.
      */
-    static final String BRAND_IMAGE_URL =
-            "https://onestudy.id.vn/resource/vietdetour/admin-media/06a38eef-3fb4-4139-9c5e-3240ea368c66-app_icon.png";
+    static final String BRAND_IMAGE_PATH = "/pengoo-logo.png";
 
-    static final String SITE_NAME = "Vietdetour";
+    static final String SITE_NAME = "Pengoo";
 
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{\\{([A-Z_]+)}}");
 
@@ -93,11 +92,12 @@ public class PublicPageServiceImpl implements PublicPageService {
 
         Map<String, String> values = new LinkedHashMap<>();
         values.put("LANG", vietnamese ? "vi" : "en");
+        values.put("BRAND_IMAGE", html(brandImageUrl()));
         values.put("USERNAME", html(profile == null ? handle : profile.getUsername()));
         values.put("FOUND", String.valueOf(profile != null));
         if (profile == null) {
             values.put("TITLE", html(copy.notFoundTitle()));
-            values.put("META", metaTags(copy.notFoundTitle(), copy.notFoundDescription(), BRAND_IMAGE_URL,
+            values.put("META", metaTags(copy.notFoundTitle(), copy.notFoundDescription(), brandImageUrl(),
                     canonicalUrl, "website", false));
             values.put("JSON_LD", "");
             values.put("HEADER", "");
@@ -162,9 +162,13 @@ public class PublicPageServiceImpl implements PublicPageService {
     /** Moderation may have hidden the picture; the API swaps it, so the preview must too. */
     private String visibleImage(String url) {
         if (url == null || url.isBlank() || hiddenImageService.isHidden(url)) {
-            return BRAND_IMAGE_URL;
+            return brandImageUrl();
         }
         return url;
+    }
+
+    private String brandImageUrl() {
+        return publicBaseUrl + BRAND_IMAGE_PATH;
     }
 
     private static String metaTags(String title, String description, String image, String canonicalUrl,

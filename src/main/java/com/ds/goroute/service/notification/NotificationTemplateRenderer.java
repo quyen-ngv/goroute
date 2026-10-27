@@ -118,7 +118,7 @@ public class NotificationTemplateRenderer {
             return null;
         }
         return new NotificationMessage(
-                title != null ? title : "TripMind Announcement",
+                title != null ? title : "Pengoo Announcement",
                 body != null ? body : ""
         );
     }
@@ -792,8 +792,8 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.PARTNER_VERIFICATION_DECIDED, "Verification {decisionLabel}", "Your organization {organizationName} was {decisionLabel}. {reason}"),
                 entry(NotificationType.PARTNER_VERIFICATION_SUBMITTED, "Partner verification submitted", "{organizationName} submitted documents for verification"),
                 entry(NotificationType.PARTNER_STATEMENT_READY, "Statement ready", "Your statement for {periodLabel} is ready: {netAmount} after commission. Open Finance to review it"),
-                entry(NotificationType.ADMIN_ANNOUNCEMENT, "TripMind Announcement", "{body}"),
-                entry(NotificationType.ADMIN_MESSAGE, "Message from TripMind", "{body}")
+                entry(NotificationType.ADMIN_ANNOUNCEMENT, "Pengoo Announcement", "{body}"),
+                entry(NotificationType.ADMIN_MESSAGE, "Message from Pengoo", "{body}")
         );
     }
 
@@ -862,7 +862,7 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.ITINERARY_ITEM_UPCOMING, "Còn 15 phút", "“{itemName}” là {itemKindLabel} tiếp theo và sẽ bắt đầu sau 15 phút"),
                 entry(NotificationType.ITINERARY_ITEM_COMPLETED, "“{itemName}” thế nào?", "Bạn vừa hoàn thành “{itemName}”. Chia sẻ một đánh giá ngắn để lưu lại trải nghiệm nhé. {nextItemSentence}"),
                 entry(NotificationType.TRIP_DAY_ENDED, "Khép lại ngày {dayNumber}", "Ngày {dayNumber} của “{tripName}” đã xong. Check-in và đánh giá nhanh những nơi bạn đã ghé hôm nay nhé"),
-                entry(NotificationType.TRIP_ENDED, "Chuyến đi đã khép lại", "“{tripName}” đã kết thúc. Cảm ơn bạn đã đồng hành cùng TripMind!"),
+                entry(NotificationType.TRIP_ENDED, "Chuyến đi đã khép lại", "“{tripName}” đã kết thúc. Cảm ơn bạn đã đồng hành cùng Pengoo!"),
                 entry(NotificationType.TRIP_SUMMARY, "Nhìn lại chuyến đi", "Bạn đã chi {totalExpense} {currency} tại {placesCount} địa điểm. {debtSummary}"),
                 entry(NotificationType.MARKETPLACE_BOOKING_REQUEST, "Yêu cầu đặt chỗ mới", "Có yêu cầu đặt chỗ mới từ khách đang chờ bạn phản hồi"),
                 entry(NotificationType.MARKETPLACE_BOOKING_CONFIRMED, "Đặt chỗ đã được xác nhận", "Đặt chỗ của bạn đã được xác nhận. Mọi thứ đã sẵn sàng!"),
@@ -878,8 +878,8 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.PARTNER_VERIFICATION_DECIDED, "Xác minh {decisionLabel}", "Tổ chức {organizationName} đã {decisionLabel}. {reason}"),
                 entry(NotificationType.PARTNER_VERIFICATION_SUBMITTED, "Đối tác nộp hồ sơ xác minh", "{organizationName} vừa nộp hồ sơ xác minh"),
                 entry(NotificationType.PARTNER_STATEMENT_READY, "Sao kê đã sẵn sàng", "Sao kê kỳ {periodLabel} đã có: còn {netAmount} sau hoa hồng. Mở mục Tài chính để đối soát"),
-                entry(NotificationType.ADMIN_ANNOUNCEMENT, "Thông báo từ TripMind", "{body}"),
-                entry(NotificationType.ADMIN_MESSAGE, "Tin nhắn từ TripMind", "{body}")
+                entry(NotificationType.ADMIN_ANNOUNCEMENT, "Thông báo từ Pengoo", "{body}"),
+                entry(NotificationType.ADMIN_MESSAGE, "Tin nhắn từ Pengoo", "{body}")
         );
     }
 
@@ -953,8 +953,8 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.MARKETPLACE_BOOKING_REQUEST, "新しい予約リクエスト", "ゲストから予約リクエストが届きました。内容をご確認ください"),
                 entry(NotificationType.MARKETPLACE_BOOKING_CONFIRMED, "予約が確定しました", "予約が確定しました。準備は完了です！"),
                 entry(NotificationType.MARKETPLACE_BOOKING_DECLINED, "予約を確定できませんでした", "予約リクエストを確定できませんでした。アプリで別の選択肢をご確認ください"),
-                entry(NotificationType.ADMIN_ANNOUNCEMENT, "TripMindからのお知らせ", "{body}"),
-                entry(NotificationType.ADMIN_MESSAGE, "TripMindからのメッセージ", "{body}")
+                entry(NotificationType.ADMIN_ANNOUNCEMENT, "Pengooからのお知らせ", "{body}"),
+                entry(NotificationType.ADMIN_MESSAGE, "Pengooからのメッセージ", "{body}")
         );
     }
 
@@ -1028,8 +1028,8 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.MARKETPLACE_BOOKING_REQUEST, "새 예약 요청", "게스트의 예약 요청이 도착했습니다. 내용을 확인해 주세요"),
                 entry(NotificationType.MARKETPLACE_BOOKING_CONFIRMED, "예약이 확정됐어요", "예약이 확정되었습니다. 이제 준비가 끝났어요!"),
                 entry(NotificationType.MARKETPLACE_BOOKING_DECLINED, "예약을 확정하지 못했어요", "예약 요청을 확정하지 못했습니다. 앱에서 다른 옵션을 확인해 주세요"),
-                entry(NotificationType.ADMIN_ANNOUNCEMENT, "TripMind 공지사항", "{body}"),
-                entry(NotificationType.ADMIN_MESSAGE, "TripMind 메시지", "{body}")
+                entry(NotificationType.ADMIN_ANNOUNCEMENT, "Pengoo 공지사항", "{body}"),
+                entry(NotificationType.ADMIN_MESSAGE, "Pengoo 메시지", "{body}")
         );
     }
 
@@ -1103,8 +1103,8 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.MARKETPLACE_BOOKING_REQUEST, "नया आरक्षण अनुरोध", "एक अतिथि ने आरक्षण अनुरोध भेजा है। कृपया इसकी जानकारी देखें"),
                 entry(NotificationType.MARKETPLACE_BOOKING_CONFIRMED, "आरक्षण की पुष्टि हुई", "आपके आरक्षण की पुष्टि हो गई है। सब तैयार है!"),
                 entry(NotificationType.MARKETPLACE_BOOKING_DECLINED, "आरक्षण की पुष्टि नहीं हुई", "आरक्षण अनुरोध की पुष्टि नहीं हो सकी। दूसरे विकल्प देखने के लिए ऐप खोलें"),
-                entry(NotificationType.ADMIN_ANNOUNCEMENT, "TripMind की सूचना", "{body}"),
-                entry(NotificationType.ADMIN_MESSAGE, "TripMind का संदेश", "{body}")
+                entry(NotificationType.ADMIN_ANNOUNCEMENT, "Pengoo की सूचना", "{body}"),
+                entry(NotificationType.ADMIN_MESSAGE, "Pengoo का संदेश", "{body}")
         );
     }
 
@@ -1178,8 +1178,8 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.MARKETPLACE_BOOKING_REQUEST, "Новый запрос на бронирование", "Гость отправил запрос на бронирование. Проверьте детали"),
                 entry(NotificationType.MARKETPLACE_BOOKING_CONFIRMED, "Бронирование подтверждено", "Бронирование подтверждено. Всё готово!"),
                 entry(NotificationType.MARKETPLACE_BOOKING_DECLINED, "Бронирование не подтверждено", "Не удалось подтвердить запрос. Откройте приложение, чтобы посмотреть другие варианты"),
-                entry(NotificationType.ADMIN_ANNOUNCEMENT, "Объявление TripMind", "{body}"),
-                entry(NotificationType.ADMIN_MESSAGE, "Сообщение от TripMind", "{body}")
+                entry(NotificationType.ADMIN_ANNOUNCEMENT, "Объявление Pengoo", "{body}"),
+                entry(NotificationType.ADMIN_MESSAGE, "Сообщение от Pengoo", "{body}")
         );
     }
 
@@ -1253,8 +1253,8 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.MARKETPLACE_BOOKING_REQUEST, "คำขอจองใหม่", "มีคำขอจองใหม่จากผู้เข้าพัก โปรดตรวจสอบรายละเอียด"),
                 entry(NotificationType.MARKETPLACE_BOOKING_CONFIRMED, "ยืนยันการจองแล้ว", "การจองของคุณได้รับการยืนยันแล้ว ทุกอย่างพร้อม!"),
                 entry(NotificationType.MARKETPLACE_BOOKING_DECLINED, "ยังยืนยันการจองไม่ได้", "ไม่สามารถยืนยันคำขอจองได้ เปิดแอปเพื่อดูตัวเลือกอื่น"),
-                entry(NotificationType.ADMIN_ANNOUNCEMENT, "ประกาศจาก TripMind", "{body}"),
-                entry(NotificationType.ADMIN_MESSAGE, "ข้อความจาก TripMind", "{body}")
+                entry(NotificationType.ADMIN_ANNOUNCEMENT, "ประกาศจาก Pengoo", "{body}"),
+                entry(NotificationType.ADMIN_MESSAGE, "ข้อความจาก Pengoo", "{body}")
         );
     }
 
@@ -1328,8 +1328,8 @@ public class NotificationTemplateRenderer {
                 entry(NotificationType.MARKETPLACE_BOOKING_REQUEST, "新的預訂請求", "旅客送出了一筆預訂請求，請查看詳情"),
                 entry(NotificationType.MARKETPLACE_BOOKING_CONFIRMED, "預訂已確認", "你的預訂已確認，一切都準備好了！"),
                 entry(NotificationType.MARKETPLACE_BOOKING_DECLINED, "預訂尚未確認", "目前無法確認這筆預訂，請開啟應用程式查看其他選項"),
-                entry(NotificationType.ADMIN_ANNOUNCEMENT, "TripMind 公告", "{body}"),
-                entry(NotificationType.ADMIN_MESSAGE, "TripMind 訊息", "{body}")
+                entry(NotificationType.ADMIN_ANNOUNCEMENT, "Pengoo 公告", "{body}"),
+                entry(NotificationType.ADMIN_MESSAGE, "Pengoo 訊息", "{body}")
         );
     }
 

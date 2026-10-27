@@ -25,7 +25,7 @@ public final class GpxWriter {
     public static String write(String trackName, List<List<Point>> days) {
         StringBuilder out = new StringBuilder(256 + days.size() * 4096);
         out.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-                .append("<gpx version=\"1.1\" creator=\"Vietdetour\" xmlns=\"http://www.topografix.com/GPX/1/1\"")
+                .append("<gpx version=\"1.1\" creator=\"Pengoo\" xmlns=\"http://www.topografix.com/GPX/1/1\"")
                 .append(" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"")
                 .append(" xsi:schemaLocation=\"http://www.topografix.com/GPX/1/1")
                 .append(" http://www.topografix.com/GPX/1/1/gpx.xsd\">\n")

@@ -106,7 +106,7 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
                     .matchType("GOOGLE_PLACE_ID")
                     .existingPlace(toExistingPlaceSummary(existingPlace))
                     .canContributeReview(true)
-                    .message("Place already exists on GoRoute. You can write a review directly on the place page.")
+                    .message("Place already exists on Pengoo. You can write a review directly on the place page.")
                     .build();
         }
 
@@ -124,7 +124,7 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
         return CheckContributionResponse.builder()
                 .exists(false)
                 .canContributeReview(true)
-                .message("This place is not on GoRoute yet. You can contribute it.")
+                .message("This place is not on Pengoo yet. You can contribute it.")
                 .build();
     }
 

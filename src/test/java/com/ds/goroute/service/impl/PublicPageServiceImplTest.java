@@ -56,8 +56,8 @@ class PublicPageServiceImplTest {
         assertThat(page.found()).isTrue();
         assertThat(page.html())
                 .contains("<html lang=\"vi\">")
-                .contains("<title>Ăn cùng An (@an.food) · Vietdetour</title>")
-                .contains("<meta property=\"og:title\" content=\"Ăn cùng An (@an.food) · Vietdetour\">")
+                .contains("<title>Ăn cùng An (@an.food) · Pengoo</title>")
+                .contains("<meta property=\"og:title\" content=\"Ăn cùng An (@an.food) · Pengoo\">")
                 .contains("<meta property=\"og:description\" content=\"Review quán ngon Hà Nội\">")
                 .contains("<meta property=\"og:image\" content=\"https://cdn/avatar.jpg\">")
                 .contains("<link rel=\"canonical\" href=\"" + BASE_URL + "/u/an.food\">")
@@ -83,9 +83,9 @@ class PublicPageServiceImplTest {
 
         assertThat(service.profilePage("an.food", false).html())
                 .contains("<html lang=\"en\">")
-                .contains("content=\"An on Vietdetour: 12 check-ins, 3 shared trips.\"");
+                .contains("content=\"An on Pengoo: 12 check-ins, 3 shared trips.\"");
         assertThat(service.profilePage("an.food", true).html())
-                .contains("content=\"An trên Vietdetour: 12 check-in, 3 lịch trình đã chia sẻ.\"");
+                .contains("content=\"An trên Pengoo: 12 check-in, 3 lịch trình đã chia sẻ.\"");
     }
 
     @Test
@@ -113,7 +113,7 @@ class PublicPageServiceImplTest {
 
         assertThat(service.profilePage("an.food", true).html())
                 .doesNotContain("https://cdn/avatar.jpg")
-                .contains("<meta property=\"og:image\" content=\"" + PublicPageServiceImpl.BRAND_IMAGE_URL + "\">");
+                .contains("<meta property=\"og:image\" content=\"" + BASE_URL + PublicPageServiceImpl.BRAND_IMAGE_PATH + "\">");
     }
 
     @Test
@@ -139,7 +139,7 @@ class PublicPageServiceImplTest {
         String html = service.tripPage(trip.getId()).html();
 
         assertThat(html)
-                .contains("<title>Đà Lạt 3N2Đ · Vietdetour</title>")
+                .contains("<title>Đà Lạt 3N2Đ · Pengoo</title>")
                 .contains("<meta property=\"og:image\" content=\"https://cdn/dalat.jpg\">")
                 .contains("content=\"Đà Lạt · 3-day itinerary\"")
                 .contains("<link rel=\"canonical\" href=\"" + BASE_URL + "/ondetour/" + trip.getId() + "\">")
@@ -152,7 +152,7 @@ class PublicPageServiceImplTest {
         when(trips.findById(shared.getId())).thenReturn(Optional.of(shared));
 
         assertThat(service.tripPage(shared.getId()).html())
-                .contains("<title>Đà Lạt 3N2Đ · Vietdetour</title>")
+                .contains("<title>Đà Lạt 3N2Đ · Pengoo</title>")
                 .contains("<meta name=\"robots\" content=\"noindex\">");
     }
 

@@ -14,7 +14,7 @@ import java.util.List;
  */
 public final class IcalWriter {
 
-    public static final String PRODID = "-//GoRoute//Marketplace Calendar//EN";
+    public static final String PRODID = "-//Pengoo//Marketplace Calendar//EN";
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'");
     private static final String CRLF = "\r\n";
