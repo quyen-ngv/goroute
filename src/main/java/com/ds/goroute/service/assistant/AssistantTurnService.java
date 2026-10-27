@@ -73,6 +73,8 @@ public class AssistantTurnService {
     static final int MAX_ITEM_CARDS = 6;
     static final int MAX_SUGGESTIONS = 4;
     static final int MAX_MEMORY_CHARS = 1500;
+    /** Long enough for a pasted booking confirmation or a page of notes to turn into trip edits. */
+    static final int MAX_QUESTION = 6000;
     private static final Pattern MENTION = Pattern.compile("(?i)@pengoo\\b[:,]?\\s*");
 
     private final AssistantRepository repository;
@@ -95,7 +97,11 @@ public class AssistantTurnService {
     public void onMessage(ChatMessageCreatedEvent message) {
         UUID askerId = message.senderUserId();
         if (askerId == null || AssistantIdentity.isAssistant(askerId)) return;
-        if (!MarketplaceMessageType.TEXT.name().equals(message.messageType())) return;
+        // A photo (a receipt, a ticket, a page of notes) with its caption asks like a text does.
+        if (!MarketplaceMessageType.TEXT.name().equals(message.messageType())
+                && !MarketplaceMessageType.IMAGE.name().equals(message.messageType())) {
+            return;
+        }
         MarketplaceConversation conversation = chatRepository.find(message.conversationId(), null).orElse(null);
         if (conversation == null || !asksAssistant(conversation, message)) return;
         if (!access.isAvailable(askerId)) return;
@@ -279,7 +285,7 @@ public class AssistantTurnService {
     static String question(String content) {
         if (content == null) return "";
         String text = MENTION.matcher(content).replaceAll("").trim();
-        return text.length() > 2000 ? text.substring(0, 2000) : text;
+        return text.length() > MAX_QUESTION ? text.substring(0, MAX_QUESTION) : text;
     }
 
     private Map<String, Object> thinkingBlock(AssistantTurn turn) {

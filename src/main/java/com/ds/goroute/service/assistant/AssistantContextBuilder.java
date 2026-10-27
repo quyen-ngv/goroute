@@ -13,6 +13,7 @@ import com.ds.goroute.repository.MarketplaceChatRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.service.BusinessConfigService;
+import com.ds.goroute.service.HiddenImageService;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.ChatShareType;
 import com.ds.goroute.type.MarketplaceMessageType;
@@ -48,6 +49,13 @@ public class AssistantContextBuilder {
      */
     static final int HISTORY_WINDOW_STEP = 10;
     static final int MAX_OUTPUT_TOKENS = 1800;
+    /** Photos read with one question: a receipt, a ticket, a page of notes. */
+    static final int MAX_IMAGES = 4;
+    /**
+     * When the question itself has no photo, an earlier photo of the asker's counts ("add the
+     * expense in that picture") if it is one of this many messages just before the question.
+     */
+    static final int RECENT_IMAGE_MESSAGES = 3;
     /**
      * The worker stops this long before the turn timeout job would fail the turn, so a slow answer
      * ends as the worker's own failure (told to the asker once) rather than racing the job.
@@ -62,6 +70,7 @@ public class AssistantContextBuilder {
     private final BusinessConfigService businessConfig;
     private final AiTripWorkerProperties workerProperties;
     private final AssistantAccessService access;
+    private final HiddenImageService hiddenImages;
     private final ObjectMapper objectMapper;
 
     @Transactional(readOnly = true)
@@ -82,6 +91,8 @@ public class AssistantContextBuilder {
         long before = repository.findMessageSequence(turn.getTriggerMessageId()).orElse(Long.MAX_VALUE);
         payload.put("history", history(conversation, before));
         payload.put("question", turn.getQuestion() == null ? "" : turn.getQuestion());
+        List<String> images = images(turn, conversation.getId(), before);
+        if (!images.isEmpty()) payload.put("images", images);
         payload.put("callbackBaseUrl", workerProperties.getInternalBaseUrl());
         payload.put("memory", repository.findMemory(conversation.getId()).orElse(null));
         int turnTimeout = businessConfig.getInt(BusinessConfigKey.ASSISTANT_TURN_TIMEOUT_SECONDS);
@@ -114,6 +125,51 @@ public class AssistantContextBuilder {
     }
 
     /**
+     * The photos this question is about: the question's own; else those of the message it replies
+     * to; else the asker's latest photo message among the few just before the question. Hidden
+     * (moderated) photos are left out.
+     */
+    private List<String> images(AssistantTurn turn, UUID conversationId, long beforeSequence) {
+        AssistantHistoryMessage trigger = repository.findMessage(turn.getTriggerMessageId()).orElse(null);
+        if (trigger == null) return List.of();
+        List<String> own = imageUrls(trigger);
+        if (!own.isEmpty()) return own;
+        if (trigger.getReplyToMessageId() != null) {
+            // A reply always quotes a message of its own thread (the chat service checks it on send).
+            List<String> quoted = repository.findMessage(trigger.getReplyToMessageId())
+                    .map(this::imageUrls).orElse(List.of());
+            if (!quoted.isEmpty()) return quoted;
+        }
+        List<AssistantHistoryMessage> recent = repository.findRecentMessages(conversationId, beforeSequence,
+                RECENT_IMAGE_MESSAGES);
+        for (int i = recent.size() - 1; i >= 0; i--) {
+            AssistantHistoryMessage message = recent.get(i);
+            if (!turn.getUserId().equals(message.getSenderUserId())) continue;
+            List<String> urls = imageUrls(message);
+            if (!urls.isEmpty()) return urls;
+        }
+        return List.of();
+    }
+
+    private List<String> imageUrls(AssistantHistoryMessage message) {
+        if (!MarketplaceMessageType.IMAGE.name().equals(message.getMessageType())) return List.of();
+        List<String> urls = new ArrayList<>();
+        try {
+            JsonNode node = message.getAttachments() == null ? null : objectMapper.readTree(message.getAttachments());
+            if (node == null || !node.isArray()) return urls;
+            for (JsonNode attachment : node) {
+                String url = attachment.path("url").asText("");
+                if (url.isBlank() || hiddenImages.isHidden(url)) continue;
+                urls.add(url);
+                if (urls.size() >= MAX_IMAGES) break;
+            }
+        } catch (Exception e) {
+            return urls;
+        }
+        return urls;
+    }
+
+    /**
      * The newest {@code limit} messages plus the older ones back to the last sequence number that
      * is a multiple of {@link #HISTORY_WINDOW_STEP}: the window's oldest message then changes only
      * every ten messages, so consecutive turns share a prompt prefix. {@code recent} is newest first.
@@ -138,7 +194,12 @@ public class AssistantContextBuilder {
             return kind.isEmpty() ? "" : "[shared " + kind.toLowerCase() + " " + target + "]";
         }
         String content = message.getContent() == null ? "" : message.getContent().trim();
-        return content.length() > MAX_HISTORY_TEXT ? content.substring(0, MAX_HISTORY_TEXT) + "…" : content;
+        String text = content.length() > MAX_HISTORY_TEXT ? content.substring(0, MAX_HISTORY_TEXT) + "…" : content;
+        if (MarketplaceMessageType.IMAGE.name().equals(message.getMessageType())) {
+            // The photos themselves go only with the question they belong to; earlier ones are a marker.
+            return text.isEmpty() ? "[photo]" : text + " [photo]";
+        }
+        return text;
     }
 
     /** Turns the card ids of earlier answers into {id, name} in one query. */

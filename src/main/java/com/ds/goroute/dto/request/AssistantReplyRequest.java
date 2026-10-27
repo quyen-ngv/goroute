@@ -9,7 +9,9 @@ import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The worker's final answer to one question. Everything here is checked again on the server:
@@ -23,7 +25,7 @@ public class AssistantReplyRequest {
     @Size(max = 12)
     private List<PlaceRef> places = new ArrayList<>();
     @Valid
-    @Size(max = 6)
+    @Size(max = 10)
     private List<ProposalDraft> proposals = new ArrayList<>();
     @Size(max = 6)
     private List<@Size(max = 120) String> suggestions = new ArrayList<>();
@@ -113,7 +115,8 @@ public class AssistantReplyRequest {
 
     @Data
     public static class ProposalDraft {
-        @Pattern(regexp = "ADD|MOVE|UPDATE_TIME|REMOVE|REPLACE|ADD_DAYS|PREPEND_DAYS|REMOVE_DAYS|SWAP_DAYS|SHIFT_DATES")
+        @Pattern(regexp = "ADD|MOVE|UPDATE_TIME|REMOVE|REPLACE|ADD_DAYS|PREPEND_DAYS|REMOVE_DAYS|SWAP_DAYS|SHIFT_DATES"
+                + "|EDIT_TRIP|EDIT_ACTIVITY|NEW_ACTIVITY|ADD_EXPENSE|EDIT_EXPENSE|REMOVE_EXPENSE|ADD_NOTE|ADD_GUEST")
         private String action;
         @Size(max = 64)
         private String tripId;
@@ -139,5 +142,14 @@ public class AssistantReplyRequest {
         private String startDate;
         @Size(max = 300)
         private String summary;
+        /** EDIT_EXPENSE / REMOVE_EXPENSE: the expense, from {@code list_expenses}. */
+        @Size(max = 64)
+        private String expenseId;
+        /**
+         * The fields to set, by name; which names an action takes is decided (and every value
+         * checked) by the server, so anything else is ignored.
+         */
+        @Size(max = 24)
+        private Map<String, Object> changes = new LinkedHashMap<>();
     }
 }

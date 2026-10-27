@@ -2,6 +2,8 @@ package com.ds.goroute.service.assistant;
 
 import com.ds.goroute.dto.request.AssistantReplyRequest;
 import com.ds.goroute.dto.request.CreateActivityRequest;
+import com.ds.goroute.dto.request.CreateExpenseRequest;
+import com.ds.goroute.dto.request.ExpenseSplitRequest;
 import com.ds.goroute.dto.request.UpdateActivityRequest;
 import com.ds.goroute.dto.response.ActivityResponse;
 import com.ds.goroute.dto.response.AssistantProposalResponse;
@@ -10,12 +12,23 @@ import com.ds.goroute.entity.AssistantProposal;
 import com.ds.goroute.entity.AssistantTurn;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.Trip;
+import com.ds.goroute.entity.TripMember;
+import com.ds.goroute.entity.User;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.AssistantRepository;
 import com.ds.goroute.repository.PlaceRepository;
+import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripRepository;
+import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.ActivityService;
+import com.ds.goroute.service.ExpenseService;
+import com.ds.goroute.service.TextModerationService;
+import com.ds.goroute.service.TripNoteService;
+import com.ds.goroute.service.TripService;
+import com.ds.goroute.service.moderation.ModerationVerdict;
+import com.ds.goroute.type.MemberStatus;
+import com.ds.goroute.type.ModerationAction;
 import com.ds.goroute.service.MarketplaceConversationAccessService;
 import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.WebSocketService;
@@ -32,9 +45,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -60,6 +76,8 @@ class AssistantProposalServiceTest {
     private static final UUID PLACE = UUID.randomUUID();
     private static final UUID ACTIVITY = UUID.randomUUID();
     private static final UUID FOREIGN_ACTIVITY = UUID.randomUUID();
+    private static final UUID EDITOR_MEMBER = UUID.randomUUID();
+    private static final UUID GUEST_MEMBER = UUID.randomUUID();
 
     @Mock private AssistantRepository repository;
     @Mock private TripRepository trips;
@@ -70,6 +88,12 @@ class AssistantProposalServiceTest {
     @Mock private TripAccessGuard tripAccessGuard;
     @Mock private MarketplaceConversationAccessService conversationAccess;
     @Mock private WebSocketService webSocketService;
+    @Mock private TripMemberRepository members;
+    @Mock private UserRepository users;
+    @Mock private ExpenseService expenseService;
+    @Mock private TripService tripService;
+    @Mock private TripNoteService noteService;
+    @Mock private TextModerationService moderation;
 
     private AssistantProposalService service;
     private final AssistantTurn turn = AssistantTurn.builder().id(UUID.randomUUID()).conversationId(CONVERSATION)
@@ -77,9 +101,21 @@ class AssistantProposalServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AssistantProposalService(repository, trips, activities, places, activityService, tripDays, tripAccessGuard,
-                conversationAccess, webSocketService, new ObjectMapper().registerModule(new JavaTimeModule()));
-        Trip trip = Trip.builder().id(TRIP).startDate(LocalDate.of(2026, 11, 1)).endDate(LocalDate.of(2026, 11, 3)).build();
+        AssistantTripEdits tripEdits = new AssistantTripEdits(activities, members, users, activityService, expenseService,
+                tripService, noteService, moderation);
+        service = new AssistantProposalService(repository, trips, activities, places, activityService, tripDays, tripEdits,
+                tripAccessGuard, conversationAccess, webSocketService, new ObjectMapper().registerModule(new JavaTimeModule()));
+        Trip trip = Trip.builder().id(TRIP).ownerId(ASKER).name("Dốc Lết").currency("VND")
+                .budget(new BigDecimal("10000000"))
+                .startDate(LocalDate.of(2026, 11, 1)).endDate(LocalDate.of(2026, 11, 3)).build();
+        when(moderation.evaluate(any(), any(), any(), any(), any())).thenReturn(ModerationVerdict.allowed());
+        when(members.findByTripId(TRIP)).thenReturn(List.of(
+                TripMember.builder().id(UUID.randomUUID()).tripId(TRIP).userId(ASKER).status(MemberStatus.ACCEPTED).build(),
+                TripMember.builder().id(EDITOR_MEMBER).tripId(TRIP).userId(EDITOR).status(MemberStatus.ACCEPTED).build(),
+                TripMember.builder().id(GUEST_MEMBER).tripId(TRIP).isGuest(true).guestName("Lan")
+                        .status(MemberStatus.ACCEPTED).build()));
+        when(users.findByIds(any())).thenReturn(List.of(User.builder().id(ASKER).fullName("Quyền").build(),
+                User.builder().id(EDITOR).fullName("Minh").build()));
         when(trips.findById(TRIP)).thenReturn(Optional.of(trip));
         when(places.findById(PLACE)).thenReturn(Optional.of(Place.builder().id(PLACE).title("Bún chả cá")
                 .placeGroup(PlaceGroup.FOOD_AND_DRINK).visibilityStatus(PlaceVisibilityStatus.ACTIVE).build()));
@@ -346,6 +382,111 @@ class AssistantProposalServiceTest {
 
         verify(tripDays, never()).removeDays(any(), anyInt(), anyInt(), any());
         verify(repository).resolveProposal(eq(proposalId), eq("STALE"), eq(EDITOR), any(), eq(null), any());
+    }
+
+    @Test
+    void anExpenseTheAskerPaidIsSplitBetweenEveryoneAndAppliedAsThePersonWhoTapped() {
+        AssistantReplyRequest.ProposalDraft expense = draft("ADD_EXPENSE");
+        expense.setChanges(new LinkedHashMap<>(Map.of("amount", "500.000", "category", "transport",
+                "description", "Vé máy bay")));
+
+        List<UUID> created = service.createFromReply(turn, TRIP, List.of(expense));
+
+        assertThat(created).hasSize(1);
+        ArgumentCaptor<AssistantProposal> stored = ArgumentCaptor.forClass(AssistantProposal.class);
+        verify(repository).insertProposal(stored.capture());
+        String payload = stored.getValue().getPayload();
+        assertThat(payload).contains("\"amount\":\"500000\"").contains("\"category\":\"TRANSPORT\"")
+                .contains("\"currency\":\"VND\"").contains("\"field\":\"paidBy\",\"to\":\"Quyền\"")
+                .contains("Quyền, Minh, Lan");
+
+        UUID proposalId = pending("ADD_EXPENSE", payload);
+        service.apply(EDITOR, proposalId);
+
+        ArgumentCaptor<CreateExpenseRequest> request = ArgumentCaptor.forClass(CreateExpenseRequest.class);
+        verify(expenseService).createExpense(eq(TRIP), request.capture(), eq(EDITOR));
+        assertThat(request.getValue().getPaidBy()).isEqualTo(ASKER);
+        assertThat(request.getValue().getSplits()).extracting(ExpenseSplitRequest::getAmount)
+                .containsExactly(new BigDecimal("166666"), new BigDecimal("166666"), new BigDecimal("166668"));
+        assertThat(request.getValue().getSplits().get(2).getGuestMemberId()).isEqualTo(GUEST_MEMBER);
+        assertThat(request.getValue().getSplits().get(2).getGuestName()).isEqualTo("Lan");
+    }
+
+    @Test
+    void anExpenseNamingSomeoneNotOnTheTripIsDropped() {
+        AssistantReplyRequest.ProposalDraft expense = draft("ADD_EXPENSE");
+        expense.setChanges(new LinkedHashMap<>(Map.of("amount", 200000, "paidBy", UUID.randomUUID().toString())));
+
+        assertThat(service.createFromReply(turn, TRIP, List.of(expense))).isEmpty();
+    }
+
+    @Test
+    void aTripEditKeepsOnlyTheFieldsThatChange() {
+        AssistantReplyRequest.ProposalDraft edit = draft("EDIT_TRIP");
+        edit.setChanges(new LinkedHashMap<>(Map.of("name", "Dốc Lết", "budget", "12000000", "visibility", "nope")));
+
+        service.createFromReply(turn, TRIP, List.of(edit));
+
+        ArgumentCaptor<AssistantProposal> stored = ArgumentCaptor.forClass(AssistantProposal.class);
+        verify(repository).insertProposal(stored.capture());
+        assertThat(stored.getValue().getPayload()).contains("\"budget\":\"12000000\"")
+                .doesNotContain("\"name\"").doesNotContain("visibility");
+    }
+
+    @Test
+    void aTripEditThatChangesNothingIsDropped() {
+        AssistantReplyRequest.ProposalDraft edit = draft("EDIT_TRIP");
+        edit.setChanges(new LinkedHashMap<>(Map.of("name", "Dốc Lết")));
+
+        assertThat(service.createFromReply(turn, TRIP, List.of(edit))).isEmpty();
+    }
+
+    @Test
+    void blockedTextIsLeftOutOfAnActivityEdit() {
+        when(moderation.evaluate(any(), any(), any(), eq("bad words"), any()))
+                .thenReturn(ModerationVerdict.of(ModerationAction.BLOCK, null, null, "bad words"));
+        AssistantReplyRequest.ProposalDraft edit = draft("EDIT_ACTIVITY");
+        edit.setActivityId(ACTIVITY.toString());
+        edit.setChanges(new LinkedHashMap<>(Map.of("notes", "bad words")));
+
+        assertThat(service.createFromReply(turn, TRIP, List.of(edit))).isEmpty();
+    }
+
+    @Test
+    void aNewActivityNeedsANameAndADayOfTheTrip() {
+        AssistantReplyRequest.ProposalDraft flight = draft("NEW_ACTIVITY");
+        flight.setDayNumber(1);
+        flight.setStartTime("08:00");
+        flight.setChanges(new LinkedHashMap<>(Map.of("name", "Bay VN123 HAN - CXR", "transportMode", "plane")));
+        AssistantReplyRequest.ProposalDraft nameless = draft("NEW_ACTIVITY");
+        nameless.setDayNumber(1);
+        AssistantReplyRequest.ProposalDraft outside = draft("NEW_ACTIVITY");
+        outside.setDayNumber(9);
+        outside.setChanges(new LinkedHashMap<>(Map.of("name", "Later")));
+
+        List<UUID> created = service.createFromReply(turn, TRIP, List.of(flight, nameless, outside));
+
+        assertThat(created).hasSize(1);
+        ArgumentCaptor<AssistantProposal> stored = ArgumentCaptor.forClass(AssistantProposal.class);
+        verify(repository).insertProposal(stored.capture());
+        assertThat(stored.getValue().getPayload()).contains("\"transportMode\":\"PLANE\"")
+                .contains("\"category\":\"transport\"").contains("\"startTime\":\"08:00\"");
+    }
+
+    @Test
+    void onlyTheOwnerMayApplyAGuest() {
+        UUID proposalId = pending("ADD_GUEST", "{\"changes\":{\"guestName\":\"Hoa\"}}");
+
+        assertThat(service.get(EDITOR, proposalId).getViewerCanEdit()).isFalse();
+        assertThat(service.get(ASKER, proposalId).getViewerCanEdit()).isTrue();
+    }
+
+    @Test
+    void equalSharesAddUpToTheAmount() {
+        assertThat(AssistantTripEdits.equalShares(new BigDecimal("100.00"), 3, 2))
+                .containsExactly(new BigDecimal("33.33"), new BigDecimal("33.33"), new BigDecimal("33.34"));
+        assertThat(AssistantTripEdits.amount("1,250,000", false)).isEqualByComparingTo("1250000");
+        assertThat(AssistantTripEdits.amount("0", false)).isNull();
     }
 
     private UUID pending(String action, String payload) {

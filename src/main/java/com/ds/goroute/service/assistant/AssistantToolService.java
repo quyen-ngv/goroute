@@ -3,6 +3,7 @@ package com.ds.goroute.service.assistant;
 import com.ds.goroute.dto.response.BudgetOverviewResponse;
 import com.ds.goroute.dto.response.CityWeatherResponse;
 import com.ds.goroute.dto.response.DailyForecastResponse;
+import com.ds.goroute.dto.response.ExpenseResponse;
 import com.ds.goroute.dto.response.FoodSummaryResponse;
 import com.ds.goroute.dto.response.PlaceResponse;
 import com.ds.goroute.dto.response.PublicTripResponse;
@@ -86,6 +87,7 @@ public class AssistantToolService {
     static final double EVENT_RADIUS_KM = 20;
     static final double PUBLIC_TRIP_RADIUS_KM = 50;
     static final int MAX_PUBLIC_TRIPS = 6;
+    static final int MAX_EXPENSES = 40;
     static final int MAX_COMMUNITY_ROWS = 5;
     static final int MAX_TRIP_CHECKINS = 15;
     static final int MAX_GUIDE_CHARS = 1500;
@@ -127,6 +129,7 @@ public class AssistantToolService {
                 case "list_my_trips" -> myTrips(turn);
                 case "get_trip" -> tripDetails(turn, input);
                 case "get_budget" -> budget(turn, trip, input);
+                case "list_expenses" -> expenses(turn, trip, input);
                 case "search_public_trips" -> publicTrips(turn, trip, input);
                 case "get_place_community" -> placeCommunity(turn, input);
                 case "get_trip_checkins" -> tripCheckins(turn, trip, input);
@@ -476,6 +479,46 @@ public class AssistantToolService {
         return out;
     }
 
+    /**
+     * The trip's expenses, newest first, so a proposal can name one to change or remove: id, day,
+     * amount, category, description, who paid, and who shares it (names only).
+     */
+    private Map<String, Object> expenses(AssistantTurn turn, Trip trip, Map<String, Object> args) {
+        UUID tripId = trip != null ? trip.getId() : requiredUuid(args.get("trip_id"), "trip_id");
+        List<ExpenseResponse> all = expenseService.getExpenses(tripId, null, turn.getUserId());
+        String words = text(args.get("query"));
+        String needle = words == null ? null : words.toLowerCase(Locale.ROOT);
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (ExpenseResponse expense : all.stream()
+                .sorted(Comparator.comparing((ExpenseResponse e) -> e.getExpenseDate() == null
+                        ? java.time.LocalDateTime.MIN : e.getExpenseDate()).reversed())
+                .toList()) {
+            if (needle != null && (expense.getDescription() == null
+                    || !expense.getDescription().toLowerCase(Locale.ROOT).contains(needle))) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", expense.getId());
+            if (expense.getExpenseDate() != null) row.put("date", expense.getExpenseDate().toLocalDate().toString());
+            row.put("amount", expense.getAmount() == null ? null : expense.getAmount().stripTrailingZeros().toPlainString());
+            row.put("currency", expense.getCurrency());
+            row.put("category", expense.getCategory());
+            putIfPresent(row, "description", expense.getDescription());
+            if (expense.getPaidBy() != null) {
+                putIfPresent(row, "paidBy", expense.getPaidBy().getFullName() != null
+                        ? expense.getPaidBy().getFullName() : expense.getPaidBy().getUsername());
+            }
+            if (expense.getSplits() != null) row.put("sharedBy", expense.getSplits().size());
+            if (expense.getActivityId() != null) row.put("activityId", expense.getActivityId());
+            rows.add(row);
+            if (rows.size() >= MAX_EXPENSES) break;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("count", all.size());
+        out.put("expenses", rows);
+        return out;
+    }
+
     private Map<String, Object> tripDetails(AssistantTurn turn, Map<String, Object> args) {
         Trip trip = tripAccessGuard.requireAccess(requiredUuid(args.get("trip_id"), "trip_id"), turn.getUserId());
         Map<String, Object> out = new LinkedHashMap<>(tripSnapshots.snapshot(trip));
@@ -565,7 +608,7 @@ public class AssistantToolService {
         out.put("publicTrips", tripService.getPublicTripsWithPlace(place.getId(), 0, 3, turn.getUserId()).stream()
                 .map(this::publicTripRow)
                 .toList());
-        out.put("note", "Counts, check-ins and reviews come from Vietdetour users, not Google.");
+        out.put("note", "Counts, check-ins and reviews come from Pengoo users, not Google.");
         return out;
     }
 

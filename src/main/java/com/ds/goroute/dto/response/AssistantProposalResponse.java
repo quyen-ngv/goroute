@@ -7,6 +7,8 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /** A change Pengoo proposed for a trip, and what became of it. */
@@ -37,6 +39,15 @@ public class AssistantProposalResponse {
     /** Day-changing actions: the trip's dates once applied, as of when it was proposed. */
     private LocalDate newStartDate;
     private LocalDate newEndDate;
+    /** EDIT_EXPENSE / REMOVE_EXPENSE: the expense, and its description (or category) when proposed. */
+    private UUID expenseId;
+    private String expenseName;
+    /**
+     * Trip-information actions: one line per field, {@code field}, {@code from} (absent when new),
+     * {@code to} (absent for a removal) and {@code currency} for money; values are raw
+     * (ISO dates, enum names, plain numbers) for the app to format.
+     */
+    private List<Map<String, String>> lines;
     private UUID resolvedByUserId;
     private String resolvedByName;
     private LocalDateTime resolvedAt;

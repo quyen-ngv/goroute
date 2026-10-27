@@ -141,7 +141,7 @@
 
     <!-- What the assistant reads for context: people's text, shares and its own answers. -->
     <select id="findRecentMessages" resultType="com.ds.goroute.entity.AssistantHistoryMessage">
-        SELECT m.sender_user_id AS senderUserId, COALESCE(u.full_name, u.username) AS senderName,
+        SELECT m.id, m.sender_user_id AS senderUserId, COALESCE(u.full_name, u.username) AS senderName,
                m.message_type AS messageType, m.content, m.attachments::text AS attachments,
                m.sequence_no AS sequenceNo
         FROM marketplace_messages m
@@ -149,9 +149,19 @@
         WHERE m.conversation_id = #{conversationId}
           AND m.sequence_no &lt; #{beforeSequence}
           AND m.deleted_at IS NULL
-          AND m.message_type IN ('TEXT', 'SHARE', 'ASSISTANT')
+          AND m.message_type IN ('TEXT', 'IMAGE', 'SHARE', 'ASSISTANT')
         ORDER BY m.sequence_no DESC
         LIMIT #{limit}
+    </select>
+
+    <select id="findMessage" resultType="com.ds.goroute.entity.AssistantHistoryMessage">
+        SELECT m.id, m.sender_user_id AS senderUserId, COALESCE(u.full_name, u.username) AS senderName,
+               m.message_type AS messageType, m.content, m.attachments::text AS attachments,
+               m.sequence_no AS sequenceNo, m.reply_to_message_id AS replyToMessageId
+        FROM marketplace_messages m
+        LEFT JOIN users u ON u.id = m.sender_user_id
+        WHERE m.id = #{messageId}
+          AND m.deleted_at IS NULL
     </select>
 
     <select id="findMessageSender" resultType="java.util.UUID">

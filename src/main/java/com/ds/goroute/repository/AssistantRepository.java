@@ -42,6 +42,8 @@ public interface AssistantRepository {
     /** Recent readable lines before a sequence number, oldest first. */
     List<AssistantHistoryMessage> findRecentMessages(UUID conversationId, long beforeSequence, int limit);
 
+    Optional<AssistantHistoryMessage> findMessage(UUID messageId);
+
     Optional<UUID> findMessageSender(UUID messageId);
 
     Optional<Long> findMessageSequence(UUID messageId);

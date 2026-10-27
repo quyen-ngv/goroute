@@ -96,7 +96,11 @@ public class AssistantTripSnapshots {
         return Optional.of(start);
     }
 
-    /** Who is on the trip (accepted members and guests), by name and role; no ids or contacts. */
+    /**
+     * Who is on the trip (accepted members and guests), by name and role, no contacts. The id is
+     * what an expense proposal names as payer or in a split: the user id of a registered member,
+     * the member id of a guest.
+     */
     private List<Map<String, Object>> memberRows(Trip trip) {
         List<TripMember> accepted = members.findByTripId(trip.getId()).stream()
                 .filter(m -> m.getStatus() == null || m.getStatus() == MemberStatus.ACCEPTED)
@@ -121,6 +125,7 @@ public class AssistantTripSnapshots {
                     || (member.getUserId() != null && member.getUserId().equals(trip.getOwnerId()));
             ownerListed |= owner;
             Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", member.getUserId() != null ? member.getUserId() : member.getId());
             row.put("name", name);
             row.put("role", owner ? MemberRole.OWNER.name()
                     : member.getRole() == null ? MemberRole.VIEWER.name() : member.getRole().name());
@@ -130,6 +135,7 @@ public class AssistantTripSnapshots {
         String ownerName = trip.getOwnerId() == null ? null : names.get(trip.getOwnerId());
         if (!ownerListed && ownerName != null) {
             Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", trip.getOwnerId());
             row.put("name", ownerName);
             row.put("role", MemberRole.OWNER.name());
             rows.add(0, row);

@@ -92,6 +92,11 @@ public class AssistantRepositoryImpl implements AssistantRepository {
     }
 
     @Override
+    public Optional<AssistantHistoryMessage> findMessage(UUID messageId) {
+        return messageId == null ? Optional.empty() : Optional.ofNullable(mapper.findMessage(messageId));
+    }
+
+    @Override
     public Optional<UUID> findMessageSender(UUID messageId) {
         return messageId == null ? Optional.empty() : Optional.ofNullable(mapper.findMessageSender(messageId));
     }

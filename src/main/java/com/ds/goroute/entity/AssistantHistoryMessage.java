@@ -13,7 +13,10 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AssistantHistoryMessage {
+    private UUID id;
     private UUID senderUserId;
+    /** Only filled by {@code findMessage}: the message this one replies to. */
+    private UUID replyToMessageId;
     private String senderName;
     private String messageType;
     private String content;

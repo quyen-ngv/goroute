@@ -56,6 +56,9 @@ public interface AssistantMapper {
                                                      @Param("beforeSequence") long beforeSequence,
                                                      @Param("limit") int limit);
 
+    /** One message with its attachments, or null when it does not exist or was deleted. */
+    AssistantHistoryMessage findMessage(@Param("messageId") UUID messageId);
+
     /** Sender of one message, or null when the message does not exist. */
     UUID findMessageSender(@Param("messageId") UUID messageId);
 

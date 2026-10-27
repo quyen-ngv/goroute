@@ -72,6 +72,7 @@ public class AssistantProposalService {
     private final PlaceRepository places;
     private final ActivityService activityService;
     private final AssistantTripDays tripDays;
+    private final AssistantTripEdits tripEdits;
     private final TripAccessGuard tripAccessGuard;
     private final MarketplaceConversationAccessService conversationAccess;
     private final WebSocketService webSocketService;
@@ -101,7 +102,7 @@ public class AssistantProposalService {
             AssistantProposalAction action = action(draft);
             if (action == null) continue;
             boolean byDayNumber = action == AssistantProposalAction.ADD || action == AssistantProposalAction.MOVE
-                    || action == AssistantProposalAction.ADD_DAYS;
+                    || action == AssistantProposalAction.ADD_DAYS || action == AssistantProposalAction.NEW_ACTIVITY;
             if (reshaped && (AssistantProposalAction.RESHAPES_DAYS.contains(action) || byDayNumber)) continue;
             try {
                 Optional<AssistantProposal> built = buildProposal(turn, conversationTripId, action, draft, extendedTo);
@@ -140,8 +141,10 @@ public class AssistantProposalService {
         AssistantProposal proposal = repository.findProposal(proposalId).orElseThrow(this::notFound);
         conversationAccess.requireAccess(proposal.getConversationId(), viewerId);
         AssistantProposalResponse response = response(proposal);
+        // Only the owner adds people to a trip, so only the owner may apply ADD_GUEST.
+        boolean ownerOnly = AssistantProposalAction.ADD_GUEST.name().equals(proposal.getAction());
         response.setViewerCanEdit(trips.findById(proposal.getTripId())
-                .map(trip -> tripAccessGuard.canEdit(trip, viewerId))
+                .map(trip -> ownerOnly ? viewerId.equals(trip.getOwnerId()) : tripAccessGuard.canEdit(trip, viewerId))
                 .orElse(false));
         return response;
     }
@@ -166,6 +169,10 @@ public class AssistantProposalService {
         UUID activityId = uuid(payload.get("activityId"));
         if (AssistantProposalAction.NAMES_ACTIVITY.contains(action) && activityOfTrip(tripId, activityId).isEmpty()) {
             return resolve(proposal, AssistantProposalStatus.STALE, viewerId, now, null, "Activity no longer exists");
+        }
+        if (AssistantProposalAction.NAMES_EXPENSE.contains(action)) {
+            String gone = tripEdits.staleExpense(tripId, payload, viewerId);
+            if (gone != null) return resolve(proposal, AssistantProposalStatus.STALE, viewerId, now, null, gone);
         }
         String staleReason = staleDays(action, payload, trips.findById(tripId).orElseThrow(this::notFound));
         if (staleReason != null) {
@@ -220,6 +227,12 @@ public class AssistantProposalService {
                 tripDays.shiftDates(tripId, LocalDate.parse(text(payload.get("startDate"))), viewerId);
                 yield null;
             }
+            case NEW_ACTIVITY -> {
+                ensureDays(tripId, integer(payload.get("dayNumber")), viewerId);
+                yield tripEdits.apply(action, tripId, payload, viewerId);
+            }
+            case EDIT_TRIP, EDIT_ACTIVITY, ADD_EXPENSE, EDIT_EXPENSE, REMOVE_EXPENSE, ADD_NOTE, ADD_GUEST ->
+                    tripEdits.apply(action, tripId, payload, viewerId);
         };
         return resolve(proposal, AssistantProposalStatus.APPLIED, viewerId, now, resultActivityId, null);
     }
@@ -413,6 +426,10 @@ public class AssistantProposalService {
                 payload.put("startDate", start.toString());
                 putDates(payload, start, start.plusDays(days - 1L));
             }
+            case EDIT_TRIP, EDIT_ACTIVITY, NEW_ACTIVITY, ADD_EXPENSE, EDIT_EXPENSE, REMOVE_EXPENSE, ADD_NOTE,
+                 ADD_GUEST -> {
+                if (!tripEdits.build(action, trip, turn.getUserId(), lastDay, draft, payload)) return Optional.empty();
+            }
         }
         if (AssistantProposalAction.NUMBERS_DAYS.contains(action) && trip.getStartDate() != null) {
             payload.put("baseStartDate", trip.getStartDate().toString());
@@ -513,6 +530,9 @@ public class AssistantProposalService {
                 .activityCount(integer(payload.get("activityCount")))
                 .newStartDate(date(text(payload.get("newStartDate"))))
                 .newEndDate(date(text(payload.get("newEndDate"))))
+                .expenseId(uuid(payload.get("expenseId")))
+                .expenseName(text(payload.get("expenseName")))
+                .lines(lines(payload.get("lines")))
                 .resolvedByUserId(proposal.getResolvedBy())
                 .resolvedByName(proposal.getResolvedByName())
                 .resolvedAt(proposal.getResolvedAt())
@@ -535,6 +555,21 @@ public class AssistantProposalService {
         } else {
             send.run();
         }
+    }
+
+    /** The card's field-by-field lines: field, from, to and (for money) currency, all as text. */
+    private static List<Map<String, String>> lines(Object raw) {
+        if (!(raw instanceof List<?> list) || list.isEmpty()) return null;
+        List<Map<String, String>> out = new ArrayList<>();
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?> map)) continue;
+            Map<String, String> line = new LinkedHashMap<>();
+            map.forEach((key, value) -> {
+                if (key != null && value != null) line.put(key.toString(), value.toString());
+            });
+            out.add(line);
+        }
+        return out;
     }
 
     private Map<String, Object> payload(AssistantProposal proposal) {
