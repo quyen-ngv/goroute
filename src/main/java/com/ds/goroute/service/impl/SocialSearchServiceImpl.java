@@ -72,6 +72,7 @@ public class SocialSearchServiceImpl implements SocialSearchService {
     private final UserCheckinService checkinService;
     private final TripService tripService;
     private final UserBlockService blockService;
+    private final com.ds.goroute.service.ParallelReads parallelReads;
 
     @Override
     @Transactional(readOnly = true)
@@ -123,12 +124,17 @@ public class SocialSearchServiceImpl implements SocialSearchService {
             List<SocialSearchHits.Hit> tourPreview = List.of();
             List<SocialSearchHits.Hit> eventPreview = List.of();
             if (firstPageOfAll) {
-                userPreview = index.search(query, Set.of(SocialSearchType.USER), viewerId, null, 0, USER_PREVIEW_SIZE)
-                        .hits();
-                tourPreview = index.search(query, Set.of(SocialSearchType.TOUR), viewerId, tourVariant, 0,
-                        ROW_PREVIEW_SIZE).hits();
-                eventPreview = index.search(query, Set.of(SocialSearchType.EVENT), viewerId, null, 0,
-                        ROW_PREVIEW_SIZE).hits();
+                // Three independent index reads: run together.
+                List<List<SocialSearchHits.Hit>> previews = this.<List<SocialSearchHits.Hit>>inMemory(List.of(
+                        () -> index.search(query, Set.of(SocialSearchType.USER), viewerId, null, 0,
+                                USER_PREVIEW_SIZE).hits(),
+                        () -> index.search(query, Set.of(SocialSearchType.TOUR), viewerId, tourVariant, 0,
+                                ROW_PREVIEW_SIZE).hits(),
+                        () -> index.search(query, Set.of(SocialSearchType.EVENT), viewerId, null, 0,
+                                ROW_PREVIEW_SIZE).hits()));
+                userPreview = previews.get(0);
+                tourPreview = previews.get(1);
+                eventPreview = previews.get(2);
                 indexHits.addAll(userPreview);
                 indexHits.addAll(tourPreview);
                 indexHits.addAll(eventPreview);
@@ -155,16 +161,46 @@ public class SocialSearchServiceImpl implements SocialSearchService {
         }
     }
 
+    /** One search index read; it may throw IOException. */
+    @FunctionalInterface
+    private interface IndexRead<T> {
+        T read() throws IOException;
+    }
+
+    /** Runs index reads together; an IOException from any of them comes back out as itself. */
+    private <T> List<T> inMemory(List<IndexRead<T>> reads) throws IOException {
+        List<java.util.function.Supplier<T>> suppliers = new ArrayList<>(reads.size());
+        for (IndexRead<T> read : reads) {
+            suppliers.add(() -> {
+                try {
+                    return read.read();
+                } catch (IOException e) {
+                    throw new java.io.UncheckedIOException(e);
+                }
+            });
+        }
+        try {
+            return parallelReads.allInMemory(suppliers);
+        } catch (java.io.UncheckedIOException e) {
+            throw e.getCause();
+        }
+    }
+
     private SocialSearchCountsResponse counts(String query, UUID viewerId, String tourVariant) throws IOException {
-        Map<SocialSearchType, Integer> counts = index.countByKind(query, viewerId, tourVariant);
+        List<Object> found = this.<Object>inMemory(List.of(
+                () -> index.countByKind(query, viewerId, tourVariant),
+                () -> placeIndex.countPlacesByName(query, PLACE_GROUPS),
+                () -> placeIndex.countPlacesByName(query, STAY_GROUPS)));
+        @SuppressWarnings("unchecked")
+        Map<SocialSearchType, Integer> counts = (Map<SocialSearchType, Integer>) found.get(0);
         return SocialSearchCountsResponse.builder()
                 .users(counts.getOrDefault(SocialSearchType.USER, 0))
                 .checkins(counts.getOrDefault(SocialSearchType.CHECKIN, 0))
                 .trips(counts.getOrDefault(SocialSearchType.TRIP, 0))
                 .tours(counts.getOrDefault(SocialSearchType.TOUR, 0))
                 .events(counts.getOrDefault(SocialSearchType.EVENT, 0))
-                .places(placeIndex.countPlacesByName(query, PLACE_GROUPS))
-                .stays(placeIndex.countPlacesByName(query, STAY_GROUPS))
+                .places((Integer) found.get(1))
+                .stays((Integer) found.get(2))
                 .build();
     }
 

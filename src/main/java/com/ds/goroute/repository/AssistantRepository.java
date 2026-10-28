@@ -54,8 +54,12 @@ public interface AssistantRepository {
 
     Optional<AssistantProposal> lockProposal(UUID proposalId);
 
+    /** @param createdTripId NEW_TRIP: the trip applying created; null leaves the proposal's trip as it is */
     boolean resolveProposal(UUID proposalId, String status, UUID resolvedBy, LocalDateTime resolvedAt,
-                            UUID resultActivityId, String failureReason);
+                            UUID resultActivityId, String failureReason, UUID createdTripId);
+
+    /** NEW_TRIP and PLAN_DAYS proposals shown under the given messages. */
+    List<AssistantProposal> findPlanProposalsOfMessages(List<UUID> messageIds);
 
     void attachProposalsToMessage(UUID turnId, UUID messageId);
 

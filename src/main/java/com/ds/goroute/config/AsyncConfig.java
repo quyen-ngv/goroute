@@ -1,5 +1,7 @@
 package com.ds.goroute.config;
 
+import com.ds.goroute.config.filter.RequestContextTaskDecorator;
+import com.ds.goroute.service.ParallelReads;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.aop.interceptor.AsyncUncaughtExceptionHandler;
 import org.springframework.aop.interceptor.SimpleAsyncUncaughtExceptionHandler;
@@ -101,6 +103,27 @@ public class AsyncConfig implements AsyncConfigurer {
                         pool.getQueue().size()));
         executor.initialize();
         log.info("Follower fan-out executor initialized: core=1, max=2, queue=500");
+        return executor;
+    }
+
+    /**
+     * Independent reads split off one HTTP request and joined before it answers
+     * (ParallelReads): feed candidate sources, card hydration. Each thread holds a database
+     * connection while it runs, so the pool stays well under the Hikari maximum (20) that
+     * request threads share. A full queue runs the read on the request thread, which is
+     * exactly the sequential behaviour this replaced.
+     */
+    @Bean(name = ParallelReads.EXECUTOR)
+    public ThreadPoolTaskExecutor requestReadExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(8);
+        executor.setMaxPoolSize(8);
+        executor.setQueueCapacity(64);
+        executor.setThreadNamePrefix(ParallelReads.THREAD_PREFIX);
+        executor.setTaskDecorator(new RequestContextTaskDecorator());
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.initialize();
+        log.info("Request read executor initialized: core=8, max=8, queue=64");
         return executor;
     }
 

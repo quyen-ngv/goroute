@@ -499,15 +499,17 @@
             <choose>
                 <when test="q.placeIds.isEmpty()">AND FALSE</when>
                 <otherwise>
-                    <!-- Posts about one of the places, and trips that share two or more of them. -->
+                    <!-- Posts about one of the places, and trips that share two or more of them.
+                         The trips are found once, from the places' activities (an uncorrelated,
+                         hashed subquery), rather than by counting each candidate trip's stops. -->
                     AND (fi.place_id IN
                          <foreach collection="q.placeIds" item="place" open="(" separator="," close=")">#{place}</foreach>
-                         OR (fi.item_type = 'TRIP' AND (
-                             SELECT COUNT(DISTINCT a.place_ref_id) FROM activities a
-                             WHERE a.trip_id = fi.item_id
-                               AND a.place_ref_id IN
+                         OR (fi.item_type = 'TRIP' AND fi.item_id IN (
+                             SELECT a.trip_id FROM activities a
+                             WHERE a.place_ref_id IN
                                <foreach collection="q.placeIds" item="place" open="(" separator="," close=")">#{place}</foreach>
-                         ) &gt;= 2))
+                             GROUP BY a.trip_id
+                             HAVING COUNT(DISTINCT a.place_ref_id) &gt;= 2)))
                 </otherwise>
             </choose>
         </if>

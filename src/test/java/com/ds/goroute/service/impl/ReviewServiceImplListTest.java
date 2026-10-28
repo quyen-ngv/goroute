@@ -91,7 +91,7 @@ class ReviewServiceImplListTest {
                 User.builder().id(authorB).fullName("Binh").build()));
         when(profiles.findByUserIds(any())).thenReturn(List.of(
                 UserReviewProfile.builder().userId(authorA).tier(UserTier.EXPERT).build()));
-        when(places.findByIds(List.of(placeId))).thenReturn(List.of(
+        when(places.findCardsByIds(List.of(placeId))).thenReturn(List.of(
                 Place.builder().id(placeId).title("Pho 10").build()));
         when(votes.findByReviewIdsAndUserId(any(), eq(viewerId))).thenReturn(List.of(
                 ReviewHelpfulVote.builder().reviewId(second.getId()).userId(viewerId).isHelpful(false).build()));
@@ -107,7 +107,7 @@ class ReviewServiceImplListTest {
 
         verify(users, times(1)).findByIds(Set.of(authorA, authorB));
         verify(profiles, times(1)).findByUserIds(Set.of(authorA, authorB));
-        verify(places, times(1)).findByIds(List.of(placeId));
+        verify(places, times(1)).findCardsByIds(List.of(placeId));
         verify(votes, times(1)).findByReviewIdsAndUserId(
                 List.of(first.getId(), second.getId(), third.getId()), viewerId);
         verify(mediaAssets, times(1)).findByEntityIds(eq("USER_REVIEW"), any());
@@ -133,7 +133,7 @@ class ReviewServiceImplListTest {
 
         assertThat(page).extracting(UserReviewResponse::getActivityBookingTitle).containsOnly("Kayak");
         verify(bookings, times(1)).findByIds(List.of(bookingId));
-        verify(places, never()).findByIds(any());
+        verify(places, never()).findCardsByIds(any());
         verify(votes, never()).findByReviewIdsAndUserId(any(), any());
     }
 

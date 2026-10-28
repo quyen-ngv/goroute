@@ -2,6 +2,7 @@ package com.ds.goroute.repository.impl;
 
 import com.ds.goroute.dto.response.PlaceDetailRefreshCandidateResponse;
 import com.ds.goroute.entity.Place;
+import com.ds.goroute.entity.PlaceTrendingRow;
 import com.ds.goroute.mapper.PlaceMapper;
 import com.ds.goroute.repository.PlaceRepository;
 import org.springframework.stereotype.Repository;
@@ -100,6 +101,13 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     }
 
     @Override
+    public List<PlaceTrendingRow> findTrendingUsage(BigDecimal latitude, BigDecimal longitude,
+                                                    BigDecimal radiusMeters, List<String> placeGroups,
+                                                    int days, int limit) {
+        return placeMapper.findTrendingUsage(latitude, longitude, radiusMeters, placeGroups, days, limit);
+    }
+
+    @Override
     public List<Place> findMapPinsByIds(List<UUID> ids) {
         if (ids == null || ids.isEmpty()) {
             return List.of();
@@ -180,6 +188,18 @@ public class PlaceRepositoryImpl implements PlaceRepository {
                               List<String> visibilityStatus,
                               List<String> trustLevel, List<UUID> locationImageIds) {
         return placeMapper.countFiltered(search, searchId, placeGroups, subTypes, visibilityStatus, trustLevel, locationImageIds);
+    }
+
+    @Override
+    public List<Place> findCardsByIds(List<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        List<Place> places = new java.util.ArrayList<>(ids.size());
+        for (List<UUID> batch : com.google.common.collect.Lists.partition(ids, 500)) {
+            places.addAll(placeMapper.findCardsByIds(batch));
+        }
+        return places;
     }
 
     @Override

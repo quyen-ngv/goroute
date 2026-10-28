@@ -11,6 +11,10 @@ import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.UserCheckinRepository;
 import com.ds.goroute.service.ContentModerationService;
 import com.ds.goroute.service.FoodService;
+import com.ds.goroute.service.SavedCategoryService;
+import com.ds.goroute.dto.response.SavedCategoryDetailResponse;
+import com.ds.goroute.dto.response.SavedCategoryResponse;
+import com.ds.goroute.type.SavedCategoryVisibility;
 import com.ds.goroute.type.ContentVisibility;
 import com.ds.goroute.type.MeetupStatus;
 import com.ds.goroute.type.ModeratedContentType;
@@ -58,6 +62,8 @@ class ChatShareValidatorTest {
     @Mock private MeetupService meetups;
     @Mock private ObjectProvider<FoodService> foodProvider;
     @Mock private ObjectProvider<MeetupService> meetupProvider;
+    @Mock private SavedCategoryService savedCategories;
+    @Mock private ObjectProvider<SavedCategoryService> savedCategoryProvider;
 
     private ChatShareValidator validator;
 
@@ -65,7 +71,9 @@ class ChatShareValidatorTest {
     void setUp() {
         when(foodProvider.getObject()).thenReturn(foods);
         when(meetupProvider.getObject()).thenReturn(meetups);
-        validator = new ChatShareValidator(places, foodProvider, checkins, moderation, trips, events, meetupProvider);
+        when(savedCategoryProvider.getObject()).thenReturn(savedCategories);
+        validator = new ChatShareValidator(
+                places, foodProvider, checkins, moderation, trips, events, meetupProvider, savedCategoryProvider);
     }
 
     @Test
@@ -108,6 +116,24 @@ class ChatShareValidatorTest {
 
         trip.setVisibility(TripVisibility.PUBLIC);
         assertThat(validator.validate(SENDER, share("TRIP", null))).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("refuses a saved category that is not public, even to its owner")
+    void refusesAPrivateSavedCategory() {
+        SavedCategoryResponse category = SavedCategoryResponse.builder()
+                .id(TARGET)
+                .ownerId(SENDER)
+                .visibility(SavedCategoryVisibility.PRIVATE)
+                .build();
+        when(savedCategories.get(SENDER, TARGET))
+                .thenReturn(SavedCategoryDetailResponse.builder().category(category).owner(true).build());
+
+        assertThatThrownBy(() -> validator.validate(SENDER, share("SAVED_CATEGORY", null)))
+                .isInstanceOf(BusinessException.class);
+
+        category.setVisibility(SavedCategoryVisibility.PUBLIC);
+        assertThat(validator.validate(SENDER, share("SAVED_CATEGORY", null))).hasSize(1);
     }
 
     @Test

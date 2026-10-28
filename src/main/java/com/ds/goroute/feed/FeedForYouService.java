@@ -15,6 +15,7 @@ import com.ds.goroute.feed.session.FeedSession;
 import com.ds.goroute.feed.session.FeedSessionStore;
 import com.ds.goroute.feed.source.CandidateSource;
 import com.ds.goroute.mapper.FeedItemMapper;
+import com.ds.goroute.service.ParallelReads;
 import com.ds.goroute.service.ReviewService;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.service.UserCheckinService;
@@ -24,6 +25,7 @@ import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
@@ -34,6 +36,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -61,6 +64,7 @@ public class FeedForYouService {
     private final UserCheckinService checkinService;
     private final ReviewService reviewService;
     private final TripService tripService;
+    private final ParallelReads parallelReads;
 
     public FeedForYouPageResponse page(UUID viewerId, FeedFilterSpec spec, String cursor, int size,
                                        Double deviceLat, Double deviceLng, boolean contextOff,
@@ -125,11 +129,12 @@ public class FeedForYouService {
         int maxCandidates = w.i("caps.maxCandidates", 1400);
 
         Map<String, FeedCandidate> pool = new LinkedHashMap<>();
+        Set<FeedCandidateQuery> alreadyRead = new HashSet<>();
         FillLevel level = FillLevel.L1;
         List<FeedCandidate> usable = List.of();
         for (FillLevel attempt : List.of(FillLevel.L1, FillLevel.L2, FillLevel.L3, FillLevel.L4)) {
             level = attempt;
-            collect(pool, context, spec, w, attempt, maxCandidates);
+            collect(pool, alreadyRead, context, spec, w, attempt, maxCandidates);
             usable = usable(pool, exclude, context, spec, w, attempt, now);
             if (usable.size() >= minCandidates) {
                 break;
@@ -184,33 +189,58 @@ public class FeedForYouService {
         return session;
     }
 
-    /** Runs every applicable source at {@code level} and merges into {@code pool}. */
-    private void collect(Map<String, FeedCandidate> pool, ViewerContext context, FeedFilterSpec spec,
-                         FeedWeights w, FillLevel level, int maxCandidates) {
+    /**
+     * Runs every applicable source at {@code level}, at the same time, and merges their rows into
+     * {@code pool} in source order. A query an earlier level already ran is not run again: L3
+     * reads exactly what L2 read (it only lets seen posts back in) and the Social source never
+     * changes with the level.
+     */
+    private void collect(Map<String, FeedCandidate> pool, Set<FeedCandidateQuery> alreadyRead,
+                         ViewerContext context, FeedFilterSpec spec, FeedWeights w, FillLevel level,
+                         int maxCandidates) {
+        if (pool.size() >= maxCandidates) {
+            return;
+        }
         FeedCandidateQuery base = baseQuery(context, spec, w, level);
+        List<CandidateSource> toRun = new ArrayList<>();
+        List<Supplier<List<FeedItemRow>>> reads = new ArrayList<>();
         for (CandidateSource source : sources) {
-            if (pool.size() >= maxCandidates) {
-                break;
-            }
             if (!source.applies(context, spec)) {
                 continue;
             }
             FeedCandidateQuery query = source.query(base, context, w, level);
-            if (query == null) {
+            if (query == null || !alreadyRead.add(identity(query))) {
                 continue;
             }
-            List<FeedItemRow> rows;
-            try {
-                rows = itemMapper.selectCandidates(query);
-            } catch (RuntimeException exception) {
-                // One source failing costs its posts, not the feed.
-                log.warn("Feed source {} failed: {}", source.kind(), exception.getMessage());
-                continue;
+            toRun.add(source);
+            reads.add(() -> read(source, query));
+        }
+        List<List<FeedItemRow>> results = parallelReads.all(reads);
+        for (int i = 0; i < toRun.size(); i++) {
+            if (pool.size() >= maxCandidates) {
+                break;
             }
-            for (FeedItemRow row : rows) {
+            CandidateSource source = toRun.get(i);
+            for (FeedItemRow row : results.get(i)) {
                 pool.computeIfAbsent(row.key().key(), key -> new FeedCandidate(row)).sources().add(source.kind());
             }
         }
+    }
+
+    private List<FeedItemRow> read(CandidateSource source, FeedCandidateQuery query) {
+        try {
+            return itemMapper.selectCandidates(query);
+        } catch (RuntimeException exception) {
+            // One source failing costs its posts, not the feed.
+            log.warn("Feed source {} failed: {}", source.kind(), exception.getMessage());
+            return List.of();
+        }
+    }
+
+    /** {@code query} with its window to the minute: two levels asking the same window read the same rows. */
+    private static FeedCandidateQuery identity(FeedCandidateQuery query) {
+        return query.getSince() == null ? query
+                : query.toBuilder().since(query.getSince().truncatedTo(ChronoUnit.MINUTES)).build();
     }
 
     private static FeedCandidateQuery baseQuery(ViewerContext context, FeedFilterSpec spec, FeedWeights w,
@@ -314,14 +344,22 @@ public class FeedForYouService {
         }
         Map<String, List<UUID>> idsByType = slice.stream().collect(Collectors.groupingBy(
                 FeedKey::getItemType, Collectors.mapping(FeedKey::getItemId, Collectors.toList())));
-        Map<UUID, UserCheckinResponse> checkins = idsByType.containsKey("CHECKIN")
-                ? checkinService.findVisibleByIds(viewerId, idsByType.get("CHECKIN")) : Map.of();
-        Map<UUID, UserReviewResponse> reviews = idsByType.containsKey("REVIEW")
-                ? reviewService.findVisibleByIds(viewerId, idsByType.get("REVIEW")) : Map.of();
-        Map<UUID, PublicTripResponse> trips = idsByType.containsKey("TRIP")
-                ? tripService.getPublicTripCards(viewerId, idsByType.get("TRIP")).stream()
-                        .collect(Collectors.toMap(PublicTripResponse::getId, Function.identity(), (a, b) -> a))
-                : Map.of();
+        // The three card kinds are independent reads of about ten queries each: load them together.
+        List<Map<UUID, ?>> loaded = parallelReads.all(List.<Supplier<Map<UUID, ?>>>of(
+                () -> idsByType.containsKey("CHECKIN")
+                        ? checkinService.findVisibleByIds(viewerId, idsByType.get("CHECKIN")) : Map.of(),
+                () -> idsByType.containsKey("REVIEW")
+                        ? reviewService.findVisibleByIds(viewerId, idsByType.get("REVIEW")) : Map.of(),
+                () -> idsByType.containsKey("TRIP")
+                        ? tripService.getPublicTripCards(viewerId, idsByType.get("TRIP")).stream()
+                                .collect(Collectors.toMap(PublicTripResponse::getId, Function.identity(), (a, b) -> a))
+                        : Map.of()));
+        @SuppressWarnings("unchecked")
+        Map<UUID, UserCheckinResponse> checkins = (Map<UUID, UserCheckinResponse>) loaded.get(0);
+        @SuppressWarnings("unchecked")
+        Map<UUID, UserReviewResponse> reviews = (Map<UUID, UserReviewResponse>) loaded.get(1);
+        @SuppressWarnings("unchecked")
+        Map<UUID, PublicTripResponse> trips = (Map<UUID, PublicTripResponse>) loaded.get(2);
 
         List<FeedForYouPageResponse.Item> items = new ArrayList<>(slice.size());
         for (FeedKey key : slice) {

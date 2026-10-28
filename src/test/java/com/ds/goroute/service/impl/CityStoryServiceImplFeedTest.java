@@ -56,7 +56,7 @@ class CityStoryServiceImplFeedTest {
     private void twoStoriesInHanoi() {
         when(mapper.selectActiveSince(any())).thenReturn(List.of(newer, older));
         when(locations.findAll()).thenReturn(List.of(hanoi));
-        when(places.findByIds(List.of(placeId))).thenReturn(List.of(Place.builder().id(placeId).title("Hoan Kiem").build()));
+        when(places.findCardsByIds(List.of(placeId))).thenReturn(List.of(Place.builder().id(placeId).title("Hoan Kiem").build()));
         when(weather.findWeatherQuietly(hanoi)).thenReturn(CityWeatherResponse.builder().build());
     }
 
@@ -85,7 +85,7 @@ class CityStoryServiceImplFeedTest {
 
         verify(mapper, times(1)).selectActiveSince(any());
         verify(locations, times(1)).findAll();
-        verify(places, times(1)).findByIds(List.of(placeId));
+        verify(places, times(1)).findCardsByIds(List.of(placeId));
         verify(places, never()).findById(any());
         verify(weather, times(1)).findWeatherQuietly(hanoi);
         verify(mapper, times(1)).selectViewedStoryIdsSince(eq(bob), any());

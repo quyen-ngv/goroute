@@ -102,6 +102,7 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     static final int MAX_NAME_SEARCH_SIZE = 500;
     private static final String INDEX_SCHEMA_VERSION = "9";
     private static final String ID_FIELD = "id";
+    private static final Set<String> ID_ONLY = Set.of(ID_FIELD);
     private static final String NAME_FIELD = "name";
     private static final String LOCATION_FIELD = "location";
     private static final String VISIBILITY_FIELD = "visibility";
@@ -534,7 +535,7 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
             ScoreDoc[] hits = searcher.search(query.build(), requestedHits).scoreDocs;
             List<UUID> ids = new ArrayList<>();
             for (int index = offset; index < hits.length; index++) {
-                ids.add(UUID.fromString(searcher.doc(hits[index].doc).get(ID_FIELD)));
+                ids.add(UUID.fromString(searcher.doc(hits[index].doc, ID_ONLY).get(ID_FIELD)));
             }
             return ids;
         } finally {
@@ -568,7 +569,9 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
                 if (qualifyingHitIndex++ < offset) {
                     continue;
                 }
-                Document doc = searcher.doc(scoreDoc.doc);
+                // Only the id: every other stored field (names, texts in every language) is
+                // read from the database for the page anyway.
+                Document doc = searcher.doc(scoreDoc.doc, ID_ONLY);
                 ids.add(UUID.fromString(doc.get(ID_FIELD)));
                 if (ids.size() == criteria.size()) {
                     break;
@@ -677,17 +680,56 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         Query area = buildSearchQuery(withoutSubTypes(criteria));
         IndexSearcher searcher = searcherManager.acquire();
         try {
-            Map<String, Integer> counts = new LinkedHashMap<>();
-            for (PlaceSubType kind : kinds) {
-                counts.put(kind.name(), searcher.count(new BooleanQuery.Builder()
-                        .add(area, BooleanClause.Occur.MUST)
-                        .add(new TermQuery(new Term(SUB_TYPE_FIELD, kind.name())), BooleanClause.Occur.FILTER)
-                        .build()));
+            // One pass: the area (distance, text, filters) is evaluated once per segment into a
+            // bit set, then each kind's posting list is walked against it. Counting each kind
+            // with its own query evaluated the area once per kind.
+            int[] kindCounts = new int[kinds.size()];
+            int areaCount = 0;
+            int typedCount = 0;
+            org.apache.lucene.search.Weight weight = searcher.createWeight(
+                    searcher.rewrite(area), org.apache.lucene.search.ScoreMode.COMPLETE_NO_SCORES, 1f);
+            for (LeafReaderContext leaf : searcher.getIndexReader().leaves()) {
+                org.apache.lucene.search.Scorer scorer = weight.scorer(leaf);
+                if (scorer == null) {
+                    continue;
+                }
+                org.apache.lucene.util.Bits live = leaf.reader().getLiveDocs();
+                org.apache.lucene.util.FixedBitSet inArea = new org.apache.lucene.util.FixedBitSet(leaf.reader().maxDoc());
+                org.apache.lucene.search.DocIdSetIterator docs = scorer.iterator();
+                for (int doc = docs.nextDoc(); doc != org.apache.lucene.search.DocIdSetIterator.NO_MORE_DOCS;
+                     doc = docs.nextDoc()) {
+                    if (live == null || live.get(doc)) {
+                        inArea.set(doc);
+                    }
+                }
+                areaCount += inArea.cardinality();
+                // Any known kind makes a place typed, listed or not: the same rule as untypedQuery().
+                org.apache.lucene.util.FixedBitSet typed = new org.apache.lucene.util.FixedBitSet(leaf.reader().maxDoc());
+                for (PlaceSubType known : PlaceSubType.values()) {
+                    org.apache.lucene.index.PostingsEnum postings =
+                            leaf.reader().postings(new Term(SUB_TYPE_FIELD, known.name()));
+                    if (postings == null) {
+                        continue;
+                    }
+                    int listed = kinds.indexOf(known);
+                    for (int doc = postings.nextDoc(); doc != org.apache.lucene.search.DocIdSetIterator.NO_MORE_DOCS;
+                         doc = postings.nextDoc()) {
+                        if (!inArea.get(doc)) {
+                            continue;
+                        }
+                        typed.set(doc);
+                        if (listed >= 0) {
+                            kindCounts[listed]++;
+                        }
+                    }
+                }
+                typedCount += typed.cardinality();
             }
-            counts.put(PlaceSubType.UNTYPED_FILTER, searcher.count(new BooleanQuery.Builder()
-                    .add(area, BooleanClause.Occur.MUST)
-                    .add(untypedQuery(), BooleanClause.Occur.FILTER)
-                    .build()));
+            Map<String, Integer> counts = new LinkedHashMap<>();
+            for (int i = 0; i < kinds.size(); i++) {
+                counts.put(kinds.get(i).name(), kindCounts[i]);
+            }
+            counts.put(PlaceSubType.UNTYPED_FILTER, areaCount - typedCount);
             return counts;
         } finally {
             searcherManager.release(searcher);

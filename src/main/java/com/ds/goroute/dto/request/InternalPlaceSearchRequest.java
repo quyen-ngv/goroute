@@ -10,7 +10,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/** Scrape worker request: find a place by free text through the backend's map provider. */
+/** Scrape worker request: find a place by free text in the catalogue, then through Mapbox. */
 @Data
 @Builder
 @NoArgsConstructor
@@ -20,6 +20,10 @@ public class InternalPlaceSearchRequest {
     @NotBlank
     @Size(max = 300)
     private String query;
+
+    /** The place's own name, without the area hints in {@code query}; matched against the catalogue. */
+    @Size(max = 300)
+    private String name;
 
     @NotNull
     @Min(1)

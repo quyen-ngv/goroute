@@ -40,11 +40,13 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -73,6 +75,7 @@ public class AssistantProposalService {
     private final ActivityService activityService;
     private final AssistantTripDays tripDays;
     private final AssistantTripEdits tripEdits;
+    private final AssistantTripPlans tripPlans;
     private final TripAccessGuard tripAccessGuard;
     private final MarketplaceConversationAccessService conversationAccess;
     private final WebSocketService webSocketService;
@@ -97,19 +100,26 @@ public class AssistantProposalService {
         ordered.sort(Comparator.comparingInt(draft -> order(action(draft))));
         Map<UUID, Integer> extendedTo = new HashMap<>();
         boolean reshaped = false;
+        boolean plannedNewTrip = false;
+        Set<UUID> plannedTrips = new HashSet<>();
         List<UUID> created = new ArrayList<>();
         for (AssistantReplyRequest.ProposalDraft draft : ordered) {
             AssistantProposalAction action = action(draft);
             if (action == null) continue;
             boolean byDayNumber = action == AssistantProposalAction.ADD || action == AssistantProposalAction.MOVE
-                    || action == AssistantProposalAction.ADD_DAYS || action == AssistantProposalAction.NEW_ACTIVITY;
+                    || action == AssistantProposalAction.ADD_DAYS || action == AssistantProposalAction.NEW_ACTIVITY
+                    || action == AssistantProposalAction.PLAN_DAYS;
             if (reshaped && (AssistantProposalAction.RESHAPES_DAYS.contains(action) || byDayNumber)) continue;
+            // One new trip per answer and one plan per trip: a second would be another version of the same plan.
+            if (action == AssistantProposalAction.NEW_TRIP && plannedNewTrip) continue;
             try {
                 Optional<AssistantProposal> built = buildProposal(turn, conversationTripId, action, draft, extendedTo);
                 if (built.isEmpty()) continue;
                 AssistantProposal proposal = built.get();
+                if (action == AssistantProposalAction.PLAN_DAYS && !plannedTrips.add(proposal.getTripId())) continue;
                 repository.insertProposal(proposal);
                 created.add(proposal.getId());
+                plannedNewTrip |= action == AssistantProposalAction.NEW_TRIP;
                 if (action == AssistantProposalAction.ADD_DAYS) {
                     extendedTo.merge(proposal.getTripId(), integer(payload(proposal).get("toDayNumber")), Math::max);
                 }
@@ -141,6 +151,11 @@ public class AssistantProposalService {
         AssistantProposal proposal = repository.findProposal(proposalId).orElseThrow(this::notFound);
         conversationAccess.requireAccess(proposal.getConversationId(), viewerId);
         AssistantProposalResponse response = response(proposal);
+        if (AssistantProposalAction.NEW_TRIP.name().equals(proposal.getAction())) {
+            // The planned trip is the asker's: only they create it, and they become its owner.
+            response.setViewerCanEdit(viewerId.equals(proposal.getRequestedBy()));
+            return response;
+        }
         // Only the owner adds people to a trip, so only the owner may apply ADD_GUEST.
         boolean ownerOnly = AssistantProposalAction.ADD_GUEST.name().equals(proposal.getAction());
         response.setViewerCanEdit(trips.findById(proposal.getTripId())
@@ -153,18 +168,26 @@ public class AssistantProposalService {
      * Applies a pending proposal as the viewer. Idempotent: a proposal already resolved is returned
      * as it is. A proposal the trip has moved on from (its activity is gone, the days were
      * renumbered since) becomes STALE instead of failing the request.
+     *
+     * @param startDate NEW_TRIP only: the first day the applier picked; null keeps the plan's own
+     *                  dates (a plan without dates then cannot be applied)
      */
     @Transactional
-    public AssistantProposalResponse apply(UUID viewerId, UUID proposalId) {
+    public AssistantProposalResponse apply(UUID viewerId, UUID proposalId, LocalDate startDate) {
         AssistantProposal proposal = repository.lockProposal(proposalId).orElseThrow(this::notFound);
         conversationAccess.requireAccess(proposal.getConversationId(), viewerId);
         if (!AssistantProposalStatus.PENDING.name().equals(proposal.getStatus())) {
             return reload(proposalId);
         }
-        tripAccessGuard.requireEditAccess(proposal.getTripId(), viewerId);
         Map<String, Object> payload = payload(proposal);
         AssistantProposalAction action = AssistantProposalAction.valueOf(proposal.getAction());
         LocalDateTime now = LocalDateTime.now();
+        if (action == AssistantProposalAction.NEW_TRIP) {
+            requireAsker(proposal, viewerId);
+            UUID createdTripId = tripPlans.createTrip(payload, startDate, viewerId);
+            return resolve(proposal, AssistantProposalStatus.APPLIED, viewerId, now, null, null, createdTripId);
+        }
+        tripAccessGuard.requireEditAccess(proposal.getTripId(), viewerId);
         UUID tripId = proposal.getTripId();
         UUID activityId = uuid(payload.get("activityId"));
         if (AssistantProposalAction.NAMES_ACTIVITY.contains(action) && activityOfTrip(tripId, activityId).isEmpty()) {
@@ -233,6 +256,11 @@ public class AssistantProposalService {
             }
             case EDIT_TRIP, EDIT_ACTIVITY, ADD_EXPENSE, EDIT_EXPENSE, REMOVE_EXPENSE, ADD_NOTE, ADD_GUEST ->
                     tripEdits.apply(action, tripId, payload, viewerId);
+            case PLAN_DAYS -> {
+                tripPlans.planDays(tripId, payload, viewerId);
+                yield null;
+            }
+            case NEW_TRIP -> throw new IllegalStateException("NEW_TRIP is applied above");
         };
         return resolve(proposal, AssistantProposalStatus.APPLIED, viewerId, now, resultActivityId, null);
     }
@@ -244,8 +272,36 @@ public class AssistantProposalService {
         if (!AssistantProposalStatus.PENDING.name().equals(proposal.getStatus())) {
             return reload(proposalId);
         }
-        tripAccessGuard.requireEditAccess(proposal.getTripId(), viewerId);
+        if (AssistantProposalAction.NEW_TRIP.name().equals(proposal.getAction())) {
+            requireAsker(proposal, viewerId);
+        } else {
+            tripAccessGuard.requireEditAccess(proposal.getTripId(), viewerId);
+        }
         return resolve(proposal, AssistantProposalStatus.DISMISSED, viewerId, LocalDateTime.now(), null, null);
+    }
+
+    /** A planned new trip belongs to the person who asked for it. */
+    private static void requireAsker(AssistantProposal proposal, UUID viewerId) {
+        if (!viewerId.equals(proposal.getRequestedBy())) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Only the person who asked can create this trip");
+        }
+    }
+
+    /**
+     * The plan cards under the given messages as notes for the history Pengoo reads, by message id.
+     * Only plans: other proposals are one-line changes the answer text already names.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, String> planNotes(List<UUID> messageIds) {
+        Map<UUID, String> notes = new LinkedHashMap<>();
+        if (messageIds == null || messageIds.isEmpty()) return notes;
+        for (AssistantProposal proposal : repository.findPlanProposalsOfMessages(messageIds)) {
+            String note = tripPlans.historyNote(proposal, payload(proposal));
+            if (note != null && proposal.getMessageId() != null) {
+                notes.merge(proposal.getMessageId(), note, (first, second) -> first + " " + second);
+            }
+        }
+        return notes;
     }
 
     /**
@@ -312,7 +368,14 @@ public class AssistantProposalService {
 
     private AssistantProposalResponse resolve(AssistantProposal proposal, AssistantProposalStatus status, UUID viewerId,
                                               LocalDateTime at, UUID resultActivityId, String reason) {
-        repository.resolveProposal(proposal.getId(), status.name(), viewerId, at, resultActivityId, reason);
+        return resolve(proposal, status, viewerId, at, resultActivityId, reason, null);
+    }
+
+    /** @param createdTripId NEW_TRIP: the trip applying created, stored as the proposal's trip */
+    private AssistantProposalResponse resolve(AssistantProposal proposal, AssistantProposalStatus status, UUID viewerId,
+                                              LocalDateTime at, UUID resultActivityId, String reason,
+                                              UUID createdTripId) {
+        repository.resolveProposal(proposal.getId(), status.name(), viewerId, at, resultActivityId, reason, createdTripId);
         AssistantProposalResponse response = reload(proposal.getId());
         broadcastAfterCommit(proposal.getConversationId(), viewerId, response);
         return response;
@@ -330,6 +393,11 @@ public class AssistantProposalService {
                                                       AssistantProposalAction action,
                                                       AssistantReplyRequest.ProposalDraft draft,
                                                       Map<UUID, Integer> extendedTo) {
+        if (action == AssistantProposalAction.NEW_TRIP) {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            if (!tripPlans.buildNewTrip(draft.getPlan(), payload)) return Optional.empty();
+            return Optional.of(proposal(turn, null, action, payload, draft.getSummary()));
+        }
         UUID tripId = conversationTripId != null ? conversationTripId : uuid(draft.getTripId());
         if (tripId == null) return Optional.empty();
         Trip trip = trips.findById(tripId).filter(t -> !Boolean.TRUE.equals(t.getIsDeleted())).orElse(null);
@@ -430,6 +498,12 @@ public class AssistantProposalService {
                  ADD_GUEST -> {
                 if (!tripEdits.build(action, trip, turn.getUserId(), lastDay, draft, payload)) return Optional.empty();
             }
+            case PLAN_DAYS -> {
+                if (!tripPlans.buildPlanDays(trip, draft.getPlan(), payload)) return Optional.empty();
+            }
+            case NEW_TRIP -> {
+                return Optional.empty();
+            }
         }
         if (AssistantProposalAction.NUMBERS_DAYS.contains(action) && trip.getStartDate() != null) {
             payload.put("baseStartDate", trip.getStartDate().toString());
@@ -441,8 +515,13 @@ public class AssistantProposalService {
                 && time(draft.getEndTime()).isAfter(time(draft.getStartTime()))) {
             payload.put("endTime", draft.getEndTime());
         }
-        String summary = draft.getSummary() == null ? null : draft.getSummary().trim();
-        return Optional.of(AssistantProposal.builder()
+        return Optional.of(proposal(turn, tripId, action, payload, draft.getSummary()));
+    }
+
+    private AssistantProposal proposal(AssistantTurn turn, UUID tripId, AssistantProposalAction action,
+                                       Map<String, Object> payload, String rawSummary) {
+        String summary = rawSummary == null ? null : rawSummary.trim();
+        return AssistantProposal.builder()
                 .id(UUID.randomUUID())
                 .conversationId(turn.getConversationId())
                 .turnId(turn.getId())
@@ -453,7 +532,7 @@ public class AssistantProposalService {
                 .summary(summary == null || summary.isEmpty() ? null : summary)
                 .status(AssistantProposalStatus.PENDING.name())
                 .createdAt(LocalDateTime.now())
-                .build());
+                .build();
     }
 
     private Place activePlace(String rawId) {
@@ -533,12 +612,18 @@ public class AssistantProposalService {
                 .expenseId(uuid(payload.get("expenseId")))
                 .expenseName(text(payload.get("expenseName")))
                 .lines(lines(payload.get("lines")))
+                .plan(isPlan(proposal) ? tripPlans.view(payload.get("plan")) : null)
                 .resolvedByUserId(proposal.getResolvedBy())
                 .resolvedByName(proposal.getResolvedByName())
                 .resolvedAt(proposal.getResolvedAt())
                 .resultActivityId(proposal.getResultActivityId())
                 .failureReason(proposal.getFailureReason())
                 .build();
+    }
+
+    private static boolean isPlan(AssistantProposal proposal) {
+        return AssistantProposalAction.NEW_TRIP.name().equals(proposal.getAction())
+                || AssistantProposalAction.PLAN_DAYS.name().equals(proposal.getAction());
     }
 
     private void broadcastAfterCommit(UUID conversationId, UUID actorId, AssistantProposalResponse response) {

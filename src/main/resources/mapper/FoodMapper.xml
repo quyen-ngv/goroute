@@ -238,6 +238,23 @@
         WHERE f.id = #{foodId} AND fcs.city_slug = #{citySlug}
     </select>
 
+    <!-- The dish's own text, with no city's regional entry: for a city it has none in. -->
+    <select id="findFoodDetailDefault" resultMap="FoodWithScoreResultMap">
+        SELECT
+            f.id, f.name_vi, f.name_en, f.name_ja, f.name_ko, f.description, f.category,
+            f.subtitle_vi, f.subtitle_en, f.subtitle_ja, f.subtitle_ko,
+            f.hero_tagline_vi, f.hero_tagline_en, f.hero_tagline_ja, f.hero_tagline_ko,
+            f.price_min, f.price_max, f.price_currency, f.core_ingredients, f.varieties,
+            f.history_origin, f.ingredients_preparation, f.fun_fact,
+            f.how_to_eat_description, f.how_to_eat_steps,
+            f.theme_color, f.tags,
+            f.image_url, f.introduction_images,
+            CAST(NULL AS INTEGER) AS score, CAST(NULL AS TEXT) AS city_slug,
+            CAST(NULL AS TEXT) AS local_description, CAST(NULL AS TEXT) AS flavor_profile
+        FROM foods f
+        WHERE f.id = #{foodId}
+    </select>
+
     <insert id="insertCityScore">
         INSERT INTO food_city_scores (id, food_id, city_slug, score, local_description, short_description, region_key, image_url, introduction_images, flavor_profile, created_at, updated_at)
         VALUES (#{id}, #{foodId}, #{citySlug}, #{score}, #{localDescription}, #{shortDescription}, #{regionKey}, #{imageUrl}, #{introductionImages}, #{flavorProfile}::jsonb, #{createdAt}, #{updatedAt})

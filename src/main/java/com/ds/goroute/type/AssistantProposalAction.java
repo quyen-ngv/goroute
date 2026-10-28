@@ -39,14 +39,25 @@ public enum AssistantProposalAction {
     /** Save a shared note on the trip, or on one of its activities. */
     ADD_NOTE,
     /** Add a person without an account to the trip as a guest, so expenses can name them. */
-    ADD_GUEST;
+    ADD_GUEST,
+    /**
+     * A whole new trip planned in chat: name, destination, dates (or only a length, the dates then
+     * picked when applying), budget, starting point and every day's stops. It has no trip until
+     * applied; applying creates the trip with the applier as its owner.
+     */
+    NEW_TRIP,
+    /** A day-by-day plan poured into an existing trip, lengthening it when the plan runs past its end. */
+    PLAN_DAYS;
 
     /** Changes that renumber or re-date the days: one per answer, never next to a day-numbered add or move. */
     public static final Set<AssistantProposalAction> RESHAPES_DAYS = Set.of(PREPEND_DAYS, REMOVE_DAYS, SWAP_DAYS, SHIFT_DATES);
 
     /** Changes whose day numbers assume the trip still starts on the date it started when proposed. */
     public static final Set<AssistantProposalAction> NUMBERS_DAYS =
-            Set.of(ADD, MOVE, ADD_DAYS, PREPEND_DAYS, REMOVE_DAYS, SWAP_DAYS, SHIFT_DATES, NEW_ACTIVITY);
+            Set.of(ADD, MOVE, ADD_DAYS, PREPEND_DAYS, REMOVE_DAYS, SWAP_DAYS, SHIFT_DATES, NEW_ACTIVITY, PLAN_DAYS);
+
+    /** Changes that carry a day-by-day plan ({@code plan} in the draft and the payload). */
+    public static final Set<AssistantProposalAction> PLANS = Set.of(NEW_TRIP, PLAN_DAYS);
 
     /** Changes that name an existing activity, which must still exist when applied. */
     public static final Set<AssistantProposalAction> NAMES_ACTIVITY = Set.of(MOVE, UPDATE_TIME, REMOVE, REPLACE, EDIT_ACTIVITY);

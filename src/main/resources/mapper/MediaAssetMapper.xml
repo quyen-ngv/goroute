@@ -193,25 +193,29 @@
 
     <!-- Trip card previews: the first perTrip memories of each trip of a page, ordered as
          selectTripMemoriesByTripId orders one gallery (id breaks ties so the cut is stable). -->
+    <!-- The first perTrip memories of each trip, in gallery order. One LIMITed read per trip
+         (idx_media_assets_trip_memory_preview, V260) instead of numbering every memory of every
+         trip on the page: a trip with two thousand photos costs six rows, not two thousand. -->
     <select id="selectTripMemoryPreviewsByTripIds" resultMap="MediaAssetResultMap">
         SELECT <include refid="assetColumns"/>
-        FROM (
-            SELECT <include refid="assetColumns"/>,
-                   ROW_NUMBER() OVER (
-                       PARTITION BY trip_id
-                       ORDER BY COALESCE(position, 32767), COALESCE(taken_at, created_at) DESC, id
-                   ) AS preview_rank
-            FROM media_assets
-            WHERE trip_id IN
-            <foreach collection="tripIds" item="tripId" open="(" separator="," close=")">
+        FROM unnest(ARRAY[
+            <foreach collection="tripIds" item="tripId" separator=",">
                 #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
             </foreach>
+        ]::uuid[]) WITH ORDINALITY AS wanted(wanted_trip_id, wanted_order)
+        CROSS JOIN LATERAL (
+            SELECT <include refid="assetColumns"/>,
+                   COALESCE(position, 32767) AS preview_position,
+                   COALESCE(taken_at, created_at) AS preview_time
+            FROM media_assets
+            WHERE trip_id = wanted.wanted_trip_id
               AND entity_type IN ('TRIP_MEMORY', 'TRIP_ACTIVITY_MEMORY')
               AND (asset_role IS NULL OR asset_role = 'MEMORY')
               AND deleted_at IS NULL
-        ) ranked
-        WHERE preview_rank &lt;= #{perTrip}
-        ORDER BY trip_id, preview_rank
+            ORDER BY COALESCE(position, 32767), COALESCE(taken_at, created_at) DESC, id
+            LIMIT #{perTrip}
+        ) preview
+        ORDER BY wanted.wanted_order, preview.preview_position, preview.preview_time DESC, preview.id
     </select>
 
     <select id="countTripMemoriesByTripIds" resultType="com.ds.goroute.entity.TripCount">

@@ -9,9 +9,9 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * Same field names as the scrape worker's own Google Maps search result
- * ({@code place_searcher.search_google_maps}), so the worker's matching code and every backend
- * reader of {@code mapSearch.candidates[]} work unchanged whichever produced it.
+ * Same field names as the scrape worker's old Google Maps search result, so the worker's
+ * matching code and every backend reader of {@code mapSearch.candidates[]} keep working.
+ * {@code provider} is {@code CATALOG} or {@code MAPBOX}.
  */
 @Data
 @Builder
@@ -39,5 +39,9 @@ public class InternalPlaceSearchResponse {
         private BigDecimal longitude;
         private String address;
         private String category;
+        /** Our {@code places.id} when the hit is a catalogue place. */
+        private String catalogPlaceId;
+        /** Mapbox's {@code mapbox_id} when the hit came from Mapbox. */
+        private String mapboxId;
     }
 }

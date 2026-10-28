@@ -97,7 +97,8 @@ class FeedForYouServiceTest {
         Reranker reranker = new Reranker(List.of(new RerankRules.Author(), new RerankRules.TypeRun(),
                 new RerankRules.PhotolessTrip()));
         service = new FeedForYouService(rollout, contexts, provider, itemMapper, sources, factors, reranker,
-                new CaffeineFeedSessionStore(), checkinService, reviewService, tripService);
+                new CaffeineFeedSessionStore(), checkinService, reviewService, tripService,
+                com.ds.goroute.service.ParallelReads.sequential());
     }
 
     /** {@code count} check-ins by distinct authors, newest first, scores falling. */

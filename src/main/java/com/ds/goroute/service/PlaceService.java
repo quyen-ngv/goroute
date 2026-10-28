@@ -9,6 +9,7 @@ import com.ds.goroute.dto.response.AdminPlacePageResponse;
 import com.ds.goroute.dto.response.PlaceReviewResponse;
 import com.ds.goroute.utils.GeoDistance;
 import com.ds.goroute.type.PlaceSearchSort;
+import com.ds.goroute.type.PlaceTrendingPeriod;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -92,6 +93,15 @@ public interface PlaceService {
      */
     Map<String, Integer> countPlacesBySubType(BigDecimal latitude, BigDecimal longitude, BigDecimal radius,
                                              List<String> placeGroups, boolean includeInactive);
+
+    /**
+     * The public places within {@code radiusKm} of the point that trips and check-ins used most
+     * over {@code period} (rolling back from now), most used first: the same trip and check-in
+     * counts that rank Trip Detail's suggestions, counted inside the window only. Places nobody
+     * used in the window are left out, so the list can be shorter than {@code size} or empty.
+     */
+    List<PlaceResponse> getTrendingPlaces(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm,
+                                          List<String> placeGroups, PlaceTrendingPeriod period, int size);
 
     /**
      * Copies of {@code places} with {@code distance} measured from this exact point, order kept.

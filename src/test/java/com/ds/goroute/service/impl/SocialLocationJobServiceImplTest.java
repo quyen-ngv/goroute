@@ -3,7 +3,6 @@ package com.ds.goroute.service.impl;
 import com.ds.goroute.config.InternalApiProperties;
 import com.ds.goroute.dto.request.SocialLocationJobCallbackRequest;
 import com.ds.goroute.dto.request.CreateSocialLocationJobRequest;
-import com.ds.goroute.dto.request.CreateSocialPlaceImportJobRequest;
 import com.ds.goroute.entity.AiApiCall;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.SocialLocationJob;
@@ -15,13 +14,10 @@ import com.ds.goroute.mapper.SocialLocationJobMapper;
 import com.ds.goroute.repository.AiTripRepository;
 import com.ds.goroute.repository.SocialLocationRestrictionRepository;
 import com.ds.goroute.service.NotificationService;
-import com.ds.goroute.service.PlaceImportJobService;
 import com.ds.goroute.service.PlaceSocialVideoService;
 import com.ds.goroute.service.SocialLocationConfigService;
 import com.ds.goroute.service.SocialLocationCompletionService;
 import com.ds.goroute.service.SocialCandidateImageService;
-import com.ds.goroute.service.InternalPlaceSearchService;
-import com.ds.goroute.type.SocialMapSearchProvider;
 import com.ds.goroute.service.StorageService;
 import com.ds.goroute.thirdparty.scrape.ScrapeServiceClient;
 import com.ds.goroute.thirdparty.scrape.ScrapeSocialLocationJobRequest;
@@ -61,7 +57,6 @@ class SocialLocationJobServiceImplTest {
     private AiApiCallMapper aiApiCallMapper;
     private PlaceImportJobMapper placeImportJobMapper;
     private PlaceMapper placeMapper;
-    private PlaceImportJobService placeImportJobService;
     private PlaceSocialVideoService placeSocialVideoService;
     private NotificationService notificationService;
     private ScrapeServiceClient scrapeServiceClient;
@@ -72,7 +67,6 @@ class SocialLocationJobServiceImplTest {
     private SocialCandidateImageService candidateImageService;
     private StorageService storageService;
     private ObjectMapper objectMapper;
-    private InternalPlaceSearchService internalPlaceSearchService;
     private com.ds.goroute.service.AiCreditService credits;
     private com.ds.goroute.service.AiTripQuotaService aiTripQuota;
     private SocialLocationJobServiceImpl service;
@@ -105,7 +99,6 @@ class SocialLocationJobServiceImplTest {
         aiApiCallMapper = mock(AiApiCallMapper.class);
         placeImportJobMapper = mock(PlaceImportJobMapper.class);
         placeMapper = mock(PlaceMapper.class);
-        placeImportJobService = mock(PlaceImportJobService.class);
         placeSocialVideoService = mock(PlaceSocialVideoService.class);
         notificationService = mock(NotificationService.class);
         scrapeServiceClient = mock(ScrapeServiceClient.class);
@@ -115,7 +108,6 @@ class SocialLocationJobServiceImplTest {
         completionService = mock(SocialLocationCompletionService.class);
         storageService = mock(StorageService.class);
         candidateImageService = new SocialCandidateImageServiceImpl(storageService);
-        internalPlaceSearchService = mock(InternalPlaceSearchService.class);
         credits = mock(com.ds.goroute.service.AiCreditService.class);
         aiTripQuota = mock(com.ds.goroute.service.AiTripQuotaService.class);
         objectMapper = new ObjectMapper();
@@ -126,7 +118,6 @@ class SocialLocationJobServiceImplTest {
                 placeMapper,
                 scrapeServiceClient,
                 objectMapper,
-                placeImportJobService,
                 placeSocialVideoService,
                 socialConfigService,
                 aiTripRepository,
@@ -137,7 +128,6 @@ class SocialLocationJobServiceImplTest {
                 new com.ds.goroute.config.ScrapeHttpClientProperties(),
                 new InternalApiProperties("ai-token", "internal-token"),
                 candidateImageService,
-                internalPlaceSearchService,
                 credits,
                 aiTripQuota
         );
@@ -376,11 +366,6 @@ class SocialLocationJobServiceImplTest {
 
         assertThat(job.getStatus()).isEqualTo(SocialLocationJobStatus.COMPLETED);
         verify(jobMapper).update(job);
-        ArgumentCaptor<CreateSocialPlaceImportJobRequest> importRequest =
-                ArgumentCaptor.forClass(CreateSocialPlaceImportJobRequest.class);
-        verify(placeImportJobService).createFromSocialJobs(eq(userId), importRequest.capture());
-        assertThat(importRequest.getValue().getMaxReviews()).isEqualTo(5);
-        assertThat(importRequest.getValue().getLimit()).isNull();
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> dataCaptor = ArgumentCaptor.forClass(Map.class);
@@ -482,7 +467,6 @@ class SocialLocationJobServiceImplTest {
         service.dispatchQueuedJobs();
 
         assertThat(job.getStatus()).isEqualTo(SocialLocationJobStatus.COMPLETED);
-        verify(placeImportJobService).createFromSocialJobs(eq(job.getUserId()), any());
         verify(notificationService).createNotification(
                 eq(job.getUserId()), isNull(), eq(NotificationType.SOCIAL_PLACES_EXTRACTED),
                 isNull(), isNull(), any(), isNull());
@@ -542,36 +526,13 @@ class SocialLocationJobServiceImplTest {
     }
 
     @Test
-    void dispatchKeepsTheWorkerScrapingMapsByDefault() {
+    void dispatchSendsTheWorkerToTheBackendPlaceSearch() {
         ScrapeSocialLocationJobRequest request = dispatchOneJob();
 
-        assertThat(request.getMapSearchProvider()).isEqualTo("SCRAPE");
-        assertThat(request.getMapSearchUrl()).isNull();
-        verify(internalPlaceSearchService, never()).isAvailable();
-    }
-
-    @Test
-    void dispatchSendsTheWorkerToTheBackendWhenGoogleIsChosenAndConfigured() {
-        when(socialConfigService.mapSearchProvider()).thenReturn(SocialMapSearchProvider.GOOGLE);
-        when(internalPlaceSearchService.isAvailable()).thenReturn(true);
-
-        ScrapeSocialLocationJobRequest request = dispatchOneJob();
-
-        assertThat(request.getMapSearchProvider()).isEqualTo("GOOGLE");
+        assertThat(request.getMapSearchProvider()).isEqualTo("MAPBOX");
         assertThat(request.getMapSearchUrl())
                 .isEqualTo("http://goroute-app:8080/v1/api/internal/place-search/text");
-        assertThat(objectMapper.valueToTree(request).path("map_search_provider").asText()).isEqualTo("GOOGLE");
-    }
-
-    @Test
-    void dispatchKeepsScrapingWhenGoogleIsChosenButHasNoKey() {
-        when(socialConfigService.mapSearchProvider()).thenReturn(SocialMapSearchProvider.GOOGLE);
-        when(internalPlaceSearchService.isAvailable()).thenReturn(false);
-
-        ScrapeSocialLocationJobRequest request = dispatchOneJob();
-
-        assertThat(request.getMapSearchProvider()).isEqualTo("SCRAPE");
-        assertThat(request.getMapSearchUrl()).isNull();
+        assertThat(objectMapper.valueToTree(request).path("map_search_provider").asText()).isEqualTo("MAPBOX");
     }
 
     private ScrapeSocialLocationJobRequest dispatchOneJob() {
@@ -643,7 +604,6 @@ class SocialLocationJobServiceImplTest {
                 .contains(existingPlaceId.toString())
                 .contains("EXISTING_DATABASE")
                 .contains("SKIPPED_EXISTING");
-        verify(placeImportJobService, never()).createFromSocialJobs(any(), any());
         verify(notificationService, never()).createNotification(any(), any(), any(), any(), any(), any(), any());
 
         ArgumentCaptor<AiApiCall> aiCallCaptor = ArgumentCaptor.forClass(AiApiCall.class);

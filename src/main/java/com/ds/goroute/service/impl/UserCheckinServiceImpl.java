@@ -858,7 +858,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         if (placeIds.isEmpty()) {
             return Map.of();
         }
-        return placeRepository.findByIds(placeIds).stream()
+        return placeRepository.findCardsByIds(placeIds).stream()
                 .collect(Collectors.toMap(Place::getId, place -> place, (first, second) -> first));
     }
 

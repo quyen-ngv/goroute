@@ -20,6 +20,7 @@ import com.ds.goroute.config.filter.AcceptLanguageFilter;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.PlaceReview;
 import com.ds.goroute.entity.PlaceTranslation;
+import com.ds.goroute.entity.PlaceTrendingRow;
 import com.ds.goroute.event.PlaceActivatedEvent;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.dto.response.FoodTagResponse;
@@ -47,6 +48,7 @@ import com.ds.goroute.utils.JsonUtils;
 import com.ds.goroute.utils.PlaceDisplayRating;
 import com.ds.goroute.utils.PlaceIdentityMatcher;
 import com.ds.goroute.type.PlaceSearchSort;
+import com.ds.goroute.type.PlaceTrendingPeriod;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -523,6 +525,21 @@ public class PlaceServiceImpl implements PlaceService {
             log.error("Place sub-type count failed", e);
             throw new BusinessException(ErrorConstant.INTERNAL_SERVER_ERROR, "Place search failed");
         }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PlaceResponse> getTrendingPlaces(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm,
+                                                 List<String> placeGroups, PlaceTrendingPeriod period, int size) {
+        List<UUID> orderedIds = placeRepository.findTrendingUsage(
+                        latitude, longitude, radiusKm.multiply(BigDecimal.valueOf(1000)),
+                        normalizedPlaceGroups(placeGroups), period.getDays(), size).stream()
+                .map(PlaceTrendingRow::getPlaceId)
+                .toList();
+        if (orderedIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        return toListResponses(inIdOrder(orderedIds, placeRepository.findListSummaryByIds(orderedIds, true)));
     }
 
     @Override

@@ -372,8 +372,19 @@
          the two lists: 0 when the destination is inside the province that covers the
          point, then 1, 2, ... per 100 km ring further out, trips without a destination
          point last; most recently shared first inside each rank. Without one, or when no
-         province covers it, most recently shared first throughout, as before. -->
+         province covers it, most recently shared first throughout, as before.
+
+         The focus province is found once (the focus CTE), not once per trip, as in
+         findFollowingFeed. -->
     <select id="findFollowingTrips" resultMap="FollowingTripResultMap">
+        <if test="focusLat != null and focusLng != null">
+        WITH focus AS MATERIALIZED (
+            SELECT fp.geom
+            FROM provinces fp
+            WHERE fp.geom IS NOT NULL
+              AND ST_Covers(fp.geom, ST_SetSRID(ST_MakePoint(#{focusLng}::float8, #{focusLat}::float8), 4326))
+        )
+        </if>
         SELECT t.id, t.name, t.cover_image_url, t.destination, t.destination_place_id,
                t.destination_lat, t.destination_lng, t.start_date, t.end_date, t.budget, t.currency,
                t.status, t.visibility, t.share_code, t.share_expenses, t.share_notes, t.description,
@@ -386,10 +397,8 @@
                CASE
                    WHEN t.destination_lat IS NULL OR t.destination_lng IS NULL THEN NULL
                    WHEN EXISTS (
-                       SELECT 1 FROM provinces fp
-                       WHERE fp.geom IS NOT NULL
-                         AND ST_Covers(fp.geom, ST_SetSRID(ST_MakePoint(#{focusLng}::float8, #{focusLat}::float8), 4326))
-                         AND ST_Covers(fp.geom, ST_SetSRID(ST_MakePoint(t.destination_lng::float8, t.destination_lat::float8), 4326)))
+                       SELECT 1 FROM focus fp
+                       WHERE ST_Covers(fp.geom, ST_SetSRID(ST_MakePoint(t.destination_lng::float8, t.destination_lat::float8), 4326)))
                        THEN 0
                    ELSE 1 + FLOOR(ST_Distance(
                                 goroute_point(t.destination_lat::float8, t.destination_lng::float8),

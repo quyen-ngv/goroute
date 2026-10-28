@@ -2,6 +2,7 @@ package com.ds.goroute.repository;
 
 import com.ds.goroute.dto.response.PlaceDetailRefreshCandidateResponse;
 import com.ds.goroute.entity.Place;
+import com.ds.goroute.entity.PlaceTrendingRow;
 import org.apache.ibatis.annotations.Param;
 
 import java.math.BigDecimal;
@@ -48,6 +49,13 @@ public interface PlaceRepository {
      * places a guest may see (visibility and lifecycle ACTIVE).
      */
     List<Place> findListSummaryByIds(List<UUID> ids, boolean publicOnly);
+
+    /**
+     * Public places within {@code radiusMeters} of the point that trips or check-ins used in the
+     * last {@code days} days, most used first, at most {@code limit}.
+     */
+    List<PlaceTrendingRow> findTrendingUsage(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusMeters,
+                                             List<String> placeGroups, int days, int limit);
 
     /** Map-pin columns for the ids that a guest may see, in no particular order. */
     List<Place> findMapPinsByIds(List<UUID> ids);
@@ -96,6 +104,9 @@ public interface PlaceRepository {
                        @Param("locationImageIds") List<UUID> locationImageIds);
 
     List<Place> findByIds(List<UUID> ids);
+
+    /** What a feed card shows of each place: no raw_data, menu, popular times or AI texts. */
+    List<Place> findCardsByIds(List<UUID> ids);
 
     List<Place> findByPlaceIds(List<String> placeIds);
 

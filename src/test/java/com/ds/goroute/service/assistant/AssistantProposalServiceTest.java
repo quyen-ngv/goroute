@@ -7,6 +7,7 @@ import com.ds.goroute.dto.request.ExpenseSplitRequest;
 import com.ds.goroute.dto.request.UpdateActivityRequest;
 import com.ds.goroute.dto.response.ActivityResponse;
 import com.ds.goroute.dto.response.AssistantProposalResponse;
+import com.ds.goroute.dto.response.TripResponse;
 import com.ds.goroute.entity.Activity;
 import com.ds.goroute.entity.AssistantProposal;
 import com.ds.goroute.entity.AssistantTurn;
@@ -16,6 +17,7 @@ import com.ds.goroute.entity.TripMember;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.ActivityRepository;
+import com.ds.goroute.repository.LocationImageRepository;
 import com.ds.goroute.repository.AssistantRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.TripMemberRepository;
@@ -24,6 +26,7 @@ import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.ActivityService;
 import com.ds.goroute.service.ExpenseService;
 import com.ds.goroute.service.TextModerationService;
+import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.service.TripNoteService;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.service.moderation.ModerationVerdict;
@@ -94,6 +97,8 @@ class AssistantProposalServiceTest {
     @Mock private TripService tripService;
     @Mock private TripNoteService noteService;
     @Mock private TextModerationService moderation;
+    @Mock private LocationImageRepository areas;
+    @Mock private TripRealtimePublisher realtime;
 
     private AssistantProposalService service;
     private final AssistantTurn turn = AssistantTurn.builder().id(UUID.randomUUID()).conversationId(CONVERSATION)
@@ -103,8 +108,11 @@ class AssistantProposalServiceTest {
     void setUp() {
         AssistantTripEdits tripEdits = new AssistantTripEdits(activities, members, users, activityService, expenseService,
                 tripService, noteService, moderation);
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        AssistantTripPlans tripPlans = new AssistantTripPlans(places, areas, activities, tripService, tripDays, realtime,
+                moderation, objectMapper);
         service = new AssistantProposalService(repository, trips, activities, places, activityService, tripDays, tripEdits,
-                tripAccessGuard, conversationAccess, webSocketService, new ObjectMapper().registerModule(new JavaTimeModule()));
+                tripPlans, tripAccessGuard, conversationAccess, webSocketService, objectMapper);
         Trip trip = Trip.builder().id(TRIP).ownerId(ASKER).name("Dốc Lết").currency("VND")
                 .budget(new BigDecimal("10000000"))
                 .startDate(LocalDate.of(2026, 11, 1)).endDate(LocalDate.of(2026, 11, 3)).build();
@@ -164,7 +172,7 @@ class AssistantProposalServiceTest {
         when(activityService.createActivity(eq(TRIP), any(), eq(EDITOR)))
                 .thenReturn(ActivityResponse.builder().id(UUID.randomUUID()).build());
 
-        service.apply(EDITOR, proposalId);
+        service.apply(EDITOR, proposalId, null);
 
         verify(tripAccessGuard).requireEditAccess(TRIP, EDITOR);
         ArgumentCaptor<CreateActivityRequest> request = ArgumentCaptor.forClass(CreateActivityRequest.class);
@@ -172,7 +180,7 @@ class AssistantProposalServiceTest {
         assertThat(request.getValue().getDayNumber()).isEqualTo(2);
         assertThat(request.getValue().getStartTime()).isEqualTo(LocalTime.of(19, 0));
         assertThat(request.getValue().getPlaceId()).isEqualTo(PLACE.toString());
-        verify(repository).resolveProposal(eq(proposalId), eq("APPLIED"), eq(EDITOR), any(), any(), eq(null));
+        verify(repository).resolveProposal(eq(proposalId), eq("APPLIED"), eq(EDITOR), any(), any(), eq(null), any());
     }
 
     @Test
@@ -180,10 +188,10 @@ class AssistantProposalServiceTest {
         UUID gone = UUID.randomUUID();
         UUID proposalId = pending("REMOVE", "{\"activityId\":\"" + gone + "\"}");
 
-        service.apply(EDITOR, proposalId);
+        service.apply(EDITOR, proposalId, null);
 
         verify(activityService, never()).deleteActivity(any(), any(), any());
-        verify(repository).resolveProposal(eq(proposalId), eq("STALE"), eq(EDITOR), any(), eq(null), any());
+        verify(repository).resolveProposal(eq(proposalId), eq("STALE"), eq(EDITOR), any(), eq(null), any(), any());
     }
 
     @Test
@@ -191,7 +199,7 @@ class AssistantProposalServiceTest {
         UUID proposalId = pending("REMOVE", "{\"activityId\":\"" + ACTIVITY + "\"}");
         doThrow(new BusinessException(4030001, "viewer")).when(tripAccessGuard).requireEditAccess(TRIP, ASKER);
 
-        assertThatThrownBy(() -> service.apply(ASKER, proposalId)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> service.apply(ASKER, proposalId, null)).isInstanceOf(BusinessException.class);
         verify(activityService, never()).deleteActivity(any(), any(), any());
     }
 
@@ -203,7 +211,7 @@ class AssistantProposalServiceTest {
         when(repository.lockProposal(proposalId)).thenReturn(Optional.of(applied));
         when(repository.findProposal(proposalId)).thenReturn(Optional.of(applied));
 
-        AssistantProposalResponse response = service.apply(EDITOR, proposalId);
+        AssistantProposalResponse response = service.apply(EDITOR, proposalId, null);
 
         assertThat(response.getStatus()).isEqualTo("APPLIED");
         verify(activityService, never()).createActivity(any(), any(), any());
@@ -254,7 +262,7 @@ class AssistantProposalServiceTest {
         when(activityService.createActivity(eq(TRIP), any(), eq(EDITOR)))
                 .thenReturn(ActivityResponse.builder().id(UUID.randomUUID()).build());
 
-        service.apply(EDITOR, proposalId);
+        service.apply(EDITOR, proposalId, null);
 
         org.mockito.InOrder order = org.mockito.Mockito.inOrder(tripDays, activityService);
         order.verify(tripDays).extendTo(TRIP, 4, EDITOR);
@@ -265,10 +273,10 @@ class AssistantProposalServiceTest {
     void applyingAnExtensionAsksTheTripDaysForItsLastDay() {
         UUID proposalId = pending("ADD_DAYS", "{\"dayNumber\":4,\"toDayNumber\":5,\"baseStartDate\":\"2026-11-01\"}");
 
-        service.apply(EDITOR, proposalId);
+        service.apply(EDITOR, proposalId, null);
 
         verify(tripDays).extendTo(TRIP, 5, EDITOR);
-        verify(repository).resolveProposal(eq(proposalId), eq("APPLIED"), eq(EDITOR), any(), eq(null), eq(null));
+        verify(repository).resolveProposal(eq(proposalId), eq("APPLIED"), eq(EDITOR), any(), eq(null), eq(null), any());
     }
 
     @Test
@@ -287,7 +295,7 @@ class AssistantProposalServiceTest {
                 .contains("\"placeName\":\"Hải sản Bé Mặn\"").contains("\"category\":\"restaurant\"");
 
         UUID proposalId = pending("REPLACE", stored.getValue().getPayload());
-        service.apply(EDITOR, proposalId);
+        service.apply(EDITOR, proposalId, null);
 
         verify(activities).assignPlace(eq(ACTIVITY), eq(other), any(), any());
         ArgumentCaptor<UpdateActivityRequest> update = ArgumentCaptor.forClass(UpdateActivityRequest.class);
@@ -368,7 +376,7 @@ class AssistantProposalServiceTest {
                 .contains("\"newEndDate\":\"2026-11-10\"");
         UUID proposalId = pending("SHIFT_DATES", stored.getValue().getPayload());
 
-        service.apply(EDITOR, proposalId);
+        service.apply(EDITOR, proposalId, null);
 
         verify(tripDays).shiftDates(TRIP, LocalDate.of(2026, 11, 8), EDITOR);
     }
@@ -378,10 +386,10 @@ class AssistantProposalServiceTest {
         UUID proposalId = pending("REMOVE_DAYS",
                 "{\"dayNumber\":2,\"toDayNumber\":2,\"baseStartDate\":\"2026-10-31\"}");
 
-        service.apply(EDITOR, proposalId);
+        service.apply(EDITOR, proposalId, null);
 
         verify(tripDays, never()).removeDays(any(), anyInt(), anyInt(), any());
-        verify(repository).resolveProposal(eq(proposalId), eq("STALE"), eq(EDITOR), any(), eq(null), any());
+        verify(repository).resolveProposal(eq(proposalId), eq("STALE"), eq(EDITOR), any(), eq(null), any(), any());
     }
 
     @Test
@@ -401,7 +409,7 @@ class AssistantProposalServiceTest {
                 .contains("Quyền, Minh, Lan");
 
         UUID proposalId = pending("ADD_EXPENSE", payload);
-        service.apply(EDITOR, proposalId);
+        service.apply(EDITOR, proposalId, null);
 
         ArgumentCaptor<CreateExpenseRequest> request = ArgumentCaptor.forClass(CreateExpenseRequest.class);
         verify(expenseService).createExpense(eq(TRIP), request.capture(), eq(EDITOR));
@@ -487,6 +495,96 @@ class AssistantProposalServiceTest {
                 .containsExactly(new BigDecimal("33.33"), new BigDecimal("33.33"), new BigDecimal("33.34"));
         assertThat(AssistantTripEdits.amount("1,250,000", false)).isEqualByComparingTo("1250000");
         assertThat(AssistantTripEdits.amount("0", false)).isNull();
+    }
+
+    private static AssistantReplyRequest.PlanItem planItem(String placeId, String name, String startTime) {
+        AssistantReplyRequest.PlanItem item = new AssistantReplyRequest.PlanItem();
+        item.setPlaceId(placeId);
+        item.setName(name);
+        item.setStartTime(startTime);
+        return item;
+    }
+
+    private static AssistantReplyRequest.PlanDay planDay(int number, AssistantReplyRequest.PlanItem... items) {
+        AssistantReplyRequest.PlanDay day = new AssistantReplyRequest.PlanDay();
+        day.setDayNumber(number);
+        day.setItems(new java.util.ArrayList<>(List.of(items)));
+        return day;
+    }
+
+    @Test
+    void aNewTripPlanKeepsCataloguePlacesAndNamedStopsAndDropsAPastDate() {
+        when(places.findByIds(any())).thenReturn(List.of(Place.builder().id(PLACE).title("Bún chả cá")
+                .placeGroup(PlaceGroup.FOOD_AND_DRINK).visibilityStatus(PlaceVisibilityStatus.ACTIVE).build()));
+        when(areas.findBestMatch(any())).thenReturn(Optional.empty());
+        AssistantReplyRequest.TripPlanDraft plan = new AssistantReplyRequest.TripPlanDraft();
+        plan.setName("Tà Xùa 2N1Đ");
+        plan.setDestination("Tà Xùa");
+        plan.setStartDate("2020-01-01");                    // in the past: dropped, picked when applying
+        plan.setBudget("3.605.000");
+        plan.setDays(new java.util.ArrayList<>(List.of(
+                planDay(1, planItem(null, "Limousine đón ở Royal City", "06:30"),
+                        planItem(PLACE.toString(), "whatever the model called it", "12:30"),
+                        planItem(null, "  ", "14:00")),  // no name: dropped
+                planDay(2, planItem(null, "Hồ Mắt Ngọc", "08:30")))));
+        AssistantReplyRequest.ProposalDraft draft = draft("NEW_TRIP");
+        draft.setPlan(plan);
+
+        List<UUID> created = service.createFromReply(turn, null, List.of(draft, draft));
+
+        assertThat(created).hasSize(1);                     // one new trip per answer
+        ArgumentCaptor<AssistantProposal> stored = ArgumentCaptor.forClass(AssistantProposal.class);
+        verify(repository).insertProposal(stored.capture());
+        assertThat(stored.getValue().getTripId()).isNull();
+        assertThat(stored.getValue().getPayload())
+                .contains("\"name\":\"Bún chả cá\"").contains("\"category\":\"restaurant\"")
+                .contains("\"dayCount\":2").contains("\"itemCount\":3").contains("\"budget\":\"3605000\"")
+                .doesNotContain("2020-01-01");
+    }
+
+    @Test
+    void onlyTheAskerCreatesThePlannedTripOnTheDayTheyPick() {
+        LocalDate start = LocalDate.now().plusDays(10);
+        UUID proposalId = UUID.randomUUID();
+        AssistantProposal proposal = AssistantProposal.builder().id(proposalId).conversationId(CONVERSATION)
+                .requestedBy(ASKER).action("NEW_TRIP").status("PENDING")
+                .payload("{\"plan\":{\"name\":\"Tà Xùa\",\"destination\":\"Tà Xùa\",\"dayCount\":2,\"currency\":\"VND\","
+                        + "\"days\":[{\"dayNumber\":1,\"items\":[{\"name\":\"Limousine\",\"startTime\":\"06:30\","
+                        + "\"category\":\"transport\",\"transportMode\":\"CAR\"}]}]}}")
+                .build();
+        when(repository.lockProposal(proposalId)).thenReturn(Optional.of(proposal));
+        when(repository.findProposal(proposalId)).thenReturn(Optional.of(proposal));
+        UUID created = UUID.randomUUID();
+        when(tripService.createTrip(any(), eq(ASKER))).thenReturn(TripResponse.builder().id(created).build());
+
+        assertThatThrownBy(() -> service.apply(EDITOR, proposalId, start)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> service.apply(ASKER, proposalId, null)).isInstanceOf(BusinessException.class);
+        service.apply(ASKER, proposalId, start);
+
+        ArgumentCaptor<com.ds.goroute.dto.request.CreateTripRequest> request =
+                ArgumentCaptor.forClass(com.ds.goroute.dto.request.CreateTripRequest.class);
+        verify(tripService).createTrip(request.capture(), eq(ASKER));
+        assertThat(request.getValue().getStartDate()).isEqualTo(start);
+        assertThat(request.getValue().getEndDate()).isEqualTo(start.plusDays(1));
+        verify(activities).insert(org.mockito.ArgumentMatchers.argThat(a -> created.equals(a.getTripId())
+                && "Limousine".equals(a.getName()) && a.getDayNumber() == 1));
+        verify(repository).resolveProposal(eq(proposalId), eq("APPLIED"), eq(ASKER), any(), eq(null), eq(null), eq(created));
+    }
+
+    @Test
+    void aPlanForTheTripMayRunPastItsEnd() {
+        when(places.findByIds(any())).thenReturn(List.of());
+        AssistantReplyRequest.TripPlanDraft plan = new AssistantReplyRequest.TripPlanDraft();
+        plan.setDays(new java.util.ArrayList<>(List.of(planDay(4, planItem(null, "Chợ đêm", "19:00")))));
+        AssistantReplyRequest.ProposalDraft draft = draft("PLAN_DAYS");
+        draft.setPlan(plan);
+
+        assertThat(service.createFromReply(turn, TRIP, List.of(draft))).hasSize(1);
+
+        ArgumentCaptor<AssistantProposal> stored = ArgumentCaptor.forClass(AssistantProposal.class);
+        verify(repository).insertProposal(stored.capture());
+        assertThat(stored.getValue().getPayload()).contains("\"newEndDate\":\"2026-11-04\"")
+                .contains("\"baseStartDate\":\"2026-11-01\"");
     }
 
     private UUID pending(String action, String payload) {

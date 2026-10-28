@@ -39,6 +39,8 @@ public interface FoodMapper {
 
     FoodWithScoreRow findFoodDetailByCity(@Param("foodId") UUID foodId, @Param("citySlug") String citySlug);
 
+    FoodWithScoreRow findFoodDetailDefault(@Param("foodId") UUID foodId);
+
     void insertCityScore(FoodCityScore score);
 
     void updateCityScore(FoodCityScore score);

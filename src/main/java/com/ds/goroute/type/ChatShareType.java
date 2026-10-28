@@ -14,5 +14,7 @@ public enum ChatShareType {
     CHECKIN,
     TRIP,
     EVENT,
-    MEETUP
+    MEETUP,
+    /** A user's saved-places list ({@code saved_categories.id}); only a PUBLIC one can be shared. */
+    SAVED_CATEGORY
 }

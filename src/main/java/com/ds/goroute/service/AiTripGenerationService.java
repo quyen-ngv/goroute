@@ -389,7 +389,14 @@ public class AiTripGenerationService {
             tripPreferenceService.save(trip.getId(), tripPreferenceService.fromAiRequest(original), TripPreference.SOURCE_AI);
         }
         if (request.getTripDescription() != null) tripService.updateTrip(trip.getId(), UpdateTripRequest.builder().description(request.getTripDescription()).build(), job.getUserId());
-        for (AiTripCommitRequest.Item item : request.getItems()) activityRepository.insert(toActivity(item, trip.getId(), job.getUserId()));
+        Map<String, String> mapboxIds = socialMapboxIds(original);
+        for (AiTripCommitRequest.Item item : request.getItems()) {
+            Activity activity = toActivity(item, trip.getId(), job.getUserId());
+            if (activity.getPlaceRefId() == null && item.getSourceSocialCandidateRef() != null) {
+                activity.setMapboxId(trunc(mapboxIds.get(item.getSourceSocialCandidateRef()), 255));
+            }
+            activityRepository.insert(activity);
+        }
         int completed = mapper.markCompleted(jobId, job.getAttemptId(), trip.getId());
         log.info("AI trip commit: job {} COMPLETED -> trip {}", jobId, trip.getId());
         AiTripGenerationEvent event = event(job, "COMPLETED", "COMPLETED", 100, "ai_trip.completed", Map.of("tripId", trip.getId()));
@@ -448,6 +455,19 @@ public class AiTripGenerationService {
                 .optionGroupId(trunc(i.getOptionGroupId(), 128)).optionIndex(i.getOptionIndex()).relation(trunc(i.getRelation(), 32))
                 .sourceSocialJobId(uuid(i.getSourceSocialJobId())).sourceSocialCandidateRef(trunc(i.getSourceSocialCandidateRef(), 128))
                 .build();
+    }
+    /** Social candidate ref to the Mapbox id the video's place search found for it. */
+    private static Map<String, String> socialMapboxIds(AiTripGenerateRequest request) {
+        Map<String, String> ids = new HashMap<>();
+        Object candidates = request.getSocialContext() == null ? null : request.getSocialContext().get("candidates");
+        if (!(candidates instanceof List<?> rows)) return ids;
+        for (Object row : rows) {
+            if (row instanceof Map<?, ?> map && map.get("candidateId") instanceof String ref
+                    && map.get("mapboxId") instanceof String mapboxId && !mapboxId.isBlank()) {
+                ids.put(ref, mapboxId);
+            }
+        }
+        return ids;
     }
     private String trunc(String s, int max) {
         if (s == null || s.length() <= max) return s;

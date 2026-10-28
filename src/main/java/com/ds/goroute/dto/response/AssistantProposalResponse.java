@@ -48,6 +48,11 @@ public class AssistantProposalResponse {
      * (ISO dates, enum names, plain numbers) for the app to format.
      */
     private List<Map<String, String>> lines;
+    /**
+     * NEW_TRIP / PLAN_DAYS: the plan. For NEW_TRIP {@code tripId} is empty until applied, then the
+     * trip it created.
+     */
+    private AssistantTripPlanResponse plan;
     private UUID resolvedByUserId;
     private String resolvedByName;
     private LocalDateTime resolvedAt;

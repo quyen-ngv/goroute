@@ -123,8 +123,14 @@ public class AssistantRepositoryImpl implements AssistantRepository {
 
     @Override
     public boolean resolveProposal(UUID proposalId, String status, UUID resolvedBy, LocalDateTime resolvedAt,
-                                   UUID resultActivityId, String failureReason) {
-        return mapper.resolveProposal(proposalId, status, resolvedBy, resolvedAt, resultActivityId, failureReason) == 1;
+                                   UUID resultActivityId, String failureReason, UUID createdTripId) {
+        return mapper.resolveProposal(proposalId, status, resolvedBy, resolvedAt, resultActivityId, failureReason,
+                createdTripId) == 1;
+    }
+
+    @Override
+    public List<AssistantProposal> findPlanProposalsOfMessages(List<UUID> messageIds) {
+        return messageIds == null || messageIds.isEmpty() ? List.of() : mapper.findPlanProposalsOfMessages(messageIds);
     }
 
     @Override

@@ -37,6 +37,9 @@ public interface FoodRepository {
 
     Optional<FoodWithScoreRow> findFoodDetailByCity(UUID foodId, String citySlug);
 
+    /** The dish's own text with no city's regional entry (no score, no local description). */
+    Optional<FoodWithScoreRow> findFoodDetailDefault(UUID foodId);
+
     void insertCityScore(FoodCityScore score);
 
     void updateCityScore(FoodCityScore score);

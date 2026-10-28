@@ -72,6 +72,8 @@ public class AssistantTurnService {
     static final int MAX_PLACE_CARDS = 8;
     static final int MAX_ITEM_CARDS = 6;
     static final int MAX_SUGGESTIONS = 4;
+    static final int MAX_QUESTIONS = 3;
+    static final int MAX_QUESTION_OPTIONS = 6;
     static final int MAX_MEMORY_CHARS = 1500;
     /** Long enough for a pasted booking confirmation or a page of notes to turn into trip edits. */
     static final int MAX_QUESTION = 6000;
@@ -177,6 +179,8 @@ public class AssistantTurnService {
         List<String> suggestions = suggestions(reply.getSuggestions()).stream()
                 .map(this::allowed).filter(java.util.Objects::nonNull).toList();
         blocks.addAll(actions.blocks(turn, reply.getActions(), this::allowed));
+        Map<String, Object> questions = questionsBlock(reply.getQuestions());
+        if (questions != null) blocks.add(questions);
         if (!suggestions.isEmpty()) blocks.add(Map.of("kind", "SUGGESTIONS", "items", suggestions));
         boolean stoppedForCredit = NOTICE_CREDIT_EXHAUSTED.equals(reply.getStopReason());
         if (stoppedForCredit) blocks.add(Map.of("kind", "NOTICE", "code", NOTICE_CREDIT_EXHAUSTED, "partial", true));
@@ -368,6 +372,31 @@ public class AssistantTurnService {
     private void saveMemory(AssistantTurn turn, String memory) {
         if (memory == null || memory.isBlank()) return;
         repository.saveMemory(turn.getConversationId(), truncate(memory.trim(), MAX_MEMORY_CHARS), turn.getId(), access.now());
+    }
+
+    /**
+     * The questions Pengoo asks before it plans (dates, group, pace, budget), each with options the
+     * user taps; null when none survive the chat filter. A question needs two options to be worth
+     * tapping, otherwise the user just types the answer.
+     */
+    private Map<String, Object> questionsBlock(List<AssistantReplyRequest.QuestionDraft> drafts) {
+        if (drafts == null || drafts.isEmpty()) return null;
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (AssistantReplyRequest.QuestionDraft draft : drafts) {
+            if (items.size() >= MAX_QUESTIONS || draft == null) break;
+            String text = allowed(draft.getText());
+            if (text == null) continue;
+            List<String> options = draft.getOptions() == null ? List.of() : draft.getOptions().stream()
+                    .map(this::allowed).filter(java.util.Objects::nonNull).distinct()
+                    .limit(MAX_QUESTION_OPTIONS).toList();
+            if (options.size() < 2) continue;
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("text", text);
+            item.put("options", options);
+            if (Boolean.TRUE.equals(draft.getMultiple())) item.put("multiple", true);
+            items.add(item);
+        }
+        return items.isEmpty() ? null : Map.of("kind", "QUESTIONS", "items", items);
     }
 
     private static List<String> suggestions(List<String> raw) {

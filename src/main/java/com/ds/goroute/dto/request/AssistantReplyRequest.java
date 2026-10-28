@@ -38,6 +38,10 @@ public class AssistantReplyRequest {
     @Valid
     @Size(max = 8)
     private List<DestinationRef> destinations = new ArrayList<>();
+    /** Questions with tap-to-answer options, asked before Pengoo plans (when, who, how long, budget). */
+    @Valid
+    @Size(max = 6)
+    private List<QuestionDraft> questions = new ArrayList<>();
     /** Pengoo's notes for this conversation, replacing the old ones; null keeps them as they are. */
     @Size(max = 2000)
     private String memory;
@@ -113,11 +117,110 @@ public class AssistantReplyRequest {
         private String endDate;
     }
 
+    /**
+     * One question Pengoo asks with ready answers the user taps; typing an answer works as well.
+     * {@code multiple} lets several options be picked together (interests, for example).
+     */
+    @Data
+    public static class QuestionDraft {
+        @Size(max = 200)
+        private String text;
+        @Size(max = 8)
+        private List<@Size(max = 80) String> options = new ArrayList<>();
+        private Boolean multiple;
+    }
+
+    /**
+     * A day-by-day plan: a new trip (NEW_TRIP) or the days of an existing one (PLAN_DAYS). Values
+     * are checked one by one on the server and a bad one is dropped (a stop without a usable
+     * name, a time that does not parse), so the limits here only bound the request's size.
+     */
+    @Data
+    public static class TripPlanDraft {
+        @Size(max = 255)
+        private String name;
+        /** NEW_TRIP: the destination as the user said it; matched to a catalogue city when possible. */
+        @Size(max = 120)
+        private String destination;
+        @Size(max = 2000)
+        private String description;
+        /** NEW_TRIP: the first day, when the user named it; without it the dates are picked when applying. */
+        @Size(max = 10)
+        private String startDate;
+        /** NEW_TRIP: the trip's length in days; the days listed count when it is missing. */
+        @Min(1) @Max(400)
+        private Integer dayCount;
+        /** Plain number or with separators ("3.605.000"). */
+        @Size(max = 32)
+        private String budget;
+        @Size(max = 8)
+        private String currency;
+        @Size(max = 255)
+        private String startingPointName;
+        @Size(max = 500)
+        private String startingPointAddress;
+        /** Leaving the starting point on day 1, HH:mm. */
+        @Size(max = 8)
+        private String departureTime;
+        @Valid
+        @Size(max = 31)
+        private List<PlanDay> days = new ArrayList<>();
+    }
+
+    @Data
+    public static class PlanDay {
+        @Min(1) @Max(400)
+        private Integer dayNumber;
+        /** A short theme for the day ("Săn mây Tà Xùa"). */
+        @Size(max = 120)
+        private String title;
+        @Valid
+        @Size(max = 16)
+        private List<PlanItem> items = new ArrayList<>();
+    }
+
+    /** One stop or leg of a planned day: a catalogue place ({@code placeId}) or something named only. */
+    @Data
+    public static class PlanItem {
+        @Size(max = 64)
+        private String placeId;
+        @Size(max = 255)
+        private String name;
+        @Size(max = 8)
+        private String startTime;
+        @Size(max = 8)
+        private String endTime;
+        @Size(max = 40)
+        private String category;
+        @Size(max = 2000)
+        private String notes;
+        @Size(max = 2000)
+        private String description;
+        @Size(max = 500)
+        private String address;
+        @Size(max = 500)
+        private String endAddress;
+        @Size(max = 16)
+        private String transportMode;
+        @Size(max = 32)
+        private String cost;
+        @Size(max = 8)
+        private String costCurrency;
+        /** The night's stay; {@code untilDay} is the day of check-out. */
+        private Boolean stay;
+        @Min(1) @Max(400)
+        private Integer untilDay;
+    }
+
     @Data
     public static class ProposalDraft {
         @Pattern(regexp = "ADD|MOVE|UPDATE_TIME|REMOVE|REPLACE|ADD_DAYS|PREPEND_DAYS|REMOVE_DAYS|SWAP_DAYS|SHIFT_DATES"
-                + "|EDIT_TRIP|EDIT_ACTIVITY|NEW_ACTIVITY|ADD_EXPENSE|EDIT_EXPENSE|REMOVE_EXPENSE|ADD_NOTE|ADD_GUEST")
+                + "|EDIT_TRIP|EDIT_ACTIVITY|NEW_ACTIVITY|ADD_EXPENSE|EDIT_EXPENSE|REMOVE_EXPENSE|ADD_NOTE|ADD_GUEST"
+                + "|NEW_TRIP|PLAN_DAYS")
         private String action;
+        /** NEW_TRIP / PLAN_DAYS: the plan. */
+        @Valid
+        private TripPlanDraft plan;
         @Size(max = 64)
         private String tripId;
         @Min(1) @Max(400)

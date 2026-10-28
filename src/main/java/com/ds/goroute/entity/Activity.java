@@ -24,6 +24,8 @@ public class Activity {
     private String placeId;
     private UUID customPlaceId;  // Custom place reference
     private UUID placeRefId;
+    /** Mapbox's id for a social-video stop that is not in `places` (V259). */
+    private String mapboxId;
     private String name;
     private String address;
     private BigDecimal lat;

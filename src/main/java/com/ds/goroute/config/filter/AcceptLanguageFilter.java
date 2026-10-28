@@ -54,6 +54,15 @@ public class AcceptLanguageFilter implements Filter {
         return toLocale(currentCode());
     }
 
+    /** Binds {@code code} to this thread for work handed over by {@link RequestContextTaskDecorator}. */
+    static void bind(String code) {
+        LANGUAGE_HOLDER.set(code);
+    }
+
+    static void unbind() {
+        LANGUAGE_HOLDER.remove();
+    }
+
     static String normalize(String raw) {
         if (raw == null || raw.isBlank()) {
             return DEFAULT_LANGUAGE;

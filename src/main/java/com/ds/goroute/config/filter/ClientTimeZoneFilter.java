@@ -59,4 +59,17 @@ public class ClientTimeZoneFilter implements Filter {
     public static ZoneId currentZone() {
         return ZONE_HOLDER.get();
     }
+
+    /** Binds {@code zone} (may be null) to this thread for work handed over by {@link RequestContextTaskDecorator}. */
+    static void bind(ZoneId zone) {
+        if (zone == null) {
+            ZONE_HOLDER.remove();
+        } else {
+            ZONE_HOLDER.set(zone);
+        }
+    }
+
+    static void unbind() {
+        ZONE_HOLDER.remove();
+    }
 }

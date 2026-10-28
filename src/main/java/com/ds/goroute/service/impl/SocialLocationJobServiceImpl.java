@@ -4,7 +4,6 @@ import com.ds.goroute.config.InternalApiProperties;
 import com.ds.goroute.config.ScrapeHttpClientProperties;
 import com.ds.goroute.dto.request.CreateSocialLocationJobRequest;
 import com.ds.goroute.dto.request.SocialLocationJobCallbackRequest;
-import com.ds.goroute.dto.request.CreateSocialPlaceImportJobRequest;
 import com.ds.goroute.dto.response.SocialLocationJobResponse;
 import com.ds.goroute.entity.SocialLocationJob;
 import com.ds.goroute.entity.AiApiCall;
@@ -17,15 +16,12 @@ import com.ds.goroute.entity.Place;
 import com.ds.goroute.service.AiCreditService;
 import com.ds.goroute.service.AiTripQuotaService;
 import com.ds.goroute.service.SocialLocationJobService;
-import com.ds.goroute.service.PlaceImportJobService;
 import com.ds.goroute.service.PlaceSocialVideoService;
 import com.ds.goroute.service.SocialLocationConfigService;
 import com.ds.goroute.service.NotificationService;
 import com.ds.goroute.service.SocialLocationCompletionService;
 import com.ds.goroute.service.SocialCandidateImageService;
-import com.ds.goroute.service.InternalPlaceSearchService;
 import com.ds.goroute.type.AiCreditFeature;
-import com.ds.goroute.type.SocialMapSearchProvider;
 import com.ds.goroute.repository.AiTripRepository;
 import com.ds.goroute.repository.SocialLocationRestrictionRepository;
 import com.ds.goroute.entity.SocialLocationSubmissionEvent;
@@ -76,6 +72,8 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
 
     /** error_details marker for a trigger call that was accepted but never answered. */
     private static final String DISPATCH_OUTCOME_UNVERIFIED = "UNVERIFIED";
+    /** Tells the worker to ask {@code map_search_url} instead of scraping Google Maps. */
+    private static final String MAP_SEARCH_PROVIDER = "MAPBOX";
 
     private final SocialLocationJobMapper jobMapper;
     private final AiApiCallMapper aiApiCallMapper;
@@ -83,7 +81,6 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     private final PlaceMapper placeMapper;
     private final ScrapeServiceClient scrapeServiceClient;
     private final ObjectMapper objectMapper;
-    private final PlaceImportJobService placeImportJobService;
     private final PlaceSocialVideoService placeSocialVideoService;
     private final SocialLocationConfigService socialConfig;
     private final AiTripRepository aiTripRepository;
@@ -107,7 +104,6 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
 
     private final SocialCandidateImageService candidateImageService;
 
-    private final InternalPlaceSearchService internalPlaceSearchService;
 
     private final AiCreditService credits;
     private final AiTripQuotaService aiTripQuota;
@@ -298,10 +294,6 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         // Outside any transaction: this call can block for the worker's full read timeout.
         // gorouteJobId is the request id: it is stable across every attempt at this job, so a
         // worker that already accepted it can recognise a repeat submission as the same work.
-        // Google is used only when an operator chose it and the key is present; otherwise the
-        // worker keeps scraping, exactly as before the switch existed.
-        boolean backendMapSearch = socialConfig.mapSearchProvider() == SocialMapSearchProvider.GOOGLE
-                && internalPlaceSearchService.isAvailable();
         long startedNanos = System.nanoTime();
         ScrapeSocialLocationJobResponse trigger;
         try {
@@ -324,10 +316,10 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                         .aiBaseUrl(blankToNull(socialConfig.aiBaseUrl()))
                         .includeMapSearch(true)
                         .mapSearchLimit(1)
-                        .mapSearchProvider(backendMapSearch
-                                ? SocialMapSearchProvider.GOOGLE.name()
-                                : SocialMapSearchProvider.SCRAPE.name())
-                        .mapSearchUrl(backendMapSearch ? placeSearchUrl() : null)
+                        // Places are looked up through the backend (catalogue, then Mapbox); the
+                        // worker no longer scrapes Google Maps.
+                        .mapSearchProvider(MAP_SEARCH_PROVIDER)
+                        .mapSearchUrl(placeSearchUrl())
                         .headless(true)
                         .build());
         } catch (ScrapeServiceClient.TriggerUnverifiedException e) {
@@ -748,17 +740,6 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
             log.warn("Could not persist completed social job {} side effects: {}",
                     job.getId(), e.getMessage(), e);
         }
-        try {
-            placeImportJobService.createFromSocialJobs(
-                    job.getUserId(),
-                    CreateSocialPlaceImportJobRequest.builder()
-                            .socialJobIds(List.of(job.getId()))
-                            .maxReviews(5)
-                            .build());
-        } catch (Exception e) {
-            log.warn("Could not queue automatic place import for social job {}: {}",
-                    job.getId(), e.getMessage(), e);
-        }
         if (!itineraryStarted) {
             try {
                 notifyExtractionCompleted(job, callbackResult);
@@ -1069,6 +1050,14 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     }
 
     private Place findExistingPlace(JsonNode candidate) {
+        // The backend search names the catalogue place it answered with.
+        UUID catalogPlaceId = uuidOrNull(text(candidate, "catalogPlaceId"));
+        if (catalogPlaceId != null) {
+            Place place = placeMapper.findById(catalogPlaceId);
+            if (place != null) {
+                return place;
+            }
+        }
         String googlePlaceId = text(candidate, "placeId", "googlePlaceId");
         if (googlePlaceId != null) {
             Place place = placeMapper.findByPlaceId(googlePlaceId);
@@ -1098,6 +1087,17 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                         title, address)
                 .map(placeMapper::findById)
                 .orElse(null);
+    }
+
+    private static UUID uuidOrNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private void enforceRestriction(UUID userId, String sourceUrl) {

@@ -2,6 +2,7 @@ package com.ds.goroute.mapper;
 
 import com.ds.goroute.dto.response.PlaceDetailRefreshCandidateResponse;
 import com.ds.goroute.entity.Place;
+import com.ds.goroute.entity.PlaceTrendingRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -49,6 +50,17 @@ public interface PlaceMapper {
     /** What a place card shows, for the given ids; heavy JSON columns are left out. */
     List<Place> findListSummaryByIds(@Param("ids") List<UUID> ids,
                                      @Param("publicOnly") boolean publicOnly);
+
+    /**
+     * Public places within {@code radiusMeters} that trips or check-ins used in the last
+     * {@code days} days, most used first (the {@code PlaceProminence} score over the window).
+     */
+    List<PlaceTrendingRow> findTrendingUsage(@Param("latitude") BigDecimal latitude,
+                                             @Param("longitude") BigDecimal longitude,
+                                             @Param("radiusMeters") BigDecimal radiusMeters,
+                                             @Param("placeGroups") List<String> placeGroups,
+                                             @Param("days") int days,
+                                             @Param("limit") int limit);
 
     /** What a map pin shows, for the given ids: its address and photos too. Public places only. */
     List<Place> findMapPinsByIds(@Param("ids") List<UUID> ids);
@@ -110,6 +122,9 @@ public interface PlaceMapper {
                     @Param("locationImageIds") List<UUID> locationImageIds);
 
     List<Place> findByIds(@Param("ids") List<UUID> ids);
+
+    /** Feed cards' places: the plain columns, none of the large JSON/TEXT ones. */
+    List<Place> findCardsByIds(@Param("ids") List<UUID> ids);
 
     /** What a saved-place list shows of each place, without the heavy JSON columns. */
     List<Place> findSavedSummaryByIds(@Param("ids") List<UUID> ids);

@@ -702,7 +702,7 @@ public class ReviewServiceImpl implements ReviewService {
         List<UUID> placeIds = reviews.stream().map(UserReview::getPlaceId)
                 .filter(Objects::nonNull).distinct().toList();
         Map<UUID, Place> places = placeIds.isEmpty() ? Map.of()
-                : placeRepository.findByIds(placeIds).stream()
+                : placeRepository.findCardsByIds(placeIds).stream()
                         .collect(Collectors.toMap(Place::getId, Function.identity(), (first, second) -> first));
         List<UUID> bookingIds = reviews.stream().map(UserReview::getActivityBookingId)
                 .filter(Objects::nonNull).distinct().toList();

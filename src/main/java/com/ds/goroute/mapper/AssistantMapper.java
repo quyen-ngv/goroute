@@ -75,7 +75,10 @@ public interface AssistantMapper {
                         @Param("resolvedBy") UUID resolvedBy,
                         @Param("resolvedAt") LocalDateTime resolvedAt,
                         @Param("resultActivityId") UUID resultActivityId,
-                        @Param("failureReason") String failureReason);
+                        @Param("failureReason") String failureReason,
+                        @Param("createdTripId") UUID createdTripId);
+
+    List<AssistantProposal> findPlanProposalsOfMessages(@Param("messageIds") List<UUID> messageIds);
 
     int attachProposalsToMessage(@Param("turnId") UUID turnId, @Param("messageId") UUID messageId);
 

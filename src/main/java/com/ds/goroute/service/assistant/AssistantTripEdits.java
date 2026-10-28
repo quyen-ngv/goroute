@@ -703,7 +703,7 @@ class AssistantTripEdits {
         }
     }
 
-    private static String currency(Object raw) {
+    static String currency(Object raw) {
         if (raw == null) return null;
         String code = raw.toString().trim().toUpperCase(Locale.ROOT);
         if (!CURRENCY.matcher(code).matches()) return null;

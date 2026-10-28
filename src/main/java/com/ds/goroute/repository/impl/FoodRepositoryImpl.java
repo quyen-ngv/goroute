@@ -79,6 +79,11 @@ public class FoodRepositoryImpl implements FoodRepository {
     }
 
     @Override
+    public Optional<FoodWithScoreRow> findFoodDetailDefault(UUID foodId) {
+        return Optional.ofNullable(foodMapper.findFoodDetailDefault(foodId));
+    }
+
+    @Override
     public void insertCityScore(FoodCityScore score) {
         foodMapper.insertCityScore(score);
     }

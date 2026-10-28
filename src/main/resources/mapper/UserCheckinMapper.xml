@@ -321,17 +321,26 @@
          0 inside the province that covers the point (its ward's province, the stored code,
          or the coordinates), then 1, 2, ... for each 100 km ring further out, and posts
          without coordinates last; newest first inside each rank. Without one, or when no
-         province covers it, it is newest first throughout, as before. -->
+         province covers it, it is newest first throughout, as before.
+
+         The focus province is found once (the focus CTE), not once per post: every row then
+         tests against the same geometry, which PostGIS prepares once and reuses. -->
     <select id="findFollowingFeed" resultMap="followingCheckinMap">
+        <if test="focusLat != null and focusLng != null">
+        WITH focus AS MATERIALIZED (
+            SELECT fp.code, fp.geom
+            FROM provinces fp
+            WHERE fp.geom IS NOT NULL
+              AND ST_Covers(fp.geom, ST_SetSRID(ST_MakePoint(#{focusLng}::float8, #{focusLat}::float8), 4326))
+        )
+        </if>
         SELECT <include refid="columns"/>,
         <choose>
             <when test="focusLat != null and focusLng != null">
                CASE
                    WHEN EXISTS (
-                       SELECT 1 FROM provinces fp
-                       WHERE fp.geom IS NOT NULL
-                         AND ST_Covers(fp.geom, ST_SetSRID(ST_MakePoint(#{focusLng}::float8, #{focusLat}::float8), 4326))
-                         AND (fp.code = COALESCE(
+                       SELECT 1 FROM focus fp
+                       WHERE (fp.code = COALESCE(
                                   (SELECT w.province_code FROM wards w WHERE w.code = user_checkins.ward_code),
                                   user_checkins.province_code)
                               <!-- Qualified: provinces has latitude/longitude columns of its own. -->

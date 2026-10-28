@@ -176,7 +176,7 @@ public class CityStoryServiceImpl implements CityStoryService {
         if (placeIds.isEmpty()) {
             return Map.of();
         }
-        return placeRepository.findByIds(placeIds).stream()
+        return placeRepository.findCardsByIds(placeIds).stream()
                 .collect(Collectors.toMap(Place::getId, this::toPlaceSummary, (first, second) -> first));
     }
 

@@ -199,6 +199,8 @@ public class ActivityServiceImpl implements ActivityService {
         if (request.getStartingPointDate() != null) activity.setStartingPointDate(request.getStartingPointDate());
 
         activityRepository.updateById(activity);
+        // An edit may give a dismissed activity something to link, so it goes back to the admin queue.
+        activityRepository.restorePlaceReview(activityId);
 
         String cacheKey = "activities:" + tripId;
         redisService.delete(cacheKey);

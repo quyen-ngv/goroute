@@ -98,11 +98,15 @@
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </update>
 
+    <!-- GET /users/me calls this on every app open and tab return. Writing at most once per
+         five minutes keeps last_login_at accurate to that and spares the row (and its
+         idx_users_last_login_at entry) a new version on every read. -->
     <update id="updateLastLoginAt" parameterType="java.util.UUID">
         UPDATE users
         SET last_login_at = NOW()
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
           AND deleted_at IS NULL
+          AND (last_login_at IS NULL OR last_login_at &lt; NOW() - INTERVAL '5 minutes')
     </update>
 
     <select id="selectByUsername" parameterType="String" resultMap="UserResultMap">

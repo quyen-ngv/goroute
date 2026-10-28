@@ -197,9 +197,20 @@
     <update id="resolveProposal">
         UPDATE assistant_proposals
         SET status = #{status}, resolved_by = #{resolvedBy}, resolved_at = #{resolvedAt},
-            result_activity_id = #{resultActivityId}, failure_reason = #{failureReason}
+            result_activity_id = #{resultActivityId}, failure_reason = #{failureReason},
+            trip_id = COALESCE(#{createdTripId}, trip_id)
         WHERE id = #{id} AND status = 'PENDING'
     </update>
+
+    <!-- Bounded by the history window: a few dozen message ids, one plan card each. -->
+    <select id="findPlanProposalsOfMessages" resultMap="ProposalMap">
+        SELECT <include refid="ProposalColumns"/>
+        FROM assistant_proposals p LEFT JOIN users u ON u.id = p.resolved_by
+        WHERE p.message_id IN
+        <foreach collection="messageIds" item="messageId" open="(" separator="," close=")">#{messageId}</foreach>
+        AND p.action IN ('NEW_TRIP', 'PLAN_DAYS')
+        ORDER BY p.created_at
+    </select>
 
     <update id="attachProposalsToMessage">
         UPDATE assistant_proposals SET message_id = #{messageId}

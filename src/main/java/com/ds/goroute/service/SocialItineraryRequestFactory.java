@@ -127,6 +127,8 @@ public class SocialItineraryRequestFactory {
         put(row, "id", placeId);
         put(row, "candidateId", first(candidate, "candidateRef", "candidateId"));
         put(row, "googlePlaceId", googlePlaceId);
+        // A Mapbox hit is not in `places`; the activity keeps this id with its own location.
+        put(row, "mapboxId", mapCandidate == null ? null : first(mapCandidate, "mapboxId"));
         row.put("title", limit(title, 255));
         String address = first(candidate, "address_hint", "addressHint", "city_hint", "region_hint");
         if (address == null && mapCandidate != null) {

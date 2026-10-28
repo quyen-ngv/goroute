@@ -48,7 +48,11 @@ public class AssistantContextBuilder {
      * every turn never matches the previous turn's prompt again.
      */
     static final int HISTORY_WINDOW_STEP = 10;
-    static final int MAX_OUTPUT_TOKENS = 1800;
+    /**
+     * Room for a whole trip plan in the answer's JSON (a five-day plan is about 3,000 tokens); a
+     * short answer stops long before it. Was 1800, which cut plans off mid-JSON.
+     */
+    static final int MAX_OUTPUT_TOKENS = 5000;
     /** Photos read with one question: a receipt, a ticket, a page of notes. */
     static final int MAX_IMAGES = 4;
     /**
@@ -71,6 +75,7 @@ public class AssistantContextBuilder {
     private final AiTripWorkerProperties workerProperties;
     private final AssistantAccessService access;
     private final HiddenImageService hiddenImages;
+    private final AssistantProposalService proposals;
     private final ObjectMapper objectMapper;
 
     @Transactional(readOnly = true)
@@ -107,9 +112,17 @@ public class AssistantContextBuilder {
     private List<Map<String, Object>> history(MarketplaceConversation conversation, long beforeSequence) {
         int limit = businessConfig.getInt(BusinessConfigKey.ASSISTANT_HISTORY_MESSAGES);
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (AssistantHistoryMessage message : stableWindow(
-                repository.findRecentMessages(conversation.getId(), beforeSequence, limit + HISTORY_WINDOW_STEP), limit)) {
+        List<AssistantHistoryMessage> window = stableWindow(
+                repository.findRecentMessages(conversation.getId(), beforeSequence, limit + HISTORY_WINDOW_STEP), limit);
+        // A plan card holds the itinerary itself (the answer text only sums it up), so Pengoo reads
+        // it back to revise it ("swap day 2's café") or to edit the trip it became.
+        Map<UUID, String> planNotes = proposals.planNotes(window.stream()
+                .filter(message -> AssistantIdentity.isAssistant(message.getSenderUserId()))
+                .map(AssistantHistoryMessage::getId).toList());
+        for (AssistantHistoryMessage message : window) {
             String text = text(message);
+            String planNote = planNotes.get(message.getId());
+            if (planNote != null) text = text.isBlank() ? planNote : text + "\n" + planNote;
             if (text.isBlank()) continue;
             Map<String, Object> row = new LinkedHashMap<>();
             boolean fromAssistant = AssistantIdentity.isAssistant(message.getSenderUserId());

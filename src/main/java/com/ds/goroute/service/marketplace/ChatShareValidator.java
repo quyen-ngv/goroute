@@ -1,6 +1,7 @@
 package com.ds.goroute.service.marketplace;
 
 import com.ds.goroute.constant.ErrorConstant;
+import com.ds.goroute.dto.response.SavedCategoryDetailResponse;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.entity.UserCheckin;
 import com.ds.goroute.exception.BusinessException;
@@ -12,6 +13,7 @@ import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.UserCheckinRepository;
 import com.ds.goroute.service.ContentModerationService;
 import com.ds.goroute.service.FoodService;
+import com.ds.goroute.service.SavedCategoryService;
 import com.ds.goroute.type.ChatShareType;
 import com.ds.goroute.type.ContentVisibility;
 import com.ds.goroute.type.MeetupStatus;
@@ -37,7 +39,7 @@ import java.util.regex.Pattern;
  * private trip, a hidden check-in, a draft event, a meetup still waiting for review. Membership
  * of a chat never grants access to what is shared into it.
  *
- * <p>The two services are looked up per call, not injected: the meetup service reaches the chat
+ * <p>The services are looked up per call, not injected: the meetup service reaches the chat
  * service through its group chat, and the chat service depends on this validator, so a direct
  * dependency is a construction cycle that stops the application from starting.
  */
@@ -58,6 +60,7 @@ public class ChatShareValidator {
     private final TripRepository trips;
     private final LocalEventRepository events;
     private final ObjectProvider<MeetupService> meetups;
+    private final ObjectProvider<SavedCategoryService> savedCategories;
 
     /** @return the one attachment to store, normalised */
     public List<Map<String, Object>> validate(UUID senderId, List<Map<String, Object>> attachments) {
@@ -108,6 +111,7 @@ public class ChatShareValidator {
             case TRIP -> trips.findById(id).filter(this::isPublicTrip).isPresent();
             case EVENT -> events.findPublishedById(id).isPresent();
             case MEETUP -> isApprovedMeetup(senderId, id);
+            case SAVED_CATEGORY -> isPublicSavedCategory(senderId, id);
         };
         if (!isShareable) throw new BusinessException(ErrorConstant.NOT_FOUND, "This item cannot be shared");
     }
@@ -126,6 +130,16 @@ public class ChatShareValidator {
     private boolean isApprovedMeetup(UUID senderId, UUID meetupId) {
         MeetupDetailResponse meetup = meetups.getObject().detail(senderId, meetupId);
         return meetup != null && meetup.getStatus() == MeetupStatus.APPROVED;
+    }
+
+    /**
+     * Asked as the sender, so a category hidden by a block is refused too. Private is refused
+     * even for the owner: nobody else in the thread could open it.
+     */
+    private boolean isPublicSavedCategory(UUID senderId, UUID categoryId) {
+        // Throws its own not-found when the sender cannot see the category.
+        SavedCategoryDetailResponse detail = savedCategories.getObject().get(senderId, categoryId);
+        return detail != null && detail.getCategory().getVisibility().isPublic();
     }
 
     private ChatShareType shareType(Object value) {

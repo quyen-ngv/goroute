@@ -16,6 +16,7 @@ import com.ds.goroute.service.PlaceMapTileService;
 import com.ds.goroute.service.PlaceService;
 import com.ds.goroute.utils.MapTile;
 import com.ds.goroute.type.PlaceSearchSort;
+import com.ds.goroute.type.PlaceTrendingPeriod;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
@@ -149,6 +150,25 @@ public class PlaceController extends BaseController {
             @RequestParam(defaultValue = "false") boolean includeInactive) {
         return ResponseEntity.ok(ofSucceeded(placeService.countPlacesBySubType(
                 latitude, longitude, radius, placeGroups, includeInactive)));
+    }
+
+    /**
+     * Trending places around a point: the public places trips and check-ins used most over
+     * {@code period} (WEEK, MONTH or YEAR, rolling back from now). Only places used in the
+     * window are listed, so fewer than {@code size} may come back. Public, like the search.
+     */
+    @GetMapping("/trending")
+    public ResponseEntity<BaseResponse<List<PlaceResponse>>> getTrendingPlaces(
+            @RequestParam @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
+            @RequestParam @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
+            // Kilometres, like the search.
+            @RequestParam(defaultValue = "30") @DecimalMin(value = "0", inclusive = false)
+            @DecimalMax("1000") BigDecimal radius,
+            @RequestParam(defaultValue = "MONTH") PlaceTrendingPeriod period,
+            @RequestParam(required = false) List<String> placeGroups,
+            @RequestParam(defaultValue = "10") @Min(1) @Max(30) int size) {
+        return ResponseEntity.ok(ofSucceeded(placeService.getTrendingPlaces(
+                latitude, longitude, radius, placeGroups, period, size)));
     }
 
     /**

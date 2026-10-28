@@ -55,6 +55,11 @@ public class UserServiceImpl implements UserService {
     private static final int TOP_ACTIVE_MIN_TRIP_ACTIVITIES = 5;
     private static final int TOP_ACTIVE_MAX_TRIP_POINTS = 10;
     private static final int TOP_ACTIVE_MAX_LIMIT = 20;
+    /**
+     * Rows the shared board keeps beyond the largest page, so a viewer who blocked (or was
+     * blocked by) a few of the leaders still gets a full page once those are taken out.
+     */
+    private static final int TOP_ACTIVE_BOARD_HEADROOM = 20;
 
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
@@ -67,6 +72,17 @@ public class UserServiceImpl implements UserService {
     private final UserDeviceService userDeviceService;
     private final com.ds.goroute.service.TrackService trackService;
     private final UserCheckinRepository userCheckinRepository;
+    private final com.ds.goroute.service.UserBlockService userBlockService;
+    /**
+     * The board is the same for every viewer apart from blocks, and the Feed asks for it on
+     * every open: computed once a minute per period, blocks applied per viewer afterwards.
+     */
+    private final com.github.benmanes.caffeine.cache.Cache<
+            String, List<com.ds.goroute.dto.response.TopActiveUserResponse>> topActiveBoards =
+            com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+                    .expireAfterWrite(java.time.Duration.ofSeconds(60))
+                    .maximumSize(16)
+                    .build();
 
     @Override
     @Transactional
@@ -153,14 +169,28 @@ public class UserServiceImpl implements UserService {
     @Transactional(readOnly = true)
     public List<com.ds.goroute.dto.response.TopActiveUserResponse> getTopActiveUsers(
             UUID viewerId, com.ds.goroute.type.TopActivePeriod period, int limit) {
-        return userRepository.findTopActiveUsers(
-                viewerId,
-                period.startUtc(java.time.Instant.now()),
-                TOP_ACTIVE_CHECKIN_POINTS,
-                TOP_ACTIVE_CHECKIN_WITH_REVIEW_POINTS,
-                TOP_ACTIVE_MIN_TRIP_ACTIVITIES,
-                TOP_ACTIVE_MAX_TRIP_POINTS,
-                Math.max(1, Math.min(limit, TOP_ACTIVE_MAX_LIMIT)));
+        int pageLimit = Math.max(1, Math.min(limit, TOP_ACTIVE_MAX_LIMIT));
+        // Keyed by period and its start: a new day, week or month starts a new board, and DAY
+        // and WEEK share a start every Monday.
+        java.time.LocalDateTime since = period.startUtc(java.time.Instant.now());
+        List<com.ds.goroute.dto.response.TopActiveUserResponse> board = topActiveBoards.get(
+                period.name() + '@' + since,
+                key -> List.copyOf(userRepository.findTopActiveUsers(
+                        null,
+                        since,
+                        TOP_ACTIVE_CHECKIN_POINTS,
+                        TOP_ACTIVE_CHECKIN_WITH_REVIEW_POINTS,
+                        TOP_ACTIVE_MIN_TRIP_ACTIVITIES,
+                        TOP_ACTIVE_MAX_TRIP_POINTS,
+                        TOP_ACTIVE_MAX_LIMIT + TOP_ACTIVE_BOARD_HEADROOM)));
+        java.util.Set<UUID> blocked = viewerId == null || board.isEmpty() || userBlockService == null
+                ? java.util.Set.of()
+                : userBlockService.blockedAmong(viewerId,
+                        board.stream().map(com.ds.goroute.dto.response.TopActiveUserResponse::getId).toList());
+        return board.stream()
+                .filter(row -> !blocked.contains(row.getId()))
+                .limit(pageLimit)
+                .toList();
     }
 
     @Override

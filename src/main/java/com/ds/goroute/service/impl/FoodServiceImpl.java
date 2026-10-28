@@ -71,11 +71,13 @@ public class FoodServiceImpl implements FoodService {
     @Override
     public FoodDetailResponse getDetail(UUID foodId, String citySlug) {
         String normalizedCitySlug = CitySlugResolver.normalizeRequired(citySlug);
+        // A dish opened in a city it has no public regional entry for (from a place there, say)
+        // shows its own text: no local description, score or flavour. The city stays the one
+        // asked for, so "where to try" still lists that city's places.
         FoodWithScoreRow row = foodRepository.findFoodDetailByCity(foodId, normalizedCitySlug)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Food not found for city"));
-        if (row.getScore() == null || row.getScore() < MIN_SCORE_PUBLIC) {
-            throw new BusinessException(ErrorConstant.NOT_FOUND, "Food not available for city");
-        }
+                .filter(cityRow -> cityRow.getScore() != null && cityRow.getScore() >= MIN_SCORE_PUBLIC)
+                .or(() -> foodRepository.findFoodDetailDefault(foodId))
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Food not found"));
         return toDetail(row, normalizedCitySlug, listCitiesForFood(foodId));
     }
 
@@ -100,8 +102,9 @@ public class FoodServiceImpl implements FoodService {
     public FoodPlacePageResponse listPlacesForFood(UUID foodId, String citySlug, BigDecimal lat, BigDecimal lng,
                                                    int page, int size) {
         String normalizedCitySlug = CitySlugResolver.normalizeRequired(citySlug);
-        foodRepository.findFoodDetailByCity(foodId, normalizedCitySlug)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Food not found for city"));
+        // Any city: a dish is served at places in cities it has no regional entry for.
+        foodRepository.findFoodById(foodId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Food not found"));
 
         String cityJson = CitySlugResolver.toJsonbFilter(normalizedCitySlug);
         boolean useDistance = lat != null && lng != null;

@@ -314,6 +314,78 @@
         </if>
     </select>
 
+    <!--
+      Trending: what trips and check-ins used in the last few days (days), near a point. Counted
+      the way recomputeUsageCounts counts all time (each trip once, deleted trips and REJECTED
+      activities not at all, removed check-ins not at all), but only rows created inside the
+      window, and only for the public places of the area. Ranked by the PlaceProminence score
+      over the window, then by all-time use.
+    -->
+    <select id="findTrendingUsage" resultType="com.ds.goroute.entity.PlaceTrendingRow">
+        WITH area AS (
+            SELECT id, place_id, trip_use_count, checkin_count
+            FROM places
+            WHERE ST_DWithin(goroute_point(latitude, longitude),
+                             goroute_point(#{latitude}::float8, #{longitude}::float8),
+                             #{radiusMeters}::float8)
+              AND visibility_status = 'ACTIVE' AND lifecycle_status = 'ACTIVE'
+              <if test="placeGroups != null and placeGroups.size() > 0">
+                AND place_group IN
+                <foreach item="placeGroup" collection="placeGroups" open="(" separator="," close=")">
+                    #{placeGroup}
+                </foreach>
+              </if>
+        ),
+        <!-- Driven from the area's places through the activity indexes, so a call costs the
+             area's activities, not every activity in the country inside the window. -->
+        activity_places AS (
+            SELECT ar.id AS place_uuid, a.trip_id
+            FROM area ar
+            JOIN activities a ON a.place_ref_id = ar.id
+            JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
+            WHERE a.created_at &gt;= NOW() - make_interval(days => #{days})
+              AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+            UNION ALL
+            SELECT ar.id, a.trip_id
+            FROM area ar
+            JOIN activities a ON a.place_ref_id IS NULL AND a.place_id = ar.place_id
+            JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
+            WHERE a.created_at &gt;= NOW() - make_interval(days => #{days})
+              AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+            UNION ALL
+            SELECT ar.id, a.trip_id
+            FROM area ar
+            JOIN activities a ON a.place_ref_id IS NULL AND a.place_id = ar.id::text
+            JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
+            WHERE a.created_at &gt;= NOW() - make_interval(days => #{days})
+              AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+        ),
+        trip_uses AS (
+            SELECT place_uuid, COUNT(DISTINCT trip_id) AS trips
+            FROM activity_places
+            GROUP BY place_uuid
+        ),
+        recent_checkins AS (
+            SELECT c.place_id AS place_uuid, COUNT(*) AS checkins
+            FROM user_checkins c
+            JOIN area ar ON ar.id = c.place_id
+            WHERE c.is_removed = FALSE
+              AND c.created_at &gt;= NOW() - make_interval(days => #{days})
+            GROUP BY c.place_id
+        )
+        SELECT ar.id AS "placeId",
+               COALESCE(tu.trips, 0)::int AS "tripCount",
+               COALESCE(rc.checkins, 0)::int AS "checkinCount"
+        FROM area ar
+        LEFT JOIN trip_uses tu ON tu.place_uuid = ar.id
+        LEFT JOIN recent_checkins rc ON rc.place_uuid = ar.id
+        WHERE tu.trips IS NOT NULL OR rc.checkins IS NOT NULL
+        ORDER BY LN(1 + COALESCE(tu.trips, 0)) + LN(1 + COALESCE(rc.checkins, 0)) DESC,
+                 LN(1 + ar.trip_use_count) + LN(1 + ar.checkin_count) DESC,
+                 ar.id
+        LIMIT #{limit}
+    </select>
+
     <!-- Map pins: the search index picked the ids, this reads only what a pin draws. Same
          public rule as findListSummaryByIds with publicOnly. -->
     <select id="findMapPinsByIds" resultMap="PlaceResultMap">
@@ -592,6 +664,21 @@
                 WHERE 1 = 0
             </otherwise>
         </choose>
+    </select>
+
+    <!-- What a feed card shows of its place (check-ins, reviews, city stories): the plain
+         columns only. SELECT * would also unpack raw_data, menu, popular_times, about,
+         attributes and the AI texts, none of which a card sends. -->
+    <select id="findCardsByIds" resultMap="PlaceResultMap">
+        SELECT id, place_id, title, place_group, category, sub_types, address, province_code, ward_code,
+               latitude, longitude, thumbnail, review_count, review_rating, adjusted_rating,
+               phone, website, price_range, visit_duration_minutes, visibility_status,
+               trip_use_count, checkin_count, created_at, updated_at
+        FROM places
+        WHERE id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">
+            #{id}
+        </foreach>
     </select>
 
     <select id="findSavedSummaryByIds" resultMap="PlaceResultMap">
