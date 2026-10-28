@@ -50,10 +50,12 @@ public class AssistantContextBuilder {
      */
     static final int HISTORY_WINDOW_STEP = 10;
     /**
-     * Room for a whole trip plan in the answer's JSON (a five-day plan is about 3,000 tokens); a
-     * short answer stops long before it. Was 1800, which cut plans off mid-JSON.
+     * Room for a whole trip plan in the answer's JSON (a five-day plan is about 3,000 tokens) plus
+     * Claude's thinking, which counts against the same limit; a short answer stops long before it.
+     * Was 1800, then 5000: a 3-day plan after 2,040 thinking tokens was cut off mid-JSON (prod
+     * 2026-10-28). Only tokens actually written are paid for.
      */
-    static final int MAX_OUTPUT_TOKENS = 5000;
+    static final int MAX_OUTPUT_TOKENS = 16000;
     /** Photos read with one question: a receipt, a ticket, a page of notes. */
     static final int MAX_IMAGES = 4;
     /**
