@@ -36,6 +36,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.context.ApplicationEventPublisher;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -333,6 +334,72 @@ class AssistantTurnServiceTest {
                     eq(MESSAGE), eq(ASKER), eq("turn:" + turnId));
             assertThat(blocks.getValue()).anySatisfy(block -> assertThat(block)
                     .containsEntry("code", "CREDIT_EXHAUSTED").containsEntry("partial", true));
+        }
+
+        @Test
+        void aMapPlaceBecomesACardInTheOrderGivenAndABrokenOneIsDropped() {
+            UUID real = UUID.randomUUID();
+            when(places.findByIds(anyList())).thenReturn(List.of(
+                    Place.builder().id(real).visibilityStatus(PlaceVisibilityStatus.ACTIVE).build()));
+            AssistantReplyRequest reply = new AssistantReplyRequest();
+            reply.setMarkdown("Có hai quán");
+            reply.setPlaces(List.of(mapRef("GOONG", "g-1", "Lẩu Bò Ban Công"), ref(real, "Gần"),
+                    mapRef("GOONG", "g-1", "Lẩu Bò Ban Công"), mapRef("GOOGLE", "x", "Bịa")));
+
+            service.complete(turnId, reply);
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<Map<String, Object>>> blocks = ArgumentCaptor.forClass(List.class);
+            verify(chatService).postAssistantMessage(eq(CONVERSATION), anyString(), blocks.capture(),
+                    any(), any(), anyString());
+            List<Map<String, Object>> cards = blocks.getValue().stream()
+                    .filter(block -> "PLACE".equals(block.get("kind")) || "MAP_PLACE".equals(block.get("kind")))
+                    .toList();
+            assertThat(cards).extracting(block -> block.get("kind")).containsExactly("MAP_PLACE", "PLACE");
+            assertThat(cards.get(0)).containsEntry("provider", "GOONG").containsEntry("providerPlaceId", "g-1")
+                    .containsEntry("name", "Lẩu Bò Ban Công").containsEntry("lat", new BigDecimal("21.03"));
+        }
+
+        @Test
+        void aOneToOneAnswerNamesItsThreadAndKeepsTheProfile() {
+            when(chatRepository.find(eq(CONVERSATION), any())).thenReturn(Optional.of(MarketplaceConversation.builder()
+                    .id(CONVERSATION).assistantUserId(ASKER)
+                    .conversationType(MarketplaceConversationType.ASSISTANT.name()).build()));
+            AssistantReplyRequest reply = new AssistantReplyRequest();
+            reply.setMarkdown("ok");
+            reply.setTitle("  Lẩu bò   Cầu Giấy ");
+            reply.setProfile("- Ở Hà Nội\n\n• Ăn chay\n");
+
+            service.complete(turnId, reply);
+
+            verify(chatRepository).setAssistantTitleIfEmpty(eq(CONVERSATION), eq("Lẩu bò Cầu Giấy"), any());
+            verify(repository).saveProfile(eq(ASKER), eq("Ở Hà Nội\nĂn chay"), eq(turnId), any());
+        }
+
+        @Test
+        void aTitledThreadAndATripChatKeepTheirNames() {
+            AssistantReplyRequest reply = new AssistantReplyRequest();
+            reply.setMarkdown("ok");
+            reply.setTitle("Lẩu bò");
+            reply.setProfile("Ở Hà Nội");
+
+            service.complete(turnId, reply);
+
+            verify(chatRepository, never()).setAssistantTitleIfEmpty(any(), any(), any());
+            verify(repository, never()).saveProfile(any(), any(), any(), any());
+        }
+
+        private AssistantReplyRequest.PlaceRef mapRef(String provider, String id, String name) {
+            AssistantReplyRequest.MapPlaceRef map = new AssistantReplyRequest.MapPlaceRef();
+            map.setProvider(provider);
+            map.setProviderPlaceId(id);
+            map.setName(name);
+            map.setAddress("12 ngõ 87 Vũ Phạm Hàm, Cầu Giấy");
+            map.setLat(new BigDecimal("21.03"));
+            map.setLng(new BigDecimal("105.80"));
+            AssistantReplyRequest.PlaceRef ref = new AssistantReplyRequest.PlaceRef();
+            ref.setMapPlace(map);
+            return ref;
         }
 
         private AssistantReplyRequest.CardRef card(String type, UUID id) {

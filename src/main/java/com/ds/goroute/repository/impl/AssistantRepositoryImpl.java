@@ -147,4 +147,20 @@ public class AssistantRepositoryImpl implements AssistantRepository {
     public void saveMemory(UUID conversationId, String content, UUID turnId, LocalDateTime updatedAt) {
         mapper.upsertMemory(conversationId, content, turnId, updatedAt);
     }
+
+    @Override
+    public Optional<String> findProfile(UUID userId) {
+        return userId == null ? Optional.empty()
+                : Optional.ofNullable(mapper.findProfile(userId)).filter(text -> !text.isBlank());
+    }
+
+    @Override
+    public void saveProfile(UUID userId, String content, UUID turnId, LocalDateTime updatedAt) {
+        mapper.upsertProfile(userId, content, turnId, updatedAt);
+    }
+
+    @Override
+    public void deleteProfile(UUID userId) {
+        mapper.deleteProfile(userId);
+    }
 }

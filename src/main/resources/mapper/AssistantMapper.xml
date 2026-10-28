@@ -227,4 +227,20 @@
         ON CONFLICT (conversation_id) DO UPDATE
             SET content = EXCLUDED.content, turn_id = EXCLUDED.turn_id, updated_at = EXCLUDED.updated_at
     </insert>
+
+    <!-- What Pengoo keeps about a person across their 1:1 threads (V261). -->
+    <select id="findProfile" resultType="string">
+        SELECT content FROM assistant_profiles WHERE user_id = #{userId}
+    </select>
+
+    <insert id="upsertProfile">
+        INSERT INTO assistant_profiles (user_id, content, turn_id, updated_at)
+        VALUES (#{userId}, #{content}, #{turnId}, #{updatedAt})
+        ON CONFLICT (user_id) DO UPDATE
+            SET content = EXCLUDED.content, turn_id = EXCLUDED.turn_id, updated_at = EXCLUDED.updated_at
+    </insert>
+
+    <delete id="deleteProfile">
+        DELETE FROM assistant_profiles WHERE user_id = #{userId}
+    </delete>
 </mapper>

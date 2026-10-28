@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -71,5 +72,10 @@ public class AssistantTripPlanResponse {
         private String costCurrency;
         private Boolean stay;
         private Integer untilDay;
+        /** A map place (no {@code placeId}): its point, the provider (GOONG | MAPBOX) and its id there. */
+        private BigDecimal lat;
+        private BigDecimal lng;
+        private String mapProvider;
+        private String mapPlaceId;
     }
 }

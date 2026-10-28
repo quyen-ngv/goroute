@@ -100,7 +100,16 @@ class ModeratedFieldCoverageTest {
             // dropped, where a request-level block would throw away the whole answer.
             Map.entry("AssistantStepRequest.text", "AI worker narration; filtered in AssistantTurnService"),
             Map.entry("AssistantReplyRequest.note", "AI worker place note; filtered in AssistantTurnService"),
-            Map.entry("AssistantReplyRequest.summary", "AI worker proposal summary; filtered in AssistantTurnService"));
+            Map.entry("AssistantReplyRequest.summary", "AI worker proposal summary; filtered in AssistantTurnService"),
+            Map.entry("AssistantReplyRequest.title", "AI worker thread title and plan day titles; filtered in "
+                    + "AssistantTurnService and AssistantTripPlans"),
+            Map.entry("AssistantReplyRequest.name", "AI worker plan and map place names; filtered in "
+                    + "AssistantTripPlans and AssistantTurnService"),
+            Map.entry("AssistantReplyRequest.address", "AI worker plan and map place addresses; filtered in "
+                    + "AssistantTripPlans and AssistantTurnService"),
+            Map.entry("AssistantReplyRequest.description", "AI worker plan text; filtered in AssistantTripPlans"),
+            Map.entry("AssistantReplyRequest.notes", "AI worker plan stop notes; filtered in AssistantTripPlans"),
+            Map.entry("AssistantReplyRequest.text", "AI worker question text; filtered in AssistantTurnService"));
 
     @Test
     void everyFreeTextRequestFieldIsFilteredOrDeliberatelyExempt() {

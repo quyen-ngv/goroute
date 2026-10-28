@@ -253,6 +253,27 @@
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </update>
 
+    <!-- A map place (Pengoo, V261) is not a catalogue place: both links go, the point moves. -->
+    <update id="assignMapPlace">
+        UPDATE activities
+        SET place_id = NULL,
+            place_ref_id = NULL,
+            lat = #{lat},
+            lng = #{lng},
+            mapbox_id = #{mapboxId},
+            updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+          AND trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <update id="setMapboxId">
+        UPDATE activities
+        SET mapbox_id = #{mapboxId},
+            updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+          AND trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
     <!-- Admin-only bookkeeping: updated_at stays, the trip's content has not changed. -->
     <update id="dismissPlaceReview">
         UPDATE activities

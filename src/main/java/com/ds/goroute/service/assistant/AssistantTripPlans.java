@@ -251,6 +251,10 @@ class AssistantTripPlans {
                 ? raw.getUntilDay() : null;
         BigDecimal cost = AssistantTripEdits.amount(raw.getCost(), true);
         String costCurrency = cost == null ? null : AssistantTripEdits.currency(raw.getCostCurrency());
+        // A stop the map found (no catalogue place): where it is, so the activity lands on the map.
+        String mapProvider = AssistantMapPlace.provider(raw.getMapProvider());
+        String mapPlaceId = AssistantMapPlace.trimmed(raw.getMapPlaceId());
+        boolean onMap = place == null && AssistantMapPlace.hasLocation(mapProvider, mapPlaceId, raw.getLat(), raw.getLng());
         return AssistantTripPlanResponse.Item.builder()
                 .placeId(place == null ? null : place.getId().toString())
                 .name(name)
@@ -271,6 +275,10 @@ class AssistantTripPlans {
                 .costCurrency(costCurrency)
                 .stay(stay ? Boolean.TRUE : null)
                 .untilDay(untilDay)
+                .lat(onMap ? raw.getLat() : null)
+                .lng(onMap ? raw.getLng() : null)
+                .mapProvider(onMap ? mapProvider : null)
+                .mapPlaceId(onMap ? mapPlaceId : null)
                 .build();
     }
 
@@ -383,8 +391,10 @@ class AssistantTripPlans {
                         .name(item.getName())
                         .address(place != null && place.getAddress() != null
                                 ? truncate(place.getAddress(), AssistantTripEdits.MAX_ADDRESS) : item.getAddress())
-                        .lat(place == null ? null : place.getLatitude())
-                        .lng(place == null ? null : place.getLongitude())
+                        .lat(place == null ? item.getLat() : place.getLatitude())
+                        .lng(place == null ? item.getLng() : place.getLongitude())
+                        .mapboxId(place == null && AssistantMapPlace.MAPBOX.equals(item.getMapProvider())
+                                ? item.getMapPlaceId() : null)
                         .endAddress(item.getEndAddress())
                         .startTime(time(item.getStartTime()))
                         .endTime(time(item.getEndTime()))

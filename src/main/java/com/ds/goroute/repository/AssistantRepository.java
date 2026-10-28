@@ -67,4 +67,12 @@ public interface AssistantRepository {
     Optional<String> findMemory(UUID conversationId);
 
     void saveMemory(UUID conversationId, String content, UUID turnId, LocalDateTime updatedAt);
+
+    /** What Pengoo keeps about a person across their 1:1 threads (V261), one fact per line. */
+    Optional<String> findProfile(UUID userId);
+
+    /** Replaces the person's profile; {@code turnId} is null when they edited it themselves. */
+    void saveProfile(UUID userId, String content, UUID turnId, LocalDateTime updatedAt);
+
+    void deleteProfile(UUID userId);
 }

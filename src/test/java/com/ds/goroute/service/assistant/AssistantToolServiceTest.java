@@ -22,6 +22,7 @@ import com.ds.goroute.service.ReviewService;
 import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.service.UserCheckinService;
+import com.ds.goroute.service.placelookup.PlaceLookupProviderType;
 import com.ds.goroute.type.PlaceGroup;
 import com.ds.goroute.type.PlaceSearchSort;
 import com.ds.goroute.type.PlaceVisibilityStatus;
@@ -44,11 +45,15 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -76,6 +81,7 @@ class AssistantToolServiceTest {
     @Mock private UserCheckinService checkinService;
     @Mock private ReviewService reviewService;
     @Mock private AssistantTripSnapshots tripSnapshots;
+    @Mock private AssistantMapSearch mapSearch;
 
     private AssistantToolService service;
 
@@ -83,7 +89,7 @@ class AssistantToolServiceTest {
     void setUp() {
         service = new AssistantToolService(turns, trips, activities, places, placeService, areas, weatherService,
                 eventService, meetupService, foodService, expenseService, tripAccessGuard, tripService,
-                checkinService, reviewService, tripSnapshots, new ObjectMapper());
+                checkinService, reviewService, tripSnapshots, mapSearch, new ObjectMapper());
         when(turns.requireRunning(TURN)).thenReturn(AssistantTurn.builder().id(TURN).tripId(TRIP).userId(ASKER).build());
         when(trips.findById(TRIP)).thenReturn(Optional.of(Trip.builder().id(TRIP).name("Đà Lạt")
                 .destination("Đà Lạt").destinationLat(new BigDecimal("11.94")).destinationLng(new BigDecimal("108.44"))
@@ -113,6 +119,45 @@ class AssistantToolServiceTest {
         assertThat(rows).singleElement().satisfies(row -> assertThat(row)
                 .containsEntry("trips", 120).containsEntry("checkins", 45));
         verify(places, never()).findActiveForAiInArea(any(), any(), any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void aNameTheCatalogueLacksIsLookedUpOnTheMapAndTheSearchIsNotWidened() {
+        AssistantMapPlace venue = new AssistantMapPlace("GOONG", "g-1", "Bún Chả Cá 109", "109 Nguyễn Chí Thanh",
+                new BigDecimal("11.945000"), new BigDecimal("108.442000"));
+        when(mapSearch.search(eq(ASKER), eq("bún chả cá 109"), any(), any(), anyDouble(), anyDouble(), anyCollection()))
+                .thenReturn(new AssistantMapSearch.Result(PlaceLookupProviderType.GOONG, List.of(venue)));
+
+        Map<String, Object> out = service.execute(TURN, "search_places", Map.of("query", "bún chả cá 109"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) out.get("places");
+        assertThat(rows).singleElement().satisfies(row -> assertThat(row)
+                .containsEntry("id", "map:GOONG:g-1").containsEntry("source", "map")
+                .containsEntry("name", "Bún Chả Cá 109").containsEntry("address", "109 Nguyễn Chí Thanh")
+                .containsEntry("lat", new BigDecimal("11.945000")).containsKey("distanceKm"));
+        assertThat(out).containsEntry("map", Map.of("provider", "GOONG", "found", 1)).doesNotContainKey("relaxed");
+        // One catalogue search by name; the 30 km retry is for names the map could not find either.
+        verify(placeService, times(1)).searchPlaces(any(), any(), any(), any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), anyBoolean(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void threeCataloguePlacesByTheNameNeedNoMap() {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        UUID third = UUID.randomUUID();
+        when(placeService.searchPlaces(eq("bún chả cá"), any(), any(), any(), isNull(), any(), any(), isNull(),
+                eq(PlaceSearchSort.RELEVANCE), isNull(), isNull(), isNull(), eq(false), isNull(), eq(0), anyInt()))
+                .thenReturn(List.of(PlaceResponse.builder().id(first).build(), PlaceResponse.builder().id(second).build(),
+                        PlaceResponse.builder().id(third).build()));
+        when(places.findByIds(anyList())).thenReturn(List.of(place(first, "Bún chả cá A", 1, 0),
+                place(second, "Bún chả cá B", 1, 0), place(third, "Bún chả cá C", 1, 0)));
+
+        Map<String, Object> out = service.execute(TURN, "search_places", Map.of("query", "bún chả cá"));
+
+        assertThat(out).doesNotContainKey("map");
+        verify(mapSearch, never()).search(any(), any(), any(), any(), anyDouble(), anyDouble(), anyCollection());
     }
 
     @Test

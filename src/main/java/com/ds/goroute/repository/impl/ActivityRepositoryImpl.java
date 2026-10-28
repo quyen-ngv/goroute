@@ -224,6 +224,21 @@ public class ActivityRepositoryImpl implements ActivityRepository {
     }
 
     @Override
+    public int assignMapPlace(UUID tripId, UUID activityId, BigDecimal lat, BigDecimal lng, String mapboxId) {
+        Activity before = activityMapper.selectById(activityId);
+        int changed = activityMapper.assignMapPlace(activityId, tripId, lat, lng, mapboxId);
+        if (changed > 0) {
+            publishPlaceUsageChange(placeReferences(before));
+        }
+        return changed;
+    }
+
+    @Override
+    public int setMapboxId(UUID tripId, UUID activityId, String mapboxId) {
+        return activityMapper.setMapboxId(activityId, tripId, mapboxId);
+    }
+
+    @Override
     public int shiftDays(UUID tripId, int fromDay, int dayDelta, int dateDeltaDays) {
         return activityMapper.shiftDays(tripId, fromDay, dayDelta, dateDeltaDays);
     }

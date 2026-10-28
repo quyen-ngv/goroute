@@ -16,6 +16,7 @@ import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.HiddenImageService;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.ChatShareType;
+import com.ds.goroute.type.MarketplaceConversationType;
 import com.ds.goroute.type.MarketplaceMessageType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -100,6 +101,12 @@ public class AssistantContextBuilder {
         if (!images.isEmpty()) payload.put("images", images);
         payload.put("callbackBaseUrl", workerProperties.getInternalBaseUrl());
         payload.put("memory", repository.findMemory(conversation.getId()).orElse(null));
+        // 1:1 threads: the first answer names the thread, and what Pengoo keeps about the asker
+        // goes with every question of every thread.
+        if (MarketplaceConversationType.ASSISTANT.name().equals(conversation.getConversationType())) {
+            if (conversation.getTitle() == null) payload.put("needsTitle", true);
+            repository.findProfile(turn.getUserId()).ifPresent(profile -> payload.put("profile", profile));
+        }
         int turnTimeout = businessConfig.getInt(BusinessConfigKey.ASSISTANT_TURN_TIMEOUT_SECONDS);
         payload.put("limits", Map.of("maxToolCalls", access.maxToolCalls(turn.getUserId()),
                 "maxOutputTokens", MAX_OUTPUT_TOKENS,
@@ -131,6 +138,8 @@ public class AssistantContextBuilder {
             row.put("text", text);
             List<String> placeIds = fromAssistant ? placeIds(message.getAttachments()) : sharedPlaceIds(message);
             if (!placeIds.isEmpty()) row.put("places", placeIds);
+            List<Map<String, Object>> mapPlaces = fromAssistant ? mapPlaces(message.getAttachments()) : List.of();
+            if (!mapPlaces.isEmpty()) row.put("mapPlaces", mapPlaces);
             rows.add(row);
         }
         nameShownPlaces(rows);
@@ -264,6 +273,34 @@ public class AssistantContextBuilder {
             return ids;
         }
         return ids;
+    }
+
+    /**
+     * The map cards under an earlier answer, whole: a map place has no catalogue row to look up,
+     * so "add the second one to day 2" needs its position from here.
+     */
+    private List<Map<String, Object>> mapPlaces(String json) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        try {
+            JsonNode node = json == null ? null : objectMapper.readTree(json);
+            if (node == null || !node.isArray()) return rows;
+            for (JsonNode block : node) {
+                if (!"MAP_PLACE".equals(block.path("kind").asText()) || !block.hasNonNull("providerPlaceId")
+                        || !block.path("lat").isNumber() || !block.path("lng").isNumber()) {
+                    continue;
+                }
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", "map:" + block.path("provider").asText() + ":" + block.path("providerPlaceId").asText());
+                row.put("name", block.path("name").asText(""));
+                if (block.hasNonNull("address")) row.put("address", block.get("address").asText());
+                row.put("lat", block.get("lat").decimalValue());
+                row.put("lng", block.get("lng").decimalValue());
+                rows.add(row);
+            }
+        } catch (Exception e) {
+            return rows;
+        }
+        return rows;
     }
 
     private JsonNode first(String json) {

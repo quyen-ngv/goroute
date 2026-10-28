@@ -38,6 +38,10 @@ public class MarketplaceConversation {
     private UUID pinnedMessageId;
     /** Owner of an ASSISTANT conversation: the one person chatting with Pengoo. */
     private UUID assistantUserId;
+    /** ASSISTANT only: the thread's name, from Pengoo's first answer or the owner; null until then. */
+    private String title;
+    /** ASSISTANT only: when the owner deleted the thread; an archived thread is gone for them. */
+    private LocalDateTime archivedAt;
 
     /**
      * Enough of the last message to draw an inbox row without opening the thread: who said

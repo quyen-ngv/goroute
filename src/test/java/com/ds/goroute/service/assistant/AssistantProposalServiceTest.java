@@ -184,6 +184,62 @@ class AssistantProposalServiceTest {
     }
 
     @Test
+    void aMapPlaceCanBeAddedButNotWithoutItsCoordinates() {
+        AssistantReplyRequest.ProposalDraft add = draft("ADD");
+        add.setDayNumber(2);
+        add.setMapPlace(mapPlace("MAPBOX", "dXJuOm1ieHBvaTox", new BigDecimal("21.03")));
+        AssistantReplyRequest.ProposalDraft noPoint = draft("ADD");
+        noPoint.setDayNumber(2);
+        noPoint.setMapPlace(mapPlace("GOONG", "g-1", null));
+        AssistantReplyRequest.ProposalDraft move = draft("MOVE");
+        move.setActivityId(ACTIVITY.toString());
+        move.setToDayNumber(3);
+        move.setMapPlace(mapPlace("GOONG", "g-2", new BigDecimal("21.03")));
+
+        List<UUID> created = service.createFromReply(turn, TRIP, List.of(add, noPoint, move));
+
+        assertThat(created).hasSize(2);
+        ArgumentCaptor<AssistantProposal> stored = ArgumentCaptor.forClass(AssistantProposal.class);
+        verify(repository, org.mockito.Mockito.times(2)).insertProposal(stored.capture());
+        assertThat(stored.getAllValues().get(0).getPayload())
+                .contains("\"placeName\":\"Lẩu Bò Ban Công\"").contains("\"mapProvider\":\"MAPBOX\"")
+                .contains("\"mapPlaceId\":\"dXJuOm1ieHBvaTox\"").contains("\"category\":\"attraction\"")
+                .doesNotContain("placeId\":\"" + PLACE);
+        assertThat(stored.getAllValues().get(1).getPayload()).doesNotContain("mapPlaceId");
+    }
+
+    @Test
+    void applyingAMapPlaceMakesAPlainActivityThatKeepsTheMapboxId() {
+        UUID created = UUID.randomUUID();
+        UUID proposalId = pending("ADD", "{\"placeName\":\"Lẩu Bò Ban Công\",\"address\":\"12 ngõ 87\","
+                + "\"lat\":\"21.03\",\"lng\":\"105.8\",\"mapProvider\":\"MAPBOX\",\"mapPlaceId\":\"mb-1\","
+                + "\"dayNumber\":2,\"category\":\"restaurant\"}");
+        when(activityService.createActivity(eq(TRIP), any(), eq(EDITOR)))
+                .thenReturn(ActivityResponse.builder().id(created).build());
+
+        service.apply(EDITOR, proposalId, null);
+
+        ArgumentCaptor<CreateActivityRequest> request = ArgumentCaptor.forClass(CreateActivityRequest.class);
+        verify(activityService).createActivity(eq(TRIP), request.capture(), eq(EDITOR));
+        assertThat(request.getValue().getName()).isEqualTo("Lẩu Bò Ban Công");
+        assertThat(request.getValue().getPlaceId()).isNull();
+        assertThat(request.getValue().getLat()).isEqualByComparingTo("21.03");
+        verify(activities).setMapboxId(TRIP, created, "mb-1");
+        verify(places, never()).findById(any());
+    }
+
+    private static AssistantReplyRequest.MapPlaceRef mapPlace(String provider, String id, BigDecimal lat) {
+        AssistantReplyRequest.MapPlaceRef map = new AssistantReplyRequest.MapPlaceRef();
+        map.setProvider(provider);
+        map.setProviderPlaceId(id);
+        map.setName("Lẩu Bò Ban Công");
+        map.setAddress("12 ngõ 87 Vũ Phạm Hàm");
+        map.setLat(lat);
+        map.setLng(new BigDecimal("105.80"));
+        return map;
+    }
+
+    @Test
     void anActivityDeletedMeanwhileMakesTheProposalStale() {
         UUID gone = UUID.randomUUID();
         UUID proposalId = pending("REMOVE", "{\"activityId\":\"" + gone + "\"}");

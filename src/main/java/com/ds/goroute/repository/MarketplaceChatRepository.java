@@ -63,4 +63,33 @@ public interface MarketplaceChatRepository {int insertConversation(MarketplaceCo
 
  int deleteReaction(UUID messageId,UUID userId,String emoji);
 
- List<MarketplaceMessageReaction> findReactions(List<UUID> messageIds);}
+ List<MarketplaceMessageReaction> findReactions(List<UUID> messageIds);
+
+ /**
+  * Serialises creating Pengoo threads for one person until the transaction ends (V261 dropped the
+  * one-thread-per-person index). Must run inside a transaction.
+  */
+ void lockAssistantOwner(UUID userId);
+
+ /** The owner's live thread they last wrote in, when its last message is at or after {@code since}. */
+ Optional<UUID> findRecentUsedAssistantThread(UUID userId, LocalDateTime since);
+
+ /** The owner's newest live thread with no message of theirs yet. */
+ Optional<UUID> findNewestUnusedAssistantThread(UUID userId);
+
+ /** Whether the person ever had a Pengoo thread, archived ones included. */
+ boolean hasAssistantThread(UUID userId);
+
+ /** A page of the owner's live, used threads, latest first; {@code query} matches the shown title. */
+ List<AssistantThreadRow> findAssistantThreads(UUID ownerId, String query, int limit, int offset);
+
+ long countAssistantThreads(UUID ownerId, String query);
+
+ /** Renames a live thread of the owner; 0 when it is not theirs, not a Pengoo thread, or archived. */
+ int renameAssistantThread(UUID conversationId, UUID ownerId, String title, LocalDateTime at);
+
+ /** Sets a Pengoo thread's title unless it already has one. */
+ int setAssistantTitleIfEmpty(UUID conversationId, String title, LocalDateTime at);
+
+ /** Archives a thread of the owner (keeping an earlier archive time); 0 when it is not theirs. */
+ int archiveAssistantThread(UUID conversationId, UUID ownerId, LocalDateTime at);}

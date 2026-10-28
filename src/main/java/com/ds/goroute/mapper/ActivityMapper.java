@@ -56,6 +56,11 @@ public interface ActivityMapper {
     int assignPlace(@Param("id") UUID id, @Param("placeId") String placeId, @Param("placeRefId") UUID placeRefId,
                     @Param("lat") BigDecimal lat, @Param("lng") BigDecimal lng);
 
+    int assignMapPlace(@Param("id") UUID id, @Param("tripId") UUID tripId, @Param("lat") BigDecimal lat,
+                       @Param("lng") BigDecimal lng, @Param("mapboxId") String mapboxId);
+
+    int setMapboxId(@Param("id") UUID id, @Param("tripId") UUID tripId, @Param("mapboxId") String mapboxId);
+
     int shiftDays(@Param("tripId") UUID tripId, @Param("fromDay") int fromDay, @Param("dayDelta") int dayDelta,
                   @Param("dateDeltaDays") int dateDeltaDays);
 

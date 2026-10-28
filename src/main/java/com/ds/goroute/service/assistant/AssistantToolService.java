@@ -111,6 +111,7 @@ public class AssistantToolService {
     private final UserCheckinService checkinService;
     private final ReviewService reviewService;
     private final AssistantTripSnapshots tripSnapshots;
+    private final AssistantMapSearch mapSearch;
     private final ObjectMapper objectMapper;
 
     public Map<String, Object> execute(UUID turnId, String tool, Map<String, Object> args) {
@@ -151,6 +152,10 @@ public class AssistantToolService {
      * reduced first: kind words become a sub-type filter, filler words are dropped, and whatever
      * is left (a dish, a brand, a name) searches names. When that finds too little the search
      * relaxes on its own — the kinds without the words, then the widest radius — and says so.
+     *
+     * <p>Fewer than three places by the asked name: the map provider is asked too (see
+     * {@link AssistantMapSearch}), and its places follow the catalogue rows as {@code source: "map"}
+     * rows. When it finds one, neither relaxation runs: they stand in for a name the map found.
      */
     private Map<String, Object> searchPlaces(AssistantTurn turn, Trip trip, Map<String, Object> args) {
         Anchor anchor = anchor(trip, args);
@@ -167,12 +172,17 @@ public class AssistantToolService {
         Set<UUID> byName = new LinkedHashSet<>();
         collect(found, findPlaces(anchor, request.words(), request, radius, sort, limit), anchor, limit);
         byName.addAll(found.keySet());
-        if (found.size() < limit && request.words() != null && request.hasKinds()) {
+        AssistantMapSearch.Result map = request.words() != null && byName.size() < AssistantMapSearch.CATALOGUE_ENOUGH
+                ? mapSearch.search(turn.getUserId(), text(args.get("query")), anchor.lat(), anchor.lng(), radius,
+                MAX_RADIUS_KM, List.copyOf(found.values()))
+                : null;
+        boolean mapFound = map != null && !map.places().isEmpty();
+        if (!mapFound && found.size() < limit && request.words() != null && request.hasKinds()) {
             int before = found.size();
             collect(found, findPlaces(anchor, null, request, radius, sort, limit), anchor, limit);
             if (found.size() > before) relaxed.add("added places of the same kind whose name does not contain '" + request.words() + "'");
         }
-        if (found.isEmpty() && radius < MAX_RADIUS_KM) {
+        if (!mapFound && found.isEmpty() && radius < MAX_RADIUS_KM) {
             radius = MAX_RADIUS_KM;
             collect(found, findPlaces(anchor, request.words(), request, radius, sort, limit), anchor, limit);
             byName.addAll(found.keySet());
@@ -185,9 +195,17 @@ public class AssistantToolService {
         // Hours for the asked day, else today: "is it open now / this morning" needs no second call.
         LocalDate hoursOn = anchor.date() != null ? anchor.date()
                 : LocalDate.now(trip == null ? LOCAL_ZONE : com.ds.goroute.service.time.TripTimeZones.zoneOf(trip));
-        List<Map<String, Object>> rows = found.values().stream()
+        List<Map<String, Object>> rows = new ArrayList<>(found.values().stream()
                 .map(place -> placeRow(place, anchor, hoursOn, request.words() != null && !byName.contains(place.getId())))
-                .toList();
+                .toList());
+        int mapRows = 0;
+        if (map != null) {
+            for (AssistantMapPlace place : map.places()) {
+                if (rows.size() >= limit) break;
+                rows.add(mapRow(place, anchor));
+                mapRows++;
+            }
+        }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("near", anchor.label());
         out.put("radiusKm", radius);
@@ -200,9 +218,10 @@ public class AssistantToolService {
         out.put("searched", searched);
         if (!relaxed.isEmpty()) out.put("relaxed", relaxed);
         out.put("places", rows);
+        if (map != null) out.put("map", Map.of("provider", map.provider().name(), "found", mapRows));
         if (rows.isEmpty()) {
-            out.put("note", "No catalogue place matched. Try other types or shorter name words; "
-                    + "do not invent a place. web_search (if offered) is the last resort.");
+            out.put("note", "Nothing in the app's catalogue or on the map matched. Try other types or shorter name words; "
+                    + "do not invent a place.");
         }
         return out;
     }
@@ -904,6 +923,23 @@ public class AssistantToolService {
         }
         if (food) putIfPresent(row, "menu", emptyToNull(PlaceAiFacts.menuHighlights(place.getMenu(), 4)));
         putIfPresent(row, "desc", truncate(place.getAiDescription(), 140));
+        return row;
+    }
+
+    /**
+     * A place only the map knows: name, address and distance, nothing the catalogue would add
+     * (rating, hours, usage). The worker keeps the row by its id and rebuilds the card from it, so
+     * the model never writes coordinates.
+     */
+    private static Map<String, Object> mapRow(AssistantMapPlace place, Anchor anchor) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", "map:" + place.provider() + ":" + place.providerPlaceId());
+        row.put("source", "map");
+        row.put("name", place.name());
+        putIfPresent(row, "address", place.address());
+        row.put("distanceKm", round(haversineKm(anchor.lat(), anchor.lng(), place.lat(), place.lng()), 1));
+        row.put("lat", place.lat());
+        row.put("lng", place.lng());
         return row;
     }
 

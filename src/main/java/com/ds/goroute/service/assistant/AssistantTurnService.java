@@ -75,6 +75,7 @@ public class AssistantTurnService {
     static final int MAX_QUESTIONS = 3;
     static final int MAX_QUESTION_OPTIONS = 6;
     static final int MAX_MEMORY_CHARS = 1500;
+    static final int MAX_TITLE = 80;
     /** Long enough for a pasted booking confirmation or a page of notes to turn into trip edits. */
     static final int MAX_QUESTION = 6000;
     private static final Pattern MENTION = Pattern.compile("(?i)@pengoo\\b[:,]?\\s*");
@@ -172,7 +173,15 @@ public class AssistantTurnService {
         blocks.addAll(cardBlocks(turn, reply.getCards()));
         UUID conversationTripId = MarketplaceConversationType.TRIP.name().equals(conversation.getConversationType())
                 ? conversation.getTripId() : null;
-        if (reply.getProposals() != null) reply.getProposals().forEach(draft -> draft.setSummary(allowed(draft.getSummary())));
+        if (reply.getProposals() != null) reply.getProposals().forEach(draft -> {
+            draft.setSummary(allowed(draft.getSummary()));
+            // A map place whose name or address the filter blocks leaves the draft without a place,
+            // so the proposal is dropped.
+            if (draft.getMapPlace() != null) {
+                draft.setMapPlace(AssistantMapPlace.of(draft.getMapPlace(), this::allowed)
+                        .map(AssistantMapPlace::toRef).orElse(null));
+            }
+        });
         for (UUID proposalId : proposals.createFromReply(turn, conversationTripId, reply.getProposals())) {
             blocks.add(Map.of("kind", "PROPOSAL", "proposalId", proposalId.toString()));
         }
@@ -194,6 +203,10 @@ public class AssistantTurnService {
         repository.completeTurn(turnId, message.getId(), reply.getInputTokens(), reply.getOutputTokens(), access.now());
         repository.attachProposalsToMessage(turnId, message.getId());
         saveMemory(turn, reply.getMemory());
+        if (MarketplaceConversationType.ASSISTANT.name().equals(conversation.getConversationType())) {
+            saveTitle(conversation, reply.getTitle());
+            saveProfile(turn, reply.getProfile());
+        }
         broadcastAfterCommit(turnId);
         startNext(conversation.getId());
         return message.getId();
@@ -303,32 +316,57 @@ public class AssistantTurnService {
         return block;
     }
 
-    /** Only places that exist and are public become cards; the model never invents one. */
+    /** One place card as asked for: a catalogue place, or a map place when there is no catalogue id. */
+    private record PlaceCard(UUID placeId, AssistantMapPlace mapPlace, String note) {
+    }
+
+    /**
+     * Only catalogue places that exist and are public, and map places the worker rebuilt from this
+     * turn's search rows (checked and filtered again here), become cards; the model never invents
+     * one. Both kinds share the cap, in the order given.
+     */
     private List<Map<String, Object>> placeBlocks(List<AssistantReplyRequest.PlaceRef> refs) {
         if (refs == null || refs.isEmpty()) return List.of();
-        Map<UUID, String> notes = new LinkedHashMap<>();
+        List<PlaceCard> cards = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        Set<UUID> catalogueIds = new LinkedHashSet<>();
         for (AssistantReplyRequest.PlaceRef ref : refs) {
+            if (cards.size() >= MAX_PLACE_CARDS) break;
             UUID placeId = AssistantProposalService.uuid(ref.getPlaceId());
-            if (placeId != null && !notes.containsKey(placeId) && notes.size() < MAX_PLACE_CARDS) {
-                notes.put(placeId, allowed(ref.getNote()));
+            if (placeId != null) {
+                if (seen.add(placeId.toString())) {
+                    cards.add(new PlaceCard(placeId, null, allowed(ref.getNote())));
+                    catalogueIds.add(placeId);
+                }
+                continue;
+            }
+            AssistantMapPlace mapPlace = AssistantMapPlace.of(ref.getMapPlace(), this::allowed).orElse(null);
+            if (mapPlace != null && seen.add("map:" + mapPlace.provider() + ":" + mapPlace.providerPlaceId())) {
+                cards.add(new PlaceCard(null, mapPlace, allowed(ref.getNote())));
             }
         }
-        if (notes.isEmpty()) return List.of();
+        if (cards.isEmpty()) return List.of();
         Set<UUID> visible = new LinkedHashSet<>();
-        for (Place place : places.findByIds(new ArrayList<>(notes.keySet()))) {
-            if (place.getVisibilityStatus() == null || place.getVisibilityStatus() == PlaceVisibilityStatus.ACTIVE) {
-                visible.add(place.getId());
+        if (!catalogueIds.isEmpty()) {
+            for (Place place : places.findByIds(new ArrayList<>(catalogueIds))) {
+                if (place.getVisibilityStatus() == null || place.getVisibilityStatus() == PlaceVisibilityStatus.ACTIVE) {
+                    visible.add(place.getId());
+                }
             }
         }
         List<Map<String, Object>> blocks = new ArrayList<>();
-        notes.forEach((placeId, note) -> {
-            if (!visible.contains(placeId)) return;
+        for (PlaceCard card : cards) {
+            if (card.mapPlace() != null) {
+                blocks.add(card.mapPlace().block(card.note()));
+                continue;
+            }
+            if (!visible.contains(card.placeId())) continue;
             Map<String, Object> block = new LinkedHashMap<>();
             block.put("kind", "PLACE");
-            block.put("placeId", placeId.toString());
-            if (note != null && !note.isEmpty()) block.put("note", note);
+            block.put("placeId", card.placeId().toString());
+            if (card.note() != null && !card.note().isEmpty()) block.put("note", card.note());
             blocks.add(block);
-        });
+        }
         return blocks;
     }
 
@@ -372,6 +410,24 @@ public class AssistantTurnService {
     private void saveMemory(AssistantTurn turn, String memory) {
         if (memory == null || memory.isBlank()) return;
         repository.saveMemory(turn.getConversationId(), truncate(memory.trim(), MAX_MEMORY_CHARS), turn.getId(), access.now());
+    }
+
+    /** The model names a 1:1 thread once, in its first answer; a title already there (the owner's) stays. */
+    private void saveTitle(MarketplaceConversation conversation, String raw) {
+        if (conversation.getTitle() != null || raw == null || raw.isBlank()) return;
+        String title = allowed(truncate(raw.trim().replaceAll("\\s+", " "), MAX_TITLE));
+        if (title != null) chatRepository.setAssistantTitleIfEmpty(conversation.getId(), title, access.now());
+    }
+
+    /**
+     * The worker's full list of what to keep about the asker in every 1:1 thread; the person sees
+     * it, so each line passes the chat filter. Nothing usable keeps the old list.
+     */
+    private void saveProfile(AssistantTurn turn, String raw) {
+        List<String> lines = AssistantProfileService.lines(raw).stream()
+                .map(this::allowed).filter(java.util.Objects::nonNull).toList();
+        if (lines.isEmpty()) return;
+        repository.saveProfile(turn.getUserId(), String.join("\n", lines), turn.getId(), access.now());
     }
 
     /**

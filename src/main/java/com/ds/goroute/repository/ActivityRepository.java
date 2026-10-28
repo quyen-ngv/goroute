@@ -69,6 +69,15 @@ public interface ActivityRepository {
     int assignPlace(UUID activityId, UUID placeId, BigDecimal lat, BigDecimal lng);
 
     /**
+     * Unlinks the trip's activity from any catalogue place and puts it at a map place's point,
+     * with that place's Mapbox id (null clears it). Returns the number of rows changed.
+     */
+    int assignMapPlace(UUID tripId, UUID activityId, BigDecimal lat, BigDecimal lng, String mapboxId);
+
+    /** Records the Mapbox place an activity of the trip was made from. Returns the rows changed. */
+    int setMapboxId(UUID tripId, UUID activityId, String mapboxId);
+
+    /**
      * Renumbers the trip's activities from {@code fromDay} on by {@code dayDelta}; a starting
      * point's date moves by {@code dateDeltaDays}. Returns the number of activities moved.
      */

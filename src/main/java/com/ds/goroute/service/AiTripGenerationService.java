@@ -16,6 +16,7 @@ import com.ds.goroute.service.placelookup.PlaceLookupProvider;
 import com.ds.goroute.service.placelookup.PlaceLookupProviderType;
 import com.ds.goroute.service.placelookup.PlaceLookupProviders;
 import com.ds.goroute.service.placelookup.PlaceLookupQuery;
+import com.ds.goroute.service.placelookup.PlaceLookupRouter;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.RequiredArgsConstructor;
@@ -50,9 +51,9 @@ public class AiTripGenerationService {
     /** Field-injected and optional so the hand-built service in unit tests keeps its constructor. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private TripPreferenceService tripPreferenceService;
-    /** Same as above: absent in hand-built tests, which then resolve with Goong as before. */
+    /** Same as above: absent in hand-built tests, which then resolve with Goong inside Vietnam as before. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.ds.goroute.service.mapsearch.MapProviderResolver mapProviderResolver;
+    private PlaceLookupRouter placeLookupRouter;
     /** Same as above: absent in hand-built tests, which then search the plain 50 km circle as before. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private LocationImageRepository locationImageRepository;
@@ -284,27 +285,11 @@ public class AiTripGenerationService {
         return row;
     }
 
-    /**
-     * Mapbox outside Vietnam (Goong has nothing there); otherwise the requester's map provider
-     * (beta users and everyone else are configured apart), Goong without a resolver.
-     */
+    /** The shared rule ({@link PlaceLookupRouter}); hand-built tests get it without a resolver. */
     private PlaceLookupProviderType lookupProviderFor(UUID userId, BigDecimal latitude, BigDecimal longitude) {
-        if (!inVietnam(latitude, longitude) && placeLookupProviders.isAvailable(PlaceLookupProviderType.MAPBOX)) {
-            return PlaceLookupProviderType.MAPBOX;
-        }
-        if (mapProviderResolver == null) return PlaceLookupProviderType.GOONG;
-        return mapProviderResolver.forUser(userId)
-                .map(provider -> provider == com.ds.goroute.type.MapProvider.MAPBOX
-                        ? PlaceLookupProviderType.MAPBOX : PlaceLookupProviderType.GOONG)
-                .orElse(PlaceLookupProviderType.GOONG);
-    }
-
-    /** Vietnam's mainland and near islands, the same box map search uses. */
-    private static boolean inVietnam(BigDecimal latitude, BigDecimal longitude) {
-        if (latitude == null || longitude == null) return true;
-        double lat = latitude.doubleValue();
-        double lng = longitude.doubleValue();
-        return lat >= 8.0 && lat <= 23.5 && lng >= 102.0 && lng <= 110.5;
+        PlaceLookupRouter router = placeLookupRouter != null ? placeLookupRouter
+                : new PlaceLookupRouter(placeLookupProviders, null);
+        return router.providerFor(userId, latitude, longitude);
     }
 
     private Map<String, Object> resolveExternally(AiTripCandidateResolutionRequest.Candidate candidate,

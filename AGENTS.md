@@ -230,6 +230,7 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `ASSISTANT` | `FREE_MAX_TOOL_CALLS` / `PRO_MAX_TOOL_CALLS` | tool calls per question, 1..30 / 1..50 | safe fallback 6 / 20 | private/admin |
 | `ASSISTANT` | `TURN_TIMEOUT_SECONDS` | seconds, 30..900 | safe fallback 300 | private/admin |
 | `ASSISTANT` | `WEB_SEARCH_ENABLED` | boolean; one web search per answer when the catalogue has nothing (worker also needs a provider) | safe fallback true | private/admin |
+| `ASSISTANT` | `MAP_SEARCH_ENABLED` | boolean; `search_places` also asks the map provider (Goong/Mapbox, `PlaceLookupRouter`) when fewer than 3 catalogue places match the name | safe fallback true | private/admin |
 | `SOCIAL` | `FOLLOWER_FANOUT_ENABLED` | boolean (beta followers always told) | safe fallback false | users via `GET /v1/api/following/moments` (`enabled`) |
 | `SOCIAL` | `FOLLOWER_PUSH_COOLDOWN_MINUTES` / `FOLLOWER_PUSH_DAILY_MAX` | minutes per author 0..1440 / pushes per recipient per 24 h 0..100 | safe fallback 30 / 10 | private/admin |
 | `SOCIAL` | `FOLLOWER_FANOUT_BATCH_SIZE` / `FOLLOWER_FANOUT_PAUSE_MS` | followers per chunk 50..500 / ms between chunks 0..5000 | safe fallback 500 / 100 | private/admin |

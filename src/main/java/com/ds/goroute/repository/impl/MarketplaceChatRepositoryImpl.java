@@ -117,4 +117,49 @@ import com.ds.goroute.entity.*;import com.ds.goroute.mapper.MarketplaceChatMappe
         if(messageIds==null||messageIds.isEmpty())return List.of();
         return m.findReactions(messageIds.stream().distinct().toList());
     }
+
+    @Override
+    public void lockAssistantOwner(UUID userId) {
+        m.lockAssistantOwner(userId);
+    }
+
+    @Override
+    public Optional<UUID> findRecentUsedAssistantThread(UUID userId, LocalDateTime since) {
+        return Optional.ofNullable(m.findRecentUsedAssistantThread(userId, since));
+    }
+
+    @Override
+    public Optional<UUID> findNewestUnusedAssistantThread(UUID userId) {
+        return Optional.ofNullable(m.findNewestUnusedAssistantThread(userId));
+    }
+
+    @Override
+    public boolean hasAssistantThread(UUID userId) {
+        return m.hasAssistantThread(userId);
+    }
+
+    @Override
+    public List<AssistantThreadRow> findAssistantThreads(UUID ownerId, String query, int limit, int offset) {
+        return m.findAssistantThreads(ownerId, query, limit, offset);
+    }
+
+    @Override
+    public long countAssistantThreads(UUID ownerId, String query) {
+        return m.countAssistantThreads(ownerId, query);
+    }
+
+    @Override
+    public int renameAssistantThread(UUID conversationId, UUID ownerId, String title, LocalDateTime at) {
+        return m.renameAssistantThread(conversationId, ownerId, title, at);
+    }
+
+    @Override
+    public int setAssistantTitleIfEmpty(UUID conversationId, String title, LocalDateTime at) {
+        return m.setAssistantTitleIfEmpty(conversationId, title, at);
+    }
+
+    @Override
+    public int archiveAssistantThread(UUID conversationId, UUID ownerId, LocalDateTime at) {
+        return m.archiveAssistantThread(conversationId, ownerId, at);
+    }
 }

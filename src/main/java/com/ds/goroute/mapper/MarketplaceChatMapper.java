@@ -81,4 +81,31 @@ public interface MarketplaceChatMapper {
  int deleteReaction(@Param("messageId")UUID messageId,@Param("userId")UUID userId,@Param("emoji")String emoji);
 
  List<MarketplaceMessageReaction> findReactions(@Param("messageIds")List<UUID> messageIds);
+
+ /** Takes the transaction-scoped advisory lock on one person's Pengoo threads. */
+ boolean lockAssistantOwner(@Param("userId") UUID userId);
+
+ /** The owner's live thread they wrote in most recently, if its last message is not before {@code since}. */
+ UUID findRecentUsedAssistantThread(@Param("userId") UUID userId, @Param("since") LocalDateTime since);
+
+ /** The owner's newest live thread they have not written in yet. */
+ UUID findNewestUnusedAssistantThread(@Param("userId") UUID userId);
+
+ /** Whether the person ever had a Pengoo thread, archived ones included. */
+ boolean hasAssistantThread(@Param("userId") UUID userId);
+
+ /** The owner's live, used threads, latest first, optionally only those whose shown title has {@code query}. */
+ List<AssistantThreadRow> findAssistantThreads(@Param("viewerId") UUID ownerId, @Param("query") String query,
+                                               @Param("limit") int limit, @Param("offset") int offset);
+
+ long countAssistantThreads(@Param("viewerId") UUID ownerId, @Param("query") String query);
+
+ int renameAssistantThread(@Param("id") UUID conversationId, @Param("ownerId") UUID ownerId,
+                           @Param("title") String title, @Param("at") LocalDateTime at);
+
+ int setAssistantTitleIfEmpty(@Param("id") UUID conversationId, @Param("title") String title,
+                              @Param("at") LocalDateTime at);
+
+ int archiveAssistantThread(@Param("id") UUID conversationId, @Param("ownerId") UUID ownerId,
+                            @Param("at") LocalDateTime at);
 }

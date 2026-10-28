@@ -88,4 +88,13 @@ public interface AssistantMapper {
                      @Param("content") String content,
                      @Param("turnId") UUID turnId,
                      @Param("updatedAt") LocalDateTime updatedAt);
+
+    String findProfile(@Param("userId") UUID userId);
+
+    int upsertProfile(@Param("userId") UUID userId,
+                      @Param("content") String content,
+                      @Param("turnId") UUID turnId,
+                      @Param("updatedAt") LocalDateTime updatedAt);
+
+    int deleteProfile(@Param("userId") UUID userId);
 }

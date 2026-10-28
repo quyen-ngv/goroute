@@ -33,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -332,6 +333,7 @@ public class AssistantProposalService {
 
     private UUID addPlace(AssistantProposal proposal, Map<String, Object> payload, UUID viewerId) {
         UUID placeId = uuid(payload.get("placeId"));
+        if (placeId == null && payload.get("mapPlaceId") != null) return addMapPlace(proposal, payload, viewerId);
         Place place = places.findById(placeId).orElseThrow(this::notFound);
         ActivityResponse created = activityService.createActivity(proposal.getTripId(), CreateActivityRequest.builder()
                 .name(place.getTitle())
@@ -349,10 +351,44 @@ public class AssistantProposalService {
     }
 
     /**
+     * A map place becomes a plain activity: its name, address and coordinates, no catalogue link,
+     * and the Mapbox id when Mapbox found it.
+     */
+    private UUID addMapPlace(AssistantProposal proposal, Map<String, Object> payload, UUID viewerId) {
+        ActivityResponse created = activityService.createActivity(proposal.getTripId(), CreateActivityRequest.builder()
+                .name(text(payload.get("placeName")))
+                .address(text(payload.get("address")))
+                .lat(decimal(payload.get("lat")))
+                .lng(decimal(payload.get("lng")))
+                .dayNumber(integer(payload.get("dayNumber")))
+                .startTime(time(payload.get("startTime")))
+                .endTime(time(payload.get("endTime")))
+                .category(text(payload.get("category")))
+                .build(), viewerId);
+        String mapboxId = mapboxId(payload);
+        if (mapboxId != null) activities.setMapboxId(proposal.getTripId(), created.getId(), mapboxId);
+        return created.getId();
+    }
+
+    /**
      * Points the activity at another catalogue place and takes that place's name, address and
      * category; its day, notes and expenses stay, and its time unless the proposal gives one.
+     * A map place instead drops the catalogue link and takes the map place's name, address and
+     * coordinates (and Mapbox id).
      */
     private void replacePlace(UUID tripId, UUID activityId, Map<String, Object> payload, UUID viewerId) {
+        if (uuid(payload.get("placeId")) == null && payload.get("mapPlaceId") != null) {
+            activities.assignMapPlace(tripId, activityId, decimal(payload.get("lat")), decimal(payload.get("lng")),
+                    mapboxId(payload));
+            activityService.updateActivity(tripId, activityId, UpdateActivityRequest.builder()
+                    .name(text(payload.get("placeName")))
+                    .address(text(payload.get("address")))
+                    .category(text(payload.get("category")))
+                    .startTime(time(payload.get("startTime")))
+                    .endTime(time(payload.get("endTime")))
+                    .build(), viewerId);
+            return;
+        }
         Place place = places.findById(uuid(payload.get("placeId"))).orElseThrow(this::notFound);
         // place_ref_id wins over place_id when the app reads the link, so both move together.
         activities.assignPlace(activityId, place.getId(), place.getLatitude(), place.getLongitude());
@@ -416,8 +452,10 @@ public class AssistantProposalService {
         switch (action) {
             case ADD -> {
                 Place place = activePlace(draft.getPlaceId());
-                if (place == null || !validDay(from, lastDay)) return Optional.empty();
-                putPlace(payload, place, draft.getCategory());
+                AssistantMapPlace mapPlace = place == null ? mapPlace(draft) : null;
+                if ((place == null && mapPlace == null) || !validDay(from, lastDay)) return Optional.empty();
+                if (place != null) putPlace(payload, place, draft.getCategory());
+                else putMapPlace(payload, mapPlace, draft.getCategory());
                 payload.put("dayNumber", from);
             }
             case MOVE -> {
@@ -439,11 +477,17 @@ public class AssistantProposalService {
             case REPLACE -> {
                 Activity activity = activityOfTrip(tripId, uuid(draft.getActivityId())).orElse(null);
                 Place place = activePlace(draft.getPlaceId());
-                if (activity == null || place == null || place.getId().equals(AssistantTripSnapshots.catalogueId(activity))) {
+                AssistantMapPlace mapPlace = place == null ? mapPlace(draft) : null;
+                if (activity == null || (place == null && mapPlace == null)) return Optional.empty();
+                if (place != null && place.getId().equals(AssistantTripSnapshots.catalogueId(activity))) {
+                    return Optional.empty();
+                }
+                if (mapPlace != null && mapPlace.isMapbox() && mapPlace.providerPlaceId().equals(activity.getMapboxId())) {
                     return Optional.empty();
                 }
                 putActivity(payload, activity);
-                putPlace(payload, place, draft.getCategory());
+                if (place != null) putPlace(payload, place, draft.getCategory());
+                else putMapPlace(payload, mapPlace, draft.getCategory());
             }
             case ADD_DAYS -> {
                 // Only at the end, only a few days at a time, and only on a trip with dates.
@@ -569,6 +613,22 @@ public class AssistantProposalService {
         payload.put("category", category(category, place));
     }
 
+    /**
+     * The draft's map place, for an ADD or REPLACE that names no catalogue place; null otherwise or
+     * when it is out of bounds (its text was filtered when the answer arrived).
+     */
+    private static AssistantMapPlace mapPlace(AssistantReplyRequest.ProposalDraft draft) {
+        if (draft.getPlaceId() != null && !draft.getPlaceId().isBlank()) return null;
+        return AssistantMapPlace.of(draft.getMapPlace(), AssistantMapPlace::trimmed).orElse(null);
+    }
+
+    /** A map place has no group to guess from; the default is the one NEW_ACTIVITY uses. */
+    private static void putMapPlace(Map<String, Object> payload, AssistantMapPlace place, String category) {
+        place.putInto(payload);
+        String requested = category == null ? null : category.trim().toLowerCase(Locale.ROOT);
+        payload.put("category", requested != null && CATEGORY.matcher(requested).matches() ? requested : "attraction");
+    }
+
     private static void putDates(Map<String, Object> payload, LocalDate start, LocalDate end) {
         payload.put("newStartDate", start.toString());
         payload.put("newEndDate", end.toString());
@@ -689,6 +749,20 @@ public class AssistantProposalService {
         if (value == null) return null;
         try {
             return Integer.parseInt(value.toString().trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** The map place's id when Mapbox found it: the only map id an activity keeps. */
+    private static String mapboxId(Map<String, Object> payload) {
+        return AssistantMapPlace.MAPBOX.equals(text(payload.get("mapProvider"))) ? text(payload.get("mapPlaceId")) : null;
+    }
+
+    private static BigDecimal decimal(Object value) {
+        if (value == null) return null;
+        try {
+            return new BigDecimal(value.toString().trim());
         } catch (NumberFormatException e) {
             return null;
         }

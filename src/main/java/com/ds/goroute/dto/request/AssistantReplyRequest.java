@@ -8,6 +8,7 @@ import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -45,6 +46,15 @@ public class AssistantReplyRequest {
     /** Pengoo's notes for this conversation, replacing the old ones; null keeps them as they are. */
     @Size(max = 2000)
     private String memory;
+    /** 1:1 chat only: the thread's title, kept only while the thread has none. */
+    @Size(max = 80)
+    private String title;
+    /**
+     * 1:1 chat only: what Pengoo keeps about the asker across every thread, one fact per line, the
+     * full list replacing the old one; null keeps it as it is.
+     */
+    @Size(max = 1000)
+    private String profile;
     @PositiveOrZero
     private Integer inputTokens;
     @PositiveOrZero
@@ -62,6 +72,30 @@ public class AssistantReplyRequest {
         private String placeId;
         @Size(max = 300)
         private String note;
+        /** A place search_places found on the map, used when {@code placeId} is empty. */
+        @Valid
+        private MapPlaceRef mapPlace;
+    }
+
+    /**
+     * A place from the map provider (Goong or Mapbox) that is not in the catalogue, rebuilt by the
+     * worker from the tool row of the same turn. The bounds here only cap the request's size; the
+     * server checks the real limits (provider GOONG|MAPBOX, id 1..255, name 1..200, address up to
+     * 300, coordinates in range) and drops a card, proposal or stop that fails them instead of
+     * refusing the whole answer.
+     */
+    @Data
+    public static class MapPlaceRef {
+        @Size(max = 16)
+        private String provider;
+        @Size(max = 1000)
+        private String providerPlaceId;
+        @Size(max = 1000)
+        private String name;
+        @Size(max = 1000)
+        private String address;
+        private BigDecimal lat;
+        private BigDecimal lng;
     }
 
     /**
@@ -210,6 +244,13 @@ public class AssistantReplyRequest {
         private Boolean stay;
         @Min(1) @Max(400)
         private Integer untilDay;
+        /** A map place (no {@code placeId}): where it is, and the provider's id for it. */
+        private BigDecimal lat;
+        private BigDecimal lng;
+        @Size(max = 16)
+        private String mapProvider;
+        @Size(max = 1000)
+        private String mapPlaceId;
     }
 
     @Data
@@ -233,6 +274,9 @@ public class AssistantReplyRequest {
         private String endTime;
         @Size(max = 64)
         private String placeId;
+        /** ADD / REPLACE without {@code placeId}: a place search_places found on the map. */
+        @Valid
+        private MapPlaceRef mapPlace;
         @Size(max = 64)
         private String activityId;
         @Size(max = 40)
