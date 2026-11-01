@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -44,10 +45,12 @@ public class ActivityPlaceAdminServiceImpl implements ActivityPlaceAdminService 
 
     @Override
     @Transactional(readOnly = true)
-    public List<AdminUnlinkedActivityResponse> listUnlinked(String search, boolean dismissed, int page, int size) {
+    public List<AdminUnlinkedActivityResponse> listUnlinked(String search, boolean dismissed, List<String> categories,
+                                                            List<String> excludedCategories, int page, int size) {
         int boundedSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
         List<UnlinkedActivityRow> rows = activityRepository.findUnlinkedForAdmin(
-                blankToNull(search), dismissed, boundedSize, Math.max(0, page) * boundedSize);
+                blankToNull(search), dismissed, normalizeCategories(categories),
+                normalizeCategories(excludedCategories), boundedSize, Math.max(0, page) * boundedSize);
         if (rows.isEmpty()) {
             return List.of();
         }
@@ -86,8 +89,10 @@ public class ActivityPlaceAdminServiceImpl implements ActivityPlaceAdminService 
 
     @Override
     @Transactional(readOnly = true)
-    public long countUnlinked(String search, boolean dismissed) {
-        return activityRepository.countUnlinkedForAdmin(blankToNull(search), dismissed);
+    public long countUnlinked(String search, boolean dismissed, List<String> categories,
+                              List<String> excludedCategories) {
+        return activityRepository.countUnlinkedForAdmin(blankToNull(search), dismissed,
+                normalizeCategories(categories), normalizeCategories(excludedCategories));
     }
 
     @Override
@@ -163,5 +168,18 @@ public class ActivityPlaceAdminServiceImpl implements ActivityPlaceAdminService 
 
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    /** Lowercase and deduplicated, matched against LOWER(category); null when nothing is left. */
+    private List<String> normalizeCategories(List<String> values) {
+        if (values == null) {
+            return null;
+        }
+        List<String> normalized = values.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(value -> value.trim().toLowerCase(Locale.ROOT))
+                .distinct()
+                .toList();
+        return normalized.isEmpty() ? null : normalized;
     }
 }

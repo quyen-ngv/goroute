@@ -45,9 +45,11 @@ public interface ActivityMapper {
 
     List<UnlinkedActivityRow> selectUnlinkedForAdmin(
             @Param("search") String search, @Param("dismissed") boolean dismissed,
+            @Param("categories") List<String> categories, @Param("excludedCategories") List<String> excludedCategories,
             @Param("limit") int limit, @Param("offset") int offset);
 
-    long countUnlinkedForAdmin(@Param("search") String search, @Param("dismissed") boolean dismissed);
+    long countUnlinkedForAdmin(@Param("search") String search, @Param("dismissed") boolean dismissed,
+            @Param("categories") List<String> categories, @Param("excludedCategories") List<String> excludedCategories);
 
     int dismissPlaceReview(@Param("id") UUID id, @Param("adminId") UUID adminId);
 

@@ -12,9 +12,14 @@ import java.util.UUID;
  */
 public interface ActivityPlaceAdminService {
 
-    List<AdminUnlinkedActivityResponse> listUnlinked(String search, boolean dismissed, int page, int size);
+    /**
+     * {@code categories} keeps only activities of those categories; {@code excludedCategories}
+     * drops those categories but keeps activities with no category. Either may be null or empty.
+     */
+    List<AdminUnlinkedActivityResponse> listUnlinked(String search, boolean dismissed, List<String> categories,
+                                                     List<String> excludedCategories, int page, int size);
 
-    long countUnlinked(String search, boolean dismissed);
+    long countUnlinked(String search, boolean dismissed, List<String> categories, List<String> excludedCategories);
 
     void assignPlace(UUID adminId, UUID activityId, AssignActivityPlaceRequest request);
 

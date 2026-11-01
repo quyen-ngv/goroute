@@ -9,6 +9,8 @@ import com.ds.goroute.service.ActivityPlaceAdminService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -36,6 +38,9 @@ import java.util.UUID;
 public class AdminActivityPlaceController extends BaseController {
 
     private static final int MAX_PAGE_SIZE = 100;
+    private static final int MAX_CATEGORY_FILTERS = 20;
+    /** Activity categories are free lowercase codes (`hotel`, `transport`, `restaurant`…), not an enum. */
+    private static final String CATEGORY_PATTERN = "[A-Za-z_]{1,40}";
 
     private final ActivityPlaceAdminService service;
 
@@ -44,10 +49,15 @@ public class AdminActivityPlaceController extends BaseController {
     public ResponseEntity<BaseResponse<PageResponse<AdminUnlinkedActivityResponse>>> listUnlinked(
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "false") boolean dismissed,
+            @RequestParam(name = "category", required = false)
+            @Size(max = MAX_CATEGORY_FILTERS) List<@Pattern(regexp = CATEGORY_PATTERN) String> categories,
+            @RequestParam(name = "excludeCategory", required = false)
+            @Size(max = MAX_CATEGORY_FILTERS) List<@Pattern(regexp = CATEGORY_PATTERN) String> excludedCategories,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "50") @Min(1) @Max(MAX_PAGE_SIZE) int size) {
-        List<AdminUnlinkedActivityResponse> items = service.listUnlinked(search, dismissed, page, size);
-        long total = service.countUnlinked(search, dismissed);
+        List<AdminUnlinkedActivityResponse> items =
+                service.listUnlinked(search, dismissed, categories, excludedCategories, page, size);
+        long total = service.countUnlinked(search, dismissed, categories, excludedCategories);
         return ResponseEntity.ok(ofSucceeded(PageResponse.of(items, total, page, size)));
     }
 

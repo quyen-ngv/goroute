@@ -222,6 +222,15 @@
                OR a.address ILIKE '%' || #{search} || '%'
                OR t.name ILIKE '%' || #{search} || '%')
         </if>
+        <if test="categories != null and !categories.isEmpty()">
+          AND LOWER(a.category) IN
+          <foreach collection="categories" item="category" open="(" separator="," close=")">#{category}</foreach>
+        </if>
+        <!-- An activity with no category is kept: only the named categories are dropped. -->
+        <if test="excludedCategories != null and !excludedCategories.isEmpty()">
+          AND (a.category IS NULL OR LOWER(a.category) NOT IN
+          <foreach collection="excludedCategories" item="category" open="(" separator="," close=")">#{category}</foreach>)
+        </if>
     </sql>
 
     <select id="selectUnlinkedForAdmin" resultType="com.ds.goroute.entity.UnlinkedActivityRow">

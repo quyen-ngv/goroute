@@ -109,16 +109,16 @@ class ActivityPlaceAdminServiceImplTest {
     }
 
     @Test
-    void listingCarriesTheTripOwnerAndTrimsTheSearch() {
+    void listingCarriesTheTripOwnerAndNormalizesTheFilters() {
         UUID ownerId = UUID.randomUUID();
         UnlinkedActivityRow row = UnlinkedActivityRow.builder()
                 .id(activityId).tripId(tripId).tripName("Đà Nẵng 3N2Đ").ownerId(ownerId)
                 .name("Bún chả cá bà Lữ").address("319 Hùng Vương, Đà Nẵng").build();
-        when(activities.findUnlinkedForAdmin("bún", false, 50, 50)).thenReturn(List.of(row));
+        when(activities.findUnlinkedForAdmin("bún", false, null, List.of("hotel", "transport"), 50, 50)).thenReturn(List.of(row));
         when(users.findByIds(List.of(ownerId)))
                 .thenReturn(List.of(User.builder().id(ownerId).fullName("Lan").email("lan@example.com").build()));
 
-        List<AdminUnlinkedActivityResponse> result = service.listUnlinked("  bún ", false, 1, 50);
+        List<AdminUnlinkedActivityResponse> result = service.listUnlinked("  bún ", false, null, List.of(" Hotel", "transport", "hotel"), 1, 50);
 
         assertThat(result).singleElement().satisfies(item -> {
             assertThat(item.getTripName()).isEqualTo("Đà Nẵng 3N2Đ");
@@ -133,12 +133,12 @@ class ActivityPlaceAdminServiceImplTest {
         UUID ownerId = UUID.randomUUID();
         UnlinkedActivityRow row = UnlinkedActivityRow.builder()
                 .id(activityId).tripId(tripId).ownerId(ownerId).dismissedBy(adminId).build();
-        when(activities.findUnlinkedForAdmin(null, true, 50, 0)).thenReturn(List.of(row));
+        when(activities.findUnlinkedForAdmin(null, true, null, null, 50, 0)).thenReturn(List.of(row));
         when(users.findByIds(List.of(ownerId, adminId))).thenReturn(List.of(
                 User.builder().id(ownerId).fullName("Lan").build(),
                 User.builder().id(adminId).fullName("Ops").build()));
 
-        List<AdminUnlinkedActivityResponse> result = service.listUnlinked(" ", true, 0, 50);
+        List<AdminUnlinkedActivityResponse> result = service.listUnlinked(" ", true, List.of(" "), null, 0, 50);
 
         assertThat(result).singleElement().satisfies(item -> {
             assertThat(item.getOwnerDisplayName()).isEqualTo("Lan");

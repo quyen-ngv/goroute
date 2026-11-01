@@ -55,9 +55,11 @@ public interface ActivityRepository {
      * Activities with an address that resolves to no catalogue place: still in the admin queue,
      * newest first, or ({@code dismissed}) taken out of it, most recently dismissed first.
      */
-    List<UnlinkedActivityRow> findUnlinkedForAdmin(String search, boolean dismissed, int limit, int offset);
+    List<UnlinkedActivityRow> findUnlinkedForAdmin(String search, boolean dismissed, List<String> categories,
+                                                   List<String> excludedCategories, int limit, int offset);
 
-    long countUnlinkedForAdmin(String search, boolean dismissed);
+    long countUnlinkedForAdmin(String search, boolean dismissed, List<String> categories,
+                               List<String> excludedCategories);
 
     /** Takes the activity out of the admin queue; 0 when it is missing or already out. */
     int dismissPlaceReview(UUID activityId, UUID adminId);
