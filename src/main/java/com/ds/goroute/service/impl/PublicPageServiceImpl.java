@@ -39,15 +39,15 @@ public class PublicPageServiceImpl implements PublicPageService {
     static final String TRIP_TEMPLATE = "static/ondetour.html";
 
     /** The line in ondetour.html the trip's preview tags replace. */
-    static final String TRIP_TITLE_TAG = "<title>Shared Trip - Pengoo</title>";
+    static final String TRIP_TITLE_TAG = "<title>Shared Trip - OnDetour</title>";
 
     /**
-     * The Pengoo app icon ({@code static/pengoo-logo.png}), for previews of a profile without an
+     * The OnDetour app icon ({@code static/pengoo-logo.png}), for previews of a profile without an
      * avatar and of a trip without a cover. Served next to these pages, under the public base URL.
      */
     static final String BRAND_IMAGE_PATH = "/pengoo-logo.png";
 
-    static final String SITE_NAME = "Pengoo";
+    static final String SITE_NAME = "OnDetour";
 
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{\\{([A-Z_]+)}}");
 

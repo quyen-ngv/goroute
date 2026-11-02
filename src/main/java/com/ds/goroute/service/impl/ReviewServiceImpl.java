@@ -616,7 +616,7 @@ public class ReviewServiceImpl implements ReviewService {
                         score.getGoogleScore().toString() :
                         (score.getTripmindScore() != null ? score.getTripmindScore().toString() : "N/A"))
                 .displayLabel(score.getReviewCount() < 10 ? "Preliminary" :
-                        "Pengoo Score")
+                        "OnDetour Score")
                 .useGoogleScore(useGoogle)
                 .lastCalculatedAt(score.getLastCalculatedAt())
                 .build();
@@ -646,7 +646,7 @@ public class ReviewServiceImpl implements ReviewService {
                 .ambianceScore(ambianceScore)
                 .serviceScore(serviceScore)
                 .displayScore(score != null ? score.toString() : "N/A")
-                .displayLabel(reviewCount == 0 ? "Not enough reviews" : "Pengoo Score")
+                .displayLabel(reviewCount == 0 ? "Not enough reviews" : "OnDetour Score")
                 .lastCalculatedAt(LocalDateTime.now())
                 .build();
     }
