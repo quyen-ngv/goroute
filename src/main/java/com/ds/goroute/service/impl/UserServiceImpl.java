@@ -365,7 +365,9 @@ public class UserServiceImpl implements UserService {
                 .lastLoginAt(user.getLastLoginAt())
                 .language(user.getLanguage())
                 .theme(user.getTheme())
-                .onboardingCompleted(user.getOnboardingCompleted())
+                // Hotfix: always true so the app skips /profile-onboarding, which iOS
+                // shows as "page not found". Revert once a fixed app build is live.
+                .onboardingCompleted(true)
                 .tripCount(stats.tripCount())
                 .reviewCount(stats.reviewCount())
                 .likeCount(stats.likeCount())

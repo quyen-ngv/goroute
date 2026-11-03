@@ -1056,6 +1056,8 @@ public class PassportServiceImpl implements PassportService {
                 .description(rule == null ? null
                         : PassportTextResolver.resolve(rule.getDescription(), rule.getDescriptionEn()))
                 .icon(rule == null ? null : rule.getIcon())
+                .rewardPoints(rule == null ? null : rule.getRewardPoints())
+                .threshold(rule == null ? null : rule.getThreshold())
                 .awardedAt(stamp.getAwardedAt())
                 .triggeringEventId(stamp.getTriggeringEventId())
                 .build();

@@ -361,7 +361,9 @@ public class AuthServiceImpl implements AuthService {
                 .defaultTravelMode(user.getDefaultTravelMode())
                 .language(user.getLanguage())
                 .theme(user.getTheme())
-                .onboardingCompleted(user.getOnboardingCompleted())
+                // Hotfix: always true so the app skips /profile-onboarding, which iOS
+                // shows as "page not found". Revert once a fixed app build is live.
+                .onboardingCompleted(true)
                 .build();
 
         return AuthResponse.builder()
