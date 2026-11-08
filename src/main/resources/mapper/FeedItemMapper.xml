@@ -375,6 +375,15 @@
         WHERE (fi.item_type, fi.item_id) IN <include refid="keyList"/>
     </select>
 
+    <!-- Keyset pages over the primary key, for the Lucene rebuild. -->
+    <select id="selectPage" resultMap="FeedItemRowMap">
+        SELECT <include refid="itemColumns"/>
+        FROM feed_items fi
+        WHERE (fi.item_type, fi.item_id) &gt; (#{afterType}, #{afterId})
+        ORDER BY fi.item_type, fi.item_id
+        LIMIT #{limit}
+    </select>
+
     <update id="updateScores">
         UPDATE feed_items fi SET
             quality_score = v.q,

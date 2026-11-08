@@ -30,6 +30,8 @@ public interface TripMemberMapper {
     /** ACCEPTED member rows per trip; trips without any have no row. */
     List<TripCount> countAcceptedByTripIds(@Param("tripIds") List<UUID> tripIds);
 
+    List<TripMember> selectByIds(@Param("ids") java.util.Collection<UUID> ids);
+
     int updateById(TripMember member);
     
     int deleteById(@Param("id") UUID id);

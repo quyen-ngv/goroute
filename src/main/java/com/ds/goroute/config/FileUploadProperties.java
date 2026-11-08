@@ -11,6 +11,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.util.unit.DataSize;
 import org.springframework.validation.annotation.Validated;
 
+import java.time.Duration;
 import java.util.List;
 
 @Getter
@@ -31,6 +32,23 @@ public class FileUploadProperties {
     @Min(1)
     @Max(50)
     private int maxBatchFiles = 10;
+
+    /**
+     * Uploads processed at once across the instance. Each holds its whole image in the heap
+     * while it is checked and sent to storage, so this bounds that memory (16 x 10 MB).
+     */
+    @Min(1)
+    @Max(256)
+    private int maxConcurrentUploads = 16;
+
+    /** Uploads one user may have processed at once; one phone cannot take every slot. */
+    @Min(1)
+    @Max(32)
+    private int maxConcurrentUploadsPerUser = 4;
+
+    /** How long an upload waits for a free slot before it is answered 503 + Retry-After. */
+    @NotNull
+    private Duration uploadSlotWait = Duration.ofSeconds(5);
 
     @NotEmpty
     private List<String> allowedImageTypes = List.of("image/jpeg", "image/png", "image/webp");

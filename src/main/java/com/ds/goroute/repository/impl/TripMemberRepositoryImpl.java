@@ -96,4 +96,14 @@ public class TripMemberRepositoryImpl implements TripMemberRepository {
     public List<TripMember> findGuestsByEmail(String email) {
         return tripMemberMapper.selectGuestsByEmail(email);
     }
+
+    @Override
+    public List<TripMember> findByIds(Collection<UUID> ids) {
+        if (ids == null || ids.isEmpty()) return List.of();
+        List<TripMember> members = new java.util.ArrayList<>();
+        for (List<UUID> chunk : Lists.partition(ids.stream().filter(Objects::nonNull).distinct().toList(), 500)) {
+            members.addAll(tripMemberMapper.selectByIds(chunk));
+        }
+        return members;
+    }
 }

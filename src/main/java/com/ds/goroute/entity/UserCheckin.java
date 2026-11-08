@@ -85,6 +85,8 @@ public class UserCheckin {
     private String rewardReason;
 
     private Boolean isRemoved;
+    /** An approver said this check-in names no real place, so it left the queue for one (V272). */
+    private LocalDateTime placeDismissedAt;
     /**
      * The day of the visit, which the author can set when they post after getting home.
      * {@link #createdAt} stays the moment the row was written: the reward window and the

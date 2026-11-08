@@ -9,6 +9,11 @@ package com.ds.goroute.type;
  * code default instead of changing product behaviour.
  */
 public enum BusinessConfigKey {
+    /**
+     * LEGACY-STAR-QUOTA: the old free-trip count. Since V262 turned unused free trips into credits
+     * it is read only by the deprecated admin quota endpoint; delete with that endpoint.
+     */
+    @Deprecated
     TRIP_FREE_CREATION_QUOTA("TRIP", "FREE_TRIP_QUOTA", 3, 0, 1000),
     FREE_TRIP_MEMORY_LIMIT("TRIP_MEMORY", "FREE_TRIP_MEMORY_LIMIT", 50, 1, 1000),
     PLACE_REVIEW_REFRESH_MAX_REVIEWS("PLACE_REVIEW", "DEFAULT_REFRESH_MAX_REVIEWS", 200, 1, 200),
@@ -52,6 +57,14 @@ public enum BusinessConfigKey {
     AI_CREDIT_MIN_BALANCE_SOCIAL_LOCATION("AI_CREDIT", "MIN_BALANCE_SOCIAL_LOCATION", 10, 0, 100_000),
     /** Charged for a call whose model has no AI_PRICING row, so a missing price is never free. */
     AI_CREDIT_FALLBACK_CREDITS_PER_CALL("AI_CREDIT", "FALLBACK_CREDITS_PER_CALL", 20, 0, 100_000),
+    /** Credits every trip creation costs: manual, clone, AI draft, Pengoo card (V262). */
+    AI_CREDIT_TRIP_CREATION_COST("AI_CREDIT", "TRIP_CREATION_COST", 50, 0, 100_000),
+    /** Stars may be exchanged one way into credits. */
+    AI_CREDIT_STAR_EXCHANGE_ENABLED("AI_CREDIT", "STAR_EXCHANGE_ENABLED", true),
+    /** Credits one Star buys. */
+    AI_CREDIT_STAR_EXCHANGE_RATE("AI_CREDIT", "STAR_EXCHANGE_RATE", 10, 1, 1000),
+    /** Credits a user may get from Stars per credit-wallet period; caps check-in farming. */
+    AI_CREDIT_STAR_EXCHANGE_MONTHLY_CAP("AI_CREDIT", "STAR_EXCHANGE_MONTHLY_CAP", 500, 0, 100_000),
 
     // --- Social video itinerary defaults --------------------------------------------
     SOCIAL_START_OFFSET_DAYS("AI_TRIP", "SOCIAL_START_OFFSET_DAYS", 5, 0, 30),
@@ -64,6 +77,9 @@ public enum BusinessConfigKey {
     CHECKIN_MAX_ACCURACY_METERS("CHECKIN", "MAX_ACCURACY_METERS", 100, 5, 2000),
     CHECKIN_MAX_PHOTOS("CHECKIN", "MAX_PHOTOS", 6, 1, 20),
     CHECKIN_MAX_CAPTION_LENGTH("CHECKIN", "MAX_CAPTION_LENGTH", 2000, 100, 5000),
+    /** Lets everyone post a video check-in; beta users always can. */
+    CHECKIN_VIDEO_ENABLED("CHECKIN", "VIDEO_ENABLED", false),
+    CHECKIN_MAX_VIDEO_SECONDS("CHECKIN", "MAX_VIDEO_SECONDS", 60, 5, 300),
     CHECKIN_LOCATION_KEY_PRECISION("CHECKIN", "LOCATION_KEY_PRECISION", 4, 2, 6),
     CHECKIN_GALLERY_ALLOWED_FOR_FREE("CHECKIN", "GALLERY_ALLOWED_FOR_FREE", true),
     CHECKIN_GUIDE_SCREEN_ENABLED("CHECKIN", "GUIDE_SCREEN_ENABLED", true),
@@ -407,7 +423,13 @@ public enum BusinessConfigKey {
      * JSON overriding the ranking weights; keys left out keep the defaults in
      * {@code feed/feed-ranking-defaults.json}. Shape: .docs/FEED_RANKING_DESIGN_2026-10-22.md §3.7.
      */
-    FEED_RANKING_WEIGHTS("FEED", "RANKING_WEIGHTS", "{}");
+    FEED_RANKING_WEIGHTS("FEED", "RANKING_WEIGHTS", "{}"),
+    /** Write feed_events (V267): what the Feed served and what viewers did with it. */
+    FEED_EVENTS_ENABLED("FEED", "EVENTS_ENABLED", true),
+    /** Days of feed_events kept; older daily partitions are dropped every night. */
+    FEED_EVENTS_RETENTION_DAYS("FEED", "EVENTS_RETENTION_DAYS", 30, 7, 365),
+    /** Where the ranked feed reads candidates: SQL, or LUCENE (the feed index, SQL when it cannot). */
+    FEED_CANDIDATES_BACKEND("FEED", "CANDIDATES_BACKEND", "SQL");
 
     /** Value shapes the configuration layer knows how to validate. */
     public enum ValueType {

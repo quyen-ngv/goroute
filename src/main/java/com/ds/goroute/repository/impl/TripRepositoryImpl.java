@@ -191,4 +191,14 @@ public class TripRepositoryImpl implements TripRepository {
     public Optional<java.time.LocalDateTime> findSearchIndexMaxUpdatedAt() {
         return Optional.ofNullable(tripMapper.selectSearchIndexMaxUpdatedAt());
     }
+
+    @Override
+    public boolean findSimplifyDebts(UUID tripId) {
+        return !Boolean.FALSE.equals(tripMapper.selectSimplifyDebts(tripId));
+    }
+
+    @Override
+    public void updateSimplifyDebts(UUID tripId, boolean simplifyDebts) {
+        tripMapper.updateSimplifyDebts(tripId, simplifyDebts);
+    }
 }

@@ -319,7 +319,8 @@
       the way recomputeUsageCounts counts all time (each trip once, deleted trips and REJECTED
       activities not at all, removed check-ins not at all), but only rows created inside the
       window, and only for the public places of the area. Ranked by the PlaceProminence score
-      over the window, then by all-time use.
+      over the window (a check-in weighs PlaceProminence.CHECKIN_WEIGHT = 2 trips), then by
+      all-time use.
     -->
     <select id="findTrendingUsage" resultType="com.ds.goroute.entity.PlaceTrendingRow">
         WITH area AS (
@@ -380,8 +381,8 @@
         LEFT JOIN trip_uses tu ON tu.place_uuid = ar.id
         LEFT JOIN recent_checkins rc ON rc.place_uuid = ar.id
         WHERE tu.trips IS NOT NULL OR rc.checkins IS NOT NULL
-        ORDER BY LN(1 + COALESCE(tu.trips, 0)) + LN(1 + COALESCE(rc.checkins, 0)) DESC,
-                 LN(1 + ar.trip_use_count) + LN(1 + ar.checkin_count) DESC,
+        ORDER BY LN(1 + COALESCE(tu.trips, 0)) + 2 * LN(1 + COALESCE(rc.checkins, 0)) DESC,
+                 LN(1 + ar.trip_use_count) + 2 * LN(1 + ar.checkin_count) DESC,
                  ar.id
         LIMIT #{limit}
     </select>

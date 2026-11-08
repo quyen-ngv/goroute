@@ -2,7 +2,6 @@ package com.ds.goroute.service;
 
 import com.ds.goroute.entity.UserQuotaOverride;
 import com.ds.goroute.repository.UserQuotaOverrideRepository;
-import com.ds.goroute.type.BusinessConfigKey;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -16,7 +15,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class UserQuotaPolicyService {
     private final UserQuotaOverrideRepository repository;
-    private final BusinessConfigService businessConfig;
 
     @Cacheable(cacheNames = "userQuotaOverrides", key = "#userId", sync = true)
     public Optional<UserQuotaOverride> findOverride(UUID userId) {
@@ -27,10 +25,5 @@ public class UserQuotaPolicyService {
     public void evict(UUID userId) {
         // The annotation is the operation; keeping this method explicit makes the cache boundary
         // visible to the admin update use case.
-    }
-
-    public int freeTripQuota(UUID userId) {
-        return findOverride(userId).map(UserQuotaOverride::getFreeTripQuota)
-                .orElseGet(() -> businessConfig.getInt(BusinessConfigKey.TRIP_FREE_CREATION_QUOTA));
     }
 }

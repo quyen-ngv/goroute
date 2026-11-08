@@ -166,7 +166,7 @@ public class PlaceController extends BaseController {
             @DecimalMax("1000") BigDecimal radius,
             @RequestParam(defaultValue = "MONTH") PlaceTrendingPeriod period,
             @RequestParam(required = false) List<String> placeGroups,
-            @RequestParam(defaultValue = "10") @Min(1) @Max(30) int size) {
+            @RequestParam(defaultValue = "50") @Min(1) @Max(50) int size) {
         return ResponseEntity.ok(ofSucceeded(placeService.getTrendingPlaces(
                 latitude, longitude, radius, placeGroups, period, size)));
     }

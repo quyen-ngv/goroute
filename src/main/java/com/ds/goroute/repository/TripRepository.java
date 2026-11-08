@@ -95,4 +95,9 @@ public interface TripRepository {
             java.time.LocalDateTime afterUpdatedAt, UUID afterId, int limit);
 
     Optional<java.time.LocalDateTime> findSearchIndexMaxUpdatedAt();
+
+    /** Whether the trip's ledger shows simplified debts (V268, default true). */
+    boolean findSimplifyDebts(UUID tripId);
+
+    void updateSimplifyDebts(UUID tripId, boolean simplifyDebts);
 }

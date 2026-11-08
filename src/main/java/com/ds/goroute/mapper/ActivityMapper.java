@@ -8,6 +8,7 @@ import org.apache.ibatis.annotations.Param;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Mapper
@@ -63,8 +64,7 @@ public interface ActivityMapper {
 
     int setMapboxId(@Param("id") UUID id, @Param("tripId") UUID tripId, @Param("mapboxId") String mapboxId);
 
-    int shiftDays(@Param("tripId") UUID tripId, @Param("fromDay") int fromDay, @Param("dayDelta") int dayDelta,
-                  @Param("dateDeltaDays") int dateDeltaDays);
-
-    int swapDays(@Param("tripId") UUID tripId, @Param("firstDay") int firstDay, @Param("secondDay") int secondDay);
+    int relayoutDays(@Param("tripId") UUID tripId, @Param("oldDays") int oldDays,
+                     @Param("moves") Map<Integer, Integer> moves, @Param("outsideDelta") int outsideDelta,
+                     @Param("startDelta") int startDelta);
 }

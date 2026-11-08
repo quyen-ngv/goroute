@@ -87,6 +87,7 @@ class TripServiceImplPublicTripCardsTest {
     void setUp() {
         service = new TripServiceImpl(
                 mock(StarService.class),
+                mock(com.ds.goroute.service.AiCreditService.class),
                 tripRepository,
                 mock(TripAccessGuard.class),
                 mock(com.ds.goroute.service.TripChatService.class),

@@ -12,4 +12,5 @@ import java.util.UUID;
 public class TripCompletionCandidate {
     private UUID tripId;
     private UUID ownerId;
+    private int activityCount;
 }

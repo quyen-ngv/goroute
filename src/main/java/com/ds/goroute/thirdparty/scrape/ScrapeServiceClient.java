@@ -1,5 +1,6 @@
 package com.ds.goroute.thirdparty.scrape;
 
+import com.ds.goroute.dto.response.AdminPlaceImportMappingResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -10,6 +11,7 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Component
@@ -76,6 +78,39 @@ private String apiKey;
             log.error("Scrape trigger failed for url {}: {}", request.getUrl(), e.getMessage(), e);
             return null;
         }
+    }
+
+    /**
+     * Sends a pending AGENT_PROPOSAL mapping to the Telegram approver in the worker. The worker
+     * checks the shared {@code X-API-Key}; any failure is the caller's to log.
+     */
+    public void notifyActivityPlaceProposal(AdminPlaceImportMappingResponse mapping) {
+        String url = baseUrl + "/api/v1/telegram/activity-place-proposals";
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        if (apiKey != null && !apiKey.isBlank()) {
+            headers.set("X-API-Key", apiKey);
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("itemId", mapping.getId());
+        body.put("jobId", mapping.getJobId());
+        body.put("activityId", mapping.getActivityId());
+        body.put("activityName", mapping.getActivityName());
+        body.put("activityAddress", mapping.getActivityAddress());
+        // A check-in proposal carries these instead of the activity fields.
+        body.put("checkinId", mapping.getCheckinId());
+        body.put("checkinName", mapping.getCheckinName());
+        body.put("checkinAddress", mapping.getCheckinAddress());
+        body.put("checkinCaption", mapping.getCheckinCaption());
+        body.put("sourceUrl", mapping.getSourceOriginalUrl() != null ? mapping.getSourceOriginalUrl() : mapping.getSourceUrl());
+        body.put("placeId", mapping.getMappedPlaceId());
+        body.put("placeName", mapping.getMappedPlaceName());
+        body.put("placeAddress", mapping.getMappedPlaceAddress());
+        body.put("placeGoogleMapsLink", mapping.getMappedPlaceGoogleMapsLink());
+        body.put("placeVisibilityStatus", mapping.getMappedPlaceVisibilityStatus());
+        body.put("itemStatus", mapping.getStatus() == null ? null : mapping.getStatus().name());
+        body.put("proposalNote", mapping.getProposalNote());
+        restTemplate.postForEntity(url, new HttpEntity<>(body, headers), Map.class);
     }
 
     public ScrapeJobTriggerResponse triggerPlaceScrapeImport(ScrapePlaceImportJobRequest request) {

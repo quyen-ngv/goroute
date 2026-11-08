@@ -20,6 +20,8 @@ public class PlaceImportJobItem {
     private UUID jobId;
     private UUID sourceRefId;
     private UUID activityId;
+    /** Set instead of activityId when the agent proposes a place for a check-in (V272). */
+    private UUID checkinId;
     private String sourceUrl;
     private String sourceAddress;
     private String sourceOriginalUrl;
@@ -45,6 +47,8 @@ public class PlaceImportJobItem {
     private PlaceImportJobItemStatus status;
     private PlaceImportApprovalStatus approvalStatus;
     private String approvalNote;
+    /** AGENT_PROPOSAL only: the agent's reason for the proposed place, shown to the approver. */
+    private String proposalNote;
     private LocalDateTime approvedAt;
     private String errorMessage;
     private LocalDateTime createdAt;

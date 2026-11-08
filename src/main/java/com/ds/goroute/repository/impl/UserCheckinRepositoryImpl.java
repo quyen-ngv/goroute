@@ -262,13 +262,19 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     }
 
     @Override
-    public List<UserCheckin> findAllForAdmin(String search, UUID userId, Boolean hidden, int limit, int offset) {
-        return mapper.findAllForAdmin(search, userId, hidden, limit, offset);
+    public List<UserCheckin> findAllForAdmin(String search, UUID userId, Boolean hidden, boolean needsPlace,
+                                             int limit, int offset) {
+        return mapper.findAllForAdmin(search, userId, hidden, needsPlace, limit, offset);
     }
 
     @Override
-    public long countAllForAdmin(String search, UUID userId, Boolean hidden) {
-        return mapper.countAllForAdmin(search, userId, hidden);
+    public long countAllForAdmin(String search, UUID userId, Boolean hidden, boolean needsPlace) {
+        return mapper.countAllForAdmin(search, userId, hidden, needsPlace);
+    }
+
+    @Override
+    public int dismissPlace(UUID id, UUID adminId) {
+        return mapper.dismissPlace(id, adminId);
     }
 
     @Override

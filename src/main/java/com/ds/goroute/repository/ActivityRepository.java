@@ -80,11 +80,10 @@ public interface ActivityRepository {
     int setMapboxId(UUID tripId, UUID activityId, String mapboxId);
 
     /**
-     * Renumbers the trip's activities from {@code fromDay} on by {@code dayDelta}; a starting
-     * point's date moves by {@code dateDeltaDays}. Returns the number of activities moved.
+     * Renumbers the trip's days in one statement: each day in {@code moves} (old number to new)
+     * takes its new number, the other days 1..{@code oldDays} keep theirs, and activities outside
+     * those days move by {@code outsideDelta}. A starting point's date moves with its day's date;
+     * {@code startDelta} is how many days later the trip now starts. Returns the activities changed.
      */
-    int shiftDays(UUID tripId, int fromDay, int dayDelta, int dateDeltaDays);
-
-    /** Exchanges the activities of two days of the trip. Returns the number of activities moved. */
-    int swapDays(UUID tripId, int firstDay, int secondDay);
+    int relayoutDays(UUID tripId, int oldDays, Map<Integer, Integer> moves, int outsideDelta, int startDelta);
 }

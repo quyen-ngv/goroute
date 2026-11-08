@@ -64,7 +64,10 @@ public class AssistantTripSnapshots {
             out.put("budget", Map.of("amount", trip.getBudget(),
                     "currency", trip.getCurrency() == null ? "VND" : trip.getCurrency()));
         }
-        out.put("days", dayRows(trip));
+        List<Activity> all = activitiesOf(trip);
+        out.put("days", dayRows(trip, all));
+        List<Map<String, Object>> outside = outsideRows(trip, all);
+        if (!outside.isEmpty()) out.put("outsideDays", outside);
         return out;
     }
 
@@ -195,10 +198,10 @@ public class AssistantTripSnapshots {
         return rows;
     }
 
-    private List<Map<String, Object>> dayRows(Trip trip) {
+    private List<Map<String, Object>> dayRows(Trip trip, List<Activity> all) {
         int days = Math.min(dayCount(trip), MAX_DAYS);
         Map<Integer, List<Activity>> byDay = new LinkedHashMap<>();
-        for (Activity activity : activitiesOf(trip)) {
+        for (Activity activity : all) {
             if (activity.getDayNumber() == null || activity.getDayNumber() < 1 || activity.getDayNumber() > days) continue;
             byDay.computeIfAbsent(activity.getDayNumber(), key -> new ArrayList<>()).add(activity);
         }
@@ -212,6 +215,28 @@ public class AssistantTripSnapshots {
                 items.add(activityRow(activity));
             }
             row.put("activities", items);
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /**
+     * Activities dated before the first day or after the last (a bus taken the day before), with
+     * their date. They are kept by date when days change; MOVE puts one into the trip, REMOVE drops it.
+     */
+    private List<Map<String, Object>> outsideRows(Trip trip, List<Activity> all) {
+        int days = dayCount(trip);
+        List<Activity> outside = all.stream()
+                .filter(a -> a.getDayNumber() != null && (a.getDayNumber() < 1 || a.getDayNumber() > days))
+                .sorted(Comparator.comparing(Activity::getDayNumber)
+                        .thenComparing(a -> a.getStartTime() == null ? LocalTime.MAX : a.getStartTime()))
+                .toList();
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Activity activity : outside) {
+            Map<String, Object> row = activityRow(activity);
+            row.put("day", activity.getDayNumber());
+            dateOfDay(trip, activity.getDayNumber()).ifPresent(date -> row.put("date", date));
+            row.put("when", activity.getDayNumber() < 1 ? "BEFORE_TRIP" : "AFTER_TRIP");
             rows.add(row);
         }
         return rows;

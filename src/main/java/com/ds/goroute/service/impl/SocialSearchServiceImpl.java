@@ -114,7 +114,8 @@ public class SocialSearchServiceImpl implements SocialSearchService {
                 total = placeIndex.countPlacesByName(query, groupsOf(type));
             } else {
                 if (offset < SocialSearchIndexService.MAX_RESULT_WINDOW) {
-                    found = index.search(query, type.listedKinds(), viewerId, tourVariant, (int) offset, size);
+                    found = index.search(query, type.listedKinds(), viewerId, tourVariant, false, (int) offset,
+                            size);
                 }
                 indexHits.addAll(found.hits());
                 total = found.totalHits();
@@ -124,13 +125,15 @@ public class SocialSearchServiceImpl implements SocialSearchService {
             List<SocialSearchHits.Hit> tourPreview = List.of();
             List<SocialSearchHits.Hit> eventPreview = List.of();
             if (firstPageOfAll) {
-                // Three independent index reads: run together.
+                // Three independent index reads: run together. A section of All shows only what
+                // the keyword names (a person, a tour, an event); a bio or a description that
+                // mentions it waits in the kind's own tab, so All stays short and on topic.
                 List<List<SocialSearchHits.Hit>> previews = this.<List<SocialSearchHits.Hit>>inMemory(List.of(
-                        () -> index.search(query, Set.of(SocialSearchType.USER), viewerId, null, 0,
+                        () -> index.search(query, Set.of(SocialSearchType.USER), viewerId, null, true, 0,
                                 USER_PREVIEW_SIZE).hits(),
-                        () -> index.search(query, Set.of(SocialSearchType.TOUR), viewerId, tourVariant, 0,
+                        () -> index.search(query, Set.of(SocialSearchType.TOUR), viewerId, tourVariant, true, 0,
                                 ROW_PREVIEW_SIZE).hits(),
-                        () -> index.search(query, Set.of(SocialSearchType.EVENT), viewerId, null, 0,
+                        () -> index.search(query, Set.of(SocialSearchType.EVENT), viewerId, null, true, 0,
                                 ROW_PREVIEW_SIZE).hits()));
                 userPreview = previews.get(0);
                 tourPreview = previews.get(1);

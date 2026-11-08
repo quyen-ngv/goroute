@@ -8,6 +8,8 @@ import com.ds.goroute.repository.AiCreditRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -57,6 +59,11 @@ public class AiCreditRepositoryImpl implements AiCreditRepository {
     @Override
     public long countTransactions(UUID userId) {
         return mapper.countTransactions(userId);
+    }
+
+    @Override
+    public BigDecimal sumAmountSince(UUID userId, String transactionType, LocalDateTime since) {
+        return mapper.sumAmountSince(userId, transactionType, since);
     }
 
     @Override

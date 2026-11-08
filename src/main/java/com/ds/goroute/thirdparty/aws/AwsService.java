@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.http.apache.ApacheHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.polly.PollyClient;
 import software.amazon.awssdk.services.polly.model.*;
@@ -53,7 +54,12 @@ public class AwsService implements StorageService {
 
         var s3Builder = S3Client.builder()
                 .credentialsProvider(provider)
-                .region(region);
+                .region(region)
+                .httpClientBuilder(ApacheHttpClient.builder()
+                        .maxConnections(awsProperties.getS3MaxConnections())
+                        .connectionAcquisitionTimeout(awsProperties.getS3ConnectionAcquisitionTimeout())
+                        .connectionTimeout(awsProperties.getS3ConnectionTimeout())
+                        .socketTimeout(awsProperties.getS3SocketTimeout()));
 
         if (awsProperties.getEndpoint() != null && !awsProperties.getEndpoint().isBlank()) {
             s3Builder.endpointOverride(java.net.URI.create(awsProperties.getEndpoint()))

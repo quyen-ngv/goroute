@@ -22,7 +22,9 @@ import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.UserCheckinService;
 import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.service.TripService;
+import com.ds.goroute.service.AiCreditService;
 import com.ds.goroute.service.StarService;
+import com.ds.goroute.type.TripCreationCharge;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.service.trip.PublicTripRankingCache;
@@ -59,6 +61,7 @@ public class TripServiceImpl implements TripService {
     static final int CARD_MEMORY_PREVIEW_LIMIT = 6;
 
     private final StarService starService;
+    private final AiCreditService aiCreditService;
     /** Field-injected and optional so the hand-built service in unit tests keeps its constructor. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.ds.goroute.service.TripPreferenceService tripPreferenceService;
@@ -291,11 +294,19 @@ public class TripServiceImpl implements TripService {
     @Override
     @Transactional
     public TripResponse createTrip(CreateTripRequest request, UUID userId) {
+        return createTrip(request, userId, TripCreationCharge.REQUIRE_BALANCE);
+    }
+
+    @Override
+    @Transactional
+    public TripResponse createTrip(CreateTripRequest request, UUID userId, TripCreationCharge charge) {
         // Validate dates
         if (request.getStartDate().isAfter(request.getEndDate())) {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Start date must be before end date");
         }
-        starService.reserveTripCreation(userId);
+        UUID tripId = UUID.randomUUID();
+        // Charged first, so a refused creation does no other work; a failure later rolls it back.
+        aiCreditService.chargeTripCreation(userId, tripId, charge);
 
         List<TripDestination> destinations = buildDestinationsForTrip(
                 null,
@@ -318,7 +329,7 @@ public class TripServiceImpl implements TripService {
         String coverImage = locationImageService.getImageForDestination(destinationAddress);
 
         Trip trip = Trip.builder()
-                .id(UUID.randomUUID())
+                .id(tripId)
                 .name(request.getName())
                 .coverImageUrl(coverImage)
                 .destination(destinationAddress != null ? destinationAddress : destinationName)
@@ -1409,36 +1420,31 @@ public class TripServiceImpl implements TripService {
         // ignored status and role, so a PENDING invitee or a VIEWER could link a guest away.
         tripAccessGuard.requireEditAccess(tripId, currentUserId);
 
-        // Linking deletes the guest row. Splits survive that: they are moved onto the target
-        // user below and stop referencing the guest at all, but an expense that names this
-        // guest as its payer does not: expenses.paid_by keeps the member id while the FK on
-        // paid_by_guest_member_id nulls itself out, leaving an expense paid by nobody and money
-        // that is never shown as owed to the linked user. Nothing is silently moved or dropped:
-        // the link is refused until those expenses name a different payer.
+        // Linking deletes the guest row, and the FK on paid_by_guest_member_id nulls itself out
+        // while expenses.paid_by keeps the dead member id: an expense paid by nobody. So the
+        // payer is moved to the target user below, the same way signup auto-link does it. That
+        // move is never silent: the first call is refused with the count, the app shows it to
+        // the user, and only a call carrying confirmMoveExpenses goes through.
         int paidExpenses = expenseRepository.countByPaidByGuestMemberId(guestMemberId);
-        if (paidExpenses > 0) {
+        if (paidExpenses > 0 && !Boolean.TRUE.equals(request.getConfirmMoveExpenses())) {
             throw new BusinessException(
                     ErrorConstant.TRIP_GUEST_HAS_EXPENSES,
-                    paidExpenses + " expense(s) in this trip are still recorded as paid by this "
-                            + "guest. Change the payer on those expenses first, then link the guest.");
+                    paidExpenses + " expense(s) in this trip are recorded as paid by this guest. "
+                            + "Confirm to move them to the linked account.");
         }
 
-        // Update all expense splits for this guest member
         List<ExpenseSplit> guestSplits = expenseSplitRepository.findByGuestMemberId(guestMemberId);
-        log.info("Found {} expense splits for guest member {}", guestSplits.size(), guestMemberId);
-
-        for (ExpenseSplit split : guestSplits) {
-            split.setUserId(targetUserId);
-            split.setGuestMemberId(null);
-            split.setGuestName(null);
-            expenseSplitRepository.update(split);
-        }
+        int mergedSplits = moveGuestSplitsToUser(guestSplits, targetUserId);
+        int movedExpenses = paidExpenses > 0
+                ? expenseRepository.reassignGuestPayerToUser(guestMemberId, targetUserId)
+                : 0;
 
         tripMemberRepository.deleteById(guestMemberId);
 
         tripChatService.onMembershipChanged(tripId);
-        log.info("Guest member linked: trip={}, guest={} -> user={}, updated {} expense splits",
-                tripId, guestMemberId, targetUserId, guestSplits.size());
+        log.info("Guest member linked: trip={}, guest={} -> user={}, moved {} expense splits"
+                        + " ({} merged into the user's own) and {} paid expenses",
+                tripId, guestMemberId, targetUserId, guestSplits.size(), mergedSplits, movedExpenses);
 
         Map<String, Object> linkedData = Map.of(
                 "guestName", guestMember.getGuestName(),
@@ -1458,6 +1464,41 @@ public class TripServiceImpl implements TripService {
         // no account behind it, so nobody loses access here.
         tripRealtimePublisher.publishAfterCommit(
                 TripRealtimeEventType.EXPENSE_UPDATED, tripId, null, currentUserId);
+    }
+
+    /**
+     * Hands a guest's splits to a user. Where the user already has a split on the same expense,
+     * the guest's amount is added to it instead, so one expense never shows the same person
+     * twice. Splits are only merged when both are settled or both are not: merging a settled
+     * share into an open one would ask for money already paid back. Returns how many merged.
+     */
+    private int moveGuestSplitsToUser(List<ExpenseSplit> guestSplits, UUID userId) {
+        if (guestSplits.isEmpty()) {
+            return 0;
+        }
+        List<UUID> expenseIds = guestSplits.stream().map(ExpenseSplit::getExpenseId).distinct().toList();
+        Map<UUID, ExpenseSplit> userSplitByExpense = expenseSplitRepository.findByExpenseIds(expenseIds).stream()
+                .filter(split -> userId.equals(split.getUserId()))
+                .collect(Collectors.toMap(ExpenseSplit::getExpenseId, split -> split, (first, second) -> first));
+
+        int merged = 0;
+        for (ExpenseSplit guestSplit : guestSplits) {
+            ExpenseSplit userSplit = userSplitByExpense.get(guestSplit.getExpenseId());
+            boolean sameSettlement = userSplit != null
+                    && Boolean.TRUE.equals(userSplit.getIsSettled()) == Boolean.TRUE.equals(guestSplit.getIsSettled());
+            if (sameSettlement) {
+                userSplit.setAmount(userSplit.getAmount().add(guestSplit.getAmount()));
+                expenseSplitRepository.update(userSplit);
+                expenseSplitRepository.delete(guestSplit.getId());
+                merged++;
+                continue;
+            }
+            guestSplit.setUserId(userId);
+            guestSplit.setGuestMemberId(null);
+            guestSplit.setGuestName(null);
+            expenseSplitRepository.update(guestSplit);
+        }
+        return merged;
     }
 
     @Override
@@ -1542,7 +1583,7 @@ public class TripServiceImpl implements TripService {
         if (Boolean.TRUE.equals(trip.getShareNotes())) {
             List<TripNote> notes = tripNoteRepository.findByTripId(tripId);
             for (TripNote n : notes) {
-                if (Boolean.FALSE.equals(n.getIsShared())) {
+                if (Boolean.FALSE.equals(n.getIsShared()) || n.getNoteType() == TripNoteType.TODO) {
                     continue;
                 }
                 PublicNoteResponse noteResponse = PublicNoteResponse.builder()
@@ -1593,6 +1634,10 @@ public class TripServiceImpl implements TripService {
                             .address(a.getAddress())
                             .lat(a.getLat())
                             .lng(a.getLng())
+                            .endAddress(a.getEndAddress())
+                            .endLat(a.getEndLat())
+                            .endLng(a.getEndLng())
+                            .transportMode(a.getTransportMode() != null ? a.getTransportMode().name() : null)
                             .startTime(a.getStartTime())
                             .endTime(a.getEndTime())
                             .category(a.getCategory())
@@ -1673,32 +1718,14 @@ public class TripServiceImpl implements TripService {
 
     @Override
     @Transactional
-    public TripVoteResponse voteTripHelpful(UUID tripId, UUID userId) {
+    public TripVoteResponse voteTripHelpful(UUID tripId, UUID userId, Boolean voted) {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
         ensurePublicTripVotable(trip);
 
-        TripHelpfulVote existingVote = tripHelpfulVoteRepository.findByTripIdAndUserId(tripId, userId);
-        boolean isHelpfulNow = true;
-        if (existingVote != null) {
-            if (existingVote.isHelpful()) {
-                tripHelpfulVoteRepository.delete(tripId, userId);
-                isHelpfulNow = false;
-            } else {
-                existingVote.setHelpful(true);
-                tripHelpfulVoteRepository.update(existingVote);
-            }
-        } else {
-            tripHelpfulVoteRepository.save(TripHelpfulVote.builder()
-                    .tripId(tripId)
-                    .userId(userId)
-                    .isHelpful(true)
-                    .createdAt(LocalDateTime.now())
-                    .build());
-        }
-
+        boolean becameHelpful = setTripVote(tripId, userId, true, voted);
         syncTripVoteCounts(trip);
-        if (isHelpfulNow) {
+        if (becameHelpful) {
             socialNotificationService.notifyLike(
                     trip.getOwnerId(), userId, "TRIP", tripId);
         }
@@ -1707,30 +1734,43 @@ public class TripServiceImpl implements TripService {
 
     @Override
     @Transactional
-    public TripVoteResponse voteTripUnhelpful(UUID tripId, UUID userId) {
+    public TripVoteResponse voteTripUnhelpful(UUID tripId, UUID userId, Boolean voted) {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
         ensurePublicTripVotable(trip);
 
+        setTripVote(tripId, userId, false, voted);
+        syncTripVoteCounts(trip);
+        return buildTripVoteResponse(trip, userId);
+    }
+
+    /**
+     * Puts the viewer's {@code helpful} vote on ({@code voted} true) or takes it off (false);
+     * null flips it. The two votes are exclusive, so putting one on replaces the other, and
+     * taking off a vote the viewer does not hold changes nothing. Returns whether the viewer
+     * now holds a {@code helpful} vote they did not hold before.
+     */
+    private boolean setTripVote(UUID tripId, UUID userId, boolean helpful, Boolean voted) {
         TripHelpfulVote existingVote = tripHelpfulVoteRepository.findByTripIdAndUserId(tripId, userId);
-        if (existingVote != null) {
-            if (!existingVote.isHelpful()) {
-                tripHelpfulVoteRepository.delete(tripId, userId);
-            } else {
-                existingVote.setHelpful(false);
-                tripHelpfulVoteRepository.update(existingVote);
-            }
+        boolean holds = existingVote != null && existingVote.isHelpful() == helpful;
+        boolean wanted = voted == null ? !holds : voted;
+        if (wanted == holds) {
+            return false;
+        }
+        if (!wanted) {
+            tripHelpfulVoteRepository.delete(tripId, userId);
+        } else if (existingVote != null) {
+            existingVote.setHelpful(helpful);
+            tripHelpfulVoteRepository.update(existingVote);
         } else {
             tripHelpfulVoteRepository.save(TripHelpfulVote.builder()
                     .tripId(tripId)
                     .userId(userId)
-                    .isHelpful(false)
+                    .isHelpful(helpful)
                     .createdAt(LocalDateTime.now())
                     .build());
         }
-
-        syncTripVoteCounts(trip);
-        return buildTripVoteResponse(trip, userId);
+        return wanted;
     }
 
     private TripVoteResponse buildTripVoteResponse(Trip trip, UUID userId) {
@@ -2000,14 +2040,15 @@ public class TripServiceImpl implements TripService {
         }
 
         // 4. A clone is a trip, so it costs what a trip costs. Left out, this was the way
-        // past the quota: copy somebody's public trip instead of starting one. Reserved
+        // past the charge: copy somebody's public trip instead of starting one. Charged
         // after the access check, so a clone the user is not allowed to make cannot spend
-        // a slot on its way to being refused.
-        starService.reserveTripCreation(userId);
+        // credits on its way to being refused.
+        UUID newTripId = UUID.randomUUID();
+        aiCreditService.chargeTripCreation(userId, newTripId, TripCreationCharge.REQUIRE_BALANCE);
 
         // 5. Create new trip with user-provided info
         Trip newTrip = Trip.builder()
-                .id(UUID.randomUUID())
+                .id(newTripId)
                 .name(request.getName())
                 .coverImageUrl(originalTrip.getCoverImageUrl())
                 .destination(originalTrip.getDestination())

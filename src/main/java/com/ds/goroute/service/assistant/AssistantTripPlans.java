@@ -16,6 +16,7 @@ import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.LocationImageRepository;
 import com.ds.goroute.repository.PlaceRepository;
+import com.ds.goroute.service.trip.TripDayService;
 import com.ds.goroute.service.TextModerationService;
 import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.service.TripService;
@@ -78,7 +79,7 @@ class AssistantTripPlans {
     private final LocationImageRepository areas;
     private final ActivityRepository activities;
     private final TripService tripService;
-    private final AssistantTripDays tripDays;
+    private final TripDayService tripDays;
     private final TripRealtimePublisher realtime;
     private final TextModerationService moderation;
     private final ObjectMapper objectMapper;

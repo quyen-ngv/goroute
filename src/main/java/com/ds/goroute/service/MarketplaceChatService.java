@@ -24,7 +24,7 @@ public interface MarketplaceChatService {
     MarketplaceConversationResponse start(UUID actor, StartMarketplaceConversationRequest request);
 
     /** The inbox. {@code types} filters the chips; empty means everything. */
-    List<MarketplaceConversationResponse> listMine(UUID actor, List<String> types, int page, int size);
+    List<MarketplaceConversationResponse> listMine(UUID actor, List<String> types, boolean unreadOnly, int page, int size);
 
     /** Threads with something unread in them, muted ones excluded: the tab badge. */
     long unreadConversationCount(UUID actor);

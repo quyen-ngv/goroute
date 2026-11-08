@@ -23,6 +23,7 @@ import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.UserGuideService;
 import com.ds.goroute.service.UserService;
 import com.ds.goroute.utils.JsonUtils;
+import com.ds.goroute.utils.AppBuildGate;
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -365,9 +366,8 @@ public class UserServiceImpl implements UserService {
                 .lastLoginAt(user.getLastLoginAt())
                 .language(user.getLanguage())
                 .theme(user.getTheme())
-                // Hotfix: always true so the app skips /profile-onboarding, which iOS
-                // shows as "page not found". Revert once a fixed app build is live.
-                .onboardingCompleted(true)
+                // Builds before 1.0.19 loop on /profile-onboarding; they still get true.
+                .onboardingCompleted(AppBuildGate.onboardingCompletedForApp(user.getOnboardingCompleted()))
                 .tripCount(stats.tripCount())
                 .reviewCount(stats.reviewCount())
                 .likeCount(stats.likeCount())

@@ -47,19 +47,23 @@ public class PublicTripController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(trip));
     }
 
+    /** {@code voted} is the state the viewer wants; without it the vote flips (older apps). */
     @PostMapping("/v1/api/public/trips/{tripId}/helpful")
     public ResponseEntity<BaseResponse<TripVoteResponse>> voteTripHelpful(
             @PathVariable UUID tripId,
+            @RequestParam(required = false) Boolean voted,
             @CurrentUser UUID userId) {
-        TripVoteResponse result = tripService.voteTripHelpful(tripId, userId);
+        TripVoteResponse result = tripService.voteTripHelpful(tripId, userId, voted);
         return ResponseEntity.ok(ofSucceeded(result));
     }
 
+    /** {@code voted} is the state the viewer wants; without it the vote flips (older apps). */
     @PostMapping("/v1/api/public/trips/{tripId}/unhelpful")
     public ResponseEntity<BaseResponse<TripVoteResponse>> voteTripUnhelpful(
             @PathVariable UUID tripId,
+            @RequestParam(required = false) Boolean voted,
             @CurrentUser UUID userId) {
-        TripVoteResponse result = tripService.voteTripUnhelpful(tripId, userId);
+        TripVoteResponse result = tripService.voteTripUnhelpful(tripId, userId, voted);
         return ResponseEntity.ok(ofSucceeded(result));
     }
     

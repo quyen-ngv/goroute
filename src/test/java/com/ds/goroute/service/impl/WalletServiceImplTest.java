@@ -1,6 +1,7 @@
 package com.ds.goroute.service.impl;
 
 import com.ds.goroute.constant.ErrorConstant;
+import com.ds.goroute.dto.response.WalletConvertedResponse;
 import com.ds.goroute.dto.response.WalletResponse;
 import com.ds.goroute.entity.ExpensePaymentReminder;
 import com.ds.goroute.entity.Trip;
@@ -11,6 +12,7 @@ import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.WalletRepository;
 import com.ds.goroute.service.BusinessConfigService;
+import com.ds.goroute.service.ExchangeRateService;
 import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.BusinessConfigKey;
@@ -43,12 +45,13 @@ class WalletServiceImplTest {
     private final TripAccessGuard accessGuard = mock(TripAccessGuard.class);
     private final BusinessConfigService config = mock(BusinessConfigService.class);
     private final NotificationHelper notifications = mock(NotificationHelper.class);
+    private final ExchangeRateService rates = mock(ExchangeRateService.class);
     private WalletServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new WalletServiceImpl(walletRepository, members, accessGuard, config, notifications,
-                mock(com.ds.goroute.service.NotificationService.class));
+                mock(com.ds.goroute.service.NotificationService.class), rates);
     }
 
     @Test
@@ -81,6 +84,51 @@ class WalletServiceImplTest {
         });
         verify(walletRepository).findExpenses(userId, 30, 0);
         verify(walletRepository).countExpenses(userId);
+    }
+
+    @Test
+    void convertsEveryCurrencyRowIntoTheChosenCurrencyAndMergesCategories() {
+        UUID userId = UUID.randomUUID();
+        WalletCurrencySummaryRow jpy = currency("JPY", "10000", "2000", "500", "6000", "5500");
+        WalletCurrencySummaryRow vnd = currency("VND", "300000", "0", "100000", "200000", "100000");
+        when(walletRepository.findCurrencySummary(userId)).thenReturn(List.of(jpy, vnd));
+        when(walletRepository.findCategorySummary(userId)).thenReturn(List.of(
+                category("JPY", "FOOD", "4000"), category("VND", "FOOD", "100000"), category("VND", "HOTEL", "200000")));
+        when(rates.getRate("JPY", "VND")).thenReturn(new BigDecimal("170"));
+
+        WalletConvertedResponse response = service.getConverted(userId, "vnd");
+
+        assertThat(response.getCurrency()).isEqualTo("VND");
+        assertThat(response.getTotalSpent()).isEqualByComparingTo("2000000");
+        assertThat(response.getOwedToMe()).isEqualByComparingTo("340000");
+        assertThat(response.getIOwe()).isEqualByComparingTo("185000");
+        assertThat(response.getMyShare()).isEqualByComparingTo("1220000");
+        assertThat(response.getMyPaid()).isEqualByComparingTo("1035000");
+        assertThat(response.getCategoryBreakdown())
+                .extracting(c -> c.getCategory(), c -> c.getAmount().stripTrailingZeros().toPlainString())
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("FOOD", "780000"),
+                        org.assertj.core.groups.Tuple.tuple("HOTEL", "200000"));
+        assertThat(response.getRates()).containsOnlyKeys("JPY", "VND");
+        assertThat(response.getUnconvertedCurrencies()).isEmpty();
+        verify(rates, times(1)).getRate("JPY", "VND");
+        verify(rates, never()).getRate("VND", "VND");
+    }
+
+    @Test
+    void leavesOutACurrencyWithNoRateInsteadOfCountingItOneToOne() {
+        UUID userId = UUID.randomUUID();
+        WalletCurrencySummaryRow jpy = currency("JPY", "10000", "0", "0", "10000", "10000");
+        WalletCurrencySummaryRow vnd = currency("VND", "300000", "0", "0", "300000", "300000");
+        when(walletRepository.findCurrencySummary(userId)).thenReturn(List.of(jpy, vnd));
+        when(walletRepository.findCategorySummary(userId)).thenReturn(List.of());
+        // ExchangeRateService answers 1 when the lookup fails.
+        when(rates.getRate("JPY", "VND")).thenReturn(BigDecimal.ONE);
+
+        WalletConvertedResponse response = service.getConverted(userId, "VND");
+
+        assertThat(response.getTotalSpent()).isEqualByComparingTo("300000");
+        assertThat(response.getUnconvertedCurrencies()).containsExactly("JPY");
+        assertThat(response.getRates()).containsOnlyKeys("VND");
     }
 
     @Test
@@ -267,6 +315,14 @@ class WalletServiceImplTest {
         row.setIOwe(new BigDecimal(owe));
         row.setMyShare(new BigDecimal(share));
         row.setMyPaid(new BigDecimal(paid));
+        return row;
+    }
+
+    private static WalletCategorySummaryRow category(String currency, String category, String amount) {
+        WalletCategorySummaryRow row = new WalletCategorySummaryRow();
+        row.setCurrency(currency);
+        row.setCategory(category);
+        row.setAmount(new BigDecimal(amount));
         return row;
     }
 }

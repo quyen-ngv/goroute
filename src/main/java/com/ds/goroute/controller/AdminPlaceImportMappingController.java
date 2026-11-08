@@ -1,5 +1,6 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.request.ModeratePlaceImportMappingRequest;
 import com.ds.goroute.dto.response.AdminPlaceImportMappingResponse;
 import com.ds.goroute.service.PlaceImportJobService;
@@ -28,10 +29,11 @@ public class AdminPlaceImportMappingController extends BaseController {
     @PreAuthorize("@adminAuthorization.can(authentication,'places','get')")
     public ResponseEntity list(
             @RequestParam(defaultValue = "ALL") String status,
+            @RequestParam(required = false) String sourceType,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
         List<AdminPlaceImportMappingResponse> response =
-                placeImportJobService.adminListMappings(status, page, size);
+                placeImportJobService.adminListMappings(status, sourceType, page, size);
         return ResponseEntity.ok(ofSucceeded(response));
     }
 
@@ -39,9 +41,10 @@ public class AdminPlaceImportMappingController extends BaseController {
     @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
     public ResponseEntity approve(
             @PathVariable UUID itemId,
-            @RequestBody(required = false) ModeratePlaceImportMappingRequest request) {
+            @RequestBody(required = false) ModeratePlaceImportMappingRequest request,
+            @CurrentUser UUID adminId) {
         AdminPlaceImportMappingResponse response = placeImportJobService.adminApproveMapping(
-                itemId, request == null ? null : request.getNote());
+                itemId, request == null ? null : request.getNote(), adminId);
         return ResponseEntity.ok(ofSucceeded(response));
     }
 

@@ -19,6 +19,7 @@ import java.lang.reflect.Field;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -84,11 +85,11 @@ class AdminApiKeyServiceTest {
         String key = "grk_" + "b".repeat(40);
         UUID keyId = UUID.randomUUID();
         when(repository.findByHash(AdminApiKeyService.hash(key))).thenReturn(Optional.of(
-                AdminApiKey.builder().id(keyId).ownerUserId(owner).build()));
+                AdminApiKey.builder().id(keyId).ownerUserId(owner).scopes("[\"events:import\"]").build()));
 
         Optional<AdminApiKeyService.AuthenticatedKey> result = service.authenticate(key);
 
-        assertThat(result).contains(new AdminApiKeyService.AuthenticatedKey(keyId, owner));
+        assertThat(result).contains(new AdminApiKeyService.AuthenticatedKey(keyId, owner, List.of("events:import")));
         verify(repository).touchLastUsed(keyId, NOW, NOW.minusMinutes(1));
     }
 

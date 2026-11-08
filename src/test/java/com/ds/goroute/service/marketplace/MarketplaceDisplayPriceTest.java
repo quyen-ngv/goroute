@@ -24,6 +24,15 @@ class MarketplaceDisplayPriceTest {
             @Override public BigDecimal getRate(String from, String to) {
                 return rate;
             }
+
+            @Override public java.util.Optional<BigDecimal> findRate(String from, String to) {
+                throw new AssertionError("display prices use getRate");
+            }
+
+            @Override public java.util.Optional<BigDecimal> findRateOn(String from, String to,
+                                                                       java.time.LocalDate date) {
+                throw new AssertionError("display prices use getRate");
+            }
         });
     }
 

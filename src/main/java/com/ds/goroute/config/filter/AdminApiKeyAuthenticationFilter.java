@@ -4,6 +4,7 @@ import com.ds.goroute.config.ApiSecurityErrorResponseWriter;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.constant.RequestKeyConstant;
 import com.ds.goroute.localevent.service.AdminApiKeyService;
+import com.ds.goroute.type.AdminApiKeyScope;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -27,21 +28,25 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
- * Authenticates the events crawler by {@code X-Admin-Api-Key} (epic 17). Runs before the JWT
- * filter and only acts when the header is present:
+ * Authenticates machine callers by {@code X-Admin-Api-Key}: the events crawler (epic 17), the
+ * activity-place agent and its Telegram approver (epic 02). Runs before the JWT filter and only
+ * acts when the header is present:
  *
  * <ul>
- *     <li>the request must be one of the key's scoped paths (import, lookup, import batches),
- *     otherwise 401 — keys are not general admin credentials;</li>
+ *     <li>the request must be one of the scoped paths, otherwise 401 before the key is even
+ *     looked up — keys are not general admin credentials;</li>
+ *     <li>the path must belong to a scope the key carries, otherwise 401: an agent key cannot
+ *     call the approver's paths;</li>
  *     <li>the key must be known, not revoked, not expired, and its owner an active admin,
  *     otherwise 401 at once. It fails closed: a bad key never falls through to another
  *     authentication;</li>
  *     <li>a valid key authenticates as its OWNER (principal = owner UUID, ROLE_ADMIN, request
  *     attributes {@code userId} and {@code ADMIN_API_KEY_ID}), so {@code @adminAuthorization.can}
- *     still checks the owner's {@code events:import} permission.</li>
+ *     still checks the owner's RBAC permission for the endpoint.</li>
  * </ul>
  *
  * <p>Any {@code Authorization} header is hidden from the rest of the chain so a bearer token
@@ -56,11 +61,28 @@ public class AdminApiKeyAuthenticationFilter extends OncePerRequestFilter {
     /** Request attribute holding the UUID of the admin API key that authenticated the request. */
     public static final String API_KEY_ID_ATTRIBUTE = "ADMIN_API_KEY_ID";
 
-    static final RequestMatcher SCOPED_ENDPOINTS = new OrRequestMatcher(
-            new AntPathRequestMatcher("/v1/api/admin/events/import", HttpMethod.POST.name()),
-            new AntPathRequestMatcher("/v1/api/admin/events/lookup", HttpMethod.GET.name()),
-            new AntPathRequestMatcher("/v1/api/admin/events/import-batches/**", HttpMethod.GET.name())
+    /** The paths each scope opens. A key is accepted on the union of its scopes' paths. */
+    static final Map<String, RequestMatcher> SCOPE_ENDPOINTS = Map.of(
+            AdminApiKeyScope.EVENTS_IMPORT.code(), new OrRequestMatcher(
+                    new AntPathRequestMatcher("/v1/api/admin/events/import", HttpMethod.POST.name()),
+                    new AntPathRequestMatcher("/v1/api/admin/events/lookup", HttpMethod.GET.name()),
+                    new AntPathRequestMatcher("/v1/api/admin/events/import-batches/**", HttpMethod.GET.name())),
+            AdminApiKeyScope.ACTIVITY_PLACES_PROPOSE.code(), new OrRequestMatcher(
+                    new AntPathRequestMatcher("/v1/api/admin/activities/unlinked", HttpMethod.GET.name()),
+                    new AntPathRequestMatcher("/v1/api/admin/place-import-jobs/activity-proposals", HttpMethod.POST.name()),
+                    new AntPathRequestMatcher("/v1/api/admin/checkins/unlinked", HttpMethod.GET.name()),
+                    new AntPathRequestMatcher("/v1/api/admin/place-import-jobs/checkin-proposals", HttpMethod.POST.name()),
+                    new AntPathRequestMatcher("/v1/api/admin/place-import-jobs/*", HttpMethod.GET.name()),
+                    new AntPathRequestMatcher("/v1/api/admin/place-import-mappings", HttpMethod.GET.name())),
+            AdminApiKeyScope.ACTIVITY_PLACES_APPROVE.code(), new OrRequestMatcher(
+                    new AntPathRequestMatcher("/v1/api/admin/place-import-mappings", HttpMethod.GET.name()),
+                    new AntPathRequestMatcher("/v1/api/admin/place-import-mappings/*/approve", HttpMethod.POST.name()),
+                    new AntPathRequestMatcher("/v1/api/admin/place-import-mappings/*/reject", HttpMethod.POST.name()),
+                    new AntPathRequestMatcher("/v1/api/admin/activities/*/dismiss", HttpMethod.POST.name()),
+                    new AntPathRequestMatcher("/v1/api/admin/checkins/*/dismiss-place", HttpMethod.POST.name()))
     );
+
+    static final RequestMatcher SCOPED_ENDPOINTS = new OrRequestMatcher(List.copyOf(SCOPE_ENDPOINTS.values()));
 
     private final AdminApiKeyService adminApiKeyService;
     private final ObjectMapper objectMapper;
@@ -83,6 +105,10 @@ public class AdminApiKeyAuthenticationFilter extends OncePerRequestFilter {
             reject(request, response, "Invalid X-Admin-Api-Key");
             return;
         }
+        if (!allowedByScopes(key.get().scopes(), request)) {
+            reject(request, response, "This X-Admin-Api-Key has no scope for this path");
+            return;
+        }
 
         var authentication = new UsernamePasswordAuthenticationToken(
                 key.get().ownerUserId().toString(),
@@ -93,6 +119,12 @@ public class AdminApiKeyAuthenticationFilter extends OncePerRequestFilter {
         request.setAttribute(API_KEY_ID_ATTRIBUTE, key.get().keyId());
         log.debug("Admin API key {} authenticated as {}", key.get().keyId(), key.get().ownerUserId());
         filterChain.doFilter(new WithoutAuthorizationHeader(request), response);
+    }
+
+    private static boolean allowedByScopes(List<String> scopes, HttpServletRequest request) {
+        return scopes != null && scopes.stream()
+                .map(SCOPE_ENDPOINTS::get)
+                .anyMatch(matcher -> matcher != null && matcher.matches(request));
     }
 
     private void reject(HttpServletRequest request, HttpServletResponse response, String message) throws IOException {

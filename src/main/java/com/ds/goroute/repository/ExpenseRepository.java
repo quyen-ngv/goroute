@@ -2,6 +2,8 @@ package com.ds.goroute.repository;
 
 import com.ds.goroute.dto.ExpenseSplitCount;
 import com.ds.goroute.entity.Expense;
+import com.ds.goroute.type.ExpenseCategory;
+
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -27,6 +29,9 @@ public interface ExpenseRepository {
 
     /** Split counts for every expense of a trip, keyed by expense id. */
     List<ExpenseSplitCount> findSplitCountsByTripId(UUID tripId);
+
+    /** One page of a trip's expenses, in the order of {@link #findByTripId}. */
+    List<Expense> findByTripIdPage(UUID tripId, ExpenseCategory category, int limit, int offset);
 
     void updateById(Expense expense);
     

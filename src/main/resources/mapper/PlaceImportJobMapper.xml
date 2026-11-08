@@ -41,6 +41,7 @@
         <result property="jobId" column="job_id"/>
         <result property="sourceRefId" column="source_ref_id"/>
         <result property="activityId" column="activity_id"/>
+        <result property="checkinId" column="checkin_id"/>
         <result property="sourceUrl" column="source_url"/>
         <result property="sourceAddress" column="source_address"/>
         <result property="sourceOriginalUrl" column="source_original_url"/>
@@ -66,6 +67,7 @@
         <result property="status" column="status" javaType="com.ds.goroute.type.PlaceImportJobItemStatus"/>
         <result property="approvalStatus" column="approval_status" javaType="com.ds.goroute.type.PlaceImportApprovalStatus"/>
         <result property="approvalNote" column="approval_note"/>
+        <result property="proposalNote" column="proposal_note"/>
         <result property="approvedAt" column="approved_at"/>
         <result property="errorMessage" column="error_message"/>
         <result property="createdAt" column="created_at"/>
@@ -148,19 +150,19 @@
 
     <insert id="insertItem" parameterType="com.ds.goroute.entity.PlaceImportJobItem">
         INSERT INTO place_import_job_items (
-            id, job_id, source_ref_id, activity_id, source_url, source_address, source_original_url,
+            id, job_id, source_ref_id, activity_id, checkin_id, source_url, source_address, source_original_url,
             source_candidate_key, candidate_name,
             google_place_id, cid, latitude, longitude, existing_place_id, imported_place_id,
-            python_job_id, status, approval_status, approval_note, approved_at, error_message, created_at, updated_at
+            python_job_id, status, approval_status, approval_note, proposal_note, approved_at, error_message, created_at, updated_at
             , region_code, region_name, search_query, review_count, scraped_review_count,
             selected_review_count, avg_authenticity_score, place_overall_score, adjusted_rating, outcome_reason
         ) VALUES (
-            #{id}, #{jobId}, #{sourceRefId}, #{activityId}, #{sourceUrl}, #{sourceAddress}, #{sourceOriginalUrl},
+            #{id}, #{jobId}, #{sourceRefId}, #{activityId}, #{checkinId}, #{sourceUrl}, #{sourceAddress}, #{sourceOriginalUrl},
             #{sourceCandidateKey}, #{candidateName},
             #{googlePlaceId}, #{cid}, #{latitude}, #{longitude}, #{existingPlaceId}, #{importedPlaceId},
             #{pythonJobId}, #{status, javaType=com.ds.goroute.type.PlaceImportJobItemStatus},
             #{approvalStatus, javaType=com.ds.goroute.type.PlaceImportApprovalStatus},
-            #{approvalNote}, #{approvedAt}, #{errorMessage}, #{createdAt}, #{updatedAt}
+            #{approvalNote}, #{proposalNote}, #{approvedAt}, #{errorMessage}, #{createdAt}, #{updatedAt}
             , #{regionCode}, #{regionName}, #{searchQuery}, #{reviewCount}, #{scrapedReviewCount},
             #{selectedReviewCount}, #{avgAuthenticityScore}, #{placeOverallScore}, #{adjustedRating}, #{outcomeReason}
         )
@@ -232,7 +234,7 @@
              updated_at when it starts and again after every item, and the longest a live one can
              stay quiet is a single item's worker poll (300 attempts, 2s apart: ~10 minutes),
              well inside abandonAfter, so only a dead one qualifies. -->
-        WHERE source_type IN ('NATIONWIDE', 'PLACE_DETAILS_REFRESH', 'SOCIAL_LOCATION', 'ACTIVITY', 'MANUAL', 'ADMIN_LINKS')
+        WHERE source_type IN ('NATIONWIDE', 'PLACE_DETAILS_REFRESH', 'SOCIAL_LOCATION', 'ACTIVITY', 'MANUAL', 'ADMIN_LINKS', 'AGENT_PROPOSAL')
           AND status IN ('QUEUED', 'PROCESSING')
           AND COALESCE(updated_at, created_at) &lt; #{silentSince}
         ORDER BY COALESCE(updated_at, created_at)
@@ -341,6 +343,11 @@
         <result property="sourceRefId" column="source_ref_id"/>
         <result property="activityId" column="activity_id"/>
         <result property="activityName" column="activity_name"/>
+        <result property="activityAddress" column="activity_address"/>
+        <result property="checkinId" column="checkin_id"/>
+        <result property="checkinName" column="checkin_name"/>
+        <result property="checkinAddress" column="checkin_address"/>
+        <result property="checkinCaption" column="checkin_caption"/>
         <result property="candidateName" column="candidate_name"/>
         <result property="sourceUrl" column="source_url"/>
         <result property="sourceAddress" column="source_address"/>
@@ -357,6 +364,7 @@
         <result property="status" column="status" javaType="com.ds.goroute.type.PlaceImportJobItemStatus"/>
         <result property="approvalStatus" column="approval_status" javaType="com.ds.goroute.type.PlaceImportApprovalStatus"/>
         <result property="approvalNote" column="approval_note"/>
+        <result property="proposalNote" column="proposal_note"/>
         <result property="errorMessage" column="error_message"/>
         <result property="createdAt" column="created_at"/>
         <result property="approvedAt" column="approved_at"/>
@@ -364,13 +372,16 @@
 
     <sql id="AdminMappingColumns">
         i.id, i.job_id, j.source_type, i.source_ref_id, i.activity_id, a.name AS activity_name,
+        a.address AS activity_address,
+        i.checkin_id, COALESCE(c.custom_name, c.location_name) AS checkin_name,
+        CONCAT_WS(', ', c.ward, c.province) AS checkin_address, c.caption AS checkin_caption,
         i.candidate_name, i.source_url, i.source_address, i.source_original_url,
         i.google_place_id, i.cid, i.latitude, i.longitude,
         COALESCE(i.imported_place_id, i.existing_place_id) AS mapped_place_id,
         p.title AS mapped_place_name, p.address AS mapped_place_address,
         p.google_maps_link AS mapped_place_google_maps_link,
         p.visibility_status AS mapped_place_visibility_status,
-        i.status, i.approval_status, i.approval_note, i.error_message, i.created_at, i.approved_at
+        i.status, i.approval_status, i.approval_note, i.proposal_note, i.error_message, i.created_at, i.approved_at
     </sql>
 
     <select id="findAdminMappings" resultMap="AdminPlaceImportMappingResultMap">
@@ -378,13 +389,39 @@
         FROM place_import_job_items i
         JOIN place_import_jobs j ON j.id = i.job_id
         LEFT JOIN activities a ON a.id = i.activity_id
+        LEFT JOIN user_checkins c ON c.id = i.checkin_id
         LEFT JOIN places p ON p.id = COALESCE(i.imported_place_id, i.existing_place_id)
         WHERE 1 = 1
         <if test="approvalStatus != null and approvalStatus != ''">
             AND i.approval_status = #{approvalStatus}
         </if>
+        <if test="sourceType != null and sourceType != ''">
+            AND j.source_type = #{sourceType}
+        </if>
         ORDER BY i.created_at DESC
         LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- Failed and cancelled items carry no proposal any more; anything else blocks a second one. -->
+    <select id="existsOpenActivityProposal" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM place_import_job_items i
+            JOIN place_import_jobs j ON j.id = i.job_id
+            WHERE i.activity_id = #{activityId}
+              AND j.source_type = 'AGENT_PROPOSAL'
+              AND i.approval_status = 'PENDING'
+              AND i.status NOT IN ('FAILED', 'CANCELLED'))
+    </select>
+
+    <!-- Same rule for check-ins (V272). -->
+    <select id="existsOpenCheckinProposal" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM place_import_job_items i
+            JOIN place_import_jobs j ON j.id = i.job_id
+            WHERE i.checkin_id = #{checkinId}
+              AND j.source_type = 'AGENT_PROPOSAL'
+              AND i.approval_status = 'PENDING'
+              AND i.status NOT IN ('FAILED', 'CANCELLED'))
     </select>
 
     <select id="findAdminMappingByItemId" resultMap="AdminPlaceImportMappingResultMap">
@@ -392,6 +429,7 @@
         FROM place_import_job_items i
         JOIN place_import_jobs j ON j.id = i.job_id
         LEFT JOIN activities a ON a.id = i.activity_id
+        LEFT JOIN user_checkins c ON c.id = i.checkin_id
         LEFT JOIN places p ON p.id = COALESCE(i.imported_place_id, i.existing_place_id)
         WHERE i.id = #{itemId}
     </select>

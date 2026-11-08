@@ -1,5 +1,6 @@
 package com.ds.goroute.service;
 
+import com.ds.goroute.dto.request.FeedEventRequest;
 import com.ds.goroute.dto.request.FeedImpressionRequest;
 import com.ds.goroute.type.FeedItemType;
 
@@ -18,9 +19,16 @@ public interface FeedImpressionService {
 
     /**
      * Records one batch from the app. The same post twice in a batch counts once, keeping the
-     * longer dwell and opened if either says so.
+     * longer dwell and opened if either says so. Each sighting also goes to feed_events as
+     * IMPRESSION (and OPEN when opened), without a surface: old app builds do not say.
      */
     void record(UUID userId, List<FeedImpressionRequest.Item> items);
+
+    /**
+     * Records one batch of POST /feed/events: every event to feed_events; IMPRESSION and OPEN
+     * also to feed_impressions, as {@link #record} does.
+     */
+    void recordEvents(UUID userId, List<FeedEventRequest.Item> items);
 
     /** Of {@code itemIds}, those {@code userId} has already seen. Empty for a guest. */
     Set<UUID> seenIds(UUID userId, FeedItemType itemType, Collection<UUID> itemIds);

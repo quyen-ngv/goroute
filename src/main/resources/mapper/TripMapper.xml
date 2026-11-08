@@ -685,4 +685,14 @@
         SELECT MAX(updated_at) FROM trips
     </select>
 
+    <select id="selectSimplifyDebts" resultType="java.lang.Boolean">
+        SELECT simplify_debts FROM trips
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND is_deleted = FALSE
+    </select>
+
+    <update id="updateSimplifyDebts">
+        UPDATE trips SET simplify_debts = #{simplifyDebts}, updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND is_deleted = FALSE
+    </update>
+
 </mapper>

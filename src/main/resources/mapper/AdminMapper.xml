@@ -325,15 +325,29 @@
         ORDER BY days.day
     </select>
 
+    <!-- Count per place/booking key first, then join only those distinct keys. Joining on one
+         uuid equality lets Postgres hash-join; the old "p.id::text = place_id OR p.id = place_ref_id"
+         forced a nested loop over activities x places and hit the statement timeout. -->
     <select id="findTopSelectedPlaces" resultType="map">
-        SELECT item_type, item_id, title, count(*) AS selection_count
+        WITH counted AS (
+            SELECT COALESCE(a.place_ref_id,
+                            CASE WHEN BTRIM(a.place_id) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                                 THEN BTRIM(a.place_id)::uuid END) AS place_uuid,
+                   a.booking_id,
+                   count(*) AS n
+            FROM activities a
+            WHERE a.place_ref_id IS NOT NULL OR a.place_id IS NOT NULL OR a.booking_id IS NOT NULL
+            GROUP BY 1, 2
+        )
+        SELECT item_type, item_id, title, sum(n)::bigint AS selection_count
         FROM (
             SELECT CASE WHEN p.id IS NOT NULL THEN 'PLACE' ELSE 'ACTIVITY_BOOKING' END AS item_type,
                    COALESCE(p.id::text, b.id::text) AS item_id,
-                   COALESCE(p.title, b.title) AS title
-            FROM activities a
-            LEFT JOIN places p ON p.id::text = NULLIF(BTRIM(a.place_id), '') OR p.id = a.place_ref_id
-            LEFT JOIN activity_bookings b ON b.id = a.booking_id
+                   COALESCE(p.title, b.title) AS title,
+                   c.n
+            FROM counted c
+            LEFT JOIN places p ON p.id = c.place_uuid
+            LEFT JOIN activity_bookings b ON b.id = c.booking_id
             WHERE p.id IS NOT NULL OR b.id IS NOT NULL
         ) selected
         GROUP BY item_type, item_id, title

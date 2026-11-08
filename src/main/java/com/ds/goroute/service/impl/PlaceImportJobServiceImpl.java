@@ -1,9 +1,13 @@
 package com.ds.goroute.service.impl;
 
 import com.ds.goroute.dto.request.CreateActivityPlaceImportJobRequest;
+import com.ds.goroute.dto.request.AssignCheckinPlaceRequest;
+import com.ds.goroute.dto.request.CreateActivityPlaceProposalsRequest;
+import com.ds.goroute.dto.request.CreateCheckinPlaceProposalsRequest;
 import com.ds.goroute.dto.request.CreateAdminLinksPlaceImportJobRequest;
 import com.ds.goroute.dto.request.CreateManualPlaceImportJobRequest;
 import com.ds.goroute.dto.request.CreateSocialPlaceImportJobRequest;
+import com.ds.goroute.dto.response.AdminActivityPlaceProposalRunResponse;
 import com.ds.goroute.dto.response.PlaceImportJobItemResponse;
 import com.ds.goroute.dto.response.PlaceImportJobResponse;
 import com.ds.goroute.dto.response.AdminPlaceImportMappingResponse;
@@ -13,18 +17,24 @@ import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.PlaceImportJob;
 import com.ds.goroute.entity.PlaceImportJobItem;
 import com.ds.goroute.entity.SocialLocationJob;
+import com.ds.goroute.entity.UserCheckin;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.mapper.PlaceImportJobMapper;
 import com.ds.goroute.mapper.SocialLocationJobMapper;
 import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.TripRepository;
+import com.ds.goroute.repository.UserCheckinRepository;
+import com.ds.goroute.service.CheckinAdminService;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.PlaceImportJobService;
 import com.ds.goroute.service.PlaceService;
 import com.ds.goroute.service.PlaceSocialVideoService;
+import com.ds.goroute.service.TripRealtimePublisher;
+import com.ds.goroute.service.redis.RedisService;
 import com.ds.goroute.thirdparty.scrape.ScrapeJobStatusResponse;
 import com.ds.goroute.thirdparty.scrape.ScrapeJobTriggerResponse;
+import com.ds.goroute.type.TripRealtimeEventType;
 import com.ds.goroute.thirdparty.scrape.ScrapePlaceImportJobRequest;
 import com.ds.goroute.thirdparty.scrape.ScrapePlaceSearchResponse;
 import com.ds.goroute.thirdparty.scrape.ScrapeResolveResponse;
@@ -44,12 +54,15 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executor;
+import java.util.stream.Stream;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -75,6 +88,10 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
     private final ObjectMapper objectMapper;
     private final PlaceSocialVideoService placeSocialVideoService;
     private final PlaceService placeService;
+    private final RedisService redisService;
+    private final TripRealtimePublisher tripRealtimePublisher;
+    private final UserCheckinRepository checkinRepository;
+    private final CheckinAdminService checkinAdminService;
 
     @Resource(name = "placeImportJobExecutor")
     private Executor placeImportJobExecutor;
@@ -210,6 +227,97 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
     }
 
     @Override
+    public AdminActivityPlaceProposalRunResponse adminRunActivityProposals(CreateActivityPlaceProposalsRequest request) {
+        List<Candidate> candidates = new ArrayList<>();
+        List<AdminActivityPlaceProposalRunResponse.Skipped> skipped = new ArrayList<>();
+        Set<UUID> seen = new HashSet<>();
+        for (CreateActivityPlaceProposalsRequest.Proposal proposal : request.getProposals()) {
+            UUID activityId = proposal.getActivityId();
+            String url = trimToNull(proposal.getGoogleMapsUrl());
+            String reason = null;
+            Activity activity = activityRepository.findById(activityId).orElse(null);
+            if (!seen.add(activityId)) {
+                reason = "DUPLICATE";
+            } else if (url == null || !isGoogleMapsPlaceUrl(url)) {
+                reason = "INVALID_URL";
+            } else if (activity == null || tripRepository.findById(activity.getTripId()).isEmpty()) {
+                reason = "ACTIVITY_NOT_FOUND";
+            } else if (isLinkedToCatalogue(activity)) {
+                reason = "ALREADY_LINKED";
+            } else if (jobMapper.existsOpenActivityProposal(activityId)) {
+                reason = "PROPOSAL_PENDING";
+            }
+            if (reason != null) {
+                skipped.add(AdminActivityPlaceProposalRunResponse.Skipped.builder()
+                        .activityId(activityId).reason(reason).build());
+                continue;
+            }
+            candidates.add(Candidate.fromAgentProposal(activity, url,
+                    "ACTIVE".equalsIgnoreCase(proposal.getVisibilityStatus()) ? "ACTIVE" : "INACTIVE",
+                    trimToNull(proposal.getNote())));
+        }
+        if (candidates.isEmpty()) {
+            return AdminActivityPlaceProposalRunResponse.builder().queued(0).skipped(skipped).build();
+        }
+        // Proposals naming the same link run one after another: the first imports the place and
+        // the rest find it as an existing place, so a link is scraped once per job.
+        PlaceImportJob job = createJob(null, PlaceImportSourceType.AGENT_PROPOSAL, null, DEFAULT_MAX_REVIEWS, request);
+        startAfterCommit(() -> runJob(job.getId(), candidates));
+        return AdminActivityPlaceProposalRunResponse.builder()
+                .job(toResponse(job, List.of()))
+                .queued(candidates.size())
+                .skipped(skipped)
+                .build();
+    }
+
+    @Override
+    public AdminActivityPlaceProposalRunResponse adminRunCheckinProposals(CreateCheckinPlaceProposalsRequest request) {
+        List<Candidate> candidates = new ArrayList<>();
+        List<AdminActivityPlaceProposalRunResponse.Skipped> skipped = new ArrayList<>();
+        Set<UUID> seen = new HashSet<>();
+        for (CreateCheckinPlaceProposalsRequest.Proposal proposal : request.getProposals()) {
+            UUID checkinId = proposal.getCheckinId();
+            String url = trimToNull(proposal.getGoogleMapsUrl());
+            String reason = null;
+            UserCheckin checkin = checkinRepository.findById(checkinId)
+                    .filter(found -> !Boolean.TRUE.equals(found.getIsRemoved()))
+                    .orElse(null);
+            if (!seen.add(checkinId)) {
+                reason = "DUPLICATE";
+            } else if (url == null || !isGoogleMapsPlaceUrl(url)) {
+                reason = "INVALID_URL";
+            } else if (checkin == null) {
+                reason = "CHECKIN_NOT_FOUND";
+            } else if (checkin.getPlaceId() != null) {
+                reason = "ALREADY_LINKED";
+            } else if (checkin.getPlaceDismissedAt() != null) {
+                reason = "DISMISSED";
+            } else if (jobMapper.existsOpenCheckinProposal(checkinId)) {
+                reason = "PROPOSAL_PENDING";
+            }
+            if (reason != null) {
+                skipped.add(AdminActivityPlaceProposalRunResponse.Skipped.builder()
+                        .checkinId(checkinId).reason(reason).build());
+                continue;
+            }
+            candidates.add(Candidate.fromCheckinProposal(checkin, url,
+                    "ACTIVE".equalsIgnoreCase(proposal.getVisibilityStatus()) ? "ACTIVE" : "INACTIVE",
+                    trimToNull(proposal.getNote())));
+        }
+        if (candidates.isEmpty()) {
+            return AdminActivityPlaceProposalRunResponse.builder().queued(0).skipped(skipped).build();
+        }
+        // Same job type as the activity proposals: one scrape per link, a Telegram card per item.
+        PlaceImportJob job = createJob(null, PlaceImportSourceType.AGENT_PROPOSAL, null, DEFAULT_MAX_REVIEWS, request);
+        startAfterCommit(() -> runJob(job.getId(), candidates));
+        return AdminActivityPlaceProposalRunResponse.builder()
+                .job(toResponse(job, List.of()))
+                .queued(candidates.size())
+                .skipped(skipped)
+                .build();
+    }
+
+    @Override
     public List<PlaceImportJobResponse> adminListJobs(UUID userId, String status, String sourceType, int page, int size) {
         String normalizedStatus = null;
         if (status != null && !status.isBlank()) {
@@ -245,7 +353,8 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
     }
 
     @Override
-    public List<AdminPlaceImportMappingResponse> adminListMappings(String approvalStatus, int page, int size) {
+    public List<AdminPlaceImportMappingResponse> adminListMappings(String approvalStatus, String sourceType,
+                                                                   int page, int size) {
         String normalizedStatus = approvalStatus == null ? "ALL" : approvalStatus.trim().toUpperCase();
         if (!"ALL".equals(normalizedStatus)) {
             try {
@@ -256,13 +365,22 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
         }
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 100);
+        String normalizedSourceType = null;
+        if (sourceType != null && !sourceType.isBlank()) {
+            try {
+                normalizedSourceType = PlaceImportSourceType.valueOf(sourceType.trim().toUpperCase()).name();
+            } catch (Exception e) {
+                throw new IllegalArgumentException("Invalid place import source type");
+            }
+        }
         return jobMapper.findAdminMappings("ALL".equals(normalizedStatus) ? null : normalizedStatus,
+                normalizedSourceType,
                 safeSize, safePage * safeSize);
     }
 
     @Override
     @Transactional
-    public AdminPlaceImportMappingResponse adminApproveMapping(UUID itemId, String note) {
+    public AdminPlaceImportMappingResponse adminApproveMapping(UUID itemId, String note, UUID adminId) {
         PlaceImportJobItem item = jobMapper.findItemById(itemId);
         if (item == null) {
             throw new IllegalArgumentException("Place import mapping not found");
@@ -277,7 +395,8 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
         }
         Place place = placeRepository.findById(placeId)
                 .orElseThrow(() -> new IllegalArgumentException("Mapped place not found"));
-        applyApprovedActivityMapping(item, place);
+        applyApprovedActivityMapping(item, place, adminId);
+        applyApprovedCheckinMapping(item, place, adminId);
 
         item.setApprovalStatus(PlaceImportApprovalStatus.APPROVED);
         item.setApprovalNote(trimToNull(note));
@@ -421,6 +540,7 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
                 jobMapper.updateItem(item);
                 applyManualActivityMapping(job, item, existingPlace);
                 syncSocialVideoLink(job, candidate);
+                notifyAgentProposal(job, item);
                 return;
             }
 
@@ -480,6 +600,7 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
                     .orElseThrow(() -> new IllegalArgumentException("Imported place not found"));
             applyManualActivityMapping(job, item, importedPlace);
             syncSocialVideoLink(job, candidate);
+            notifyAgentProposal(job, item);
         } catch (Exception e) {
             log.warn("Place import item failed: job={} item={} error={}", job.getId(), item.getId(), e.getMessage(), e);
             failItem(item, e.getMessage());
@@ -654,28 +775,92 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
         return null;
     }
 
-    private void applyApprovedActivityMapping(PlaceImportJobItem item, Place place) {
+    /**
+     * Links the activity the same way the admin "Gán địa điểm" action does: both place_id and
+     * place_ref_id (readers prefer place_ref_id, so a stale one would hide the new link), then the
+     * trip's cached activity list is dropped and open trips are told to refresh.
+     */
+    private void applyApprovedActivityMapping(PlaceImportJobItem item, Place place, UUID actorId) {
         if (item.getActivityId() == null) {
             return;
         }
         Activity activity = activityRepository.findById(item.getActivityId())
                 .orElseThrow(() -> new IllegalArgumentException("Activity not found"));
-        String mappedPlaceId = place.getId().toString();
-        if (hasExistingPlace(activity) && !mappedPlaceId.equals(activity.getPlaceId())) {
+        UUID linked = linkedPlaceId(activity);
+        if (linked != null && !place.getId().equals(linked)) {
             throw new IllegalArgumentException("Activity was updated while this mapping was pending approval");
         }
-        activity.setPlaceId(mappedPlaceId);
-        if (place.getLatitude() != null) {
-            activity.setLat(place.getLatitude());
-        } else if (item.getLatitude() != null) {
-            activity.setLat(item.getLatitude());
+        BigDecimal lat = place.getLatitude() != null ? place.getLatitude() : item.getLatitude();
+        BigDecimal lng = place.getLongitude() != null ? place.getLongitude() : item.getLongitude();
+        if (activityRepository.assignPlace(activity.getId(), place.getId(), lat, lng) != 1) {
+            throw new IllegalArgumentException("Activity not found");
         }
-        if (place.getLongitude() != null) {
-            activity.setLng(place.getLongitude());
-        } else if (item.getLongitude() != null) {
-            activity.setLng(item.getLongitude());
+        redisService.delete("activities:" + activity.getTripId());
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.ACTIVITY_UPDATED, activity.getTripId(), activity.getId(), actorId);
+    }
+
+    /**
+     * Links the check-in through the admin "assign place" path, so the author's own location is
+     * snapshotted, verification is re-run against the place and their rating follows the visit.
+     */
+    private void applyApprovedCheckinMapping(PlaceImportJobItem item, Place place, UUID actorId) {
+        if (item.getCheckinId() == null) {
+            return;
         }
-        activityRepository.update(activity);
+        UserCheckin checkin = checkinRepository.findById(item.getCheckinId())
+                .filter(found -> !Boolean.TRUE.equals(found.getIsRemoved()))
+                .orElseThrow(() -> new IllegalArgumentException("Check-in not found"));
+        if (place.getId().equals(checkin.getPlaceId())) {
+            return;
+        }
+        if (checkin.getPlaceId() != null) {
+            throw new IllegalArgumentException("Check-in was linked to another place while this mapping was pending approval");
+        }
+        AssignCheckinPlaceRequest assign = new AssignCheckinPlaceRequest();
+        assign.setPlaceId(place.getId());
+        String reason = "Agent proposal approved" + (item.getProposalNote() == null ? "" : ": " + item.getProposalNote());
+        assign.setReason(reason.length() > 500 ? reason.substring(0, 500) : reason);
+        checkinAdminService.assignPlace(actorId, checkin.getId(), assign);
+    }
+
+    /** True when place_ref_id or a UUID place_id points at a catalogue row. */
+    private boolean isLinkedToCatalogue(Activity activity) {
+        return linkedPlaceId(activity) != null;
+    }
+
+    private UUID linkedPlaceId(Activity activity) {
+        if (activity.getPlaceRefId() != null && placeRepository.existsById(activity.getPlaceRefId())) {
+            return activity.getPlaceRefId();
+        }
+        if (isBlank(activity.getPlaceId())) {
+            return null;
+        }
+        try {
+            UUID placeId = UUID.fromString(activity.getPlaceId().trim());
+            return placeRepository.existsById(placeId) ? placeId : null;
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * Tells the Telegram approver (google-maps-bot) that a proposal is ready. Best effort: a
+     * missed message leaves the mapping in the Import Mappings queue and in the bot's /pending.
+     */
+    private void notifyAgentProposal(PlaceImportJob job, PlaceImportJobItem item) {
+        if (job.getSourceType() != PlaceImportSourceType.AGENT_PROPOSAL
+                || item.getApprovalStatus() != PlaceImportApprovalStatus.PENDING) {
+            return;
+        }
+        try {
+            AdminPlaceImportMappingResponse mapping = jobMapper.findAdminMappingByItemId(item.getId());
+            if (mapping != null) {
+                scrapeServiceClient.notifyActivityPlaceProposal(mapping);
+            }
+        } catch (Exception e) {
+            log.warn("Could not notify the Telegram approver about mapping {}: {}", item.getId(), e.getMessage());
+        }
     }
 
     private boolean hasExistingPlace(Activity activity) {
@@ -728,9 +913,11 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
                 .jobId(jobId)
                 .sourceRefId(candidate.sourceRefId)
                 .activityId(candidate.activityId)
+                .checkinId(candidate.checkinId)
                 .sourceCandidateKey(candidate.sourceCandidateKey)
                 .status(PlaceImportJobItemStatus.QUEUED)
                 .approvalStatus(PlaceImportApprovalStatus.PENDING)
+                .proposalNote(candidate.proposalNote)
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
@@ -799,7 +986,7 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
         if (job.getSourceType() != PlaceImportSourceType.MANUAL) {
             return;
         }
-        applyApprovedActivityMapping(item, place);
+        applyApprovedActivityMapping(item, place, null);
         item.setApprovalStatus(PlaceImportApprovalStatus.APPROVED);
         item.setApprovedAt(LocalDateTime.now());
         item.setUpdatedAt(LocalDateTime.now());
@@ -882,6 +1069,7 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
                 .id(item.getId())
                 .sourceRefId(item.getSourceRefId())
                 .activityId(item.getActivityId())
+                .checkinId(item.getCheckinId())
                 .sourceUrl(item.getSourceUrl())
                 .sourceAddress(item.getSourceAddress())
                 .sourceOriginalUrl(item.getSourceOriginalUrl())
@@ -1010,6 +1198,7 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
     private static class Candidate {
         private UUID sourceRefId;
         private UUID activityId;
+        private UUID checkinId;
         private String sourceCandidateKey;
         private String url;
         private String sourceAddress;
@@ -1025,6 +1214,7 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
         // same process, and the table has no column for either.
         private String visibilityStatus;
         private boolean includeReviews = true;
+        private String proposalNote;
 
         private static Candidate fromMapSearch(UUID socialJobId, JsonNode node) {
             Candidate candidate = new Candidate();
@@ -1065,6 +1255,36 @@ public class PlaceImportJobServiceImpl implements PlaceImportJobService {
             candidate.sourceOriginalUrl = url;
             candidate.visibilityStatus = visibilityStatus;
             candidate.includeReviews = false;
+            return candidate;
+        }
+
+        /**
+         * An agent's proposal: the activity is mapped only on approval. Reviews are skipped like a
+         * catalog link import; the review job fills them in later.
+         */
+        private static Candidate fromAgentProposal(Activity activity, String url, String visibilityStatus,
+                                                   String note) {
+            Candidate candidate = fromManualLink(activity, url);
+            candidate.visibilityStatus = visibilityStatus;
+            candidate.includeReviews = false;
+            candidate.proposalNote = note;
+            return candidate;
+        }
+
+        /** The same for a check-in with no catalogue place: linked only on approval. */
+        private static Candidate fromCheckinProposal(UserCheckin checkin, String url, String visibilityStatus,
+                                                     String note) {
+            Candidate candidate = new Candidate();
+            candidate.sourceRefId = checkin.getTripId();
+            candidate.checkinId = checkin.getId();
+            candidate.name = checkin.getCustomName() != null ? checkin.getCustomName() : checkin.getLocationName();
+            candidate.sourceAddress = String.join(", ", Stream.of(checkin.getWard(), checkin.getProvince())
+                    .filter(part -> part != null && !part.isBlank()).toList());
+            candidate.url = url;
+            candidate.sourceOriginalUrl = url;
+            candidate.visibilityStatus = visibilityStatus;
+            candidate.includeReviews = false;
+            candidate.proposalNote = note;
             return candidate;
         }
 

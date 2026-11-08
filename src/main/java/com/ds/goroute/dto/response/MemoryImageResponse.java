@@ -80,4 +80,8 @@ public class MemoryImageResponse {
      */
     private UUID activityId;
     private String activityName;
+
+    /** The still frame of a VIDEO; null for an image. Set by check-in videos only. */
+    private String thumbnailUrl;
+    private Integer durationSeconds;
 }

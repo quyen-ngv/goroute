@@ -19,6 +19,7 @@ import com.ds.goroute.service.placelookup.PlaceLookupQuery;
 import com.ds.goroute.service.placelookup.PlaceLookupRouter;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.ds.goroute.type.TripCreationCharge;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -369,7 +370,10 @@ public class AiTripGenerationService {
         TripResponse trip = tripService.createTrip(CreateTripRequest.builder().name(original.getTripName() == null || original.getTripName().isBlank() ? original.getCityName() : original.getTripName())
                 .startDate(first.getStartDate()).endDate(last.getEndDate()).destination(original.getCityName())
                 .destinationLat(first.getLatitude()).destinationLng(first.getLongitude()).destinations(destinations)
-                .budget(original.getBudgetMax()).currency(original.getBudgetCurrency()).build(), job.getUserId());
+                .budget(original.getBudgetMax()).currency(original.getBudgetCurrency()).build(), job.getUserId(),
+                // The balance was checked when the job started; refusing now would leave the AI bill paid
+                // and nothing saved.
+                TripCreationCharge.ALLOW_OVERDRAFT);
         if (tripPreferenceService != null) {
             tripPreferenceService.save(trip.getId(), tripPreferenceService.fromAiRequest(original), TripPreference.SOURCE_AI);
         }

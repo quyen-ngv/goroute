@@ -14,7 +14,7 @@ import com.ds.goroute.type.PlaceSubType;
 import com.ds.goroute.utils.CitySlugResolver;
 import com.ds.goroute.utils.DestinationMatchUtils;
 import com.ds.goroute.utils.JsonUtils;
-import com.ds.goroute.utils.LuceneTitleQueryBuilder;
+import com.ds.goroute.utils.LuceneKeywordQuery;
 import com.ds.goroute.utils.MapTile;
 import com.ds.goroute.utils.PlaceProminence;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -23,10 +23,6 @@ import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.miscellaneous.ASCIIFoldingFilter;
-import org.apache.lucene.analysis.core.LowerCaseFilter;
-import org.apache.lucene.analysis.standard.StandardTokenizer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.DoubleDocValuesField;
 import org.apache.lucene.document.DoublePoint;
@@ -48,6 +44,7 @@ import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.IndexOrDocValuesQuery;
 import org.apache.lucene.search.MatchAllDocsQuery;
+import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.SearcherFactory;
@@ -100,10 +97,14 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     private static final int REINDEX_BATCH_SIZE = 500;
     /** Largest page the location-free name search serves (the console picker asks for 500). */
     static final int MAX_NAME_SEARCH_SIZE = 500;
-    private static final String INDEX_SCHEMA_VERSION = "9";
+    private static final String INDEX_SCHEMA_VERSION = "11";
     private static final String ID_FIELD = "id";
     private static final Set<String> ID_ONLY = Set.of(ID_FIELD);
     private static final String NAME_FIELD = "name";
+    /** How much a word weighs in a place's names (the weights a client's minLuceneScore is set against). */
+    private static final List<LuceneKeywordQuery.Field> NAME_FIELDS = List.of(
+            new LuceneKeywordQuery.Field(NAME_FIELD, 4f, 2f, 0.75f, 10f, 1, 4));
+    private static final int MAX_KEYWORD_WORDS = 8;
     private static final String LOCATION_FIELD = "location";
     private static final String VISIBILITY_FIELD = "visibility";
     private static final String CATEGORY_FIELD = "category";
@@ -171,7 +172,7 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
 
     @PostConstruct
     public void init() throws IOException {
-        analyzer = createSearchAnalyzer();
+        analyzer = LuceneKeywordQuery.createAnalyzer();
         Path indexDir = Paths.get(indexPath);
         Files.createDirectories(indexDir);
         directory = FSDirectory.open(indexDir);
@@ -187,18 +188,6 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         });
         log.info("Place Lucene index initialized at: {}", indexDir.toAbsolutePath());
         ensureSearchIndexPopulated();
-    }
-
-    private Analyzer createSearchAnalyzer() {
-        return new Analyzer() {
-            @Override
-            protected TokenStreamComponents createComponents(String fieldName) {
-                StandardTokenizer tokenizer = new StandardTokenizer();
-                TokenStream stream = new LowerCaseFilter(tokenizer);
-                stream = new ASCIIFoldingFilter(stream);
-                return new TokenStreamComponents(tokenizer, stream);
-            }
-        };
     }
 
     /**
@@ -482,20 +471,9 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
 
     @Override
     public int countPlacesByName(String keyword, List<String> placeGroups) throws IOException {
-        if (keyword == null || keyword.isBlank()) {
-            return 0;
-        }
-        BooleanQuery.Builder query = new BooleanQuery.Builder();
-        try {
-            query.add(LuceneTitleQueryBuilder.build(keyword.trim(), analyzer), BooleanClause.Occur.MUST);
-        } catch (IllegalArgumentException noSearchableText) {
-            return 0;
-        }
-        query.add(new TermQuery(new Term(VISIBILITY_FIELD, "ACTIVE")), BooleanClause.Occur.FILTER);
-        addTermSetFilter(query, PLACE_GROUP_FIELD, normalizeUpper(placeGroups));
         IndexSearcher searcher = searcherManager.acquire();
         try {
-            return searcher.count(query.build());
+            return relevantByName(searcher, keyword, placeGroups, false, MAX_NAME_SEARCH_SIZE).length;
         } finally {
             searcherManager.release(searcher);
         }
@@ -519,20 +497,9 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         } catch (ArithmeticException e) {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Requested page is too large");
         }
-        BooleanQuery.Builder query = new BooleanQuery.Builder();
-        try {
-            query.add(LuceneTitleQueryBuilder.build(keyword.trim(), analyzer), BooleanClause.Occur.MUST);
-        } catch (IllegalArgumentException noSearchableText) {
-            return List.of();
-        }
-        if (!includeInactive) {
-            query.add(new TermQuery(new Term(VISIBILITY_FIELD, "ACTIVE")), BooleanClause.Occur.FILTER);
-        }
-        addTermSetFilter(query, PLACE_GROUP_FIELD, normalizeUpper(placeGroups));
-
         IndexSearcher searcher = searcherManager.acquire();
         try {
-            ScoreDoc[] hits = searcher.search(query.build(), requestedHits).scoreDocs;
+            ScoreDoc[] hits = relevantByName(searcher, keyword, placeGroups, includeInactive, requestedHits);
             List<UUID> ids = new ArrayList<>();
             for (int index = offset; index < hits.length; index++) {
                 ids.add(UUID.fromString(searcher.doc(hits[index].doc, ID_ONLY).get(ID_FIELD)));
@@ -543,15 +510,43 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         }
     }
 
+    /**
+     * The first {@code maxHits} places whose name matches {@code keyword} well enough to show:
+     * every word as typed, or with a typo when that finds none, less the weak tail of the best
+     * match ({@link LuceneKeywordQuery}). The count and the pages of a keyword agree because
+     * both come from here.
+     */
+    private ScoreDoc[] relevantByName(IndexSearcher searcher, String keyword, List<String> placeGroups,
+                                      boolean includeInactive, int maxHits) throws IOException {
+        List<LuceneKeywordQuery.Word> words = LuceneKeywordQuery.words(keyword, MAX_KEYWORD_WORDS);
+        if (words.isEmpty()) {
+            return new ScoreDoc[0];
+        }
+        List<String> groups = normalizeUpper(placeGroups);
+        for (LuceneKeywordQuery.Match match : LuceneKeywordQuery.STRICT_TIERS) {
+            BooleanQuery.Builder query = new BooleanQuery.Builder()
+                    .add(LuceneKeywordQuery.build(words, NAME_FIELDS, match), BooleanClause.Occur.MUST);
+            if (!includeInactive) {
+                query.add(new TermQuery(new Term(VISIBILITY_FIELD, "ACTIVE")), BooleanClause.Occur.FILTER);
+            }
+            addTermSetFilter(query, PLACE_GROUP_FIELD, groups);
+            ScoreDoc[] hits = searcher.search(query.build(), maxHits).scoreDocs;
+            if (hits.length > 0) {
+                return LuceneKeywordQuery.relevant(hits);
+            }
+        }
+        return new ScoreDoc[0];
+    }
+
     @Override
     public List<UUID> searchPlaceIds(PlaceSearchCriteria criteria) throws IOException {
         validateCriteria(criteria);
         int offset = Math.multiplyExact(criteria.page(), criteria.size());
         int requestedHits = Math.addExact(offset, criteria.size());
-        Query query = buildSearchQuery(criteria);
 
         IndexSearcher searcher = searcherManager.acquire();
         try {
+            Query query = buildSearchQuery(searcher, criteria);
             Sort sort = switch (criteria.sort()) {
                 case RATING -> EFFECTIVE_RATING_DESCENDING_SORT;
                 case POPULARITY -> PROMINENCE_DESCENDING_SORT;
@@ -583,17 +578,40 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         }
     }
 
-    private Query buildSearchQuery(PlaceSearchCriteria criteria) throws IOException {
+    private Query buildSearchQuery(IndexSearcher searcher, PlaceSearchCriteria criteria) throws IOException {
+        return withAreaFilters(keywordQuery(searcher, criteria), criteria);
+    }
+
+    /**
+     * The keyword's query at the strictest tier ({@link LuceneKeywordQuery#AREA_TIERS}) that
+     * finds a place in the area before any kind is chosen: every word as typed, then with a
+     * typo, then any one word ("cafe da lat" in Da Lat, where no name says Da Lat). Chosen
+     * without the kinds, so the list and its kind counts ({@link #countBySubType}) agree.
+     */
+    private Query keywordQuery(IndexSearcher searcher, PlaceSearchCriteria criteria) throws IOException {
+        if (criteria.keyword() == null || criteria.keyword().isBlank()) {
+            return new MatchAllDocsQuery();
+        }
+        List<LuceneKeywordQuery.Word> words = LuceneKeywordQuery.words(criteria.keyword(), MAX_KEYWORD_WORDS);
+        if (words.isEmpty()) {
+            return new MatchNoDocsQuery();
+        }
+        PlaceSearchCriteria area = withoutSubTypes(criteria);
+        Query text = null;
+        for (LuceneKeywordQuery.Match match : LuceneKeywordQuery.AREA_TIERS) {
+            text = LuceneKeywordQuery.build(words, NAME_FIELDS, match);
+            if (searcher.count(withAreaFilters(text, area)) > 0) {
+                return text;
+            }
+        }
+        return text;
+    }
+
+    private Query withAreaFilters(Query text, PlaceSearchCriteria criteria) {
         double latitude = criteria.latitude().doubleValue();
         double longitude = criteria.longitude().doubleValue();
         double radiusMeters = criteria.radiusKm().doubleValue() * 1_000.0;
-        BooleanQuery.Builder query = new BooleanQuery.Builder();
-
-        if (criteria.keyword() == null || criteria.keyword().isBlank()) {
-            query.add(new MatchAllDocsQuery(), BooleanClause.Occur.MUST);
-        } else {
-            query.add(LuceneTitleQueryBuilder.build(criteria.keyword().trim(), analyzer), BooleanClause.Occur.MUST);
-        }
+        BooleanQuery.Builder query = new BooleanQuery.Builder().add(text, BooleanClause.Occur.MUST);
 
         Query distanceFilter = new IndexOrDocValuesQuery(
                 LatLonPoint.newDistanceQuery(LOCATION_FIELD, latitude, longitude, radiusMeters),
@@ -676,10 +694,10 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     public Map<String, Integer> countBySubType(PlaceSearchCriteria criteria, List<PlaceSubType> kinds)
             throws IOException {
         validateCriteria(criteria);
-        // The area as the list searches it, before any kind is chosen.
-        Query area = buildSearchQuery(withoutSubTypes(criteria));
         IndexSearcher searcher = searcherManager.acquire();
         try {
+            // The area as the list searches it, before any kind is chosen.
+            Query area = buildSearchQuery(searcher, withoutSubTypes(criteria));
             // One pass: the area (distance, text, filters) is evaluated once per segment into a
             // bit set, then each kind's posting list is walked against it. Counting each kind
             // with its own query evaluated the area once per kind.
@@ -920,7 +938,8 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         Document doc = new Document();
         doc.add(new StringField(ID_FIELD, place.getId().toString(), Field.Store.YES));
         doc.add(new StringField("schema_version", INDEX_SCHEMA_VERSION, Field.Store.YES));
-        doc.add(new TextField(NAME_FIELD, buildSearchableName(place, translations), Field.Store.YES));
+        doc.add(new TextField(NAME_FIELD, LuceneKeywordQuery.normalize(buildSearchableName(place, translations)),
+                Field.Store.YES));
 
         if (place.getLatitude() != null && place.getLongitude() != null) {
             double latitude = place.getLatitude().doubleValue();

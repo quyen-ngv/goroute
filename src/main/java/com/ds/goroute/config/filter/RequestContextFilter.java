@@ -21,7 +21,10 @@ import org.springframework.web.multipart.support.StandardServletMultipartResolve
 import java.io.IOException;
 import java.util.UUID;
 
+import static com.ds.goroute.constant.RequestKeyConstant.THREAD_APP_BUILD;
 import static com.ds.goroute.constant.RequestKeyConstant.THREAD_REQUEST_ID;
+import static com.ds.goroute.constant.RequestKeyConstant.THREAD_USER_ID;
+import static com.ds.goroute.constant.RequestKeyConstant.X_APP_BUILD;
 import static com.ds.goroute.constant.RequestKeyConstant.X_REQUEST_ID;
 
 /**
@@ -44,6 +47,9 @@ public class RequestContextFilter implements Filter {
      * above anything the app legitimately posts and far below what it takes to exhaust the heap.
      */
     private static final int MAX_BUFFERED_BODY_CHARS = ApiKeyVerifyRequestWrapper.DEFAULT_MAX_BODY_CHARS;
+
+    /** Requests at or above this are logged as slow; the app gives up at 30 s. */
+    private static final long SLOW_REQUEST_MS = 5_000;
 
     private final MultipartResolver multipartResolver;
 
@@ -87,8 +93,14 @@ public class RequestContextFilter implements Filter {
 
             String requestId = requestIdOf(forwarded);
             MDC.put(THREAD_REQUEST_ID, requestId);
+            String appBuild = appBuildOf(forwarded);
+            if (appBuild != null) {
+                MDC.put(THREAD_APP_BUILD, appBuild);
+            }
             forwarded.setAttribute(RequestKeyConstant.REQUEST_ID, requestId);
+            long startedAt = System.nanoTime();
             chain.doFilter(forwarded, response);
+            logIfSlow(forwarded, response, startedAt);
         } catch (Exception e) {
             if (isSizeLimit(e)) {
                 log.warn("Request size limit exceeded: {}", e.getMessage(), e);
@@ -99,12 +111,33 @@ public class RequestContextFilter implements Filter {
             }
         } finally {
             MDC.remove(THREAD_REQUEST_ID);
+            MDC.remove(THREAD_APP_BUILD);
+            // Put by JwtAuthenticationFilter further down the chain; pool threads are reused.
+            MDC.remove(THREAD_USER_ID);
+        }
+    }
+
+    /**
+     * A request that holds its thread (and usually a DB connection) this long is what starves
+     * the Hikari pool. Async requests (SSE, streaming) return here immediately and are skipped.
+     */
+    private static void logIfSlow(HttpServletRequest request, HttpServletResponse response, long startedAt) {
+        long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000;
+        if (elapsedMs >= SLOW_REQUEST_MS && !request.isAsyncStarted()) {
+            log.warn("Slow request {} {} -> {} in {} ms", request.getMethod(), request.getRequestURI(),
+                    response.getStatus(), elapsedMs);
         }
     }
 
     private static String requestIdOf(HttpServletRequest request) {
         String requestId = request.getHeader(X_REQUEST_ID);
         return requestId == null || requestId.isBlank() ? UUID.randomUUID().toString() : requestId;
+    }
+
+    /** The app sends its build number; anything that is not a short number is not logged. */
+    private static String appBuildOf(HttpServletRequest request) {
+        String build = request.getHeader(X_APP_BUILD);
+        return build != null && build.matches("\\d{1,9}") ? build : null;
     }
 
     private static boolean isSizeLimit(Exception e) {

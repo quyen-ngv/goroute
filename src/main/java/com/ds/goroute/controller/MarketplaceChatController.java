@@ -51,14 +51,18 @@ public class MarketplaceChatController {
                 .body(BaseResponse.ofSucceeded(chatService.start(userId, request)));
     }
 
-    /** The inbox. {@code types} is the filter chips; leaving it out means everything. */
+    /**
+     * The inbox. {@code types} is the filter chips; leaving it out means everything.
+     * {@code unread} keeps only threads with a message the reader has not read.
+     */
     @GetMapping("/conversations")
     public ResponseEntity<BaseResponse<List<MarketplaceConversationResponse>>> list(
             @CurrentUser UUID userId,
             @RequestParam(required = false) List<String> types,
+            @RequestParam(defaultValue = "false") boolean unread,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "30") int size) {
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(chatService.listMine(userId, types, page, size)));
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(chatService.listMine(userId, types, unread, page, size)));
     }
 
     /** The number on the tab. */

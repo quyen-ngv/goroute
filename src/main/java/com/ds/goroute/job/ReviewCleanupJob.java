@@ -27,11 +27,11 @@ public class ReviewCleanupJob {
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final PlatformTransactionManager transactionManager;
 
-    private static final int MAX_REVIEWS_PER_PLACE = 20;
+    private static final int MAX_REVIEWS_PER_PLACE = 5;
 
     /**
      * Clean up low-quality reviews for all places
-     * Keep only top 20 reviews per place based on weighted score
+     * Keep only top 5 reviews per place based on weighted score
      */
     @Async
     public void cleanupAllPlaces() {
@@ -93,7 +93,7 @@ public class ReviewCleanupJob {
         // Sort by weight descending
         reviewsWithWeights.sort((a, b) -> Double.compare(b.weight, a.weight));
 
-        // Keep top 20 reviews
+        // Keep top 5 reviews
         List<UUID> reviewsToKeep = reviewsWithWeights.stream()
                 .limit(MAX_REVIEWS_PER_PLACE)
                 .map(rw -> rw.review.getId())

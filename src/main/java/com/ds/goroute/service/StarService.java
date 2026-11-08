@@ -1,8 +1,6 @@
 package com.ds.goroute.service;
 
-import com.ds.goroute.dto.response.StarWalletResponse;
 import com.ds.goroute.entity.StarTransaction;
-import com.ds.goroute.entity.TripCreationEntitlement;
 import com.ds.goroute.entity.UserStarWallet;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.StarMapper;
@@ -12,7 +10,6 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -22,7 +19,8 @@ import com.ds.goroute.constant.ErrorConstant;
 /**
  * The one point wallet for the whole product (REWARD-01).
  *
- * <p>Passport rewards, check-in bonuses, referrals and trip unlocks all move through here.
+ * <p>Passport rewards, check-in bonuses, referrals and exchanges into credits
+ * ({@link AiCreditService#exchangeStars}) all move through here.
  * Nothing gets a wallet of its own -- a second balance is a second answer to "how many
  * points do I have", and users notice.
  *
@@ -42,78 +40,8 @@ import com.ds.goroute.constant.ErrorConstant;
 @Slf4j
 public class StarService {
 
-    private static final int TRIP_UNLOCK_COST = 10;
-    private static final int TRANSACTION_LIMIT = 50;
-
     private final StarMapper starMapper;
     private final StarWalletBootstrapService walletBootstrap;
-    private final UserQuotaPolicyService quotaPolicy;
-
-    @Transactional
-    public void reserveTripCreation(UUID userId) {
-        UserStarWallet wallet = ensureWallet(userId);
-        int freeTripQuota = quotaPolicy.freeTripQuota(userId);
-        int freeTripQuotaUsed = wallet.getFreeTripQuotaUsed() != null ? wallet.getFreeTripQuotaUsed() : 0;
-        if (freeTripQuotaUsed < freeTripQuota
-                && starMapper.incrementFreeQuota(userId, freeTripQuota) == 1) {
-            return;
-        }
-        TripCreationEntitlement entitlement = starMapper.findActiveEntitlement(userId, LocalDateTime.now());
-        if (entitlement == null || starMapper.consumeEntitlement(entitlement.getId(), LocalDateTime.now()) != 1) {
-            throw new BusinessException(ErrorConstant.TRIP_CREATION_QUOTA_EXHAUSTED);
-        }
-    }
-
-    /**
-     * How a trip creation would go right now, without consuming anything.
-     *
-     * <p>Exists so a caller that is about to spend something <em>else</em> on the user's behalf --
-     * an AI generation slot, and the model bill behind it -- can find out first. Asking
-     * {@link #reserveTripCreation} and rolling back is not the same thing: the AI flow reserves its
-     * own quota in a separate short transaction, so a rollback here would not give that back.
-     */
-    @Transactional
-    public TripCreationStatus tripCreationStatus(UUID userId) {
-        UserStarWallet wallet = ensureWallet(userId);
-        int unlockedSlots = starMapper.countActiveEntitlements(userId, LocalDateTime.now());
-        int freeTripQuota = quotaPolicy.freeTripQuota(userId);
-        int freeTripQuotaUsed = wallet.getFreeTripQuotaUsed() != null ? wallet.getFreeTripQuotaUsed() : 0;
-        return new TripCreationStatus(
-                freeTripQuotaUsed < freeTripQuota || unlockedSlots > 0,
-                freeTripQuotaUsed,
-                freeTripQuota,
-                unlockedSlots);
-    }
-
-    /**
-     * @param available whether the next trip creation would be accepted, which is not the same as
-     *                  having enough stars to buy the right to one
-     */
-    public record TripCreationStatus(boolean available, int freeQuotaUsed, int freeQuota,
-                                     int unlockedSlots) {
-    }
-
-    /**
-     * Buys one trip creation slot.
-     *
-     * <p>The reference key is the position in this user's own sequence of unlocks, not a
-     * fresh UUID. A random key is unique by construction and therefore idempotent against
-     * nothing: two taps on the same button, or a retry after a timeout the client never
-     * saw resolve, each bought their own slot at full price. Counting instead means both
-     * attempts build the same key, the second one loses to the unique index, and the
-     * entitlement is written only for the attempt that actually paid.
-     */
-    @Transactional
-    public StarWalletResponse unlockTrip(UUID userId) {
-        ensureWallet(userId);
-        String reference = "trip_unlock:" + userId + ":" + starMapper.countEntitlements(userId);
-        record(userId, -TRIP_UNLOCK_COST, "TRIP_UNLOCK", reference,
-                "Unlocked one trip creation slot for 3 months", null, null, null)
-                .ifPresent(charged -> starMapper.insertEntitlement(TripCreationEntitlement.builder()
-                        .id(UUID.randomUUID()).userId(userId).starsSpent(TRIP_UNLOCK_COST)
-                        .expiresAt(LocalDateTime.now().plusMonths(3)).build()));
-        return getWallet(userId);
-    }
 
     /**
      * Adds points. Returns {@code false} when this reference has already been credited,
@@ -194,25 +122,6 @@ public class StarService {
     }
 
     @Transactional
-    public StarWalletResponse getWallet(UUID userId) {
-        UserStarWallet wallet = ensureWallet(userId);
-        TripCreationStatus tripQuota = tripCreationStatus(userId);
-        int balance = wallet.getBalance() != null ? wallet.getBalance() : 0;
-        int freeTripQuotaUsed = wallet.getFreeTripQuotaUsed() != null ? wallet.getFreeTripQuotaUsed() : 0;
-        return StarWalletResponse.builder()
-                .balance(balance).freeTripQuotaUsed(freeTripQuotaUsed)
-                .freeTripQuota(tripQuota.freeQuota())
-                // Whether a trip can be created right now, which is not the same as having
-                // enough stars to buy the right to: an affordable unlock still has to be
-                // bought. Answering the second question here is what let the client show a
-                // green tick to somebody whose next trip creation would be refused.
-                .canCreateTrip(tripQuota.available())
-                .starsToUnlockTrip(TRIP_UNLOCK_COST)
-                .unlockedTripSlots(tripQuota.unlockedSlots())
-                .recentTransactions(starMapper.findTransactions(userId, TRANSACTION_LIMIT, 0)).build();
-    }
-
-    @Transactional
     public List<StarTransaction> getTransactions(UUID userId, int limit, int offset) {
         ensureWallet(userId);
         return starMapper.findTransactions(userId, Math.max(1, Math.min(limit, 100)), Math.max(0, offset));
@@ -223,14 +132,28 @@ public class StarService {
         return starMapper.countTransactions(userId);
     }
 
+    /** A shared trip earns one Star for every this many activities. */
+    static final int TRIP_ACTIVITIES_PER_STAR = 5;
+    /** The most Stars one shared trip can earn. */
+    static final int TRIP_MAX_STARS = 3;
+
+    /**
+     * One Star per {@link #TRIP_ACTIVITIES_PER_STAR} activities of a finished public trip,
+     * up to {@link #TRIP_MAX_STARS}. Each Star has its own reference, so a trip that grows
+     * after its first Star earns the next one on a later run and never one twice. The first
+     * keeps the old single-Star key, so trips already paid are not paid again.
+     */
     @Transactional
     public int awardEligibleTripCompletions() {
         int awarded = 0;
         for (var candidate : starMapper.findEligibleCompletionCandidates()) {
-            if (grant(candidate.getOwnerId(), 1, "TRIP_COMPLETED",
-                    "completed_trip:" + candidate.getTripId(),
-                    "Your public trip met the completion milestones")) {
-                awarded++;
+            int stars = Math.min(TRIP_MAX_STARS, candidate.getActivityCount() / TRIP_ACTIVITIES_PER_STAR);
+            for (int star = 1; star <= stars; star++) {
+                String referenceKey = "completed_trip:" + candidate.getTripId() + (star == 1 ? "" : ":" + star);
+                if (grant(candidate.getOwnerId(), 1, "TRIP_COMPLETED", referenceKey,
+                        "Your public trip met the completion milestones")) {
+                    awarded++;
+                }
             }
         }
         return awarded;

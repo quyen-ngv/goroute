@@ -28,6 +28,7 @@ import com.ds.goroute.type.AuthProvider;
 import com.ds.goroute.type.MemberStatus;
 import com.ds.goroute.utils.JsonUtils;
 import com.ds.goroute.utils.JwtUtils;
+import com.ds.goroute.utils.AppBuildGate;
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -361,9 +362,8 @@ public class AuthServiceImpl implements AuthService {
                 .defaultTravelMode(user.getDefaultTravelMode())
                 .language(user.getLanguage())
                 .theme(user.getTheme())
-                // Hotfix: always true so the app skips /profile-onboarding, which iOS
-                // shows as "page not found". Revert once a fixed app build is live.
-                .onboardingCompleted(true)
+                // Builds before 1.0.19 loop on /profile-onboarding; they still get true.
+                .onboardingCompleted(AppBuildGate.onboardingCompletedForApp(user.getOnboardingCompleted()))
                 .build();
 
         return AuthResponse.builder()

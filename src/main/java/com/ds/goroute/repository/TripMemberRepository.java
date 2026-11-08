@@ -22,6 +22,9 @@ public interface TripMemberRepository {
     /** ACCEPTED member count per trip for a page of trips, in one grouped query; absent trips have 0. */
     Map<UUID, Integer> countAcceptedByTripIds(Collection<UUID> tripIds);
 
+    /** Member rows by id, in no particular order; empty ids yield an empty list. */
+    List<TripMember> findByIds(Collection<UUID> ids);
+
     void updateById(TripMember member);
     
     void deleteById(UUID id);

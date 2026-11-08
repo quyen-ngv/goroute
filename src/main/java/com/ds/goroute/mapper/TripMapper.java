@@ -107,4 +107,9 @@ public interface TripMapper {
             @Param("limit") int limit);
 
     java.time.LocalDateTime selectSearchIndexMaxUpdatedAt();
+
+    /** trips.simplify_debts (V268); null when the trip is gone. */
+    Boolean selectSimplifyDebts(@Param("id") UUID id);
+
+    int updateSimplifyDebts(@Param("id") UUID id, @Param("simplifyDebts") boolean simplifyDebts);
 }

@@ -33,6 +33,14 @@
         ORDER BY created_at
     </select>
 
+    <select id="selectByIds" resultMap="TripMemberResultMap">
+        SELECT * FROM trip_members
+        WHERE id IN
+        <foreach collection="ids" item="memberId" open="(" separator="," close=")">
+            #{memberId,javaType=java.util.UUID,jdbcType=OTHER}
+        </foreach>
+    </select>
+
     <select id="selectByTripIdAndUserId" resultMap="TripMemberResultMap">
         SELECT * FROM trip_members WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
         AND user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}

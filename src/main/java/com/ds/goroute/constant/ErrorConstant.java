@@ -20,13 +20,18 @@ public class ErrorConstant {
     public static final int INVALID_PARAMETERS = 4000001;
 
     /**
-     * The user has used all free trip-creation slots and needs to unlock one.
+     * LEGACY-STAR-QUOTA: the balance does not cover AI_CREDIT.TRIP_CREATION_COST. Data:
+     * {@code {reason: "CREDIT", feature: "TRIP", balance, required}}. App builds up to 21 only
+     * know this code for a refused trip creation; once APP.MIN_BUILD_* passes the first credit
+     * build, throw {@link #AI_CREDIT_INSUFFICIENT} with feature TRIP instead and delete this.
      */
     public static final int TRIP_CREATION_QUOTA_EXHAUSTED = 4000101;
 
     /**
-     * The user does not have enough Stars to unlock another trip-creation slot.
+     * LEGACY-STAR-QUOTA: declared for the old Star unlock but never thrown (a short unlock
+     * raises {@link #INSUFFICIENT_POINTS}). Delete with the other legacy trip-quota code.
      */
+    @Deprecated
     public static final int INSUFFICIENT_STARS_FOR_TRIP_UNLOCK = 4000102;
 
     /**
@@ -84,6 +89,13 @@ public class ErrorConstant {
     public static final int EXPENSE_RECEIPT_SCAN_INVALID_IMAGE = 4001103;
 
     /**
+     * The expense is in another currency than the trip, the app sent no exchange rate and the
+     * rate provider had none (epic 05 §2.6). The expense is not saved; it used to be stored 1:1.
+     * 4001104 is taken by a retired receipt-scan quota message.
+     */
+    public static final int EXCHANGE_RATE_UNAVAILABLE = 4001105;
+
+    /**
      * Content moderation (epic 12). The blocked-content code carries the violated policy
      * group in its message so the app can tell the user what to fix instead of showing
      * "invalid content"; the draft is never discarded.
@@ -101,12 +113,17 @@ public class ErrorConstant {
     public static final int CHECKIN_GALLERY_NOT_ALLOWED = 4000803;
     public static final int CHECKIN_LOCATION_REQUIRED = 4000804;
     public static final int CHECKIN_PLACE_IMMUTABLE = 4000805;
+    public static final int CHECKIN_VIDEO_NOT_ALLOWED = 4000806;
+    public static final int CHECKIN_VIDEO_TOO_LONG = 4000807;
 
     /**
      * Points wallet (epic 08).
      */
     public static final int INSUFFICIENT_POINTS = 4000901;
     public static final int POINT_TRANSACTION_NOT_REVERSIBLE = 4000902;
+
+    /** AI_CREDIT.STAR_EXCHANGE_ENABLED is off. */
+    public static final int STAR_EXCHANGE_DISABLED = 4000903;
 
     /**
      * Passport (epic 04).
@@ -308,6 +325,13 @@ public class ErrorConstant {
      */
     public static final int AI_CREDIT_INSUFFICIENT = 4020101;
 
+    /**
+     * Exchanging these Stars would pass AI_CREDIT.STAR_EXCHANGE_MONTHLY_CAP for the current
+     * credit-wallet period. Data: {@code {monthlyCap, usedThisPeriod, remainingThisPeriod,
+     * maxStarsThisPeriod}}.
+     */
+    public static final int STAR_EXCHANGE_CAP_REACHED = 4090901;
+
     /** The user already has an AI task of this kind running (one at a time per user). */
     public static final int AI_TASK_ALREADY_RUNNING = 4090701;
 
@@ -372,5 +396,16 @@ public class ErrorConstant {
      * 500
      */
     public static final int INTERNAL_SERVER_ERROR = 5001001;
+
+    /**
+     * Write the error code prefixed with 503 below
+     * 503
+     */
+    /**
+     * Media upload: every upload slot is busy (goroute.upload.max-concurrent-uploads) or this
+     * user already has goroute.upload.max-concurrent-uploads-per-user running. Sent with
+     * Retry-After; the app retries on its own.
+     */
+    public static final int UPLOAD_BUSY = 5030701;
 
 }

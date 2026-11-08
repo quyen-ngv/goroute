@@ -127,6 +127,26 @@ public class AsyncConfig implements AsyncConfigurer {
         return executor;
     }
 
+    /**
+     * Scoring uploaded images (ImageModerationService). Never CallerRuns: the caller is the
+     * upload request, and a provider call there held every photo upload for seconds as soon
+     * as the shared pool filled up, which is when uploads started timing out on the phone.
+     * Each queued task holds the image bytes, so the queue stays short; a rejected task
+     * leaves its row PENDING and ImageModerationRetryJob reads the image back from storage.
+     */
+    @Bean(name = "imageModerationExecutor")
+    public Executor imageModerationExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(8);
+        executor.setThreadNamePrefix("image-moderation-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.initialize();
+        log.info("Image moderation executor initialized: core=1, max=2, queue=8");
+        return executor;
+    }
+
     @Bean(name = "placeImportJobExecutor")
     public Executor placeImportJobExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();

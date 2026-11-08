@@ -146,7 +146,11 @@ public class MapSearchService {
             return mapboxAreaAutocomplete(query, input, latitude, longitude, limit, language, cacheKey, catalogueOnly);
         }
         List<MapPlaceCacheEntry> picked = pickedPlaces(normalized, latitude, longitude, radiusKm, limit);
-        if (picked.size() >= Math.min(limit, PICKED_ENOUGH) || catalogueOnly) {
+        // Without a point, picked places come from the whole country ranked by name alone:
+        // "Hồ Chí Minh" found five Hà Nội venues named after him and never the city. They answer
+        // alone only near a point; elsewhere Mapbox is asked.
+        boolean pickedAreEnough = point != null && picked.size() >= Math.min(limit, PICKED_ENOUGH);
+        if (pickedAreEnough || catalogueOnly) {
             return json(shape.autocomplete(picked));
         }
         MapBudgetGuard.Decision decision = budget.tryAcquire(MapBillingApi.SEARCH);

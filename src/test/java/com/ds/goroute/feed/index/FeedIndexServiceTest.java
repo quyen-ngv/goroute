@@ -40,7 +40,8 @@ class FeedIndexServiceTest {
     void setUp() {
         BusinessConfigService config = mock(BusinessConfigService.class);
         when(config.getText(BusinessConfigKey.FEED_RANKING_WEIGHTS)).thenReturn("{}");
-        service = new FeedIndexService(items, viewers, new FeedWeightsProvider(config, new ObjectMapper()));
+        service = new FeedIndexService(items, viewers, new FeedWeightsProvider(config, new ObjectMapper()),
+                org.mockito.Mockito.mock(FeedLuceneIndex.class));
     }
 
     @Test

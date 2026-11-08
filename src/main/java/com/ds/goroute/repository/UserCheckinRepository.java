@@ -140,12 +140,15 @@ public interface UserCheckinRepository {
      *
      * @param hidden null for both, true for only the ones a takedown currently hides
      */
-    List<UserCheckin> findAllForAdmin(String search, UUID userId, Boolean hidden, int limit, int offset);
+    List<UserCheckin> findAllForAdmin(String search, UUID userId, Boolean hidden, boolean needsPlace,
+                                      int limit, int offset);
 
-    long countAllForAdmin(String search, UUID userId, Boolean hidden);
+    long countAllForAdmin(String search, UUID userId, Boolean hidden, boolean needsPlace);
 
     /** Moves a check-in onto a catalogue place, keeping the author's own wording. */
     int assignPlace(UUID id, UUID placeId, String locationKey, String provinceCode);
+
+    int dismissPlace(UUID id, UUID adminId);
 
     int insertLocationHistory(UserCheckinLocationHistory history);
 

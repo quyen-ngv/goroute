@@ -43,4 +43,10 @@ public class ExpenseResponse {
     private LocalDateTime expenseDate;
 
     private LocalDateTime createdAt;
+
+    /** Everyone who paid (epic 05 §8.2); {@link #paidBy} is the one who paid the most. */
+    private List<ExpensePayerResponse> payers;
+
+    /** EQUAL, EXACT, PERCENT, SHARES or ADJUSTMENT. */
+    private String splitMethod;
 }

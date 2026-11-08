@@ -16,6 +16,7 @@ import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.AssistantRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.TripRepository;
+import com.ds.goroute.service.trip.TripDayService;
 import com.ds.goroute.service.ActivityService;
 import com.ds.goroute.service.MarketplaceConversationAccessService;
 import com.ds.goroute.service.TripAccessGuard;
@@ -74,7 +75,7 @@ public class AssistantProposalService {
     private final ActivityRepository activities;
     private final PlaceRepository places;
     private final ActivityService activityService;
-    private final AssistantTripDays tripDays;
+    private final TripDayService tripDays;
     private final AssistantTripEdits tripEdits;
     private final AssistantTripPlans tripPlans;
     private final TripAccessGuard tripAccessGuard;
@@ -236,7 +237,7 @@ public class AssistantProposalService {
                 yield null;
             }
             case PREPEND_DAYS -> {
-                tripDays.prepend(tripId, integer(payload.get("days")), viewerId);
+                tripDays.insertDays(tripId, 1, integer(payload.get("days")), viewerId);
                 yield null;
             }
             case REMOVE_DAYS -> {
@@ -249,6 +250,14 @@ public class AssistantProposalService {
             }
             case SHIFT_DATES -> {
                 tripDays.shiftDates(tripId, LocalDate.parse(text(payload.get("startDate"))), viewerId);
+                yield null;
+            }
+            case INSERT_DAYS -> {
+                tripDays.insertDays(tripId, integer(payload.get("dayNumber")), integer(payload.get("days")), viewerId);
+                yield null;
+            }
+            case MOVE_DAY -> {
+                tripDays.moveDay(tripId, integer(payload.get("dayNumber")), integer(payload.get("toDayNumber")), viewerId);
                 yield null;
             }
             case NEW_ACTIVITY -> {
@@ -320,13 +329,14 @@ public class AssistantProposalService {
         return switch (action) {
             case REMOVE_DAYS -> from == null || to == null || to > days || to - from + 1 >= days
                     ? "Those days are no longer in the trip" : null;
-            case SWAP_DAYS -> from == null || to == null || from > days || to > days
+            case SWAP_DAYS, MOVE_DAY -> from == null || to == null || from > days || to > days
                     ? "Those days are no longer in the trip" : null;
+            case INSERT_DAYS -> from == null || from > days ? "Those days are no longer in the trip" : null;
             default -> null;
         };
     }
 
-    /** Lengthens the trip at its end so it has {@code dayNumber}; see {@link AssistantTripDays#extendTo}. */
+    /** Lengthens the trip at its end so it has {@code dayNumber}; see {@link TripDayService#extendTo}. */
     private void ensureDays(UUID tripId, Integer dayNumber, UUID viewerId) {
         if (dayNumber != null) tripDays.extendTo(tripId, dayNumber, viewerId);
     }
@@ -528,6 +538,23 @@ public class AssistantProposalService {
                 if (!validDay(from, days) || !validDay(to, days) || from.equals(to)) return Optional.empty();
                 payload.put("dayNumber", Math.min(from, to));
                 payload.put("toDayNumber", Math.max(from, to));
+            }
+            case INSERT_DAYS -> {
+                // Only between two days: before day 1 is PREPEND_DAYS, after the last ADD_DAYS.
+                Integer count = draft.getDays() == null ? Integer.valueOf(1) : draft.getDays();
+                if (!dated || from == null || from < 2 || from > days || count < 1 || count > MAX_ADDED_DAYS
+                        || days + count > AssistantActionService.MAX_TRIP_DAYS) {
+                    return Optional.empty();
+                }
+                payload.put("dayNumber", from);
+                payload.put("days", count);
+                putDates(payload, trip.getStartDate(), trip.getEndDate().plusDays(count));
+            }
+            case MOVE_DAY -> {
+                if (!dated || !validDay(from, days) || !validDay(to, days) || from.equals(to)) return Optional.empty();
+                payload.put("dayNumber", from);
+                payload.put("toDayNumber", to);
+                payload.put("activityCount", activitiesOn(tripId, from, from));
             }
             case SHIFT_DATES -> {
                 LocalDate start = date(draft.getStartDate());

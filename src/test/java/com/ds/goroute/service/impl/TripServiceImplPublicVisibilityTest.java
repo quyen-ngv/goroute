@@ -53,6 +53,7 @@ class TripServiceImplPublicVisibilityTest {
     void setUp() {
         service = new TripServiceImpl(
                 mock(StarService.class),
+                mock(com.ds.goroute.service.AiCreditService.class),
                 mock(TripRepository.class),
                 // getPublicTrip answers for anonymous readers and never consults the guard.
                 mock(TripAccessGuard.class),

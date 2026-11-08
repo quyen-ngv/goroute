@@ -5,7 +5,8 @@ import java.util.UUID;
 /**
  * How well travellers know a place, which decides the places a zoomed-out map keeps and the
  * order of popular searches: how many trips used it and how many check-ins it has (V225), each
- * on a log scale so the hundredth trip adds less than the first. Google's stars count for
+ * on a log scale so the hundredth trip adds less than the first, the check-ins weighing
+ * {@link #CHECKIN_WEIGHT} times as much: someone went, not only planned to. Google's stars count for
  * nothing: they are not trusted. Its review count only orders the places nobody has used yet,
  * at a weight a single trip or check-in outranks ({@link #REVIEW_WEIGHT} times ln(1 + 10^6)
  * is under ln 2).
@@ -15,6 +16,9 @@ import java.util.UUID;
  * kept at every closer zoom.
  */
 public final class PlaceProminence {
+
+    /** A check-in's weight against a trip's. The trending query in PlaceMapper.xml uses the same. */
+    static final double CHECKIN_WEIGHT = 2.0;
 
     /** Review count's weight: orders unused places without outranking one used once. */
     static final double REVIEW_WEIGHT = 0.04;
@@ -27,7 +31,7 @@ public final class PlaceProminence {
 
     public static double of(UUID id, Integer tripUseCount, Integer checkinCount, Integer reviewCount) {
         return Math.log1p(nonNegative(tripUseCount))
-                + Math.log1p(nonNegative(checkinCount))
+                + CHECKIN_WEIGHT * Math.log1p(nonNegative(checkinCount))
                 + REVIEW_WEIGHT * Math.log1p(nonNegative(reviewCount))
                 + tieBreak(id);
     }

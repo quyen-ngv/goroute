@@ -5,6 +5,7 @@ import com.ds.goroute.dto.response.AiCreditStatus;
 import com.ds.goroute.dto.response.AiCreditTransactionPageResponse;
 import com.ds.goroute.dto.response.AiCreditTransactionResponse;
 import com.ds.goroute.dto.response.AiCreditWalletResponse;
+import com.ds.goroute.dto.response.StarExchangeTerms;
 import com.ds.goroute.entity.AiApiCall;
 import com.ds.goroute.entity.AiCreditPlan;
 import com.ds.goroute.entity.AiCreditTransaction;
@@ -14,6 +15,7 @@ import com.ds.goroute.repository.AiCreditRepository;
 import com.ds.goroute.type.AiCreditFeature;
 import com.ds.goroute.type.AiCreditTransactionType;
 import com.ds.goroute.type.BusinessConfigKey;
+import com.ds.goroute.type.TripCreationCharge;
 import com.ds.goroute.type.UserRealtimeEventType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,17 +35,20 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * AI credits: the one limit on every AI feature a user triggers (Pengoo, AI trip, receipt scan,
- * social video). Each model call is charged its real cost x AI_CREDIT.MARKUP as it is logged.
+ * Credits: the one thing a user spends. Every model call of an AI feature a user triggers (Pengoo,
+ * AI trip, receipt scan, social video) is charged its real cost x AI_CREDIT.MARKUP as it is logged,
+ * and every trip creation costs AI_CREDIT.TRIP_CREATION_COST.
  *
  * <ul>
- *   <li>Two buckets. The plan bucket is reset to the plan's allowance every period (FREE monthly,
+ *   <li>Three buckets. The plan bucket is reset to the plan's allowance every period (FREE monthly,
  *       each PRO plan on its own cycle), unused plan credits do not carry over, and debt is paid
- *       from the refill. Bought credits never expire. Charges take the plan bucket first.</li>
+ *       from the refill. Earned credits (exchanged from Stars) and bought credits never expire.
+ *       Debits take plan, then earned, then bought, so what the user paid for lasts longest.</li>
  *   <li>Starting a task needs AI_CREDIT.MIN_BALANCE_* for the feature. A running task may finish
  *       below zero, down to minus AI_CREDIT.NEGATIVE_FLOOR; past that the worker is told to stop.
  *       Beta users are charged like everyone but never refused or stopped.</li>
- *   <li>A task that fails on our side is refunded in full; a task stopped for credit is not.</li>
+ *   <li>A task that fails on our side is refunded in full; a task stopped for credit is not. A trip
+ *       creation is never refunded, deleting the trip included.</li>
  *   <li>Every write locks the wallet row and carries a unique reference key, so a retried report
  *       never charges twice. Refills happen lazily, on the first read or write of a new period.</li>
  * </ul>
@@ -57,6 +62,11 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AiCreditService {
     static final String FREE_PLAN = "FREE";
+    /** {@code feature} of a trip-creation entry; not an AiCreditFeature, which names logged model calls. */
+    static final String TRIP_FEATURE = "TRIP";
+    /** {@code feature} of a Star exchange entry, and its Star ledger type. */
+    static final String STAR_FEATURE = "STAR";
+    static final String STAR_EXCHANGE_TYPE = "STAR_EXCHANGE";
     private static final String PRO_TIER = "PRO";
     private static final String DEFAULT_PRO_PLAN = "PRO_MONTHLY";
     private static final int SCALE = 4;
@@ -66,6 +76,7 @@ public class AiCreditService {
     private final BusinessConfigService config;
     private final BetaAccessService betaAccess;
     private final UserRealtimePublisher realtime;
+    private final StarService stars;
 
     /** Replaced in tests. */
     Clock clock = Clock.systemDefaultZone();
@@ -99,15 +110,106 @@ public class AiCreditService {
     /** Refuses with {@link ErrorConstant#AI_CREDIT_INSUFFICIENT} (HTTP 402) when {@link #canStart} is false. */
     @Transactional
     public void ensureCanStart(UUID userId, AiCreditFeature... features) {
-        if (betaAccess.isBetaUser(userId)) return;
-        BigDecimal balance = openWallet(userId).balance();
-        int required = required(features);
-        if (balance.compareTo(BigDecimal.valueOf(required)) >= 0) return;
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("feature", features.length == 0 ? null : features[0].name());
-        data.put("balance", balance.setScale(0, RoundingMode.FLOOR));
-        data.put("required", required);
-        throw new BusinessException(ErrorConstant.AI_CREDIT_INSUFFICIENT, data);
+        ensureBalance(userId, required(features), features);
+    }
+
+    /**
+     * Like {@link #canStart}, for a task whose result is saved as a trip: the trip creation cost
+     * is added, so a run that could never be saved does not start and spend credits.
+     */
+    @Transactional
+    public boolean canStartTrip(UUID userId, AiCreditFeature... features) {
+        if (betaAccess.isBetaUser(userId)) return true;
+        int required = required(features) + tripCreationCost();
+        return openWallet(userId).balance().compareTo(BigDecimal.valueOf(required)) >= 0;
+    }
+
+    /** Refuses with {@link ErrorConstant#AI_CREDIT_INSUFFICIENT} when {@link #canStartTrip} is false. */
+    @Transactional
+    public void ensureCanStartTrip(UUID userId, AiCreditFeature... features) {
+        ensureBalance(userId, required(features) + tripCreationCost(), features);
+    }
+
+    /** Credits one trip creation costs now. */
+    public int tripCreationCost() {
+        return config.getInt(BusinessConfigKey.AI_CREDIT_TRIP_CREATION_COST);
+    }
+
+    /**
+     * Charges one trip creation. Keyed by the trip, so a retried create never pays twice.
+     *
+     * @throws BusinessException {@link ErrorConstant#TRIP_CREATION_QUOTA_EXHAUSTED} with
+     *         {@code reason = CREDIT} when the balance is short and the charge may not overdraw
+     */
+    @Transactional
+    public void chargeTripCreation(UUID userId, UUID tripId, TripCreationCharge charge) {
+        int cost = tripCreationCost();
+        if (cost <= 0) return;
+        AiCreditWallet wallet = openWallet(userId);
+        String key = "trip_create:" + tripId;
+        if (repository.hasReference(key)) return;
+        BigDecimal credits = BigDecimal.valueOf(cost);
+        if (charge == TripCreationCharge.REQUIRE_BALANCE && !betaAccess.isBetaUser(userId)
+                && wallet.balance().compareTo(credits) < 0) {
+            throw tripCreationRefused(wallet.balance(), cost);
+        }
+        Split split = split(wallet, credits);
+        record(wallet, AiCreditTransaction.builder()
+                .transactionType(AiCreditTransactionType.TRIP_CREATE.name())
+                .planAmount(split.plan().negate())
+                .earnedAmount(split.earned().negate())
+                .purchasedAmount(split.purchased().negate())
+                .referenceKey(key)
+                .feature(TRIP_FEATURE)
+                .note(tripId.toString())
+                .build());
+        wallet.setLifetimeSpent(wallet.getLifetimeSpent().add(credits));
+        repository.updateWallet(wallet);
+    }
+
+    /**
+     * Exchanges Stars one way into the earned bucket at AI_CREDIT.STAR_EXCHANGE_RATE, within
+     * AI_CREDIT.STAR_EXCHANGE_MONTHLY_CAP credits per wallet period.
+     *
+     * <p>The Star wallet is locked before the credit wallet. That is the only order any flow takes
+     * both in (trip creation and AI charges lock the credit wallet alone), so the two cannot
+     * deadlock. The reference key counts this user's credit entries, as {@link #adjust} does.
+     */
+    @Transactional
+    public void exchangeStars(UUID userId, int starCount) {
+        if (!config.getBoolean(BusinessConfigKey.AI_CREDIT_STAR_EXCHANGE_ENABLED)) {
+            throw new BusinessException(ErrorConstant.STAR_EXCHANGE_DISABLED);
+        }
+        if (starCount <= 0) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Exchange at least one star");
+        }
+        stars.lockPoints(userId);
+        AiCreditWallet wallet = openWallet(userId);
+        StarExchangeTerms terms = exchangeTerms(wallet);
+        BigDecimal credits = BigDecimal.valueOf((long) starCount * terms.getRate());
+        if (credits.compareTo(terms.getRemainingThisPeriod()) > 0) {
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("monthlyCap", terms.getMonthlyCap());
+            data.put("usedThisPeriod", terms.getUsedThisPeriod());
+            data.put("remainingThisPeriod", terms.getRemainingThisPeriod());
+            data.put("maxStarsThisPeriod", terms.getMaxStarsThisPeriod());
+            throw new BusinessException(ErrorConstant.STAR_EXCHANGE_CAP_REACHED, data);
+        }
+        String key = "star_exchange:" + userId + ":" + repository.countTransactions(userId);
+        if (repository.hasReference(key)) return;
+        // Refuses with INSUFFICIENT_POINTS before anything is credited.
+        stars.spend(userId, starCount, STAR_EXCHANGE_TYPE, key,
+                "Exchanged " + starCount + " stars for " + credits.toPlainString() + " credits");
+        record(wallet, AiCreditTransaction.builder()
+                .transactionType(AiCreditTransactionType.STAR_EXCHANGE.name())
+                .planAmount(BigDecimal.ZERO)
+                .earnedAmount(credits)
+                .purchasedAmount(BigDecimal.ZERO)
+                .referenceKey(key)
+                .feature(STAR_FEATURE)
+                .note(starCount + " stars x " + terms.getRate())
+                .build());
+        repository.updateWallet(wallet);
     }
 
     /**
@@ -129,6 +231,7 @@ public class AiCreditService {
             record(wallet, AiCreditTransaction.builder()
                     .transactionType(AiCreditTransactionType.CHARGE.name())
                     .planAmount(split.plan().negate())
+                    .earnedAmount(split.earned().negate())
                     .purchasedAmount(split.purchased().negate())
                     .referenceKey(key)
                     .feature(feature.name())
@@ -152,6 +255,7 @@ public class AiCreditService {
             record(wallet, AiCreditTransaction.builder()
                     .transactionType(AiCreditTransactionType.REFUND.name())
                     .planAmount(charge.getPlanAmount().negate())
+                    .earnedAmount(nz(charge.getEarnedAmount()).negate())
                     .purchasedAmount(charge.getPurchasedAmount().negate())
                     .referenceKey("refund:" + charge.getId())
                     .feature(charge.getFeature())
@@ -174,22 +278,16 @@ public class AiCreditService {
         AiCreditWallet wallet = openWallet(userId);
         BigDecimal credits = amount.setScale(SCALE, RoundingMode.HALF_UP);
         if (credits.signum() == 0) return toResponse(userId, wallet);
-        BigDecimal plan;
-        BigDecimal purchased;
-        if (credits.signum() > 0) {
-            plan = BigDecimal.ZERO;
-            purchased = credits;
-        } else {
-            Split split = split(wallet, credits.negate());
-            plan = split.plan().negate();
-            purchased = split.purchased().negate();
-        }
+        Split split = credits.signum() > 0
+                ? new Split(BigDecimal.ZERO, BigDecimal.ZERO, credits)
+                : split(wallet, credits.negate()).negate();
         // Counted rather than random: two taps on the same button must not both apply.
         String key = "admin_adjust:" + userId + ":" + repository.countTransactions(userId);
         record(wallet, AiCreditTransaction.builder()
                 .transactionType(AiCreditTransactionType.ADJUST.name())
-                .planAmount(plan)
-                .purchasedAmount(purchased)
+                .planAmount(split.plan())
+                .earnedAmount(split.earned())
+                .purchasedAmount(split.purchased())
                 .referenceKey(key)
                 .note(truncate(reason, 500))
                 .createdBy(operatorId)
@@ -213,6 +311,50 @@ public class AiCreditService {
         return wallet;
     }
 
+    private void ensureBalance(UUID userId, int required, AiCreditFeature... features) {
+        if (betaAccess.isBetaUser(userId)) return;
+        BigDecimal balance = openWallet(userId).balance();
+        if (balance.compareTo(BigDecimal.valueOf(required)) >= 0) return;
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("feature", features.length == 0 ? null : features[0].name());
+        data.put("balance", balance.setScale(0, RoundingMode.FLOOR));
+        data.put("required", required);
+        throw new BusinessException(ErrorConstant.AI_CREDIT_INSUFFICIENT, data);
+    }
+
+    /**
+     * LEGACY-STAR-QUOTA: app builds up to 21 only understand 4000101 for a refused trip creation
+     * (they offer "see my stars"), so the old code stays and {@code reason = CREDIT} tells newer
+     * builds it is about credits. Once APP.MIN_BUILD_* passes the first credit build, throw
+     * {@link ErrorConstant#AI_CREDIT_INSUFFICIENT} with {@code feature = TRIP} instead.
+     */
+    private static BusinessException tripCreationRefused(BigDecimal balance, int required) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("reason", "CREDIT");
+        data.put("feature", TRIP_FEATURE);
+        data.put("balance", balance.setScale(0, RoundingMode.FLOOR));
+        data.put("required", required);
+        return new BusinessException(ErrorConstant.TRIP_CREATION_QUOTA_EXHAUSTED, data);
+    }
+
+    /** The exchange cap of the wallet's current period and how much of it is used. */
+    private StarExchangeTerms exchangeTerms(AiCreditWallet wallet) {
+        int rate = config.getInt(BusinessConfigKey.AI_CREDIT_STAR_EXCHANGE_RATE);
+        int cap = config.getInt(BusinessConfigKey.AI_CREDIT_STAR_EXCHANGE_MONTHLY_CAP);
+        BigDecimal used = repository.sumAmountSince(wallet.getUserId(),
+                AiCreditTransactionType.STAR_EXCHANGE.name(), wallet.getPlanPeriodStart());
+        BigDecimal remaining = BigDecimal.valueOf(cap).subtract(nz(used)).max(BigDecimal.ZERO);
+        return StarExchangeTerms.builder()
+                .enabled(config.getBoolean(BusinessConfigKey.AI_CREDIT_STAR_EXCHANGE_ENABLED))
+                .rate(rate)
+                .monthlyCap(cap)
+                .usedThisPeriod(nz(used))
+                .remainingThisPeriod(remaining)
+                .maxStarsThisPeriod(remaining.divide(BigDecimal.valueOf(rate), 0, RoundingMode.FLOOR).intValue())
+                .periodEndsAt(wallet.getPlanPeriodEnd())
+                .build();
+    }
+
     /**
      * Starts the current period when the last one ended or the plan changed: the plan bucket goes
      * to the allowance, less any debt it carried.
@@ -232,6 +374,7 @@ public class AiCreditService {
             record(wallet, AiCreditTransaction.builder()
                     .transactionType(AiCreditTransactionType.PLAN_REFILL.name())
                     .planAmount(target.subtract(wallet.getPlanBalance()))
+                    .earnedAmount(BigDecimal.ZERO)
                     .purchasedAmount(BigDecimal.ZERO)
                     .referenceKey(key)
                     .note(plan.code())
@@ -245,31 +388,41 @@ public class AiCreditService {
 
     /** Applies the entry to the wallet in memory and writes it; the caller saves the wallet. */
     private void record(AiCreditWallet wallet, AiCreditTransaction tx) {
+        tx.setEarnedAmount(nz(tx.getEarnedAmount()));
         wallet.setPlanBalance(wallet.getPlanBalance().add(tx.getPlanAmount()));
+        wallet.setEarnedBalance(nz(wallet.getEarnedBalance()).add(tx.getEarnedAmount()));
         wallet.setPurchasedBalance(wallet.getPurchasedBalance().add(tx.getPurchasedAmount()));
         tx.setId(UUID.randomUUID());
         tx.setUserId(wallet.getUserId());
-        tx.setAmount(tx.getPlanAmount().add(tx.getPurchasedAmount()));
+        tx.setAmount(tx.getPlanAmount().add(tx.getEarnedAmount()).add(tx.getPurchasedAmount()));
         tx.setPlanBalanceAfter(wallet.getPlanBalance());
+        tx.setEarnedBalanceAfter(wallet.getEarnedBalance());
         tx.setPurchasedBalanceAfter(wallet.getPurchasedBalance());
         repository.insertTransaction(tx);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("balance", wallet.balance());
         payload.put("planBalance", wallet.getPlanBalance());
+        payload.put("earnedBalance", wallet.getEarnedBalance());
         payload.put("purchasedBalance", wallet.getPurchasedBalance());
         payload.put("delta", tx.getAmount());
         payload.put("type", tx.getTransactionType());
-        payload.put("feature", tx.getFeature());
-        payload.put("traceId", tx.getTraceId());
+        // Absent rather than null: the realtime event copies its payload with Map.copyOf.
+        if (tx.getFeature() != null) payload.put("feature", tx.getFeature());
+        if (tx.getTraceId() != null) payload.put("traceId", tx.getTraceId());
         realtime.publishAfterCommit(UserRealtimeEventType.CREDIT_CHANGED, wallet.getUserId(), payload);
     }
 
-    /** How much of a debit each bucket takes: plan credits above zero first, then bought ones, then debt. */
+    /**
+     * How much of a debit each bucket takes: plan credits above zero first, then earned, then
+     * bought ones, and whatever is left becomes debt in the plan bucket.
+     */
     private static Split split(AiCreditWallet wallet, BigDecimal debit) {
         BigDecimal fromPlan = debit.min(wallet.getPlanBalance().max(BigDecimal.ZERO));
         BigDecimal rest = debit.subtract(fromPlan);
+        BigDecimal fromEarned = rest.min(nz(wallet.getEarnedBalance()).max(BigDecimal.ZERO));
+        rest = rest.subtract(fromEarned);
         BigDecimal fromPurchased = rest.min(wallet.getPurchasedBalance());
-        return new Split(fromPlan.add(rest.subtract(fromPurchased)), fromPurchased);
+        return new Split(fromPlan.add(rest.subtract(fromPurchased)), fromEarned, fromPurchased);
     }
 
     /** cost x markup / price of a credit; a call with tokens but no price pays the fallback. */
@@ -337,6 +490,7 @@ public class AiCreditService {
         return AiCreditWalletResponse.builder()
                 .balance(wallet.balance())
                 .planBalance(wallet.getPlanBalance())
+                .earnedBalance(nz(wallet.getEarnedBalance()))
                 .purchasedBalance(wallet.getPurchasedBalance())
                 .planCode(wallet.getPlanCode())
                 .planCredits(plan.credits())
@@ -345,6 +499,8 @@ public class AiCreditService {
                 .negativeFloor(config.getInt(BusinessConfigKey.AI_CREDIT_NEGATIVE_FLOOR))
                 .minBalance(minBalance)
                 .unlimited(betaAccess.isBetaUser(userId))
+                .tripCreationCost(tripCreationCost())
+                .starExchange(exchangeTerms(wallet))
                 .build();
     }
 
@@ -352,12 +508,19 @@ public class AiCreditService {
         return value == null ? 0 : value;
     }
 
+    private static BigDecimal nz(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
     private static String truncate(String value, int max) {
         if (value == null) return null;
         return value.length() > max ? value.substring(0, max) : value;
     }
 
-    private record Split(BigDecimal plan, BigDecimal purchased) {
+    private record Split(BigDecimal plan, BigDecimal earned, BigDecimal purchased) {
+        Split negate() {
+            return new Split(plan.negate(), earned.negate(), purchased.negate());
+        }
     }
 
     private record PlanTerms(String code, BigDecimal credits, int months, LocalDateTime anchor) {

@@ -16,6 +16,9 @@ public interface ExpenseService {
 
     List<ExpenseResponse> getExpenses(UUID tripId, ExpenseCategory category, UUID userId);
 
+    /** One page when {@code page} or {@code size} is set; the whole list otherwise, as before. */
+    List<ExpenseResponse> getExpenses(UUID tripId, ExpenseCategory category, Integer page, Integer size, UUID userId);
+
     BudgetOverviewResponse getBudgetOverview(UUID tripId, UUID userId);
 
     ExpenseResponse updateExpense(UUID tripId, UUID expenseId, UpdateExpenseRequest request, UUID userId);
@@ -28,6 +31,10 @@ public interface ExpenseService {
 
     void markAllPaymentsForTrip(UUID tripId, MarkPaymentRequest request, UUID userId);
 
-    /** Re-apply trip currency conversion for all expenses after trip.currency changes. */
+    /**
+     * Re-converts every expense of the trip into its (new) currency at the rate of the day each was
+     * spent. Inside a transaction it runs once that transaction has committed, so no database
+     * connection is held while rates are fetched.
+     */
     void recalculateForTripCurrency(UUID tripId);
 }

@@ -48,9 +48,11 @@ public class UserRealtimePublisher {
     /** Sends now. Only for callers that are already past any transaction, such as a socket interceptor. */
     public void send(UserRealtimeEventType type, UUID userId, Map<String, Object> payload) {
         if (userId == null) return;
-        UserRealtimeEventResponse event = new UserRealtimeEventResponse(
-                UUID.randomUUID(), EVENT_VERSION, type.wireValue(), userId, Instant.now(), payload);
         try {
+            // Built inside the try: it runs after commit, so a bad payload here (Map.copyOf refuses
+            // nulls) used to turn every committed write into a 500.
+            UserRealtimeEventResponse event = new UserRealtimeEventResponse(
+                    UUID.randomUUID(), EVENT_VERSION, type.wireValue(), userId, Instant.now(), payload);
             messagingTemplate.convertAndSend(USER_TOPIC_PREFIX + userId + USER_EVENTS_SUFFIX, event);
         } catch (RuntimeException exception) {
             // The write already committed; a lost realtime hint must not turn it into an error.

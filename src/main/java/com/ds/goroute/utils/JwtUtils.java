@@ -8,6 +8,7 @@ import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.security.Key;
@@ -16,6 +17,7 @@ import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class JwtUtils {
 
     private final JwtProperties properties;
@@ -59,6 +61,9 @@ public class JwtUtils {
                     .parseClaimsJws(token);
             return true;
         } catch (Exception e) {
+            // Says why (ExpiredJwtException, SignatureException, MalformedJwtException…) so a
+            // 401 can be told apart from a request that sent no token at all.
+            log.info("JWT rejected ({}): {}", e.getClass().getSimpleName(), e.getMessage());
             return false;
         }
     }

@@ -33,7 +33,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Per-key machine credentials for the admin API (today: the events crawler). A key is
+ * Per-key machine credentials for the admin API (the events crawler, the activity-place agent
+ * and its Telegram approver). A key is
  * {@code grk_} + 40 random base62 characters, shown once; only its SHA-256 is stored. A key acts
  * as its owner — an admin user — so RBAC and {@code created_by} attribution work unchanged.
  */
@@ -60,8 +61,8 @@ public class AdminApiKeyService {
 
     Clock clock = Clock.systemUTC();
 
-    /** Who a valid key acts as. */
-    public record AuthenticatedKey(UUID keyId, UUID ownerUserId) {
+    /** Who a valid key acts as, and the scope codes that decide which paths it may call. */
+    public record AuthenticatedKey(UUID keyId, UUID ownerUserId, List<String> scopes) {
     }
 
     @Transactional(readOnly = true)
@@ -87,8 +88,8 @@ public class AdminApiKeyService {
         if (expiresAt != null && !expiresAt.isAfter(now)) {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "expiresAt must be in the future");
         }
+        List<String> scopes = requestedScopes(request.getScopes());
         String key = generateKey();
-        List<String> scopes = List.of(AdminApiKeyScope.EVENTS_IMPORT.code());
         AdminApiKey row = AdminApiKey.builder()
                 .id(UUID.randomUUID())
                 .name(request.getName().trim())
@@ -152,7 +153,33 @@ public class AdminApiKeyService {
             // Bookkeeping only; never refuse a valid key because the timestamp could not be written.
             log.warn("Could not record admin API key use: {}", exception.getClass().getSimpleName());
         }
-        return Optional.of(new AuthenticatedKey(key.getId(), key.getOwnerUserId()));
+        return Optional.of(new AuthenticatedKey(key.getId(), key.getOwnerUserId(), scopes(key.getScopes())));
+    }
+
+    /**
+     * Known codes only, de-duplicated. The agent that proposes activity places and the approver
+     * that links them must hold different keys: one key with both would let the agent approve its
+     * own proposals and skip the human review the flow exists for.
+     */
+    private List<String> requestedScopes(List<String> requested) {
+        if (requested == null || requested.isEmpty()) {
+            return List.of(AdminApiKeyScope.EVENTS_IMPORT.code());
+        }
+        List<String> scopes = requested.stream()
+                .map(code -> code == null ? "" : code.trim())
+                .distinct()
+                .toList();
+        for (String code : scopes) {
+            if (AdminApiKeyScope.fromCode(code).isEmpty()) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Unknown API key scope: " + code);
+            }
+        }
+        if (scopes.contains(AdminApiKeyScope.ACTIVITY_PLACES_PROPOSE.code())
+                && scopes.contains(AdminApiKeyScope.ACTIVITY_PLACES_APPROVE.code())) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "activity-places:propose and activity-places:approve must be on different keys");
+        }
+        return scopes;
     }
 
     /** Lower-case hex SHA-256, the form stored in {@code admin_api_keys.key_hash}. */

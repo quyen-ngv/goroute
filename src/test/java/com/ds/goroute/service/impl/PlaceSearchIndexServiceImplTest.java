@@ -246,6 +246,51 @@ class PlaceSearchIndexServiceImplTest {
     }
 
     @Test
+    void nameSearchNeedsEveryWordAndPrefersTheAccentsTyped() throws Exception {
+        Place phoThin = place("Phở Thìn", "restaurant", 21.0, 105.8);
+        Place phoCo = place("Phố Cổ Bún", "restaurant", 21.0, 105.8);
+        Place bunCha = place("Bún Chả Hàng Mành", "restaurant", 21.0, 105.8);
+        for (Place place : List.of(phoThin, phoCo, bunCha)) {
+            searchService.indexPlace(place);
+        }
+
+        // Typed with accents: phở before phố; without, both are the same word.
+        assertThat(searchService.searchPlaceIdsByName("phở", null, false, 0, 20))
+                .containsExactly(phoThin.getId(), phoCo.getId());
+        // "Phố Cổ Bún" has bun but not cha.
+        assertThat(searchService.searchPlaceIdsByName("bun cha", null, false, 0, 20))
+                .containsExactly(bunCha.getId());
+        assertThat(searchService.countPlacesByName("bun cha", null)).isEqualTo(1);
+    }
+
+    @Test
+    void nameSearchTriesTyposOnlyWhenNothingMatchesAsTyped() throws Exception {
+        Place ninhBinh = place("Ninh Bình Homestay", "hotel", 20.25, 105.97);
+        Place minhBinh = place("Minh Bình Hotel", "hotel", 20.25, 105.97);
+        searchService.indexPlace(ninhBinh);
+        searchService.indexPlace(minhBinh);
+
+        assertThat(searchService.searchPlaceIdsByName("ninh binh", null, false, 0, 20))
+                .containsExactly(ninhBinh.getId());
+        assertThat(searchService.searchPlaceIdsByName("nihn binh", null, false, 0, 20))
+                .containsExactly(ninhBinh.getId());
+    }
+
+    @Test
+    void areaSearchFallsBackToAnyWordWhenNoNameHasThemAll() throws Exception {
+        Place cafe = place("Cafe Mây", "cafe", 10.0001, 106.0);
+        Place exact = place("Cafe Đà Lạt", "cafe", 10.0002, 106.0);
+        searchService.indexPlace(cafe);
+
+        assertThat(searchService.searchPlaceIds(criteria("cafe da lat", null, 2.0)))
+                .containsExactly(cafe.getId());
+
+        searchService.indexPlace(exact);
+        assertThat(searchService.searchPlaceIds(criteria("cafe da lat", null, 2.0)))
+                .containsExactly(exact.getId());
+    }
+
+    @Test
     void reindexRunsInTheBackgroundAndReplacesStaleDocuments() throws Exception {
         Place stale = place("Stale cafe", "cafe", 10.0001, 106.0);
         searchService.indexPlace(stale);

@@ -9,8 +9,11 @@ import com.ds.goroute.service.ImageModerationService;
 import com.ds.goroute.service.ImageUploadOutcome;
 import com.ds.goroute.service.ImageUploadRequest;
 import com.ds.goroute.service.StorageService;
+import com.ds.goroute.service.UploadSlots;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.repository.AiTripRepository;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -22,6 +25,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -44,6 +48,16 @@ public class FileUploadServiceImpl implements FileUploadService {
     private final BusinessConfigService businessConfigService;
     private final AiTripRepository aiTripRepository;
     private final Executor applicationTaskExecutor;
+    private final UploadSlots uploadSlots;
+
+    /**
+     * FREE or PRO per user, for the size limit. Read on every photo it was an INSERT and a
+     * SELECT on the shared connection pool; a tier change shows within five minutes.
+     */
+    private final Cache<UUID, Boolean> proUsers = Caffeine.newBuilder()
+            .expireAfterWrite(Duration.ofMinutes(5))
+            .maximumSize(10_000)
+            .build();
 
     @Autowired
     public FileUploadServiceImpl(
@@ -53,7 +67,8 @@ public class FileUploadServiceImpl implements FileUploadService {
             ImageModerationService imageModerationService,
             BusinessConfigService businessConfigService,
             AiTripRepository aiTripRepository,
-            @Qualifier("applicationTaskExecutor") Executor applicationTaskExecutor) {
+            @Qualifier("applicationTaskExecutor") Executor applicationTaskExecutor,
+            UploadSlots uploadSlots) {
         this.storageService = storageService;
         this.restTemplate = restTemplate;
         this.uploadProperties = uploadProperties;
@@ -61,6 +76,20 @@ public class FileUploadServiceImpl implements FileUploadService {
         this.businessConfigService = businessConfigService;
         this.aiTripRepository = aiTripRepository;
         this.applicationTaskExecutor = applicationTaskExecutor;
+        this.uploadSlots = uploadSlots;
+    }
+
+    public FileUploadServiceImpl(
+            StorageService storageService,
+            RestTemplate restTemplate,
+            FileUploadProperties uploadProperties,
+            ImageModerationService imageModerationService,
+            BusinessConfigService businessConfigService,
+            AiTripRepository aiTripRepository,
+            Executor applicationTaskExecutor) {
+        this(storageService, restTemplate, uploadProperties, imageModerationService,
+                businessConfigService, aiTripRepository, applicationTaskExecutor,
+                new UploadSlots(uploadProperties));
     }
 
     public FileUploadServiceImpl(
@@ -87,6 +116,11 @@ public class FileUploadServiceImpl implements FileUploadService {
 
     @Override
     public List<ImageUploadOutcome> uploadImages(ImageUploadRequest request, List<MultipartFile> files) {
+        // One slot for the whole batch: per-file slots would let one batch take every one.
+        return uploadSlots.run(request.userId(), () -> uploadBatch(request, files));
+    }
+
+    private List<ImageUploadOutcome> uploadBatch(ImageUploadRequest request, List<MultipartFile> files) {
         if (files == null || files.isEmpty()) {
             throw invalid("At least one image is required");
         }
@@ -121,7 +155,8 @@ public class FileUploadServiceImpl implements FileUploadService {
 
     @Override
     public ImageUploadOutcome uploadImage(ImageUploadRequest request, MultipartFile file) {
-        return uploadImage(request, file, getMaxImageSizeBytes(request.userId()));
+        return uploadSlots.run(request.userId(),
+                () -> uploadImage(request, file, getMaxImageSizeBytes(request.userId())));
     }
 
     private ImageUploadOutcome uploadImage(ImageUploadRequest request, MultipartFile file, long maxSizeBytes) {
@@ -294,6 +329,10 @@ public class FileUploadServiceImpl implements FileUploadService {
         if (userId == null) {
             return false;
         }
+        return proUsers.get(userId, this::lookUpProUser);
+    }
+
+    private boolean lookUpProUser(UUID userId) {
         try {
             aiTripRepository.ensureSubscription(userId);
             return "PRO".equalsIgnoreCase(aiTripRepository.getSubscriptionTier(userId));

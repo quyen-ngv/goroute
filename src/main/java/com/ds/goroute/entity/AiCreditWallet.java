@@ -9,7 +9,10 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-/** One user's AI credits: the plan bucket (refilled each period) and the bought bucket. */
+/**
+ * One user's credits: the plan bucket (refilled each period), the earned bucket (exchanged from
+ * Stars, never expires) and the bought bucket.
+ */
 @Data
 @Builder
 @NoArgsConstructor
@@ -18,6 +21,7 @@ public class AiCreditWallet {
     private UUID userId;
     /** Negative when a task finished in debt; the next refill or purchase pays it back. */
     private BigDecimal planBalance;
+    private BigDecimal earnedBalance;
     private BigDecimal purchasedBalance;
     /** The plan the current period was refilled from: FREE or a subscription_plans code. */
     private String planCode;
@@ -28,6 +32,6 @@ public class AiCreditWallet {
     private LocalDateTime updatedAt;
 
     public BigDecimal balance() {
-        return planBalance.add(purchasedBalance);
+        return planBalance.add(earnedBalance).add(purchasedBalance);
     }
 }

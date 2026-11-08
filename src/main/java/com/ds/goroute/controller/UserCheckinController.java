@@ -7,6 +7,7 @@ import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.request.CreateUserCheckinRequest;
 import com.ds.goroute.dto.request.UpdateUserCheckinRequest;
 import com.ds.goroute.dto.response.CheckinContextResponse;
+import com.ds.goroute.dto.response.CheckinVideoUploadResponse;
 import com.ds.goroute.dto.response.UserCheckinResponse;
 import com.ds.goroute.dto.response.CheckinLikeResponse;
 import com.ds.goroute.service.UserCheckinService;
@@ -18,6 +19,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -29,6 +31,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -72,6 +75,19 @@ public class UserCheckinController extends BaseController {
                 .body(ofSucceeded(checkinService.create(userId, request)));
     }
 
+    /**
+     * Uploads the one video of a check-in (MP4/MOV/WEBM, at most 50 MB). The app then posts
+     * the check-in with this URL as its only media item, plus a still frame it uploaded as an
+     * ordinary image.
+     */
+    @PostMapping(value = "/videos", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<BaseResponse<CheckinVideoUploadResponse>> uploadVideo(
+            @RequestParam("file") MultipartFile file,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ofSucceeded(checkinService.uploadVideo(userId, file)));
+    }
+
     @PutMapping("/{checkinId}")
     public ResponseEntity<BaseResponse<UserCheckinResponse>> update(
             @PathVariable UUID checkinId,
@@ -106,11 +122,13 @@ public class UserCheckinController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(checkinService.get(userId, checkinId)));
     }
 
+    /** {@code liked} is the state the viewer wants; without it the like flips (older apps). */
     @PostMapping("/{checkinId}/like")
     public ResponseEntity<BaseResponse<CheckinLikeResponse>> toggleLike(
             @PathVariable UUID checkinId,
+            @RequestParam(required = false) Boolean liked,
             @CurrentUser UUID userId) {
-        return ResponseEntity.ok(ofSucceeded(checkinService.toggleLike(userId, checkinId)));
+        return ResponseEntity.ok(ofSucceeded(checkinService.setLike(userId, checkinId, liked)));
     }
 
     /**

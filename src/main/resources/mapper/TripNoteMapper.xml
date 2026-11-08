@@ -12,6 +12,7 @@
         <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
         <result column="is_deleted" property="isDeleted" jdbcType="BOOLEAN"/>
         <result column="is_shared" property="isShared" jdbcType="BOOLEAN"/>
+        <result column="note_type" property="noteType" jdbcType="VARCHAR"/>
     </resultMap>
 
     <select id="selectById" parameterType="java.util.UUID" resultMap="TripNoteResultMap">
@@ -29,10 +30,11 @@
     </select>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.TripNote">
-        INSERT INTO trip_notes (id, trip_id, activity_id, user_id, content, created_at, updated_at, is_deleted, is_shared)
+        INSERT INTO trip_notes (id, trip_id, activity_id, user_id, content, created_at, updated_at, is_deleted, is_shared, note_type)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
                 #{activityId,javaType=java.util.UUID,jdbcType=OTHER}, #{userId,javaType=java.util.UUID,jdbcType=OTHER},
-                #{content}, NOW(), NOW(), false, #{isShared,jdbcType=BOOLEAN})
+                #{content}, NOW(), NOW(), false, #{isShared,jdbcType=BOOLEAN},
+                COALESCE(#{noteType,jdbcType=VARCHAR}, 'TEXT'))
     </insert>
 
     <update id="updateById" parameterType="com.ds.goroute.entity.TripNote">

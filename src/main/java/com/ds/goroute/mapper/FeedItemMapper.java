@@ -46,6 +46,10 @@ public interface FeedItemMapper {
 
     List<FeedItemRow> selectByKeys(@Param("keys") Collection<FeedKey> keys);
 
+    /** Up to {@code limit} rows after ({@code afterType}, {@code afterId}) in key order: the Lucene rebuild's pages. */
+    List<FeedItemRow> selectPage(@Param("afterType") String afterType, @Param("afterId") UUID afterId,
+                                 @Param("limit") int limit);
+
     /** Writes the scores computed in Java and clears stats_dirty. */
     int updateScores(@Param("rows") Collection<FeedItemRow> rows);
 

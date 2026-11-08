@@ -37,6 +37,9 @@ public enum NotificationType {
     PAYMENT_ALL_MARKED,
     PAYMENT_TRIP_MARKED,
     PAYMENT_REMINDER,
+    // Ledger (epic 05). Data: actorName, payerName, payeeName, amount, currency, settlementId, deepLink.
+    // A payment was recorded between two people; sent to the side that did not record it.
+    SETTLEMENT_ADDED,
     
     // Check-in events
     CHECKIN,
@@ -46,6 +49,9 @@ public enum NotificationType {
     NOTE_ADDED,
     NOTE_UPDATED,
     NOTE_DELETED,
+    // Todo list in a trip note (epic 04 §2.4). Data: actorName, tripName, todoText, deepLink.
+    // Sent to the people newly assigned to an item, never to the actor.
+    TODO_ASSIGNED,
 
     // Trip memory events
     MEMORY_ADDED,

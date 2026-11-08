@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.SettlementMapper">
+
+    <resultMap id="SettlementResultMap" type="com.ds.goroute.entity.Settlement">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="trip_id" property="tripId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="from_user_id" property="fromUserId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="from_guest_member_id" property="fromGuestMemberId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="to_user_id" property="toUserId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="to_guest_member_id" property="toGuestMemberId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="amount" property="amount" jdbcType="DECIMAL"/>
+        <result column="currency" property="currency" jdbcType="VARCHAR"/>
+        <result column="method" property="method" jdbcType="VARCHAR"/>
+        <result column="note" property="note" jdbcType="VARCHAR"/>
+        <result column="paid_at" property="paidAt" jdbcType="TIMESTAMP"/>
+        <result column="original_amount" property="originalAmount" jdbcType="DECIMAL"/>
+        <result column="original_currency" property="originalCurrency" jdbcType="VARCHAR"/>
+        <result column="split_id" property="splitId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="created_by" property="createdBy" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
+        <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
+        <result column="deleted_at" property="deletedAt" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <sql id="Columns">
+        id, trip_id, from_user_id, from_guest_member_id, to_user_id, to_guest_member_id, amount, currency,
+        method, note, paid_at, original_amount, original_currency, split_id, created_by, created_at,
+        updated_at, deleted_at
+    </sql>
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.Settlement">
+        INSERT INTO settlements (id, trip_id, from_user_id, from_guest_member_id, to_user_id, to_guest_member_id,
+                                 amount, currency, method, note, paid_at, original_amount, original_currency,
+                                 split_id, created_by, created_at, updated_at)
+        VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{fromUserId,javaType=java.util.UUID,jdbcType=OTHER}, #{fromGuestMemberId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{toUserId,javaType=java.util.UUID,jdbcType=OTHER}, #{toGuestMemberId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{amount}, #{currency}, #{method,jdbcType=VARCHAR}, #{note,jdbcType=VARCHAR}, #{paidAt,jdbcType=TIMESTAMP},
+                #{originalAmount,jdbcType=DECIMAL}, #{originalCurrency,jdbcType=VARCHAR},
+                #{splitId,javaType=java.util.UUID,jdbcType=OTHER}, #{createdBy,javaType=java.util.UUID,jdbcType=OTHER},
+                NOW(), NOW())
+    </insert>
+
+    <!-- The editable part. The trip and the share link never change. -->
+    <update id="updateById" parameterType="com.ds.goroute.entity.Settlement">
+        UPDATE settlements SET
+            from_user_id = #{fromUserId,javaType=java.util.UUID,jdbcType=OTHER},
+            from_guest_member_id = #{fromGuestMemberId,javaType=java.util.UUID,jdbcType=OTHER},
+            to_user_id = #{toUserId,javaType=java.util.UUID,jdbcType=OTHER},
+            to_guest_member_id = #{toGuestMemberId,javaType=java.util.UUID,jdbcType=OTHER},
+            amount = #{amount},
+            currency = #{currency},
+            method = #{method,jdbcType=VARCHAR},
+            note = #{note,jdbcType=VARCHAR},
+            paid_at = #{paidAt,jdbcType=TIMESTAMP},
+            original_amount = #{originalAmount,jdbcType=DECIMAL},
+            original_currency = #{originalCurrency,jdbcType=VARCHAR},
+            updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <select id="selectById" resultMap="SettlementResultMap">
+        SELECT <include refid="Columns"/> FROM settlements WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <update id="softDelete">
+        UPDATE settlements SET deleted_at = NOW(), updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
+    </update>
+
+    <update id="restore">
+        UPDATE settlements SET deleted_at = NULL, updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NOT NULL
+    </update>
+
+    <!-- Live settlements of these trips, for balances. -->
+    <select id="selectActiveByTripIds" resultMap="SettlementResultMap">
+        SELECT <include refid="Columns"/> FROM settlements
+        WHERE deleted_at IS NULL
+          AND trip_id IN
+        <foreach item="tripId" collection="tripIds" open="(" separator="," close=")">
+            #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+        </foreach>
+        ORDER BY paid_at, id
+    </select>
+
+    <select id="selectTripPage" resultMap="SettlementResultMap">
+        SELECT <include refid="Columns"/> FROM settlements
+        WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+        <if test="!includeDeleted">
+            AND deleted_at IS NULL
+        </if>
+        ORDER BY paid_at DESC, created_at DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countTrip" resultType="long">
+        SELECT COUNT(*) FROM settlements
+        WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+        <if test="!includeDeleted">
+            AND deleted_at IS NULL
+        </if>
+    </select>
+
+    <!-- The live settlements that stand for these shares (an old build's "mark as paid"). -->
+    <select id="selectActiveBySplitIds" resultMap="SettlementResultMap">
+        SELECT <include refid="Columns"/> FROM settlements
+        WHERE deleted_at IS NULL
+          AND split_id IN
+        <foreach item="splitId" collection="splitIds" open="(" separator="," close=")">
+            #{splitId,javaType=java.util.UUID,jdbcType=OTHER}
+        </foreach>
+    </select>
+
+    <update id="softDeleteBySplitIds">
+        UPDATE settlements SET deleted_at = NOW(), updated_at = NOW()
+        WHERE deleted_at IS NULL
+          AND split_id IN
+        <foreach item="splitId" collection="splitIds" open="(" separator="," close=")">
+            #{splitId,javaType=java.util.UUID,jdbcType=OTHER}
+        </foreach>
+    </update>
+
+    <update id="moveGuestFromToUser">
+        UPDATE settlements
+        SET from_user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}, from_guest_member_id = NULL,
+            updated_at = NOW()
+        WHERE from_guest_member_id = #{guestMemberId,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <update id="moveGuestToToUser">
+        UPDATE settlements
+        SET to_user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}, to_guest_member_id = NULL,
+            updated_at = NOW()
+        WHERE to_guest_member_id = #{guestMemberId,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <!-- After a guest became this user, a payment between the two of them is one person paying themself. -->
+    <update id="softDeleteSelfSettlements">
+        UPDATE settlements SET deleted_at = NOW(), updated_at = NOW()
+        WHERE deleted_at IS NULL
+          AND from_user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND to_user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+</mapper>

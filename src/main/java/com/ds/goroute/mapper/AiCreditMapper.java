@@ -6,6 +6,8 @@ import com.ds.goroute.entity.AiCreditWallet;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -28,6 +30,9 @@ public interface AiCreditMapper {
                                                @Param("limit") int limit, @Param("offset") int offset);
 
     long countTransactions(@Param("userId") UUID userId);
+
+    BigDecimal sumAmountSince(@Param("userId") UUID userId, @Param("transactionType") String transactionType,
+                              @Param("since") LocalDateTime since);
 
     AiCreditPlan findPlan(@Param("userId") UUID userId);
 

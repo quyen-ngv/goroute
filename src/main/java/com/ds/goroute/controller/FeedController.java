@@ -3,6 +3,7 @@ package com.ds.goroute.controller;
 import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.FeedFeedbackRequest;
+import com.ds.goroute.dto.request.FeedEventRequest;
 import com.ds.goroute.dto.request.FeedImpressionRequest;
 import com.ds.goroute.dto.FeedGeoFilter;
 import com.ds.goroute.dto.FeedPlaceKind;
@@ -91,6 +92,19 @@ public class FeedController extends BaseController {
             @CurrentUser UUID userId,
             @Valid @RequestBody FeedImpressionRequest request) {
         impressionService.record(userId, request.getItems());
+        return ResponseEntity.ok(ofSucceeded(null));
+    }
+
+    /**
+     * A batch of what the viewer did with Feed posts, at most 50 per call: every event goes to
+     * the event log, IMPRESSION and OPEN also count as on {@code /impressions}. Kept alongside
+     * {@code /impressions}, which old app builds keep using.
+     */
+    @PostMapping("/events")
+    public ResponseEntity<BaseResponse<Void>> recordEvents(
+            @CurrentUser UUID userId,
+            @Valid @RequestBody FeedEventRequest request) {
+        impressionService.recordEvents(userId, request.getItems());
         return ResponseEntity.ok(ofSucceeded(null));
     }
 

@@ -47,6 +47,7 @@ public class FeedIndexService {
     private final FeedItemMapper itemMapper;
     private final FeedViewerMapper viewerMapper;
     private final FeedWeightsProvider weights;
+    private final FeedLuceneIndex luceneIndex;
 
     private volatile LocalDateTime lastImpressionScan = LocalDateTime.now().minusMinutes(10);
 
@@ -63,6 +64,7 @@ public class FeedIndexService {
                     FeedKey::getItemType, Collectors.mapping(FeedKey::getItemId, Collectors.toList())));
             idsByType.forEach(this::index);
             itemMapper.deleteQueued(batch);
+            luceneIndex.refresh(batch);
             total += batch.size();
             if (batch.size() < QUEUE_BATCH) {
                 break;
@@ -110,6 +112,7 @@ public class FeedIndexService {
             if (!scored.isEmpty()) {
                 itemMapper.updateScores(scored);
             }
+            luceneIndex.refresh(dirty);
             total += dirty.size();
             if (dirty.size() < STATS_BATCH) {
                 break;

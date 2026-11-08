@@ -5,8 +5,10 @@ import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.request.CreateUserCheckinRequest;
 import com.ds.goroute.dto.request.UpdateUserCheckinRequest;
 import com.ds.goroute.dto.response.CheckinContextResponse;
+import com.ds.goroute.dto.response.CheckinVideoUploadResponse;
 import com.ds.goroute.dto.response.UserCheckinResponse;
 import com.ds.goroute.dto.response.CheckinLikeResponse;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.util.Collection;
@@ -45,6 +47,13 @@ public interface UserCheckinService {
      */
     UserCheckinResponse create(UUID userId, CreateUserCheckinRequest request);
 
+    /**
+     * Stores the one video of a check-in about to be posted. Refused when video check-ins are
+     * not open to this user, or when the file's header says it runs past
+     * {@code CHECKIN.MAX_VIDEO_SECONDS}.
+     */
+    CheckinVideoUploadResponse uploadVideo(UUID userId, MultipartFile file);
+
     /** Edits caption, rating, custom name and visibility. The place cannot be changed. */
     UserCheckinResponse update(UUID userId, UUID checkinId, UpdateUserCheckinRequest request);
 
@@ -82,7 +91,12 @@ public interface UserCheckinService {
      */
     Map<UUID, UserCheckinResponse> findVisibleByIds(UUID viewerId, Collection<UUID> checkinIds);
 
-    CheckinLikeResponse toggleLike(UUID userId, UUID checkinId);
+    /**
+     * Sets the viewer's like to {@code liked}; null flips it, for app builds that only knew
+     * the toggle. A client that sends the state it wants cannot turn a like into an unlike
+     * by tapping a heart drawn from a stale copy of the post.
+     */
+    CheckinLikeResponse setLike(UUID userId, UUID checkinId, Boolean liked);
 
     /**
      * Public feed without the viewer's own check-ins: posts with photos first, then newest

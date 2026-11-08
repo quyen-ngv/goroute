@@ -100,6 +100,7 @@ public class TripBookServiceImpl implements TripBookService {
                 .collect(Collectors.groupingBy(MediaAsset::getActivityId));
         Map<UUID, List<TripNote>> notesByActivity = tripNoteRepository.findByTripId(tripId).stream()
                 .filter(note -> note.getActivityId() != null)
+                .filter(note -> note.getNoteType() != com.ds.goroute.type.TripNoteType.TODO)
                 .collect(Collectors.groupingBy(TripNote::getActivityId));
         Map<UUID, BigDecimal> expensesByActivity = expenseRepository.findByTripId(tripId).stream()
                 .filter(expense -> expense.getActivityId() != null)

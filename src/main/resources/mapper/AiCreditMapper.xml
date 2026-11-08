@@ -5,15 +5,17 @@
 <mapper namespace="com.ds.goroute.mapper.AiCreditMapper">
 
     <sql id="walletColumns">
-        user_id AS userId, plan_balance AS planBalance, purchased_balance AS purchasedBalance,
+        user_id AS userId, plan_balance AS planBalance, earned_balance AS earnedBalance,
+        purchased_balance AS purchasedBalance,
         plan_code AS planCode, plan_period_start AS planPeriodStart, plan_period_end AS planPeriodEnd,
         lifetime_spent AS lifetimeSpent, created_at AS createdAt, updated_at AS updatedAt
     </sql>
 
     <sql id="transactionColumns">
         id, user_id AS userId, transaction_type AS transactionType, amount,
-        plan_amount AS planAmount, purchased_amount AS purchasedAmount,
-        plan_balance_after AS planBalanceAfter, purchased_balance_after AS purchasedBalanceAfter,
+        plan_amount AS planAmount, earned_amount AS earnedAmount, purchased_amount AS purchasedAmount,
+        plan_balance_after AS planBalanceAfter, earned_balance_after AS earnedBalanceAfter,
+        purchased_balance_after AS purchasedBalanceAfter,
         reference_key AS referenceKey, feature, trace_id AS traceId, ai_api_call_id AS aiApiCallId,
         cost_usd AS costUsd, reverses_transaction_id AS reversesTransactionId, note,
         created_by AS createdBy, created_at AS createdAt
@@ -35,6 +37,7 @@
     <update id="updateWallet">
         UPDATE ai_credit_wallets
         SET plan_balance = #{wallet.planBalance},
+            earned_balance = #{wallet.earnedBalance},
             purchased_balance = #{wallet.purchasedBalance},
             plan_code = #{wallet.planCode},
             plan_period_start = #{wallet.planPeriodStart},
@@ -50,12 +53,13 @@
 
     <insert id="insertTransaction">
         INSERT INTO ai_credit_transactions (
-            id, user_id, transaction_type, amount, plan_amount, purchased_amount,
-            plan_balance_after, purchased_balance_after, reference_key, feature, trace_id,
+            id, user_id, transaction_type, amount, plan_amount, earned_amount, purchased_amount,
+            plan_balance_after, earned_balance_after, purchased_balance_after, reference_key, feature, trace_id,
             ai_api_call_id, cost_usd, reverses_transaction_id, note, created_by
         ) VALUES (
-            #{tx.id}, #{tx.userId}, #{tx.transactionType}, #{tx.amount}, #{tx.planAmount}, #{tx.purchasedAmount},
-            #{tx.planBalanceAfter}, #{tx.purchasedBalanceAfter}, #{tx.referenceKey}, #{tx.feature}, #{tx.traceId},
+            #{tx.id}, #{tx.userId}, #{tx.transactionType}, #{tx.amount}, #{tx.planAmount}, #{tx.earnedAmount},
+            #{tx.purchasedAmount}, #{tx.planBalanceAfter}, #{tx.earnedBalanceAfter}, #{tx.purchasedBalanceAfter},
+            #{tx.referenceKey}, #{tx.feature}, #{tx.traceId},
             #{tx.aiApiCallId}, #{tx.costUsd}, #{tx.reversesTransactionId}, #{tx.note}, #{tx.createdBy}
         )
     </insert>
@@ -80,6 +84,15 @@
         WHERE user_id = #{userId}
         ORDER BY created_at DESC, id
         LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- What one kind of entry added since a moment; served by idx_ai_credit_transactions_user_created. -->
+    <select id="sumAmountSince" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(amount), 0)
+        FROM ai_credit_transactions
+        WHERE user_id = #{userId}
+          AND created_at &gt;= #{since}
+          AND transaction_type = #{transactionType}
     </select>
 
     <select id="countTransactions" resultType="long">

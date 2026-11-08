@@ -18,11 +18,13 @@ public class AiCreditTransaction {
     private UUID id;
     private UUID userId;
     private String transactionType;
-    /** planAmount + purchasedAmount; negative for a charge. */
+    /** planAmount + earnedAmount + purchasedAmount; negative for a charge. */
     private BigDecimal amount;
     private BigDecimal planAmount;
+    private BigDecimal earnedAmount;
     private BigDecimal purchasedAmount;
     private BigDecimal planBalanceAfter;
+    private BigDecimal earnedBalanceAfter;
     private BigDecimal purchasedBalanceAfter;
     private String referenceKey;
     private String feature;

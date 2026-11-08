@@ -22,6 +22,10 @@ public enum AssistantProposalAction {
     REMOVE_DAYS,
     /** Exchange the plans of two days. */
     SWAP_DAYS,
+    /** Insert empty days in the middle of the trip, before a given day; that day and the later ones move later. */
+    INSERT_DAYS,
+    /** Move one day's plan to another position; the days between close up and every date stays. */
+    MOVE_DAY,
     /** Move the whole trip to other dates, same length and plan. */
     SHIFT_DATES,
     /** Change the trip's own fields: name, description, budget, currency, visibility, starting point. */
@@ -50,11 +54,12 @@ public enum AssistantProposalAction {
     PLAN_DAYS;
 
     /** Changes that renumber or re-date the days: one per answer, never next to a day-numbered add or move. */
-    public static final Set<AssistantProposalAction> RESHAPES_DAYS = Set.of(PREPEND_DAYS, REMOVE_DAYS, SWAP_DAYS, SHIFT_DATES);
+    public static final Set<AssistantProposalAction> RESHAPES_DAYS = Set.of(PREPEND_DAYS, REMOVE_DAYS, SWAP_DAYS, SHIFT_DATES, INSERT_DAYS, MOVE_DAY);
 
     /** Changes whose day numbers assume the trip still starts on the date it started when proposed. */
     public static final Set<AssistantProposalAction> NUMBERS_DAYS =
-            Set.of(ADD, MOVE, ADD_DAYS, PREPEND_DAYS, REMOVE_DAYS, SWAP_DAYS, SHIFT_DATES, NEW_ACTIVITY, PLAN_DAYS);
+            Set.of(ADD, MOVE, ADD_DAYS, PREPEND_DAYS, REMOVE_DAYS, SWAP_DAYS, SHIFT_DATES, INSERT_DAYS, MOVE_DAY,
+                    NEW_ACTIVITY, PLAN_DAYS);
 
     /** Changes that carry a day-by-day plan ({@code plan} in the draft and the payload). */
     public static final Set<AssistantProposalAction> PLANS = Set.of(NEW_TRIP, PLAN_DAYS);

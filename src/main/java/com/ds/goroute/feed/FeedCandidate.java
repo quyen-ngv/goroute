@@ -24,7 +24,8 @@ public final class FeedCandidate {
     private int socialPeople;
     private FeedViewerRows.Seen seen;
     private double score;
-    private final Map<String, Double> explain = new LinkedHashMap<>();
+    /** Each score factor's value by name, in factor order: the features the post was ranked with. */
+    private final Map<String, Double> features = new LinkedHashMap<>();
 
     public FeedCandidate(FeedItemRow row) {
         this.row = row;
@@ -98,8 +99,8 @@ public final class FeedCandidate {
         score = value;
     }
 
-    public Map<String, Double> explain() {
-        return explain;
+    public Map<String, Double> features() {
+        return features;
     }
 
     /** No memory photos: the card shows the city's stock picture. */

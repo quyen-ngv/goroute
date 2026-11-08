@@ -18,8 +18,9 @@ public interface LocationImageWardMapper {
     @Select("SELECT ward_code FROM location_image_wards WHERE location_image_id = #{locationImageId} ORDER BY ward_code")
     List<String> findWardCodes(@Param("locationImageId") UUID locationImageId);
 
+    // Aliases quoted: Postgres folds unquoted ones to lowercase, and the map keys are read camelCase.
     @Select("""
-        SELECT location_image_id AS locationImageId, ward_code AS wardCode
+        SELECT location_image_id AS "locationImageId", ward_code AS "wardCode"
         FROM location_image_wards
         ORDER BY location_image_id, ward_code
         """)

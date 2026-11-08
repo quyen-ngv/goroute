@@ -55,3 +55,7 @@ __pycache__/
 .mvn/*.out
 /mvn
 .claude/worktrees/
+
+# JVM crash and replay reports generated locally
+hs_err_pid*.log
+replay_pid*.log

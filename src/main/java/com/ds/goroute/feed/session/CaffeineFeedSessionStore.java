@@ -8,8 +8,9 @@ import java.time.Duration;
 import java.util.Optional;
 
 /**
- * Rankings in process memory: 30 minutes after the last page read, at most 20,000 at once.
- * A session holds at most 500 keys (about 10 KB), so the cap bounds the memory. A restart
+ * Rankings in process memory: 30 minutes after the last page read, at most 12,000 at once.
+ * A session holds at most 500 keys (about 10 KB) and their features (about 7 KB), so the cap
+ * bounds the memory to about 200 MB. A restart
  * loses them; the next page then starts a new ranking (the app keeps what it shows).
  */
 @Component
@@ -17,7 +18,7 @@ public class CaffeineFeedSessionStore implements FeedSessionStore {
 
     private final Cache<String, FeedSession> sessions = Caffeine.newBuilder()
             .expireAfterAccess(Duration.ofMinutes(30))
-            .maximumSize(20_000)
+            .maximumSize(12_000)
             .build();
 
     @Override

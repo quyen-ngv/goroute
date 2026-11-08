@@ -15,10 +15,15 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AiCreditWalletResponse {
-    /** planBalance + purchasedBalance; negative after a task finished in debt. */
+    /** planBalance + earnedBalance + purchasedBalance; negative after a task finished in debt. */
     private BigDecimal balance;
     private BigDecimal planBalance;
+    /** Exchanged from Stars (and the V262 grant); never expires, spent after the plan bucket. */
+    private BigDecimal earnedBalance;
     private BigDecimal purchasedBalance;
+    /** Credits one trip creation costs (AI_CREDIT.TRIP_CREATION_COST). */
+    private int tripCreationCost;
+    private StarExchangeTerms starExchange;
     /** FREE or the subscription plan code the current period came from. */
     private String planCode;
     /** What the plan refills to each period. */

@@ -2,7 +2,10 @@ package com.ds.goroute.feed;
 
 import com.ds.goroute.dto.response.FeedForYouPageResponse;
 import com.ds.goroute.dto.response.UserCheckinResponse;
+import com.ds.goroute.feed.backend.SqlCandidateBackend;
+import com.ds.goroute.feed.event.FeedEventLogger;
 import com.ds.goroute.feed.model.FeedCandidateQuery;
+import com.ds.goroute.feed.model.FeedEventRow;
 import com.ds.goroute.feed.model.FeedItemRow;
 import com.ds.goroute.feed.model.FeedViewerRows;
 import com.ds.goroute.feed.rerank.Reranker;
@@ -55,6 +58,7 @@ class FeedForYouServiceTest {
     private final ReviewService reviewService = mock(ReviewService.class);
     private final TripService tripService = mock(TripService.class);
     private final BusinessConfigService config = mock(BusinessConfigService.class);
+    private final FeedEventLogger eventLogger = mock(FeedEventLogger.class);
 
     /** Every source query answers with this pool, as if the whole app matched. */
     private List<FeedItemRow> pool = new ArrayList<>();
@@ -96,9 +100,10 @@ class FeedForYouServiceTest {
                 new ScoreFactors.Context(), new ScoreFactors.Social(), new ScoreFactors.Seen());
         Reranker reranker = new Reranker(List.of(new RerankRules.Author(), new RerankRules.TypeRun(),
                 new RerankRules.PhotolessTrip()));
-        service = new FeedForYouService(rollout, contexts, provider, itemMapper, sources, factors, reranker,
+        service = new FeedForYouService(rollout, contexts, provider, new SqlCandidateBackend(itemMapper), sources,
+                factors, reranker,
                 new CaffeineFeedSessionStore(), checkinService, reviewService, tripService,
-                com.ds.goroute.service.ParallelReads.sequential());
+                com.ds.goroute.service.ParallelReads.sequential(), eventLogger);
     }
 
     /** {@code count} check-ins by distinct authors, newest first, scores falling. */
@@ -385,6 +390,64 @@ class FeedForYouServiceTest {
         service.page(viewer, everything, null, 20, 21.0, 105.8, false, Set.of(tripId), false);
 
         verify(contexts, times(1)).resolve(eq(viewer), eq(21.0), eq(105.8), eq(false), eq(Set.of(tripId)));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void everyServedPostIsLoggedWithItsPositionInTheRankingAndItsFeatures() {
+        pool = checkins(150);
+
+        FeedForYouPageResponse first = page(null, 5);
+        FeedForYouPageResponse second = page(first.getNextCursor(), 5);
+
+        org.mockito.ArgumentCaptor<List<FeedEventRow>> logged = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(eventLogger, times(2)).log(logged.capture());
+        List<FeedEventRow> rows = logged.getAllValues().stream().flatMap(List::stream).toList();
+        List<UUID> served = new ArrayList<>(ids(first));
+        served.addAll(ids(second));
+        assertThat(rows).extracting(FeedEventRow::getItemId).containsExactlyElementsOf(served);
+        assertThat(rows).extracting(FeedEventRow::getPosition).containsExactly(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+        assertThat(rows).allSatisfy(row -> {
+            assertThat(row.getUserId()).isEqualTo(viewer);
+            assertThat(row.getEvent()).isEqualTo("SERVE");
+            assertThat(row.getSurface()).isEqualTo("for-you");
+            assertThat(row.getVariant()).isEqualTo(FeedRollout.RANKED);
+            assertThat(row.getSessionId()).isEqualTo(first.getSessionId());
+            assertThat(row.getFeatures()).startsWith("{\"v\":1,\"EQN\":").contains("\"seen\":", "\"score\":");
+        });
+    }
+
+    @Test
+    void featuresJsonWritesWhatFloat16CannotHoldAsZero() {
+        Map<String, Float> values = new java.util.LinkedHashMap<>();
+        values.put("F", 0.5f);
+        values.put("score", Float.POSITIVE_INFINITY);
+
+        assertThat(FeedForYouService.featuresJson(values)).isEqualTo("{\"v\":1,\"F\":0.5,\"score\":0.0}");
+    }
+
+    @Test
+    void theSurfaceListLimitsTheFactorsThatScore() {
+        weights("{\"surfaces\":{\"for-you\":{\"factors\":[\"F\",\"seen\"]}}}");
+        when(rollout.isBeta(viewer)).thenReturn(true);
+        pool = checkins(150);
+
+        FeedForYouPageResponse withDebug = service.page(viewer, everything, null, 5, null, null, false, Set.of(), true);
+
+        assertThat(withDebug.getItems().get(0).getRank().getFactors()).containsOnlyKeys("F", "seen");
+    }
+
+    @Test
+    void theSurfaceListLimitsTheSourcesThatRun() {
+        weights("{\"surfaces\":{\"for-you\":{\"sources\":[\"FRESH\"]}}}");
+        pool = checkins(150);
+
+        page(null, 20);
+
+        // Trending is the only source that orders by engagement.
+        verify(itemMapper, never()).selectCandidates(org.mockito.ArgumentMatchers.argThat(
+                FeedCandidateQuery::isOrderByEngagement));
+        verify(itemMapper, atLeastOnce()).selectCandidates(any());
     }
 
     private static FeedViewerRows.Seen seen(FeedItemRow row, int count, boolean opened, LocalDateTime at) {

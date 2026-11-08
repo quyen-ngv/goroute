@@ -4,9 +4,13 @@ import com.ds.goroute.dto.ExpenseSplitCount;
 import com.ds.goroute.entity.Expense;
 import com.ds.goroute.mapper.ExpenseMapper;
 import com.ds.goroute.repository.ExpenseRepository;
+import com.ds.goroute.type.ExpenseCategory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -55,6 +59,23 @@ public class ExpenseRepositoryImpl implements ExpenseRepository {
     @Override
     public List<ExpenseSplitCount> findSplitCountsByTripId(UUID tripId) {
         return expenseMapper.selectSplitCountsByTripId(tripId);
+    }
+
+    @Override
+    public List<Expense> findByTripIdPage(UUID tripId, ExpenseCategory category, int limit, int offset) {
+        return expenseMapper.selectByTripIdPage(tripId, category, limit, offset);
+    }
+
+    /** An empty IN () is a syntax error, and a very long one is slow to plan. */
+    private static List<Expense> inChunks(Collection<UUID> ids,
+                                          java.util.function.Function<Collection<UUID>, List<Expense>> query) {
+        if (ids == null || ids.isEmpty()) return List.of();
+        List<UUID> all = ids.stream().distinct().toList();
+        List<Expense> result = new ArrayList<>();
+        for (int from = 0; from < all.size(); from += 500) {
+            result.addAll(query.apply(all.subList(from, Math.min(all.size(), from + 500))));
+        }
+        return result;
     }
 
     @Override

@@ -8,6 +8,7 @@ import com.ds.goroute.dto.request.CreateUserCheckinRequest;
 import com.ds.goroute.dto.request.UpdateUserCheckinRequest;
 import com.ds.goroute.dto.response.CheckinContextResponse;
 import com.ds.goroute.dto.response.CheckinPhotoResponse;
+import com.ds.goroute.dto.response.CheckinVideoUploadResponse;
 import com.ds.goroute.dto.response.CheckinLikeResponse;
 import com.ds.goroute.dto.response.CheckinLinkedReviewResponse;
 import com.ds.goroute.dto.response.UserCheckinResponse;
@@ -35,9 +36,11 @@ import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.repository.UserReviewRepository;
 import com.ds.goroute.repository.MediaAssetRepository;
 import com.ds.goroute.mapper.SavedPostMapper;
+import com.ds.goroute.service.BetaAccessService;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.ContentModerationService;
 import com.ds.goroute.service.FeedImpressionService;
+import com.ds.goroute.service.FileUploadService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.ReviewScoringService;
 import com.ds.goroute.service.ReviewService;
@@ -53,6 +56,7 @@ import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.NotificationType;
+import com.ds.goroute.type.CheckinMediaType;
 import com.ds.goroute.type.CheckinPhotoSource;
 import com.ds.goroute.type.CheckinVerificationStatus;
 import com.ds.goroute.type.ContentVisibility;
@@ -61,6 +65,7 @@ import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.SavedPostType;
 import com.ds.goroute.utils.GeoDistance;
 import com.ds.goroute.utils.JsonUtils;
+import com.ds.goroute.utils.Mp4Duration;
 import com.ds.goroute.utils.MediaAssetResponseMapper;
 import com.ds.goroute.utils.PlaceDisplayRating;
 import lombok.RequiredArgsConstructor;
@@ -68,7 +73,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -83,6 +91,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -98,6 +107,9 @@ public class UserCheckinServiceImpl implements UserCheckinService {
      */
     private static final int MAX_TRIP_CHECKINS = 200;
     private static final String PRO_TIER = "PRO";
+
+    /** Storage prefix of check-in videos; the user id follows. */
+    private static final String VIDEO_PREFIX = "checkin-videos/";
 
     /** How close to a stop of the itinerary counts as having been there. */
     private static final double ACTIVITY_VISIT_RADIUS_METERS = 200;
@@ -129,6 +141,8 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     private final ContentCommentRepository contentCommentRepository;
     private final SavedPostMapper savedPostMapper;
     private final FeedImpressionService feedImpressionService;
+    private final FileUploadService fileUploadService;
+    private final BetaAccessService betaAccess;
 
     @Override
     @Transactional(readOnly = true)
@@ -174,6 +188,8 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .previousCheckinCount(previousVisits)
                 .galleryAllowed(isGalleryAllowed(userId))
                 .maxPhotos(config.getInt(BusinessConfigKey.CHECKIN_MAX_PHOTOS))
+                .videoAllowed(isVideoAllowed(userId))
+                .maxVideoSeconds(config.getInt(BusinessConfigKey.CHECKIN_MAX_VIDEO_SECONDS))
                 .maxCaptionLength(config.getInt(BusinessConfigKey.CHECKIN_MAX_CAPTION_LENGTH))
                 .verifyRadiusMeters(assessment.effectiveRadiusMeters())
                 .placeSpecificRadius(place.map(Place::getVerificationRadiusMeters)
@@ -217,6 +233,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
             throw new BusinessException(ErrorConstant.CHECKIN_GALLERY_NOT_ALLOWED,
                     "Choosing photos from your library is not available on your plan right now.");
         }
+        requireAllowedMedia(userId, photos, Set.of());
 
         Place place = request.getPlaceId() == null ? null
                 : placeRepository.findById(request.getPlaceId())
@@ -283,9 +300,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         // uncatalogued one keeps the score on the check-in until the cluster is promoted,
         // where it becomes a review without the author having to do anything again.
         if (checkin.hasRating() && checkin.hasCataloguePlace()) {
-            UUID reviewId = upsertReview(userId, checkin, photos.stream()
-                    .map(CreateUserCheckinRequest.CheckinPhotoInput::getUrl)
-                    .toList());
+            UUID reviewId = upsertReview(userId, checkin, reviewImageUrls(photos));
             checkin.setReviewId(reviewId);
             checkinRepository.attachReview(checkin.getId(), reviewId);
             scoringService.recalculatePlaceScores(checkin.getPlaceId());
@@ -381,6 +396,12 @@ public class UserCheckinServiceImpl implements UserCheckinService {
             throw new BusinessException(ErrorConstant.CHECKIN_GALLERY_NOT_ALLOWED,
                     "Choosing photos from your library is not available on your plan right now.");
         }
+        // A video already on this visit stays editable after the switch is turned off.
+        Set<String> videosAlreadyPosted = checkinRepository.findPhotos(checkinId).stream()
+                .filter(UserCheckinPhoto::isVideo)
+                .map(UserCheckinPhoto::getUrl)
+                .collect(Collectors.toSet());
+        requireAllowedMedia(userId, photos, videosAlreadyPosted);
 
         checkin.setCaption(blankToNull(request.getCaption()));
         checkin.setFrameStyle(request.getFrameStyle());
@@ -398,15 +419,17 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         checkin.setEditedAt(LocalDateTime.now());
         checkin.setUpdatedAt(LocalDateTime.now());
 
+        // A video keeps two files alive: the video and its still frame.
         List<String> keptUrls = photos.stream()
-                .map(CreateUserCheckinRequest.CheckinPhotoInput::getUrl)
+                .flatMap(photo -> Stream.of(photo.getUrl(), photo.getThumbnailUrl()))
+                .filter(Objects::nonNull)
                 .toList();
 
         // The review goes first so the cleanup below asks it what it shows *after* this
         // edit. Asked before, it would still be listing the photo the author just removed
         // and would keep the file alive for a post that no longer has it.
         if (checkin.hasRating() && checkin.hasCataloguePlace()) {
-            checkin.setReviewId(upsertReview(userId, checkin, keptUrls));
+            checkin.setReviewId(upsertReview(userId, checkin, reviewImageUrls(photos)));
         }
 
         // A photo taken off the visit is taken off it now. The orphan sweep is run by hand
@@ -530,7 +553,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
     @Override
     @Transactional
-    public CheckinLikeResponse toggleLike(UUID userId, UUID checkinId) {
+    public CheckinLikeResponse setLike(UUID userId, UUID checkinId, Boolean liked) {
         UserCheckin checkin = checkinRepository.findById(checkinId)
                 .filter(found -> found.getVisibility() == ContentVisibility.PUBLIC
                         && !Boolean.TRUE.equals(found.getIsRemoved()))
@@ -539,9 +562,10 @@ public class UserCheckinServiceImpl implements UserCheckinService {
             throw new BusinessException(ErrorConstant.CONTENT_TAKEN_DOWN, "This content has been removed.");
         }
         boolean hasLiked = checkinRepository.hasLike(checkinId, userId);
-        if (hasLiked) {
+        boolean wantLiked = liked == null ? !hasLiked : liked;
+        if (hasLiked && !wantLiked) {
             checkinRepository.deleteLike(checkinId, userId);
-        } else {
+        } else if (!hasLiked && wantLiked) {
             checkinRepository.insertLike(checkinId, userId);
             socialNotificationService.notifyLike(
                     checkin.getUserId(), userId, ModeratedContentType.CHECKIN.name(), checkinId);
@@ -549,7 +573,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         return CheckinLikeResponse.builder()
                 .checkinId(checkinId)
                 .likeCount(checkinRepository.countLikes(checkinId))
-                .hasLiked(!hasLiked)
+                .hasLiked(wantLiked)
                 .build();
     }
 
@@ -606,9 +630,9 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         Set<UUID> latestReviewCheckinIds = checkinRepository.findLatestRatedPerUserForPlace(placeId).stream()
                 .map(UserCheckin::getId)
                 .collect(Collectors.toSet());
-        List<UserCheckinResponse> responses = toResponses(checkins, latestReviewCheckinIds, null);
-        markSaved(responses, viewerId);
-        return responses;
+        // The viewer's own like/saved state rides on every row: a heart drawn empty for a
+        // post the viewer already liked turns the next tap into an unlike.
+        return toResponses(checkins, latestReviewCheckinIds, viewerId);
     }
 
     @Override
@@ -627,10 +651,8 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     @Override
     @Transactional(readOnly = true)
     public List<UserCheckinResponse> byLocationKey(UUID viewerId, String locationKey, int page, int size) {
-        List<UserCheckinResponse> responses = toResponses(checkinRepository.findByLocationKey(
-                locationKey, boundedSize(size), boundedPage(page) * boundedSize(size)), Set.of(), null);
-        markSaved(responses, viewerId);
-        return responses;
+        return toResponses(checkinRepository.findByLocationKey(
+                locationKey, boundedSize(size), boundedPage(page) * boundedSize(size)), Set.of(), viewerId);
     }
 
     @Override
@@ -702,6 +724,92 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         return review.getId();
     }
 
+    @Override
+    public CheckinVideoUploadResponse uploadVideo(UUID userId, MultipartFile file) {
+        requireFeatureEnabled();
+        requireVideoAllowed(userId);
+        // Checked before the upload so a too-long clip costs no storage. The length is read
+        // from the file's own header; WEBM has none we read and is left to the app's limit.
+        Integer durationSeconds = readDurationSeconds(file);
+        requireVideoLength(durationSeconds);
+        String url = fileUploadService.uploadVideo(VIDEO_PREFIX + userId, file);
+        return CheckinVideoUploadResponse.builder()
+                .url(url)
+                .durationSeconds(durationSeconds)
+                .build();
+    }
+
+    private Integer readDurationSeconds(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            return null;
+        }
+        try (InputStream input = file.getInputStream()) {
+            return Mp4Duration.seconds(input);
+        } catch (IOException exception) {
+            return null;
+        }
+    }
+
+    /**
+     * A check-in is photos or exactly one video. The video must be one this user uploaded
+     * through {@link #uploadVideo}, and carries the still frame the app cut from it.
+     *
+     * @param videosAlreadyPosted video URLs the check-in being edited already shows; those
+     *                            stay allowed when the feature switch is off
+     */
+    private void requireAllowedMedia(UUID userId, List<CreateUserCheckinRequest.CheckinPhotoInput> photos,
+                                     Set<String> videosAlreadyPosted) {
+        List<CreateUserCheckinRequest.CheckinPhotoInput> videos = photos.stream()
+                .filter(photo -> photo.getMediaType() == CheckinMediaType.VIDEO)
+                .toList();
+        if (videos.isEmpty()) {
+            return;
+        }
+        if (photos.size() != 1) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "A video check-in carries the video alone");
+        }
+        CreateUserCheckinRequest.CheckinPhotoInput video = videos.get(0);
+        if (!videosAlreadyPosted.contains(video.getUrl())) {
+            requireVideoAllowed(userId);
+            if (!video.getUrl().contains(VIDEO_PREFIX + userId + "/")) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                        "Upload the video through the check-in video upload first");
+            }
+        }
+        if (video.getThumbnailUrl() == null || video.getThumbnailUrl().isBlank()) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "A video needs its still frame");
+        }
+        requireVideoLength(video.getDurationSeconds());
+    }
+
+    private void requireVideoLength(Integer durationSeconds) {
+        int maxSeconds = config.getInt(BusinessConfigKey.CHECKIN_MAX_VIDEO_SECONDS);
+        if (durationSeconds != null && durationSeconds > maxSeconds) {
+            throw new BusinessException(ErrorConstant.CHECKIN_VIDEO_TOO_LONG,
+                    "A check-in video can be at most " + maxSeconds + " seconds long");
+        }
+    }
+
+    private void requireVideoAllowed(UUID userId) {
+        if (!isVideoAllowed(userId)) {
+            throw new BusinessException(ErrorConstant.CHECKIN_VIDEO_NOT_ALLOWED,
+                    "Video check-ins are not available yet.");
+        }
+    }
+
+    private boolean isVideoAllowed(UUID userId) {
+        return config.getBoolean(BusinessConfigKey.CHECKIN_VIDEO_ENABLED) || betaAccess.isBetaUser(userId);
+    }
+
+    /** What the linked review shows: the photos, or a video's still frame. */
+    private List<String> reviewImageUrls(List<CreateUserCheckinRequest.CheckinPhotoInput> photos) {
+        return photos.stream()
+                .map(photo -> photo.getMediaType() == CheckinMediaType.VIDEO ? photo.getThumbnailUrl() : photo.getUrl())
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
     private CheckinPhotoSource resolvePhotoSource(List<CreateUserCheckinRequest.CheckinPhotoInput> photos) {
         return photos.stream()
                 .map(CreateUserCheckinRequest.CheckinPhotoInput::getSource)
@@ -713,10 +821,14 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                              LocalDateTime now) {
         int position = 0;
         for (CreateUserCheckinRequest.CheckinPhotoInput photo : photos) {
+            boolean isVideo = photo.getMediaType() == CheckinMediaType.VIDEO;
             checkinRepository.insertPhoto(UserCheckinPhoto.builder()
                     .id(UUID.randomUUID())
                     .checkinId(checkinId)
                     .url(photo.getUrl())
+                    .mediaType(isVideo ? CheckinMediaType.VIDEO : CheckinMediaType.IMAGE)
+                    .thumbnailUrl(isVideo ? photo.getThumbnailUrl() : null)
+                    .durationSeconds(isVideo ? photo.getDurationSeconds() : null)
                     .source(photo.getSource())
                     .position(position++)
                     .title(photo.getTitle())
@@ -902,7 +1014,9 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                         .url(photo.getUrl())
                         .entityType("USER_CHECKIN")
                         .entityId(checkin.getId())
-                        .mediaType("IMAGE")
+                        .mediaType(photo.isVideo() ? CheckinMediaType.VIDEO.name() : CheckinMediaType.IMAGE.name())
+                        .thumbnailUrl(photo.getThumbnailUrl())
+                        .durationSeconds(photo.getDurationSeconds())
                         .position(photo.getPosition())
                         .title(photo.getTitle())
                         .description(photo.getDescription())
@@ -991,6 +1105,9 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                                 .latitude(photo.getLatitude())
                                 .longitude(photo.getLongitude())
                                 .accuracyMeters(photo.getAccuracyMeters())
+                                .mediaType(photo.isVideo() ? CheckinMediaType.VIDEO : CheckinMediaType.IMAGE)
+                                .thumbnailUrl(photo.getThumbnailUrl())
+                                .durationSeconds(photo.getDurationSeconds())
                                 .build())
                         .toList())
                 .photosV2(photoResponses)

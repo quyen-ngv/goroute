@@ -17,6 +17,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
+/**
+ * LEGACY-STAR-QUOTA: the per-user free-trip override. Since V262 trip creation costs credits and
+ * nothing reads the override; V262 used it once to turn unused free trips into credits, and the
+ * console's Quota tab is gone. Delete with the user_quota_overrides.free_trip_quota column and
+ * TRIP/FREE_TRIP_QUOTA.
+ */
+@Deprecated
 @RestController
 @RequestMapping("/v1/api/admin/users/{userId}/quotas")
 @RequiredArgsConstructor

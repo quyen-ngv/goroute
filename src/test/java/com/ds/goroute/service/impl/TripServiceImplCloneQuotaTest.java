@@ -23,7 +23,9 @@ import com.ds.goroute.service.ExchangeRateService;
 import com.ds.goroute.service.ExpenseService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.LocationImageService;
+import com.ds.goroute.service.AiCreditService;
 import com.ds.goroute.service.StarService;
+import com.ds.goroute.type.TripCreationCharge;
 import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.service.UserCheckinService;
@@ -39,6 +41,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -48,13 +51,13 @@ import static org.mockito.Mockito.when;
 /**
  * A clone is a trip, and has to be paid for like one.
  *
- * <p>Cloning wrote a trip without ever reserving a slot, so the quota was avoidable by
- * anyone who copied a public trip instead of starting their own -- the free path around
- * the only thing stars are currently spent on.
+ * <p>Cloning once wrote a trip without paying for it, so the trip cost was avoidable by
+ * anyone who copied a public trip instead of starting their own.
  */
 class TripServiceImplCloneQuotaTest {
 
     private final StarService starService = mock(StarService.class);
+    private final AiCreditService aiCreditService = mock(AiCreditService.class);
     private final TripRepository tripRepository = mock(TripRepository.class);
     private final TripMemberRepository tripMemberRepository = mock(TripMemberRepository.class);
 
@@ -67,6 +70,7 @@ class TripServiceImplCloneQuotaTest {
     void setUp() {
         service = new TripServiceImpl(
                 starService,
+                aiCreditService,
                 tripRepository,
                 // Cloning has its own access rule -- the trip has to be public, or the cloner has
                 // to already be in it -- so it never reaches the editor guard.
@@ -115,22 +119,22 @@ class TripServiceImplCloneQuotaTest {
     }
 
     @Test
-    void aCloneIsRefusedWhenThereIsNoSlotLeftToPayForIt() {
+    void aCloneIsRefusedWhenTheCreditsDoNotCoverIt() {
         publicTripExists();
         doThrow(new BusinessException(ErrorConstant.TRIP_CREATION_QUOTA_EXHAUSTED))
-                .when(starService).reserveTripCreation(userId);
+                .when(aiCreditService).chargeTripCreation(eq(userId), any(), eq(TripCreationCharge.REQUIRE_BALANCE));
 
         assertThatThrownBy(() -> service.cloneTrip(tripId, request(), userId))
                 .isInstanceOf(BusinessException.class);
 
-        // Nothing was written: the refusal has to land before the copy, or the quota is
+        // Nothing was written: the refusal has to land before the copy, or the cost is
         // enforced only in the error message.
         verify(tripRepository, never()).insert(any());
     }
 
     /**
-     * The reservation sits behind the access check, so a clone the user is not allowed to
-     * make cannot spend a slot on its way to being refused.
+     * The charge sits behind the access check, so a clone the user is not allowed to
+     * make cannot spend credits on its way to being refused.
      */
     @Test
     void aCloneNobodyIsAllowedToMakeCostsNothing() {
@@ -142,7 +146,7 @@ class TripServiceImplCloneQuotaTest {
         assertThatThrownBy(() -> service.cloneTrip(tripId, request(), userId))
                 .isInstanceOf(BusinessException.class);
 
-        verify(starService, never()).reserveTripCreation(any());
+        verify(aiCreditService, never()).chargeTripCreation(any(), any(), any());
         verify(tripRepository, never()).insert(any());
     }
 
@@ -153,6 +157,6 @@ class TripServiceImplCloneQuotaTest {
         assertThatThrownBy(() -> service.cloneTrip(tripId, request(), userId))
                 .isInstanceOf(BusinessException.class);
 
-        verify(starService, never()).reserveTripCreation(any());
+        verify(aiCreditService, never()).chargeTripCreation(any(), any(), any());
     }
 }

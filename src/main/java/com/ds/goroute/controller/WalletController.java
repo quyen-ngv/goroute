@@ -3,6 +3,7 @@ package com.ds.goroute.controller;
 import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.WalletReminderRequest;
+import com.ds.goroute.dto.response.WalletConvertedResponse;
 import com.ds.goroute.dto.response.WalletPersonReminderResponse;
 import com.ds.goroute.dto.response.WalletReminderResponse;
 import com.ds.goroute.dto.response.WalletResponse;
@@ -11,6 +12,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -40,6 +42,14 @@ public class WalletController extends BaseController {
             @RequestParam(defaultValue = "100") @Min(1) @Max(200) int debtLimit,
             @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(walletService.getWallet(userId, page, size, debtLimit)));
+    }
+
+    /** The Wallet's totals added up in one currency at today's rates; an estimate for display only. */
+    @GetMapping("/converted")
+    public ResponseEntity<BaseResponse<WalletConvertedResponse>> getConverted(
+            @RequestParam @Pattern(regexp = "^[A-Za-z]{3}$") String currency,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(walletService.getConverted(userId, currency)));
     }
 
     /** One notification to one person about every split named; at most EXPENSE.PAYMENT_REMINDER_DAILY_MAX a day. */

@@ -4,6 +4,8 @@ import com.ds.goroute.entity.AiCreditPlan;
 import com.ds.goroute.entity.AiCreditTransaction;
 import com.ds.goroute.entity.AiCreditWallet;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,6 +25,9 @@ public interface AiCreditRepository {
     List<AiCreditTransaction> findTransactions(UUID userId, int limit, int offset);
 
     long countTransactions(UUID userId);
+
+    /** Sum of the amounts of one entry type written since {@code since}. */
+    BigDecimal sumAmountSince(UUID userId, String transactionType, LocalDateTime since);
 
     Optional<AiCreditPlan> findPlan(UUID userId);
 

@@ -17,4 +17,6 @@ public class ExpenseSplitRequest {
     private UUID guestMemberId; // Reference to trip_members.id for guest
     private String guestName; // Treat as both username and fullName
     private BigDecimal amount;
+    /** PERCENT: the percentage; SHARES: the number of shares; ADJUSTMENT: the amount added or taken off. */
+    private BigDecimal shareInput;
 }

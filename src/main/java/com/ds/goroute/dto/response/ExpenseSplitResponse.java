@@ -19,4 +19,6 @@ public class ExpenseSplitResponse {
     private UUID guestMemberId;
     private BigDecimal amount;
     private Boolean isPaid;
+    /** The percentage, number of shares or adjustment the share was computed from; null otherwise. */
+    private BigDecimal shareInput;
 }

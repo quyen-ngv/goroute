@@ -1,5 +1,6 @@
 package com.ds.goroute.dto.response;
 
+import com.ds.goroute.type.CheckinMediaType;
 import com.ds.goroute.type.CheckinPhotoSource;
 import lombok.Builder;
 import lombok.Data;
@@ -33,4 +34,9 @@ public class CheckinPhotoResponse {
     private BigDecimal latitude;
     private BigDecimal longitude;
     private BigDecimal accuracyMeters;
+
+    /** IMAGE or VIDEO. A VIDEO is the only item of its check-in; {@code url} is the video file. */
+    private CheckinMediaType mediaType;
+    private String thumbnailUrl;
+    private Integer durationSeconds;
 }

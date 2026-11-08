@@ -2,6 +2,7 @@ package com.ds.goroute.dto.request;
 
 import com.ds.goroute.annotations.ModeratedText;
 import com.ds.goroute.type.CheckinLocationSource;
+import com.ds.goroute.type.CheckinMediaType;
 import com.ds.goroute.type.CheckinPhotoSource;
 import com.ds.goroute.type.CheckinFrameStyle;
 import com.ds.goroute.type.ContentVisibility;
@@ -142,6 +143,21 @@ public class CreateUserCheckinRequest {
          */
         @NotNull(message = "The photo source is required")
         private CheckinPhotoSource source;
+
+        /**
+         * Absent means IMAGE, which is what every app before video sends. A VIDEO must be
+         * the only item of its check-in, uploaded through {@code POST /checkins/videos}.
+         */
+        private CheckinMediaType mediaType;
+
+        /** The still frame of a video, uploaded as an ordinary image. Required for a VIDEO. */
+        @Size(max = 1000)
+        private String thumbnailUrl;
+
+        /** Length of a video as the app measured it; display only. */
+        @Min(0)
+        @Max(3600)
+        private Integer durationSeconds;
 
         /**
          * When the device says the photo was taken. Reference information only: device

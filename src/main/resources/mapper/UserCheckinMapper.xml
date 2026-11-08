@@ -37,6 +37,7 @@
         <result property="rewardPoints" column="reward_points"/>
         <result property="rewardReason" column="reward_reason"/>
         <result property="isRemoved" column="is_removed"/>
+        <result property="placeDismissedAt" column="place_dismissed_at"/>
         <result property="visitedAt" column="visited_at"/>
         <result property="editedAt" column="edited_at"/>
         <result property="createdAt" column="created_at"/>
@@ -57,6 +58,9 @@
         <result property="longitude" column="longitude"/>
         <result property="accuracyMeters" column="accuracy_meters"/>
         <result property="createdAt" column="created_at"/>
+        <result property="mediaType" column="media_type"/>
+        <result property="thumbnailUrl" column="thumbnail_url"/>
+        <result property="durationSeconds" column="duration_seconds"/>
     </resultMap>
 
     <resultMap id="clusterMap" type="com.ds.goroute.entity.CheckinCluster">
@@ -107,7 +111,7 @@
         ambiance_rating, service_rating, photo_source, visibility, verification_status,
         verification_scope, ward_code,
         distance_meters, idempotency_key, reward_points, reward_reason, is_removed,
-        visited_at, edited_at, created_at, updated_at, has_photo
+        visited_at, edited_at, created_at, updated_at, has_photo, place_dismissed_at
     </sql>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.UserCheckin">
@@ -555,11 +559,13 @@
 
     <insert id="insertPhoto" parameterType="com.ds.goroute.entity.UserCheckinPhoto">
         INSERT INTO media_assets
-            (id, trip_id, activity_id, entity_type, entity_id, media_type, url, asset_role,
+            (id, trip_id, activity_id, entity_type, entity_id, media_type, url, thumbnail_url,
+             duration_seconds, asset_role,
              position, caption, description, taken_at, latitude, longitude, accuracy_meters,
              capture_source, date_source, place_id, location_name, location_source,
              uploaded_by, created_at, updated_at)
-        SELECT #{id}, c.trip_id, c.activity_id, 'USER_CHECKIN', c.id, 'IMAGE', #{url}, 'PHOTO',
+        SELECT #{id}, c.trip_id, c.activity_id, 'USER_CHECKIN', c.id, #{mediaType},
+               #{url}, #{thumbnailUrl,jdbcType=VARCHAR}, #{durationSeconds,jdbcType=INTEGER}, 'PHOTO',
                #{position}, #{title}, #{description}, #{capturedAt}, #{latitude}, #{longitude},
                #{accuracyMeters}, #{source},
                <choose>
@@ -574,7 +580,7 @@
     <select id="findPhotos" resultMap="photoMap">
         SELECT id, entity_id AS checkin_id, url, capture_source AS source, position,
                caption AS title, description, taken_at AS captured_at, latitude, longitude,
-               accuracy_meters, created_at
+               accuracy_meters, created_at, media_type, thumbnail_url, duration_seconds
         FROM media_assets
         WHERE entity_type = 'USER_CHECKIN'
           AND entity_id = #{checkinId}
@@ -587,7 +593,7 @@
     <select id="findPhotosForCheckins" resultMap="photoMap">
         SELECT id, entity_id AS checkin_id, url, capture_source AS source, position,
                caption AS title, description, taken_at AS captured_at, latitude, longitude,
-               accuracy_meters, created_at
+               accuracy_meters, created_at, media_type, thumbnail_url, duration_seconds
         FROM media_assets
         WHERE entity_type = 'USER_CHECKIN'
           AND entity_id IN
@@ -669,7 +675,7 @@
                MIN(c.created_at) AS first_seen_at,
                MAX(c.created_at) AS last_seen_at,
                (SELECT string_agg(p.url, ',')
-                  FROM (SELECT url FROM media_assets ph
+                  FROM (SELECT COALESCE(ph.thumbnail_url, ph.url) AS url FROM media_assets ph
                         JOIN user_checkins uc ON uc.id = ph.entity_id
                         WHERE ph.entity_type = 'USER_CHECKIN'
                           AND (ph.asset_role IS NULL OR ph.asset_role = 'PHOTO')
@@ -751,6 +757,14 @@
         FROM user_checkins
         WHERE is_removed = FALSE
         <if test="userId != null">AND user_id = #{userId}</if>
+        <!-- The queue of check-ins waiting for a catalogue place: every check-in with none,
+             whatever the author picked it from (a trip activity, map search, a typed name).
+             Assigning a place takes the row out; so does an approver's "not a place" (V272).
+             Quest checkpoints are left out: the quest decides where those are. -->
+        <if test="needsPlace">
+            AND place_id IS NULL AND place_dismissed_at IS NULL
+            AND location_source &lt;&gt; 'QUEST_CHECKPOINT'
+        </if>
         <if test="search != null and search != ''">
             AND (location_name ILIKE CONCAT('%', #{search}, '%')
                  OR custom_name ILIKE CONCAT('%', #{search}, '%')
@@ -773,6 +787,12 @@
             </choose>
         </if>
     </sql>
+
+    <update id="dismissPlace">
+        UPDATE user_checkins
+        SET place_dismissed_at = NOW(), place_dismissed_by = #{adminId}
+        WHERE id = #{id} AND is_removed = FALSE AND place_id IS NULL
+    </update>
 
     <select id="findAllForAdmin" resultMap="checkinMap">
         SELECT <include refid="columns"/>

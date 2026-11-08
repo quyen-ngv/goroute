@@ -60,7 +60,7 @@ public class ImageModerationServiceImpl implements ImageModerationService {
                                       ContentModerationService contentModerationService,
                                       HiddenImageService hiddenImageService,
                                       StorageService storageService,
-                                      @Qualifier("applicationTaskExecutor") Executor executor) {
+                                      @Qualifier("imageModerationExecutor") Executor executor) {
         this.providers = providers;
         this.auditRepository = auditRepository;
         this.config = config;

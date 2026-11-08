@@ -91,6 +91,8 @@ public class InternalAiTripGenerationController extends BaseController {
         try {
             return ResponseEntity.ok(ofSucceeded(Map.of("tripId", service.commit(jobId, request))));
         } catch (BusinessException error) {
+            // LEGACY-STAR-QUOTA: commit overdraws credits since V262, so this no longer fires; it goes
+            // with ErrorConstant.TRIP_CREATION_QUOTA_EXHAUSTED.
             if (error.getError() != null
                     && error.getError().getCode() == ErrorConstant.TRIP_CREATION_QUOTA_EXHAUSTED) {
                 service.fail(jobId, "TRIP_CREATION_QUOTA_EXHAUSTED");

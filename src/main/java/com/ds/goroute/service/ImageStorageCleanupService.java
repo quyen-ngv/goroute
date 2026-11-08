@@ -684,7 +684,7 @@ public class ImageStorageCleanupService {
                         "SELECT url FROM media_assets WHERE entity_type = 'USER_REVIEW' AND deleted_at IS NULL AND url IS NOT NULL",
                         "SELECT url FROM media_assets WHERE entity_type = 'USER_REVIEW' AND entity_id = ? AND deleted_at IS NULL AND url IS NOT NULL",
                         """
-                        SELECT m.url
+                        SELECT m.url, m.thumbnail_url
                         FROM media_assets m
                         JOIN user_checkins c ON c.id = m.entity_id
                         WHERE m.entity_type = 'USER_CHECKIN'
@@ -713,9 +713,11 @@ public class ImageStorageCleanupService {
                 //
                 // The record query is keyed by the check-in, not by the photo row, because
                 // the caller deleting a check-in holds the check-in id.
+                // A video row names two files: the video (url, under checkin-videos/) and the
+                // still frame (thumbnail_url, an ordinary upload).
                 retaining("USER_CHECKIN_PHOTO",
-                        "SELECT url FROM media_assets WHERE entity_type = 'USER_CHECKIN' AND deleted_at IS NULL AND url IS NOT NULL",
-                        "SELECT url FROM media_assets WHERE entity_type = 'USER_CHECKIN' AND entity_id = ? AND deleted_at IS NULL AND url IS NOT NULL",
+                        "SELECT url, thumbnail_url FROM media_assets WHERE entity_type = 'USER_CHECKIN' AND deleted_at IS NULL AND url IS NOT NULL",
+                        "SELECT url, thumbnail_url FROM media_assets WHERE entity_type = 'USER_CHECKIN' AND entity_id = ? AND deleted_at IS NULL AND url IS NOT NULL",
                         // The review this visit wrote keeps showing the same files.
                         """
                         SELECT m.url
@@ -725,7 +727,8 @@ public class ImageStorageCleanupService {
                           AND m.deleted_at IS NULL
                           AND c.id = ?
                           AND m.url IS NOT NULL
-                        """),
+                        """,
+                        "checkin-videos/"),
                 spec("PENDING_CONTRIBUTION_REVIEW",
                         "SELECT url FROM media_assets WHERE entity_type = 'PENDING_REVIEW' AND deleted_at IS NULL AND url IS NOT NULL",
                         "SELECT m.url FROM media_assets m JOIN pending_contribution_reviews p ON p.id = m.entity_id WHERE p.contribution_id = ? AND m.entity_type = 'PENDING_REVIEW' AND m.deleted_at IS NULL AND m.url IS NOT NULL"),

@@ -716,17 +716,17 @@ class MarketplaceChatServiceChatFeaturesTest {
         @Test
         @DisplayName("passes the chips through, upper-cased")
         void normalisesTypes() {
-            service.listMine(ME, List.of("trip", "direct"), 0, 30);
+            service.listMine(ME, List.of("trip", "direct"), false, 0, 30);
 
-            verify(repo).findForUser(ME, List.of("TRIP", "DIRECT"), 30, 0);
+            verify(repo).findForUser(ME, List.of("TRIP", "DIRECT"), false, 30, 0);
         }
 
         @Test
         @DisplayName("carries a few members per row, not every member of every group")
         void carriesAParticipantPreview() {
-            when(repo.findForUser(ME, List.of(), 30, 0)).thenReturn(List.of(tripConversation()));
+            when(repo.findForUser(ME, List.of(), false, 30, 0)).thenReturn(List.of(tripConversation()));
 
-            service.listMine(ME, null, 0, 30);
+            service.listMine(ME, null, false, 0, 30);
 
             verify(repo).findParticipantPreviews(List.of(CONVERSATION),
                     MarketplaceChatServiceImpl.INBOX_PARTICIPANT_PREVIEW);
@@ -734,9 +734,17 @@ class MarketplaceChatServiceChatFeaturesTest {
         }
 
         @Test
+        @DisplayName("passes the unread chip through")
+        void passesUnreadOnly() {
+            service.listMine(ME, null, true, 0, 30);
+
+            verify(repo).findForUser(ME, List.of(), true, 30, 0);
+        }
+
+        @Test
         @DisplayName("refuses a filter that is not a conversation kind")
         void refusesNonsense() {
-            assertThatThrownBy(() -> service.listMine(ME, List.of("everything"), 0, 30))
+            assertThatThrownBy(() -> service.listMine(ME, List.of("everything"), false, 0, 30))
                     .isInstanceOf(BusinessException.class);
         }
     }

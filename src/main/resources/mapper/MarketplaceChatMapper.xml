@@ -87,6 +87,7 @@
      WHERE ac.conversation_type='ASSISTANT' AND ac.assistant_user_id=#{viewerId} AND ac.archived_at IS NULL
      ORDER BY ac.last_message_at DESC NULLS LAST,ac.created_at DESC,ac.id DESC LIMIT 1))
    <if test="conversationTypes != null and conversationTypes.size() > 0"> AND pc.conversation_type IN<foreach item="item" collection="conversationTypes" open="(" separator="," close=")">#{item}</foreach></if>
+   <if test="unreadOnly"> AND EXISTS(SELECT 1 FROM marketplace_messages um LEFT JOIN marketplace_messages rm ON rm.id=pm.last_read_message_id WHERE um.conversation_id=pc.id AND um.deleted_at IS NULL AND um.sequence_no&gt;COALESCE(rm.sequence_no,0) AND um.sender_user_id IS DISTINCT FROM #{viewerId})</if>
    ORDER BY pc.last_message_at DESC NULLS LAST,pc.created_at DESC,pc.id DESC
    LIMIT #{limit} OFFSET #{offset}
   ) page

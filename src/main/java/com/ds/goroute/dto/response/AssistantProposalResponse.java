@@ -32,9 +32,9 @@ public class AssistantProposalResponse {
     private UUID activityId;
     private String activityName;
     private String category;
-    /** PREPEND_DAYS: how many days come before day 1. */
+    /** PREPEND_DAYS: how many days come before day 1; INSERT_DAYS: how many days are inserted. */
     private Integer days;
-    /** REMOVE_DAYS: how many activities the removed days hold (they are deleted with them). */
+    /** REMOVE_DAYS: how many activities the removed days hold (they are deleted with them); MOVE_DAY: the moved day's. */
     private Integer activityCount;
     /** Day-changing actions: the trip's dates once applied, as of when it was proposed. */
     private LocalDate newStartDate;

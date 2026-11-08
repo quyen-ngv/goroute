@@ -255,7 +255,7 @@ public class AssistantReplyRequest {
 
     @Data
     public static class ProposalDraft {
-        @Pattern(regexp = "ADD|MOVE|UPDATE_TIME|REMOVE|REPLACE|ADD_DAYS|PREPEND_DAYS|REMOVE_DAYS|SWAP_DAYS|SHIFT_DATES"
+        @Pattern(regexp = "ADD|MOVE|UPDATE_TIME|REMOVE|REPLACE|ADD_DAYS|PREPEND_DAYS|REMOVE_DAYS|SWAP_DAYS|SHIFT_DATES|INSERT_DAYS|MOVE_DAY"
                 + "|EDIT_TRIP|EDIT_ACTIVITY|NEW_ACTIVITY|ADD_EXPENSE|EDIT_EXPENSE|REMOVE_EXPENSE|ADD_NOTE|ADD_GUEST"
                 + "|NEW_TRIP|PLAN_DAYS")
         private String action;
@@ -281,7 +281,7 @@ public class AssistantReplyRequest {
         private String activityId;
         @Size(max = 40)
         private String category;
-        /** PREPEND_DAYS: days to add before day 1. */
+        /** PREPEND_DAYS / INSERT_DAYS: how many days to add. */
         @Min(1) @Max(30)
         private Integer days;
         /** SHIFT_DATES: the trip's new first date. */

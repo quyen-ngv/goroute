@@ -221,7 +221,7 @@ public class PassportServiceImpl implements PassportService {
                 .totalLocationImageCount(totalLocationImages)
                 .locationCompletionPercent(locationCompletionPercent(visitedLocationImages, totalLocationImages))
                 .completionPercent(completionPercent(visitedProvinces, totalProvinces))
-                .pointsBalance(includePrivate ? pointWallet.getWallet(userId).getBalance() : 0)
+                .pointsBalance(includePrivate ? pointWallet.getBalance(userId) : 0)
                 .stamps(stamps)
                 .nextStamps(includePrivate
                         ? progressTowardsNextStamps(rules, earned, counters, visitedProvinces)

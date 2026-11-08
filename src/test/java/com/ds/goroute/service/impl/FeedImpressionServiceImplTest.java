@@ -1,6 +1,9 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.dto.request.FeedEventRequest;
 import com.ds.goroute.dto.request.FeedImpressionRequest;
+import com.ds.goroute.feed.event.FeedEventLogger;
+import com.ds.goroute.feed.model.FeedEventRow;
 import com.ds.goroute.mapper.FeedImpressionMapper;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.type.BusinessConfigKey;
@@ -31,7 +34,8 @@ class FeedImpressionServiceImplTest {
 
     private final FeedImpressionMapper mapper = mock(FeedImpressionMapper.class);
     private final BusinessConfigService config = mock(BusinessConfigService.class);
-    private final FeedImpressionServiceImpl service = new FeedImpressionServiceImpl(mapper, config);
+    private final FeedEventLogger eventLogger = mock(FeedEventLogger.class);
+    private final FeedImpressionServiceImpl service = new FeedImpressionServiceImpl(mapper, config, eventLogger);
     private final UUID viewer = UUID.randomUUID();
 
     private static FeedImpressionRequest.Item item(FeedItemType type, UUID id, int dwell, boolean opened) {
@@ -57,6 +61,61 @@ class FeedImpressionServiceImplTest {
         assertThat(merged.getId()).isEqualTo(post);
         assertThat(merged.getDwellMs()).isEqualTo(4000);
         assertThat(merged.isOpened()).isTrue();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void anOldAppBatchAlsoGoesToTheEventLogWithoutASurface() {
+        UUID post = UUID.randomUUID();
+
+        service.record(viewer, List.of(item(FeedItemType.CHECKIN, post, 2500, true)));
+
+        ArgumentCaptor<List<FeedEventRow>> logged = ArgumentCaptor.forClass(List.class);
+        verify(eventLogger).log(logged.capture());
+        assertThat(logged.getValue()).extracting(FeedEventRow::getEvent).containsExactly("IMPRESSION", "OPEN");
+        assertThat(logged.getValue()).allSatisfy(row -> {
+            assertThat(row.getItemId()).isEqualTo(post);
+            assertThat(row.getSurface()).isNull();
+        });
+        assertThat(logged.getValue().get(0).getDwellMs()).isEqualTo(2500);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void eventsLogEverythingButOnlyImpressionsAndOpensCountAsSeen() {
+        UUID post = UUID.randomUUID();
+        UUID liked = UUID.randomUUID();
+
+        service.recordEvents(viewer, List.of(
+                event(post, "IMPRESSION", 1800),
+                event(post, "OPEN", null),
+                event(liked, "LIKE", null)));
+
+        ArgumentCaptor<Collection<FeedImpressionRequest.Item>> upserted = ArgumentCaptor.forClass(Collection.class);
+        verify(mapper).upsertBatch(eq(viewer), upserted.capture());
+        assertThat(upserted.getValue()).singleElement().satisfies(item -> {
+            assertThat(item.getId()).isEqualTo(post);
+            assertThat(item.getDwellMs()).isEqualTo(1800);
+            assertThat(item.isOpened()).isTrue();
+        });
+        ArgumentCaptor<List<FeedEventRow>> logged = ArgumentCaptor.forClass(List.class);
+        verify(eventLogger).log(logged.capture());
+        assertThat(logged.getValue()).extracting(FeedEventRow::getEvent).containsExactly("IMPRESSION", "OPEN", "LIKE");
+        assertThat(logged.getValue()).allSatisfy(row -> assertThat(row.getSurface()).isEqualTo("for-you"));
+    }
+
+    @Test
+    void eventsWithoutImpressionsDoNotTouchSeen() {
+        service.recordEvents(viewer, List.of(event(UUID.randomUUID(), "GLANCE", 300)));
+
+        verify(mapper, never()).upsertBatch(any(), any());
+        verify(eventLogger).log(any());
+    }
+
+    private static FeedEventRequest.Item event(UUID id, String event, Integer dwellMs) {
+        return FeedEventRequest.Item.builder()
+                .type(FeedItemType.CHECKIN).id(id).event(event).surface("for-you").position(3).dwellMs(dwellMs)
+                .build();
     }
 
     @Test

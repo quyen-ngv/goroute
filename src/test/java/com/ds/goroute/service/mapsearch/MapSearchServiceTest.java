@@ -168,10 +168,22 @@ class MapSearchServiceTest {
         picked = List.of(picked.get(0), picked.get(1), picked.get(0), picked.get(1), picked.get(0));
         when(cache.searchPicked(eq("cho ben"), any(), any(), anyDouble(), anyInt())).thenReturn(picked);
 
-        JsonNode answer = body(service.autocomplete(user, query("chợ bến", null, null)));
+        JsonNode answer = body(service.autocomplete(user, query("chợ bến", "10.77,106.69", null)));
 
         assertThat(answer.path("predictions")).hasSize(5);
         verify(mapbox, never()).forward(anyString(), any(), any(), any(), anyInt());
+    }
+
+    @Test
+    @DisplayName("without a point, picked places from anywhere do not stand in for Mapbox")
+    void pickedPlacesNeedAPoint() throws Exception {
+        List<MapPlaceCacheEntry> picked = MapboxResults.places(objectMapper.readTree(FORWARD));
+        picked = List.of(picked.get(0), picked.get(1), picked.get(0), picked.get(1), picked.get(0));
+        when(cache.searchPicked(eq("cho ben"), any(), any(), anyDouble(), anyInt())).thenReturn(picked);
+
+        service.autocomplete(user, query("chợ bến", null, null));
+
+        verify(mapbox).forward(anyString(), any(), any(), any(), anyInt());
     }
 
     @Test

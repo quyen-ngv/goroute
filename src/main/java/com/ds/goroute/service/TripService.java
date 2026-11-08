@@ -4,13 +4,17 @@ import com.ds.goroute.dto.PublicTripSearchCriteria;
 import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.request.*;
 import com.ds.goroute.dto.response.*;
+import com.ds.goroute.type.TripCreationCharge;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
 public interface TripService {
+    /** Creates a trip the user pays AI_CREDIT.TRIP_CREATION_COST for; refused when the balance is short. */
     TripResponse createTrip(CreateTripRequest request, UUID userId);
+
+    TripResponse createTrip(CreateTripRequest request, UUID userId, TripCreationCharge charge);
 
     List<TripResponse> getTrips(UUID userId, String status);
 
@@ -44,9 +48,15 @@ public interface TripService {
 
     PublicTripResponse getPublicTrip(UUID tripId, UUID viewerId);
 
-    TripVoteResponse voteTripHelpful(UUID tripId, UUID userId);
+    /**
+     * Sets or removes the viewer's helpful vote; {@code voted} null flips it, for app builds
+     * that only knew the toggle. Sending the wanted state means a heart drawn from a stale
+     * copy of the trip cannot turn a like into an unlike.
+     */
+    TripVoteResponse voteTripHelpful(UUID tripId, UUID userId, Boolean voted);
 
-    TripVoteResponse voteTripUnhelpful(UUID tripId, UUID userId);
+    /** As {@link #voteTripHelpful}, for the not-helpful vote. */
+    TripVoteResponse voteTripUnhelpful(UUID tripId, UUID userId, Boolean voted);
 
     TripResponse joinTripByCode(String code, UUID userId);
 

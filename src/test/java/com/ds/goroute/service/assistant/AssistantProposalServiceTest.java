@@ -23,6 +23,7 @@ import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.UserRepository;
+import com.ds.goroute.service.trip.TripDayService;
 import com.ds.goroute.service.ActivityService;
 import com.ds.goroute.service.ExpenseService;
 import com.ds.goroute.service.TextModerationService;
@@ -87,7 +88,7 @@ class AssistantProposalServiceTest {
     @Mock private ActivityRepository activities;
     @Mock private PlaceRepository places;
     @Mock private ActivityService activityService;
-    @Mock private AssistantTripDays tripDays;
+    @Mock private TripDayService tripDays;
     @Mock private TripAccessGuard tripAccessGuard;
     @Mock private MarketplaceConversationAccessService conversationAccess;
     @Mock private WebSocketService webSocketService;
@@ -435,6 +436,25 @@ class AssistantProposalServiceTest {
         service.apply(EDITOR, proposalId, null);
 
         verify(tripDays).shiftDates(TRIP, LocalDate.of(2026, 11, 8), EDITOR);
+    }
+
+    @Test
+    void prependingDaysStartsEarlierAndUsesTheSharedDayInsertion() {
+        AssistantReplyRequest.ProposalDraft prepend = draft("PREPEND_DAYS");
+        prepend.setDays(2);
+
+        service.createFromReply(turn, TRIP, List.of(prepend));
+
+        ArgumentCaptor<AssistantProposal> stored = ArgumentCaptor.forClass(AssistantProposal.class);
+        verify(repository).insertProposal(stored.capture());
+        assertThat(stored.getValue().getPayload()).contains("\"newStartDate\":\"2026-10-30\"")
+                .contains("\"newEndDate\":\"2026-11-03\"");
+        UUID proposalId = pending("PREPEND_DAYS", stored.getValue().getPayload());
+
+        service.apply(EDITOR, proposalId, null);
+
+        verify(tripAccessGuard).requireEditAccess(TRIP, EDITOR);
+        verify(tripDays).insertDays(TRIP, 1, 2, EDITOR);
     }
 
     @Test

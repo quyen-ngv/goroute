@@ -164,7 +164,8 @@ public class CheckinClusterAdminServiceImpl implements CheckinClusterAdminServic
 
         for (UserCheckin rated : checkinRepository.findLatestRatedPerUserForLocationKey(locationKey)) {
             List<String> photoUrls = checkinRepository.findPhotos(rated.getId()).stream()
-                    .map(photo -> photo.getUrl())
+                    .map(photo -> photo.imageUrl())
+                    .filter(java.util.Objects::nonNull)
                     .toList();
             UUID reviewId = reviewConverter.convert(rated, placeId, photoUrls);
             checkinRepository.attachReview(rated.getId(), reviewId);

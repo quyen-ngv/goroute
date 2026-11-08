@@ -177,12 +177,14 @@ public interface UserCheckinMapper {
     List<UserCheckin> findAllForAdmin(@Param("search") String search,
                                       @Param("userId") UUID userId,
                                       @Param("hidden") Boolean hidden,
+                                      @Param("needsPlace") boolean needsPlace,
                                       @Param("limit") int limit,
                                       @Param("offset") int offset);
 
     long countAllForAdmin(@Param("search") String search,
                           @Param("userId") UUID userId,
-                          @Param("hidden") Boolean hidden);
+                          @Param("hidden") Boolean hidden,
+                          @Param("needsPlace") boolean needsPlace);
 
     /**
      * Moves a check-in onto a catalogue place. The author's own name for the spot is left
@@ -193,6 +195,9 @@ public interface UserCheckinMapper {
                     @Param("placeId") UUID placeId,
                     @Param("locationKey") String locationKey,
                     @Param("provinceCode") String provinceCode);
+
+    /** Takes a check-in with no place out of the queue for one: it names no real place. */
+    int dismissPlace(@Param("id") UUID id, @Param("adminId") UUID adminId);
 
     int insertLocationHistory(UserCheckinLocationHistory history);
 

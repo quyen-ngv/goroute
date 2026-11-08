@@ -3,6 +3,7 @@ package com.ds.goroute.service.impl;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.response.WalletCurrencySummaryResponse;
 import com.ds.goroute.dto.response.WalletCategorySummaryResponse;
+import com.ds.goroute.dto.response.WalletConvertedResponse;
 import com.ds.goroute.dto.response.WalletDebtResponse;
 import com.ds.goroute.dto.response.WalletExpenseResponse;
 import com.ds.goroute.dto.response.WalletExpenseSplitResponse;
@@ -20,6 +21,7 @@ import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.WalletRepository;
 import com.ds.goroute.service.BusinessConfigService;
+import com.ds.goroute.service.ExchangeRateService;
 import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.WalletService;
 import com.ds.goroute.service.NotificationService;
@@ -32,6 +34,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -39,6 +42,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -59,6 +63,7 @@ public class WalletServiceImpl implements WalletService {
     private final NotificationHelper notificationHelper;
     /** Personal expenses have no trip, so their reminders skip the trip event pipeline. */
     private final NotificationService notificationService;
+    private final ExchangeRateService exchangeRateService;
 
     @Override
     @Transactional(readOnly = true)
@@ -80,6 +85,68 @@ public class WalletServiceImpl implements WalletService {
                 .totalItems(walletRepository.countExpenses(userId))
                 .build();
     }
+
+    /**
+     * Adds the Wallet's currency rows up in {@code currency} at today's rates. Not transactional:
+     * a rate miss fetches over HTTP, which must not hold a database connection.
+     *
+     * <p>{@link ExchangeRateService#getRate} answers 1 when it has no rate, so 1 between two
+     * different currencies is treated as "no rate": that currency is listed in
+     * {@code unconvertedCurrencies} and left out, rather than counted 1:1 (1 JPY as 1 VND).
+     */
+    @Override
+    public WalletConvertedResponse getConverted(UUID userId, String currency) {
+        String target = currency.toUpperCase(Locale.ROOT);
+        Map<String, BigDecimal> rates = new LinkedHashMap<>();
+        List<String> unconverted = new ArrayList<>();
+        BigDecimal totalSpent = BigDecimal.ZERO;
+        BigDecimal owedToMe = BigDecimal.ZERO;
+        BigDecimal iOwe = BigDecimal.ZERO;
+        BigDecimal myShare = BigDecimal.ZERO;
+        BigDecimal myPaid = BigDecimal.ZERO;
+        for (WalletCurrencySummaryRow row : walletRepository.findCurrencySummary(userId)) {
+            BigDecimal rate = rateTo(row.getCurrency(), target, rates, unconverted);
+            if (rate == null) continue;
+            totalSpent = totalSpent.add(zero(row.getTotalSpent()).multiply(rate));
+            owedToMe = owedToMe.add(zero(row.getOwedToMe()).multiply(rate));
+            iOwe = iOwe.add(zero(row.getIOwe()).multiply(rate));
+            myShare = myShare.add(zero(row.getMyShare()).multiply(rate));
+            myPaid = myPaid.add(zero(row.getMyPaid()).multiply(rate));
+        }
+        Map<String, BigDecimal> byCategory = new LinkedHashMap<>();
+        walletRepository.findCategorySummary(userId).forEach(row -> {
+            BigDecimal rate = rateTo(row.getCurrency(), target, rates, unconverted);
+            if (rate != null) byCategory.merge(row.getCategory(), zero(row.getAmount()).multiply(rate), BigDecimal::add);
+        });
+        return WalletConvertedResponse.builder()
+                .currency(target)
+                .totalSpent(money(totalSpent)).owedToMe(money(owedToMe)).iOwe(money(iOwe))
+                .myShare(money(myShare)).myPaid(money(myPaid))
+                .categoryBreakdown(byCategory.entrySet().stream()
+                        .sorted(Map.Entry.<String, BigDecimal>comparingByValue().reversed())
+                        .map(entry -> WalletCategorySummaryResponse.builder().currency(target)
+                                .category(entry.getKey()).amount(money(entry.getValue())).build())
+                        .toList())
+                .rates(rates)
+                .unconvertedCurrencies(unconverted)
+                .build();
+    }
+
+    /** Rate from {@code source} to {@code target}, looked up once per currency; null when there is none. */
+    private BigDecimal rateTo(String source, String target, Map<String, BigDecimal> rates, List<String> unconverted) {
+        String from = source == null ? target : source.toUpperCase(Locale.ROOT);
+        if (rates.containsKey(from)) return rates.get(from);
+        if (unconverted.contains(from)) return null;
+        BigDecimal rate = from.equals(target) ? BigDecimal.ONE : exchangeRateService.getRate(from, target);
+        if (rate == null || rate.signum() <= 0 || (!from.equals(target) && rate.compareTo(BigDecimal.ONE) == 0)) {
+            unconverted.add(from);
+            return null;
+        }
+        rates.put(from, rate);
+        return rate;
+    }
+
+    private static BigDecimal money(BigDecimal amount) { return amount.setScale(2, RoundingMode.HALF_UP); }
 
     /**
      * Legacy single-split reminder, kept for app builds that still remind split by split.

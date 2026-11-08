@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 class PlaceProminenceTest {
 
@@ -22,6 +23,15 @@ class PlaceProminenceTest {
 
         assertThat(PlaceProminence.of(id, 3, 2, 0)).isGreaterThan(PlaceProminence.of(id, 3, 0, 0));
         assertThat(PlaceProminence.of(id, 3, 2, 0)).isGreaterThan(PlaceProminence.of(id, 0, 2, 0));
+    }
+
+    @Test
+    void aCheckinWeighsTwiceATrip() {
+        UUID id = UUID.randomUUID();
+
+        assertThat(PlaceProminence.of(id, 0, 1, 0)).isGreaterThan(PlaceProminence.of(id, 2, 0, 0));
+        // 2 x ln(1 + 3) = ln(1 + 15)
+        assertThat(PlaceProminence.of(id, 0, 3, 0)).isCloseTo(PlaceProminence.of(id, 15, 0, 0), within(1e-12));
     }
 
     @Test

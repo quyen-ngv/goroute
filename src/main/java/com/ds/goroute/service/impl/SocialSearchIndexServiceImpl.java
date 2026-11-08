@@ -9,16 +9,12 @@ import com.ds.goroute.repository.UserCheckinRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.SocialSearchIndexService;
 import com.ds.goroute.type.SocialSearchType;
+import com.ds.goroute.utils.LuceneKeywordQuery;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.core.LowerCaseFilter;
-import org.apache.lucene.analysis.miscellaneous.ASCIIFoldingFilter;
-import org.apache.lucene.analysis.standard.StandardTokenizer;
-import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.FeatureField;
 import org.apache.lucene.document.Field;
@@ -33,18 +29,14 @@ import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.BoostQuery;
-import org.apache.lucene.search.FuzzyQuery;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.MatchAllDocsQuery;
-import org.apache.lucene.search.PhraseQuery;
-import org.apache.lucene.search.PrefixQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.SearcherFactory;
 import org.apache.lucene.search.SearcherManager;
 import org.apache.lucene.search.TermInSetQuery;
 import org.apache.lucene.search.TermQuery;
-import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.util.BytesRef;
@@ -62,7 +54,6 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -110,17 +101,15 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
 
     // Text: a match in the name outweighs one in the caption; a whole username wins outright.
     private static final float HANDLE_EXACT_BOOST = 20f;
-    private static final float TITLE_TERM_BOOST = 4f;
-    private static final float TITLE_PREFIX_BOOST = 2f;
-    private static final float TITLE_FUZZY_BOOST = 1f;
-    private static final float HANDLE_TERM_BOOST = 5f;
-    private static final float HANDLE_PREFIX_BOOST = 3f;
-    private static final float HANDLE_FUZZY_BOOST = 1f;
-    private static final float BODY_TERM_BOOST = 1.5f;
-    private static final float BODY_PREFIX_BOOST = 0.5f;
-    private static final float BODY_FUZZY_BOOST = 0.3f;
-    private static final float TITLE_PHRASE_BOOST = 6f;
-    private static final float BODY_PHRASE_BOOST = 2f;
+    private static final LuceneKeywordQuery.Field TITLE =
+            new LuceneKeywordQuery.Field(TITLE_FIELD, 4f, 2f, 1f, 6f, 1, 4);
+    private static final LuceneKeywordQuery.Field HANDLE =
+            new LuceneKeywordQuery.Field(HANDLE_FIELD, 5f, 3f, 1f, 0f, 1, 4);
+    private static final LuceneKeywordQuery.Field BODY =
+            new LuceneKeywordQuery.Field(BODY_FIELD, 1.5f, 0.5f, 0.3f, 2f, 3, 5);
+    private static final List<LuceneKeywordQuery.Field> ALL_FIELDS = List.of(TITLE, HANDLE, BODY);
+    /** Name and username only: what the All tab's people, tours and events sections must match. */
+    private static final List<LuceneKeywordQuery.Field> NAME_FIELDS = List.of(TITLE, HANDLE);
     // Signals: each adds less than 1, so they order equal matches and never beat a better one.
     private static final float POPULARITY_WEIGHT = 1f;
     private static final float POPULARITY_PIVOT = 10f;
@@ -156,7 +145,7 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
 
     @PostConstruct
     public void init() throws IOException {
-        analyzer = createAnalyzer();
+        analyzer = LuceneKeywordQuery.createAnalyzer();
         Path indexDir = Paths.get(indexPath);
         Files.createDirectories(indexDir);
         directory = FSDirectory.open(indexDir);
@@ -171,19 +160,6 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
         // The index on disk keeps answering while it is rebuilt; what changed while the app was
         // down (or by hand in the database) is picked up here.
         triggerReindex();
-    }
-
-    /** Same folding as the place index: case and Vietnamese diacritics never stop a match. */
-    private static Analyzer createAnalyzer() {
-        return new Analyzer() {
-            @Override
-            protected TokenStreamComponents createComponents(String fieldName) {
-                StandardTokenizer tokenizer = new StandardTokenizer();
-                TokenStream stream = new LowerCaseFilter(tokenizer);
-                stream = new ASCIIFoldingFilter(stream);
-                return new TokenStreamComponents(tokenizer, stream);
-            }
-        };
     }
 
     @PreDestroy
@@ -214,29 +190,27 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
 
     @Override
     public SocialSearchHits search(String keyword, Set<SocialSearchType> kinds, UUID excludeUserId,
-                                   String tourVariant, int offset, int limit) throws IOException {
+                                   String tourVariant, boolean namesOnly, int offset, int limit) throws IOException {
         if (kinds == null || kinds.isEmpty() || offset < 0 || limit < 1 || offset >= MAX_RESULT_WINDOW) {
             return SocialSearchHits.EMPTY;
         }
-        Query text = textQuery(keyword);
-        if (text == null) {
+        List<LuceneKeywordQuery.Word> words = LuceneKeywordQuery.words(keyword, MAX_QUERY_TERMS);
+        if (words.isEmpty()) {
             return SocialSearchHits.EMPTY;
         }
-        int wanted = Math.min(offset + limit, MAX_RESULT_WINDOW);
-        Query query = withRanking(filtered(text, kinds, excludeUserId, tourVariant));
-
         IndexSearcher searcher = searcherManager.acquire();
         try {
-            TopDocs top = searcher.search(query, wanted);
+            ScoreDoc[] relevant = relevant(searcher, words, keyword, kinds, excludeUserId, tourVariant,
+                    namesOnly ? NAME_FIELDS : ALL_FIELDS);
             StoredFields stored = searcher.storedFields();
-            List<SocialSearchHits.Hit> hits = new ArrayList<>(Math.max(0, top.scoreDocs.length - offset));
-            for (int index = offset; index < top.scoreDocs.length; index++) {
-                ScoreDoc scoreDoc = top.scoreDocs[index];
-                Document doc = stored.document(scoreDoc.doc, Set.of(TYPE_FIELD, ID_FIELD));
+            int end = Math.min(relevant.length, offset + limit);
+            List<SocialSearchHits.Hit> hits = new ArrayList<>(Math.max(0, end - offset));
+            for (int index = offset; index < end; index++) {
+                Document doc = stored.document(relevant[index].doc, Set.of(TYPE_FIELD, ID_FIELD));
                 hits.add(new SocialSearchHits.Hit(
                         SocialSearchType.valueOf(doc.get(TYPE_FIELD)), UUID.fromString(doc.get(ID_FIELD))));
             }
-            return new SocialSearchHits(hits, top.totalHits.value);
+            return new SocialSearchHits(hits, relevant.length);
         } finally {
             searcherManager.release(searcher);
         }
@@ -247,14 +221,16 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
             throws IOException {
         Map<SocialSearchType, Integer> counts = new LinkedHashMap<>();
         INDEXED_KINDS.forEach(kind -> counts.put(kind, 0));
-        Query text = textQuery(keyword);
-        if (text == null) {
+        List<LuceneKeywordQuery.Word> words = LuceneKeywordQuery.words(keyword, MAX_QUERY_TERMS);
+        if (words.isEmpty()) {
             return counts;
         }
         IndexSearcher searcher = searcherManager.acquire();
         try {
+            // Each kind's tab lists what its own search keeps, so each is counted that same way.
             for (SocialSearchType kind : INDEXED_KINDS) {
-                counts.put(kind, searcher.count(filtered(text, Set.of(kind), excludeUserId, tourVariant)));
+                counts.put(kind, relevant(searcher, words, keyword, Set.of(kind), excludeUserId, tourVariant,
+                        ALL_FIELDS).length);
             }
             return counts;
         } finally {
@@ -263,67 +239,40 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
     }
 
     /**
-     * Every word of the keyword (up to {@link #MAX_QUERY_TERMS}) must match somewhere — as a
-     * word, the start of one, or one typo away — except that past two words a quarter may miss,
-     * so one stray word does not empty the results. Null when the keyword has no word in it.
+     * The hits worth showing, best first, at most {@link #MAX_RESULT_WINDOW}: those of the
+     * strictest tier that finds anything ({@link LuceneKeywordQuery#STRICT_TIERS}: typos only
+     * when the words as typed match nothing), less that tier's weak tail
+     * ({@link LuceneKeywordQuery#relevant}).
      */
-    private Query textQuery(String keyword) throws IOException {
-        if (keyword == null || keyword.isBlank()) {
-            return null;
+    private static ScoreDoc[] relevant(IndexSearcher searcher, List<LuceneKeywordQuery.Word> words, String keyword,
+                                       Set<SocialSearchType> kinds, UUID excludeUserId, String tourVariant,
+                                       List<LuceneKeywordQuery.Field> fields) throws IOException {
+        for (LuceneKeywordQuery.Match match : LuceneKeywordQuery.STRICT_TIERS) {
+            Query query = withRanking(filtered(textQuery(words, keyword, fields, match), kinds, excludeUserId,
+                    tourVariant));
+            ScoreDoc[] hits = searcher.search(query, MAX_RESULT_WINDOW).scoreDocs;
+            if (hits.length > 0) {
+                return LuceneKeywordQuery.relevant(hits);
+            }
         }
-        List<String> terms = analyze(keyword);
-        if (terms.isEmpty()) {
-            return null;
-        }
-        BooleanQuery.Builder words = new BooleanQuery.Builder();
-        for (String term : terms) {
-            words.add(termQuery(term), BooleanClause.Occur.SHOULD);
-        }
-        int count = terms.size();
-        words.setMinimumNumberShouldMatch(count <= 2 ? count : count - count / 4);
+        return new ScoreDoc[0];
+    }
 
+    /**
+     * The keyword's words in {@code fields} ({@link LuceneKeywordQuery}: every word, the last
+     * also as a start, accents counting extra), plus a large bonus for a whole username when
+     * the username is searched.
+     */
+    private static Query textQuery(List<LuceneKeywordQuery.Word> words, String keyword,
+                                   List<LuceneKeywordQuery.Field> fields, LuceneKeywordQuery.Match match) {
         BooleanQuery.Builder query = new BooleanQuery.Builder()
-                .add(words.build(), BooleanClause.Occur.MUST);
-        if (count > 1) {
-            String[] phrase = terms.toArray(String[]::new);
-            query.add(new BoostQuery(new PhraseQuery(1, TITLE_FIELD, phrase), TITLE_PHRASE_BOOST),
-                    BooleanClause.Occur.SHOULD);
-            query.add(new BoostQuery(new PhraseQuery(1, BODY_FIELD, phrase), BODY_PHRASE_BOOST),
-                    BooleanClause.Occur.SHOULD);
-        }
+                .add(LuceneKeywordQuery.build(words, fields, match), BooleanClause.Occur.MUST);
         String handle = normalizeHandle(keyword);
-        if (!handle.isEmpty()) {
+        if (!handle.isEmpty() && fields.contains(HANDLE)) {
             query.add(new BoostQuery(new TermQuery(new Term(HANDLE_EXACT_FIELD, handle)), HANDLE_EXACT_BOOST),
                     BooleanClause.Occur.SHOULD);
         }
         return query.build();
-    }
-
-    /** One word of the keyword, in any field, scored by where and how well it matched. */
-    private static Query termQuery(String term) {
-        BooleanQuery.Builder anyField = new BooleanQuery.Builder();
-        addBoosted(anyField, new TermQuery(new Term(TITLE_FIELD, term)), TITLE_TERM_BOOST);
-        addBoosted(anyField, new TermQuery(new Term(HANDLE_FIELD, term)), HANDLE_TERM_BOOST);
-        addBoosted(anyField, new TermQuery(new Term(BODY_FIELD, term)), BODY_TERM_BOOST);
-        if (term.length() >= 2) {
-            addBoosted(anyField, new PrefixQuery(new Term(TITLE_FIELD, term)), TITLE_PREFIX_BOOST);
-            addBoosted(anyField, new PrefixQuery(new Term(HANDLE_FIELD, term)), HANDLE_PREFIX_BOOST);
-        }
-        if (term.length() >= 3) {
-            addBoosted(anyField, new PrefixQuery(new Term(BODY_FIELD, term)), BODY_PREFIX_BOOST);
-        }
-        if (term.length() >= 4) {
-            addBoosted(anyField, new FuzzyQuery(new Term(TITLE_FIELD, term), 1), TITLE_FUZZY_BOOST);
-            addBoosted(anyField, new FuzzyQuery(new Term(HANDLE_FIELD, term), 1), HANDLE_FUZZY_BOOST);
-        }
-        if (term.length() >= 5) {
-            addBoosted(anyField, new FuzzyQuery(new Term(BODY_FIELD, term), 1), BODY_FUZZY_BOOST);
-        }
-        return anyField.build();
-    }
-
-    private static void addBoosted(BooleanQuery.Builder builder, Query query, float boost) {
-        builder.add(new BoostQuery(query, boost), BooleanClause.Occur.SHOULD);
     }
 
     private static Query filtered(Query text, Set<SocialSearchType> kinds, UUID excludeUserId, String tourVariant) {
@@ -359,19 +308,6 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
                 .add(LongField.newDistanceFeatureQuery(PUBLISHED_FIELD, FRESHNESS_WEIGHT,
                         System.currentTimeMillis(), FRESHNESS_PIVOT_MILLIS), BooleanClause.Occur.SHOULD)
                 .build();
-    }
-
-    private List<String> analyze(String text) throws IOException {
-        Set<String> terms = new LinkedHashSet<>();
-        try (TokenStream stream = analyzer.tokenStream(TITLE_FIELD, text)) {
-            CharTermAttribute attribute = stream.addAttribute(CharTermAttribute.class);
-            stream.reset();
-            while (stream.incrementToken() && terms.size() < MAX_QUERY_TERMS) {
-                terms.add(attribute.toString());
-            }
-            stream.end();
-        }
-        return new ArrayList<>(terms);
     }
 
     /** A keyword typed as a username: "@Minh_92" and "minh_92" are the same account. */
@@ -588,7 +524,7 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
 
     private static void addText(Document doc, String field, String value) {
         if (value != null && !value.isBlank()) {
-            doc.add(new TextField(field, value.trim(), Field.Store.NO));
+            doc.add(new TextField(field, LuceneKeywordQuery.normalize(value.trim()), Field.Store.NO));
         }
     }
 

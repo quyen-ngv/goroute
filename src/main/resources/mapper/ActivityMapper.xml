@@ -301,34 +301,34 @@
     </update>
 
     <!--
-        Moves every activity from day fromDay on by dayDelta days (multi-day ones keep their span);
-        a starting point's date moves by dateDeltaDays, the change of calendar date of those days.
+        Renumbers the trip's days in one statement (every SET reads the old row): a day in
+        `moves` (old day -> new day) takes its new number, the other days 1..oldDays keep theirs,
+        and activities outside those days move by outsideDelta. A multi-day activity keeps its
+        span; a starting point's date moves by the change of calendar date of its day, which is
+        the change of number plus startDelta (how many days later the trip now starts).
     -->
-    <update id="shiftDays">
-        UPDATE activities
-        SET day_number = day_number + #{dayDelta},
-            end_day_number = CASE WHEN end_day_number IS NULL THEN NULL ELSE end_day_number + #{dayDelta} END,
-            starting_point_date = CASE WHEN starting_point_date IS NULL THEN NULL
-                                       ELSE starting_point_date + (#{dateDeltaDays} * INTERVAL '1 day') END,
-            updated_at = NOW()
-        WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
-          AND day_number &gt;= #{fromDay}
-    </update>
+    <sql id="relaidDay">
+        (CASE
+        <foreach collection="moves" index="fromDay" item="toDay">
+            WHEN day_number = #{fromDay} THEN #{toDay}
+        </foreach>
+            WHEN day_number BETWEEN 1 AND #{oldDays} THEN day_number
+            ELSE day_number + #{outsideDelta}
+        END)
+    </sql>
 
-    <!-- Exchanges the activities of two days in one statement (CASE reads the old row values). -->
-    <update id="swapDays">
+    <update id="relayoutDays">
         UPDATE activities
-        SET day_number = CASE WHEN day_number = #{firstDay} THEN #{secondDay} ELSE #{firstDay} END,
+        SET day_number = <include refid="relaidDay"/>,
             end_day_number = CASE WHEN end_day_number IS NULL THEN NULL
-                                  WHEN day_number = #{firstDay} THEN end_day_number + (#{secondDay} - #{firstDay})
-                                  ELSE end_day_number + (#{firstDay} - #{secondDay}) END,
+                                  ELSE end_day_number + (<include refid="relaidDay"/> - day_number) END,
             starting_point_date = CASE WHEN starting_point_date IS NULL THEN NULL
-                                       WHEN day_number = #{firstDay}
-                                           THEN starting_point_date + ((#{secondDay} - #{firstDay}) * INTERVAL '1 day')
-                                       ELSE starting_point_date + ((#{firstDay} - #{secondDay}) * INTERVAL '1 day') END,
+                                       ELSE starting_point_date
+                                           + ((<include refid="relaidDay"/> - day_number + #{startDelta}) * INTERVAL '1 day') END,
             updated_at = NOW()
         WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
-          AND day_number IN (#{firstDay}, #{secondDay})
+          AND (<include refid="relaidDay"/> &lt;&gt; day_number
+               OR (starting_point_date IS NOT NULL AND <include refid="relaidDay"/> - day_number + #{startDelta} &lt;&gt; 0))
     </update>
 
 </mapper>

@@ -5,6 +5,7 @@ import com.ds.goroute.dto.CheckinLocationSnapshot;
 import com.ds.goroute.dto.request.AssignCheckinPlaceRequest;
 import com.ds.goroute.dto.request.HideCheckinRequest;
 import com.ds.goroute.dto.response.AdminCheckinResponse;
+import com.ds.goroute.dto.response.AdminUnlinkedCheckinResponse;
 import com.ds.goroute.dto.response.CheckinLocationHistoryResponse;
 import com.ds.goroute.entity.ContentTakedown;
 import com.ds.goroute.entity.Place;
@@ -69,17 +70,59 @@ public class CheckinAdminServiceImpl implements CheckinAdminService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<AdminCheckinResponse> list(String search, UUID userId, Boolean hidden, int page, int size) {
+    public List<AdminCheckinResponse> list(String search, UUID userId, Boolean hidden, boolean needsPlace,
+                                           int page, int size) {
         int boundedSize = boundedSize(size);
         List<UserCheckin> checkins = checkinRepository.findAllForAdmin(
-                blankToNull(search), userId, hidden, boundedSize, boundedPage(page) * boundedSize);
+                blankToNull(search), userId, hidden, needsPlace, boundedSize, boundedPage(page) * boundedSize);
         return toResponses(checkins);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public long count(String search, UUID userId, Boolean hidden) {
-        return checkinRepository.countAllForAdmin(blankToNull(search), userId, hidden);
+    public List<AdminUnlinkedCheckinResponse> listUnlinked(int page, int size) {
+        int boundedSize = boundedSize(size);
+        List<UserCheckin> checkins = checkinRepository.findAllForAdmin(
+                null, null, null, true, boundedSize, boundedPage(page) * boundedSize);
+        Map<UUID, AdminCheckinResponse> rows = toResponses(checkins).stream()
+                .collect(Collectors.toMap(AdminCheckinResponse::getId, row -> row, (a, b) -> a));
+        return checkins.stream()
+                .map(checkin -> AdminUnlinkedCheckinResponse.builder()
+                        .id(checkin.getId())
+                        .tripId(checkin.getTripId())
+                        .activityId(checkin.getActivityId())
+                        .locationSource(checkin.getLocationSource())
+                        .locationName(checkin.getLocationName())
+                        .customName(checkin.getCustomName())
+                        .ward(checkin.getWard())
+                        .province(checkin.getProvince())
+                        .provinceCode(checkin.getProvinceCode())
+                        .latitude(checkin.getLatitude())
+                        .longitude(checkin.getLongitude())
+                        .caption(checkin.getCaption())
+                        .photoUrls(rows.containsKey(checkin.getId()) ? rows.get(checkin.getId()).getPhotoUrls() : List.of())
+                        .createdAt(checkin.getCreatedAt())
+                        .build())
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public void dismissPlace(UUID adminId, UUID checkinId) {
+        UserCheckin checkin = checkinRepository.findById(checkinId)
+                .filter(found -> !Boolean.TRUE.equals(found.getIsRemoved()))
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Check-in not found"));
+        if (checkin.getPlaceId() != null) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "This check-in is already linked to a place");
+        }
+        checkinRepository.dismissPlace(checkinId, adminId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public long count(String search, UUID userId, Boolean hidden, boolean needsPlace) {
+        return checkinRepository.countAllForAdmin(blankToNull(search), userId, hidden, needsPlace);
     }
 
     @Override
@@ -225,7 +268,8 @@ public class CheckinAdminServiceImpl implements CheckinAdminService {
     private void moveRating(UserCheckin checkin, UUID previousPlaceId, UUID previousReviewId) {
         if (checkin.hasRating()) {
             List<String> photoUrls = checkinRepository.findPhotos(checkin.getId()).stream()
-                    .map(UserCheckinPhoto::getUrl)
+                    .map(UserCheckinPhoto::imageUrl)
+                    .filter(Objects::nonNull)
                     .toList();
             UUID reviewId = reviewConverter.convert(checkin, checkin.getPlaceId(), photoUrls);
             checkinRepository.attachReview(checkin.getId(), reviewId);
@@ -291,7 +335,8 @@ public class CheckinAdminServiceImpl implements CheckinAdminService {
                         Collectors.collectingAndThen(Collectors.toList(), photos -> photos.stream()
                                 .sorted(Comparator.comparing(UserCheckinPhoto::getPosition,
                                         Comparator.nullsLast(Comparator.naturalOrder())))
-                                .map(UserCheckinPhoto::getUrl)
+                                .map(UserCheckinPhoto::imageUrl)
+                                .filter(Objects::nonNull)
                                 .toList())));
         Map<UUID, Integer> likeCounts = checkinRepository.findLikeCounts(ids).stream()
                 .collect(Collectors.toMap(count -> count.getCheckinId(),

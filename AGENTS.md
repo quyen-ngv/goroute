@@ -148,7 +148,7 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 
 | Label | Key | Unit/range | Failure behavior | Visibility |
 |---|---|---|---|---|
-| `TRIP` | `FREE_TRIP_QUOTA` | count, 0..1000 | safe fallback 3 | private/admin |
+| `TRIP` | `FREE_TRIP_QUOTA` | LEGACY-STAR-QUOTA: unused since V262 (trip creation costs credits); delete with the admin quota endpoint | safe fallback 3 | private/admin |
 | `PLACE_REVIEW` | `DEFAULT_REFRESH_MAX_REVIEWS` | count, 1..200 | safe fallback 200 | private/admin |
 | `TRIP_MEMORY` | `FREE_TRIP_MEMORY_LIMIT` | count, 1..1000 | safe fallback 50 | private/admin |
 | `EXPENSE` | `PAYMENT_REMINDER_COOLDOWN_MINUTES` | minutes, 1..10080 | safe fallback 1440 | private/admin |
@@ -157,6 +157,10 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `AI_CREDIT` | `NEGATIVE_FLOOR` | credits below zero a running task may reach, 0..1000 | safe fallback 5 | users via `/me/ai-credits` (`negativeFloor`) |
 | `AI_CREDIT` | `MIN_BALANCE_ASSISTANT` / `_AI_TRIP` / `_RECEIPT_SCAN` / `_SOCIAL_LOCATION` | credits needed to start, 0..100000 | safe fallback 20 / 100 / 10 / 10 | users via `/me/ai-credits` (`minBalance`) |
 | `AI_CREDIT` | `FALLBACK_CREDITS_PER_CALL` | credits for a model call with no AI_PRICING row, 0..100000 | safe fallback 20 | private/admin |
+| `AI_CREDIT` | `TRIP_CREATION_COST` | credits per trip creation (manual, clone, AI draft, Pengoo card), 0..100000 | safe fallback 50 | users via `/me/ai-credits` and `/me/stars` (`tripCreationCost`) |
+| `AI_CREDIT` | `STAR_EXCHANGE_ENABLED` | boolean; Stars may be exchanged into credits | safe fallback true | users via `/me/stars` (`exchange.enabled`) |
+| `AI_CREDIT` | `STAR_EXCHANGE_RATE` | credits per Star, 1..1000 | safe fallback 10 | users via `/me/stars` (`exchange.rate`) |
+| `AI_CREDIT` | `STAR_EXCHANGE_MONTHLY_CAP` | credits from Stars per credit-wallet period, 0..100000 | safe fallback 500 | users via `/me/stars` (`exchange.monthlyCap`) |
 | `MAP_SEARCH` | `RATE_LIMIT_ENABLED` / `EXEMPT_ADMINS` | boolean | safe fallback true / true | private/admin |
 | `MAP_SEARCH` | `AUTOCOMPLETE_PER_MINUTE` / `PLACE_DETAIL_PER_MINUTE` | count/minute/user, 1..600 | safe fallback 30 / 30 | private/admin |
 | `MAP_SEARCH` | `AUTOCOMPLETE_PER_DAY` / `PLACE_DETAIL_PER_DAY` | count/day/user, 1..100000 | safe fallback 300 / 200 | private/admin |
@@ -180,6 +184,8 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `CHECKIN` | `MAX_ACCURACY_METERS` | metres, 5..2000 | safe fallback 100 | public |
 | `CHECKIN` | `MAX_PHOTOS` | count, 1..20 | safe fallback 6 | public |
 | `CHECKIN` | `MAX_CAPTION_LENGTH` | characters, 100..5000 | safe fallback 2000 | public |
+| `CHECKIN` | `VIDEO_ENABLED` | boolean (beta users always on); gates `POST /v1/api/checkins/videos` and a VIDEO item | safe fallback false | users via `GET /v1/api/checkins/context` (`videoAllowed`) |
+| `CHECKIN` | `MAX_VIDEO_SECONDS` | seconds, 5..300 | safe fallback 60 | users via check-in context (`maxVideoSeconds`) |
 | `CHECKIN` | `LOCATION_KEY_PRECISION` | decimal places, 2..6 | safe fallback 4 | private/admin |
 | `CHECKIN` | `GALLERY_ALLOWED_FOR_FREE` | boolean | safe fallback true | public |
 | `CHECKIN` | `GUIDE_SCREEN_ENABLED` / `GUIDE_SCREEN_MAX_VIEWS` | boolean / count 0..50 | safe fallback true / 3 | public |
@@ -239,6 +245,9 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `FEED` | `HIDE_AUTHOR_DAYS` | days "hide posts from this person" lasts, 1..365 | safe fallback 30 | users via `POST /v1/api/feed/feedback` (`expiresAt`) |
 | `FEED` | `RANKING_ENABLED` | boolean (beta users always on) | safe fallback false | users via `GET /v1/api/feed/for-you` (`enabled`) |
 | `FEED` | `RANKING_PERCENT` | share of signed-in users on the ranked feed, 0..100 | safe fallback 0 | users via `GET /v1/api/feed/for-you` (`enabled`) |
+| `FEED` | `EVENTS_ENABLED` | write `feed_events` (V267) | safe fallback `true` | private/admin |
+| `FEED` | `EVENTS_RETENTION_DAYS` | days of `feed_events` daily partitions kept, 7..365 | safe fallback 30 | private/admin |
+| `FEED` | `CANDIDATES_BACKEND` | `SQL` or `LUCENE` (feed Lucene index, falls back to SQL) | safe fallback `SQL` | private/admin |
 | `FEED` | `RANKING_WEIGHTS` | JSON overriding `feed/feed-ranking-defaults.json` key by key | safe fallback `{}` (defaults) | private/admin |
 
 ## Build note
