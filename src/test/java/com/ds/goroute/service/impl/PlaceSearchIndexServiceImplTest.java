@@ -8,6 +8,7 @@ import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.type.PlaceGroup;
 import com.ds.goroute.type.PlaceSubType;
 import com.ds.goroute.type.PlaceVisibilityStatus;
+import com.ds.goroute.utils.LuceneKeywordQuery;
 import com.ds.goroute.utils.MapTile;
 import com.ds.goroute.type.PlaceSearchSort;
 import org.junit.jupiter.api.AfterEach;
@@ -288,6 +289,80 @@ class PlaceSearchIndexServiceImplTest {
         searchService.indexPlace(exact);
         assertThat(searchService.searchPlaceIds(criteria("cafe da lat", null, 2.0)))
                 .containsExactly(exact.getId());
+    }
+
+    @Test
+    void areaKeywordTierTellsWhenOnlyOneWordMatchesInTheArea() throws Exception {
+        searchService.indexPlace(place("Cafe Mây", "cafe", 10.0001, 106.0));
+
+        assertThat(searchService.areaKeywordTier(criteria("cafe da lat", null, 2.0)))
+                .isEqualTo(LuceneKeywordQuery.Match.ANY_WORD);
+        assertThat(searchService.areaKeywordTier(criteria("cafe may", null, 2.0)))
+                .isEqualTo(LuceneKeywordQuery.Match.EXACT);
+        assertThat(searchService.areaKeywordTier(criteria(null, null, 2.0))).isNull();
+    }
+
+    @Test
+    void searchPlaceIdsKeepsItsResultsBesideTheTierLookup() throws Exception {
+        Place cafe = place("Cafe Mây", "cafe", 10.0001, 106.0);
+        searchService.indexPlace(cafe);
+        PlaceSearchCriteria loose = criteria("cafe da lat", null, 2.0);
+
+        searchService.areaKeywordTier(loose);
+
+        assertThat(searchService.searchPlaceIds(loose)).containsExactly(cafe.getId());
+    }
+
+    @Test
+    void outsideSearchFindsTheNameBeyondTheRadiusOnly() throws Exception {
+        // Hồ Chí Minh City is the point; Hà Nội is ~1,140 km north.
+        Place inSaigon = place("Phở Thìn", "restaurant", 10.7770, 106.7010);
+        Place inHanoi = place("Phở Thìn Bờ Hồ", "restaurant", 21.0285, 105.8542);
+        searchService.indexPlace(inSaigon);
+        searchService.indexPlace(inHanoi);
+
+        assertThat(searchService.searchPlaceIdsByNameOutside("pho thin", null, 10.7769, 106.7009, 30.0, 10))
+                .containsExactly(inHanoi.getId());
+    }
+
+    @Test
+    void outsideSearchNeverFallsBackToAnyOneWord() throws Exception {
+        searchService.indexPlace(place("Phở 24", "restaurant", 21.0285, 105.8542));
+
+        assertThat(searchService.searchPlaceIdsByNameOutside("pho thin", null, 10.7769, 106.7009, 30.0, 10))
+                .isEmpty();
+    }
+
+    @Test
+    void outsideSearchOrdersEqualMatchesByProminence() throws Exception {
+        Place quiet = place("Highlands Coffee", "cafe", 21.0285, 105.8542);
+        Place busy = place("Highlands Coffee", "cafe", 16.0544, 108.2022);
+        busy.setCheckinCount(40);
+        busy.setTripUseCount(12);
+        Place middling = place("Highlands Coffee", "cafe", 12.2388, 109.1967);
+        middling.setTripUseCount(2);
+        middling.setCheckinCount(0);
+        searchService.indexPlace(quiet);
+        searchService.indexPlace(busy);
+        searchService.indexPlace(middling);
+
+        assertThat(searchService.searchPlaceIdsByNameOutside("highlands coffee", null, 10.7769, 106.7009, 30.0, 10))
+                .containsExactly(busy.getId(), middling.getId(), quiet.getId());
+    }
+
+    @Test
+    void outsideSearchSkipsInactivePlacesAndOtherGroups() throws Exception {
+        Place hidden = place("Chùa Một Cột", "temple", 21.0359, 105.8338);
+        hidden.setVisibilityStatus(PlaceVisibilityStatus.INACTIVE);
+        Place temple = place("Chùa Một Cột", "temple", 21.0360, 105.8339);
+        temple.setPlaceGroup(PlaceGroup.ATTRACTIONS);
+        searchService.indexPlace(hidden);
+        searchService.indexPlace(temple);
+
+        assertThat(searchService.searchPlaceIdsByNameOutside("chua mot cot", List.of("ATTRACTIONS"),
+                10.7769, 106.7009, 30.0, 10)).containsExactly(temple.getId());
+        assertThat(searchService.searchPlaceIdsByNameOutside("chua mot cot", List.of("FOOD_AND_DRINK"),
+                10.7769, 106.7009, 30.0, 10)).isEmpty();
     }
 
     @Test

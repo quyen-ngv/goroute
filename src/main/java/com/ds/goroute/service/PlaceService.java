@@ -8,6 +8,7 @@ import com.ds.goroute.dto.response.AdminPlaceResponse;
 import com.ds.goroute.dto.response.AdminPlacePageResponse;
 import com.ds.goroute.dto.response.PlaceReviewResponse;
 import com.ds.goroute.utils.GeoDistance;
+import com.ds.goroute.utils.LuceneKeywordQuery;
 import com.ds.goroute.type.PlaceSearchSort;
 import com.ds.goroute.type.PlaceTrendingPeriod;
 
@@ -84,6 +85,22 @@ public interface PlaceService {
                                      BigDecimal minRating, PlaceSearchSort sort, String citySlug, List<UUID> foodIds,
                                      Boolean excludeLinkedFoodPlaces, boolean includeInactive,
                                      Float minLuceneScore, int page, int size);
+
+    /**
+     * The tier {@link #searchPlaces} matches {@code keyword} at within {@code radius} km of the
+     * point, its kind filter aside: {@link LuceneKeywordQuery.Match#ANY_WORD} means no name
+     * there has the words together. Null without a searchable keyword.
+     */
+    LuceneKeywordQuery.Match areaKeywordTier(String keyword, BigDecimal latitude, BigDecimal longitude,
+                                             BigDecimal radius, List<String> placeGroups);
+
+    /**
+     * Public places named like {@code keyword} beyond {@code radius} km of the point, the ones
+     * {@link #searchPlaces} of that circle can never return: best match first, then the most
+     * prominent, at most {@code maxHits}, {@code distance} from the point. Not cached.
+     */
+    List<PlaceResponse> searchPlacesByNameOutside(String keyword, BigDecimal latitude, BigDecimal longitude,
+                                                  BigDecimal radius, List<String> placeGroups, int maxHits);
 
     /**
      * How many places within {@code radius} km of the point carry each sub type that fits

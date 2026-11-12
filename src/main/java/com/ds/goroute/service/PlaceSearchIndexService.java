@@ -3,6 +3,7 @@ package com.ds.goroute.service;
 import com.ds.goroute.dto.PlaceSearchCriteria;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.type.PlaceSubType;
+import com.ds.goroute.utils.LuceneKeywordQuery;
 import com.ds.goroute.utils.MapTile;
 
 import java.io.IOException;
@@ -68,4 +69,21 @@ public interface PlaceSearchIndexService {
 
     /** How many ACTIVE places {@link #searchPlaceIdsByName} finds for {@code keyword} in these groups. */
     int countPlacesByName(String keyword, List<String> placeGroups) throws IOException;
+
+    /**
+     * The tier {@link #searchPlaceIds} matches {@code criteria}'s keyword at in its area:
+     * {@link LuceneKeywordQuery.Match#ANY_WORD} means no name there has the words together.
+     * Null without a searchable keyword.
+     */
+    LuceneKeywordQuery.Match areaKeywordTier(PlaceSearchCriteria criteria) throws IOException;
+
+    /**
+     * Name search beyond a circle, best match first and, between equal matches, the most
+     * prominent: the places {@link #searchPlaceIds} of that circle can never return. Strict
+     * tiers only (every word, then with a typo) and the weak tail cut, as the type-ahead;
+     * ACTIVE places only. At most {@code maxHits}.
+     */
+    List<UUID> searchPlaceIdsByNameOutside(String keyword, List<String> placeGroups, double latitude,
+                                           double longitude, double excludeRadiusKm, int maxHits)
+            throws IOException;
 }

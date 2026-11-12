@@ -182,11 +182,14 @@ class TripSearchMapperXmlTest {
         String sql = collapse(bound.getSql());
 
         assertThat(sql)
-                .contains("ROW_NUMBER() OVER ( PARTITION BY trip_id ORDER BY COALESCE(position, 32767), "
-                        + "COALESCE(taken_at, created_at) DESC, id )")
+                // One LIMIT per trip, read in gallery order, so the cap holds per trip.
+                .contains("CROSS JOIN LATERAL ( SELECT")
+                .contains("WHERE trip_id = wanted.wanted_trip_id")
+                .contains("ORDER BY COALESCE(position, 32767), COALESCE(taken_at, created_at) DESC, id LIMIT ?")
+                .endsWith("ORDER BY wanted.wanted_order, preview.preview_position, preview.preview_time DESC, "
+                        + "preview.id")
                 .contains("entity_type IN ('TRIP_MEMORY', 'TRIP_ACTIVITY_MEMORY')")
                 .contains("deleted_at IS NULL")
-                .contains("WHERE preview_rank <= ?")
                 .doesNotContain("SELECT *");
     }
 

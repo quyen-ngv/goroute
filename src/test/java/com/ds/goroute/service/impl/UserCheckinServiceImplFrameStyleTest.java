@@ -68,6 +68,8 @@ class UserCheckinServiceImplFrameStyleTest {
 
     @Mock private com.ds.goroute.repository.ContentCommentRepository contentComments;
 
+    @Mock private com.ds.goroute.service.UserGuideService userGuides;
+
     @InjectMocks private UserCheckinServiceImpl service;
 
     /** The frame the author picks is stored with the visit and comes back on it. */

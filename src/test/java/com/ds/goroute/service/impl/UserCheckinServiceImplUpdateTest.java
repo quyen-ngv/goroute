@@ -65,6 +65,8 @@ class UserCheckinServiceImplUpdateTest {
 
     @Mock private com.ds.goroute.repository.ContentCommentRepository contentComments;
 
+    @Mock private com.ds.goroute.service.UserGuideService userGuides;
+
     @InjectMocks private UserCheckinServiceImpl service;
 
     /**

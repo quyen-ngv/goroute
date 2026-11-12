@@ -61,7 +61,8 @@ class MapboxClientTest {
     void geocodeAreas() {
         server.expect(requestTo(startsWith("https://api.mapbox.test/search/geocode/v6/forward")))
                 .andExpect(queryParam("q", "singapore"))
-                .andExpect(queryParam("types", "country%2Cregion%2Cdistrict%2Cplace%2Clocality"))
+                // Sent as plain commas, which Mapbox reads as the list separator.
+                .andExpect(queryParam("types", "country,region,district,place,locality"))
                 .andExpect(queryParam("autocomplete", "true"))
                 .andExpect(queryParam("proximity", "105.850000,21.030000"))
                 .andExpect(queryParam("limit", "10"))

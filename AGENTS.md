@@ -150,6 +150,7 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 |---|---|---|---|---|
 | `TRIP` | `FREE_TRIP_QUOTA` | LEGACY-STAR-QUOTA: unused since V262 (trip creation costs credits); delete with the admin quota endpoint | safe fallback 3 | private/admin |
 | `PLACE_REVIEW` | `DEFAULT_REFRESH_MAX_REVIEWS` | count, 1..200 | safe fallback 200 | private/admin |
+| `PLACE_SEARCH` | `ELSEWHERE_ENABLED` / `ELSEWHERE_MAX` | boolean / count, 1..30 | safe fallback true / 10 | private/admin |
 | `TRIP_MEMORY` | `FREE_TRIP_MEMORY_LIMIT` | count, 1..1000 | safe fallback 50 | private/admin |
 | `EXPENSE` | `PAYMENT_REMINDER_COOLDOWN_MINUTES` | minutes, 1..10080 | safe fallback 1440 | private/admin |
 | `AI_CREDIT` | `MARKUP` / `USD_PER_CREDIT` | multiplier 1..10 / USD per credit 0.00001..1 | safe fallback 1.2 / 0.001 | private/admin |

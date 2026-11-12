@@ -38,6 +38,8 @@ public class PlaceResponse {
     private String wardCode;
     /** Province the ward belongs to; only populated since the geo backfill fills the column. */
     private String provinceCode;
+    /** Name of {@link #provinceCode}; only set by GET /places/search/grouped, to tell far places apart. */
+    private String provinceName;
     private String phone;
     private String website;
     private String googleMapsLink;

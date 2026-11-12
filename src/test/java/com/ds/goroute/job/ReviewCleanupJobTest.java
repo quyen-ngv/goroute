@@ -46,17 +46,17 @@ class ReviewCleanupJobTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void keepsTheTwentyHeaviestReviewsAndDeletesTheRestWithTheirFiles() {
-        List<PlaceReview> reviews = reviews(25);
+    void keepsTheFiveHeaviestReviewsAndDeletesTheRestWithTheirFiles() {
+        List<PlaceReview> reviews = reviews(10);
         when(reviewRepository.findByPlaceId(placeId)).thenReturn(reviews);
-        // Weight = position in the list, so reviews 5..24 are the twenty kept.
+        // Weight = position in the list, so reviews 5..9 are the five kept.
         when(scoringService.calculateReviewWeight(any(), anyInt()))
                 .thenAnswer(inv -> (double) reviews.indexOf(inv.getArgument(0)));
         when(transactionManager.getTransaction(any())).thenReturn(txStatus);
 
         Map<String, Integer> result = job.cleanupPlaceReviews(placeId);
 
-        assertThat(result).containsEntry("kept", 20).containsEntry("deleted", 5);
+        assertThat(result).containsEntry("kept", 5).containsEntry("deleted", 5);
         ArgumentCaptor<List<UUID>> deleted = ArgumentCaptor.forClass(List.class);
         InOrder order = inOrder(transactionManager, imageCleanup, reviewRepository);
         order.verify(transactionManager).getTransaction(any());
@@ -68,12 +68,12 @@ class ReviewCleanupJobTest {
     }
 
     @Test
-    void placeWithTwentyOrFewerReviewsIsLeftAlone() {
-        when(reviewRepository.findByPlaceId(placeId)).thenReturn(reviews(20));
+    void placeWithFiveOrFewerReviewsIsLeftAlone() {
+        when(reviewRepository.findByPlaceId(placeId)).thenReturn(reviews(5));
 
         Map<String, Integer> result = job.cleanupPlaceReviews(placeId);
 
-        assertThat(result).containsEntry("kept", 20).containsEntry("deleted", 0);
+        assertThat(result).containsEntry("kept", 5).containsEntry("deleted", 0);
         verify(reviewRepository, never()).deleteByIds(anyList());
         verify(imageCleanup, never()).deleteImagesForEntityRecord(any(), any(UUID.class));
         verify(transactionManager, never()).getTransaction(any());
@@ -81,7 +81,7 @@ class ReviewCleanupJobTest {
 
     @Test
     void aFailedRowDeleteRollsBackSoNoFileIsDeleted() {
-        when(reviewRepository.findByPlaceId(placeId)).thenReturn(reviews(21));
+        when(reviewRepository.findByPlaceId(placeId)).thenReturn(reviews(6));
         when(transactionManager.getTransaction(any())).thenReturn(txStatus);
         doThrow(new IllegalStateException("db down")).when(reviewRepository).deleteByIds(anyList());
 

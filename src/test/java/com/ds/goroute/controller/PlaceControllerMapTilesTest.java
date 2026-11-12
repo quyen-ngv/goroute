@@ -1,6 +1,7 @@
 package com.ds.goroute.controller;
 
 import com.ds.goroute.service.FoodService;
+import com.ds.goroute.service.PlaceGroupedSearchService;
 import com.ds.goroute.service.PlaceMapTileService;
 import com.ds.goroute.service.PlaceService;
 import com.ds.goroute.utils.MapTile;
@@ -28,7 +29,8 @@ class PlaceControllerMapTilesTest {
     void setUp() {
         mapTileService = mock(PlaceMapTileService.class);
         when(mapTileService.getTiles(any(), any(), any())).thenReturn(List.of());
-        controller = new PlaceController(mock(PlaceService.class), mock(FoodService.class), mapTileService);
+        controller = new PlaceController(mock(PlaceService.class), mock(FoodService.class), mapTileService,
+                mock(PlaceGroupedSearchService.class));
         ReflectionTestUtils.setField(controller, "httpServletRequest", new MockHttpServletRequest());
     }
 

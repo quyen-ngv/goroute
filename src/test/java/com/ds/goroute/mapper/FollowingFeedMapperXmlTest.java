@@ -63,7 +63,7 @@ class FollowingFeedMapperXmlTest {
                 .endsWith("ORDER BY focus_rank ASC NULLS LAST, created_at DESC, id DESC LIMIT ? OFFSET ?");
         assertThat(bound.getParameterMappings())
                 .extracting(ParameterMapping::getProperty)
-                .containsExactly("viewerId", "viewerId", "viewerId", "limit", "offset");
+                .containsExactly("viewerId", "viewerId", "viewerId", "viewerId", "limit", "offset");
     }
 
     @Test
@@ -83,7 +83,7 @@ class FollowingFeedMapperXmlTest {
         assertThat(bound.getParameterMappings())
                 .extracting(ParameterMapping::getProperty)
                 .containsExactly("focusLng", "focusLat", "focusLat", "focusLng",
-                        "viewerId", "viewerId", "viewerId", "limit", "offset");
+                        "viewerId", "viewerId", "viewerId", "viewerId", "limit", "offset");
     }
 
     @Test
@@ -101,7 +101,7 @@ class FollowingFeedMapperXmlTest {
         assertThat(bound.getParameterMappings())
                 .extracting(ParameterMapping::getProperty)
                 .containsExactly("focusLng", "focusLat", "focusLat", "focusLng",
-                        "viewerId", "viewerId", "viewerId", "limit", "offset");
+                        "viewerId", "viewerId", "viewerId", "viewerId", "limit", "offset");
     }
 
     @Test
@@ -121,13 +121,14 @@ class FollowingFeedMapperXmlTest {
                         + "WHERE ct.content_type = 'TRIP' AND ct.content_id = t.id "
                         + "AND ct.restored_at IS NULL)")
                 .contains("t.location_image_id, NULL::int AS focus_rank FROM trips t")
+                .contains("SELECT 1 FROM feed_feedback ff WHERE ff.user_id = ?")
                 .doesNotContain("SELECT *")
                 .contains("NULL::int AS focus_rank")
                 .endsWith("ORDER BY focus_rank ASC NULLS LAST, COALESCE(t.public_shared_at, t.created_at) DESC, "
                         + "t.id DESC LIMIT ? OFFSET ?");
         assertThat(bound.getParameterMappings())
                 .extracting(ParameterMapping::getProperty)
-                .containsExactly("viewerId", "viewerId", "viewerId", "limit", "offset");
+                .containsExactly("viewerId", "viewerId", "viewerId", "viewerId", "limit", "offset");
     }
 
     private static BoundSql bound(String statementId) {

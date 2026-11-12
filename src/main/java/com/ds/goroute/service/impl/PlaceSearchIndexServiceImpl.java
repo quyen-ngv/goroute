@@ -131,6 +131,9 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
             new SortField(EFFECTIVE_RATING_SORT_FIELD, SortField.Type.DOUBLE, true));
     private static final Sort PROMINENCE_DESCENDING_SORT = new Sort(
             new SortField(PROMINENCE_FIELD, SortField.Type.DOUBLE, true));
+    /** Best name match first; equal matches (one chain's branches) the most prominent first. */
+    private static final Sort SCORE_THEN_PROMINENCE_SORT = new Sort(
+            SortField.FIELD_SCORE, new SortField(PROMINENCE_FIELD, SortField.Type.DOUBLE, true));
 
     private final PlaceRepository placeRepository;
     private final PlaceTranslationMapper placeTranslationMapper;
@@ -596,15 +599,82 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         if (words.isEmpty()) {
             return new MatchNoDocsQuery();
         }
+        return LuceneKeywordQuery.build(words, NAME_FIELDS, areaTier(searcher, words, criteria));
+    }
+
+    /** The first of {@link LuceneKeywordQuery#AREA_TIERS} that finds a place in the area; the last when none does. */
+    private LuceneKeywordQuery.Match areaTier(IndexSearcher searcher, List<LuceneKeywordQuery.Word> words,
+                                              PlaceSearchCriteria criteria) throws IOException {
         PlaceSearchCriteria area = withoutSubTypes(criteria);
-        Query text = null;
-        for (LuceneKeywordQuery.Match match : LuceneKeywordQuery.AREA_TIERS) {
-            text = LuceneKeywordQuery.build(words, NAME_FIELDS, match);
-            if (searcher.count(withAreaFilters(text, area)) > 0) {
-                return text;
+        List<LuceneKeywordQuery.Match> tiers = LuceneKeywordQuery.AREA_TIERS;
+        for (LuceneKeywordQuery.Match match : tiers) {
+            if (searcher.count(withAreaFilters(LuceneKeywordQuery.build(words, NAME_FIELDS, match), area)) > 0) {
+                return match;
             }
         }
-        return text;
+        return tiers.get(tiers.size() - 1);
+    }
+
+    @Override
+    public LuceneKeywordQuery.Match areaKeywordTier(PlaceSearchCriteria criteria) throws IOException {
+        validateCriteria(criteria);
+        if (criteria.keyword() == null || criteria.keyword().isBlank()) {
+            return null;
+        }
+        List<LuceneKeywordQuery.Word> words = LuceneKeywordQuery.words(criteria.keyword(), MAX_KEYWORD_WORDS);
+        if (words.isEmpty()) {
+            return null;
+        }
+        IndexSearcher searcher = searcherManager.acquire();
+        try {
+            return areaTier(searcher, words, criteria);
+        } finally {
+            searcherManager.release(searcher);
+        }
+    }
+
+    @Override
+    public List<UUID> searchPlaceIdsByNameOutside(String keyword, List<String> placeGroups, double latitude,
+                                                  double longitude, double excludeRadiusKm, int maxHits)
+            throws IOException {
+        if (keyword == null || keyword.isBlank() || maxHits < 1) {
+            return List.of();
+        }
+        List<LuceneKeywordQuery.Word> words = LuceneKeywordQuery.words(keyword, MAX_KEYWORD_WORDS);
+        if (words.isEmpty()) {
+            return List.of();
+        }
+        int limit = Math.min(maxHits, MAX_NAME_SEARCH_SIZE);
+        double radiusMeters = excludeRadiusKm * 1_000.0;
+        List<String> groups = normalizeUpper(placeGroups);
+        IndexSearcher searcher = searcherManager.acquire();
+        try {
+            for (LuceneKeywordQuery.Match match : LuceneKeywordQuery.STRICT_TIERS) {
+                BooleanQuery.Builder query = new BooleanQuery.Builder()
+                        .add(LuceneKeywordQuery.build(words, NAME_FIELDS, match), BooleanClause.Occur.MUST)
+                        .add(new TermQuery(new Term(VISIBILITY_FIELD, "ACTIVE")), BooleanClause.Occur.FILTER);
+                addTermSetFilter(query, PLACE_GROUP_FIELD, groups);
+                if (Double.isFinite(radiusMeters) && radiusMeters > 0) {
+                    // The same circle the area search filters on, so the two never share a place.
+                    query.add(new IndexOrDocValuesQuery(
+                                    LatLonPoint.newDistanceQuery(LOCATION_FIELD, latitude, longitude, radiusMeters),
+                                    LatLonDocValuesField.newSlowDistanceQuery(
+                                            LOCATION_FIELD, latitude, longitude, radiusMeters)),
+                            BooleanClause.Occur.MUST_NOT);
+                }
+                ScoreDoc[] hits = searcher.search(query.build(), limit, SCORE_THEN_PROMINENCE_SORT, true).scoreDocs;
+                if (hits.length > 0) {
+                    List<UUID> ids = new ArrayList<>(hits.length);
+                    for (ScoreDoc hit : LuceneKeywordQuery.relevant(hits)) {
+                        ids.add(UUID.fromString(searcher.doc(hit.doc, ID_ONLY).get(ID_FIELD)));
+                    }
+                    return ids;
+                }
+            }
+            return List.of();
+        } finally {
+            searcherManager.release(searcher);
+        }
     }
 
     private Query withAreaFilters(Query text, PlaceSearchCriteria criteria) {

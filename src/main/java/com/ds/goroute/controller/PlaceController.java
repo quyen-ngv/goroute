@@ -6,12 +6,14 @@ import com.ds.goroute.type.PlaceSubType;
 import com.ds.goroute.dto.request.ImportPlaceRequest;
 import com.ds.goroute.dto.request.UpdatePlaceRequest;
 import com.ds.goroute.dto.BaseResponse;
+import com.ds.goroute.dto.response.GroupedPlaceSearchResponse;
 import com.ds.goroute.dto.response.PlaceMapTileResponse;
 import com.ds.goroute.dto.response.PlaceResponse;
 import com.ds.goroute.dto.response.PlaceReviewResponse;
 import com.ds.goroute.dto.response.FoodSummaryResponse;
 import com.ds.goroute.dto.response.FoodTagResponse;
 import com.ds.goroute.service.FoodService;
+import com.ds.goroute.service.PlaceGroupedSearchService;
 import com.ds.goroute.service.PlaceMapTileService;
 import com.ds.goroute.service.PlaceService;
 import com.ds.goroute.utils.MapTile;
@@ -50,6 +52,7 @@ public class PlaceController extends BaseController {
     private final PlaceService placeService;
     private final FoodService foodService;
     private final PlaceMapTileService placeMapTileService;
+    private final PlaceGroupedSearchService placeGroupedSearchService;
 
     @PostMapping("/import")
     public ResponseEntity importPlace(@Valid @RequestBody ImportPlaceRequest request) {
@@ -135,6 +138,38 @@ public class PlaceController extends BaseController {
                 citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, minLuceneScore, page, size);
         // The search cache is shared by callers a few metres apart: distance is this caller's own.
         return ResponseEntity.ok(ofSucceeded(PlaceService.withDistanceFrom(responses, latitude, longitude)));
+    }
+
+    /**
+     * {@link #searchPlaces} as {@code nearby}, plus {@code elsewhere}: places beyond the radius
+     * named like the keyword, when the area finds none or only names sharing one word with it.
+     * A separate path so the flat list of /search, which older apps draw on the map, never
+     * changes.
+     */
+    @GetMapping("/search/grouped")
+    public ResponseEntity<BaseResponse<GroupedPlaceSearchResponse>> searchPlacesGrouped(
+            @RequestParam(required = false) String keyword,
+            @RequestParam @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
+            @RequestParam @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
+            @RequestParam(defaultValue = "0.1") @DecimalMin(value = "0", inclusive = false) BigDecimal radius,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) List<String> placeGroups,
+            @RequestParam(required = false) List<String> subTypes,
+            @RequestParam(required = false) BigDecimal minRating,
+            @RequestParam(defaultValue = "false") boolean sortByRating,
+            @RequestParam(required = false) PlaceSearchSort sortBy,
+            @RequestParam(required = false) String citySlug,
+            @RequestParam(required = false) List<UUID> foodIds,
+            @RequestParam(required = false) Boolean excludeLinkedFoodPlaces,
+            @RequestParam(defaultValue = "false") boolean includeInactive,
+            @RequestParam(required = false) Float minLuceneScore,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(PlaceSearchCriteria.MAX_PAGE_SIZE) int size
+    ) {
+        return ResponseEntity.ok(ofSucceeded(placeGroupedSearchService.search(
+                keyword, latitude, longitude, radius, category, placeGroups, PlaceSubType.filterCodes(subTypes),
+                minRating, sortBy != null ? sortBy : (sortByRating ? PlaceSearchSort.RATING : PlaceSearchSort.RELEVANCE),
+                citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, minLuceneScore, page, size)));
     }
 
     /**

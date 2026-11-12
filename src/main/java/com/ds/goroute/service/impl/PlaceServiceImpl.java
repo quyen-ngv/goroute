@@ -45,6 +45,7 @@ import com.ds.goroute.utils.FoodNameResolver;
 import com.ds.goroute.utils.AdminListSort;
 import com.ds.goroute.utils.GeoDistance;
 import com.ds.goroute.utils.JsonUtils;
+import com.ds.goroute.utils.LuceneKeywordQuery;
 import com.ds.goroute.utils.PlaceDisplayRating;
 import com.ds.goroute.utils.PlaceIdentityMatcher;
 import com.ds.goroute.type.PlaceSearchSort;
@@ -502,6 +503,53 @@ public class PlaceServiceImpl implements PlaceService {
             throw e;
         } catch (Exception e) {
             log.error("Place Lucene search failed", e);
+            throw new BusinessException(ErrorConstant.INTERNAL_SERVER_ERROR, "Place search failed");
+        }
+    }
+
+    @Override
+    public LuceneKeywordQuery.Match areaKeywordTier(String keyword, BigDecimal latitude, BigDecimal longitude,
+                                                    BigDecimal radius, List<String> placeGroups) {
+        try {
+            return placeSearchIndexService.areaKeywordTier(new PlaceSearchCriteria(
+                    keyword, latitude, longitude, radius, null, normalizedPlaceGroups(placeGroups), null, null,
+                    null, null, null, false, PlaceSearchSort.RELEVANCE, null, 0, 1));
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Place area tier lookup failed", e);
+            throw new BusinessException(ErrorConstant.INTERNAL_SERVER_ERROR, "Place search failed");
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PlaceResponse> searchPlacesByNameOutside(String keyword, BigDecimal latitude, BigDecimal longitude,
+                                                         BigDecimal radius, List<String> placeGroups, int maxHits) {
+        String text = blankToNull(keyword);
+        if (text == null || text.length() < MIN_SEARCH_LENGTH || latitude == null || longitude == null
+                || radius == null) {
+            return List.of();
+        }
+        try {
+            List<UUID> orderedIds = placeSearchIndexService.searchPlaceIdsByNameOutside(
+                    text, normalizedPlaceGroups(placeGroups), latitude.doubleValue(), longitude.doubleValue(),
+                    radius.doubleValue(), maxHits);
+            if (orderedIds.isEmpty()) {
+                return List.of();
+            }
+            List<Place> places = inIdOrder(orderedIds, placeRepository.findListSummaryByIds(orderedIds, true));
+            for (Place place : places) {
+                place.setDistance(GeoDistance.kilometresOrFarAway(
+                        latitude, longitude, place.getLatitude(), place.getLongitude()));
+            }
+            List<PlaceResponse> responses = toListResponses(places);
+            attachFoodTags(responses);
+            return responses;
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Place search outside the area failed", e);
             throw new BusinessException(ErrorConstant.INTERNAL_SERVER_ERROR, "Place search failed");
         }
     }

@@ -77,6 +77,8 @@ class UserCheckinServiceImplFeedTest {
     @Mock private NotificationHelper notifications;
     @Mock private ContentCommentRepository contentComments;
 
+    @Mock private com.ds.goroute.service.UserGuideService userGuides;
+
     @InjectMocks private UserCheckinServiceImpl service;
 
     private final UUID viewerId = UUID.randomUUID();

@@ -24,6 +24,16 @@ public enum BusinessConfigKey {
      */
     PLACE_REVIEW_DAILY_REFRESH_ENABLED("PLACE_REVIEW", "DAILY_REFRESH_ENABLED", true),
 
+    // --- Epic 06: place search ---------------------------------------------------------
+    /**
+     * Lets GET /places/search/grouped look outside the searched area by name when the area
+     * finds nothing, or only names sharing one word. Off: the far group is always empty, as
+     * before it existed. GET /places/search never looks outside the area either way.
+     */
+    PLACE_SEARCH_ELSEWHERE_ENABLED("PLACE_SEARCH", "ELSEWHERE_ENABLED", true),
+    /** How many far places that search returns at most, after one per name and province. */
+    PLACE_SEARCH_ELSEWHERE_MAX("PLACE_SEARCH", "ELSEWHERE_MAX", 10, 1, 30),
+
     // --- Epic 12: content moderation -------------------------------------------------
     MODERATION_TEXT_FILTER_ENABLED("MODERATION", "TEXT_FILTER_ENABLED", true),
     MODERATION_AI_TEXT_ENABLED("MODERATION", "AI_TEXT_ENABLED", false),
