@@ -51,6 +51,9 @@ public interface PostService {
 
     PostResponse tripDraft(UUID userId, UUID tripId);
 
+    /** "Start over": a trip story becomes the draft the trip would produce today; the author's text is gone. */
+    PostResponse resetTripDraft(UUID userId, UUID postId);
+
     /** The author's own check-in photos and trip memories of a trip story's trip, matched to its stops. */
     PostTripMediaResponse tripMedia(UUID userId, UUID postId);
 

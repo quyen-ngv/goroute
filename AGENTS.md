@@ -253,7 +253,7 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `POST` | `ENABLED` | boolean (beta users always on); posts in Feed/Place Detail/profile lists, `GET /posts/{id}` never gated | safe fallback false | users via `GET /v1/api/posts/policy` (`enabled`) |
 | `POST` | `USER_WRITE_ENABLED` | boolean (beta users always on); gates creating/editing/publishing posts in the app, never the console | safe fallback false | users via post policy (`canWrite`) |
 | `LEGAL` | `TERMS_VERSION` / `PRIVACY_VERSION` | text; the version of the bundled Terms / Privacy Policy. A user whose accepted version differs gets the consent screen again (`GET /v1/api/consents/me` → `needsAcceptance`); raise only with an app release carrying the new text | safe fallback `2.0` | users via `GET /v1/api/consents/me` |
-| `POST` | `MAX_BODY_LENGTH` / `MAX_MEDIA` / `MAX_VIDEO_SECONDS` / `MAX_PLACES` | characters 1000..100000 / count 1..200 / seconds 5..900 / count 1..100 | safe fallback 30000 / 40 / 300 / 30 | users via post policy |
+| `POST` | `MAX_BODY_LENGTH` / `MAX_MEDIA` / `MAX_VIDEO_SECONDS` / `MAX_PLACES` | characters 1000..100000 / count 1..500 (a trip story borrows every check-in photo as a shared row, so the ceiling is generous) / seconds 5..900 / count 1..100 | safe fallback 30000 / 200 / 300 / 30 | users via post policy |
 
 ## Build note
 

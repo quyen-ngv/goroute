@@ -253,6 +253,19 @@ public class PostServiceImpl implements PostService {
     }
 
     @Override
+    @Transactional
+    public PostResponse resetTripDraft(UUID userId, UUID postId) {
+        requireWrite(userId);
+        Post post = requireOwned(userId, postId);
+        if (post.getTripId() == null) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Only a trip story can be rewritten from its trip");
+        }
+        Trip trip = tripAccessGuard.requireAccess(post.getTripId(), userId);
+        tripStoryDraftBuilder.reset(post, trip, userId);
+        return detail(requireLive(post.getId()), userId);
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public PostTripMediaResponse tripMedia(UUID userId, UUID postId) {
         requireWrite(userId);

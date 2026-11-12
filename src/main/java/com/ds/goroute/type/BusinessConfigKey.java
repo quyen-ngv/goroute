@@ -468,7 +468,7 @@ public enum BusinessConfigKey {
     /** Characters of markdown in one body, checked on every save. */
     POST_MAX_BODY_LENGTH("POST", "MAX_BODY_LENGTH", 30000, 1000, 100000),
     /** Non-deleted media (cover and body) one post may carry. */
-    POST_MAX_MEDIA("POST", "MAX_MEDIA", 40, 1, 200),
+    POST_MAX_MEDIA("POST", "MAX_MEDIA", 200, 1, 500),
     /** Seconds of one post video, read from the file's own header like a check-in video. */
     POST_MAX_VIDEO_SECONDS("POST", "MAX_VIDEO_SECONDS", 300, 5, 900),
     /** Catalogue places one post may be tagged with. */

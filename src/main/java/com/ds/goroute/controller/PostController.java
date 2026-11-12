@@ -197,6 +197,14 @@ public class PostController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(postService.tripMedia(userId, postId)));
     }
 
+    /** "Start over": the trip story is written again from the trip as it is today; the author's text is lost. */
+    @PostMapping("/posts/{postId}/reset-draft")
+    public ResponseEntity<BaseResponse<PostResponse>> resetTripDraft(
+            @PathVariable UUID postId,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(postService.resetTripDraft(userId, postId)));
+    }
+
     /** Puts one item of that tray on the post as a shared media row; the file is not copied. */
     @PostMapping("/posts/{postId}/media/attach")
     public ResponseEntity<BaseResponse<PostMediaResponse>> attachTripMedia(

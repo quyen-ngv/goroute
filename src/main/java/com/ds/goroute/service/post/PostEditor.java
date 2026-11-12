@@ -292,6 +292,15 @@ public class PostEditor {
         return attachExisting(post.getId(), actorId, mediaType, PostMediaRole.BODY, url, thumbnailUrl, durationSeconds);
     }
 
+    /**
+     * Soft-deletes every media row of the post ("start over" of a trip story). Shared files stay
+     * with the check-ins and memories that own them; uploads go to the storage sweep.
+     */
+    public void clearMedia(Post post) {
+        imageStorageCleanupService.deleteImagesForEntityRecord(CLEANUP_ENTITY, post.getId());
+        postRepository.softDeleteAllMedia(post.getId());
+    }
+
     /** Writes generated content straight to a draft (the trip-story generator), bypassing the editor's checks. */
     public void writeGenerated(Post post, String body, UUID coverMediaId, List<UUID> placeIds, UUID actorId) {
         post.setBody(body);
