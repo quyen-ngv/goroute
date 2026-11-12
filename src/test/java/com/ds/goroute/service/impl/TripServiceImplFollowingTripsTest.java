@@ -103,9 +103,9 @@ class TripServiceImplFollowingTripsTest {
         service.getFollowingTrips(viewerId, null, null, null, 2, 0);
         service.getFollowingTrips(viewerId, null, null, null, 3, 20);
 
-        verify(tripRepository).findFollowingTrips(viewerId, null, null, null, 50, 0);
-        verify(tripRepository).findFollowingTrips(viewerId, null, null, null, 1, 2);
-        verify(tripRepository).findFollowingTrips(viewerId, null, null, null, 20, 60);
+        verify(tripRepository).findFollowingTrips(viewerId, null, null, null, null, 50, 0);
+        verify(tripRepository).findFollowingTrips(viewerId, null, null, null, null, 1, 2);
+        verify(tripRepository).findFollowingTrips(viewerId, null, null, null, null, 20, 60);
     }
 
     @Test
@@ -113,7 +113,7 @@ class TripServiceImplFollowingTripsTest {
         UUID viewerId = UUID.randomUUID();
         LocalDateTime createdAt = LocalDateTime.of(2026, 9, 1, 8, 0);
         Trip trip = trip(UUID.randomUUID(), null, createdAt);
-        when(tripRepository.findFollowingTrips(viewerId, null, null, null, 20, 0)).thenReturn(List.of(trip));
+        when(tripRepository.findFollowingTrips(viewerId, null, null, null, null, 20, 0)).thenReturn(List.of(trip));
 
         List<PublicTripResponse> trips = service.getFollowingTrips(viewerId, null, null, null, 0, 20);
 
@@ -127,7 +127,7 @@ class TripServiceImplFollowingTripsTest {
         UUID viewerId = UUID.randomUUID();
         LocalDateTime sharedAt = LocalDateTime.of(2026, 9, 20, 21, 15);
         Trip trip = trip(UUID.randomUUID(), sharedAt, LocalDateTime.of(2026, 9, 1, 8, 0));
-        when(tripRepository.findFollowingTrips(viewerId, null, null, null, 20, 0)).thenReturn(List.of(trip));
+        when(tripRepository.findFollowingTrips(viewerId, null, null, null, null, 20, 0)).thenReturn(List.of(trip));
 
         assertThat(service.getFollowingTrips(viewerId, null, null, null, 0, 20)).singleElement()
                 .extracting(PublicTripResponse::getPublicSharedAt)
@@ -139,7 +139,7 @@ class TripServiceImplFollowingTripsTest {
         UUID viewerId = UUID.randomUUID();
         UUID ownerId = UUID.randomUUID();
         Trip trip = trip(ownerId, null, LocalDateTime.of(2026, 9, 1, 8, 0));
-        when(tripRepository.findFollowingTrips(viewerId, null, null, null, 20, 0)).thenReturn(List.of(trip));
+        when(tripRepository.findFollowingTrips(viewerId, null, null, null, null, 20, 0)).thenReturn(List.of(trip));
         when(userRepository.findByIds(Set.of(ownerId))).thenReturn(List.of(
                 User.builder().id(ownerId).fullName("Linh").avatarUrl("https://cdn/linh.jpg").build()));
 

@@ -4,6 +4,7 @@ import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.AssignCheckinPlaceRequest;
 import com.ds.goroute.dto.request.HideCheckinRequest;
+import com.ds.goroute.dto.request.RemoveCheckinRequest;
 import com.ds.goroute.dto.response.AdminCheckinResponse;
 import com.ds.goroute.dto.response.AdminUnlinkedCheckinResponse;
 import com.ds.goroute.dto.response.CheckinLocationHistoryResponse;
@@ -96,6 +97,17 @@ public class AdminUserCheckinController extends BaseController {
             @PathVariable UUID checkinId,
             @CurrentUser UUID adminId) {
         service.show(adminId, checkinId);
+        return ResponseEntity.ok(ofSucceeded(null));
+    }
+
+    /** Deletes an unsuitable check-in, as its author would; unlike hide it cannot be undone. */
+    @PostMapping("/{checkinId}/remove")
+    @PreAuthorize("@adminAuthorization.can(authentication,'checkins','update')")
+    public ResponseEntity<BaseResponse<Void>> remove(
+            @PathVariable UUID checkinId,
+            @Valid @RequestBody RemoveCheckinRequest request,
+            @CurrentUser UUID adminId) {
+        service.remove(adminId, checkinId, request);
         return ResponseEntity.ok(ofSucceeded(null));
     }
 

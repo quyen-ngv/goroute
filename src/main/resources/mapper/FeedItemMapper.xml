@@ -481,6 +481,19 @@
                 </if>
             )
         </if>
+        <if test="q.tripRules != null">
+            <!-- FeedTripRules, read at request time. A trip row keeps its end date and length,
+                 so its start is trip_end_date - (day_count - 1); a trip without dates has
+                 day_count 0, counts as started and as one day long. -->
+            <if test="q.tripRules.startedBy() != null">
+                AND NOT (fi.item_type = 'TRIP' AND fi.trip_end_date IS NOT NULL AND fi.day_count &gt; 0
+                         AND fi.trip_end_date - (fi.day_count - 1) &gt; #{q.tripRules.startedBy})
+            </if>
+            <if test="q.tripRules.minActivitiesPerDay() != null">
+                AND NOT (fi.item_type = 'TRIP'
+                         AND COALESCE(fi.stop_count, 0) &lt; #{q.tripRules.minActivitiesPerDay} * GREATEST(fi.day_count, 1))
+            </if>
+        </if>
         <if test="q.radiusLat != null and q.radiusLng != null and q.radiusMeters != null">
             AND fi.point IS NOT NULL
             AND ST_DWithin(fi.point, goroute_point(#{q.radiusLat}, #{q.radiusLng}), #{q.radiusMeters})

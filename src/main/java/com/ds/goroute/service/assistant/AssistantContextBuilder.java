@@ -14,6 +14,8 @@ import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.HiddenImageService;
+import com.ds.goroute.enums.ConsentPurpose;
+import com.ds.goroute.service.consent.ConsentService;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.ChatShareType;
 import com.ds.goroute.type.MarketplaceConversationType;
@@ -80,6 +82,7 @@ public class AssistantContextBuilder {
     private final HiddenImageService hiddenImages;
     private final AssistantProposalService proposals;
     private final ObjectMapper objectMapper;
+    private final ConsentService consents;
 
     @Transactional(readOnly = true)
     public Map<String, Object> build(UUID turnId) {
@@ -104,10 +107,13 @@ public class AssistantContextBuilder {
         payload.put("callbackBaseUrl", workerProperties.getInternalBaseUrl());
         payload.put("memory", repository.findMemory(conversation.getId()).orElse(null));
         // 1:1 threads: the first answer names the thread, and what Pengoo keeps about the asker
-        // goes with every question of every thread.
+        // goes with every question of every thread, once the asker has let Pengoo remember
+        // (ConsentPurpose.ASSISTANT_MEMORY; off until turned on).
         if (MarketplaceConversationType.ASSISTANT.name().equals(conversation.getConversationType())) {
             if (conversation.getTitle() == null) payload.put("needsTitle", true);
-            repository.findProfile(turn.getUserId()).ifPresent(profile -> payload.put("profile", profile));
+            if (consents.isGranted(turn.getUserId(), ConsentPurpose.ASSISTANT_MEMORY)) {
+                repository.findProfile(turn.getUserId()).ifPresent(profile -> payload.put("profile", profile));
+            }
         }
         int turnTimeout = businessConfig.getInt(BusinessConfigKey.ASSISTANT_TURN_TIMEOUT_SECONDS);
         payload.put("limits", Map.of("maxToolCalls", access.maxToolCalls(turn.getUserId()),

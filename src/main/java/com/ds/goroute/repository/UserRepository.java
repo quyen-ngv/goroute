@@ -91,4 +91,26 @@ public interface UserRepository {
             java.time.LocalDateTime afterUpdatedAt, UUID afterId, int limit);
 
     Optional<java.time.LocalDateTime> findSearchIndexMaxUpdatedAt();
+
+    // --- Managed accounts (epic 20) ---------------------------------------------------
+
+    List<com.ds.goroute.entity.ManagedAccountRow> findManagedAccounts(
+            String search, com.ds.goroute.type.ManagedAccountStatus status, int limit, int offset);
+
+    long countManagedAccounts(String search, com.ds.goroute.type.ManagedAccountStatus status);
+
+    /** A managed or handed-over account with its counts; empty for an ordinary account. */
+    Optional<com.ds.goroute.entity.ManagedAccountRow> findManagedAccount(UUID id);
+
+    /** Marks a freshly inserted account as held by the console (managed_since = now). */
+    void markManaged(UUID id);
+
+    /** Rows changed: 1, or 0 when the account is gone or no longer managed. */
+    int updateManagedProfile(UUID id, String fullName, String username, String email, String bio, String avatarUrl);
+
+    /**
+     * Gives the account to its owner: real email, optional password hash (null keeps the random
+     * one), managed flag off for good. Rows changed: 1, or 0 when it was not managed any more.
+     */
+    int handOverManagedAccount(UUID id, String email, String passwordHash, UUID handedOverBy);
 }

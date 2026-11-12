@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- Consent history (V278). Append-only: rows are never updated. -->
+<mapper namespace="com.ds.goroute.mapper.UserConsentMapper">
+
+    <resultMap id="ConsentMap" type="com.ds.goroute.entity.UserConsent">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="purpose" column="purpose"/>
+        <result property="granted" column="granted"/>
+        <result property="documentVersion" column="document_version"/>
+        <result property="source" column="source"/>
+        <result property="platform" column="platform"/>
+        <result property="appVersion" column="app_version"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO user_consents (user_id, purpose, granted, document_version, source, platform, app_version, created_at)
+        VALUES (#{userId}, #{purpose}, #{granted}, #{documentVersion}, #{source}, #{platform}, #{appVersion}, #{createdAt})
+    </insert>
+
+    <select id="findLatestByUser" resultMap="ConsentMap">
+        SELECT DISTINCT ON (purpose)
+               id, user_id, purpose, granted, document_version, source, platform, app_version, created_at
+        FROM user_consents
+        WHERE user_id = #{userId}
+        ORDER BY purpose, created_at DESC
+    </select>
+
+    <select id="findLatestGranted" resultType="boolean">
+        SELECT granted
+        FROM user_consents
+        WHERE user_id = #{userId} AND purpose = #{purpose}
+        ORDER BY created_at DESC
+        LIMIT 1
+    </select>
+</mapper>

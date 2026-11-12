@@ -175,6 +175,9 @@ public class SocialNotificationService {
         if (ModeratedContentType.REVIEW.name().equals(targetType)) {
             return "/reviews/" + targetId;
         }
+        if (ModeratedContentType.POST.name().equals(targetType)) {
+            return "/posts/" + targetId;
+        }
         return "TRIP".equals(targetType) ? "/trip/" + targetId : "/trips";
     }
 }

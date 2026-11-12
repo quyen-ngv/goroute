@@ -449,6 +449,22 @@
         LIMIT #{limit}
     </select>
 
+    <!-- The author's own check-ins for their trip story: the ones they recorded on the trip, plus
+         (when the trip has dates) the ones they made in that window without picking the trip --
+         a Home-camera check-in during the trip is still their material. Every visibility: the
+         author decides what goes into the story; a private check-in is theirs to publish. -->
+    <select id="findMineForTrip" resultMap="checkinMap">
+        SELECT <include refid="columns"/> FROM user_checkins
+        WHERE user_id = #{userId} AND is_removed = FALSE
+          AND (trip_id = #{tripId}
+            <if test="from != null and to != null">
+              OR (trip_id IS NULL AND visited_at &gt;= #{from} AND visited_at &lt; #{to})
+            </if>
+          )
+        ORDER BY visited_at ASC, created_at ASC
+        LIMIT #{limit}
+    </select>
+
     <select id="countByUserAndPlace" resultType="long">
         SELECT COUNT(*)
         FROM user_checkins

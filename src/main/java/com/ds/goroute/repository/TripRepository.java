@@ -1,7 +1,9 @@
 package com.ds.goroute.repository;
 
 import com.ds.goroute.dto.FeedPlaceKind;
+import com.ds.goroute.dto.FeedTripRules;
 import com.ds.goroute.dto.PublicTripSearchCriteria;
+import com.ds.goroute.entity.AdminTripRow;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.entity.TripRankRow;
 import java.time.LocalDate;
@@ -40,6 +42,15 @@ public interface TripRepository {
     /** The trips among {@code ids} that are still public, live and not taken down. */
     List<Trip> findPublicByIds(List<UUID> ids);
 
+    /**
+     * Live PUBLIC and SHARED trips for the admin console, most recently shared first.
+     * {@code visibility} narrows to one of the two, {@code hidden} to taken-down or not.
+     */
+    List<AdminTripRow> findAdminSharedTrips(String search, UUID ownerId, String visibility, Boolean hidden,
+                                            int limit, int offset);
+
+    long countAdminSharedTrips(String search, UUID ownerId, String visibility, Boolean hidden);
+
     /** Recounts {@code trips.activity_count} (V216) for one trip. */
     void refreshActivityCount(UUID tripId);
 
@@ -54,10 +65,11 @@ public interface TripRepository {
 
     /**
      * Public trips owned by the people {@code viewerId} follows, most recently shared first,
-     * without deleted owners, taken-down trips or blocks in either direction.
+     * without deleted owners, taken-down trips or blocks in either direction. {@code rules}
+     * (the Feed's Friends tab) also drops trips not started yet or with too few activities.
      */
     List<Trip> findFollowingTrips(UUID viewerId, Double focusLat, Double focusLng, FeedPlaceKind kind,
-                                  int limit, int offset);
+                                  FeedTripRules rules, int limit, int offset);
 
     /**
      * Ids of the public trips that have the catalogue place {@code placeId} in their

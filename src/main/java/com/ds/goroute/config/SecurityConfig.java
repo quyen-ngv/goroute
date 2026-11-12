@@ -108,6 +108,11 @@ public class SecurityConfig {
                         // The ranked feed answers guests too (enabled only once it is on for everyone).
                         .requestMatchers(HttpMethod.GET, "/v1/api/feed/for-you").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/users/top-active").permitAll()
+                        // Blog posts (epic 20): the reads answer guests. "following" means nothing to a
+                        // guest and must precede the /posts/* rule, which would otherwise open it.
+                        .requestMatchers(HttpMethod.GET, "/v1/api/posts/following").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/v1/api/posts/policy", "/v1/api/posts/feed",
+                                "/v1/api/posts/*", "/v1/api/users/*/posts").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/checkins/places/*",
                                 "/v1/api/checkins/locations/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/api/contributions/check").permitAll()

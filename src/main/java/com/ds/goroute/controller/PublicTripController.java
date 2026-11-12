@@ -7,6 +7,7 @@ import com.ds.goroute.dto.response.PublicTripResponse;
 import com.ds.goroute.dto.response.TripVoteResponse;
 import com.ds.goroute.service.PublicPageService;
 import com.ds.goroute.service.TripService;
+import com.ds.goroute.service.trip.FeedTripRulesProvider;
 import com.ds.goroute.dto.BaseResponse;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
@@ -33,10 +34,13 @@ public class PublicTripController extends BaseController {
     
     private final TripService tripService;
     private final PublicPageService publicPageService;
+    private final FeedTripRulesProvider feedTripRules;
 
-    public PublicTripController(TripService tripService, PublicPageService publicPageService) {
+    public PublicTripController(TripService tripService, PublicPageService publicPageService,
+                                FeedTripRulesProvider feedTripRules) {
         this.tripService = tripService;
         this.publicPageService = publicPageService;
+        this.feedTripRules = feedTripRules;
     }
 
     @GetMapping("/v1/api/public/trips/{tripId}")
@@ -109,6 +113,11 @@ public class PublicTripController extends BaseController {
                 recommended,
                 FeedPlaceKind.of(placeGroups, subTypes)
         ).withPhotoRules(photosOnly, photosThenStops);
+        // Only the Feed asks for these two orders, so they carry its trip rules: no trip that
+        // has not started, none with too few activities (FEED config group).
+        if (recommended || photosThenStops) {
+            criteria = criteria.withFeedRules(feedTripRules.current());
+        }
         List<PublicTripResponse> trips = tripService.searchPublicTrips(
                 criteria,
                 page,

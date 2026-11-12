@@ -30,6 +30,8 @@ import java.util.Locale;
  * @param photosOnly      only trips with at least one photo (the Feed's "All" chip)
  * @param photosThenStops trips with photos first, then the most stops, then the newest
  *                        (the Feed's "Trips" chip); overrides every other order
+ * @param feedRules       which trips the Feed may show (upcoming, too few activities); null
+ *                        outside the Feed. Part of the key: a new day is a new ranking
  */
 public record PublicTripSearchCriteria(
         Double latitude,
@@ -43,7 +45,8 @@ public record PublicTripSearchCriteria(
         boolean recommended,
         FeedPlaceKind placeKind,
         boolean photosOnly,
-        boolean photosThenStops) {
+        boolean photosThenStops,
+        FeedTripRules feedRules) {
 
     private static final int POINT_DECIMALS = 2;
 
@@ -91,13 +94,20 @@ public record PublicTripSearchCriteria(
                 recommended,
                 placeKind,
                 false,
-                false);
+                false,
+                null);
     }
 
     /** This search with the photo rules set; see the record's parameters. */
     public PublicTripSearchCriteria withPhotoRules(boolean photosOnly, boolean photosThenStops) {
         return new PublicTripSearchCriteria(latitude, longitude, radiusMeters, destination, keyword,
-                allPublic, randomSeed, preferImages, recommended, placeKind, photosOnly, photosThenStops);
+                allPublic, randomSeed, preferImages, recommended, placeKind, photosOnly, photosThenStops, feedRules);
+    }
+
+    /** This search with the Feed's trip rules; null for none. */
+    public PublicTripSearchCriteria withFeedRules(FeedTripRules rules) {
+        return new PublicTripSearchCriteria(latitude, longitude, radiusMeters, destination, keyword,
+                allPublic, randomSeed, preferImages, recommended, placeKind, photosOnly, photosThenStops, rules);
     }
 
     /**

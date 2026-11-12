@@ -50,6 +50,9 @@ public class NotificationTemplateRenderer {
         if (type == NotificationType.FOLLOWING_TRIP_SHARED) {
             return withLocalizedPunctuation(renderFollowingTripShared(normalizedData, lang), lang);
         }
+        if (type == NotificationType.FOLLOWING_POST) {
+            return withLocalizedPunctuation(renderFollowingPost(normalizedData, lang), lang);
+        }
         if (type == NotificationType.PAYMENT_REMINDER && expenseCount(normalizedData) > 1) {
             return withLocalizedPunctuation(renderGroupedPaymentReminder(normalizedData, lang), lang);
         }
@@ -321,48 +324,56 @@ public class NotificationTemplateRenderer {
                 case "TRIP" -> "chuyến đi";
                 case "CHECKIN" -> "check-in";
                 case "REVIEW" -> "đánh giá";
+                case "POST" -> "bài viết";
                 default -> "bình luận";
             };
             case "hi" -> switch (target) {
                 case "TRIP" -> "यात्रा";
                 case "CHECKIN" -> "चेक-इन";
                 case "REVIEW" -> "समीक्षा";
+                case "POST" -> "लेख";
                 default -> "टिप्पणी";
             };
             case "ja" -> switch (target) {
                 case "TRIP" -> "旅行";
                 case "CHECKIN" -> "チェックイン";
                 case "REVIEW" -> "レビュー";
+                case "POST" -> "記事";
                 default -> "コメント";
             };
             case "ko" -> switch (target) {
                 case "TRIP" -> "여행";
                 case "CHECKIN" -> "체크인";
                 case "REVIEW" -> "리뷰";
+                case "POST" -> "글";
                 default -> "댓글";
             };
             case "ru" -> switch (target) {
                 case "TRIP" -> "поездку";
                 case "CHECKIN" -> "отметку о посещении";
                 case "REVIEW" -> "отзыв";
+                case "POST" -> "статью";
                 default -> "комментарий";
             };
             case "th" -> switch (target) {
                 case "TRIP" -> "ทริป";
                 case "CHECKIN" -> "เช็กอิน";
                 case "REVIEW" -> "รีวิว";
+                case "POST" -> "บทความ";
                 default -> "ความคิดเห็น";
             };
             case "zh-TW" -> switch (target) {
                 case "TRIP" -> "行程";
                 case "CHECKIN" -> "打卡";
                 case "REVIEW" -> "評價";
+                case "POST" -> "文章";
                 default -> "留言";
             };
             default -> switch (target) {
                 case "TRIP" -> "trip";
                 case "CHECKIN" -> "check-in";
                 case "REVIEW" -> "review";
+                case "POST" -> "post";
                 default -> "comment";
             };
         };
@@ -418,6 +429,22 @@ public class NotificationTemplateRenderer {
             case "th" -> trip == null ? "เพิ่งแชร์แผนเที่ยวใหม่" : "เพิ่งแชร์แผนเที่ยว " + trip;
             case "zh-TW" -> trip == null ? "剛分享了新的行程" : "剛分享了行程「" + trip + "」";
             default -> trip == null ? "Shared a new trip plan" : "Shared the trip plan " + trip;
+        };
+        return new NotificationMessage(actor, body);
+    }
+
+    private NotificationMessage renderFollowingPost(Map<String, Object> data, String language) {
+        String actor = followingActor(data, language);
+        String title = stringValue(data.get("postTitle"));
+        String body = switch (language) {
+            case "vi" -> title == null ? "Vừa đăng một bài viết mới" : "Vừa đăng bài viết " + title;
+            case "hi" -> title == null ? "एक नया लेख प्रकाशित किया" : "लेख प्रकाशित किया: " + title;
+            case "ja" -> title == null ? "新しい記事を公開しました" : "記事「" + title + "」を公開しました";
+            case "ko" -> title == null ? "새 글을 올렸어요" : "글 '" + title + "'을 올렸어요";
+            case "ru" -> title == null ? "Опубликовал новую статью" : "Опубликовал статью «" + title + "»";
+            case "th" -> title == null ? "เพิ่งโพสต์บทความใหม่" : "เพิ่งโพสต์บทความ " + title;
+            case "zh-TW" -> title == null ? "剛發表了新文章" : "剛發表了文章「" + title + "」";
+            default -> title == null ? "Published a new post" : "Published the post " + title;
         };
         return new NotificationMessage(actor, body);
     }

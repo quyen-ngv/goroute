@@ -4,6 +4,7 @@ import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.CheckinLocationSnapshot;
 import com.ds.goroute.dto.request.AssignCheckinPlaceRequest;
 import com.ds.goroute.dto.request.HideCheckinRequest;
+import com.ds.goroute.dto.request.RemoveCheckinRequest;
 import com.ds.goroute.dto.response.AdminCheckinResponse;
 import com.ds.goroute.dto.response.AdminUnlinkedCheckinResponse;
 import com.ds.goroute.dto.response.CheckinLocationHistoryResponse;
@@ -24,6 +25,7 @@ import com.ds.goroute.service.NotificationService;
 import com.ds.goroute.service.PassportService;
 import com.ds.goroute.service.ReviewScoringService;
 import com.ds.goroute.service.ReviewService;
+import com.ds.goroute.service.UserCheckinService;
 import com.ds.goroute.service.checkin.CheckinReviewConverter;
 import com.ds.goroute.service.checkin.CheckinVerifier;
 import com.ds.goroute.service.checkin.LocationKeyFactory;
@@ -67,6 +69,7 @@ public class CheckinAdminServiceImpl implements CheckinAdminService {
     private final LocationKeyFactory locationKeyFactory;
     private final PassportService passportService;
     private final CheckinVerifier verifier;
+    private final UserCheckinService checkinService;
 
     @Override
     @Transactional(readOnly = true)
@@ -149,6 +152,27 @@ public class CheckinAdminServiceImpl implements CheckinAdminService {
         checkinRepository.findById(checkinId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Check-in not found"));
         flagRepository.restoreTakedown(ModeratedContentType.CHECKIN.name(), checkinId, adminId);
+    }
+
+    @Override
+    @Transactional
+    public void remove(UUID adminId, UUID checkinId, RemoveCheckinRequest request) {
+        UserCheckin checkin = checkinRepository.findById(checkinId)
+                .filter(found -> !Boolean.TRUE.equals(found.getIsRemoved()))
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Check-in not found"));
+        checkinService.removeAsAdmin(checkinId, request.isDeleteReview());
+        // The removed row has no removed_by of its own: the takedown says who and why.
+        flagRepository.insertTakedown(ContentTakedown.builder()
+                .id(UUID.randomUUID())
+                .contentType(ModeratedContentType.CHECKIN)
+                .contentId(checkinId)
+                .ownerId(checkin.getUserId())
+                .category(request.getCategory())
+                .reason(request.getReason())
+                .removedBy(adminId)
+                .removedAt(LocalDateTime.now())
+                .build());
+        notifyOwner(checkin, adminId, request.getReason());
     }
 
     @Override

@@ -1,5 +1,7 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.enums.ConsentPurpose;
+import com.ds.goroute.service.consent.ConsentService;
 import com.ds.goroute.dto.response.PublicPage;
 import com.ds.goroute.dto.response.PublicUserProfileResponse;
 import com.ds.goroute.entity.Trip;
@@ -22,6 +24,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 class PublicPageServiceImplTest {
@@ -33,6 +36,7 @@ class PublicPageServiceImplTest {
     private ContentModerationService moderation;
     private LocationImageService locationImages;
     private HiddenImageService hiddenImages;
+    private ConsentService consents;
     private PublicPageServiceImpl service;
 
     @BeforeEach
@@ -42,14 +46,29 @@ class PublicPageServiceImplTest {
         moderation = mock(ContentModerationService.class);
         locationImages = mock(LocationImageService.class);
         hiddenImages = mock(HiddenImageService.class);
+        consents = mock(ConsentService.class);
         when(profiles.findGuestProfile(any())).thenReturn(Optional.empty());
         service = new PublicPageServiceImpl(profiles, trips, moderation, locationImages, hiddenImages,
-                new ObjectMapper(), BASE_URL + "/");
+                consents, new ObjectMapper(), BASE_URL + "/");
+    }
+
+    @Test
+    void aProfilePageStaysOutOfSearchUntilItsOwnerAllowsIt() {
+        when(profiles.findGuestProfile("an.food")).thenReturn(Optional.of(profile("Ăn cùng An", "Review quán ngon Hà Nội")));
+
+        PublicPage page = service.profilePage("an.food", true);
+
+        assertThat(page.found()).isTrue();
+        assertThat(page.html())
+                .contains("<meta name=\"robots\" content=\"noindex\">")
+                .doesNotContain("index, follow")
+                .contains("<meta property=\"og:title\" content=\"Ăn cùng An (@an.food) · OnDetour\">");
     }
 
     @Test
     void aProfilePageCarriesItsOwnPreviewTagsAndHeader() {
         when(profiles.findGuestProfile("an.food")).thenReturn(Optional.of(profile("Ăn cùng An", "Review quán ngon Hà Nội")));
+        when(consents.isGranted(any(), eq(ConsentPurpose.PROFILE_SEARCH_INDEXING))).thenReturn(true);
 
         PublicPage page = service.profilePage("an.food", true);
 

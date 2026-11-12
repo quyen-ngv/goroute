@@ -1,6 +1,7 @@
 package com.ds.goroute.service.impl;
 
 import com.ds.goroute.constant.ErrorConstant;
+import com.ds.goroute.dto.response.PostResponse;
 import com.ds.goroute.dto.response.SavedPostPageResponse;
 import com.ds.goroute.dto.response.SavedPostResponse;
 import com.ds.goroute.dto.response.UserCheckinResponse;
@@ -8,6 +9,7 @@ import com.ds.goroute.dto.response.UserReviewResponse;
 import com.ds.goroute.entity.SavedPost;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.SavedPostMapper;
+import com.ds.goroute.service.PostService;
 import com.ds.goroute.service.ReviewService;
 import com.ds.goroute.service.SavedPostService;
 import com.ds.goroute.service.UserBlockService;
@@ -38,6 +40,7 @@ public class SavedPostServiceImpl implements SavedPostService {
     private final UserCheckinService checkinService;
     private final ReviewService reviewService;
     private final UserBlockService userBlockService;
+    private final PostService postService;
 
     @Override
     @Transactional
@@ -52,6 +55,10 @@ public class SavedPostServiceImpl implements SavedPostService {
             case REVIEW -> {
                 UserReviewResponse review = reviewService.findVisibleByIds(userId, List.of(postId)).get(postId);
                 yield review == null ? null : review.getUserId();
+            }
+            case POST -> {
+                PostResponse post = postService.findVisibleByIds(userId, List.of(postId)).get(postId);
+                yield post == null || post.getAuthor() == null ? null : post.getAuthor().getUserId();
             }
         };
         if (authorId == null) {
@@ -88,18 +95,22 @@ public class SavedPostServiceImpl implements SavedPostService {
 
         List<UUID> checkinIds = idsOf(page, SavedPostType.CHECKIN);
         List<UUID> reviewIds = idsOf(page, SavedPostType.REVIEW);
+        List<UUID> postIds = idsOf(page, SavedPostType.POST);
         Map<UUID, UserCheckinResponse> checkins = checkinIds.isEmpty()
                 ? Map.of() : checkinService.findVisibleByIds(userId, checkinIds);
         Map<UUID, UserReviewResponse> reviews = reviewIds.isEmpty()
                 ? Map.of() : reviewService.findVisibleByIds(userId, reviewIds);
+        Map<UUID, PostResponse> posts = postIds.isEmpty()
+                ? Map.of() : postService.findVisibleByIds(userId, postIds);
 
         Set<UUID> authorIds = new HashSet<>();
         checkins.values().forEach(checkin -> authorIds.add(checkin.getUserId()));
         reviews.values().forEach(review -> authorIds.add(review.getUserId()));
+        posts.values().forEach(post -> authorIds.add(post.getAuthor().getUserId()));
         Set<UUID> blocked = authorIds.isEmpty() ? Set.of() : userBlockService.blockedAmong(userId, authorIds);
 
         List<SavedPostResponse> items = page.stream()
-                .map(row -> toResponse(row, checkins, reviews, blocked))
+                .map(row -> toResponse(row, checkins, reviews, posts, blocked))
                 .toList();
         SavedPost last = page.isEmpty() ? null : page.get(page.size() - 1);
         return SavedPostPageResponse.builder()
@@ -114,12 +125,17 @@ public class SavedPostServiceImpl implements SavedPostService {
     private static SavedPostResponse toResponse(SavedPost row,
                                                 Map<UUID, UserCheckinResponse> checkins,
                                                 Map<UUID, UserReviewResponse> reviews,
+                                                Map<UUID, PostResponse> posts,
                                                 Set<UUID> blocked) {
         UserCheckinResponse checkin = row.getPostType() == SavedPostType.CHECKIN
                 ? checkins.get(row.getPostId()) : null;
         UserReviewResponse review = row.getPostType() == SavedPostType.REVIEW
                 ? reviews.get(row.getPostId()) : null;
-        UUID authorId = checkin != null ? checkin.getUserId() : review != null ? review.getUserId() : null;
+        PostResponse post = row.getPostType() == SavedPostType.POST
+                ? posts.get(row.getPostId()) : null;
+        UUID authorId = checkin != null ? checkin.getUserId()
+                : review != null ? review.getUserId()
+                : post != null ? post.getAuthor().getUserId() : null;
         boolean available = authorId != null && !blocked.contains(authorId);
         return SavedPostResponse.builder()
                 .postType(row.getPostType())
@@ -128,6 +144,7 @@ public class SavedPostServiceImpl implements SavedPostService {
                 .available(available)
                 .checkin(available ? checkin : null)
                 .review(available ? review : null)
+                .post(available ? post : null)
                 .build();
     }
 

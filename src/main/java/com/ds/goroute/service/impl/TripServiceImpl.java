@@ -1,6 +1,7 @@
 package com.ds.goroute.service.impl;
 
 import com.ds.goroute.dto.FeedPlaceKind;
+import com.ds.goroute.dto.FeedTripRules;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.ExpenseSplitCount;
 import com.ds.goroute.dto.PublicTripSearchCriteria;
@@ -68,6 +69,9 @@ public class TripServiceImpl implements TripService {
     /** Optional for the same reason; without it every search page is ranked by the database. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private PublicTripRankingCache publicTripRankingCache;
+    /** Optional for the same reason; without it a taken-down trip is treated as live. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.ds.goroute.service.ContentModerationService contentModerationService;
 
     // Feed signals (V245). Optional like the two above, so the unit tests that build this
     // service by hand keep compiling; without them nothing is hidden and nothing reads seen.
@@ -1510,6 +1514,7 @@ public class TripServiceImpl implements TripService {
         if (!canViewPublicTrip(trip)) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Trip is not shared");
         }
+        requireNotTakenDownFor(trip, viewerId);
 
         // Increment view count async (don't block response)
         incrementViewCountAsync(tripId);
@@ -1782,6 +1787,34 @@ public class TripServiceImpl implements TripService {
                 .build();
     }
 
+    /**
+     * A takedown (moderation queue or the admin public-trip console) hides the trip from
+     * everyone except its owner and accepted members, who keep the trip itself.
+     */
+    private void requireNotTakenDownFor(Trip trip, UUID viewerId) {
+        if (contentModerationService == null
+                || !contentModerationService.isTakenDown(ModeratedContentType.TRIP, trip.getId())) {
+            return;
+        }
+        boolean insider = viewerId != null && (viewerId.equals(trip.getOwnerId())
+                || tripMemberRepository.findByTripIdAndUserId(trip.getId(), viewerId)
+                        .filter(member -> member.getStatus() == MemberStatus.ACCEPTED)
+                        .isPresent());
+        if (!insider) {
+            throw new BusinessException(ErrorConstant.CONTENT_TAKEN_DOWN, "This content has been removed.");
+        }
+    }
+
+    private List<Trip> withoutTakenDown(List<Trip> trips) {
+        if (contentModerationService == null || trips.isEmpty()) {
+            return trips;
+        }
+        Set<UUID> takenDown = contentModerationService.takenDownIds(
+                ModeratedContentType.TRIP, trips.stream().map(Trip::getId).toList());
+        return takenDown.isEmpty() ? trips
+                : trips.stream().filter(trip -> !takenDown.contains(trip.getId())).toList();
+    }
+
     private void ensurePublicTripVotable(Trip trip) {
         if (trip.getVisibility() == TripVisibility.PRIVATE) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Trip is not shared");
@@ -2038,6 +2071,7 @@ public class TripServiceImpl implements TripService {
         if (!canClone) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "You don't have access to clone this trip");
         }
+        requireNotTakenDownFor(originalTrip, userId);
 
         // 4. A clone is a trip, so it costs what a trip costs. Left out, this was the way
         // past the charge: copy somebody's public trip instead of starting one. Charged
@@ -2296,12 +2330,13 @@ public class TripServiceImpl implements TripService {
     @Override
     @Transactional(readOnly = true)
     public List<PublicTripResponse> getFollowingTrips(UUID viewerId, Double focusLat, Double focusLng,
-                                                      FeedPlaceKind kind, int page, int size) {
+                                                      FeedPlaceKind kind, FeedTripRules feedRules,
+                                                      int page, int size) {
         int limit = Math.max(1, Math.min(size, MAX_FOLLOWING_TRIPS_PAGE_SIZE));
         int offset = Math.max(0, page) * limit;
         boolean focused = focusLat != null && focusLng != null;
         List<Trip> trips = tripRepository.findFollowingTrips(viewerId,
-                focused ? focusLat : null, focused ? focusLng : null, kind, limit, offset);
+                focused ? focusLat : null, focused ? focusLng : null, kind, feedRules, limit, offset);
         List<PublicTripResponse> summaries = toPublicTripSummaries(trips, viewerId);
         // The Friends tab keeps its order and marks what the viewer has not seen yet.
         Set<UUID> seen = feedImpressionService == null ? Set.of()
@@ -2680,7 +2715,7 @@ public class TripServiceImpl implements TripService {
         boolean isSelf = viewerId != null && viewerId.equals(targetUserId);
         List<Trip> trips = isSelf
                 ? tripRepository.findByOwnerId(targetUserId)
-                : tripRepository.findPublicTripsByOwnerId(targetUserId);
+                : withoutTakenDown(tripRepository.findPublicTripsByOwnerId(targetUserId));
 
         UUID mapViewerId = viewerId != null ? viewerId : targetUserId;
 

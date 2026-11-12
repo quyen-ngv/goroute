@@ -729,6 +729,14 @@ public class ImageStorageCleanupService {
                           AND m.url IS NOT NULL
                         """,
                         "checkin-videos/"),
+                // Blog posts (epic 20): uploads land under post-media/{postId}/. A video row names the
+                // video (url) and its poster (thumbnail_url). A trip story's rows point at check-in
+                // and trip-memory files instead, which stay alive while those rows name them. A
+                // removed post soft-deletes its rows, which is what hands its own files to the sweep.
+                spec("POST_MEDIA",
+                        "SELECT url, thumbnail_url FROM media_assets WHERE entity_type = 'POST' AND deleted_at IS NULL AND url IS NOT NULL",
+                        "SELECT url, thumbnail_url FROM media_assets WHERE entity_type = 'POST' AND entity_id = ? AND deleted_at IS NULL AND url IS NOT NULL",
+                        "post-media/"),
                 spec("PENDING_CONTRIBUTION_REVIEW",
                         "SELECT url FROM media_assets WHERE entity_type = 'PENDING_REVIEW' AND deleted_at IS NULL AND url IS NOT NULL",
                         "SELECT m.url FROM media_assets m JOIN pending_contribution_reviews p ON p.id = m.entity_id WHERE p.contribution_id = ? AND m.entity_type = 'PENDING_REVIEW' AND m.deleted_at IS NULL AND m.url IS NOT NULL"),

@@ -113,4 +113,31 @@ public interface UserMapper {
             @Param("limit") int limit);
 
     java.time.LocalDateTime selectSearchIndexMaxUpdatedAt();
+
+    // --- Managed accounts (epic 20) ---------------------------------------------------
+
+    /** {@code status}: MANAGED, HANDED_OVER or ALL (ManagedAccountStatus name). */
+    java.util.List<com.ds.goroute.entity.ManagedAccountRow> selectManagedAccounts(
+            @Param("search") String search,
+            @Param("status") String status,
+            @Param("limit") int limit,
+            @Param("offset") int offset);
+
+    long countManagedAccounts(@Param("search") String search, @Param("status") String status);
+
+    com.ds.goroute.entity.ManagedAccountRow selectManagedAccount(@Param("id") UUID id);
+
+    int markManaged(@Param("id") UUID id);
+
+    int updateManagedProfile(@Param("id") UUID id,
+                             @Param("fullName") String fullName,
+                             @Param("username") String username,
+                             @Param("email") String email,
+                             @Param("bio") String bio,
+                             @Param("avatarUrl") String avatarUrl);
+
+    int handOverManagedAccount(@Param("id") UUID id,
+                               @Param("email") String email,
+                               @Param("passwordHash") String passwordHash,
+                               @Param("handedOverBy") UUID handedOverBy);
 }

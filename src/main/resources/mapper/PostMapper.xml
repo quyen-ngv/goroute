@@ -1,0 +1,377 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- Blog posts (epic 20, V275): posts, post_places, post_likes, and the post's own media_assets
+     rows (entity_type = 'POST'). -->
+<mapper namespace="com.ds.goroute.mapper.PostMapper">
+
+    <resultMap id="postMap" type="com.ds.goroute.entity.Post">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="postType" column="post_type"/>
+        <result property="title" column="title"/>
+        <result property="excerpt" column="excerpt"/>
+        <result property="body" column="body"/>
+        <result property="coverMediaId" column="cover_media_id"/>
+        <result property="tripId" column="trip_id"/>
+        <result property="status" column="status"/>
+        <result property="visibility" column="visibility"/>
+        <result property="publishedAt" column="published_at"/>
+        <result property="likeCount" column="like_count"/>
+        <result property="readMinutes" column="read_minutes"/>
+        <result property="isRemoved" column="is_removed"/>
+        <result property="editedAt" column="edited_at"/>
+        <result property="createdBy" column="created_by"/>
+        <result property="updatedBy" column="updated_by"/>
+        <result property="version" column="version"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <resultMap id="mediaMap" type="com.ds.goroute.entity.PostMedia">
+        <id property="id" column="id"/>
+        <result property="postId" column="entity_id"/>
+        <result property="mediaType" column="media_type"/>
+        <result property="role" column="asset_role"/>
+        <result property="url" column="url"/>
+        <result property="thumbnailUrl" column="thumbnail_url"/>
+        <result property="durationSeconds" column="duration_seconds"/>
+        <result property="caption" column="caption"/>
+        <result property="position" column="position"/>
+        <result property="uploadedBy" column="uploaded_by"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <!-- The body is the one large column; lists leave it out (the list contract sends body = null). -->
+    <sql id="listColumns">
+        id, user_id, post_type, title, excerpt, cover_media_id, trip_id, status, visibility,
+        published_at, like_count, read_minutes, is_removed, edited_at, created_by, updated_by,
+        version, created_at, updated_at
+    </sql>
+
+    <sql id="mediaColumns">
+        id, entity_id, media_type, asset_role, url, thumbnail_url, duration_seconds, caption,
+        position, uploaded_by, created_at
+    </sql>
+
+    <!-- What anyone may read in a list: published, public, live, not taken down, author not deleted. -->
+    <sql id="publicPredicate">
+        posts.status = 'PUBLISHED'
+        AND posts.visibility = 'PUBLIC'
+        AND posts.is_removed = FALSE
+        AND NOT EXISTS (
+            SELECT 1 FROM content_takedowns t
+            WHERE t.content_type = 'POST' AND t.content_id = posts.id
+              AND t.restored_at IS NULL)
+        AND EXISTS (
+            SELECT 1 FROM users au
+            WHERE au.id = posts.user_id AND au.deleted_at IS NULL)
+    </sql>
+
+    <!-- Blocks hide posts in both directions, as on the check-in feed (D9). -->
+    <sql id="notBlocked">
+        AND NOT EXISTS (
+            SELECT 1 FROM user_blocks b
+            WHERE (b.blocker_id = #{viewerId} AND b.blocked_id = posts.user_id)
+               OR (b.blocker_id = posts.user_id AND b.blocked_id = #{viewerId}))
+    </sql>
+
+    <!-- ===== posts ========================================================================== -->
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.Post">
+        INSERT INTO posts (id, user_id, post_type, title, excerpt, body, cover_media_id, trip_id,
+                           status, visibility, published_at, like_count, read_minutes, is_removed,
+                           created_by, updated_by, version, created_at, updated_at)
+        VALUES (#{id}, #{userId}, #{postType}, #{title}, #{excerpt,jdbcType=VARCHAR}, #{body},
+                #{coverMediaId,jdbcType=OTHER}, #{tripId,jdbcType=OTHER}, #{status}, #{visibility},
+                NULL, 0, #{readMinutes}, FALSE, #{createdBy}, #{updatedBy}, 0, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <select id="findById" resultMap="postMap">
+        SELECT <include refid="listColumns"/>, body
+        FROM posts
+        WHERE id = #{id}
+    </select>
+
+    <select id="findByIds" resultMap="postMap">
+        SELECT <include refid="listColumns"/>
+        FROM posts
+        WHERE id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <!-- The editor's save. Optimistic: a stale version changes nothing and the service answers 409. -->
+    <update id="updateContent" parameterType="com.ds.goroute.entity.Post">
+        UPDATE posts
+        SET title = #{title},
+            excerpt = #{excerpt,jdbcType=VARCHAR},
+            body = #{body},
+            cover_media_id = #{coverMediaId,jdbcType=OTHER},
+            visibility = #{visibility},
+            read_minutes = #{readMinutes},
+            edited_at = #{editedAt,jdbcType=TIMESTAMP},
+            updated_by = #{updatedBy},
+            updated_at = NOW(),
+            version = version + 1
+        WHERE id = #{id}
+          AND version = #{version}
+          AND is_removed = FALSE
+    </update>
+
+    <!-- The first publish claims published_at. Two publishes racing each other cannot both see
+         NULL here, so the follower fan-out runs once whatever the client retries. -->
+    <update id="publishFirstTime">
+        UPDATE posts
+        SET status = 'PUBLISHED',
+            published_at = NOW(),
+            updated_by = #{actorId},
+            updated_at = NOW(),
+            version = version + 1
+        WHERE id = #{id}
+          AND is_removed = FALSE
+          AND published_at IS NULL
+    </update>
+
+    <!-- Publish again after an unpublish (published_at kept), or unpublish. -->
+    <update id="updateStatus">
+        UPDATE posts
+        SET status = #{status},
+            updated_by = #{actorId},
+            updated_at = NOW(),
+            version = version + 1
+        WHERE id = #{id}
+          AND is_removed = FALSE
+          AND status &lt;&gt; #{status}
+          <if test="status == 'PUBLISHED'">AND published_at IS NOT NULL</if>
+    </update>
+
+    <update id="markRemoved">
+        UPDATE posts
+        SET is_removed = TRUE,
+            updated_by = #{actorId},
+            updated_at = NOW(),
+            version = version + 1
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND is_removed = FALSE
+    </update>
+
+    <update id="refreshLikeCount">
+        UPDATE posts
+        SET like_count = (SELECT COUNT(*) FROM post_likes l WHERE l.post_id = #{id})
+        WHERE id = #{id}
+    </update>
+
+    <!-- ===== lists ========================================================================== -->
+
+    <!-- The Feed's post source. Newest first by idx_posts_feed. "Near you": a post is in the radius
+         when one of its places is; the inner query is driven by the GiST index on places (V214),
+         so the radius never means reading every post. -->
+    <select id="findFeed" resultMap="postMap">
+        SELECT <include refid="listColumns"/>
+        FROM posts
+        WHERE <include refid="publicPredicate"/>
+          <if test="viewerId != null">
+              AND posts.user_id &lt;&gt; #{viewerId}
+              <include refid="notBlocked"/>
+          </if>
+          <if test="latitude != null and longitude != null and radiusKm != null">
+              AND posts.id IN (
+                  SELECT pp.post_id
+                  FROM places p
+                  JOIN post_places pp ON pp.place_id = p.id
+                  WHERE ST_DWithin(goroute_point(p.latitude, p.longitude),
+                                   goroute_point(#{latitude}, #{longitude}), #{radiusKm} * 1000))
+          </if>
+        ORDER BY posts.published_at DESC, posts.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- The Friends tab: posts of the people the viewer follows (a deleted account's posts go with it). -->
+    <select id="findFollowing" resultMap="postMap">
+        SELECT <include refid="listColumns"/>
+        FROM posts
+        WHERE posts.user_id IN (
+                SELECT f.following_id
+                FROM user_follows f
+                WHERE f.follower_id = #{viewerId})
+          AND <include refid="publicPredicate"/>
+          <include refid="notBlocked"/>
+        ORDER BY posts.published_at DESC, posts.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- Place Detail: the posts tagged with this place, newest first (idx_post_places_place). -->
+    <select id="findByPlace" resultMap="postMap">
+        SELECT <include refid="listColumns"/>
+        FROM posts
+        WHERE posts.id IN (SELECT pp.post_id FROM post_places pp WHERE pp.place_id = #{placeId})
+          AND <include refid="publicPredicate"/>
+          <if test="viewerId != null">
+              <include refid="notBlocked"/>
+          </if>
+        ORDER BY posts.published_at DESC, posts.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- A profile. The owner sees every live post, drafts included, by last change; anyone else the
+         published public ones, newest first. -->
+    <select id="findByUser" resultMap="postMap">
+        SELECT <include refid="listColumns"/>
+        FROM posts
+        WHERE posts.user_id = #{userId}
+        <choose>
+            <when test="includeDrafts">
+                AND posts.is_removed = FALSE
+                ORDER BY posts.updated_at DESC, posts.id DESC
+            </when>
+            <otherwise>
+                AND <include refid="publicPredicate"/>
+                ORDER BY posts.published_at DESC, posts.id DESC
+            </otherwise>
+        </choose>
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- "Write about this trip" returns the story the user already has rather than a second one. -->
+    <select id="findLiveByUserAndTrip" resultMap="postMap">
+        SELECT <include refid="listColumns"/>
+        FROM posts
+        WHERE user_id = #{userId}
+          AND trip_id = #{tripId}
+          AND is_removed = FALSE
+        ORDER BY created_at DESC
+        LIMIT 1
+    </select>
+
+    <sql id="adminFilter">
+        <where>
+            <if test="search != null and search != ''">
+                AND posts.title ILIKE '%' || #{search} || '%'
+            </if>
+            <if test="status != null">AND posts.status = #{status}</if>
+            <if test="postType != null">AND posts.post_type = #{postType}</if>
+            <if test="authorUserId != null">AND posts.user_id = #{authorUserId}</if>
+            <if test="managedOnly">
+                AND EXISTS (
+                    SELECT 1 FROM users mu
+                    WHERE mu.id = posts.user_id AND mu.managed_by_admin = TRUE)
+            </if>
+            <if test="!includeRemoved">AND posts.is_removed = FALSE</if>
+        </where>
+    </sql>
+
+    <!-- The console: every post, drafts and hidden ones included, last changed first. -->
+    <select id="findForAdmin" resultMap="postMap">
+        SELECT <include refid="listColumns"/>
+        FROM posts
+        <include refid="adminFilter"/>
+        ORDER BY posts.updated_at DESC, posts.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- ===== post_places ==================================================================== -->
+
+    <delete id="deletePlaces">
+        DELETE FROM post_places WHERE post_id = #{postId}
+    </delete>
+
+    <insert id="insertPlaces">
+        INSERT INTO post_places (post_id, place_id, position)
+        VALUES
+        <foreach item="placeId" index="index" collection="placeIds" separator=",">
+            (#{postId}, #{placeId}, #{index})
+        </foreach>
+        ON CONFLICT (post_id, place_id) DO NOTHING
+    </insert>
+
+    <select id="findPlaces" resultType="com.ds.goroute.entity.PostPlaceRef">
+        SELECT post_id, place_id, position
+        FROM post_places
+        WHERE post_id IN
+        <foreach item="id" collection="postIds" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY post_id, position, place_id
+    </select>
+
+    <!-- ===== post_likes ===================================================================== -->
+
+    <insert id="insertLike">
+        INSERT INTO post_likes (post_id, user_id, created_at)
+        VALUES (#{postId}, #{userId}, NOW())
+        ON CONFLICT (post_id, user_id) DO NOTHING
+    </insert>
+
+    <delete id="deleteLike">
+        DELETE FROM post_likes WHERE post_id = #{postId} AND user_id = #{userId}
+    </delete>
+
+    <select id="hasLike" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM post_likes WHERE post_id = #{postId} AND user_id = #{userId})
+    </select>
+
+    <select id="findLikedIds" resultType="java.util.UUID">
+        SELECT post_id FROM post_likes
+        WHERE user_id = #{userId}
+          AND post_id IN
+        <foreach item="id" collection="postIds" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <!-- ===== media (media_assets, entity_type = 'POST') ===================================== -->
+
+    <!-- Appended after the post's last media: the position is the upload order, which is also the
+         order the image viewer pages through. -->
+    <insert id="insertMedia" parameterType="com.ds.goroute.entity.PostMedia">
+        INSERT INTO media_assets
+            (id, entity_type, entity_id, media_type, url, thumbnail_url, duration_seconds, asset_role,
+             position, caption, date_source, uploaded_by, created_at, updated_at)
+        SELECT #{id}, 'POST', #{postId}, #{mediaType}, #{url}, #{thumbnailUrl,jdbcType=VARCHAR},
+               #{durationSeconds,jdbcType=INTEGER}, #{role},
+               COALESCE(MAX(m.position), -1) + 1, #{caption,jdbcType=VARCHAR}, 'UPLOAD',
+               #{uploadedBy}, #{createdAt}, #{createdAt}
+        FROM media_assets m
+        WHERE m.entity_type = 'POST'
+          AND m.entity_id = #{postId}
+          AND m.deleted_at IS NULL
+    </insert>
+
+    <select id="findMediaById" resultMap="mediaMap">
+        SELECT <include refid="mediaColumns"/>
+        FROM media_assets
+        WHERE id = #{id}
+          AND entity_type = 'POST'
+          AND deleted_at IS NULL
+    </select>
+
+    <!-- Every live media of a page of posts in one query (idx_media_assets_entity_position). -->
+    <select id="findMedia" resultMap="mediaMap">
+        SELECT <include refid="mediaColumns"/>
+        FROM media_assets
+        WHERE entity_type = 'POST'
+          AND deleted_at IS NULL
+          AND entity_id IN
+        <foreach item="id" collection="postIds" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY entity_id, position, created_at
+    </select>
+
+    <select id="countMedia" resultType="int">
+        SELECT COUNT(*) FROM media_assets
+        WHERE entity_type = 'POST' AND entity_id = #{postId} AND deleted_at IS NULL
+    </select>
+
+    <update id="softDeleteMedia">
+        UPDATE media_assets
+        SET deleted_at = NOW(), updated_at = NOW()
+        WHERE id = #{id}
+          AND entity_type = 'POST'
+          AND entity_id = #{postId}
+          AND deleted_at IS NULL
+    </update>
+
+    <!-- A removed post's media rows go, which is what hands their files to the storage sweep. -->
+    <update id="softDeleteAllMedia">
+        UPDATE media_assets
+        SET deleted_at = NOW(), updated_at = NOW()
+        WHERE entity_type = 'POST'
+          AND entity_id = #{postId}
+          AND deleted_at IS NULL
+    </update>
+</mapper>

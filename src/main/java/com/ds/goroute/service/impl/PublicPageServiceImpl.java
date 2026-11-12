@@ -1,5 +1,7 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.enums.ConsentPurpose;
+import com.ds.goroute.service.consent.ConsentService;
 import com.ds.goroute.dto.response.PublicPage;
 import com.ds.goroute.dto.response.PublicUserProfileResponse;
 import com.ds.goroute.entity.Trip;
@@ -59,6 +61,7 @@ public class PublicPageServiceImpl implements PublicPageService {
     private final ContentModerationService contentModerationService;
     private final LocationImageService locationImageService;
     private final HiddenImageService hiddenImageService;
+    private final ConsentService consentService;
     private final ObjectMapper objectMapper;
     private final String publicBaseUrl;
 
@@ -70,6 +73,7 @@ public class PublicPageServiceImpl implements PublicPageService {
                                  ContentModerationService contentModerationService,
                                  LocationImageService locationImageService,
                                  HiddenImageService hiddenImageService,
+                                 ConsentService consentService,
                                  ObjectMapper objectMapper,
                                  @Value("${goroute.public-base-url:http://localhost:8080}") String publicBaseUrl) {
         this.publicProfileService = publicProfileService;
@@ -77,6 +81,7 @@ public class PublicPageServiceImpl implements PublicPageService {
         this.contentModerationService = contentModerationService;
         this.locationImageService = locationImageService;
         this.hiddenImageService = hiddenImageService;
+        this.consentService = consentService;
         this.objectMapper = objectMapper;
         this.publicBaseUrl = publicBaseUrl == null ? "" : publicBaseUrl.replaceAll("/+$", "");
     }
@@ -112,7 +117,10 @@ public class PublicPageServiceImpl implements PublicPageService {
         String image = visibleImage(profile.getAvatarUrl());
 
         values.put("TITLE", html(title));
-        values.put("META", metaTags(title, description, image, canonicalUrl, "profile", true));
+        // Search engines index the page only when its owner turned that on (PROFILE_SEARCH_INDEXING,
+        // off by default); a shared link still opens and previews either way.
+        boolean indexable = consentService.isGranted(profile.getId(), ConsentPurpose.PROFILE_SEARCH_INDEXING);
+        values.put("META", metaTags(title, description, image, canonicalUrl, "profile", indexable));
         values.put("JSON_LD", jsonLd(profile, name, canonicalUrl, image));
         values.put("HEADER", header(profile, name, image, copy));
         return new PublicPage(true, fill(profileTemplate(), values));

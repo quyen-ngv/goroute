@@ -1,7 +1,9 @@
 package com.ds.goroute.mapper;
 
 import com.ds.goroute.dto.FeedPlaceKind;
+import com.ds.goroute.dto.FeedTripRules;
 import com.ds.goroute.dto.PublicTripSearchCriteria;
+import com.ds.goroute.entity.AdminTripRow;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.entity.TripRankRow;
 import org.apache.ibatis.annotations.Mapper;
@@ -39,6 +41,19 @@ public interface TripMapper {
     /** The public, live, not taken-down trips among {@code ids}, in no particular order. */
     List<Trip> selectPublicByIds(@Param("ids") List<UUID> ids);
 
+    /** One page of the admin public-trip console, most recently shared first. */
+    List<AdminTripRow> selectAdminSharedTrips(@Param("search") String search,
+                                              @Param("ownerId") UUID ownerId,
+                                              @Param("visibility") String visibility,
+                                              @Param("hidden") Boolean hidden,
+                                              @Param("limit") int limit,
+                                              @Param("offset") int offset);
+
+    long countAdminSharedTrips(@Param("search") String search,
+                               @Param("ownerId") UUID ownerId,
+                               @Param("visibility") String visibility,
+                               @Param("hidden") Boolean hidden);
+
     int refreshActivityCount(@Param("tripId") UUID tripId);
 
     int claimFollowersNotification(@Param("tripId") UUID tripId);
@@ -55,6 +70,7 @@ public interface TripMapper {
                                   @Param("focusLat") Double focusLat,
                                   @Param("focusLng") Double focusLng,
                                   @Param("kind") FeedPlaceKind kind,
+                                  @Param("rules") FeedTripRules rules,
                                   @Param("limit") int limit,
                                   @Param("offset") int offset);
 

@@ -70,6 +70,25 @@ public class Activity {
     private UUID sourceSocialJobId;
     private String sourceSocialCandidateRef;
 
+    /**
+     * The catalogue place behind the stop, if any: the explicit reference, else a {@code placeId}
+     * that is itself a catalogue uuid (how the app links a place when it adds one). The same rule
+     * as {@code ActivityServiceImpl.linkedInternalPlaceId}.
+     */
+    public UUID catalogPlaceId() {
+        if (placeRefId != null) {
+            return placeRefId;
+        }
+        if (placeId == null || placeId.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(placeId.trim());
+        } catch (IllegalArgumentException notAUuid) {
+            return null;
+        }
+    }
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

@@ -2,6 +2,7 @@ package com.ds.goroute.service;
 
 import com.ds.goroute.dto.request.AssignCheckinPlaceRequest;
 import com.ds.goroute.dto.request.HideCheckinRequest;
+import com.ds.goroute.dto.request.RemoveCheckinRequest;
 import com.ds.goroute.dto.response.AdminCheckinResponse;
 import com.ds.goroute.dto.response.AdminUnlinkedCheckinResponse;
 import com.ds.goroute.dto.response.CheckinLocationHistoryResponse;
@@ -29,6 +30,12 @@ public interface CheckinAdminService {
 
     /** Reverses a hide decision. */
     void show(UUID adminId, UUID checkinId);
+
+    /**
+     * Deletes the check-in as its author would (soft delete: gone for the author too, photos
+     * removed), records the takedown for the audit trail and tells the author why.
+     */
+    void remove(UUID adminId, UUID checkinId, RemoveCheckinRequest request);
 
     /**
      * Moves a check-in onto the catalogue place it actually happened at.

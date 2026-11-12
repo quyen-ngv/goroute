@@ -65,6 +65,12 @@ public interface UserCheckinRepository {
      */
     List<UserCheckin> findByTrip(UUID tripId, int limit);
 
+    /**
+     * The author's own check-ins for a trip story, every visibility, oldest first: recorded on the
+     * trip, or (when {@code from}/{@code to} are given) made in that window without a trip.
+     */
+    List<UserCheckin> findMineForTrip(UUID userId, UUID tripId, LocalDateTime from, LocalDateTime to, int limit);
+
     long countByUserAndPlace(UUID userId, UUID placeId);
 
     List<UserCheckin> findLatestRatedPerUserForPlace(UUID placeId);

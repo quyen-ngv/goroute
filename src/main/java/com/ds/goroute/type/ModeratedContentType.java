@@ -32,6 +32,8 @@ public enum ModeratedContentType {
     QUEST_CHECKPOINT,
     /** A user-hosted meetup (epic 18): title, description, place text, join message. */
     MEETUP,
+    /** A blog post (epic 20): title, excerpt and markdown body. Commentable, savable, reportable. */
+    POST,
     /**
      * One stored image, whatever it was uploaded for. The id is the
      * {@code image_moderation_results} row; a takedown hides the image URL in every response.

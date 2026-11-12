@@ -127,7 +127,7 @@ class TripServiceImplPublicTripCardsTest {
         Trip second = trip(ownerId, "Đà Lạt", null);
         Trip third = trip(viewerId, "Huế", "https://cdn/cover.jpg");
         List<Trip> trips = List.of(first, second, third);
-        when(tripRepository.findFollowingTrips(viewerId, null, null, null, 20, 0)).thenReturn(trips);
+        when(tripRepository.findFollowingTrips(viewerId, null, null, null, null, 20, 0)).thenReturn(trips);
         when(userRepository.findByIds(any())).thenReturn(List.of(
                 User.builder().id(ownerId).fullName("Linh").build()));
         when(tripHelpfulVoteRepository.findByTripIdsAndUserId(anyCollection(), eq(viewerId))).thenReturn(Map.of(

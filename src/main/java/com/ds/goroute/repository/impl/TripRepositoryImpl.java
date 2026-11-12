@@ -1,7 +1,9 @@
 package com.ds.goroute.repository.impl;
 
 import com.ds.goroute.dto.FeedPlaceKind;
+import com.ds.goroute.dto.FeedTripRules;
 import com.ds.goroute.dto.PublicTripSearchCriteria;
+import com.ds.goroute.entity.AdminTripRow;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.entity.TripRankRow;
 import com.ds.goroute.event.PlaceUsageChangedEvent;
@@ -92,6 +94,17 @@ public class TripRepositoryImpl implements TripRepository {
     }
 
     @Override
+    public List<AdminTripRow> findAdminSharedTrips(String search, UUID ownerId, String visibility, Boolean hidden,
+                                                   int limit, int offset) {
+        return tripMapper.selectAdminSharedTrips(search, ownerId, visibility, hidden, limit, offset);
+    }
+
+    @Override
+    public long countAdminSharedTrips(String search, UUID ownerId, String visibility, Boolean hidden) {
+        return tripMapper.countAdminSharedTrips(search, ownerId, visibility, hidden);
+    }
+
+    @Override
     public boolean claimFollowersNotification(UUID tripId) {
         return tripId != null && tripMapper.claimFollowersNotification(tripId) == 1;
     }
@@ -117,8 +130,8 @@ public class TripRepositoryImpl implements TripRepository {
     
     @Override
     public List<Trip> findFollowingTrips(UUID viewerId, Double focusLat, Double focusLng,
-                                         FeedPlaceKind kind, int limit, int offset) {
-        return tripMapper.findFollowingTrips(viewerId, focusLat, focusLng, kind, limit, offset);
+                                         FeedPlaceKind kind, FeedTripRules rules, int limit, int offset) {
+        return tripMapper.findFollowingTrips(viewerId, focusLat, focusLng, kind, rules, limit, offset);
     }
 
     @Override

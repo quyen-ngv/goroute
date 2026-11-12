@@ -2,6 +2,7 @@ package com.ds.goroute.service;
 
 import com.ds.goroute.dto.PublicTripSearchCriteria;
 import com.ds.goroute.dto.FeedPlaceKind;
+import com.ds.goroute.dto.FeedTripRules;
 import com.ds.goroute.dto.request.*;
 import com.ds.goroute.dto.response.*;
 import com.ds.goroute.type.TripCreationCharge;
@@ -91,10 +92,17 @@ public interface TripService {
      * with a focus point (both non-null) those whose destination is in its province first,
      * then by 100 km ring outwards, each carrying its {@code focusRank}. Deleted owners,
      * taken-down trips and blocks in either direction are left out. {@code kind} keeps the
-     * trips with a stop of that kind; null means all of them.
+     * trips with a stop of that kind; null means all of them. {@code feedRules} (the Feed's
+     * Friends tab; null elsewhere) also drops trips not started yet or with too few activities.
      */
     List<PublicTripResponse> getFollowingTrips(UUID viewerId, Double focusLat, Double focusLng, FeedPlaceKind kind,
-                                               int page, int size);
+                                               FeedTripRules feedRules, int page, int size);
+
+    /** Without the Feed's trip rules: the Home "Friends" tab. */
+    default List<PublicTripResponse> getFollowingTrips(UUID viewerId, Double focusLat, Double focusLng,
+                                                       FeedPlaceKind kind, int page, int size) {
+        return getFollowingTrips(viewerId, focusLat, focusLng, kind, null, page, size);
+    }
 
     /**
      * The trips among {@code tripIds} that are still public, not deleted and not taken down, as

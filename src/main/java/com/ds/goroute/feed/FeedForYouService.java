@@ -75,6 +75,9 @@ public class FeedForYouService {
     private final TripService tripService;
     private final ParallelReads parallelReads;
     private final FeedEventLogger eventLogger;
+    /** Field-injected and optional so the hand-built service in unit tests keeps its constructor. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.ds.goroute.service.trip.FeedTripRulesProvider tripRulesProvider;
 
     public FeedForYouPageResponse page(UUID viewerId, FeedFilterSpec spec, String cursor, int size,
                                        Double deviceLat, Double deviceLng, boolean contextOff,
@@ -219,7 +222,8 @@ public class FeedForYouService {
         if (pool.size() >= maxCandidates) {
             return;
         }
-        FeedCandidateQuery base = baseQuery(context, spec, w, level);
+        FeedCandidateQuery base = baseQuery(context, spec, w, level,
+                tripRulesProvider == null ? null : tripRulesProvider.current());
         List<CandidateSource> toRun = new ArrayList<>();
         List<Supplier<List<FeedItemRow>>> reads = new ArrayList<>();
         for (CandidateSource source : sources) {
@@ -262,9 +266,11 @@ public class FeedForYouService {
     }
 
     private static FeedCandidateQuery baseQuery(ViewerContext context, FeedFilterSpec spec, FeedWeights w,
-                                                FillLevel level) {
+                                                FillLevel level, com.ds.goroute.dto.FeedTripRules tripRules) {
         FeedCandidateQuery.FeedCandidateQueryBuilder base = FeedCandidateQuery.builder()
                 .viewerId(context.getViewerId())
+                // No trip that has not started, none with too few activities (FEED config).
+                .tripRules(tripRules)
                 .itemTypes(spec.itemTypes().isEmpty() ? null : spec.itemTypeNames())
                 .ignoreRecommendGate(spec.tripsChip())
                 .relaxedRecommendGate(level.atLeast(FillLevel.L4))

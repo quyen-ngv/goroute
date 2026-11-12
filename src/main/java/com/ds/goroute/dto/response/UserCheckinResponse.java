@@ -25,6 +25,14 @@ public class UserCheckinResponse {
     private String userUsername;
     private String userAvatarUrl;
 
+    /**
+     * The author holds an active guide grant (user_guide_grants), so the card shows the guide
+     * badge next to the name. {@link #userGuideTitle} is the badge text; null means the app's
+     * default label.
+     */
+    private boolean userGuide;
+    private String userGuideTitle;
+
     private UUID tripId;
     private UUID activityId;
     private UUID placeId;

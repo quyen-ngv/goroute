@@ -11,6 +11,7 @@ import com.ds.goroute.dto.request.UpdateGuestNameRequest;
 import com.ds.goroute.dto.request.UpdateTripRequest;
 import com.ds.goroute.dto.response.*;
 import com.ds.goroute.service.TripService;
+import com.ds.goroute.service.trip.FeedTripRulesProvider;
 import com.ds.goroute.dto.BaseResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
@@ -35,6 +36,7 @@ public class TripController extends BaseController {
     private static final int MAX_FOLLOWING_PAGE_SIZE = 50;
 
     private final TripService tripService;
+    private final FeedTripRulesProvider feedTripRules;
 
     @PostMapping
     public ResponseEntity<BaseResponse<TripResponse>> createTrip(
@@ -240,8 +242,12 @@ public class TripController extends BaseController {
             // through its catalogue place, a trip through any of its stops.
             @RequestParam(required = false) List<String> placeGroups,
             @RequestParam(required = false) List<String> subTypes,
+            // The Feed's Friends tab: its trip rules apply (no trip that has not started, none
+            // with too few activities; FEED config group). The Home Friends tab leaves it off.
+            @RequestParam(defaultValue = "false") boolean feed,
             @CurrentUser UUID userId) {
         return ResponseEntity.ok(ofSucceeded(tripService.getFollowingTrips(
-                userId, latitude, longitude, FeedPlaceKind.of(placeGroups, subTypes), page, size)));
+                userId, latitude, longitude, FeedPlaceKind.of(placeGroups, subTypes),
+                feed ? feedTripRules.current() : null, page, size)));
     }
 }

@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
- * One saved post as it is now, not as it was when saved: {@code checkin} or {@code review} is
+ * One saved post as it is now, not as it was when saved: {@code checkin}, {@code review} or {@code post} is
  * the same payload the feed returns. When the post was deleted, taken down, made private or
  * its author and the viewer blocked one another, {@code available} is false and both are null,
  * so the list can say the post is gone and offer to remove it.
@@ -22,4 +22,6 @@ public class SavedPostResponse {
     boolean available;
     UserCheckinResponse checkin;
     UserReviewResponse review;
+    /** A blog post (epic 20), as a list card without its body. */
+    PostResponse post;
 }

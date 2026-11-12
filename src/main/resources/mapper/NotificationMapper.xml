@@ -195,7 +195,7 @@
         <foreach collection="userIds" item="userId" open="(" separator="," close=")">
             #{userId,javaType=java.util.UUID,jdbcType=OTHER}
         </foreach>
-          AND type IN ('FOLLOWING_CHECKIN', 'FOLLOWING_TRIP_SHARED')
+          AND type IN ('FOLLOWING_CHECKIN', 'FOLLOWING_TRIP_SHARED', 'FOLLOWING_POST')
           AND created_at &gt;= NOW() - make_interval(hours =&gt; #{hours})
         GROUP BY user_id
         HAVING COUNT(*) &gt; #{cap}

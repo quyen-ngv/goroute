@@ -81,6 +81,10 @@ public interface UserCheckinMapper {
     /** Public check-ins written during one trip, oldest first. */
     List<UserCheckin> findByTrip(@Param("tripId") UUID tripId, @Param("limit") int limit);
 
+    List<UserCheckin> findMineForTrip(@Param("userId") UUID userId, @Param("tripId") UUID tripId,
+                                      @Param("from") LocalDateTime from, @Param("to") LocalDateTime to,
+                                      @Param("limit") int limit);
+
     long countByUserAndPlace(@Param("userId") UUID userId,
                              @Param("placeId") UUID placeId);
 

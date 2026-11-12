@@ -10,7 +10,9 @@ import com.ds.goroute.event.ChatMessageCreatedEvent;
 import com.ds.goroute.repository.AssistantRepository;
 import com.ds.goroute.repository.MarketplaceChatRepository;
 import com.ds.goroute.repository.PlaceRepository;
+import com.ds.goroute.enums.ConsentPurpose;
 import com.ds.goroute.service.AiCreditService;
+import com.ds.goroute.service.consent.ConsentService;
 import com.ds.goroute.service.MarketplaceChatService;
 import com.ds.goroute.service.TextModerationService;
 import com.ds.goroute.service.WebSocketService;
@@ -74,6 +76,7 @@ class AssistantTurnServiceTest {
     @Mock private TextModerationService moderation;
     @Mock private WebSocketService webSocketService;
     @Mock private ApplicationEventPublisher events;
+    @Mock private ConsentService consents;
 
     private AssistantTurnService service;
 
@@ -81,7 +84,7 @@ class AssistantTurnServiceTest {
     void setUp() {
         ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
         service = new AssistantTurnService(repository, chatRepository, chatService, access, credits,
-                new AssistantTurnSnapshots(mapper), proposals, actions, places, shareValidator, moderation, webSocketService, events, mapper);
+                new AssistantTurnSnapshots(mapper), proposals, actions, places, shareValidator, moderation, webSocketService, events, mapper, consents);
         when(chatRepository.find(eq(CONVERSATION), any())).thenReturn(Optional.of(tripConversation()));
         when(access.isAvailable(ASKER)).thenReturn(true);
         when(credits.canStart(ASKER, AiCreditFeature.ASSISTANT)).thenReturn(true);
@@ -369,11 +372,27 @@ class AssistantTurnServiceTest {
             reply.setMarkdown("ok");
             reply.setTitle("  Lẩu bò   Cầu Giấy ");
             reply.setProfile("- Ở Hà Nội\n\n• Ăn chay\n");
+            when(consents.isGranted(ASKER, ConsentPurpose.ASSISTANT_MEMORY)).thenReturn(true);
 
             service.complete(turnId, reply);
 
             verify(chatRepository).setAssistantTitleIfEmpty(eq(CONVERSATION), eq("Lẩu bò Cầu Giấy"), any());
             verify(repository).saveProfile(eq(ASKER), eq("Ở Hà Nội\nĂn chay"), eq(turnId), any());
+        }
+
+        @Test
+        void aOneToOneAnswerKeepsNoProfileUntilTheAskerLetsPengooRemember() {
+            when(chatRepository.find(eq(CONVERSATION), any())).thenReturn(Optional.of(MarketplaceConversation.builder()
+                    .id(CONVERSATION).assistantUserId(ASKER)
+                    .conversationType(MarketplaceConversationType.ASSISTANT.name()).build()));
+            AssistantReplyRequest reply = new AssistantReplyRequest();
+            reply.setMarkdown("ok");
+            reply.setProfile("Ở Hà Nội");
+            when(consents.isGranted(ASKER, ConsentPurpose.ASSISTANT_MEMORY)).thenReturn(false);
+
+            service.complete(turnId, reply);
+
+            verify(repository, never()).saveProfile(any(), any(), any(), any());
         }
 
         @Test

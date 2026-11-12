@@ -184,6 +184,16 @@ public enum BusinessConfigKey {
      */
     CHAT_DIRECT_ENABLED("CHAT", "DIRECT_ENABLED", true),
 
+    // --- Legal documents (V278 user_consents) -----------------------------------------
+    /**
+     * Version of the Terms of Service the app bundles (goroute_fe/assets/legal). Raising it shows
+     * the consent screen again to everyone who accepted an older one: change it only together
+     * with an app release carrying the new text.
+     */
+    LEGAL_TERMS_VERSION("LEGAL", "TERMS_VERSION", "2.0"),
+    /** Same as LEGAL_TERMS_VERSION, for the Privacy Policy. */
+    LEGAL_PRIVACY_VERSION("LEGAL", "PRIVACY_VERSION", "2.0"),
+
     // --- Chat assistant (Pengoo) ------------------------------------------------------
     /** Everyone may ask Pengoo; beta users (USER.BETA_USER) may ask while this is off. */
     ASSISTANT_ENABLED("ASSISTANT", "ENABLED", false),
@@ -439,7 +449,30 @@ public enum BusinessConfigKey {
     /** Days of feed_events kept; older daily partitions are dropped every night. */
     FEED_EVENTS_RETENTION_DAYS("FEED", "EVENTS_RETENTION_DAYS", 30, 7, 365),
     /** Where the ranked feed reads candidates: SQL, or LUCENE (the feed index, SQL when it cannot). */
-    FEED_CANDIDATES_BACKEND("FEED", "CANDIDATES_BACKEND", "SQL");
+    FEED_CANDIDATES_BACKEND("FEED", "CANDIDATES_BACKEND", "SQL"),
+    /**
+     * Trips that have not started yet (start date after today, Vietnam time) stay off the Feed;
+     * a trip under way or already over shows. Every Feed trip source (V274, FeedTripRules).
+     */
+    FEED_TRIP_HIDE_UPCOMING("FEED", "TRIP_HIDE_UPCOMING", true),
+    /** A Feed trip needs at least this many activities per day of the trip; 0 turns the rule off. */
+    FEED_TRIP_MIN_ACTIVITIES_PER_DAY("FEED", "TRIP_MIN_ACTIVITIES_PER_DAY", 2.0, 0.0, 50.0),
+
+    // --- Epic 20: blog posts (.docs/BLOG_POSTS_PLAN_2026-11-10.md §1, V275) ---------------
+    // Both switches read "config || beta user" and are folded into GET /v1/api/posts/policy. The
+    // admin console is never gated by them. ENABLED off empties every list for non-beta viewers;
+    // a post opened by its id stays readable so a shared link does not die.
+    POST_ENABLED("POST", "ENABLED", false),
+    /** Off: creating or editing a post in the app answers POST_WRITE_NOT_ALLOWED (403). */
+    POST_USER_WRITE_ENABLED("POST", "USER_WRITE_ENABLED", false),
+    /** Characters of markdown in one body, checked on every save. */
+    POST_MAX_BODY_LENGTH("POST", "MAX_BODY_LENGTH", 30000, 1000, 100000),
+    /** Non-deleted media (cover and body) one post may carry. */
+    POST_MAX_MEDIA("POST", "MAX_MEDIA", 40, 1, 200),
+    /** Seconds of one post video, read from the file's own header like a check-in video. */
+    POST_MAX_VIDEO_SECONDS("POST", "MAX_VIDEO_SECONDS", 300, 5, 900),
+    /** Catalogue places one post may be tagged with. */
+    POST_MAX_PLACES("POST", "MAX_PLACES", 30, 1, 100);
 
     /** Value shapes the configuration layer knows how to validate. */
     public enum ValueType {

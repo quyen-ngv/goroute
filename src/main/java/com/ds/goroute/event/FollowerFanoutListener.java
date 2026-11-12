@@ -9,7 +9,8 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
- * Hands a new check-in or a newly public trip to the follower fan-out once it has committed.
+ * Hands a new check-in, a newly public trip or a first-published post to the follower fan-out once
+ * it has committed.
  *
  * <p>On {@code followerFanoutExecutor}, never on the request thread: the author's request is long
  * finished by the time the first follower is told, and a fan-out that fails costs the followers a
@@ -39,6 +40,16 @@ public class FollowerFanoutListener {
             fanoutService.fanOutTrip(event.tripId(), event.ownerId());
         } catch (RuntimeException failure) {
             log.error("FOLLOWER_FANOUT_FAILED trip {}: {}", event.tripId(), failure.getMessage(), failure);
+        }
+    }
+
+    @Async("followerFanoutExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onPostPublished(PostPublishedEvent event) {
+        try {
+            fanoutService.fanOutPost(event.postId(), event.authorId());
+        } catch (RuntimeException failure) {
+            log.error("FOLLOWER_FANOUT_FAILED post {}: {}", event.postId(), failure.getMessage(), failure);
         }
     }
 }

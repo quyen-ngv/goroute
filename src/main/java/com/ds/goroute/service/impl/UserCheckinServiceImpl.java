@@ -45,6 +45,7 @@ import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.ReviewScoringService;
 import com.ds.goroute.service.ReviewService;
 import com.ds.goroute.service.TripAccessGuard;
+import com.ds.goroute.service.UserGuideService;
 import com.ds.goroute.service.checkin.CheckinRewardCalculator;
 import com.ds.goroute.service.checkin.CheckinRewardService;
 import com.ds.goroute.service.checkin.CheckinVerifier;
@@ -143,6 +144,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     private final FeedImpressionService feedImpressionService;
     private final FileUploadService fileUploadService;
     private final BetaAccessService betaAccess;
+    private final UserGuideService userGuideService;
 
     @Override
     @Transactional(readOnly = true)
@@ -481,7 +483,21 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     @Override
     @Transactional
     public void delete(UUID userId, UUID checkinId, boolean deleteReview) {
-        UserCheckin checkin = requireOwned(userId, checkinId);
+        remove(requireOwned(userId, checkinId), deleteReview);
+    }
+
+    @Override
+    @Transactional
+    public void removeAsAdmin(UUID checkinId, boolean deleteReview) {
+        UserCheckin checkin = checkinRepository.findById(checkinId)
+                .filter(found -> !Boolean.TRUE.equals(found.getIsRemoved()))
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Check-in not found"));
+        remove(checkin, deleteReview);
+    }
+
+    private void remove(UserCheckin checkin, boolean deleteReview) {
+        UUID userId = checkin.getUserId();
+        UUID checkinId = checkin.getId();
         // Collected before the row is marked removed, because the photo rows are read
         // through the check-in and the retain query only spares files the surviving
         // review still shows. The delete itself runs after this transaction commits.
@@ -924,7 +940,29 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                         commentCounts.getOrDefault(checkin.getId(), 0)))
                 .toList();
         markSaved(responses, viewerId);
+        markGuides(responses);
         return responses;
+    }
+
+    /**
+     * Sets the guide badge of every author on the page with one query (user_guide_grants), so a
+     * Local Guide's check-in carries the badge wherever it is listed.
+     */
+    private void markGuides(List<UserCheckinResponse> responses) {
+        if (responses.isEmpty()) {
+            return;
+        }
+        Map<UUID, String> guideTitles = userGuideService.activeGuideTitles(
+                responses.stream().map(UserCheckinResponse::getUserId).toList());
+        if (guideTitles.isEmpty()) {
+            return;
+        }
+        responses.forEach(response -> {
+            if (guideTitles.containsKey(response.getUserId())) {
+                response.setUserGuide(true);
+                response.setUserGuideTitle(guideTitles.get(response.getUserId()));
+            }
+        });
     }
 
     /** Sets {@code hasSaved} on the whole page with one query. Guests have saved nothing. */
@@ -999,6 +1037,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 viewerId != null && checkinRepository.hasLike(checkin.getId(), viewerId), place,
                 commentCounts(List.of(checkin)).getOrDefault(checkin.getId(), 0));
         markSaved(List.of(response), viewerId);
+        markGuides(List.of(response));
         return response;
     }
 

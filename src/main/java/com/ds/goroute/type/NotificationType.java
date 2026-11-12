@@ -74,6 +74,10 @@ public enum NotificationType {
     // authorId, actorName, placeName / tripTitle, postCount, imageUrl, deepLink.
     FOLLOWING_CHECKIN,
     FOLLOWING_TRIP_SHARED,
+    // A followed author published a blog post for the first time (epic 20). Data as above, with
+    // postTitle instead of placeName and deepLink /posts/{postId}. Not offered by the moments
+    // popup, whose cards only know check-ins and trips.
+    FOLLOWING_POST,
 
     // Other
     ROUTE_OPTIMIZED,

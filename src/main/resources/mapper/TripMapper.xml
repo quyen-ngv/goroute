@@ -127,6 +127,22 @@
         </if>
     </sql>
 
+    <!-- The Feed's trip rules (FeedTripRules, bound as "rules", may be null): no trip that has
+         not started yet, and enough activities per day of the trip. Trips without dates count
+         as started and as one day long. activity_count is the V216 counter. -->
+    <sql id="feedTripRules">
+        <if test="rules != null">
+            <if test="rules.startedBy() != null">
+                AND (t.start_date IS NULL OR t.start_date &lt;= #{rules.startedBy})
+            </if>
+            <if test="rules.minActivitiesPerDay() != null">
+                AND COALESCE(t.activity_count, 0) &gt;= #{rules.minActivitiesPerDay} *
+                    CASE WHEN t.start_date IS NOT NULL AND t.end_date IS NOT NULL
+                         THEN GREATEST(1, t.end_date - t.start_date + 1) ELSE 1 END
+            </if>
+        </if>
+    </sql>
+
     <!-- A trip with at least one stop of the kind. A stop names its place by place_ref_id
          or, from before that column, by the place's Google id in place_id; rejected
          suggestions are not stops. -->
@@ -201,6 +217,7 @@
     -->
     <select id="searchPublicTripRanking" resultType="com.ds.goroute.entity.TripRankRow">
         <bind name="kind" value="criteria.placeKind()"/>
+        <bind name="rules" value="criteria.feedRules()"/>
         SELECT t.id, t.owner_id
         FROM trips t
         <if test="!criteria.allPublic()">
@@ -248,6 +265,7 @@
           AND EXISTS (
               SELECT 1 FROM users au
               WHERE au.id = t.owner_id AND au.deleted_at IS NULL)
+          <include refid="feedTripRules"/>
           <if test="excludeUserId != null">
               AND t.owner_id != #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
               AND NOT EXISTS (
@@ -359,6 +377,49 @@
                 AND ct.restored_at IS NULL)
     </select>
 
+    <!-- The admin public-trip console: every live PUBLIC or SHARED ("Link only") trip, with
+         whether it is taken down. Owners are read separately. -->
+    <sql id="adminSharedTripFilter">
+        FROM trips t
+        WHERE t.is_deleted = FALSE
+        <choose>
+            <when test="visibility != null">AND t.visibility = #{visibility}</when>
+            <otherwise>AND t.visibility IN ('PUBLIC', 'SHARED')</otherwise>
+        </choose>
+        <if test="ownerId != null">
+            AND t.owner_id = #{ownerId,javaType=java.util.UUID,jdbcType=OTHER}
+        </if>
+        <if test="search != null and search != ''">
+            AND (t.name ILIKE CONCAT('%', #{search}, '%')
+                 OR t.destination ILIKE CONCAT('%', #{search}, '%')
+                 OR t.description ILIKE CONCAT('%', #{search}, '%'))
+        </if>
+        <if test="hidden != null">
+            AND <if test="!hidden">NOT</if> EXISTS (
+                SELECT 1 FROM content_takedowns ct
+                WHERE ct.content_type = 'TRIP' AND ct.content_id = t.id
+                  AND ct.restored_at IS NULL)
+        </if>
+    </sql>
+
+    <select id="selectAdminSharedTrips" resultType="com.ds.goroute.entity.AdminTripRow">
+        SELECT t.id, t.name, t.description, t.cover_image_url, t.destination, t.visibility, t.owner_id,
+               t.start_date, t.end_date, t.activity_count, t.memory_count, t.view_count, t.copy_count,
+               t.helpful_votes, t.public_shared_at, t.created_at,
+               EXISTS (
+                   SELECT 1 FROM content_takedowns ct
+                   WHERE ct.content_type = 'TRIP' AND ct.content_id = t.id
+                     AND ct.restored_at IS NULL) AS hidden
+        <include refid="adminSharedTripFilter"/>
+        ORDER BY COALESCE(t.public_shared_at, t.created_at) DESC, t.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAdminSharedTrips" resultType="long">
+        SELECT COUNT(*)
+        <include refid="adminSharedTripFilter"/>
+    </select>
+
     <resultMap id="FollowingTripResultMap" type="com.ds.goroute.entity.Trip" extends="TripResultMap">
         <result property="focusRank" column="focus_rank"/>
     </resultMap>
@@ -434,6 +495,7 @@
                 AND ((ff.kind = 'HIDE_POST' AND ff.item_type = 'TRIP' AND ff.item_id = t.id)
                   OR (ff.kind = 'HIDE_AUTHOR' AND ff.target_user_id = t.owner_id
                       AND ff.expires_at &gt; NOW())))
+          <include refid="feedTripRules"/>
         ORDER BY focus_rank ASC NULLS LAST, COALESCE(t.public_shared_at, t.created_at) DESC, t.id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>

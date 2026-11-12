@@ -204,4 +204,42 @@ public class UserRepositoryImpl implements UserRepository {
     public Optional<java.time.LocalDateTime> findSearchIndexMaxUpdatedAt() {
         return Optional.ofNullable(userMapper.selectSearchIndexMaxUpdatedAt());
     }
+
+    @Override
+    public List<com.ds.goroute.entity.ManagedAccountRow> findManagedAccounts(
+            String search, com.ds.goroute.type.ManagedAccountStatus status, int limit, int offset) {
+        return userMapper.selectManagedAccounts(search, status.name(), limit, offset);
+    }
+
+    @Override
+    public long countManagedAccounts(String search, com.ds.goroute.type.ManagedAccountStatus status) {
+        return userMapper.countManagedAccounts(search, status.name());
+    }
+
+    @Override
+    public Optional<com.ds.goroute.entity.ManagedAccountRow> findManagedAccount(UUID id) {
+        return Optional.ofNullable(userMapper.selectManagedAccount(id));
+    }
+
+    @Override
+    public void markManaged(UUID id) {
+        userMapper.markManaged(id);
+        authSubjectCache.evict(id);
+    }
+
+    @Override
+    public int updateManagedProfile(UUID id, String fullName, String username, String email, String bio,
+                                    String avatarUrl) {
+        int updated = userMapper.updateManagedProfile(id, fullName, username, email, bio, avatarUrl);
+        authSubjectCache.evict(id);
+        return updated;
+    }
+
+    @Override
+    public int handOverManagedAccount(UUID id, String email, String passwordHash, UUID handedOverBy) {
+        int updated = userMapper.handOverManagedAccount(id, email, passwordHash, handedOverBy);
+        // The email and possibly the password changed: the JWT filter's cached subject must go.
+        authSubjectCache.evict(id);
+        return updated;
+    }
 }

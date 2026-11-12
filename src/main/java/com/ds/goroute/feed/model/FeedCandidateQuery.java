@@ -1,5 +1,6 @@
 package com.ds.goroute.feed.model;
 
+import com.ds.goroute.dto.FeedTripRules;
 import lombok.Builder;
 import lombok.Value;
 
@@ -37,6 +38,8 @@ public class FeedCandidateQuery {
     Double radiusLat;
     Double radiusLng;
     Double radiusMeters;
+    /** Which trips may show (FEED config group); null for no rule. */
+    FeedTripRules tripRules;
 
     // --- what the source selects by (at most one is set per source)
     List<UUID> authorIds;

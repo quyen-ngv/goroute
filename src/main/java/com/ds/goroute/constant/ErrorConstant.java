@@ -204,6 +204,12 @@ public class ErrorConstant {
     /** An admin API key may only act as a user who holds an admin role. */
     public static final int ADMIN_API_KEY_OWNER_NOT_ADMIN = 4001503;
 
+    /**
+     * Posts (epic 20): the body shows an image or video that is not {@code media:<uuid>} of one of
+     * this post's own live media (an outside URL, another post's media, a deleted one).
+     */
+    public static final int POST_INVALID_MEDIA_REF = 4002001;
+
     public static final int SYSTEM_CONFIGURATION_NOT_FOUND = 4004208;
 
     public static final int HTTP_CONNECTION_ERROR  = 4009000;
@@ -260,6 +266,9 @@ public class ErrorConstant {
 
     /** Local events (epic 17): joining events is switched off (EVENT/ENABLED) and the caller is not a beta user. */
     public static final int LOCAL_EVENT_JOIN_DISABLED = 4031501;
+
+    /** Posts (epic 20): writing in the app is switched off (POST/USER_WRITE_ENABLED) and the caller is not a beta user. */
+    public static final int POST_WRITE_NOT_ALLOWED = 4032001;
 
     /** The caller must change a temporary password before using the partner or admin portal. */
     public static final int PASSWORD_CHANGE_REQUIRED = 4031002;
@@ -358,6 +367,15 @@ public class ErrorConstant {
 
     /** Local events (epic 17): the event is cancelled or over, so nobody can join it now. */
     public static final int LOCAL_EVENT_NOT_JOINABLE = 4091501;
+
+    /** Posts (epic 20): the media is still shown by the body ({@code media:<uuid>}), so it cannot be deleted. */
+    public static final int POST_MEDIA_IN_USE = 4092001;
+
+    /**
+     * Managed accounts (epic 20): the console may only act for an account that is still
+     * {@code users.managed_by_admin}; a handed-over (or ordinary) account answers this.
+     */
+    public static final int ACCOUNT_NOT_MANAGED = 4092002;
 
     /**
      * Idempotency-Key: a request with this key is still being processed. The client should

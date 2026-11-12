@@ -68,6 +68,12 @@ public interface UserCheckinService {
      */
     void delete(UUID userId, UUID checkinId, boolean deleteReview);
 
+    /**
+     * The admin console removing an unsuitable check-in: the same removal as {@link #delete},
+     * done on the author's behalf. The author is not told here; the caller does that.
+     */
+    void removeAsAdmin(UUID checkinId, boolean deleteReview);
+
     /** Keeps the check-in only, which is what every existing caller meant. */
     default void delete(UUID userId, UUID checkinId) {
         delete(userId, checkinId, false);

@@ -8,6 +8,7 @@ import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.type.MemberRole;
 import com.ds.goroute.type.MemberStatus;
+import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.TripVisibility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,9 @@ public class TripAccessGuard {
 
     private final TripRepository tripRepository;
     private final TripMemberRepository tripMemberRepository;
+    /** Field-injected and optional so the hand-built guard in unit tests keeps its constructor. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ContentModerationService contentModerationService;
 
     /**
      * @return the trip, so a caller that needs it does not have to load it a second time
@@ -103,6 +107,12 @@ public class TripAccessGuard {
         };
         if (!isVisible) {
             throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Trip is not shared");
+        }
+        // A taken-down trip stays open to its owner and members, as on the public trip page.
+        if (contentModerationService != null
+                && contentModerationService.isTakenDown(ModeratedContentType.TRIP, tripId)
+                && (viewerId == null || !hasAccess(trip, viewerId))) {
+            throw new BusinessException(ErrorConstant.CONTENT_TAKEN_DOWN, "This content has been removed.");
         }
         return trip;
     }

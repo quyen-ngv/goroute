@@ -4,9 +4,12 @@ import com.ds.goroute.dto.response.CheckinPhotoResponse;
 import com.ds.goroute.dto.response.PublicTripResponse;
 import com.ds.goroute.dto.response.UserCheckinResponse;
 import com.ds.goroute.entity.FollowerFanoutLog;
+import com.ds.goroute.entity.Post;
+import com.ds.goroute.entity.PostMedia;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.repository.FollowerFanoutLogRepository;
 import com.ds.goroute.repository.NotificationRepository;
+import com.ds.goroute.repository.PostRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.UserCheckinRepository;
 import com.ds.goroute.repository.UserRepository;
@@ -38,7 +41,8 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Tells an author's followers that they checked in or shared a trip (epic 12).
+ * Tells an author's followers that they checked in, shared a trip (epic 12) or published a post
+ * (epic 20).
  *
  * <p>Runs on its own thread after the post committed (FollowerFanoutListener) and walks the
  * followers a chunk at a time, in follower-id order. Per chunk: one INSERT for every row (the
@@ -75,6 +79,7 @@ public class FollowerFanoutService {
     private final FirebaseService firebaseService;
     private final UserRealtimePublisher realtimePublisher;
     private final Gson gson;
+    private final PostRepository postRepository;
 
     public void fanOutCheckin(UUID checkinId, UUID authorId) {
         fanOut(FollowingPostType.CHECKIN, checkinId, authorId);
@@ -82,6 +87,14 @@ public class FollowerFanoutService {
 
     public void fanOutTrip(UUID tripId, UUID ownerId) {
         fanOut(FollowingPostType.TRIP, tripId, ownerId);
+    }
+
+    /**
+     * A post's first publish. "Once" is guaranteed upstream: only the publish that claims
+     * posts.published_at raises the event, so no claim column is needed here as for a trip.
+     */
+    public void fanOutPost(UUID postId, UUID authorId) {
+        fanOut(FollowingPostType.POST, postId, authorId);
     }
 
     private void fanOut(FollowingPostType postType, UUID postId, UUID authorId) {
@@ -223,6 +236,16 @@ public class FollowerFanoutService {
                     checkin.getLocationName()));
             putIfPresent(data, "imageUrl", firstPhoto(checkin));
             data.put("deepLink", "/checkins/" + postId);
+        } else if (postType == FollowingPostType.POST) {
+            Optional<Post> post = postRepository.findById(postId)
+                    .filter(found -> authorId.equals(found.getUserId()))
+                    .filter(found -> isPostVisible(found));
+            if (post.isEmpty()) {
+                return Optional.empty();
+            }
+            putIfPresent(data, "postTitle", post.get().getTitle());
+            putIfPresent(data, "imageUrl", postImage(post.get()));
+            data.put("deepLink", "/posts/" + postId);
         } else {
             List<PublicTripResponse> cards = tripService.getPublicTripCards(authorId, List.of(postId));
             if (cards.isEmpty() || !authorId.equals(cards.get(0).getOwnerId())) {
@@ -242,12 +265,34 @@ public class FollowerFanoutService {
         if (postType == FollowingPostType.TRIP) {
             return !tripRepository.findPublicByIds(List.of(postId)).isEmpty();
         }
+        if (postType == FollowingPostType.POST) {
+            return postRepository.findById(postId).filter(this::isPostVisible).isPresent();
+        }
         return checkinRepository.findById(postId)
                 .filter(checkin -> checkin.getVisibility() == ContentVisibility.PUBLIC)
                 .filter(checkin -> !Boolean.TRUE.equals(checkin.getIsRemoved()))
                 .filter(checkin -> contentModerationService
                         .takenDownIds(ModeratedContentType.CHECKIN, List.of(postId)).isEmpty())
                 .isPresent();
+    }
+
+    /** Published, public, live and not taken down: what the post's readers would see. */
+    private boolean isPostVisible(Post post) {
+        return post.isPubliclyReadable()
+                && contentModerationService.takenDownIds(ModeratedContentType.POST, List.of(post.getId())).isEmpty();
+    }
+
+    /** The cover, else the first media; a video shows as its poster. */
+    private String postImage(Post post) {
+        List<PostMedia> media = postRepository.findMedia(List.of(post.getId()));
+        PostMedia chosen = media.stream()
+                .filter(item -> item.getId().equals(post.getCoverMediaId()))
+                .findFirst()
+                .orElse(media.isEmpty() ? null : media.get(0));
+        if (chosen == null) {
+            return null;
+        }
+        return chosen.isVideo() ? chosen.getThumbnailUrl() : chosen.getUrl();
     }
 
     private static String firstPhoto(UserCheckinResponse checkin) {

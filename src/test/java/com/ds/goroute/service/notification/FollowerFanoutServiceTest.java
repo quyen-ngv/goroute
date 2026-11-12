@@ -67,7 +67,7 @@ class FollowerFanoutServiceTest {
 
     private final FollowerFanoutService service = new FollowerFanoutService(config, betaAccess, userRepository,
             checkinRepository, checkinService, tripRepository, tripService, moderation, notifications, logs,
-            firebase, realtime, new Gson());
+            firebase, realtime, new Gson(), mock(com.ds.goroute.repository.PostRepository.class));
 
     private final UUID author = UUID.randomUUID();
     private final UUID checkinId = UUID.randomUUID();

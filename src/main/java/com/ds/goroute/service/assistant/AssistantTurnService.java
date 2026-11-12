@@ -13,10 +13,12 @@ import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.AssistantRepository;
 import com.ds.goroute.repository.MarketplaceChatRepository;
 import com.ds.goroute.repository.PlaceRepository;
+import com.ds.goroute.enums.ConsentPurpose;
 import com.ds.goroute.service.AiCreditService;
 import com.ds.goroute.service.MarketplaceChatService;
 import com.ds.goroute.service.TextModerationService;
 import com.ds.goroute.service.WebSocketService;
+import com.ds.goroute.service.consent.ConsentService;
 import com.ds.goroute.service.marketplace.ChatShareValidator;
 import com.ds.goroute.service.moderation.ModerationVerdict;
 import com.ds.goroute.type.AiCreditFeature;
@@ -94,6 +96,7 @@ public class AssistantTurnService {
     private final WebSocketService webSocketService;
     private final ApplicationEventPublisher events;
     private final ObjectMapper objectMapper;
+    private final ConsentService consents;
 
     /** Decides whether a stored message asks Pengoo something, and if so queues or starts a turn. */
     @Transactional
@@ -421,9 +424,11 @@ public class AssistantTurnService {
 
     /**
      * The worker's full list of what to keep about the asker in every 1:1 thread; the person sees
-     * it, so each line passes the chat filter. Nothing usable keeps the old list.
+     * it, so each line passes the chat filter. Nothing usable keeps the old list. Kept only while
+     * the asker lets Pengoo remember (ConsentPurpose.ASSISTANT_MEMORY).
      */
     private void saveProfile(AssistantTurn turn, String raw) {
+        if (!consents.isGranted(turn.getUserId(), ConsentPurpose.ASSISTANT_MEMORY)) return;
         List<String> lines = AssistantProfileService.lines(raw).stream()
                 .map(this::allowed).filter(java.util.Objects::nonNull).toList();
         if (lines.isEmpty()) return;

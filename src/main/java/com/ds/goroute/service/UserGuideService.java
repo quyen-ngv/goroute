@@ -61,6 +61,26 @@ public class UserGuideService {
     }
 
     /**
+     * The badge of every guide among these accounts, in one query, for a page of check-ins or posts.
+     * An account absent from the map is not a guide; a guide without a title maps to {@code null},
+     * which the app shows as its default label.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, String> activeGuideTitles(Collection<UUID> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Map.of();
+        }
+        List<UUID> distinct = userIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (distinct.isEmpty()) {
+            return Map.of();
+        }
+        // A HashMap, not Collectors.toMap: a guide's title is often null.
+        Map<UUID, String> titles = new java.util.HashMap<>();
+        mapper.findActiveTitles(distinct).forEach(grant -> titles.put(grant.getUserId(), grant.getDisplayTitle()));
+        return titles;
+    }
+
+    /**
      * Makes this account a guide, or restores one that was revoked.
      *
      * <p>Idempotent: granting twice leaves the same single row, with the second grant's title and

@@ -40,6 +40,7 @@ public class ContentModerationServiceImpl implements ContentModerationService {
     private final ContentCommentRepository contentCommentRepository;
     private final ActivityCommentRepository activityCommentRepository;
     private final com.ds.goroute.meetup.persistence.MeetupRepository meetupRepository;
+    private final com.ds.goroute.repository.PostRepository postRepository;
 
     @Override
     @Transactional
@@ -150,6 +151,13 @@ public class ContentModerationServiceImpl implements ContentModerationService {
                 com.ds.goroute.meetup.domain.Meetup meetup = meetupRepository.findById(request.getContentId())
                         .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Meetup not found"));
                 yield new ContentReportMetadata(meetup.getHostUserId(), reportSnapshot("title", meetup.getTitle()));
+            }
+            case POST -> {
+                // The author owns the post, so a takedown notifies them; the title is the snapshot.
+                com.ds.goroute.entity.Post post = postRepository.findById(request.getContentId())
+                        .filter(found -> !Boolean.TRUE.equals(found.getIsRemoved()))
+                        .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Post not found"));
+                yield new ContentReportMetadata(post.getUserId(), reportSnapshot("title", post.getTitle()));
             }
             default -> new ContentReportMetadata(null, null);
         };

@@ -7,12 +7,14 @@ import com.ds.goroute.dto.response.ContentCommentPageResponse;
 import com.ds.goroute.dto.response.ContentCommentResponse;
 import com.ds.goroute.dto.response.UserResponse;
 import com.ds.goroute.entity.ContentComment;
+import com.ds.goroute.entity.Post;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.entity.TripMember;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.entity.UserCheckin;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.ContentCommentRepository;
+import com.ds.goroute.repository.PostRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.UserCheckinRepository;
@@ -39,7 +41,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Owns comments on the three social targets.  Visibility is decided here, before both a
+ * Owns comments on the social targets: trips, check-ins, reviews and blog posts.  Visibility is decided here, before both a
  * read and a write, so a private check-in cannot accidentally gain a
  * discussion thread through a new endpoint.
  */
@@ -52,6 +54,7 @@ public class ContentCommentServiceImpl implements ContentCommentService {
     private final TripMemberRepository tripMemberRepository;
     private final UserCheckinRepository checkinRepository;
     private final UserReviewRepository reviewRepository;
+    private final PostRepository postRepository;
     private final UserRepository userRepository;
     private final ContentModerationService contentModerationService;
     private final SocialNotificationService socialNotificationService;
@@ -243,11 +246,12 @@ public class ContentCommentServiceImpl implements ContentCommentService {
     private void verifyTargetReadable(ModeratedContentType contentType, UUID contentId, UUID viewerId) {
         if (!isCommentableType(contentType)) {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
-                    "Comments are only available for trips, check-ins and reviews");
+                    "Comments are only available for trips, check-ins, reviews and posts");
         }
         switch (contentType) {
             case TRIP -> verifyTripReadable(contentId, viewerId);
             case CHECKIN -> verifyPublicCheckin(contentId);
+            case POST -> verifyPublicPost(contentId);
             case REVIEW -> reviewRepository.findById(contentId)
                     .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Review not found"));
             default -> throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Unsupported comment target");
@@ -257,13 +261,15 @@ public class ContentCommentServiceImpl implements ContentCommentService {
     private boolean isCommentableType(ModeratedContentType contentType) {
         return contentType == ModeratedContentType.TRIP
                 || contentType == ModeratedContentType.CHECKIN
-                || contentType == ModeratedContentType.REVIEW;
+                || contentType == ModeratedContentType.REVIEW
+                || contentType == ModeratedContentType.POST;
     }
 
     private java.util.Optional<UUID> ownerOf(ModeratedContentType contentType, UUID contentId) {
         return switch (contentType) {
             case TRIP -> tripRepository.findById(contentId).map(Trip::getOwnerId);
             case CHECKIN -> checkinRepository.findById(contentId).map(UserCheckin::getUserId);
+            case POST -> postRepository.findById(contentId).map(Post::getUserId);
             case REVIEW -> reviewRepository.findById(contentId).map(review -> review.getUserId());
             default -> java.util.Optional.empty();
         };
@@ -292,6 +298,16 @@ public class ContentCommentServiceImpl implements ContentCommentService {
         if (checkin.getVisibility() != ContentVisibility.PUBLIC || Boolean.TRUE.equals(checkin.getIsRemoved())
                 || contentModerationService.isTakenDown(ModeratedContentType.CHECKIN, checkinId)) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Check-in not found");
+        }
+    }
+
+    /** A post has a thread only while anyone may read it: published, public, live, not taken down. */
+    private void verifyPublicPost(UUID postId) {
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Post not found"));
+        if (!post.isPubliclyReadable()
+                || contentModerationService.isTakenDown(ModeratedContentType.POST, postId)) {
+            throw new BusinessException(ErrorConstant.NOT_FOUND, "Post not found");
         }
     }
 

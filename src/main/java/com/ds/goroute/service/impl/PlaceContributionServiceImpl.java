@@ -1,5 +1,6 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.config.InternalApiProperties;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.*;
 import com.ds.goroute.dto.response.*;
@@ -63,6 +64,7 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
     private final StorageService storageService;
     private final MediaAssetRepository mediaAssetRepository;
     private final ScrapeServiceClient scrapeServiceClient;
+    private final InternalApiProperties internalApiProperties;
     private final ApplicationEventPublisher eventPublisher;
     private final PlatformTransactionManager transactionManager;
 
@@ -654,7 +656,14 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
                 .distinct()
                 .collect(Collectors.toList());
 
-        Map<String, String> headers = Map.of("Content-Type", "application/json");
+        String callbackToken = internalApiProperties.scrapeCallbackToken();
+        if (callbackToken == null || callbackToken.isBlank()) {
+            throw new BusinessException(ErrorConstant.INTERNAL_SERVER_ERROR,
+                    "Scrape callback authentication is not configured");
+        }
+        Map<String, String> headers = Map.of(
+                "Content-Type", "application/json",
+                "X-Internal-Token", callbackToken);
 
         return ScrapeContributionJobRequest.builder()
                 .url(group.getGoogleMapsUrl())

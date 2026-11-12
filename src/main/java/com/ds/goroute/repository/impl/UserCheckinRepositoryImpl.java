@@ -101,6 +101,12 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     }
 
     @Override
+    public List<UserCheckin> findMineForTrip(UUID userId, UUID tripId, LocalDateTime from, LocalDateTime to,
+                                             int limit) {
+        return mapper.findMineForTrip(userId, tripId, from, to, limit);
+    }
+
+    @Override
     public long countByUserAndPlace(UUID userId, UUID placeId) {
         return mapper.countByUserAndPlace(userId, placeId);
     }

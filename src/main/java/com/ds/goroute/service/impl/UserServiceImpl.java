@@ -19,6 +19,7 @@ import com.ds.goroute.service.FileUploadService;
 import com.ds.goroute.service.ImageUploadOutcome;
 import com.ds.goroute.service.ImageUploadRequest;
 import com.ds.goroute.service.UserDeviceService;
+import com.ds.goroute.service.account.AccountErasureService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.UserGuideService;
 import com.ds.goroute.service.UserService;
@@ -71,6 +72,7 @@ public class UserServiceImpl implements UserService {
     private final FileUploadService fileUploadService;
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final UserDeviceService userDeviceService;
+    private final AccountErasureService accountErasureService;
     private final com.ds.goroute.service.TrackService trackService;
     private final UserCheckinRepository userCheckinRepository;
     private final com.ds.goroute.service.UserBlockService userBlockService;
@@ -278,8 +280,9 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
 
         imageStorageCleanupService.deleteImagesForEntityRecord("USER", userId);
-        // Soft delete user
-        userRepository.softDeleteById(userId);
+        // Erased, not only hidden: content removed, private records deleted, the row anonymised
+        // so the same email or Google/Apple sign-in later starts a new account.
+        accountErasureService.erase(userId);
         // The account is gone, so its refresh tokens must go with it: otherwise a
         // token held by anyone keeps minting access tokens for up to 30 more days.
         refreshTokenRepository.deleteByUserId(userId);
@@ -289,7 +292,7 @@ public class UserServiceImpl implements UserService {
         // Recorded routes are location history; they go with the account, not with a delay.
         trackService.onUserDeleted(userId);
 
-        log.info("User account soft deleted: {}", userId);
+        log.info("User account deleted and erased: {}", userId);
     }
 
     private void ensureUserExists(UUID userId) {
@@ -345,6 +348,7 @@ public class UserServiceImpl implements UserService {
                 .rank(buildRankProgress(stats))
                 .guide(guideBadge != null)
                 .guideTitle(guideBadge)
+                .managedAccount(Boolean.TRUE.equals(user.getManagedByAdmin()))
                 .isFollowing(isFollowing)
                 .isFollowedBy(isFollowedBy)
                 .build();

@@ -3,7 +3,9 @@ package com.ds.goroute.type;
 /** A post a follower can be told about. */
 public enum FollowingPostType {
     CHECKIN(NotificationType.FOLLOWING_CHECKIN),
-    TRIP(NotificationType.FOLLOWING_TRIP_SHARED);
+    TRIP(NotificationType.FOLLOWING_TRIP_SHARED),
+    /** A blog post, told once: on its first publish (epic 20). */
+    POST(NotificationType.FOLLOWING_POST);
 
     private final NotificationType notificationType;
 

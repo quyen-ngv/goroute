@@ -27,6 +27,10 @@
         <result column="password_changed_at" property="passwordChangedAt" jdbcType="TIMESTAMP"/>
         <result column="account_status" property="accountStatus" jdbcType="VARCHAR"/>
         <result column="last_login_at" property="lastLoginAt" jdbcType="TIMESTAMP"/>
+        <result column="managed_by_admin" property="managedByAdmin" jdbcType="BOOLEAN"/>
+        <result column="managed_since" property="managedSince" jdbcType="TIMESTAMP"/>
+        <result column="handed_over_at" property="handedOverAt" jdbcType="TIMESTAMP"/>
+        <result column="handed_over_by" property="handedOverBy" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
         <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
         <result column="deleted_at" property="deletedAt" jdbcType="TIMESTAMP"/>
@@ -274,6 +278,9 @@
         LEFT JOIN trip_points tp ON tp.user_id = u.id
         WHERE u.deleted_at IS NULL
           AND u.account_type = 'HUMAN'
+          <!-- A managed account (V276) posts on the team's schedule, not a traveller's: it would
+               crowd the ranking of people who actually went somewhere. Everywhere else it shows. -->
+          AND u.managed_by_admin = FALSE
           AND (cp.user_id IS NOT NULL OR tp.user_id IS NOT NULL)
           <if test="viewerId != null">
               AND NOT EXISTS (
@@ -457,5 +464,105 @@
     <select id="selectSearchIndexMaxUpdatedAt" resultType="java.time.LocalDateTime">
         SELECT MAX(updated_at) FROM users
     </select>
+
+    <!-- ===== Managed accounts (epic 20, V276) ===================================================
+         Accounts an admin holds and posts for. The flag is only ever written by the statements
+         below, never by updateById, so an ordinary profile save cannot hand an account over or
+         take it back. -->
+
+    <sql id="ManagedAccountColumns">
+        u.id, u.full_name, u.username, u.email, u.avatar_url, u.bio,
+        u.managed_by_admin, u.managed_since, u.handed_over_at,
+        (g.user_id IS NOT NULL) AS guide,
+        g.display_title AS guide_title,
+        (SELECT COUNT(*) FROM posts p WHERE p.user_id = u.id AND p.is_removed = FALSE) AS post_count,
+        (SELECT COUNT(*) FROM user_checkins c WHERE c.user_id = u.id AND c.is_removed = FALSE) AS checkin_count,
+        (SELECT COUNT(*) FROM user_follows f WHERE f.following_id = u.id) AS follower_count
+    </sql>
+
+    <!-- A handed-over account stays listable (HANDED_OVER / ALL) so the console can still read what
+         was posted for it; it is recognised by handed_over_at. -->
+    <sql id="ManagedAccountWhere">
+        WHERE u.deleted_at IS NULL
+        <choose>
+            <when test="status == 'HANDED_OVER'">
+                AND u.managed_by_admin = FALSE AND u.handed_over_at IS NOT NULL
+            </when>
+            <when test="status == 'ALL'">
+                AND (u.managed_by_admin = TRUE OR u.handed_over_at IS NOT NULL)
+            </when>
+            <otherwise>
+                AND u.managed_by_admin = TRUE
+            </otherwise>
+        </choose>
+        <if test="search != null and search != ''">
+            AND (u.username ILIKE '%' || #{search} || '%'
+                 OR u.full_name ILIKE '%' || #{search} || '%'
+                 OR u.email ILIKE '%' || #{search} || '%')
+        </if>
+    </sql>
+
+    <select id="selectManagedAccounts" resultType="com.ds.goroute.entity.ManagedAccountRow">
+        SELECT <include refid="ManagedAccountColumns"/>
+        FROM users u
+        LEFT JOIN user_guide_grants g ON g.user_id = u.id AND g.status = 'ACTIVE'
+        <include refid="ManagedAccountWhere"/>
+        ORDER BY COALESCE(u.managed_since, u.created_at) DESC, u.id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countManagedAccounts" resultType="long">
+        SELECT COUNT(*)
+        FROM users u
+        <include refid="ManagedAccountWhere"/>
+    </select>
+
+    <!-- One account, managed or handed over; an ordinary account is absent. -->
+    <select id="selectManagedAccount" resultType="com.ds.goroute.entity.ManagedAccountRow">
+        SELECT <include refid="ManagedAccountColumns"/>
+        FROM users u
+        LEFT JOIN user_guide_grants g ON g.user_id = u.id AND g.status = 'ACTIVE'
+        WHERE u.id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+          AND u.deleted_at IS NULL
+          AND (u.managed_by_admin = TRUE OR u.handed_over_at IS NOT NULL)
+    </select>
+
+    <update id="markManaged">
+        UPDATE users
+        SET managed_by_admin = TRUE, managed_since = NOW(), updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
+    </update>
+
+    <!-- Only while still managed: a handed-over profile belongs to its owner. -->
+    <update id="updateManagedProfile">
+        UPDATE users
+        SET full_name = #{fullName},
+            username = #{username},
+            email = #{email},
+            bio = #{bio},
+            avatar_url = #{avatarUrl},
+            updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+          AND managed_by_admin = TRUE
+          AND deleted_at IS NULL
+    </update>
+
+    <!-- The real email replaces the placeholder; a password is set only when the admin gave one,
+         otherwise the owner signs in with Google on that email (AuthServiceImpl links it). -->
+    <update id="handOverManagedAccount">
+        UPDATE users
+        SET email = #{email},
+            <if test="passwordHash != null">
+                password_hash = #{passwordHash},
+                password_changed_at = NOW(),
+            </if>
+            managed_by_admin = FALSE,
+            handed_over_at = NOW(),
+            handed_over_by = #{handedOverBy,javaType=java.util.UUID,jdbcType=OTHER},
+            updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+          AND managed_by_admin = TRUE
+          AND deleted_at IS NULL
+    </update>
 
 </mapper>

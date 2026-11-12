@@ -41,7 +41,8 @@ class SavedPostServiceImplTest {
     private final UserCheckinService checkins = mock(UserCheckinService.class);
     private final ReviewService reviews = mock(ReviewService.class);
     private final UserBlockService blocks = mock(UserBlockService.class);
-    private final SavedPostServiceImpl service = new SavedPostServiceImpl(mapper, checkins, reviews, blocks);
+    private final com.ds.goroute.service.PostService posts = mock(com.ds.goroute.service.PostService.class);
+    private final SavedPostServiceImpl service = new SavedPostServiceImpl(mapper, checkins, reviews, blocks, posts);
 
     private final UUID viewer = UUID.randomUUID();
     private final UUID author = UUID.randomUUID();

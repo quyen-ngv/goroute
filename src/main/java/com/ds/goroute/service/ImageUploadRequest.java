@@ -61,6 +61,12 @@ public record ImageUploadRequest(UUID userId,
         /** Operators: images of the shared asset library (ingredient icons, banners, promotions). */
         public static final String ASSET_LIBRARY = "admin-asset-library";
 
+        /**
+         * Users, and operators writing for a managed account: a blog post's photos and video
+         * posters, stored under post-media/{postId} (epic 20).
+         */
+        public static final String POST_MEDIA = "post-media";
+
         private ImageEntryPoint() {
         }
     }
