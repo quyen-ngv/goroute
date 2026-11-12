@@ -450,7 +450,7 @@
     </select>
 
     <!-- The author's own check-ins for their trip story: the ones they recorded on the trip, plus
-         (when the trip has dates) the ones they made in that window without picking the trip --
+         (when the trip has dates) the ones they made in that window without picking the trip:
          a Home-camera check-in during the trip is still their material. Every visibility: the
          author decides what goes into the story; a private check-in is theirs to publish. -->
     <select id="findMineForTrip" resultMap="checkinMap">
