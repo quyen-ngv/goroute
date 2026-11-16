@@ -38,6 +38,7 @@ public class LocalEventPublicService {
 
     private final LocalEventRepository repository;
     private final LocalEventResponses responses;
+    private final LocalEventTranslationService translationService;
 
     Clock clock = Clock.systemUTC();
 
@@ -90,7 +91,10 @@ public class LocalEventPublicService {
     public LocalEventDetailResponse detail(UUID eventId) {
         LocalEvent event = repository.findPublishedById(eventId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.LOCAL_EVENT_NOT_FOUND, "Event not found"));
-        return responses.publicDetail(event, repository.findImagesByEvent(eventId));
+        LocalEventDetailResponse response = responses.publicDetail(event, repository.findImagesByEvent(eventId));
+        // The free text in the reader's language, in the fields every app version already shows.
+        translationService.localize(response, event);
+        return response;
     }
 
     /** Comma list of category codes; unknown codes are a 400, not silently ignored. */

@@ -5,6 +5,7 @@ import com.ds.goroute.type.CheckinPhotoSource;
 import com.ds.goroute.type.CheckinVerificationScope;
 import com.ds.goroute.type.CheckinVerificationStatus;
 import com.ds.goroute.type.CheckinFrameStyle;
+import com.ds.goroute.type.CheckinPlaceKind;
 import com.ds.goroute.type.ContentVisibility;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -58,6 +59,9 @@ public class UserCheckin {
     /** Set when this check-in was made at a quest checkpoint the player was required to check in at (D13). */
     private UUID questRunId;
 
+    /** The local event this check-in was made at (epic 17, V285); null for an ordinary check-in. */
+    private UUID localEventId;
+
     /** Rounded-coordinate grouping key; equal keys are treated as the same spot. */
     private String locationKey;
 
@@ -65,6 +69,15 @@ public class UserCheckin {
 
     /** The frame the photos are shown in; null is none. */
     private CheckinFrameStyle frameStyle;
+
+    /**
+     * The kind of spot the author said it is, kept only for a check-in without a catalogue
+     * place (V289); null otherwise or when not said. A place, once attached, decides instead.
+     */
+    private CheckinPlaceKind placeKind;
+
+    /** The background-music track (music_tracks.id); null is none. */
+    private UUID musicTrackId;
 
     private Integer overallRating;
     private Integer foodRating;

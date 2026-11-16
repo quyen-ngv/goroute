@@ -110,8 +110,11 @@
                         c.province_code,
                         goroute_province_at(COALESCE(p.latitude, c.latitude), COALESCE(p.longitude, c.longitude))),
                c.place_id,
-               p.place_group,
-               COALESCE(p.sub_types, '{}'::varchar[]),
+               -- The place's kind; with no catalogue place, the kind the author declared (V289).
+               CASE WHEN p.id IS NOT NULL THEN p.place_group
+                    ELSE goroute_checkin_kind_group(c.place_kind) END,
+               CASE WHEN p.id IS NOT NULL THEN COALESCE(p.sub_types, '{}'::varchar[])
+                    ELSE goroute_checkin_kind_sub_types(c.place_kind) END,
                CASE
                    WHEN p.latitude IS NOT NULL AND p.longitude IS NOT NULL THEN goroute_point(p.latitude, p.longitude)
                    WHEN c.latitude IS NOT NULL AND c.longitude IS NOT NULL THEN goroute_point(c.latitude, c.longitude)

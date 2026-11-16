@@ -411,6 +411,21 @@ public class AwsService implements StorageService {
     }
 
     @Override
+    public List<StorageService.ObjectEntry> listObjectPage(String prefix, String startAfter, int limit) {
+        var requestBuilder = ListObjectsV2Request.builder()
+                .bucket(awsProperties.getS3BucketName())
+                .prefix(prefix == null ? "" : prefix)
+                .maxKeys(Math.max(1, Math.min(limit, 1000)));
+        if (startAfter != null && !startAfter.isBlank()) {
+            requestBuilder.startAfter(startAfter);
+        }
+        return s3Client.listObjectsV2(requestBuilder.build()).contents().stream()
+                .map(object -> new StorageService.ObjectEntry(object.key(),
+                        object.size() == null ? 0L : object.size()))
+                .toList();
+    }
+
+    @Override
     public void copyObjectKeys(List<String> keys, String targetPrefix) {
         if (keys == null || keys.isEmpty()) {
             return;

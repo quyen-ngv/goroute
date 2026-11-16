@@ -113,6 +113,8 @@ public class TripServiceImpl implements TripService {
     private final Executor applicationTaskExecutor;
     private final ContentCommentRepository contentCommentRepository;
     private final org.springframework.context.ApplicationEventPublisher eventPublisher;
+    /** Read only for the translated names of the places a shared trip's stops are linked to. */
+    private final com.ds.goroute.repository.PlaceRepository placeRepository;
 
     private List<TripDestination> buildDestinationsForTrip(
             UUID tripId,
@@ -580,7 +582,7 @@ public class TripServiceImpl implements TripService {
 
     @Override
     @Transactional
-    public void deleteTrip(UUID tripId, UUID userId) {
+    public void deleteTrip(UUID tripId, UUID userId, boolean deleteChat) {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
         invalidatePublicTripRankingAfterCommit();
@@ -602,7 +604,7 @@ public class TripServiceImpl implements TripService {
                 tripId, affectedUserIds, TripAccessRevokedReason.DELETED);
 
         tripRepository.deleteById(tripId);
-        tripChatService.onTripDeleted(tripId);
+        tripChatService.onTripDeleted(tripId, deleteChat);
         // Routes recorded in a deleted trip have nothing left to belong to (TR-24).
         trackService.onTripDeleted(tripId);
         log.info("Trip deleted: {}", tripId);
@@ -1622,10 +1624,25 @@ public class TripServiceImpl implements TripService {
             }
         }
 
+        // The stops' places in the reader's language, one query for the trip.
+        Map<UUID, List<com.ds.goroute.entity.PlaceTranslation>> placeTranslations =
+                placeRepository.findTranslationsByPlaceIds(activities.stream()
+                        .map(com.ds.goroute.entity.Activity::catalogPlaceId)
+                        .filter(java.util.Objects::nonNull)
+                        .distinct()
+                        .toList());
+        String language = com.ds.goroute.config.filter.AcceptLanguageFilter.currentCode();
+
         // Build activity responses with nested expenses and notes
         List<PublicActivityResponse> activityResponses = activities.stream()
                 .map(a -> {
                     UUID placeId = parseActivityPlaceId(a.getPlaceId());
+                    UUID catalogPlaceId = a.catalogPlaceId();
+                    // As on the private activity: the place's name in the reader's language
+                    // while the stop's name is still a name of that place.
+                    String localizedName = catalogPlaceId == null ? null
+                            : com.ds.goroute.service.PlaceTranslationService.localizedCopy(
+                                    a.getName(), null, placeTranslations.get(catalogPlaceId), language);
                     List<MemoryImageResponse> activityMemoryImages = getActivityMemoryImages(a.getId(), a.getName());
                     List<UserReviewResponse> memberReviews = placeId != null
                             ? buildSharedTripReviews(placeId, trip.getOwnerId(), memberUserIds, viewerId)
@@ -1635,7 +1652,7 @@ public class TripServiceImpl implements TripService {
                             .dayNumber(a.getDayNumber())
                             .placeId(placeId)
                             .bookingId(a.getBookingId())
-                            .name(a.getName())
+                            .name(localizedName != null ? localizedName : a.getName())
                             .address(a.getAddress())
                             .lat(a.getLat())
                             .lng(a.getLng())

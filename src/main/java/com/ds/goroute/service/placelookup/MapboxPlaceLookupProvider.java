@@ -74,7 +74,7 @@ public class MapboxPlaceLookupProvider implements PlaceLookupProvider {
             JsonNode answer = mapbox.forward(query.text(), latitude, longitude, language, limit);
             storeAnswer(cacheKey, answer);
             List<MapPlaceCacheEntry> places = MapboxResults.places(answer);
-            places.forEach(this::remember);
+            places.forEach(place -> remember(place, language));
             return places.stream().map(this::hit).toList();
         } catch (MapboxException exception) {
             throw new PlaceLookupException("Mapbox search failed: " + exception.getMessage(), exception);
@@ -105,7 +105,8 @@ public class MapboxPlaceLookupProvider implements PlaceLookupProvider {
 
     @Override
     public Optional<PlaceHit> getDetails(String providerPlaceId) {
-        MapPlaceCacheEntry cached = cache.findPlace(MapProvider.MAPBOX.name(), providerPlaceId);
+        // Any language: the hit feeds research, not a reader.
+        MapPlaceCacheEntry cached = cache.findPlace(MapProvider.MAPBOX.name(), providerPlaceId, null);
         if (cached != null) {
             return Optional.of(hit(cached));
         }
@@ -114,14 +115,15 @@ public class MapboxPlaceLookupProvider implements PlaceLookupProvider {
         }
         try {
             List<MapPlaceCacheEntry> places = MapboxResults.places(mapbox.retrieve(providerPlaceId, null));
-            places.forEach(this::remember);
+            places.forEach(place -> remember(place, null));
             return places.stream().findFirst().map(this::hit);
         } catch (MapboxException exception) {
             throw new PlaceLookupException("Mapbox retrieve failed: " + exception.getMessage(), exception);
         }
     }
 
-    private void remember(MapPlaceCacheEntry place) {
+    private void remember(MapPlaceCacheEntry place, String language) {
+        place.setLanguage(language);
         try {
             cache.upsertPlace(place);
         } catch (RuntimeException exception) {

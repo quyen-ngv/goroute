@@ -69,10 +69,15 @@ public class TripChatServiceImpl implements TripChatService {
 
     @Override
     @Transactional
-    public void onTripDeleted(UUID tripId) {
-        chatRepository.findByTrip(tripId, null).ifPresent(conversation ->
-                chatRepository.updateConversation(conversation.getId(),
-                        MarketplaceConversationStatus.ARCHIVED.name(), null, false, LocalDateTime.now()));
+    public void onTripDeleted(UUID tripId, boolean deleteChat) {
+        chatRepository.findByTrip(tripId, null).ifPresent(conversation -> {
+            if (deleteChat) {
+                chatRepository.archiveTripConversation(conversation.getId(), LocalDateTime.now());
+                return;
+            }
+            chatRepository.updateConversation(conversation.getId(),
+                    MarketplaceConversationStatus.ARCHIVED.name(), null, false, LocalDateTime.now());
+        });
     }
 
     private void requireMember(UUID tripId, UUID userId) {

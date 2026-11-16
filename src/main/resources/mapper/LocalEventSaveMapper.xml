@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.localevent.persistence.LocalEventSaveMapper">
+
+    <!-- Saving twice is a no-op. -->
+    <insert id="insert">
+        INSERT INTO local_event_saves (event_id, user_id, saved_at)
+        VALUES (#{eventId}, #{userId}, #{savedAt})
+        ON CONFLICT (event_id, user_id) DO NOTHING
+    </insert>
+
+    <delete id="delete">
+        DELETE FROM local_event_saves
+        WHERE event_id = #{eventId} AND user_id = #{userId}
+    </delete>
+
+    <select id="exists" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM local_event_saves WHERE event_id = #{eventId} AND user_id = #{userId}
+        )
+    </select>
+
+    <select id="findSavedEventIds" resultType="java.util.UUID">
+        SELECT event_id FROM local_event_saves
+        WHERE user_id = #{userId} AND event_id IN
+        <foreach item="eventId" collection="eventIds" open="(" separator="," close=")">#{eventId}</foreach>
+    </select>
+
+    <select id="findSaversWithoutReminder" resultType="java.util.UUID">
+        SELECT s.user_id
+        FROM local_event_saves s
+        WHERE s.event_id = #{eventId}
+          AND NOT EXISTS (
+              SELECT 1 FROM local_event_reminders r
+              WHERE r.event_id = s.event_id AND r.user_id = s.user_id AND r.kind = #{kind})
+        <if test="skipCheckedIn">
+          AND NOT EXISTS (
+              SELECT 1 FROM user_checkins c
+              WHERE c.local_event_id = s.event_id AND c.user_id = s.user_id AND c.is_removed = FALSE)
+        </if>
+        ORDER BY s.user_id
+        LIMIT #{limit}
+    </select>
+
+    <insert id="insertReminder">
+        INSERT INTO local_event_reminders (event_id, user_id, kind, sent_at)
+        VALUES (#{eventId}, #{userId}, #{kind}, #{sentAt})
+        ON CONFLICT (event_id, user_id, kind) DO NOTHING
+    </insert>
+</mapper>

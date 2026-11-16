@@ -219,6 +219,16 @@ public class UserCheckinController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(checkinService.byPlace(viewerId, placeId, page, size)));
     }
 
+    /** Check-ins people made at a local event, for the event's page. Public, like the event. */
+    @GetMapping("/events/{eventId}")
+    public ResponseEntity<BaseResponse<List<UserCheckinResponse>>> byLocalEvent(
+            @PathVariable UUID eventId,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
+            @CurrentUser(required = false) UUID viewerId) {
+        return ResponseEntity.ok(ofSucceeded(checkinService.byLocalEvent(viewerId, eventId, page, size)));
+    }
+
     /**
      * Check-ins at a spot that has no catalogue page. Without this, tapping the place name
      * on such a post would lead to an error screen.

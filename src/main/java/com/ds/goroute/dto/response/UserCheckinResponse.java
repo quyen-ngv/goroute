@@ -5,6 +5,7 @@ import com.ds.goroute.type.CheckinPhotoSource;
 import com.ds.goroute.type.CheckinVerificationScope;
 import com.ds.goroute.type.CheckinVerificationStatus;
 import com.ds.goroute.type.CheckinFrameStyle;
+import com.ds.goroute.type.CheckinPlaceKind;
 import com.ds.goroute.type.ContentVisibility;
 import lombok.Builder;
 import lombok.Data;
@@ -74,10 +75,25 @@ public class UserCheckinResponse {
     private BigDecimal placeLatitude;
     private BigDecimal placeLongitude;
 
+    /**
+     * The local event this check-in was made at (epic 17), with what a card needs to name it
+     * and link to it. All null for an ordinary check-in or when the event was deleted.
+     */
+    private UUID localEventId;
+    private String eventTitle;
+    private String eventCoverUrl;
+    private String eventVenueName;
+
     private String caption;
 
     /** The frame the app shows the photos in; null is none. */
     private CheckinFrameStyle frameStyle;
+
+    /** The kind of spot the author declared; only ever set on a check-in without a catalogue place. */
+    private CheckinPlaceKind placeKind;
+
+    /** The background music played with the post; null when none or the track was switched off. */
+    private MusicTrackResponse music;
 
     private Integer overallRating;
     private Integer foodRating;

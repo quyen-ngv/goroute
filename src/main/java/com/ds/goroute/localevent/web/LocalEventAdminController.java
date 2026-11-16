@@ -6,11 +6,15 @@ import com.ds.goroute.dto.response.PageResponse;
 import com.ds.goroute.localevent.dto.AdminLocalEventDetailResponse;
 import com.ds.goroute.localevent.dto.AdminLocalEventRow;
 import com.ds.goroute.localevent.dto.LocalEventPublishStatusRequest;
+import com.ds.goroute.localevent.dto.LocalEventTranslationRequest;
+import com.ds.goroute.localevent.dto.LocalEventTranslationResponse;
 import com.ds.goroute.localevent.dto.LocalEventUpsertRequest;
 import com.ds.goroute.localevent.service.LocalEventAdminService;
+import com.ds.goroute.localevent.service.LocalEventTranslationService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,6 +32,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -41,6 +46,7 @@ import java.util.UUID;
 public class LocalEventAdminController {
 
     private final LocalEventAdminService adminService;
+    private final LocalEventTranslationService translationService;
 
     /** Comma lists are accepted for publishStatus, eventStatus and category. Dates: YYYY-MM-DD or ISO with offset. */
     @GetMapping
@@ -116,6 +122,32 @@ public class LocalEventAdminController {
     @PreAuthorize("@adminAuthorization.can(authentication,'events','update')")
     public ResponseEntity<BaseResponse<AdminLocalEventDetailResponse>> retryImages(@PathVariable UUID eventId) {
         return ResponseEntity.ok(BaseResponse.ofSucceeded(adminService.retryImages(eventId)));
+    }
+
+    /** The event's free text per language: AI or MANUAL, and whether it matches the current content. */
+    @GetMapping("/{eventId}/translations")
+    @PreAuthorize("@adminAuthorization.can(authentication,'events','get')")
+    public ResponseEntity<BaseResponse<List<LocalEventTranslationResponse>>> translations(@PathVariable UUID eventId) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(translationService.list(eventId)));
+    }
+
+    /** An admin's own wording for one language; machine translation never overwrites it. */
+    @PutMapping("/{eventId}/translations/{locale}")
+    @PreAuthorize("@adminAuthorization.can(authentication,'events','update')")
+    public ResponseEntity<BaseResponse<List<LocalEventTranslationResponse>>> saveTranslation(
+            @PathVariable UUID eventId,
+            @PathVariable @Size(max = 16) String locale,
+            @Valid @RequestBody LocalEventTranslationRequest request) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(translationService.saveManual(eventId, locale, request)));
+    }
+
+    /** Drops one language so the job machine translates it again. */
+    @DeleteMapping("/{eventId}/translations/{locale}")
+    @PreAuthorize("@adminAuthorization.can(authentication,'events','update')")
+    public ResponseEntity<BaseResponse<List<LocalEventTranslationResponse>>> resetTranslation(
+            @PathVariable UUID eventId,
+            @PathVariable @Size(max = 16) String locale) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(translationService.reset(eventId, locale)));
     }
 
     /** Multipart {@code file}; returns the stored image URL to put in {@code images[].url}. */

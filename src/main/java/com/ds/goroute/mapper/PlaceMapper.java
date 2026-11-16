@@ -29,6 +29,10 @@ public interface PlaceMapper {
 
     List<String> findExistingCids(@Param("cids") List<String> cids);
 
+    List<Place> findReferencesByPlaceIds(@Param("placeIds") List<String> placeIds);
+
+    List<Place> findReferencesByCids(@Param("cids") List<String> cids);
+
     Place findNearCoordinates(@Param("latitude") BigDecimal latitude,
                               @Param("longitude") BigDecimal longitude,
                               @Param("maxDistanceMeters") BigDecimal maxDistanceMeters);
@@ -60,6 +64,7 @@ public interface PlaceMapper {
                                              @Param("radiusMeters") BigDecimal radiusMeters,
                                              @Param("placeGroups") List<String> placeGroups,
                                              @Param("days") int days,
+                                             @Param("excludeAiTrips") boolean excludeAiTrips,
                                              @Param("limit") int limit);
 
     /** What a map pin shows, for the given ids: its address and photos too. Public places only. */
@@ -89,6 +94,9 @@ public interface PlaceMapper {
 
     /** Single row of the columns the Lucene index stores. */
     Place findSearchIndexRow(@Param("id") UUID id);
+
+    /** Every place with the hash of its searchable names (title, aliases, translations) and visibility. */
+    List<com.ds.goroute.entity.PlaceSearchNameHash> findSearchNameHashes();
 
     List<Place> findAll();
 
@@ -139,6 +147,7 @@ public interface PlaceMapper {
                                             @Param("areaLongitude") BigDecimal areaLongitude,
                                             @Param("areaRadiusKm") BigDecimal areaRadiusKm,
                                             @Param("placeGroups") List<String> placeGroups,
+                                            @Param("ids") List<UUID> ids,
                                             @Param("limit") int limit);
 
     void delete(@Param("id") UUID id);
@@ -149,7 +158,45 @@ public interface PlaceMapper {
 
     int updateSubTypes(@Param("id") UUID id, @Param("subTypes") String[] subTypes);
 
+    int updateSearchAliases(@Param("id") UUID id, @Param("searchAliases") String[] searchAliases);
+
     int assignWard(@Param("id") UUID id);
+
+    // Place edit suggestions (epic 09, V286). Narrow writes, one column group each: the generic
+    // update replaces the whole row and must never be how an approved suggestion lands.
+
+    /** PlaceEditField names the re-scrape must leave alone; empty when none or no such place. */
+    List<String> findLockedFields(@Param("id") UUID id);
+
+    int addLockedFields(@Param("id") UUID id, @Param("fields") String[] fields);
+
+    int removeLockedField(@Param("id") UUID id, @Param("field") String field);
+
+    /** What decides whether a place takes suggestions; null when there is no such place. */
+    com.ds.goroute.entity.PlaceEditGuard findEditGuard(@Param("id") UUID id);
+
+    int updateAddress(@Param("id") UUID id, @Param("address") String address);
+
+    int updateLocation(@Param("id") UUID id, @Param("latitude") BigDecimal latitude,
+                       @Param("longitude") BigDecimal longitude);
+
+    int updateOpenHours(@Param("id") UUID id, @Param("openHours") String openHours,
+                        @Param("regular") String regular);
+
+    int updatePhone(@Param("id") UUID id, @Param("phone") String phone);
+
+    int updateWebsite(@Param("id") UUID id, @Param("website") String website);
+
+    int updatePriceRange(@Param("id") UUID id, @Param("priceRange") String priceRange);
+
+    int updateStatusText(@Param("id") UUID id, @Param("status") String status);
+
+    int updateVisibility(@Param("id") UUID id, @Param("visibilityStatus") String visibilityStatus,
+                         @Param("mergedIntoPlaceId") UUID mergedIntoPlaceId);
+
+    int updatePlaceGroup(@Param("id") UUID id, @Param("placeGroup") String placeGroup);
+
+    int updateAttributes(@Param("id") UUID id, @Param("attributes") String attributes);
 
     Boolean isWithinVerificationGeometry(@Param("id") UUID id,
                                          @Param("latitude") BigDecimal latitude,
@@ -157,4 +204,13 @@ public interface PlaceMapper {
                                          @Param("accuracyMeters") BigDecimal accuracyMeters);
 
     java.util.Map<String, Object> validateGeometry(@Param("geoJson") String geoJson);
+
+    // Place image compression (epic 06 §2.13)
+    com.ds.goroute.entity.PlaceImageState findImageState(@Param("id") UUID id);
+
+    int recordImageCompression(@Param("id") UUID id, @Param("record") String record);
+
+    List<UUID> findImageCompressionPendingIds(@Param("afterId") UUID afterId, @Param("limit") int limit);
+
+    long countImageCompressionPending();
 }

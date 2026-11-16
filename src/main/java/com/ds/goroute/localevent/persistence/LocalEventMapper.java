@@ -49,6 +49,17 @@ public interface LocalEventMapper {
 
     List<LocalEvent> findSummariesByIds(@Param("ids") Collection<UUID> ids);
 
+    List<LocalEvent> findLiveSummariesByIds(@Param("ids") Collection<UUID> ids);
+
+    List<LocalEvent> findSavedOrGoing(@Param("userId") UUID userId,
+                                      @Param("from") LocalDateTime from,
+                                      @Param("limit") int limit);
+
+    List<LocalEvent> findReminderCandidates(@Param("now") LocalDateTime now,
+                                            @Param("startBefore") LocalDateTime startBefore,
+                                            @Param("endBefore") LocalDateTime endBefore,
+                                            @Param("limit") int limit);
+
     List<LocalEventDuplicateCandidate> findDuplicateCandidates(@Param("p") LocalEventDuplicateSearchParams params);
 
     int insert(LocalEvent event);

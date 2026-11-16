@@ -108,4 +108,6 @@ public interface MarketplaceChatMapper {
 
  int archiveAssistantThread(@Param("id") UUID conversationId, @Param("ownerId") UUID ownerId,
                             @Param("at") LocalDateTime at);
+
+ int archiveTripConversation(@Param("id") UUID conversationId, @Param("at") LocalDateTime at);
 }

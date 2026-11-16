@@ -26,7 +26,8 @@ import java.util.List;
         OpenAiImageModerationProperties.class,
         ClaudeProperties.class,
         PlaceImportWatchdogProperties.class,
-        AppLinksProperties.class
+        AppLinksProperties.class,
+        CaesiumProperties.class
 })
 public class WebMvcConfig implements WebMvcConfigurer {
 

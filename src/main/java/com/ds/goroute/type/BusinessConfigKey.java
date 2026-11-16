@@ -16,6 +16,10 @@ public enum BusinessConfigKey {
     @Deprecated
     TRIP_FREE_CREATION_QUOTA("TRIP", "FREE_TRIP_QUOTA", 3, 0, 1000),
     FREE_TRIP_MEMORY_LIMIT("TRIP_MEMORY", "FREE_TRIP_MEMORY_LIMIT", 50, 1, 1000),
+    /** Sends the evening-before weather alert of a trip day to every member; beta users always get it. */
+    TRIP_WEATHER_ALERT_ENABLED("TRIP_WEATHER", "ALERT_ENABLED", false),
+    /** Rain chance, in percent, from which that alert goes out even when no advisory is raised. */
+    TRIP_WEATHER_ALERT_RAIN_PERCENT("TRIP_WEATHER", "ALERT_RAIN_PERCENT", 80, 50, 100),
     PLACE_REVIEW_REFRESH_MAX_REVIEWS("PLACE_REVIEW", "DEFAULT_REFRESH_MAX_REVIEWS", 200, 1, 200),
     /**
      * Gates the scraper worker's daily review refresh. The worker reads this before every
@@ -84,12 +88,16 @@ public enum BusinessConfigKey {
     // --- Epic 06: check-in -----------------------------------------------------------
     CHECKIN_ENABLED("CHECKIN", "CHECKIN_ENABLED", true),
     CHECKIN_VERIFY_RADIUS_METERS("CHECKIN", "VERIFY_RADIUS_METERS", 200, 20, 5000),
+    /** Radius around an event venue with no catalogue place inside which a check-in counts as there (V285). */
+    CHECKIN_EVENT_VERIFY_RADIUS_METERS("CHECKIN", "EVENT_VERIFY_RADIUS_METERS", 150, 20, 5000),
     CHECKIN_MAX_ACCURACY_METERS("CHECKIN", "MAX_ACCURACY_METERS", 100, 5, 2000),
     CHECKIN_MAX_PHOTOS("CHECKIN", "MAX_PHOTOS", 6, 1, 20),
     CHECKIN_MAX_CAPTION_LENGTH("CHECKIN", "MAX_CAPTION_LENGTH", 2000, 100, 5000),
     /** Lets everyone post a video check-in; beta users always can. */
     CHECKIN_VIDEO_ENABLED("CHECKIN", "VIDEO_ENABLED", false),
     CHECKIN_MAX_VIDEO_SECONDS("CHECKIN", "MAX_VIDEO_SECONDS", 60, 5, 300),
+    /** Lets everyone add background music to a check-in; beta users always can. */
+    CHECKIN_MUSIC_ENABLED("CHECKIN", "MUSIC_ENABLED", false),
     CHECKIN_LOCATION_KEY_PRECISION("CHECKIN", "LOCATION_KEY_PRECISION", 4, 2, 6),
     CHECKIN_GALLERY_ALLOWED_FOR_FREE("CHECKIN", "GALLERY_ALLOWED_FOR_FREE", true),
     CHECKIN_GUIDE_SCREEN_ENABLED("CHECKIN", "GUIDE_SCREEN_ENABLED", true),
@@ -226,6 +234,17 @@ public enum BusinessConfigKey {
      * Higher values allow faster bulk uploads but may strain server resources.
      */
     UPLOAD_MAX_BATCH_FILES("MEDIA_UPLOAD", "MAX_BATCH_FILES", 30, 1, 100),
+
+    // --- Image compression (epic 00 §9b) ---------------------------------------------
+    // Caesium WebP compression, overwriting files in place. AUTO_ENABLED turns on the upload
+    // hook; the other keys are read by it, by the console's bulk run and by its preview.
+    // FREE applies only to images of users on the free plan; everything else uses PRO.
+    IMAGE_COMPRESSION_AUTO_ENABLED("IMAGE_COMPRESSION", "AUTO_ENABLED", false),
+    IMAGE_COMPRESSION_QUALITY_FREE("IMAGE_COMPRESSION", "QUALITY_FREE", 70, 30, 95),
+    IMAGE_COMPRESSION_QUALITY_PRO("IMAGE_COMPRESSION", "QUALITY_PRO", 82, 30, 95),
+    IMAGE_COMPRESSION_MAX_LONG_EDGE_FREE("IMAGE_COMPRESSION", "MAX_LONG_EDGE_FREE", 1600, 640, 4096),
+    IMAGE_COMPRESSION_MAX_LONG_EDGE_PRO("IMAGE_COMPRESSION", "MAX_LONG_EDGE_PRO", 2048, 640, 4096),
+    IMAGE_COMPRESSION_MIN_SAVINGS_PERCENT("IMAGE_COMPRESSION", "MIN_SAVINGS_PERCENT", 10, 0, 90),
 
     // --- Quest platform (§7.7) -------------------------------------------------------
     // Every threshold the quest feature reads lives here so an out-of-range admin value
@@ -375,6 +394,10 @@ public enum BusinessConfigKey {
     // group chat are gated on the server by the same flag (LocalEventAttendanceService). On for
     // everyone since V224.
     EVENT_ENABLED("EVENT", "ENABLED", true),
+    /** Reminders for saved events: the day before, two hours before, opening day, last days, status changes (V285). */
+    EVENT_REMINDERS_ENABLED("EVENT", "REMINDERS_ENABLED", true),
+    /** Machine translation of a published event's summary, description and notes into the app languages (V285). */
+    EVENT_AUTO_TRANSLATE_ENABLED("EVENT", "AUTO_TRANSLATE_ENABLED", true),
 
     // --- Epic 18: meetups ("Hoạt động") -----------------------------------------------
     // The flag gates every meetup user endpoint on the server (beta users always pass) and is
@@ -388,6 +411,25 @@ public enum BusinessConfigKey {
     MEETUP_EXACT_VISIBLE_HOURS("MEETUP", "EXACT_VISIBLE_HOURS", 3, 1, 12),
     MEETUP_MAX_OPEN_REQUESTS_PER_USER("MEETUP", "MAX_OPEN_REQUESTS_PER_USER", 5, 1, 50),
     MEETUP_MAX_RESUBMITS("MEETUP", "MAX_RESUBMITS", 2, 0, 10),
+
+    // --- Epic 09: place edit suggestions (V286) -----------------------------------------
+    // The flag gates every /edit-suggestions user endpoint (beta users always pass) and is
+    // folded into GET /v1/api/places/{placeId}/edit-suggestions/context (`enabled`).
+    PLACE_EDIT_ENABLED("PLACE_EDIT", "ENABLED", false),
+    /** An account younger than this cannot suggest edits (context reason ACCOUNT_TOO_NEW). */
+    PLACE_EDIT_MIN_ACCOUNT_AGE_HOURS("PLACE_EDIT", "MIN_ACCOUNT_AGE_HOURS", 24, 0, 720),
+    /** Suggestions one person may send in the last 24 hours. */
+    PLACE_EDIT_MAX_SUBMISSIONS_PER_DAY("PLACE_EDIT", "MAX_SUBMISSIONS_PER_DAY", 10, 1, 100),
+    /** Suggestions of one person waiting for review at the same time. */
+    PLACE_EDIT_MAX_PENDING_PER_USER("PLACE_EDIT", "MAX_PENDING_PER_USER", 30, 1, 500),
+    /** Farthest a suggested pin may be from the stored one, in metres (the floor is 10 m, fixed). */
+    PLACE_EDIT_MAX_PIN_MOVE_METERS("PLACE_EDIT", "MAX_PIN_MOVE_METERS", 2000, 10, 50000),
+    /** Stars for each approved (or partly approved) suggestion. */
+    PLACE_EDIT_REWARD_STARS("PLACE_EDIT", "REWARD_STARS", 1, 0, 100),
+    /** Rewards one person may receive for suggestions in 24 hours; later approvals are unpaid. */
+    PLACE_EDIT_MAX_REWARDS_PER_DAY("PLACE_EDIT", "MAX_REWARDS_PER_DAY", 5, 0, 100),
+    /** Comma-separated hosts a suggested website may not point at (link shorteners). */
+    PLACE_EDIT_WEBSITE_BLOCKED_HOSTS("PLACE_EDIT", "WEBSITE_BLOCKED_HOSTS", "bit.ly,tinyurl.com,t.co,goo.gl"),
 
     // --- Epic 06: per-user limits on the app's Goong search proxy ---------------------
     // Every autocomplete and place-detail call through /v1/api/goong is a paid Goong

@@ -15,6 +15,18 @@
         <result property="updatedAt" column="updated_at"/>
     </resultMap>
 
+    <!-- TranslationSource.rank(): LEGACY 0 < GOOGLE = WIKIDATA 1 < MANUAL 2; NULL counts as LEGACY. -->
+    <sql id="storedSourceRank">
+        CASE place_translations.translation_source
+            WHEN 'MANUAL' THEN 2 WHEN 'GOOGLE' THEN 1 WHEN 'WIKIDATA' THEN 1 ELSE 0 END
+    </sql>
+
+    <sql id="incomingSourceRank">
+        CASE EXCLUDED.translation_source
+            WHEN 'MANUAL' THEN 2 WHEN 'GOOGLE' THEN 1 WHEN 'WIKIDATA' THEN 1 ELSE 0 END
+    </sql>
+
+    <!-- A row is overwritten only by a source of the same or a higher rank; 0 rows when it is not. -->
     <insert id="upsert" parameterType="com.ds.goroute.entity.PlaceTranslation">
         INSERT INTO place_translations (
             id, place_id, locale, name, description, translation_source, created_at, updated_at
@@ -33,6 +45,49 @@
             description = EXCLUDED.description,
             translation_source = EXCLUDED.translation_source,
             updated_at = EXCLUDED.updated_at
+        WHERE <include refid="storedSourceRank"/> &lt;= <include refid="incomingSourceRank"/>
+    </insert>
+
+    <!-- The name only: an existing description is kept. Same rank rule as upsert. -->
+    <insert id="upsertName" parameterType="com.ds.goroute.entity.PlaceTranslation">
+        INSERT INTO place_translations (
+            id, place_id, locale, name, translation_source, created_at, updated_at
+        ) VALUES (
+            gen_random_uuid(),
+            #{placeId},
+            #{locale,typeHandler=com.ds.goroute.config.database.TranslationLocaleTypeHandler},
+            #{name},
+            #{translationSource,typeHandler=org.apache.ibatis.type.EnumTypeHandler},
+            COALESCE(#{createdAt}, NOW()),
+            COALESCE(#{updatedAt}, NOW())
+        )
+        ON CONFLICT (place_id, locale) DO UPDATE SET
+            name = EXCLUDED.name,
+            translation_source = EXCLUDED.translation_source,
+            updated_at = EXCLUDED.updated_at
+        WHERE <include refid="storedSourceRank"/> &lt;= <include refid="incomingSourceRank"/>
+    </insert>
+
+    <!-- The description only: an existing name is kept; a new row takes the given name (the
+         place's currently shown one). Same rank rule as upsert. -->
+    <insert id="upsertDescription" parameterType="com.ds.goroute.entity.PlaceTranslation">
+        INSERT INTO place_translations (
+            id, place_id, locale, name, description, translation_source, created_at, updated_at
+        ) VALUES (
+            gen_random_uuid(),
+            #{placeId},
+            #{locale,typeHandler=com.ds.goroute.config.database.TranslationLocaleTypeHandler},
+            #{name},
+            #{description},
+            #{translationSource,typeHandler=org.apache.ibatis.type.EnumTypeHandler},
+            COALESCE(#{createdAt}, NOW()),
+            COALESCE(#{updatedAt}, NOW())
+        )
+        ON CONFLICT (place_id, locale) DO UPDATE SET
+            description = EXCLUDED.description,
+            translation_source = EXCLUDED.translation_source,
+            updated_at = EXCLUDED.updated_at
+        WHERE <include refid="storedSourceRank"/> &lt;= <include refid="incomingSourceRank"/>
     </insert>
 
     <select id="findByPlaceIdAndLocale" resultMap="PlaceTranslationResultMap">

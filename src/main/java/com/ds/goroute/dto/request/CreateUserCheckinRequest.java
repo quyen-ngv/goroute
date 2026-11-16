@@ -5,6 +5,7 @@ import com.ds.goroute.type.CheckinLocationSource;
 import com.ds.goroute.type.CheckinMediaType;
 import com.ds.goroute.type.CheckinPhotoSource;
 import com.ds.goroute.type.CheckinFrameStyle;
+import com.ds.goroute.type.CheckinPlaceKind;
 import com.ds.goroute.type.ContentVisibility;
 import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.ModerationVisibility;
@@ -93,12 +94,28 @@ public class CreateUserCheckinRequest {
     private UUID questRunId;
     private UUID questCheckpointId;
 
+    /**
+     * Set when the check-in is made at a published local event (epic 17). The location fields
+     * carry the venue; an event that is gone by the time this arrives is simply not linked.
+     */
+    private UUID localEventId;
+
     @Size(max = 5000)
     @ModeratedText(contentType = ModeratedContentType.CHECKIN, visibility = ModerationVisibility.PUBLIC)
     private String caption;
 
     /** Optional. The frame the photos are shown in; absent shows them plainly. */
     private CheckinFrameStyle frameStyle;
+
+    /**
+     * Optional. What kind of spot it is, for a spot not in the catalogue, so the Feed's
+     * place-kind chips can find the post. Ignored when the check-in resolves to a catalogue
+     * place, whose own kind applies.
+     */
+    private CheckinPlaceKind placeKind;
+
+    /** Optional. An active track of the music catalogue played with the post (V282). */
+    private UUID musicTrackId;
 
     /**
      * The day of the visit, for someone posting after they got home. Absent means now.

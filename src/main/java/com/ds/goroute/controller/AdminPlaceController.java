@@ -2,13 +2,17 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.request.TriggerPlaceReviewRefreshRequest;
 import com.ds.goroute.dto.request.ImportPlaceRequest;
+import com.ds.goroute.dto.request.PlaceTranslationBatchRequest;
 import com.ds.goroute.dto.request.UpdatePlaceRequest;
 import com.ds.goroute.dto.response.AdminPlaceResponse;
+import com.ds.goroute.dto.BaseResponse;
+import com.ds.goroute.dto.response.PlaceTranslationBatchResponse;
 import com.ds.goroute.dto.response.PlaceReviewRefreshResponse;
 import com.ds.goroute.service.AdminPlaceReviewRefreshService;
 import com.ds.goroute.service.FoodService;
 import com.ds.goroute.service.PlaceAttributeCatalog;
 import com.ds.goroute.service.PlaceService;
+import com.ds.goroute.service.PlaceTranslationBatchService;
 import com.ds.goroute.type.PlaceReviewRefreshRerunMode;
 import com.ds.goroute.utils.AdminListSort;
 import jakarta.validation.Valid;
@@ -41,6 +45,7 @@ public class AdminPlaceController extends BaseController {
     private final AdminPlaceReviewRefreshService adminPlaceReviewRefreshService;
     private final PlaceService placeService;
     private final FoodService foodService;
+    private final PlaceTranslationBatchService placeTranslationBatchService;
 
     /**
      * The catalog is a compile-time constant (~42KB of JSON), so it is served here once
@@ -113,6 +118,17 @@ public class AdminPlaceController extends BaseController {
                 .map(item -> placeService.getAdminPlaceById(item.getId()))
                 .toList();
         return ResponseEntity.ok(ofSucceeded(result));
+    }
+
+    /**
+     * Localized names keyed by Google place id (name scraper, backfill). A MANUAL name is never
+     * overwritten by GOOGLE or WIKIDATA; invalid rows are counted, not rejected.
+     */
+    @PostMapping("/translations/batch")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
+    public ResponseEntity<BaseResponse<PlaceTranslationBatchResponse>> writeTranslations(
+            @Valid @RequestBody PlaceTranslationBatchRequest request) {
+        return ResponseEntity.ok(ofSucceeded(placeTranslationBatchService.writeNames(request.getItems())));
     }
 
     @DeleteMapping("/{placeId}")

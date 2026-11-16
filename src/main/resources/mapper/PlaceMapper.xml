@@ -14,6 +14,7 @@
         <result property="placeGroup" column="place_group" javaType="com.ds.goroute.type.PlaceGroup"/>
         <result property="category" column="category"/>
         <result property="subTypes" column="sub_types" typeHandler="org.apache.ibatis.type.ArrayTypeHandler"/>
+        <result property="searchAliases" column="search_aliases" typeHandler="org.apache.ibatis.type.ArrayTypeHandler"/>
         <result property="address" column="address"/>
         <result property="provinceCode" column="province_code"/>
         <result property="destinations" column="destinations"/>
@@ -128,6 +129,14 @@
         WHERE id = #{id}
     </update>
 
+    <!-- Search aliases too: only the place editor sets them, never an import or a job. -->
+    <update id="updateSearchAliases">
+        UPDATE places
+        SET search_aliases = #{searchAliases,jdbcType=ARRAY,typeHandler=org.apache.ibatis.type.ArrayTypeHandler}::text[],
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
     <update id="assignWard">
         UPDATE places p
         SET ward_code = w.code, province_code = w.province_code
@@ -136,6 +145,93 @@
           AND p.latitude IS NOT NULL AND p.longitude IS NOT NULL
           AND w.is_active = TRUE
           AND ST_Covers(w.geom, ST_SetSRID(ST_MakePoint(p.longitude::float8, p.latitude::float8), 4326))
+    </update>
+
+    <!-- Place edit suggestions (epic 09, V286). locked_fields is read and written only here;
+         it is not in PlaceResultMap or the generic update, so a job re-saving a loaded Place
+         cannot clear it. Each applied field is one narrow statement. -->
+    <select id="findLockedFields" resultType="string">
+        SELECT f FROM places p, unnest(p.locked_fields) AS f WHERE p.id = #{id} ORDER BY f
+    </select>
+
+    <update id="addLockedFields">
+        UPDATE places
+        SET locked_fields = ARRAY(
+                SELECT DISTINCT f
+                FROM unnest(locked_fields || CAST(#{fields,jdbcType=ARRAY,typeHandler=org.apache.ibatis.type.ArrayTypeHandler} AS varchar[])) AS f
+                ORDER BY f)::varchar[],
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="removeLockedField">
+        UPDATE places
+        SET locked_fields = array_remove(locked_fields, CAST(#{field} AS varchar)),
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- A partner place: partner-sourced, or with a partner source row, or an enabled hotel profile. -->
+    <select id="findEditGuard" resultType="com.ds.goroute.entity.PlaceEditGuard">
+        SELECT p.id AS "id",
+               p.title AS "title",
+               p.place_group AS "placeGroup",
+               p.status AS "status",
+               p.visibility_status AS "visibilityStatus",
+               p.lifecycle_status AS "lifecycleStatus",
+               (p.primary_source_type = 'PARTNER'
+                OR EXISTS (SELECT 1 FROM place_sources s WHERE s.place_id = p.id AND s.source_type = 'PARTNER')
+                OR EXISTS (SELECT 1 FROM hotel_profiles h WHERE h.place_id = p.id AND h.status = 'ENABLED'))
+                   AS "partnerPlace"
+        FROM places p
+        WHERE p.id = #{id}
+    </select>
+
+    <update id="updateAddress">
+        UPDATE places SET address = #{address,jdbcType=VARCHAR}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateLocation">
+        UPDATE places SET latitude = #{latitude}, longitude = #{longitude}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <!-- regular mirrors open_hours: both are what Google calls the regular week. -->
+    <update id="updateOpenHours">
+        UPDATE places
+        SET open_hours = #{openHours,jdbcType=VARCHAR}, regular = #{regular,jdbcType=VARCHAR}, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updatePhone">
+        UPDATE places SET phone = #{phone,jdbcType=VARCHAR}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateWebsite">
+        UPDATE places SET website = #{website,jdbcType=VARCHAR}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updatePriceRange">
+        UPDATE places SET price_range = #{priceRange,jdbcType=VARCHAR}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateStatusText">
+        UPDATE places SET status = #{status,jdbcType=VARCHAR}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateVisibility">
+        UPDATE places
+        SET visibility_status = #{visibilityStatus},
+            merged_into_place_id = COALESCE(CAST(#{mergedIntoPlaceId} AS uuid), merged_into_place_id),
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updatePlaceGroup">
+        UPDATE places SET place_group = #{placeGroup}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateAttributes">
+        UPDATE places SET attributes = CAST(#{attributes,jdbcType=VARCHAR} AS jsonb), updated_at = NOW() WHERE id = #{id}
     </update>
 
     <!-- Null when the place has no drawn area, so the caller falls back to the radius.
@@ -256,6 +352,22 @@
         </foreach>
     </select>
 
+    <select id="findReferencesByPlaceIds" resultMap="PlaceResultMap">
+        SELECT id, place_id, cid FROM places
+        WHERE place_id IN
+        <foreach collection="placeIds" item="placeId" open="(" separator="," close=")">
+            #{placeId}
+        </foreach>
+    </select>
+
+    <select id="findReferencesByCids" resultMap="PlaceResultMap">
+        SELECT id, place_id, cid FROM places
+        WHERE cid IN
+        <foreach collection="cids" item="cid" open="(" separator="," close=")">
+            #{cid}
+        </foreach>
+    </select>
+
     <!-- Radius and nearest-first order spell goroute_point(latitude, longitude) exactly as
          idx_places_point (V214) does, so the GiST index serves both. Distance in metres. -->
     <select id="findNearCoordinates" resultMap="PlaceResultMap">
@@ -299,7 +411,7 @@
         latitude, longitude, verification_radius_meters, phone, website, google_maps_link,
         review_count, review_rating, adjusted_rating, place_overall_score, score_sample_count,
         score_source, last_scraped_at, thumbnail, images, descriptions, visibility_status,
-        price_range, open_hours, regular, created_at, updated_at, trip_use_count, checkin_count
+        price_range, open_hours, regular, status, created_at, updated_at, trip_use_count, checkin_count
     </sql>
 
     <select id="findListSummaryByIds" resultMap="PlaceResultMap">
@@ -322,6 +434,20 @@
       over the window (a check-in weighs PlaceProminence.CHECKIN_WEIGHT = 2 trips), then by
       all-time use.
     -->
+    <!-- For the AI trip planner (excludeAiTrips): a trip an AI job created is left out, or the
+         planner would read its own earlier picks back as what travellers like. -->
+    <sql id="trendingNotAiTrip">
+        <if test="excludeAiTrips">
+              AND NOT EXISTS (SELECT 1 FROM ai_trip_generation_jobs j WHERE j.created_trip_id = a.trip_id)
+        </if>
+    </sql>
+
+    <!-- A place reported (and approved) as permanently closed keeps its page but is no longer
+         suggested: trending and the AI candidates skip it (PlaceBusinessStatus). -->
+    <sql id="notPermanentlyClosed">
+              AND COALESCE(status, '') NOT ILIKE '%permanently closed%'
+    </sql>
+
     <select id="findTrendingUsage" resultType="com.ds.goroute.entity.PlaceTrendingRow">
         WITH area AS (
             SELECT id, place_id, trip_use_count, checkin_count
@@ -330,6 +456,7 @@
                              goroute_point(#{latitude}::float8, #{longitude}::float8),
                              #{radiusMeters}::float8)
               AND visibility_status = 'ACTIVE' AND lifecycle_status = 'ACTIVE'
+              <include refid="notPermanentlyClosed"/>
               <if test="placeGroups != null and placeGroups.size() > 0">
                 AND place_group IN
                 <foreach item="placeGroup" collection="placeGroups" open="(" separator="," close=")">
@@ -346,6 +473,7 @@
             JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
             WHERE a.created_at &gt;= NOW() - make_interval(days => #{days})
               AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+              <include refid="trendingNotAiTrip"/>
             UNION ALL
             SELECT ar.id, a.trip_id
             FROM area ar
@@ -353,6 +481,7 @@
             JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
             WHERE a.created_at &gt;= NOW() - make_interval(days => #{days})
               AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+              <include refid="trendingNotAiTrip"/>
             UNION ALL
             SELECT ar.id, a.trip_id
             FROM area ar
@@ -360,6 +489,7 @@
             JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
             WHERE a.created_at &gt;= NOW() - make_interval(days => #{days})
               AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+              <include refid="trendingNotAiTrip"/>
         ),
         trip_uses AS (
             SELECT place_uuid, COUNT(DISTINCT trip_id) AS trips
@@ -391,7 +521,7 @@
          public rule as findListSummaryByIds with publicOnly. -->
     <select id="findMapPinsByIds" resultMap="PlaceResultMap">
         SELECT id, place_id, title, place_group, sub_types, address, latitude, longitude, thumbnail,
-               images, review_count, review_rating, adjusted_rating, trip_use_count, checkin_count
+               images, review_count, review_rating, adjusted_rating, trip_use_count, checkin_count, status
         FROM places
         WHERE id IN
         <foreach item="id" collection="ids" open="(" separator="," close=")">
@@ -420,9 +550,23 @@
     </select>
 
     <sql id="PlaceSearchIndexColumns">
-        id, title, latitude, longitude, visibility_status, category, place_group, sub_types,
-        review_rating, adjusted_rating, review_count, destinations, trip_use_count, checkin_count
+        id, title, search_aliases, latitude, longitude, visibility_status, category, place_group, sub_types,
+        review_rating, adjusted_rating, review_count, destinations, trip_use_count, checkin_count, status
     </sql>
+
+    <!--
+      One hash per place of what the search index reads of it by name: visibility, title,
+      aliases and every translated name. The index compares these with the ones it was built
+      from, so names written straight into the database (a SQL import) are picked up without a
+      restart. The locale order is byte order, so the hash does not depend on the collation.
+    -->
+    <select id="findSearchNameHashes" resultType="com.ds.goroute.entity.PlaceSearchNameHash">
+        SELECT p.id AS id,
+               md5(concat_ws(E'\n', p.visibility_status, p.title, array_to_string(p.search_aliases, E'\n'),
+                   (SELECT string_agg(t.locale || '=' || COALESCE(t.name, ''), E'\n' ORDER BY t.locale COLLATE "C")
+                    FROM place_translations t WHERE t.place_id = p.id))) AS nameHash
+        FROM places p
+    </select>
 
     <select id="findSearchIndexPage" resultMap="PlaceResultMap">
         SELECT <include refid="PlaceSearchIndexColumns"/>
@@ -734,6 +878,7 @@
                            goroute_point(#{latitude}::float8, #{longitude}::float8)) / 1000.0 AS distance
         FROM places p
         WHERE p.visibility_status = 'ACTIVE'
+          AND COALESCE(p.status, '') NOT ILIKE '%permanently closed%'
           AND ST_DWithin(goroute_point(p.latitude, p.longitude),
                          goroute_point(#{latitude}::float8, #{longitude}::float8),
                          #{radiusKm}::float8 * 1000.0)
@@ -750,12 +895,51 @@
               #{group}
           </foreach>
         </if>
+        <if test="ids != null and ids.size() > 0">
+          AND p.id IN
+          <foreach item="id" collection="ids" open="(" separator="," close=")">
+              #{id}
+          </foreach>
+        </if>
         ORDER BY p.place_overall_score DESC NULLS LAST,
                  p.adjusted_rating DESC NULLS LAST,
                  p.review_count DESC NULLS LAST,
                  distance ASC,
                  p.id
         LIMIT #{limit}
+    </select>
+
+    <!-- Place image compression (epic 06 §2.13). Files are overwritten under their own keys,
+         so only the record column is ever written here. -->
+    <sql id="placeHasImages">
+        (COALESCE(thumbnail, '') &lt;&gt; '' OR COALESCE(images, '') NOT IN ('', '[]'))
+    </sql>
+
+    <select id="findImageState" resultType="com.ds.goroute.entity.PlaceImageState">
+        SELECT id, place_id, thumbnail, images, image_compression::text AS image_compression
+        FROM places
+        WHERE id = #{id}
+    </select>
+
+    <update id="recordImageCompression">
+        UPDATE places
+        SET image_compression = CAST(#{record} AS jsonb)
+        WHERE id = #{id} AND image_compression IS NULL
+    </update>
+
+    <select id="findImageCompressionPendingIds" resultType="java.util.UUID">
+        SELECT id FROM places
+        WHERE image_compression IS NULL
+          AND <include refid="placeHasImages"/>
+          <if test="afterId != null">AND id &gt; #{afterId}</if>
+        ORDER BY id
+        LIMIT #{limit}
+    </select>
+
+    <select id="countImageCompressionPending" resultType="long">
+        SELECT COUNT(*) FROM places
+        WHERE image_compression IS NULL
+          AND <include refid="placeHasImages"/>
     </select>
 
 </mapper>

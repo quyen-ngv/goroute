@@ -2,6 +2,7 @@ package com.ds.goroute.service.impl;
 
 import com.ds.goroute.service.ImageArchiveService;
 import com.ds.goroute.service.StorageService;
+import com.ds.goroute.thirdparty.caesium.CaesiumClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -9,11 +10,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.*;
@@ -27,9 +25,7 @@ public class ImageArchiveServiceImpl implements ImageArchiveService {
     private final StorageService storageService;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
-    
-    @Value("${imgpress.service.url:http://imgpress:3000}")
-    private String imgpressUrl;
+    private final CaesiumClient caesiumClient;
     
     @Value("${image.archive.max-threads:8}")
     private int maxThreads;
@@ -64,7 +60,7 @@ public class ImageArchiveServiceImpl implements ImageArchiveService {
             long originalSize = originalBytes.length;
             log.info("📥 Downloaded: {}KB", originalSize / 1024);
             
-            byte[] compressedBytes = compressImageAggressively(originalBytes, extractFilename(imageUrl));
+            byte[] compressedBytes = compressImageAggressively(originalBytes);
             if (compressedBytes == null) {
                 log.error("❌ Compression failed: {}", imageUrl);
                 return imageUrl;
@@ -279,62 +275,16 @@ public class ImageArchiveServiceImpl implements ImageArchiveService {
         return null;
     }
 
-    private byte[] compressImageAggressively(byte[] imageBytes, String filename) {
+    private byte[] compressImageAggressively(byte[] imageBytes) {
         try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-            
-            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-            body.add("file", new ByteArrayResource(imageBytes) {
-                @Override
-                public String getFilename() {
-                    return filename;
-                }
-            });
-            
-            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
-            
-            String url = String.format("%s/compress/one?format=webp&quality=%d&width=%d&autoOrient=true",
-                    imgpressUrl, COMPRESSION_QUALITY, MAX_WIDTH);
-                    
-            ResponseEntity<Map> response = restTemplate.postForEntity(url, requestEntity, Map.class);
-            
-            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
-                Map<String, Object> responseBody = response.getBody();
-                Boolean error = (Boolean) responseBody.get("error");
-                
-                if (error == null || !error) {
-                    String base64Data = (String) responseBody.get("data");
-                    if (base64Data != null) {
-                        return Base64.getDecoder().decode(base64Data);
-                    }
-                }
-            }
-            
+            return caesiumClient.compressToWebp(imageBytes, COMPRESSION_QUALITY, MAX_WIDTH);
         } catch (Exception e) {
             log.error("Aggressive compression failed: {}", e.getMessage(), e);
+            return null;
         }
-        
-        return null;
     }
 
     private String generateCompressedFilename() {
         return "compressed_" + UUID.randomUUID() + ".webp";
-    }
-
-    private String extractFilename(String url) {
-        try {
-            String[] parts = url.split("/");
-            String lastPart = parts[parts.length - 1];
-            
-            int queryIndex = lastPart.indexOf("?");
-            if (queryIndex > 0) {
-                lastPart = lastPart.substring(0, queryIndex);
-            }
-            
-            return lastPart.isEmpty() ? "image.jpg" : lastPart;
-        } catch (Exception e) {
-            return "image.jpg";
-        }
     }
 }

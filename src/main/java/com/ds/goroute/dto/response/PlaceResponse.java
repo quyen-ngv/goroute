@@ -24,10 +24,14 @@ public class PlaceResponse {
     private String locale;
     private String name;
     private String title;
+    /** Name of the place's {@code vi} translation row (its name on signs); null when there is none. */
+    private String originalName;
     private Map<String, PlaceTranslationResponse> translations;
     private String category;
     private String placeGroup;
     private List<String> subTypes;
+    /** Other names the place is searched by; indexed, not a display name. */
+    private List<String> searchAliases;
     private String address;
     private List<String> destinations;
     private BigDecimal latitude;
@@ -65,6 +69,8 @@ public class PlaceResponse {
     private String aiDescription; // Curated for AI trip planning
     private JsonNode aiReferences; // Article/review source metadata read by AI
     private String visibilityStatus;
+    /** OPEN, TEMPORARILY_CLOSED or PERMANENTLY_CLOSED, read from Google's status text (PlaceBusinessStatus). */
+    private String businessStatus;
     private String priceRange;
 
     private Map<String, List<String>> openHours; // {"Monday": ["9 AM - 5 PM"], ...}

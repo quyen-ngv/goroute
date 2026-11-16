@@ -76,7 +76,7 @@ class PlaceServiceImplListTest {
     @Test
     void oneCharacterSearchReturnsNothingWithoutQuerying() throws Exception {
         assertThat(service.getAllPlaces("a", null, false, 0, 20)).isEmpty();
-        verify(placeSearchIndexService, never()).searchPlaceIdsByName(any(), any(), anyBoolean(), anyInt(), anyInt());
+        verify(placeSearchIndexService, never()).searchPlaceIdsByName(any(), any(), anyBoolean(), anyInt(), anyInt(), any(), any());
     }
 
     @Test
@@ -87,7 +87,7 @@ class PlaceServiceImplListTest {
         List<PlaceResponse> result = service.getAllPlaces(place.getId().toString(), null, false, 0, 20);
 
         assertThat(result).extracting(PlaceResponse::getId).containsExactly(place.getId());
-        verify(placeSearchIndexService, never()).searchPlaceIdsByName(any(), any(), anyBoolean(), anyInt(), anyInt());
+        verify(placeSearchIndexService, never()).searchPlaceIdsByName(any(), any(), anyBoolean(), anyInt(), anyInt(), any(), any());
     }
 
     @Test
@@ -98,14 +98,14 @@ class PlaceServiceImplListTest {
 
         assertThat(service.getAllPlaces("ChIJabc", null, false, 0, 20))
                 .extracting(PlaceResponse::getId).containsExactly(place.getId());
-        verify(placeSearchIndexService, never()).searchPlaceIdsByName(any(), any(), anyBoolean(), anyInt(), anyInt());
+        verify(placeSearchIndexService, never()).searchPlaceIdsByName(any(), any(), anyBoolean(), anyInt(), anyInt(), any(), any());
     }
 
     @Test
     void textGoesThroughLuceneAndKeepsItsOrder() throws Exception {
         Place first = place("Phở Thìn");
         Place second = place("Phở Bát Đàn");
-        when(placeSearchIndexService.searchPlaceIdsByName("pho", null, false, 0, 20))
+        when(placeSearchIndexService.searchPlaceIdsByName("pho", null, false, 0, 20, null, null))
                 .thenReturn(List.of(first.getId(), second.getId()));
         when(placeRepository.findListSummaryByIds(anyList(), eq(true))).thenReturn(List.of(second, first));
 

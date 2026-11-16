@@ -26,6 +26,13 @@ public class LocalEventAttendanceResponse {
     private boolean joinable;
     private List<Attendee> attendeesPreview;
 
+    /** The viewer bookmarked the event (V285): it shows on their Feed and they get its reminders. */
+    private boolean saved;
+    /** The viewer has a check-in at this event. */
+    private boolean checkedIn;
+    /** Public check-ins made at this event, by anyone. */
+    private long checkinCount;
+
     @Data
     @Builder
     @NoArgsConstructor

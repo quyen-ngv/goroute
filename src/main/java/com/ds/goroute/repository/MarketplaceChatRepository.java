@@ -92,4 +92,7 @@ public interface MarketplaceChatRepository {int insertConversation(MarketplaceCo
  int setAssistantTitleIfEmpty(UUID conversationId, String title, LocalDateTime at);
 
  /** Archives a thread of the owner (keeping an earlier archive time); 0 when it is not theirs. */
- int archiveAssistantThread(UUID conversationId, UUID ownerId, LocalDateTime at);}
+ int archiveAssistantThread(UUID conversationId, UUID ownerId, LocalDateTime at);
+
+ /** Deletes a trip group with its trip: archived and stamped, so no member lists or reads it again. */
+ int archiveTripConversation(UUID conversationId, LocalDateTime at);}

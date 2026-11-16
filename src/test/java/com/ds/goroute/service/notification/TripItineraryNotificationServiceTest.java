@@ -32,6 +32,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,6 +60,8 @@ class TripItineraryNotificationServiceTest {
     private ScheduledNotificationSender sender;
     @Mock
     private TrackSharingService trackSharingService;
+    @Mock
+    private TripDayWeatherAlerts weatherAlerts;
 
     private TripItineraryNotificationService service;
 
@@ -72,7 +75,8 @@ class TripItineraryNotificationServiceTest {
                 expenseSplitRepository,
                 userRepository,
                 sender,
-                trackSharingService
+                trackSharingService,
+                weatherAlerts
         );
     }
 
@@ -442,6 +446,35 @@ class TripItineraryNotificationServiceTest {
 
     private Instant bangkok(LocalDate date, int hour, int minute) {
         return ZonedDateTime.of(date, LocalTime.of(hour, minute), ZoneId.of("Asia/Bangkok")).toInstant();
+    }
+
+    @Test
+    void sendsTheWeatherAlertOncePerDayWithADeepLinkToThatDay() {
+        Trip trip = trip(LocalDate.of(2026, 8, 20));
+        when(activityRepository.findByTripId(trip.getId())).thenReturn(List.of());
+        when(tripMemberRepository.findByTripId(trip.getId())).thenReturn(List.of());
+        LocalDate day = trip.getStartDate().plusDays(1);
+        ZonedDateTime sendAt = ZonedDateTime.of(trip.getStartDate(), LocalTime.of(19, 0), ZoneId.of("Asia/Bangkok"));
+        when(weatherAlerts.due(eq(trip), any(), any(), any())).thenReturn(List.of(
+                new TripDayWeatherAlerts.DueAlert(day, 2, sendAt, Map.of("weather", "Heavy rain"))));
+        when(weatherAlerts.recipients(any())).thenReturn(Set.of(trip.getOwnerId()));
+        when(sender.sendOnce(any(), any(), any(), any(), any(), any())).thenReturn(true);
+
+        assertThat(service.processTrip(trip, bangkok(trip.getStartDate(), 19, 1))).isEqualTo(1);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> dataCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(sender).sendOnce(
+                eq(trip.getOwnerId()),
+                eq(trip.getId()),
+                eq(NotificationType.TRIP_DAY_WEATHER_ALERT),
+                eq(trip.getId() + ":TRIP_DAY_WEATHER_ALERT:" + trip.getId() + ":" + day),
+                eq(sendAt),
+                dataCaptor.capture()
+        );
+        assertThat(dataCaptor.getValue())
+                .containsEntry("dayNumber", 2)
+                .containsEntry("weather", "Heavy rain")
+                .containsEntry("deepLink", "/trip/" + trip.getId() + "?day=2");
     }
 
     private Trip trip(LocalDate startDate) {

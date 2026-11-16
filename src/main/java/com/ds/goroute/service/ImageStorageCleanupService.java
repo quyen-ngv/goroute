@@ -63,6 +63,8 @@ public class ImageStorageCleanupService {
             WHERE c.table_schema = current_schema()
               AND t.table_type = 'BASE TABLE'
               AND t.table_name <> 'flyway_schema_history'
+              -- Compression bookkeeping (V280): a key listed there is not a use of the file.
+              AND t.table_name <> 'image_compressions'
               AND (c.data_type IN ('text', 'character varying', 'json', 'jsonb')
                    OR c.udt_name IN ('_text', '_varchar'))
             ORDER BY c.table_name, c.column_name
@@ -79,7 +81,10 @@ public class ImageStorageCleanupService {
             "media_assets.url",
             "city_stories.image_url",
             "city_stories.video_url",
-            "city_stories.thumbnail_url");
+            "city_stories.thumbnail_url",
+            // Not a reference: the record of a place's last image compression keeps the URLs
+            // it handled, and must not keep a replaced image alive (V279).
+            "places.image_compression");
 
     /**
      * The only entities whose files go with the record, because nothing copies them: a user's

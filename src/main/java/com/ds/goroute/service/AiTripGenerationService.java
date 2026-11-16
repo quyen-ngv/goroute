@@ -61,6 +61,8 @@ public class AiTripGenerationService {
     /** Outer bound of every candidate search; the destination's tourist area narrows it further. */
     private static final BigDecimal CANDIDATE_RADIUS_KM = BigDecimal.valueOf(50);
     private static final int MENU_ITEMS_FOR_AI = 10;
+    /** Most-used places read per trending window (7 and 30 days) for one destination. */
+    private static final int TRENDING_PLACES_FOR_AI = 40;
     private static final int EXTERNAL_SEARCH_RADIUS_METERS = 50_000;
     private static final int EXTERNAL_SEARCH_LIMIT = 5;
     /** Error prefix the worker reports when it stopped a run because the user ran out of AI credits. */
@@ -158,6 +160,50 @@ public class AiTripGenerationService {
         for (Place p : places) result.add(catalogueRow(p));
         log.info("AI trip candidates: job {} groups={} area={} -> {} places", jobId, request.getPlaceGroups(),
                 area == null ? null : area.getFullAddress(), result.size());
+        return result;
+    }
+
+    /**
+     * The destination's places travellers used most lately, as catalogue rows plus how often:
+     * {@code tripsLast7Days}/{@code checkinsLast7Days} and the same over 30 days. Same tourist
+     * area and groups as {@link #candidates}; trips created by AI jobs are not counted, so the
+     * planner never reads its own earlier picks back as a trend. Places unused in both windows
+     * are not listed, so a new destination returns nothing.
+     */
+    public List<Map<String,Object>> trending(UUID jobId, String attemptId, AiTripCandidateQueryRequest request) {
+        verifyAttempt(mapper.findById(jobId), attemptId);
+        LocationImage area = destinationArea(request.getLocationImageId(), request.getLatitude(), request.getLongitude());
+        List<String> groups = PlaceGroup.normalizeCodes(request.getPlaceGroups());
+        BigDecimal radiusMeters = CANDIDATE_RADIUS_KM.multiply(BigDecimal.valueOf(1000));
+        Map<UUID, PlaceTrendingRow> week = new HashMap<>();
+        Map<UUID, PlaceTrendingRow> month = new HashMap<>();
+        for (PlaceTrendingRow row : placeRepository.findTrendingUsage(request.getLatitude(), request.getLongitude(),
+                radiusMeters, groups, PlaceTrendingPeriod.WEEK.getDays(), true, TRENDING_PLACES_FOR_AI)) {
+            week.put(row.getPlaceId(), row);
+        }
+        for (PlaceTrendingRow row : placeRepository.findTrendingUsage(request.getLatitude(), request.getLongitude(),
+                radiusMeters, groups, PlaceTrendingPeriod.MONTH.getDays(), true, TRENDING_PLACES_FOR_AI)) {
+            month.put(row.getPlaceId(), row);
+        }
+        Set<UUID> ids = new LinkedHashSet<>(week.keySet());
+        ids.addAll(month.keySet());
+        List<Map<String,Object>> result = new ArrayList<>();
+        for (Place p : placeRepository.findActiveForAiInArea(request.getLatitude(), request.getLongitude(),
+                CANDIDATE_RADIUS_KM, area, groups, new ArrayList<>(ids), ids.size())) {
+            Map<String,Object> row = catalogueRow(p);
+            PlaceTrendingRow w = week.get(p.getId());
+            PlaceTrendingRow m = month.get(p.getId());
+            int weekTrips = w == null ? 0 : w.getTripCount();
+            int weekCheckins = w == null ? 0 : w.getCheckinCount();
+            row.put("tripsLast7Days", weekTrips);
+            row.put("checkinsLast7Days", weekCheckins);
+            // A week's top place can miss the month's top list; the month still contains the week.
+            row.put("tripsLast30Days", Math.max(weekTrips, m == null ? 0 : m.getTripCount()));
+            row.put("checkinsLast30Days", Math.max(weekCheckins, m == null ? 0 : m.getCheckinCount()));
+            result.add(row);
+        }
+        log.info("AI trip trending: job {} groups={} area={} -> {} places ({} this week)", jobId, groups,
+                area == null ? null : area.getFullAddress(), result.size(), week.size());
         return result;
     }
 

@@ -51,6 +51,14 @@ public interface PlaceService {
                                      int page, int size);
 
     /**
+     * {@link #getAllPlaces(String, List, boolean, int, int)} leaning towards a point: names that
+     * match alike come nearer first, nothing is left out for being far, and each place carries
+     * {@code distance} from the point. Null coordinates behave as the plain call.
+     */
+    List<PlaceResponse> getAllPlaces(String search, List<String> placeGroups, boolean includeInactive,
+                                     int page, int size, BigDecimal latitude, BigDecimal longitude);
+
+    /**
      * List every place the detail-refresh worker may re-scrape, newest-stale first.
      *
      * <p>Unlike {@link #getAllPlaces} this is not a page of the catalogue: the worker needs

@@ -45,6 +45,7 @@
         <result column="source_social_job_id" property="sourceSocialJobId" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="source_social_candidate_ref" property="sourceSocialCandidateRef" jdbcType="VARCHAR"/>
         <result column="mapbox_id" property="mapboxId" jdbcType="VARCHAR"/>
+        <result column="local_event_id" property="localEventId" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
         <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
     </resultMap>
@@ -58,7 +59,8 @@
                                rating, photo_url, notes, description, status, added_by,
                                is_accommodation, is_starting_point, starting_point_date,
                                booking_id, booking_source, option_group_id, option_index, relation,
-                               source_social_job_id, source_social_candidate_ref, mapbox_id, created_at, updated_at)
+                               source_social_job_id, source_social_candidate_ref, mapbox_id, local_event_id,
+                               created_at, updated_at)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER},
                 #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
                 #{dayNumber}, #{sortOrder}, #{placeId}, #{customPlaceId,javaType=java.util.UUID,jdbcType=OTHER},
@@ -78,7 +80,7 @@
                 #{bookingId,javaType=java.util.UUID,jdbcType=OTHER}, #{bookingSource},
                 #{optionGroupId}, #{optionIndex}, #{relation},
                 #{sourceSocialJobId,javaType=java.util.UUID,jdbcType=OTHER}, #{sourceSocialCandidateRef},
-                #{mapboxId}, NOW(), NOW())
+                #{mapboxId}, #{localEventId,javaType=java.util.UUID,jdbcType=OTHER}, NOW(), NOW())
     </insert>
 
     <select id="selectById" parameterType="java.util.UUID" resultMap="ActivityResultMap">
@@ -201,12 +203,14 @@
         place_id is free text: a places.id UUID, a legacy Google id, or blank. The CASE keeps the
         ::uuid cast from running on text that is not a UUID. Every unlinked activity of a live trip
         is listed, with or without an address. An operator can take one out of the queue
-        (place_review_dismissed_at, V248); `dismissed` lists those instead.
+        (place_review_dismissed_at, V248); `dismissed` lists those instead. A stop that is a local
+        event (local_event_id, V285) is left out: the event names where it is.
     -->
     <sql id="unlinkedActivityFilter">
         FROM activities a
         JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
         WHERE NOT EXISTS (SELECT 1 FROM places p WHERE p.id = a.place_ref_id)
+          AND a.local_event_id IS NULL
           AND NOT EXISTS (
               SELECT 1 FROM places p
               WHERE p.id = CASE

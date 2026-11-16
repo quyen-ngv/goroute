@@ -40,6 +40,8 @@ public class PlaceMapPinResponse {
     private Integer tripUseCount;
     /** Check-ins on the place (V225). */
     private Integer checkinCount;
+    /** OPEN or TEMPORARILY_CLOSED (permanently closed places are left off map tiles). */
+    private String businessStatus;
 
     /** Photos a pin carries: enough to swipe through on a card, few enough for a tile. */
     public static final int MAX_IMAGES = 5;

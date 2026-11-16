@@ -50,6 +50,15 @@ public class InternalAiTripGenerationController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(service.candidates(jobId, attemptId, request)));
     }
 
+    /** The destination's places travellers used most in the last 7 and 30 days, with the counts. */
+    @PostMapping("/{jobId}/trending")
+    public ResponseEntity<BaseResponse<List<Map<String, Object>>>> trending(
+            @PathVariable UUID jobId,
+            @RequestHeader("X-Attempt-Id") String attemptId,
+            @Valid @RequestBody AiTripCandidateQueryRequest request) {
+        return ResponseEntity.ok(ofSucceeded(service.trending(jobId, attemptId, request)));
+    }
+
     @PostMapping("/{jobId}/resolve-candidates")
     public ResponseEntity<BaseResponse<List<Map<String, Object>>>> resolveCandidates(
             @PathVariable UUID jobId,

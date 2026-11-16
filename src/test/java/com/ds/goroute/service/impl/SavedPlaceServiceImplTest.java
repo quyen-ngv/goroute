@@ -47,7 +47,8 @@ class SavedPlaceServiceImplTest {
             savedCategoryMapper,
             placeMapper,
             locationImageRepository,
-            new ObjectMapper());
+            new ObjectMapper(),
+            org.mockito.Mockito.mock(com.ds.goroute.mapper.PlaceTranslationMapper.class));
 
     private final UUID userId = UUID.randomUUID();
 

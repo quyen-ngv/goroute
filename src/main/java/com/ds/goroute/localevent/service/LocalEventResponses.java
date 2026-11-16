@@ -135,7 +135,8 @@ public class LocalEventResponses {
                 .build();
     }
 
-    private void fillSummary(LocalEventSummaryResponse response, LocalEvent event) {
+    /** Fills the list-card fields of any summary subtype. */
+    void fillSummary(LocalEventSummaryResponse response, LocalEvent event) {
         response.setId(event.getId());
         response.setTitle(event.getTitle());
         response.setCategory(enumOf(LocalEventCategory.class, event.getCategory()));

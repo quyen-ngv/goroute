@@ -25,7 +25,6 @@ public final class FoodTaglineResolver {
             case "vi" -> food.getHeroTaglineVi();
             case "ja" -> food.getHeroTaglineJa();
             case "ko" -> food.getHeroTaglineKo();
-            case "zh-tw" -> food.getHeroTaglineJa();
             default -> food.getHeroTaglineEn();
         };
         if (fromLang != null && !fromLang.isBlank()) {

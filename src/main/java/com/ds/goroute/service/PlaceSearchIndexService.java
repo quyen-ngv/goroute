@@ -67,6 +67,14 @@ public interface PlaceSearchIndexService {
     List<UUID> searchPlaceIdsByName(String keyword, List<String> placeGroups, boolean includeInactive,
                                     int page, int size) throws IOException;
 
+    /**
+     * {@link #searchPlaceIdsByName(String, List, boolean, int, int)} with a point to lean
+     * towards: among places whose names match alike (one chain in several provinces) the
+     * nearer come first. Nothing is excluded for being far. Null coordinates mean no leaning.
+     */
+    List<UUID> searchPlaceIdsByName(String keyword, List<String> placeGroups, boolean includeInactive,
+                                    int page, int size, Double latitude, Double longitude) throws IOException;
+
     /** How many ACTIVE places {@link #searchPlaceIdsByName} finds for {@code keyword} in these groups. */
     int countPlacesByName(String keyword, List<String> placeGroups) throws IOException;
 

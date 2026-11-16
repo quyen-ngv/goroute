@@ -31,6 +31,11 @@ public class Place {
     private String category;
     /** {@link com.ds.goroute.type.PlaceSubType} codes. The generic update leaves them alone; see {@code updateSubTypes}. */
     private String[] subTypes;
+    /**
+     * Other names the place is searched by (V284), in any language; indexed, never shown as
+     * the name. The generic update leaves them alone; see {@code updateSearchAliases}.
+     */
+    private String[] searchAliases;
     private String address;
     /** Province this row was resolved to; what a check-in inherits when it is linked here. */
     private String provinceCode;

@@ -1,5 +1,7 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.config.filter.AcceptLanguageFilter;
+import com.ds.goroute.service.PlaceTranslationService;
 import com.ds.goroute.service.TripAccessGuard;
 
 import com.ds.goroute.constant.ErrorConstant;
@@ -10,6 +12,7 @@ import com.ds.goroute.dto.response.ActivityPlaceSummaryResponse;
 import com.ds.goroute.dto.response.ActivityResponse;
 import com.ds.goroute.entity.Activity;
 import com.ds.goroute.entity.Place;
+import com.ds.goroute.entity.PlaceTranslation;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.ActivityRepository;
@@ -70,11 +73,18 @@ public class ActivityServiceImpl implements ActivityService {
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final MediaAssetRepository mediaAssetRepository;
     private final TripRealtimePublisher tripRealtimePublisher;
+    private final com.ds.goroute.localevent.persistence.LocalEventRepository localEventRepository;
+    private final com.ds.goroute.localevent.service.LocalEventResponses localEventResponses;
 
     @Override
     @Transactional
     public ActivityResponse createActivity(UUID tripId, CreateActivityRequest request, UUID userId) {
         tripAccessGuard.requireEditAccess(tripId, userId);
+
+        // A stop that is a local event: only a published one can be added.
+        com.ds.goroute.localevent.domain.LocalEvent localEvent = request.getLocalEventId() == null ? null
+                : localEventRepository.findPublishedById(request.getLocalEventId())
+                        .orElseThrow(() -> new BusinessException(ErrorConstant.LOCAL_EVENT_NOT_FOUND, "Event not found"));
 
         Activity activity = Activity.builder()
                 .id(UUID.randomUUID())
@@ -106,6 +116,14 @@ public class ActivityServiceImpl implements ActivityService {
                 .bookingSource(request.getBookingSource())
                 .addedBy(userId)
                 .build();
+        if (localEvent != null) {
+            activity.setLocalEventId(localEvent.getId());
+            // The venue's catalogue place, unless the request already names one.
+            if (!isNonBlank(activity.getPlaceId()) && localEvent.getPlaceId() != null) {
+                activity.setPlaceRefId(localEvent.getPlaceId());
+            }
+            activity.setPhotoUrl(localEvent.getCoverUrl());
+        }
 
         activityRepository.insert(activity);
         log.info("Activity created: {} in trip: {}", activity.getId(), tripId);
@@ -148,10 +166,31 @@ public class ActivityServiceImpl implements ActivityService {
                 .filter(place -> isNonBlank(place.getPlaceId()))
                 .collect(Collectors.toMap(Place::getPlaceId, place -> place, (left, right) -> left));
 
+        // The linked places' names in the reader's language, one query for the trip.
+        List<UUID> linkedPlaceIds = java.util.stream.Stream.concat(
+                        placesById.keySet().stream(), placesByExternalId.values().stream().map(Place::getId))
+                .distinct()
+                .toList();
+        Map<UUID, List<PlaceTranslation>> placeTranslations =
+                placeRepository.findTranslationsByPlaceIds(linkedPlaceIds);
+
+        // The events behind the stops that are one, one query for the trip.
+        List<UUID> localEventIds = activities.stream()
+                .map(Activity::getLocalEventId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<UUID, com.ds.goroute.localevent.domain.LocalEvent> localEvents = localEventIds.isEmpty()
+                ? Map.of()
+                : localEventRepository.findLiveSummariesByIds(localEventIds);
+
         return activities.stream()
-                .map(activity -> mapToActivityResponse(
-                        activity,
-                        resolveLinkedPlace(activity, placesById, placesByExternalId)))
+                .map(activity -> {
+                    Place place = resolveLinkedPlace(activity, placesById, placesByExternalId);
+                    return mapToActivityResponse(activity, place,
+                            place == null ? null : placeTranslations.get(place.getId()),
+                            activity.getLocalEventId() == null ? null : localEvents.get(activity.getLocalEventId()));
+                })
                 .collect(Collectors.toList());
     }
 
@@ -250,7 +289,24 @@ public class ActivityServiceImpl implements ActivityService {
         log.info("Activities reorder requested in trip: {} (deprecated - order by time)", tripId);
     }
 
+    /** For one activity: its linked place's translations are read here. */
     private ActivityResponse mapToActivityResponse(Activity activity, Place place) {
+        return mapToActivityResponse(activity, place, place == null ? null
+                : placeRepository.findTranslationsByPlaceIds(List.of(place.getId())).get(place.getId()),
+                activity.getLocalEventId() == null ? null
+                        : localEventRepository.findLiveSummariesByIds(List.of(activity.getLocalEventId()))
+                                .get(activity.getLocalEventId()));
+    }
+
+    private ActivityResponse mapToActivityResponse(Activity activity, Place place,
+                                                   List<PlaceTranslation> placeTranslations,
+                                                   com.ds.goroute.localevent.domain.LocalEvent localEvent) {
+        String language = AcceptLanguageFilter.currentCode();
+        // The name was copied from the place when the activity was added: it is returned in
+        // the reader's language while it is still one of the place's names, in the field every
+        // client already shows. A name somebody wrote by hand is returned as written.
+        String localizedName = place == null ? null : PlaceTranslationService.localizedCopy(
+                activity.getName(), place.getTitle(), placeTranslations, language);
         int checkedInCount = checkinRepository.findByActivityId(activity.getId()).size();
 
         // Calculate actual spent from expenses
@@ -280,7 +336,10 @@ public class ActivityServiceImpl implements ActivityService {
                 ? place.getLongitude()
                 : activity.getLng();
         BigDecimal rating = placeRating(place, activity.getRating());
-        String photoUrl = firstNonBlank(place != null ? place.getThumbnail() : null, activity.getPhotoUrl());
+        // An event stop shows the event's own cover, not the photo of the venue it happens at.
+        String photoUrl = localEvent != null && isNonBlank(localEvent.getCoverUrl())
+                ? localEvent.getCoverUrl()
+                : firstNonBlank(place != null ? place.getThumbnail() : null, activity.getPhotoUrl());
 
         return ActivityResponse.builder()
                 .id(activity.getId())
@@ -289,8 +348,8 @@ public class ActivityServiceImpl implements ActivityService {
                 .placeId(activity.getPlaceId())
                 .customPlaceId(activity.getCustomPlaceId())
                 .placeRefId(activity.getPlaceRefId())
-                .place(mapPlaceSummary(place))
-                .name(activity.getName())
+                .place(mapPlaceSummary(place, PlaceTranslationService.localizedName(placeTranslations, language)))
+                .name(localizedName != null ? localizedName : activity.getName())
                 .address(address)
                 .lat(latitude)
                 .lng(longitude)
@@ -323,6 +382,8 @@ public class ActivityServiceImpl implements ActivityService {
                 .expenses(expenseResponses)
                 .bookingId(activity.getBookingId())
                 .bookingSource(activity.getBookingSource())
+                .localEventId(activity.getLocalEventId())
+                .localEvent(localEvent == null ? null : localEventResponses.summary(localEvent))
                 .build();
     }
 
@@ -370,14 +431,15 @@ public class ActivityServiceImpl implements ActivityService {
         }
     }
 
-    private ActivityPlaceSummaryResponse mapPlaceSummary(Place place) {
+    private ActivityPlaceSummaryResponse mapPlaceSummary(Place place, String localizedName) {
         if (place == null) {
             return null;
         }
         return ActivityPlaceSummaryResponse.builder()
                 .id(place.getId())
                 .placeId(place.getPlaceId())
-                .name(place.getTitle())
+                // In the reader's language when the place has that name; its title otherwise.
+                .name(localizedName != null ? localizedName : place.getTitle())
                 .address(place.getAddress())
                 .lat(place.getLatitude())
                 .lng(place.getLongitude())

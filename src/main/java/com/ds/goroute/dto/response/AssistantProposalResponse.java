@@ -63,4 +63,9 @@ public class AssistantProposalResponse {
      * read: a Pengoo DM has no trip of its own, so the conversation cannot answer this.
      */
     private Boolean viewerCanEdit;
+    /**
+     * The trip it names no longer exists (deleted with its chat kept). Set only on the per-reader
+     * read, like {@link #viewerCanEdit}; the app then says so instead of opening the trip.
+     */
+    private Boolean tripDeleted;
 }

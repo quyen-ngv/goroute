@@ -75,7 +75,7 @@ class MapSearchServiceTest {
         when(resolver.mayFallBackToGoong()).thenReturn(true);
         when(mapbox.isConfigured()).thenReturn(true);
         when(budget.tryAcquire(any())).thenReturn(new MapBudgetGuard.Decision(true, null));
-        when(cache.searchPicked(anyString(), any(), any(), anyDouble(), anyInt())).thenReturn(List.of());
+        when(cache.searchPicked(anyString(), anyString(), any(), any(), anyDouble(), anyInt())).thenReturn(List.of());
         when(mapbox.forward(anyString(), any(), any(), any(), anyInt())).thenReturn(objectMapper.readTree(FORWARD));
         when(goong.forward(anyString(), any())).thenReturn(ResponseEntity.ok("{\"predictions\":[],\"from\":\"goong\"}"));
         when(geoService.resolveWard(any(), any())).thenReturn(Optional.empty());
@@ -115,7 +115,8 @@ class MapSearchServiceTest {
         assertThat(answer.path("predictions")).hasSize(2);
         assertThat(answer.path("predictions").get(0).path("place_id").asText()).isEqualTo("mapbox:bentthanh1");
         verify(mapbox).forward("chợ bến", 10.77, 106.69, "vi", 5);
-        verify(cache).upsertPlace(org.mockito.ArgumentMatchers.argThat(place -> "bentthanh1".equals(place.getProviderPlaceId())));
+        verify(cache).upsertPlace(org.mockito.ArgumentMatchers.argThat(place -> "bentthanh1".equals(place.getProviderPlaceId())
+                && "vi".equals(place.getLanguage())));
         verify(cache).upsertResponse(anyString(), eq("AUTOCOMPLETE"), eq("MAPBOX"), anyString(), any());
     }
 
@@ -135,7 +136,7 @@ class MapSearchServiceTest {
         verify(mapbox).geocodeAreas("singapore", 21.03, 105.85, "vi", MapSearchService.AUTOCOMPLETE_DEFAULT_LIMIT);
         verify(budget).tryAcquire(MapBillingApi.GEOCODE);
         verify(mapbox, never()).forward(anyString(), any(), any(), any(), anyInt());
-        verify(cache, never()).searchPicked(anyString(), any(), any(), anyDouble(), anyInt());
+        verify(cache, never()).searchPicked(anyString(), anyString(), any(), any(), anyDouble(), anyInt());
     }
 
     @Test
@@ -166,7 +167,7 @@ class MapSearchServiceTest {
     void pickedPlacesAnswer() throws Exception {
         List<MapPlaceCacheEntry> picked = MapboxResults.places(objectMapper.readTree(FORWARD));
         picked = List.of(picked.get(0), picked.get(1), picked.get(0), picked.get(1), picked.get(0));
-        when(cache.searchPicked(eq("cho ben"), any(), any(), anyDouble(), anyInt())).thenReturn(picked);
+        when(cache.searchPicked(eq("vi"), eq("cho ben"), any(), any(), anyDouble(), anyInt())).thenReturn(picked);
 
         JsonNode answer = body(service.autocomplete(user, query("chợ bến", "10.77,106.69", null)));
 
@@ -179,7 +180,7 @@ class MapSearchServiceTest {
     void pickedPlacesNeedAPoint() throws Exception {
         List<MapPlaceCacheEntry> picked = MapboxResults.places(objectMapper.readTree(FORWARD));
         picked = List.of(picked.get(0), picked.get(1), picked.get(0), picked.get(1), picked.get(0));
-        when(cache.searchPicked(eq("cho ben"), any(), any(), anyDouble(), anyInt())).thenReturn(picked);
+        when(cache.searchPicked(eq("vi"), eq("cho ben"), any(), any(), anyDouble(), anyInt())).thenReturn(picked);
 
         service.autocomplete(user, query("chợ bến", null, null));
 
@@ -235,7 +236,8 @@ class MapSearchServiceTest {
     @DisplayName("a known mapbox: id is answered from the place cache, marked picked, at no cost")
     void detailFromCache() throws Exception {
         MapPlaceCacheEntry place = MapboxResults.places(objectMapper.readTree(FORWARD)).get(0);
-        when(cache.findPlace("MAPBOX", "bentthanh1")).thenReturn(place);
+        place.setLanguage("vi");
+        when(cache.findPlace("MAPBOX", "bentthanh1", "vi")).thenReturn(place);
         Ward ward = new Ward();
         ward.setName("Phường Bến Thành");
         ward.setProvinceName("Thành phố Hồ Chí Minh");
@@ -245,7 +247,7 @@ class MapSearchServiceTest {
 
         assertThat(result.path("name").asText()).isEqualTo("Chợ Bến Thành");
         assertThat(result.path("compound").path("commune").asText()).isEqualTo("Phường Bến Thành");
-        verify(cache).incrementPicked("MAPBOX", "bentthanh1");
+        verify(cache).incrementPicked("MAPBOX", "bentthanh1", "vi");
         verify(mapbox, never()).retrieve(anyString(), any());
         verify(budget, never()).tryAcquire(any());
     }
@@ -271,6 +273,39 @@ class MapSearchServiceTest {
         assertThat(answer.path("results")).hasSize(2);
         verify(mapbox).reverse(10.7725, 106.698, "vi", 5);
         verify(cache).upsertResponse(anyString(), eq("REVERSE"), eq("MAPBOX"), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("Goong reverse geocoding carries the official ward and province, without a district")
+    void goongReverseUsesOfficialWard() throws Exception {
+        when(resolver.forUser(user)).thenReturn(Optional.of(MapProvider.GOONG));
+        when(goong.forward(eq("/Geocode"), any())).thenReturn(ResponseEntity.ok("""
+                {"results":[{"name":"128 Nguyễn Chí Thanh","formatted_address":"128 Nguyễn Chí Thanh, Láng Thượng, Đống Đa, Hà Nội",
+                  "compound":{"commune":"Láng Thượng","district":"Đống Đa","province":"Hà Nội"}}],"status":"OK"}"""));
+        Ward ward = new Ward();
+        ward.setName("Láng");
+        ward.setFullName("Phường Láng");
+        ward.setProvinceName("Hà Nội");
+        when(geoService.resolveWard(any(), any())).thenReturn(Optional.of(ward));
+
+        JsonNode result = body(service.geocode(user, null, "21.0207,105.8094", 5, "vi")).path("results").get(0);
+
+        assertThat(result.path("name").asText()).isEqualTo("128 Nguyễn Chí Thanh");
+        assertThat(result.path("compound").path("commune").asText()).isEqualTo("Phường Láng");
+        assertThat(result.path("compound").path("province").asText()).isEqualTo("Hà Nội");
+        assertThat(result.path("compound").has("district")).isFalse();
+    }
+
+    @Test
+    @DisplayName("Goong reverse geocoding is left as sent when the point resolves to no ward")
+    void goongReverseWithoutWard() throws Exception {
+        when(resolver.forUser(user)).thenReturn(Optional.of(MapProvider.GOONG));
+        String goongBody = "{\"results\":[{\"name\":\"X\",\"compound\":{\"district\":\"Đống Đa\"}}]}";
+        when(goong.forward(eq("/Geocode"), any())).thenReturn(ResponseEntity.ok(goongBody));
+
+        ResponseEntity<String> response = service.geocode(user, null, "21.0207,105.8094", 5, "vi");
+
+        assertThat(response.getBody()).isEqualTo(goongBody);
     }
 
     @Test

@@ -1,5 +1,7 @@
 # Đánh giá backend và kế hoạch refactor — 2026-09-18
 
+> Trạng thái (11/11/2026, đối chiếu code): PARTIAL — tiến độ thật ở BACKEND_REFACTOR_PLAN_2026-10.md §2 — xem .docs/STATUS_INDEX.md
+
 > **14/10/2026:** tiến độ của plan này và thứ tự làm mới nằm ở
 > [`BACKEND_REFACTOR_PLAN_2026-10.md`](BACKEND_REFACTOR_PLAN_2026-10.md) (§2 đối chiếu, Phase 5 kế thừa các mục hiệu năng còn lại).
 > Nội dung chi tiết từng mục ở đây vẫn còn hiệu lực.

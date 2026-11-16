@@ -6,6 +6,7 @@ import com.ds.goroute.dto.response.PlaceResponse;
 import com.ds.goroute.service.FoodService;
 import com.ds.goroute.service.PlaceGroupedSearchService;
 import com.ds.goroute.service.PlaceMapTileService;
+import com.ds.goroute.service.ProvinceNameResolver;
 import com.ds.goroute.service.PlaceService;
 import com.ds.goroute.type.PlaceSearchSort;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,7 +42,7 @@ class PlaceControllerGroupedSearchTest {
         placeService = mock(PlaceService.class);
         groupedSearchService = mock(PlaceGroupedSearchService.class);
         controller = new PlaceController(placeService, mock(FoodService.class), mock(PlaceMapTileService.class),
-                groupedSearchService);
+                groupedSearchService, mock(ProvinceNameResolver.class));
         ReflectionTestUtils.setField(controller, "httpServletRequest", new MockHttpServletRequest());
     }
 

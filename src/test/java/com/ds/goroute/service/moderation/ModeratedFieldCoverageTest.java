@@ -54,6 +54,7 @@ class ModeratedFieldCoverageTest {
             Map.entry("PromoteCheckinClusterRequest.note", "Operator decision note on a promotion"),
             Map.entry("RejectContributionRequest.reason", "Operator decision note"),
             Map.entry("ResolveModerationFlagRequest.note", "Operator decision note"),
+            Map.entry("ReviewPlaceEditSuggestionRequest.note", "Operator note on a place edit review; never shown to a user"),
             Map.entry("GrantSubscriptionRequest.note", "Operator records why a plan was granted; never shown to a user"),
             Map.entry("GrantGuideRequest.note", "Operator records why a guide was vouched for; never shown to a user"),
             Map.entry("UpsertModerationTermRequest.note", "Operator note on a term list entry"),

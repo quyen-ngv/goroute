@@ -7,9 +7,13 @@ import com.ds.goroute.localevent.domain.LocalEvent;
 import com.ds.goroute.localevent.dto.LocalEventAttendanceResponse;
 import com.ds.goroute.localevent.persistence.LocalEventAttendeeRepository;
 import com.ds.goroute.localevent.persistence.LocalEventRepository;
+import com.ds.goroute.localevent.persistence.LocalEventSaveRepository;
 import com.ds.goroute.localevent.service.LocalEventAttendanceService;
 import com.ds.goroute.localevent.service.LocalEventChatService;
+import com.ds.goroute.localevent.service.LocalEventResponses;
+import com.ds.goroute.repository.UserCheckinRepository;
 import com.ds.goroute.repository.UserRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ds.goroute.service.BetaAccessService;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.type.BusinessConfigKey;
@@ -52,6 +56,8 @@ class LocalEventAttendanceServiceTest {
     @Mock BusinessConfigService config;
     @Mock BetaAccessService betaAccess;
     @Mock UserRepository users;
+    @Mock LocalEventSaveRepository saves;
+    @Mock UserCheckinRepository checkins;
 
     LocalEventAttendanceService service;
 
@@ -60,7 +66,8 @@ class LocalEventAttendanceServiceTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        service = new LocalEventAttendanceService(events, attendees, chat, config, betaAccess, users);
+        service = new LocalEventAttendanceService(events, attendees, chat, config, betaAccess, users, saves, checkins,
+                new LocalEventResponses(new ObjectMapper()));
         var clock = LocalEventAttendanceService.class.getDeclaredField("clock");
         clock.setAccessible(true);
         clock.set(service, Clock.fixed(NOW, ZoneOffset.UTC));

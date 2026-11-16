@@ -1,5 +1,7 @@
 # Review backend và kế hoạch cập nhật — 2026-10-14
 
+> Trạng thái (11/11/2026, đối chiếu code): PARTIAL — Phase 0: 5/7 DONE; Phase 1–7 NOT_STARTED — xem .docs/STATUS_INDEX.md
+
 Tài liệu này **kế thừa** [`BACKEND_REFACTOR_PLAN_2026-09.md`](BACKEND_REFACTOR_PLAN_2026-09.md) (2026-09-18).
 Bản 09 tập trung vào hiệu năng, cache và dọn API; các mục hiệu năng của nó vẫn còn hiệu lực và được gom
 vào Phase 5 ở đây. Bản này thêm bốn góc bản 09 chưa đi sâu: **cách chia module/feature, khả năng mở rộng,

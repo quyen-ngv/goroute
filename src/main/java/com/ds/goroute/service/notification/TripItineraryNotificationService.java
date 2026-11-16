@@ -74,6 +74,7 @@ public class TripItineraryNotificationService {
     private final UserRepository userRepository;
     private final ScheduledNotificationSender notificationSender;
     private final TrackSharingService trackSharingService;
+    private final TripDayWeatherAlerts weatherAlerts;
 
     public int processDueNotifications(Instant now) {
         LocalDate utcDate = now.atZone(ZoneOffset.UTC).toLocalDate();
@@ -171,6 +172,7 @@ public class TripItineraryNotificationService {
         }
 
         delivered += dispatchDayEnds(trip, recipients, items, zone, now);
+        delivered += dispatchWeatherAlerts(trip, recipients, activities, zone, now);
 
         delivered += dispatchToRecipients(
                 trip,
@@ -266,6 +268,38 @@ public class TripItineraryNotificationService {
                 // Keyed by date, not time: moving the day's last stop must not send a second wrap-up.
                 if (sendOnce(trip, recipientId, NotificationType.TRIP_DAY_ENDED, dayEnd, data,
                         trip.getId().toString(), day.toString())) {
+                    delivered++;
+                }
+            }
+        }
+        return delivered;
+    }
+
+    /**
+     * The evening-before weather alert of each trip day whose forecast calls for one (see
+     * {@link TripDayWeatherAlerts}). Keyed by the day, so a forecast that keeps saying rain
+     * while the job reruns inside the delivery window still sends once.
+     */
+    private int dispatchWeatherAlerts(Trip trip,
+                                      Set<UUID> recipients,
+                                      List<Activity> activities,
+                                      ZoneId zone,
+                                      Instant now) {
+        List<TripDayWeatherAlerts.DueAlert> alerts =
+                weatherAlerts.due(trip, activities, zone, sendAt -> isDue(sendAt, now));
+        if (alerts.isEmpty()) {
+            return 0;
+        }
+        Set<UUID> alertRecipients = weatherAlerts.recipients(recipients);
+        int delivered = 0;
+        for (TripDayWeatherAlerts.DueAlert alert : alerts) {
+            Map<String, Object> data = tripData(
+                    trip, "/trip/" + trip.getId() + "?day=" + alert.dayNumber());
+            data.put("dayNumber", alert.dayNumber());
+            data.putAll(alert.data());
+            for (UUID recipientId : alertRecipients) {
+                if (sendOnce(trip, recipientId, NotificationType.TRIP_DAY_WEATHER_ALERT, alert.sendAt(),
+                        data, trip.getId().toString(), alert.day().toString())) {
                     delivered++;
                 }
             }

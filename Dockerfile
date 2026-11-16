@@ -44,5 +44,7 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=5 \
   CMD curl -fsS http://localhost:8080/actuator/health || exit 1
 
-# Chạy ứng dụng với JAVA_OPTS
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+# Chạy ứng dụng với JAVA_OPTS. `exec` thay sh bằng java làm PID 1: không có nó, `docker stop`
+# gửi SIGTERM cho sh (PID 1 bỏ qua), graceful shutdown không chạy và java bị SIGKILL sau
+# stop_grace_period, cắt mọi request đang chạy giữa lúc rollout.
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]

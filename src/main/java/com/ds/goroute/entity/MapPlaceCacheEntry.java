@@ -13,6 +13,12 @@ import lombok.NoArgsConstructor;
 public class MapPlaceCacheEntry {
     private String provider;
     private String providerPlaceId;
+    /**
+     * Language the provider answered in ({@code vi}, {@code en}, {@code ko}...): one row per
+     * language, so a reader is never shown a name in someone else's language. Empty for rows
+     * written without one (server-side lookups, rows older than V281).
+     */
+    private String language;
     private String name;
     private String nameNormalized;
     private String address;

@@ -8,6 +8,7 @@ import com.ds.goroute.service.FileUploadService;
 import com.ds.goroute.service.ImageModerationService;
 import com.ds.goroute.service.ImageUploadOutcome;
 import com.ds.goroute.service.ImageUploadRequest;
+import com.ds.goroute.service.imagecompression.AutoImageCompressor;
 import com.ds.goroute.service.StorageService;
 import com.ds.goroute.service.UploadSlots;
 import com.ds.goroute.type.BusinessConfigKey;
@@ -49,6 +50,8 @@ public class FileUploadServiceImpl implements FileUploadService {
     private final AiTripRepository aiTripRepository;
     private final Executor applicationTaskExecutor;
     private final UploadSlots uploadSlots;
+    /** Null in the test constructors: no background compression there. */
+    private final AutoImageCompressor autoImageCompressor;
 
     /**
      * FREE or PRO per user, for the size limit. Read on every photo it was an INSERT and a
@@ -68,7 +71,8 @@ public class FileUploadServiceImpl implements FileUploadService {
             BusinessConfigService businessConfigService,
             AiTripRepository aiTripRepository,
             @Qualifier("applicationTaskExecutor") Executor applicationTaskExecutor,
-            UploadSlots uploadSlots) {
+            UploadSlots uploadSlots,
+            AutoImageCompressor autoImageCompressor) {
         this.storageService = storageService;
         this.restTemplate = restTemplate;
         this.uploadProperties = uploadProperties;
@@ -77,6 +81,7 @@ public class FileUploadServiceImpl implements FileUploadService {
         this.aiTripRepository = aiTripRepository;
         this.applicationTaskExecutor = applicationTaskExecutor;
         this.uploadSlots = uploadSlots;
+        this.autoImageCompressor = autoImageCompressor;
     }
 
     public FileUploadServiceImpl(
@@ -89,7 +94,7 @@ public class FileUploadServiceImpl implements FileUploadService {
             Executor applicationTaskExecutor) {
         this(storageService, restTemplate, uploadProperties, imageModerationService,
                 businessConfigService, aiTripRepository, applicationTaskExecutor,
-                new UploadSlots(uploadProperties));
+                new UploadSlots(uploadProperties), null);
     }
 
     public FileUploadServiceImpl(
@@ -305,9 +310,10 @@ public class FileUploadServiceImpl implements FileUploadService {
      * every response afterwards and its uploader is told (see {@code ImageModerationService}).
      */
     private ImageUploadOutcome store(ImageUploadRequest request, ValidatedImage image, String filename) {
-        // Stored as uploaded. Re-encoding through the ImagePress service was a synchronous
-        // network round trip on every photo and made uploads slow enough to notice. The app
-        // already caps photos (picker 1920px at quality 85, in-app camera ~1080p).
+        // Stored as uploaded: re-encoding inline was a synchronous network round trip on every
+        // photo and made uploads slow enough to notice. When IMAGE_COMPRESSION.AUTO_ENABLED is
+        // on, AutoImageCompressor re-encodes it in the background afterwards, overwriting the
+        // same key, so the URL returned here stays valid (epic 00 §9b).
         String objectKey = request.objectPrefix() + "/" + UUID.randomUUID() + image.extension();
         String url = storageService.uploadFile(
                 objectKey,
@@ -316,6 +322,9 @@ public class FileUploadServiceImpl implements FileUploadService {
                 image.bytes().length);
         imageModerationService.submit(request.userId(), request.entryPoint(), objectKey, url,
                 image.bytes(), image.contentType());
+        if (autoImageCompressor != null) {
+            autoImageCompressor.submit(request, objectKey, image.bytes());
+        }
         return ImageUploadOutcome.accepted(filename, url);
     }
 

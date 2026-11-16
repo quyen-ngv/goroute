@@ -3,6 +3,7 @@ package com.ds.goroute.controller;
 import com.ds.goroute.service.FoodService;
 import com.ds.goroute.service.PlaceGroupedSearchService;
 import com.ds.goroute.service.PlaceMapTileService;
+import com.ds.goroute.service.ProvinceNameResolver;
 import com.ds.goroute.service.PlaceService;
 import com.ds.goroute.utils.MapTile;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,7 +31,7 @@ class PlaceControllerMapTilesTest {
         mapTileService = mock(PlaceMapTileService.class);
         when(mapTileService.getTiles(any(), any(), any())).thenReturn(List.of());
         controller = new PlaceController(mock(PlaceService.class), mock(FoodService.class), mapTileService,
-                mock(PlaceGroupedSearchService.class));
+                mock(PlaceGroupedSearchService.class), mock(ProvinceNameResolver.class));
         ReflectionTestUtils.setField(controller, "httpServletRequest", new MockHttpServletRequest());
     }
 

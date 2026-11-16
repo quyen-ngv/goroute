@@ -6,6 +6,7 @@ import com.ds.goroute.localevent.persistence.LocalEventGeoSearchParams;
 import com.ds.goroute.localevent.persistence.LocalEventRepository;
 import com.ds.goroute.localevent.service.LocalEventPublicService;
 import com.ds.goroute.localevent.service.LocalEventResponses;
+import com.ds.goroute.localevent.service.LocalEventTranslationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,8 @@ class LocalEventPublicServiceTest {
 
     private final LocalEventRepository repository = mock(LocalEventRepository.class);
     private final LocalEventPublicService service =
-            new LocalEventPublicService(repository, new LocalEventResponses(new ObjectMapper().findAndRegisterModules()));
+            new LocalEventPublicService(repository, new LocalEventResponses(new ObjectMapper().findAndRegisterModules()),
+                    mock(LocalEventTranslationService.class));
 
     @BeforeEach
     void setUp() throws Exception {

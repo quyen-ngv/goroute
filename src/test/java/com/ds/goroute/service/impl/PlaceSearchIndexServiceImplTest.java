@@ -314,6 +314,21 @@ class PlaceSearchIndexServiceImplTest {
     }
 
     @Test
+    void nameSearchLeansTowardsThePointWithoutLeavingAnythingOut() throws Exception {
+        Place hanoi = place("Highlands Coffee", "cafe", 21.0285, 105.8542);
+        Place saigon = place("Highlands Coffee", "cafe", 10.7769, 106.7009);
+        Place danang = place("Highlands Coffee", "cafe", 16.0544, 108.2022);
+        searchService.indexPlace(hanoi);
+        searchService.indexPlace(saigon);
+        searchService.indexPlace(danang);
+
+        assertThat(searchService.searchPlaceIdsByName("highlands coffee", null, false, 0, 10, 10.78, 106.70))
+                .containsExactly(saigon.getId(), danang.getId(), hanoi.getId());
+        assertThat(searchService.searchPlaceIdsByName("highlands coffee", null, false, 0, 10, 21.03, 105.85))
+                .containsExactly(hanoi.getId(), danang.getId(), saigon.getId());
+    }
+
+    @Test
     void outsideSearchFindsTheNameBeyondTheRadiusOnly() throws Exception {
         // Hồ Chí Minh City is the point; Hà Nội is ~1,140 km north.
         Place inSaigon = place("Phở Thìn", "restaurant", 10.7770, 106.7010);

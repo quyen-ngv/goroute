@@ -13,4 +13,17 @@ import java.util.List;
 public class LocalEventDetailResponse extends LocalEventDetailFields {
 
     private List<LocalEventImageResponse> images;
+
+    /**
+     * True when {@code summary}, {@code description}, {@code scheduleNote}, {@code priceNote} or
+     * {@code lunarDateText} above were replaced by a translation into the reader's language
+     * (Accept-Language). The title, venue, address, organiser and performers are never translated.
+     */
+    private Boolean translated;
+    /** The language of the translation used, e.g. {@code en}; null when not translated. */
+    private String translationLocale;
+    /** {@code AI} or {@code MANUAL}; null when not translated. */
+    private String translationSource;
+    /** The replaced fields as written; null when not translated. */
+    private LocalEventOriginalText original;
 }

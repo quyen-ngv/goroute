@@ -1,0 +1,153 @@
+{
+  "_comment": "Shared by the backend (PlaceOpenHoursFormatterTest) and the app (PlaceOpenHoursStatus tests). formatCases: the structured week a suggestion sends and the exact strings the server stores (en dash U+2013, plain spaces, both clocks with AM/PM). checks: what PlaceOpenHoursStatus must answer for those strings at a local weekday and time. parseCases: strings already in the catalogue and the structured week the edit form is pre-filled with (null = cannot be read, the form starts empty).",
+  "formatCases": [
+    {
+      "name": "one window every day, Monday closed",
+      "structured": [
+        {"day": "MONDAY", "closed": true, "allDay": false, "ranges": []},
+        {"day": "TUESDAY", "closed": false, "allDay": false, "ranges": [{"from": "07:00", "to": "22:00"}]},
+        {"day": "WEDNESDAY", "closed": false, "allDay": false, "ranges": [{"from": "07:00", "to": "22:00"}]},
+        {"day": "THURSDAY", "closed": false, "allDay": false, "ranges": [{"from": "07:00", "to": "22:00"}]},
+        {"day": "FRIDAY", "closed": false, "allDay": false, "ranges": [{"from": "07:00", "to": "22:00"}]},
+        {"day": "SATURDAY", "closed": false, "allDay": false, "ranges": [{"from": "07:00", "to": "22:00"}]},
+        {"day": "SUNDAY", "closed": false, "allDay": false, "ranges": [{"from": "07:00", "to": "22:00"}]}
+      ],
+      "display": {
+        "Monday": ["Closed"],
+        "Tuesday": ["7 AM–10 PM"],
+        "Wednesday": ["7 AM–10 PM"],
+        "Thursday": ["7 AM–10 PM"],
+        "Friday": ["7 AM–10 PM"],
+        "Saturday": ["7 AM–10 PM"],
+        "Sunday": ["7 AM–10 PM"]
+      },
+      "checks": [
+        {"day": "MONDAY", "time": "12:00", "status": "closed"},
+        {"day": "TUESDAY", "time": "06:59", "status": "closed"},
+        {"day": "TUESDAY", "time": "12:00", "status": "open"},
+        {"day": "TUESDAY", "time": "22:30", "status": "closed"}
+      ]
+    },
+    {
+      "name": "lunch and dinner with minutes",
+      "structured": [
+        {"day": "MONDAY", "closed": false, "allDay": false, "ranges": [{"from": "10:30", "to": "14:00"}, {"from": "17:30", "to": "21:45"}]},
+        {"day": "TUESDAY", "closed": false, "allDay": false, "ranges": [{"from": "10:30", "to": "14:00"}, {"from": "17:30", "to": "21:45"}]},
+        {"day": "WEDNESDAY", "closed": false, "allDay": false, "ranges": [{"from": "10:30", "to": "14:00"}, {"from": "17:30", "to": "21:45"}]},
+        {"day": "THURSDAY", "closed": false, "allDay": false, "ranges": [{"from": "10:30", "to": "14:00"}, {"from": "17:30", "to": "21:45"}]},
+        {"day": "FRIDAY", "closed": false, "allDay": false, "ranges": [{"from": "10:30", "to": "14:00"}, {"from": "17:30", "to": "21:45"}]},
+        {"day": "SATURDAY", "closed": false, "allDay": false, "ranges": [{"from": "12:00", "to": "15:00"}]},
+        {"day": "SUNDAY", "closed": true, "allDay": false, "ranges": []}
+      ],
+      "display": {
+        "Monday": ["10:30 AM–2 PM", "5:30 PM–9:45 PM"],
+        "Tuesday": ["10:30 AM–2 PM", "5:30 PM–9:45 PM"],
+        "Wednesday": ["10:30 AM–2 PM", "5:30 PM–9:45 PM"],
+        "Thursday": ["10:30 AM–2 PM", "5:30 PM–9:45 PM"],
+        "Friday": ["10:30 AM–2 PM", "5:30 PM–9:45 PM"],
+        "Saturday": ["12 PM–3 PM"],
+        "Sunday": ["Closed"]
+      },
+      "checks": [
+        {"day": "MONDAY", "time": "11:00", "status": "open"},
+        {"day": "MONDAY", "time": "15:00", "status": "closed"},
+        {"day": "MONDAY", "time": "21:00", "status": "open"},
+        {"day": "SATURDAY", "time": "12:30", "status": "open"},
+        {"day": "SUNDAY", "time": "12:30", "status": "closed"}
+      ]
+    },
+    {
+      "name": "open 24 hours and past midnight",
+      "structured": [
+        {"day": "MONDAY", "closed": false, "allDay": true, "ranges": []},
+        {"day": "TUESDAY", "closed": false, "allDay": true, "ranges": []},
+        {"day": "WEDNESDAY", "closed": false, "allDay": false, "ranges": [{"from": "18:00", "to": "02:00"}]},
+        {"day": "THURSDAY", "closed": false, "allDay": false, "ranges": [{"from": "18:00", "to": "00:00"}]},
+        {"day": "FRIDAY", "closed": false, "allDay": false, "ranges": [{"from": "00:00", "to": "12:00"}]},
+        {"day": "SATURDAY", "closed": false, "allDay": true, "ranges": []},
+        {"day": "SUNDAY", "closed": false, "allDay": true, "ranges": []}
+      ],
+      "display": {
+        "Monday": ["Open 24 hours"],
+        "Tuesday": ["Open 24 hours"],
+        "Wednesday": ["6 PM–2 AM"],
+        "Thursday": ["6 PM–12 AM"],
+        "Friday": ["12 AM–12 PM"],
+        "Saturday": ["Open 24 hours"],
+        "Sunday": ["Open 24 hours"]
+      },
+      "checks": [
+        {"day": "MONDAY", "time": "03:00", "status": "open"},
+        {"day": "WEDNESDAY", "time": "17:00", "status": "closed"},
+        {"day": "WEDNESDAY", "time": "23:00", "status": "open"},
+        {"day": "THURSDAY", "time": "01:00", "status": "open"},
+        {"day": "THURSDAY", "time": "03:00", "status": "closed"}
+      ]
+    }
+  ],
+  "parseCases": [
+    {
+      "name": "Google typographic spaces and an en dash",
+      "display": {
+        "Monday": ["9:30 AM – 9 PM"],
+        "Tuesday": ["9:30 AM – 9 PM"],
+        "Wednesday": ["9:30 AM – 9 PM"],
+        "Thursday": ["9:30 AM – 9 PM"],
+        "Friday": ["9:30 AM – 9 PM"],
+        "Saturday": ["Open 24 hours"],
+        "Sunday": ["Closed"]
+      },
+      "structured": [
+        {"day": "MONDAY", "closed": false, "allDay": false, "ranges": [{"from": "09:30", "to": "21:00"}]},
+        {"day": "TUESDAY", "closed": false, "allDay": false, "ranges": [{"from": "09:30", "to": "21:00"}]},
+        {"day": "WEDNESDAY", "closed": false, "allDay": false, "ranges": [{"from": "09:30", "to": "21:00"}]},
+        {"day": "THURSDAY", "closed": false, "allDay": false, "ranges": [{"from": "09:30", "to": "21:00"}]},
+        {"day": "FRIDAY", "closed": false, "allDay": false, "ranges": [{"from": "09:30", "to": "21:00"}]},
+        {"day": "SATURDAY", "closed": false, "allDay": true, "ranges": []},
+        {"day": "SUNDAY", "closed": true, "allDay": false, "ranges": []}
+      ]
+    },
+    {
+      "name": "scraper hyphen, meridiem written once, padding and an icon glyph",
+      "display": {
+        "Monday": ["10:30 AM - 1:30 PM", "6 - 9:30 PM", ""],
+        "Tuesday": ["10:30 AM - 1:30 PM", "6 - 9:30 PM"],
+        "Wednesday": ["10:30 AM - 1:30 PM", "6 - 9:30 PM"],
+        "Thursday": ["10:30 AM - 1:30 PM", "6 - 9:30 PM"],
+        "Friday": ["10:30 AM - 1:30 PM", "6 - 9:30 PM"],
+        "Saturday": ["6:30 AM–12 AM", ""],
+        "Sunday": ["08:00 - 17:00"]
+      },
+      "structured": [
+        {"day": "MONDAY", "closed": false, "allDay": false, "ranges": [{"from": "10:30", "to": "13:30"}, {"from": "18:00", "to": "21:30"}]},
+        {"day": "TUESDAY", "closed": false, "allDay": false, "ranges": [{"from": "10:30", "to": "13:30"}, {"from": "18:00", "to": "21:30"}]},
+        {"day": "WEDNESDAY", "closed": false, "allDay": false, "ranges": [{"from": "10:30", "to": "13:30"}, {"from": "18:00", "to": "21:30"}]},
+        {"day": "THURSDAY", "closed": false, "allDay": false, "ranges": [{"from": "10:30", "to": "13:30"}, {"from": "18:00", "to": "21:30"}]},
+        {"day": "FRIDAY", "closed": false, "allDay": false, "ranges": [{"from": "10:30", "to": "13:30"}, {"from": "18:00", "to": "21:30"}]},
+        {"day": "SATURDAY", "closed": false, "allDay": false, "ranges": [{"from": "06:30", "to": "00:00"}]},
+        {"day": "SUNDAY", "closed": false, "allDay": false, "ranges": [{"from": "08:00", "to": "17:00"}]}
+      ]
+    },
+    {
+      "name": "a missing day cannot pre-fill the form",
+      "display": {
+        "Monday": ["8 AM–5 PM"],
+        "Tuesday": ["8 AM–5 PM"]
+      },
+      "structured": null
+    },
+    {
+      "name": "an unreadable entry cannot pre-fill the form",
+      "display": {
+        "Monday": ["Hours might differ"],
+        "Tuesday": ["8 AM–5 PM"],
+        "Wednesday": ["8 AM–5 PM"],
+        "Thursday": ["8 AM–5 PM"],
+        "Friday": ["8 AM–5 PM"],
+        "Saturday": ["8 AM–5 PM"],
+        "Sunday": ["8 AM–5 PM"]
+      },
+      "structured": null
+    }
+  ]
+}

@@ -153,6 +153,10 @@ public class AssistantProposalService {
         AssistantProposal proposal = repository.findProposal(proposalId).orElseThrow(this::notFound);
         conversationAccess.requireAccess(proposal.getConversationId(), viewerId);
         AssistantProposalResponse response = response(proposal);
+        // A NEW_TRIP has a trip only once applied; the trip it names may have been deleted since.
+        java.util.Optional<Trip> trip = proposal.getTripId() == null
+                ? java.util.Optional.empty() : trips.findById(proposal.getTripId());
+        response.setTripDeleted(proposal.getTripId() != null && trip.isEmpty());
         if (AssistantProposalAction.NEW_TRIP.name().equals(proposal.getAction())) {
             // The planned trip is the asker's: only they create it, and they become its owner.
             response.setViewerCanEdit(viewerId.equals(proposal.getRequestedBy()));
@@ -160,8 +164,8 @@ public class AssistantProposalService {
         }
         // Only the owner adds people to a trip, so only the owner may apply ADD_GUEST.
         boolean ownerOnly = AssistantProposalAction.ADD_GUEST.name().equals(proposal.getAction());
-        response.setViewerCanEdit(trips.findById(proposal.getTripId())
-                .map(trip -> ownerOnly ? viewerId.equals(trip.getOwnerId()) : tripAccessGuard.canEdit(trip, viewerId))
+        response.setViewerCanEdit(trip
+                .map(t -> ownerOnly ? viewerId.equals(t.getOwnerId()) : tripAccessGuard.canEdit(t, viewerId))
                 .orElse(false));
         return response;
     }

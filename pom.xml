@@ -245,6 +245,12 @@
 			<artifactId>lucene-analysis-common</artifactId>
 			<version>9.9.1</version>
 		</dependency>
+		<!-- ICUTokenizer: Thai/Lao/Khmer word breaks and per-character CJK for the bigram filter -->
+		<dependency>
+			<groupId>org.apache.lucene</groupId>
+			<artifactId>lucene-analysis-icu</artifactId>
+			<version>9.9.1</version>
+		</dependency>
 
 	</dependencies>
     <dependencyManagement>

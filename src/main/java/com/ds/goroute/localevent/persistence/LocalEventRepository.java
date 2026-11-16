@@ -44,6 +44,19 @@ public interface LocalEventRepository {
 
     Map<UUID, LocalEvent> findSummariesByIds(Collection<UUID> ids);
 
+    /** Summaries of the events among {@code ids} that are not deleted, whatever their publish status. */
+    Map<UUID, LocalEvent> findLiveSummariesByIds(Collection<UUID> ids);
+
+    /** Published events this person saved or is going to that end after {@code fromUtc}, soonest first. */
+    List<LocalEvent> findSavedOrGoing(UUID userId, LocalDateTime fromUtc, int limit);
+
+    /**
+     * Published, saved events not over at {@code nowUtc} that start before {@code startBefore},
+     * end before {@code endBefore}, or were cancelled, postponed or rescheduled.
+     */
+    List<LocalEvent> findReminderCandidates(LocalDateTime nowUtc, LocalDateTime startBefore,
+                                            LocalDateTime endBefore, int limit);
+
     List<LocalEventDuplicateCandidate> findDuplicateCandidates(LocalEventDuplicateSearchParams params);
 
     void insert(LocalEvent event);

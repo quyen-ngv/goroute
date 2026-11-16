@@ -6,8 +6,11 @@ import com.ds.goroute.entity.User;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.localevent.domain.LocalEvent;
 import com.ds.goroute.localevent.dto.LocalEventAttendanceResponse;
+import com.ds.goroute.localevent.dto.MyLocalEventResponse;
 import com.ds.goroute.localevent.persistence.LocalEventAttendeeRepository;
 import com.ds.goroute.localevent.persistence.LocalEventRepository;
+import com.ds.goroute.localevent.persistence.LocalEventSaveRepository;
+import com.ds.goroute.repository.UserCheckinRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.BetaAccessService;
 import com.ds.goroute.service.BusinessConfigService;
@@ -18,9 +21,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -31,6 +36,10 @@ import java.util.stream.Collectors;
  *
  * <p>The event data stays public; joining is user activity and sits behind the same switch as
  * the Home tab ({@code EVENT/ENABLED}, beta users always pass), checked here on the server.
+ *
+ * <p>Saving an event (V285) is the private half of the same thing: a bookmark that puts the
+ * event on the saver's Feed and sends them its reminders, with no chat and nothing shown to
+ * anyone else. Going to an event saves it too.
  */
 @Service
 @RequiredArgsConstructor
@@ -39,12 +48,18 @@ public class LocalEventAttendanceService {
     /** Faces shown to people going. */
     static final int PREVIEW_LIMIT = 8;
 
+    /** The most events GET /events/mine returns. */
+    static final int MINE_LIMIT = 100;
+
     private final LocalEventRepository events;
     private final LocalEventAttendeeRepository attendees;
     private final LocalEventChatService chat;
     private final BusinessConfigService config;
     private final BetaAccessService betaAccess;
     private final UserRepository users;
+    private final LocalEventSaveRepository saves;
+    private final UserCheckinRepository checkins;
+    private final LocalEventResponses responses;
 
     /** Replaced in tests. */
     Clock clock = Clock.systemUTC();
@@ -70,7 +85,58 @@ public class LocalEventAttendanceService {
         if (attendees.add(eventId, userId, now())) {
             chat.onJoined(eventId, userId);
         }
+        // Going implies wanting the reminders and the Feed strip.
+        saves.add(eventId, userId, now());
         return view(event, userId, true);
+    }
+
+    /** Bookmarks a published event. Idempotent; an event already over can still be kept. */
+    @Transactional
+    public LocalEventAttendanceResponse save(UUID userId, UUID eventId) {
+        requireEnabled(userId);
+        LocalEvent event = requirePublished(eventId);
+        saves.add(eventId, userId, now());
+        return view(event, userId, true);
+    }
+
+    /** Removes the bookmark. Idempotent; it does not stop the person going. */
+    @Transactional
+    public LocalEventAttendanceResponse unsave(UUID userId, UUID eventId) {
+        requireEnabled(userId);
+        LocalEvent event = requireExisting(eventId);
+        saves.remove(eventId, userId);
+        return view(event, userId, true);
+    }
+
+    /**
+     * The caller's events: published ones they saved or are going to that end after
+     * {@code from} (default now), soonest first, at most {@link #MINE_LIMIT}. Empty while the
+     * switch is off for the caller.
+     */
+    @Transactional(readOnly = true)
+    public List<MyLocalEventResponse> mine(UUID userId, Instant from) {
+        if (!isEnabled(userId)) {
+            return List.of();
+        }
+        LocalDateTime fromUtc = from == null ? now() : LocalEventTimes.toUtc(from);
+        List<LocalEvent> events = this.events.findSavedOrGoing(userId, fromUtc, MINE_LIMIT);
+        if (events.isEmpty()) {
+            return List.of();
+        }
+        List<UUID> ids = events.stream().map(LocalEvent::getId).toList();
+        Set<UUID> saved = saves.findSavedEventIds(userId, ids);
+        Set<UUID> going = attendees.findGoingEventIds(userId, ids);
+        Set<UUID> checkedIn = checkins.findCheckedInLocalEventIds(userId, ids);
+        return events.stream()
+                .map(event -> {
+                    MyLocalEventResponse response = new MyLocalEventResponse();
+                    responses.fillSummary(response, event);
+                    response.setSaved(saved.contains(event.getId()));
+                    response.setGoing(going.contains(event.getId()));
+                    response.setCheckedIn(checkedIn.contains(event.getId()));
+                    return response;
+                })
+                .toList();
     }
 
     /** Idempotent; works whatever happened to the event since, so nobody is stuck in its chat. */
@@ -103,6 +169,9 @@ public class LocalEventAttendanceService {
                 .goingCount(attendees.count(event.getId()))
                 .joinable(isJoinable(event))
                 .attendeesPreview(going ? preview(event.getId()) : List.of())
+                .saved(saves.isSaved(event.getId(), userId))
+                .checkedIn(!checkins.findCheckedInLocalEventIds(userId, List.of(event.getId())).isEmpty())
+                .checkinCount(checkins.countByLocalEvent(event.getId()))
                 .build();
     }
 

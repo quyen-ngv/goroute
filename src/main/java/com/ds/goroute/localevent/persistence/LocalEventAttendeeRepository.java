@@ -18,4 +18,7 @@ public interface LocalEventAttendeeRepository {
     long count(UUID eventId);
 
     List<UUID> findUserIds(UUID eventId, int limit);
+
+    /** Of {@code eventIds}, the events this person is going to. */
+    java.util.Set<UUID> findGoingEventIds(UUID userId, java.util.Collection<UUID> eventIds);
 }

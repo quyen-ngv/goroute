@@ -96,6 +96,8 @@ public enum NotificationType {
     /** No longer scheduled (one TRIP_DAY_ENDED per day replaced it); kept so stored rows still parse. */
     ITINERARY_ITEM_COMPLETED,
     TRIP_DAY_ENDED,
+    /** Evening before a trip day whose forecast has an advisory or likely rain. */
+    TRIP_DAY_WEATHER_ALERT,
     TRIP_ENDED,
     TRIP_SUMMARY,
 
@@ -152,6 +154,21 @@ public enum NotificationType {
     MEETUP_CANCELLED,
     // The host invited someone they follow or who follows them; sent to the invitee.
     MEETUP_INVITED,
+    // Saved local events (epic 17, V285); sent by LocalEventReminderService to people who saved
+    // the event (going saves it). Data: eventId, eventTitle, startTime, startDate, endDate,
+    // deepLink "/events/<id>".
+    // A one-day event starts tomorrow.
+    LOCAL_EVENT_TOMORROW,
+    // A one-day event starts within two hours.
+    LOCAL_EVENT_STARTING_SOON,
+    // A long-running event (an exhibition, a fair) opens today.
+    LOCAL_EVENT_OPENING_TODAY,
+    // A long-running event closes within three days and the person has not checked in at it.
+    LOCAL_EVENT_ENDING_SOON,
+    // The event's status changed to CANCELLED / POSTPONED / RESCHEDULED.
+    LOCAL_EVENT_CANCELLED,
+    LOCAL_EVENT_POSTPONED,
+    LOCAL_EVENT_RESCHEDULED,
     // Map usage (epic 06). Data: operation, resetAt (ISO instant), resetTime (shown, GMT+7).
     // The user used up today's map calls of one kind; sent to that user once a day per kind.
     MAP_LIMIT_REACHED,
@@ -161,5 +178,10 @@ public enum NotificationType {
     // The month's paid Mapbox calls crossed MAP_BUDGET/WARN_PERCENT; sent to operators. Data: api, usedPercent.
     MAP_BUDGET_WARNING,
     // A Mapbox API hit its cap and the server answers from caches; sent to operators. Data: api, resetAt, resetTime.
-    MAP_BUDGET_REACHED
+    MAP_BUDGET_REACHED,
+    // Place edit suggestions (epic 09). Data: placeId, placeName, suggestionId, rejectReason,
+    // deepLink "/place/<placeId>". An operator applied at least one change; sent to the submitter.
+    PLACE_EDIT_APPROVED,
+    // An operator applied nothing of the suggestion; sent to the submitter.
+    PLACE_EDIT_REJECTED
 }

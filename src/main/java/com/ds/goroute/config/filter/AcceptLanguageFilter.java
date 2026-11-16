@@ -1,5 +1,6 @@
 package com.ds.goroute.config.filter;
 
+import com.ds.goroute.type.TranslationLocale;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -8,7 +9,6 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.util.Locale;
-import java.util.Set;
 
 /**
  * Reads Accept-Language and exposes the normalized app language code
@@ -20,10 +20,6 @@ public class AcceptLanguageFilter implements Filter {
 
     public static final String HEADER_NAME = "Accept-Language";
     public static final String DEFAULT_LANGUAGE = "en";
-
-    private static final Set<String> ALLOWED = Set.of(
-            "en", "vi", "ko", "th", "ja", "zh-tw", "ru", "hi", "de", "es", "pt"
-    );
 
     private static final ThreadLocal<String> LANGUAGE_HOLDER = new ThreadLocal<>();
 
@@ -63,32 +59,22 @@ public class AcceptLanguageFilter implements Filter {
         LANGUAGE_HOLDER.remove();
     }
 
+    /**
+     * The first tag of the header as one of the {@link TranslationLocale} codes (vi, en, ko, th,
+     * ja, zh-CN, zh-TW, ru, hi, fr, de, es, it, pt), normalised the same way; {@code en} otherwise.
+     */
     static String normalize(String raw) {
         if (raw == null || raw.isBlank()) {
             return DEFAULT_LANGUAGE;
         }
-        String tag = raw.split(",")[0].trim().toLowerCase(Locale.ROOT);
+        String tag = raw.split(",")[0].trim();
         if (tag.contains(";")) {
             tag = tag.substring(0, tag.indexOf(';')).trim();
         }
-        tag = tag.replace('_', '-');
-        if (tag.startsWith("zh")) {
-            return "zh-TW";
-        }
-        if (ALLOWED.contains(tag)) {
-            return tag.equals("zh-tw") ? "zh-TW" : tag;
-        }
-        String primary = tag.contains("-") ? tag.substring(0, tag.indexOf('-')) : tag;
-        if ("zh".equals(primary)) {
-            return "zh-TW";
-        }
-        return ALLOWED.contains(primary) ? primary : DEFAULT_LANGUAGE;
+        return TranslationLocale.fromCode(tag).map(TranslationLocale::code).orElse(DEFAULT_LANGUAGE);
     }
 
     private static Locale toLocale(String code) {
-        if ("zh-TW".equalsIgnoreCase(code)) {
-            return Locale.forLanguageTag("zh-TW");
-        }
         return Locale.forLanguageTag(code);
     }
 }

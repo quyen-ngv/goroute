@@ -89,8 +89,9 @@ public class TripController extends BaseController {
     @DeleteMapping("/{tripId}")
     public ResponseEntity<BaseResponse<Void>> deleteTrip(
             @PathVariable UUID tripId,
+            @RequestParam(defaultValue = "false") boolean deleteChat,
             @CurrentUser UUID userId) {
-        tripService.deleteTrip(tripId, userId);
+        tripService.deleteTrip(tripId, userId, deleteChat);
         return ResponseEntity.ok(ofSucceeded(null));
     }
 

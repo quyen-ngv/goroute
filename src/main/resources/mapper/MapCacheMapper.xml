@@ -3,19 +3,20 @@
 <mapper namespace="com.ds.goroute.mapper.MapCacheMapper">
 
     <sql id="placeColumns">
-        provider, provider_place_id, name, name_normalized, address, latitude, longitude,
+        provider, provider_place_id, language, name, name_normalized, address, latitude, longitude,
         categories, phone, website, country_code, picked_count
     </sql>
 
     <insert id="upsertPlace">
-        INSERT INTO map_place_cache (provider, provider_place_id, name, name_normalized, address,
+        INSERT INTO map_place_cache (provider, provider_place_id, language, name, name_normalized, address,
                                      latitude, longitude, categories, phone, website, country_code,
                                      created_at, updated_at)
-        VALUES (#{entry.provider}, #{entry.providerPlaceId}, #{entry.name}, #{entry.nameNormalized},
+        VALUES (#{entry.provider}, #{entry.providerPlaceId}, COALESCE(#{entry.language}, ''),
+                #{entry.name}, #{entry.nameNormalized},
                 #{entry.address}, #{entry.latitude}, #{entry.longitude}, #{entry.categories},
                 #{entry.phone}, #{entry.website}, #{entry.countryCode},
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        ON CONFLICT (provider, provider_place_id) DO UPDATE
+        ON CONFLICT (provider, provider_place_id, language) DO UPDATE
         SET name            = EXCLUDED.name,
             name_normalized = EXCLUDED.name_normalized,
             address         = COALESCE(EXCLUDED.address, map_place_cache.address),
@@ -32,6 +33,11 @@
         SELECT <include refid="placeColumns"/>
         FROM map_place_cache
         WHERE provider = #{provider} AND provider_place_id = #{providerPlaceId}
+        <if test="language != null">
+          AND language = #{language}
+        </if>
+        ORDER BY updated_at DESC
+        LIMIT 1
     </select>
 
     <update id="incrementPicked">
@@ -39,6 +45,7 @@
         SET picked_count = picked_count + 1,
             updated_at = CURRENT_TIMESTAMP
         WHERE provider = #{provider} AND provider_place_id = #{providerPlaceId}
+          AND language = COALESCE(#{language}, '')
     </update>
 
     <!--
@@ -49,6 +56,7 @@
         SELECT <include refid="placeColumns"/>
         FROM map_place_cache
         WHERE picked_count &gt; 0
+          AND language = #{language}
           AND (name_normalized LIKE '%' || #{query} || '%' OR name_normalized % #{query})
         <if test="latitude != null and longitude != null">
           AND sqrt(power((latitude - #{latitude}) * 111.32, 2)

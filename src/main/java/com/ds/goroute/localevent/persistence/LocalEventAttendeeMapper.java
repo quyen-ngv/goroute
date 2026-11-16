@@ -22,4 +22,8 @@ public interface LocalEventAttendeeMapper {
 
     /** The first people who said they are going, oldest first. */
     List<UUID> findUserIds(@Param("eventId") UUID eventId, @Param("limit") int limit);
+
+    /** Of these events, the ones this person is going to. */
+    List<UUID> findGoingEventIds(@Param("userId") UUID userId,
+                                 @Param("eventIds") java.util.Collection<UUID> eventIds);
 }

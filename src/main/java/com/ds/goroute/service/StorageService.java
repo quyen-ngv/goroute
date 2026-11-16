@@ -34,6 +34,16 @@ public interface StorageService {
     record DownloadedFile(byte[] bytes, String contentType) {
     }
 
+    /**
+     * One page of the objects under a prefix, in key order, starting after {@code startAfter}
+     * (exclusive; null starts at the beginning). At most {@code limit} entries, capped at 1000.
+     */
+    List<ObjectEntry> listObjectPage(String prefix, String startAfter, int limit);
+
+    /** An object key and its size in bytes. */
+    record ObjectEntry(String key, long size) {
+    }
+
     /** One stored object: where it lives and when it was last written. */
     record StoredObject(String key, Instant lastModified) {
     }

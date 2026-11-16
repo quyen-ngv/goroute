@@ -31,6 +31,12 @@ public class PlaceTranslationService {
 
     private final PlaceTranslationMapper placeTranslationMapper;
 
+    /**
+     * Writes the place's names: the {@code vi} row (from the request, else {@code places.title}
+     * as {@link TranslationSource#LEGACY}) and every other requested locale with the entry's
+     * source. A row is replaced only by a source of the same or a higher rank, so a re-import
+     * never overwrites a name an admin fixed.
+     */
     @Transactional
     public void syncTranslations(Place place,
                                  Map<String, PlaceTranslationRequest> translations) {
@@ -38,37 +44,70 @@ public class PlaceTranslationService {
             return;
         }
 
-        Map<TranslationLocale, PlaceTranslationRequest> manual = normalizeTranslations(translations);
-        TranslationText source = resolveSource(place, manual);
+        Map<TranslationLocale, PlaceTranslationRequest> requested = normalizeTranslations(translations);
+        TranslationText source = resolveSource(place, requested);
+        PlaceTranslationRequest vietnamese = requested.get(TranslationLocale.DEFAULT);
 
         upsert(place.getId(), TranslationLocale.DEFAULT, source.name(), source.description(),
-                manual.containsKey(TranslationLocale.DEFAULT) ? TranslationSource.MANUAL : TranslationSource.LEGACY);
+                vietnamese != null ? requestSource(vietnamese) : TranslationSource.LEGACY);
 
-        for (Map.Entry<TranslationLocale, PlaceTranslationRequest> entry : manual.entrySet()) {
+        for (Map.Entry<TranslationLocale, PlaceTranslationRequest> entry : requested.entrySet()) {
             TranslationLocale locale = entry.getKey();
             if (locale == TranslationLocale.DEFAULT) {
                 continue;
             }
             PlaceTranslationRequest value = entry.getValue();
             upsert(place.getId(), locale, firstNonBlank(value.getName(), source.name()),
-                    firstNonBlank(descriptionOf(value), source.description()), TranslationSource.MANUAL);
+                    firstNonBlank(descriptionOf(value), source.description()), requestSource(value));
         }
     }
 
+    /**
+     * Writes one name, keeping the stored description, under the rank rule of
+     * {@link #syncTranslations}.
+     *
+     * @return false when a higher-ranked source already holds the row
+     */
+    @Transactional
+    public boolean writeName(UUID placeId, TranslationLocale locale, String name, TranslationSource source) {
+        LocalDateTime now = LocalDateTime.now();
+        return placeTranslationMapper.upsertName(PlaceTranslation.builder()
+                .placeId(placeId)
+                .locale(locale)
+                .name(name.trim())
+                .translationSource(source)
+                .createdAt(now)
+                .updatedAt(now)
+                .build()) > 0;
+    }
+
+    /**
+     * Writes one description, keeping the stored name, under the rank rule of
+     * {@link #syncTranslations}. A locale without a row yet gets one named {@code fallbackName}
+     * (the name the place shows now), since a translation row always carries a name.
+     *
+     * @return false when a higher-ranked source already holds the row
+     */
+    @Transactional
+    public boolean writeDescription(UUID placeId, TranslationLocale locale, String description,
+                                    String fallbackName, TranslationSource source) {
+        LocalDateTime now = LocalDateTime.now();
+        String name = fallbackName == null || fallbackName.isBlank() ? "" : fallbackName.trim();
+        return placeTranslationMapper.upsertDescription(PlaceTranslation.builder()
+                .placeId(placeId)
+                .locale(locale)
+                .name(name)
+                .description(description.trim())
+                .translationSource(source)
+                .createdAt(now)
+                .updatedAt(now)
+                .build()) > 0;
+    }
+
+    /** The requested locale, then the other Chinese script, then English, then Vietnamese. */
     @Transactional(readOnly = true)
     public PlaceTranslation resolve(UUID placeId, String requestedLocale) {
-        TranslationLocale locale = TranslationLocale.fromCode(requestedLocale).orElse(TranslationLocale.DEFAULT);
-        PlaceTranslation translation = placeTranslationMapper.findByPlaceIdAndLocale(placeId, locale);
-        if (translation != null) {
-            return translation;
-        }
-        if (locale != TranslationLocale.FALLBACK) {
-            translation = placeTranslationMapper.findByPlaceIdAndLocale(placeId, TranslationLocale.FALLBACK);
-            if (translation != null) {
-                return translation;
-            }
-        }
-        return placeTranslationMapper.findByPlaceIdAndLocale(placeId, TranslationLocale.DEFAULT);
+        return resolveFrom(placeTranslationMapper.findByPlaceId(placeId), requestedLocale);
     }
 
     @Transactional(readOnly = true)
@@ -101,20 +140,79 @@ public class PlaceTranslationService {
     }
 
     /**
-     * {@link #resolve} over an already loaded list: the requested locale, then
-     * {@link TranslationLocale#FALLBACK}, then {@link TranslationLocale#DEFAULT}; null when
-     * none of them exists.
+     * {@link #resolve} over an already loaded list: the requested locale, its
+     * {@link TranslationLocale#sibling() sibling} (zh-CN ↔ zh-TW), {@link TranslationLocale#FALLBACK},
+     * then {@link TranslationLocale#DEFAULT}; null when none of them exists.
      */
     public static PlaceTranslation resolveFrom(List<PlaceTranslation> translations, String requestedLocale) {
         if (translations == null || translations.isEmpty()) {
             return null;
         }
-        TranslationLocale locale = TranslationLocale.fromCode(requestedLocale).orElse(TranslationLocale.DEFAULT);
-        PlaceTranslation match = findLocale(translations, locale);
-        if (match == null && locale != TranslationLocale.FALLBACK) {
-            match = findLocale(translations, TranslationLocale.FALLBACK);
+        for (TranslationLocale locale : fallbackChain(requestedLocale)) {
+            PlaceTranslation match = findLocale(translations, locale);
+            if (match != null) {
+                return match;
+            }
         }
-        return match != null ? match : findLocale(translations, TranslationLocale.DEFAULT);
+        return null;
+    }
+
+    /**
+     * The place's name in {@code requestedLocale} ({@link #resolveFrom} chain) from an already
+     * loaded list; null when the place has no translated name, and its title stands.
+     */
+    public static String localizedName(List<PlaceTranslation> translations, String requestedLocale) {
+        PlaceTranslation resolved = resolveFrom(translations, requestedLocale);
+        return resolved == null || resolved.getName() == null || resolved.getName().isBlank()
+                ? null
+                : resolved.getName();
+    }
+
+    /**
+     * The name to show for text that was copied from a place's name when the place was picked:
+     * an activity's name, a saved place's. It is the place's name in {@code requestedLocale}
+     * while {@code storedName} is still one of the place's names (its title or any translation,
+     * case and surrounding space aside), so a reader sees the place in their own language. Null
+     * when the text was changed by hand since, which is then what the author meant to say, or
+     * when the place has no translated name.
+     */
+    public static String localizedCopy(String storedName, String placeTitle,
+                                       List<PlaceTranslation> translations, String requestedLocale) {
+        String localized = localizedName(translations, requestedLocale);
+        if (localized == null) {
+            return null;
+        }
+        if (storedName == null || storedName.isBlank()) {
+            return localized;
+        }
+        String stored = storedName.trim();
+        if (placeTitle != null && stored.equalsIgnoreCase(placeTitle.trim())) {
+            return localized;
+        }
+        for (PlaceTranslation translation : translations) {
+            if (translation.getName() != null && stored.equalsIgnoreCase(translation.getName().trim())) {
+                return localized;
+            }
+        }
+        return null;
+    }
+
+    /** The {@code vi} row of a loaded list: the place's own name, shown beside a translated one. */
+    public static PlaceTranslation original(List<PlaceTranslation> translations) {
+        return translations == null ? null : findLocale(translations, TranslationLocale.DEFAULT);
+    }
+
+    static List<TranslationLocale> fallbackChain(String requestedLocale) {
+        TranslationLocale locale = TranslationLocale.fromCode(requestedLocale).orElse(TranslationLocale.DEFAULT);
+        List<TranslationLocale> chain = new ArrayList<>(4);
+        chain.add(locale);
+        locale.sibling().ifPresent(chain::add);
+        for (TranslationLocale next : List.of(TranslationLocale.FALLBACK, TranslationLocale.DEFAULT)) {
+            if (!chain.contains(next)) {
+                chain.add(next);
+            }
+        }
+        return chain;
     }
 
     private static PlaceTranslation findLocale(List<PlaceTranslation> translations, TranslationLocale locale) {
@@ -178,6 +276,14 @@ public class PlaceTranslationService {
                     firstNonBlank(descriptionOf(source), place.getDescriptions()));
         }
         return new TranslationText(place.getTitle(), place.getDescriptions());
+    }
+
+    /** Clients may mark a name MANUAL or GOOGLE; blank or anything else is MANUAL. */
+    private static TranslationSource requestSource(PlaceTranslationRequest request) {
+        String value = request.getSource();
+        return value != null && TranslationSource.GOOGLE.name().equalsIgnoreCase(value.trim())
+                ? TranslationSource.GOOGLE
+                : TranslationSource.MANUAL;
     }
 
     private String descriptionOf(PlaceTranslationRequest request) {

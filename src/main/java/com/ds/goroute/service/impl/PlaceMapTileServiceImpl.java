@@ -156,6 +156,7 @@ public class PlaceMapTileServiceImpl implements PlaceMapTileService {
                     .reviewCount(place.getReviewCount())
                     .tripUseCount(place.getTripUseCount())
                     .checkinCount(place.getCheckinCount())
+                    .businessStatus(com.ds.goroute.type.PlaceBusinessStatus.fromStoredStatus(place.getStatus()).name())
                     .build());
         }
         return pins;

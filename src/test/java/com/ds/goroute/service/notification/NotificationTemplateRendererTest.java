@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class NotificationTemplateRendererTest {
 
     private static final String[] SUPPORTED_LANGUAGES = {
-            "en", "vi", "hi", "ja", "ko", "ru", "th", "zh-TW"
+            "en", "vi", "hi", "ja", "ko", "ru", "th", "zh-TW", "zh-CN", "fr", "de", "es"
     };
 
     private final NotificationTemplateRenderer renderer = new NotificationTemplateRenderer();
@@ -142,6 +142,32 @@ class NotificationTemplateRendererTest {
     }
 
     @Test
+    void theWeatherAlertNamesTheForecastInTheReadersLanguageAndTheDay() {
+        Map<String, Object> data = completeData();
+
+        NotificationMessage vietnamese = renderer.render(NotificationType.TRIP_DAY_WEATHER_ALERT, data, "vi");
+        NotificationMessage english = renderer.render(NotificationType.TRIP_DAY_WEATHER_ALERT, data, "en");
+        NotificationMessage japanese = renderer.render(NotificationType.TRIP_DAY_WEATHER_ALERT, data, "ja");
+
+        assertThat(vietnamese.title()).isEqualTo("Dự báo ngày mai: Mưa to");
+        assertThat(vietnamese.body()).contains("Ngày 2", "Bangkok");
+        assertThat(english.title()).isEqualTo("Tomorrow's forecast: Heavy rain");
+        // Forecast words exist in English and Vietnamese only; other languages show English.
+        assertThat(japanese.title()).contains("Heavy rain");
+    }
+
+    @Test
+    void simplifiedChineseHasItsOwnCopyAndDeviceTagsMapToIt() {
+        Map<String, Object> data = completeData();
+
+        assertThat(renderer.render(NotificationType.EXPENSE_ADDED, data, "zh-CN").title()).isEqualTo("新增支出");
+        assertThat(renderer.render(NotificationType.TRIP_SUMMARY, data, "zh-Hans-CN").body()).contains("个地点");
+        assertThat(renderer.render(NotificationType.TRIP_SUMMARY, data, "zh-HK").body()).contains("個地點");
+        assertThat(renderer.render(NotificationType.EXPENSE_ADDED, data, "fr-CA").title()).isEqualTo("Nouvelle dépense");
+        assertThat(renderer.render(NotificationType.EXPENSE_ADDED, data, "pt-BR").title()).isEqualTo("New expense");
+    }
+
+    @Test
     void groupedPaymentReminderNamesTheCountAndTotalOnlyWhenThereIsOne() {
         Map<String, Object> data = new HashMap<>();
         data.put("actorName", "An");
@@ -198,6 +224,9 @@ class NotificationTemplateRendererTest {
         data.put("hostName", "Linh");
         data.put("userName", "Minh");
         data.put("reason", "Trời mưa");
+        data.put("dayNumber", 2);
+        data.put("weather", "Heavy rain");
+        data.put("weatherVi", "Mưa to");
         data.put("resetTime", "00:00 12/10/2026 (GMT+7)");
         data.put("operation", "AUTOCOMPLETE");
         data.put("rejectedCount", 50);

@@ -2,9 +2,12 @@ package com.ds.goroute.utils;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.analysis.Tokenizer;
+import org.apache.lucene.analysis.cjk.CJKBigramFilter;
 import org.apache.lucene.analysis.core.LowerCaseFilter;
+import org.apache.lucene.analysis.icu.segmentation.DefaultICUTokenizerConfig;
+import org.apache.lucene.analysis.icu.segmentation.ICUTokenizer;
 import org.apache.lucene.analysis.miscellaneous.ASCIIFoldingFilter;
-import org.apache.lucene.analysis.standard.StandardTokenizer;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause;
@@ -18,7 +21,6 @@ import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TermQuery;
 
 import java.io.IOException;
-import java.io.StringReader;
 import java.io.UncheckedIOException;
 import java.text.Normalizer;
 import java.util.ArrayList;
@@ -38,8 +40,15 @@ import java.util.Set;
  *   <li>a word typed with accents also scores on its accented form, so "phở" puts phở above
  *       phố and "Hội An" above "hỏi ăn"; without accents both score alike. The field must be
  *       indexed with {@link #createAnalyzer()}, which keeps both forms;</li>
- *   <li>typos are a fallback ({@link Match#TYPO}), asked only when {@link Match#EXACT} found
- *       nothing: one wrong letter on a four-letter syllable turns "binh" into minh, linh, dinh.</li>
+ *   <li>typos are a fallback ({@link Match#TYPO}, then {@link Match#LOOSE}), asked only when
+ *       the tier before found nothing: one wrong letter on a four-letter syllable turns "binh"
+ *       into minh, linh, dinh.</li>
+ *   <li>words typed without their space, or with one too many, still match: "hanoi" finds
+ *       "Hà Nội" through a field of {@link #joinedWords joined words}, and "ha noi" finds
+ *       "Hanoi" because two neighbouring words are also tried written together.</li>
+ *   <li>Thai, Lao and Khmer are split into words by dictionary, and Chinese, Japanese and Korean
+ *       into overlapping pairs of characters ("还剑湖" → 还剑, 剑湖), on both the index and the
+ *       keyword side, so "还剑" or "호안끼엠" finds Hồ Hoàn Kiếm by its translated name.</li>
  * </ul>
  */
 public final class LuceneKeywordQuery {
@@ -50,14 +59,22 @@ public final class LuceneKeywordQuery {
         EXACT,
         /** {@link #EXACT}, plus one wrong letter (not the first) in words long enough. */
         TYPO,
+        /**
+         * {@link #TYPO} for worse typing: the first letter may be the wrong one, and a word of
+         * {@link #LOOSE_TWO_EDITS_LENGTH} letters or more may have two wrong letters. Every word
+         * is still required.
+         */
+        LOOSE,
         /** {@link #TYPO} with any one word enough: only where an area already narrows the search. */
         ANY_WORD
     }
 
     /** The tiers of a search with no area around it. */
     public static final List<Match> STRICT_TIERS = List.of(Match.EXACT, Match.TYPO);
+    /** The tiers of a search by a place's name with no area around it. */
+    public static final List<Match> NAME_TIERS = List.of(Match.EXACT, Match.TYPO, Match.LOOSE);
     /** The tiers of a search inside an area. */
-    public static final List<Match> AREA_TIERS = List.of(Match.EXACT, Match.TYPO, Match.ANY_WORD);
+    public static final List<Match> AREA_TIERS = List.of(Match.EXACT, Match.TYPO, Match.LOOSE, Match.ANY_WORD);
 
     /**
      * Hits scoring under this share of the best one are its weak tail (a word only in a long
@@ -71,6 +88,14 @@ public final class LuceneKeywordQuery {
     private static final int FUZZY_PREFIX_LENGTH = 1;
     /** A one-word keyword shorter than this is not searched as the start of a word. */
     private static final int MIN_LONE_PREFIX_LENGTH = 2;
+    /** {@link Match#LOOSE}: the shortest word matched with one wrong letter anywhere in it. */
+    private static final int LOOSE_ONE_EDIT_LENGTH = 4;
+    /** {@link Match#LOOSE}: the shortest word matched with two wrong letters. */
+    static final int LOOSE_TWO_EDITS_LENGTH = 8;
+    /** Keywords longer than this are not also tried with two neighbouring words joined. */
+    private static final int MAX_WORDS_FOR_JOINING = 6;
+    /** How many words of a name {@link #joinedWords} reads. */
+    private static final int MAX_JOINED_SOURCE_WORDS = 24;
 
     /**
      * One searched field and how much each kind of match in it weighs. A word matches as the
@@ -83,22 +108,49 @@ public final class LuceneKeywordQuery {
 
     /** One word of a keyword: always folded, and as typed when that carried accents (else null). */
     public record Word(String folded, String accented) {
+        /** Latin letters and digits once folded: the only words matched with a typo. */
+        public boolean latin() {
+            return folded.chars().allMatch(character -> character < 128);
+        }
     }
+
+    /** {@link #createAnalyzer()} without the folding: {@link #words} folds each token itself. */
+    private static final Analyzer KEYWORD_ANALYZER = new Analyzer() {
+        @Override
+        protected TokenStreamComponents createComponents(String fieldName) {
+            Tokenizer tokenizer = createTokenizer();
+            return new TokenStreamComponents(tokenizer, splitAndLowerCase(tokenizer));
+        }
+    };
 
     private LuceneKeywordQuery() {
     }
 
-    /** Index-side analysis: lower case, accents folded, and the accented form kept beside the folded one. */
+    /**
+     * Index-side analysis: words split by script (dictionary words for Thai, Lao, Khmer; pairs
+     * of characters for Han, kana and Hangul), lower case, accents folded, and the accented form
+     * kept beside the folded one.
+     */
     public static Analyzer createAnalyzer() {
         return new Analyzer() {
             @Override
             protected TokenStreamComponents createComponents(String fieldName) {
-                StandardTokenizer tokenizer = new StandardTokenizer();
-                TokenStream stream = new LowerCaseFilter(tokenizer);
-                stream = new ASCIIFoldingFilter(stream, true);
-                return new TokenStreamComponents(tokenizer, stream);
+                Tokenizer tokenizer = createTokenizer();
+                return new TokenStreamComponents(tokenizer,
+                        new ASCIIFoldingFilter(splitAndLowerCase(tokenizer), true));
             }
         };
+    }
+
+    /** Han and kana one character per token (not dictionary words), for the bigram filter to pair. */
+    private static Tokenizer createTokenizer() {
+        return new ICUTokenizer(new DefaultICUTokenizerConfig(false, true));
+    }
+
+    private static TokenStream splitAndLowerCase(Tokenizer tokenizer) {
+        TokenStream stream = new CJKBigramFilter(tokenizer,
+                CJKBigramFilter.HAN | CJKBigramFilter.HIRAGANA | CJKBigramFilter.KATAKANA | CJKBigramFilter.HANGUL);
+        return new LowerCaseFilter(stream);
     }
 
     /** Composed form, so text typed as letter + combining accent indexes and matches like the rest. */
@@ -112,9 +164,7 @@ public final class LuceneKeywordQuery {
             return List.of();
         }
         Set<Word> words = new LinkedHashSet<>();
-        StandardTokenizer tokenizer = new StandardTokenizer();
-        try (TokenStream stream = new LowerCaseFilter(tokenizer)) {
-            tokenizer.setReader(new StringReader(normalize(keyword)));
+        try (TokenStream stream = KEYWORD_ANALYZER.tokenStream("", normalize(keyword))) {
             CharTermAttribute attribute = stream.addAttribute(CharTermAttribute.class);
             stream.reset();
             while (stream.incrementToken() && words.size() < maxWords) {
@@ -130,11 +180,57 @@ public final class LuceneKeywordQuery {
     }
 
     /**
+     * Neighbouring Latin words of {@code name} written together, two and three at a time
+     * ("Hà Nội" → "hanoi", "Hồ Hoàn Kiếm" → "hohoan", "hoankiem", "hohoankiem"), folded. Indexed
+     * in a field of its own, they let a keyword typed without its spaces find the name.
+     */
+    public static Set<String> joinedWords(String name) {
+        List<Word> words = words(name, MAX_JOINED_SOURCE_WORDS);
+        Set<String> joined = new LinkedHashSet<>();
+        for (int index = 0; index + 1 < words.size(); index++) {
+            Word first = words.get(index);
+            Word second = words.get(index + 1);
+            if (!first.latin() || !second.latin()) {
+                continue;
+            }
+            String pair = first.folded() + second.folded();
+            joined.add(pair);
+            if (index + 2 < words.size() && words.get(index + 2).latin()) {
+                joined.add(pair + words.get(index + 2).folded());
+            }
+        }
+        return joined;
+    }
+
+    /**
      * The keyword query over {@code fields}: each word must match in at least one of them
      * (see the class comment), and words standing together in a field, in order, score extra.
-     * Null when there are no words.
+     * A keyword of a few Latin words is also tried with each pair of neighbours written
+     * together, so "ha noi" finds a name that says "Hanoi". Null when there are no words.
      */
     public static Query build(List<Word> words, List<Field> fields, Match match) {
+        Query asTyped = buildWords(words, fields, match);
+        if (asTyped == null || words.size() < 2 || words.size() > MAX_WORDS_FOR_JOINING) {
+            return asTyped;
+        }
+        BooleanQuery.Builder anySpelling = new BooleanQuery.Builder().add(asTyped, BooleanClause.Occur.SHOULD);
+        boolean joinedAny = false;
+        for (int index = 0; index + 1 < words.size(); index++) {
+            Word first = words.get(index);
+            Word second = words.get(index + 1);
+            if (!first.latin() || !second.latin()) {
+                continue;
+            }
+            List<Word> joined = new ArrayList<>(words);
+            joined.set(index, new Word(first.folded() + second.folded(), null));
+            joined.remove(index + 1);
+            anySpelling.add(buildWords(joined, fields, match), BooleanClause.Occur.SHOULD);
+            joinedAny = true;
+        }
+        return joinedAny ? anySpelling.build() : asTyped;
+    }
+
+    private static Query buildWords(List<Word> words, List<Field> fields, Match match) {
         if (words.isEmpty() || fields.isEmpty()) {
             return null;
         }
@@ -184,12 +280,27 @@ public final class LuceneKeywordQuery {
             if (last && folded.length() >= minPrefix) {
                 add(anyField, new PrefixQuery(new Term(field.name(), folded)), field.prefixBoost());
             }
-            if (match != Match.EXACT && folded.length() >= field.minFuzzyLength()) {
-                add(anyField, new FuzzyQuery(new Term(field.name(), folded), 1, FUZZY_PREFIX_LENGTH),
-                        field.fuzzyBoost());
+            Query typo = typoQuery(field, folded, word.latin(), match);
+            if (typo != null) {
+                add(anyField, typo, field.fuzzyBoost());
             }
         }
         return anyField.build();
+    }
+
+    /** The word with the wrong letters {@code match} forgives, in {@code field}; null when it forgives none. */
+    private static Query typoQuery(Field field, String folded, boolean latin, Match match) {
+        if (match == Match.EXACT || !latin) {
+            return null;
+        }
+        Term term = new Term(field.name(), folded);
+        if (match == Match.LOOSE) {
+            if (folded.length() < LOOSE_ONE_EDIT_LENGTH) {
+                return null;
+            }
+            return new FuzzyQuery(term, folded.length() >= LOOSE_TWO_EDITS_LENGTH ? 2 : 1, 0);
+        }
+        return folded.length() >= field.minFuzzyLength() ? new FuzzyQuery(term, 1, FUZZY_PREFIX_LENGTH) : null;
     }
 
     private static void add(BooleanQuery.Builder builder, Query query, float boost) {

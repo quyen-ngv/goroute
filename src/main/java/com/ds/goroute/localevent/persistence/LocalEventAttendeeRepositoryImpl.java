@@ -37,4 +37,12 @@ public class LocalEventAttendeeRepositoryImpl implements LocalEventAttendeeRepos
     public List<UUID> findUserIds(UUID eventId, int limit) {
         return mapper.findUserIds(eventId, limit);
     }
+
+    @Override
+    public java.util.Set<UUID> findGoingEventIds(UUID userId, java.util.Collection<UUID> eventIds) {
+        if (userId == null || eventIds == null || eventIds.isEmpty()) {
+            return java.util.Set.of();
+        }
+        return new java.util.HashSet<>(mapper.findGoingEventIds(userId, eventIds));
+    }
 }

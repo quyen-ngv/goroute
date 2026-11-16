@@ -19,6 +19,7 @@ public class PublicActivityResponse {
     private Integer dayNumber;
     private UUID placeId; // Backend Place UUID
     private UUID bookingId;
+    /** As {@code ActivityResponse.name}: the linked place's name in the reader's language while it was copied from it. */
     private String name;
     private String address;
     private BigDecimal lat;

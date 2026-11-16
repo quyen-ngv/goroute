@@ -16,6 +16,7 @@ import com.ds.goroute.service.FoodService;
 import com.ds.goroute.service.PlaceGroupedSearchService;
 import com.ds.goroute.service.PlaceMapTileService;
 import com.ds.goroute.service.PlaceService;
+import com.ds.goroute.service.ProvinceNameResolver;
 import com.ds.goroute.utils.MapTile;
 import com.ds.goroute.type.PlaceSearchSort;
 import com.ds.goroute.type.PlaceTrendingPeriod;
@@ -53,6 +54,7 @@ public class PlaceController extends BaseController {
     private final FoodService foodService;
     private final PlaceMapTileService placeMapTileService;
     private final PlaceGroupedSearchService placeGroupedSearchService;
+    private final ProvinceNameResolver provinceNameResolver;
 
     @PostMapping("/import")
     public ResponseEntity importPlace(@Valid @RequestBody ImportPlaceRequest request) {
@@ -75,12 +77,26 @@ public class PlaceController extends BaseController {
     public ResponseEntity<BaseResponse<List<PlaceResponse>>> getAllPlaces(
             @RequestParam(required = false) @Size(max = 200) String search,
             @RequestParam(required = false) List<String> placeGroups,
+            // Both or neither: a point the name search leans towards (nearer alike names first)
+            // and measures distance from. Nothing is excluded for being far.
+            @RequestParam(required = false) @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
+            @RequestParam(required = false) @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
             @RequestParam(defaultValue = "0") @Min(0) @Max(10_000) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(500) int size,
             Authentication authentication) {
+        boolean leaning = latitude != null && longitude != null;
         List<PlaceResponse> responses = placeService.getAllPlaces(
-                search, placeGroups, isAdmin(authentication), page, size);
-        return ResponseEntity.ok(ofSucceeded(responses));
+                search, placeGroups, isAdmin(authentication), page, size,
+                leaning ? latitude : null, leaning ? longitude : null);
+        return ResponseEntity.ok(ofSucceeded(withProvinceNames(responses)));
+    }
+
+    /** Copies with the province name, so a list spanning the country says where each place is. */
+    private List<PlaceResponse> withProvinceNames(List<PlaceResponse> responses) {
+        return responses.stream()
+                .map(place -> place.getProvinceCode() == null ? place
+                        : place.toBuilder().provinceName(provinceNameResolver.nameOf(place.getProvinceCode())).build())
+                .toList();
     }
 
     private static boolean isAdmin(Authentication authentication) {

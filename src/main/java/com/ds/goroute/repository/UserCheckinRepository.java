@@ -71,6 +71,14 @@ public interface UserCheckinRepository {
      */
     List<UserCheckin> findMineForTrip(UUID userId, UUID tripId, LocalDateTime from, LocalDateTime to, int limit);
 
+    /** Public, live check-ins made at a local event, newest visit first. */
+    List<UserCheckin> findByLocalEvent(UUID eventId, int limit, int offset);
+
+    long countByLocalEvent(UUID eventId);
+
+    /** Of {@code eventIds}, the events this person has a live check-in at. */
+    java.util.Set<UUID> findCheckedInLocalEventIds(UUID userId, java.util.Collection<UUID> eventIds);
+
     long countByUserAndPlace(UUID userId, UUID placeId);
 
     List<UserCheckin> findLatestRatedPerUserForPlace(UUID placeId);
@@ -177,4 +185,12 @@ public interface UserCheckinRepository {
             LocalDateTime afterUpdatedAt, UUID afterId, int limit);
 
     Optional<LocalDateTime> findSearchIndexMaxUpdatedAt();
+
+    // --- legacy reviews --------------------------------------------------------------
+
+    /**
+     * Turns up to {@code limit} reviews that no check-in carries into check-ins with the
+     * review's photos, oldest first. Returns the place of each check-in created.
+     */
+    List<UUID> convertLegacyReviews(int limit);
 }

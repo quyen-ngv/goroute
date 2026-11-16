@@ -149,9 +149,18 @@ public interface UserCheckinService {
      */
     List<UserCheckinResponse> byTripForMember(UUID userId, UUID tripId);
 
+    /** Public check-ins made at one local event (epic 17), newest visit first. */
+    List<UserCheckinResponse> byLocalEvent(UUID viewerId, UUID eventId, int page, int size);
+
     /** Everything at one uncatalogued spot, so its name is still tappable in the feed. */
     List<UserCheckinResponse> byLocationKey(UUID viewerId, String locationKey, int page, int size);
 
     /** Wards this person has checked in at; private check-ins count only for the owner. */
     List<com.ds.goroute.dto.response.VisitedWardResponse> visitedWards(UUID viewerId, UUID userId);
+
+    /**
+     * Turns up to {@code batchSize} reviews written outside the check-in flow into check-ins
+     * (oldest first) and returns how many were created. Runs from {@code LegacyReviewCheckinJob}.
+     */
+    int convertLegacyReviews(int batchSize);
 }

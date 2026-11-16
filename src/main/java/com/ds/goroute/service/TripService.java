@@ -23,7 +23,13 @@ public interface TripService {
 
     TripResponse updateTrip(UUID tripId, UpdateTripRequest request, UUID userId);
 
-    void deleteTrip(UUID tripId, UUID userId);
+    /** Deletes the trip and keeps its group chat, read-only, for the people in it. */
+    default void deleteTrip(UUID tripId, UUID userId) {
+        deleteTrip(tripId, userId, false);
+    }
+
+    /** @param deleteChat whether the trip's group chat goes with it (the owner's choice). */
+    void deleteTrip(UUID tripId, UUID userId, boolean deleteChat);
 
     TripMemberResponse inviteMember(UUID tripId, InviteMemberRequest request, UUID userId);
 

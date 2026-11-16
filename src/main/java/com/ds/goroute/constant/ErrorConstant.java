@@ -115,6 +115,7 @@ public class ErrorConstant {
     public static final int CHECKIN_PLACE_IMMUTABLE = 4000805;
     public static final int CHECKIN_VIDEO_NOT_ALLOWED = 4000806;
     public static final int CHECKIN_VIDEO_TOO_LONG = 4000807;
+    public static final int CHECKIN_MUSIC_NOT_ALLOWED = 4000808;
 
     /**
      * Points wallet (epic 08).
@@ -210,6 +211,12 @@ public class ErrorConstant {
      */
     public static final int POST_INVALID_MEDIA_REF = 4002001;
 
+    /**
+     * Place edit suggestions (epic 09): nothing to review - no field change, a description shorter
+     * than 10 characters and no photo, or every change equal to what the place already shows.
+     */
+    public static final int PLACE_EDIT_NO_CHANGES = 4000621;
+
     public static final int SYSTEM_CONFIGURATION_NOT_FOUND = 4004208;
 
     public static final int HTTP_CONNECTION_ERROR  = 4009000;
@@ -270,6 +277,15 @@ public class ErrorConstant {
     /** Posts (epic 20): writing in the app is switched off (POST/USER_WRITE_ENABLED) and the caller is not a beta user. */
     public static final int POST_WRITE_NOT_ALLOWED = 4032001;
 
+    /** Place edit suggestions are switched off (PLACE_EDIT/ENABLED) and the caller is not a beta user. */
+    public static final int PLACE_EDIT_DISABLED = 4030621;
+
+    /**
+     * The place cannot take this suggestion: not ACTIVE, a partner place or one with a live
+     * marketplace listing (a closure report is still allowed), or the account is too new.
+     */
+    public static final int PLACE_EDIT_NOT_ALLOWED = 4030622;
+
     /** The caller must change a temporary password before using the partner or admin portal. */
     public static final int PASSWORD_CHANGE_REQUIRED = 4031002;
 
@@ -300,6 +316,9 @@ public class ErrorConstant {
     public static final int LOCAL_EVENT_NOT_FOUND = 4041501;
     public static final int LOCAL_EVENT_IMPORT_BATCH_NOT_FOUND = 4041502;
     public static final int ADMIN_API_KEY_NOT_FOUND = 4041503;
+
+    /** Place edit suggestions: no such suggestion among the caller's own (or, for admins, at all). */
+    public static final int PLACE_EDIT_NOT_FOUND = 4040621;
     
     /**
      * Write the error code prefixed with 409 below
@@ -321,6 +340,18 @@ public class ErrorConstant {
 
     /** Asset library: the asset is still referenced (for example by a food ingredient), so it cannot be deleted. */
     public static final int ASSET_LIBRARY_IN_USE = 4090612;
+
+    /** Place image compression (epic 06 §2.13): the place's images were already compressed (files overwritten). */
+    public static final int PLACE_IMAGES_ALREADY_COMPRESSED = 4090613;
+
+    /** Image compression (epic 00 §9b): a bulk run is already going in this backend instance. */
+    public static final int IMAGE_COMPRESSION_RUN_ACTIVE = 4090614;
+
+    /** Image compression: the preview key is not an image file of a compression group. */
+    public static final int IMAGE_COMPRESSION_KEY_NOT_ALLOWED = 4000614;
+
+    /** Place image compression: the preview URL is not the place's thumbnail or one of its images, or not on our storage. */
+    public static final int PLACE_IMAGE_NOT_IN_PLACE = 4000613;
 
     /** Meetups (epic 18): hosting or joining needs a declared birth year first. */
     public static final int MEETUP_BIRTH_YEAR_REQUIRED = 4091601;
@@ -365,6 +396,9 @@ public class ErrorConstant {
     /** The meetup already has MeetupServiceImpl.MAX_PENDING_INVITES invitations waiting. */
     public static final int MEETUP_INVITE_LIMIT = 4091609;
 
+    /** Place edit suggestions: the suggestion is no longer PENDING (reviewed or cancelled already). */
+    public static final int PLACE_EDIT_ALREADY_REVIEWED = 4090621;
+
     /** Local events (epic 17): the event is cancelled or over, so nobody can join it now. */
     public static final int LOCAL_EVENT_NOT_JOINABLE = 4091501;
 
@@ -408,6 +442,9 @@ public class ErrorConstant {
 
     /** Meetups (epic 18): more than MEETUP/MAX_SUBMISSIONS_PER_DAY submissions in 24 hours. */
     public static final int MEETUP_RATE_LIMITED = 4291601;
+
+    /** Place edit suggestions: PLACE_EDIT/MAX_SUBMISSIONS_PER_DAY in 24 hours, or MAX_PENDING_PER_USER waiting. */
+    public static final int PLACE_EDIT_RATE_LIMITED = 4290621;
 
     /**
      * Write the error code prefixed with 500 below

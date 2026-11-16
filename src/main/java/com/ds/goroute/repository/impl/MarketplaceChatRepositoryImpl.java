@@ -162,4 +162,9 @@ import com.ds.goroute.entity.*;import com.ds.goroute.mapper.MarketplaceChatMappe
     public int archiveAssistantThread(UUID conversationId, UUID ownerId, LocalDateTime at) {
         return m.archiveAssistantThread(conversationId, ownerId, at);
     }
+
+    @Override
+    public int archiveTripConversation(UUID conversationId, LocalDateTime at) {
+        return m.archiveTripConversation(conversationId, at);
+    }
 }

@@ -107,6 +107,24 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     }
 
     @Override
+    public List<UserCheckin> findByLocalEvent(UUID eventId, int limit, int offset) {
+        return mapper.findByLocalEvent(eventId, limit, offset);
+    }
+
+    @Override
+    public long countByLocalEvent(UUID eventId) {
+        return mapper.countByLocalEvent(eventId);
+    }
+
+    @Override
+    public java.util.Set<UUID> findCheckedInLocalEventIds(UUID userId, java.util.Collection<UUID> eventIds) {
+        if (userId == null || eventIds == null || eventIds.isEmpty()) {
+            return java.util.Set.of();
+        }
+        return new java.util.HashSet<>(mapper.findCheckedInLocalEventIds(userId, eventIds));
+    }
+
+    @Override
     public long countByUserAndPlace(UUID userId, UUID placeId) {
         return mapper.countByUserAndPlace(userId, placeId);
     }
@@ -342,5 +360,10 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     @Override
     public Optional<LocalDateTime> findSearchIndexMaxUpdatedAt() {
         return Optional.ofNullable(mapper.selectSearchIndexMaxUpdatedAt());
+    }
+
+    @Override
+    public List<UUID> convertLegacyReviews(int limit) {
+        return mapper.convertLegacyReviews(limit);
     }
 }

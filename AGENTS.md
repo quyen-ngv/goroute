@@ -152,6 +152,8 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `PLACE_REVIEW` | `DEFAULT_REFRESH_MAX_REVIEWS` | count, 1..200 | safe fallback 200 | private/admin |
 | `PLACE_SEARCH` | `ELSEWHERE_ENABLED` / `ELSEWHERE_MAX` | boolean / count, 1..30 | safe fallback true / 10 | private/admin |
 | `TRIP_MEMORY` | `FREE_TRIP_MEMORY_LIMIT` | count, 1..1000 | safe fallback 50 | private/admin |
+| `TRIP_WEATHER` | `ALERT_ENABLED` | boolean (beta users always get it); sends the evening-before `TRIP_DAY_WEATHER_ALERT` to every trip member | safe fallback false | private/admin |
+| `TRIP_WEATHER` | `ALERT_RAIN_PERCENT` | percent, 50..100; rain chance that triggers the alert without an advisory | safe fallback 80 | private/admin |
 | `EXPENSE` | `PAYMENT_REMINDER_COOLDOWN_MINUTES` | minutes, 1..10080 | safe fallback 1440 | private/admin |
 | `AI_CREDIT` | `MARKUP` / `USD_PER_CREDIT` | multiplier 1..10 / USD per credit 0.00001..1 | safe fallback 1.2 / 0.001 | private/admin |
 | `AI_CREDIT` | `FREE_MONTHLY_CREDITS` | credits per month, 0..1000000 (PRO plans: `subscription_plans.ai_credits_per_refill`) | safe fallback 1000 | users via `GET /v1/api/me/ai-credits` (`planCredits`) |
@@ -182,11 +184,13 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `MODERATION` | `POLICY_VERSION` | text | safe fallback `1.0.0` | private/admin |
 | `CHECKIN` | `CHECKIN_ENABLED` | boolean | safe fallback true | public |
 | `CHECKIN` | `VERIFY_RADIUS_METERS` | metres, 20..5000 | safe fallback 200 | public |
+| `CHECKIN` | `EVENT_VERIFY_RADIUS_METERS` | metres, 20..5000; radius around the venue of a local event with no catalogue place inside which a check-in made while the event is on counts as at it (V285) | safe fallback 150 | private/admin |
 | `CHECKIN` | `MAX_ACCURACY_METERS` | metres, 5..2000 | safe fallback 100 | public |
 | `CHECKIN` | `MAX_PHOTOS` | count, 1..20 | safe fallback 6 | public |
 | `CHECKIN` | `MAX_CAPTION_LENGTH` | characters, 100..5000 | safe fallback 2000 | public |
 | `CHECKIN` | `VIDEO_ENABLED` | boolean (beta users always on); gates `POST /v1/api/checkins/videos` and a VIDEO item | safe fallback false | users via `GET /v1/api/checkins/context` (`videoAllowed`) |
 | `CHECKIN` | `MAX_VIDEO_SECONDS` | seconds, 5..300 | safe fallback 60 | users via check-in context (`maxVideoSeconds`) |
+| `CHECKIN` | `MUSIC_ENABLED` | boolean (beta users always on); gates adding a `musicTrackId` (V282) | safe fallback false | users via check-in context (`musicAllowed`) |
 | `CHECKIN` | `LOCATION_KEY_PRECISION` | decimal places, 2..6 | safe fallback 4 | private/admin |
 | `CHECKIN` | `GALLERY_ALLOWED_FOR_FREE` | boolean | safe fallback true | public |
 | `CHECKIN` | `GUIDE_SCREEN_ENABLED` / `GUIDE_SCREEN_MAX_VIEWS` | boolean / count 0..50 | safe fallback true / 3 | public |
@@ -222,6 +226,8 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `TRACKER` | `OFFPLAN_RADIUS_M` / `OFFPLAN_MIN_MINUTES` | metres 20..500 / minutes 1..120 | safe fallback 100 / 10 | members via track context (`offPlanRadiusM`, `offPlanMinMinutes`) |
 | `TRACKER` | `OFFPLAN_NAME_RADIUS_M` | metres, 10..500 | safe fallback 60 | members via track context (`offPlanNameRadiusM`) |
 | `EVENT` | `ENABLED` | boolean (beta users always see the tab; the app checks beta itself); hides/shows the Home "Sự kiện" tab only — `/v1/api/public/events/**` never checks it | safe fallback false | public (listed in `PUBLIC_CONFIG` by V210) |
+| `EVENT` | `REMINDERS_ENABLED` | boolean; the job that reminds people of the events they saved (V285) | safe fallback true | private/admin |
+| `EVENT` | `AUTO_TRANSLATE_ENABLED` | boolean; machine translation of a published event's summary, description and notes into the app languages (V285) | safe fallback true | private/admin |
 | `MEETUP` | `ENABLED` | boolean (beta users always on); gates every `/v1/api/meetups/**` endpoint | safe fallback false | users via `GET /v1/api/meetups/context` (`enabled`) |
 | `MEETUP` | `MAX_ACTIVE_PER_HOST` | count of PENDING_REVIEW/APPROVED meetups not yet past, 1..10 | safe fallback 2 | users via meetup context (`cannotHostReason = HOST_LIMIT`) |
 | `MEETUP` | `MAX_SUBMISSIONS_PER_DAY` | submissions per host in the last 24 h, 1..50 | safe fallback 5 | private/admin |
@@ -230,6 +236,12 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `MEETUP` | `EXACT_VISIBLE_HOURS` | hours after the start, capped at local midnight, 1..12 | safe fallback 3 | users via meetup context (`exactVisibleHours`) |
 | `MEETUP` | `MAX_OPEN_REQUESTS_PER_USER` | pending join requests on live meetups, 1..50 | safe fallback 5 | private/admin |
 | `MEETUP` | `MAX_RESUBMITS` | resubmits after a rejection, 0..10 | safe fallback 2 | host via meetup detail (`resubmitsLeft`) |
+| `PLACE_EDIT` | `ENABLED` | boolean (beta users always on); gates `POST /v1/api/places/{placeId}/edit-suggestions` | safe fallback false | public (`PUBLIC_CONFIG`, V288) and users via edit-suggestion context (`enabled`) |
+| `PLACE_EDIT` | `MIN_ACCOUNT_AGE_HOURS` | hours, 0..720 | safe fallback 24 | users via context (`reason = ACCOUNT_TOO_NEW`) |
+| `PLACE_EDIT` | `MAX_SUBMISSIONS_PER_DAY` / `MAX_PENDING_PER_USER` | suggestions per user in 24 h 1..100 / pending at once 1..500 | safe fallback 10 / 30 | private/admin |
+| `PLACE_EDIT` | `MAX_PIN_MOVE_METERS` | metres a user may move a pin, 10..50000 | safe fallback 2000 | public (`PUBLIC_CONFIG`, V288) |
+| `PLACE_EDIT` | `REWARD_STARS` / `MAX_REWARDS_PER_DAY` | Stars per approved suggestion 0..100 / rewarded suggestions per user in 24 h 0..100 | safe fallback 1 / 5 | private/admin |
+| `PLACE_EDIT` | `WEBSITE_BLOCKED_HOSTS` | comma-separated hosts refused as a suggested website | safe fallback `bit.ly,tinyurl.com,t.co,goo.gl` | private/admin |
 | `ASSISTANT` | `ENABLED` | boolean (beta users always on); gates asking Pengoo | safe fallback false | users via `GET /v1/api/assistant/me` (`available`) |
 | `ASSISTANT` | `LOG_PAYLOADS` | boolean; prompts/answers kept in `ai_api_calls` (beta only) | safe fallback true | private/admin |
 | `ASSISTANT` | `HISTORY_MESSAGES` | chat lines sent with a question, 0..50 | safe fallback 20 | private/admin |
@@ -252,6 +264,10 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `FEED` | `RANKING_WEIGHTS` | JSON overriding `feed/feed-ranking-defaults.json` key by key | safe fallback `{}` (defaults) | private/admin |
 | `POST` | `ENABLED` | boolean (beta users always on); posts in Feed/Place Detail/profile lists, `GET /posts/{id}` never gated | safe fallback false | users via `GET /v1/api/posts/policy` (`enabled`) |
 | `POST` | `USER_WRITE_ENABLED` | boolean (beta users always on); gates creating/editing/publishing posts in the app, never the console | safe fallback false | users via post policy (`canWrite`) |
+| `IMAGE_COMPRESSION` | `AUTO_ENABLED` | boolean; compress each upload in the background, overwriting the same key | safe fallback false | private/admin |
+| `IMAGE_COMPRESSION` | `QUALITY_FREE` / `QUALITY_PRO` | WebP quality, 30..95; FREE only for images of free-plan users, PRO for everything else | safe fallback 70 / 82 | private/admin |
+| `IMAGE_COMPRESSION` | `MAX_LONG_EDGE_FREE` / `MAX_LONG_EDGE_PRO` | pixels, 640..4096, never upscales | safe fallback 1600 / 2048 | private/admin |
+| `IMAGE_COMPRESSION` | `MIN_SAVINGS_PERCENT` | percent, 0..90; a file is overwritten only when the WebP is at least this much smaller | safe fallback 10 | private/admin |
 | `LEGAL` | `TERMS_VERSION` / `PRIVACY_VERSION` | text; the version of the bundled Terms / Privacy Policy. A user whose accepted version differs gets the consent screen again (`GET /v1/api/consents/me` → `needsAcceptance`); raise only with an app release carrying the new text | safe fallback `2.0` | users via `GET /v1/api/consents/me` |
 | `POST` | `MAX_BODY_LENGTH` / `MAX_MEDIA` / `MAX_VIDEO_SECONDS` / `MAX_PLACES` | characters 1000..100000 / count 1..500 (a trip story borrows every check-in photo as a shared row, so the ceiling is generous) / seconds 5..900 / count 1..100 | safe fallback 30000 / 200 / 300 / 30 | users via post policy |
 

@@ -93,6 +93,29 @@ public class LocalEventRepositoryImpl implements LocalEventRepository {
     }
 
     @Override
+    public Map<UUID, LocalEvent> findLiveSummariesByIds(Collection<UUID> ids) {
+        Map<UUID, LocalEvent> byId = new HashMap<>();
+        if (ids == null || ids.isEmpty()) {
+            return byId;
+        }
+        for (LocalEvent event : mapper.findLiveSummariesByIds(ids)) {
+            byId.put(event.getId(), event);
+        }
+        return byId;
+    }
+
+    @Override
+    public List<LocalEvent> findSavedOrGoing(UUID userId, LocalDateTime fromUtc, int limit) {
+        return mapper.findSavedOrGoing(userId, fromUtc, limit);
+    }
+
+    @Override
+    public List<LocalEvent> findReminderCandidates(LocalDateTime nowUtc, LocalDateTime startBefore,
+                                                   LocalDateTime endBefore, int limit) {
+        return mapper.findReminderCandidates(nowUtc, startBefore, endBefore, limit);
+    }
+
+    @Override
     public List<LocalEventDuplicateCandidate> findDuplicateCandidates(LocalEventDuplicateSearchParams params) {
         return mapper.findDuplicateCandidates(params);
     }

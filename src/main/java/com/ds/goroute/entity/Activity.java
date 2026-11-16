@@ -26,6 +26,8 @@ public class Activity {
     private UUID placeRefId;
     /** Mapbox's id for a social-video stop that is not in `places` (V259). */
     private String mapboxId;
+    /** The local event this stop is (epic 17, V285); null for an ordinary stop. */
+    private UUID localEventId;
     private String name;
     private String address;
     private BigDecimal lat;

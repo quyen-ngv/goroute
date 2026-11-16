@@ -10,6 +10,8 @@ import com.ds.goroute.mapper.PlaceTranslationMapper;
 import com.ds.goroute.repository.FoodRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.service.PlaceSearchIndexService;
+import com.ds.goroute.type.PlaceBusinessStatus;
+import com.ds.goroute.type.PlaceSearchSort;
 import com.ds.goroute.type.PlaceSubType;
 import com.ds.goroute.utils.CitySlugResolver;
 import com.ds.goroute.utils.DestinationMatchUtils;
@@ -97,16 +99,34 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     private static final int REINDEX_BATCH_SIZE = 500;
     /** Largest page the location-free name search serves (the console picker asks for 500). */
     static final int MAX_NAME_SEARCH_SIZE = 500;
-    private static final String INDEX_SCHEMA_VERSION = "11";
+    private static final String INDEX_SCHEMA_VERSION = "14";
     private static final String ID_FIELD = "id";
     private static final Set<String> ID_ONLY = Set.of(ID_FIELD);
     private static final String NAME_FIELD = "name";
-    /** How much a word weighs in a place's names (the weights a client's minLuceneScore is set against). */
+    /**
+     * The names' neighbouring words written together ({@link LuceneKeywordQuery#joinedWords}),
+     * so "hanoi" and "hoankiem" find "Hà Nội" and "Hồ Hoàn Kiếm".
+     */
+    private static final String NAME_JOINED_FIELD = "name_joined";
+    /**
+     * How much a word weighs in a place's names (the weights a client's minLuceneScore is set
+     * against). A word found only as two words joined weighs less than the word itself, and
+     * joined words make no phrase.
+     */
     private static final List<LuceneKeywordQuery.Field> NAME_FIELDS = List.of(
-            new LuceneKeywordQuery.Field(NAME_FIELD, 4f, 2f, 0.75f, 10f, 1, 4));
+            new LuceneKeywordQuery.Field(NAME_FIELD, 4f, 2f, 0.75f, 10f, 1, 4),
+            new LuceneKeywordQuery.Field(NAME_JOINED_FIELD, 3f, 1.5f, 0.5f, 0f, 4, 6));
+    /** More places than this differing from the database: rebuild instead of indexing one by one. */
+    private static final int SYNC_REBUILD_THRESHOLD = 1_000;
     private static final int MAX_KEYWORD_WORDS = 8;
     private static final String LOCATION_FIELD = "location";
     private static final String VISIBILITY_FIELD = "visibility";
+    /**
+     * "1" for a permanently closed place (PlaceBusinessStatus, schema 14): it still answers a
+     * name search, but map tiles and the popularity sort leave it out.
+     */
+    private static final String CLOSED_FIELD = "closed";
+    private static final Query PERMANENTLY_CLOSED = new TermQuery(new Term(CLOSED_FIELD, "1"));
     private static final String CATEGORY_FIELD = "category";
     private static final String PLACE_GROUP_FIELD = "place_group";
     private static final String SUB_TYPE_FIELD = "sub_type";
@@ -127,6 +147,8 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     private static final float DISTANCE_SCORE_WEIGHT = 1.5f;
     private static final double MIN_DISTANCE_PIVOT_METERS = 100.0;
     private static final double MAX_DISTANCE_PIVOT_METERS = 5_000.0;
+    /** A name search leans towards its point at the scale of a region, not a street. */
+    private static final double NAME_SEARCH_PIVOT_METERS = 50_000.0;
     private static final Sort EFFECTIVE_RATING_DESCENDING_SORT = new Sort(
             new SortField(EFFECTIVE_RATING_SORT_FIELD, SortField.Type.DOUBLE, true));
     private static final Sort PROMINENCE_DESCENDING_SORT = new Sort(
@@ -156,6 +178,12 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     private final AtomicBoolean reindexRunning = new AtomicBoolean();
     /** Places written or deleted while a rebuild runs; replayed onto the rebuilt index. */
     private final Set<UUID> changedDuringReindex = ConcurrentHashMap.newKeySet();
+    /**
+     * Place id → hash of its searchable names in the database ({@code findSearchNameHashes})
+     * when the index last read them; null until the first rebuild or sync. What
+     * {@link #syncNamesWithDatabase} compares the database against.
+     */
+    private volatile Map<UUID, String> indexedNameHashes;
 
     /**
      * Exists on disk while the live index holds writes not yet committed. Commits are batched
@@ -353,6 +381,56 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         }
     }
 
+    /**
+     * Brings the index in line with names that reached the database without passing through
+     * the application: a SQL import of translated names, a title fixed by hand, a place
+     * deleted. Compares one hash per place (visibility, title, aliases, every translated name)
+     * with the one the index was last built from, and indexes the places that differ; when most
+     * of the catalogue differs it rebuilds instead. A place the application itself just wrote
+     * differs too and is indexed once more, which costs one document. Search caches are left to
+     * expire (two minutes).
+     */
+    @Scheduled(fixedDelayString = "${goroute.search.place-index-sync-ms:300000}",
+            initialDelayString = "${goroute.search.place-index-sync-ms:300000}")
+    public void syncNamesWithDatabase() {
+        if (writer == null || !writer.isOpen() || reindexRunning.get()) {
+            return;
+        }
+        try {
+            Map<UUID, String> current = placeRepository.findSearchNameHashes();
+            Map<UUID, String> known = indexedNameHashes;
+            if (known == null) {
+                indexedNameHashes = new ConcurrentHashMap<>(current);
+                return;
+            }
+            List<UUID> changed = current.entrySet().stream()
+                    .filter(entry -> !entry.getValue().equals(known.get(entry.getKey())))
+                    .map(Map.Entry::getKey)
+                    .toList();
+            List<UUID> removed = known.keySet().stream().filter(id -> !current.containsKey(id)).toList();
+            if (changed.isEmpty() && removed.isEmpty()) {
+                return;
+            }
+            if (changed.size() > SYNC_REBUILD_THRESHOLD) {
+                log.info("Place index: {} places differ from the database; rebuilding", changed.size());
+                triggerReindex();
+                return;
+            }
+            for (UUID id : changed) {
+                placeRepository.findSearchIndexRow(id).ifPresent(this::indexPlace);
+                known.put(id, current.get(id));
+            }
+            for (UUID id : removed) {
+                deletePlace(id);
+                known.remove(id);
+            }
+            log.info("Place index synced with the database: {} places indexed, {} removed",
+                    changed.size(), removed.size());
+        } catch (RuntimeException e) {
+            log.warn("Could not sync the place index with the database: {}", e.getMessage(), e);
+        }
+    }
+
     @Override
     public boolean triggerReindex() {
         if (!reindexRunning.compareAndSet(false, true)) {
@@ -386,6 +464,9 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         try {
             IOUtils.rm(rebuildDir);
             Files.createDirectories(rebuildDir);
+            // Read before the places: a name changed while the rebuild reads is then newer than
+            // its hash here, and the next sync indexes that place once more.
+            Map<UUID, String> nameHashes = new ConcurrentHashMap<>(placeRepository.findSearchNameHashes());
             int total;
             try (Directory rebuildDirectory = FSDirectory.open(rebuildDir)) {
                 try (IndexWriter rebuildWriter = new IndexWriter(rebuildDirectory, new IndexWriterConfig(analyzer))) {
@@ -394,6 +475,7 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
                 }
                 swapIn(rebuildDirectory, generation);
             }
+            indexedNameHashes = nameHashes;
             log.info("Reindexed {} places in {} ms", total, System.currentTimeMillis() - started);
         } catch (Exception e) {
             log.error("Place reindex failed; the previous index stays in use", e);
@@ -485,6 +567,13 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     @Override
     public List<UUID> searchPlaceIdsByName(String keyword, List<String> placeGroups, boolean includeInactive,
                                            int page, int size) throws IOException {
+        return searchPlaceIdsByName(keyword, placeGroups, includeInactive, page, size, null, null);
+    }
+
+    @Override
+    public List<UUID> searchPlaceIdsByName(String keyword, List<String> placeGroups, boolean includeInactive,
+                                           int page, int size, Double latitude, Double longitude)
+            throws IOException {
         if (keyword == null || keyword.isBlank()) {
             return List.of();
         }
@@ -502,7 +591,8 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         }
         IndexSearcher searcher = searcherManager.acquire();
         try {
-            ScoreDoc[] hits = relevantByName(searcher, keyword, placeGroups, includeInactive, requestedHits);
+            ScoreDoc[] hits = relevantByName(searcher, keyword, placeGroups, includeInactive, requestedHits,
+                    latitude, longitude);
             List<UUID> ids = new ArrayList<>();
             for (int index = offset; index < hits.length; index++) {
                 ids.add(UUID.fromString(searcher.doc(hits[index].doc, ID_ONLY).get(ID_FIELD)));
@@ -521,18 +611,34 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
      */
     private ScoreDoc[] relevantByName(IndexSearcher searcher, String keyword, List<String> placeGroups,
                                       boolean includeInactive, int maxHits) throws IOException {
+        return relevantByName(searcher, keyword, placeGroups, includeInactive, maxHits, null, null);
+    }
+
+    /**
+     * {@link #relevantByName(IndexSearcher, String, List, boolean, int)}, leaning towards a point
+     * when one is given: a small bonus (at most {@link #DISTANCE_SCORE_WEIGHT}, half of it at
+     * {@link #NAME_SEARCH_PIVOT_METERS}) that only orders names matching alike; no place is
+     * dropped for being far, and the weak-tail cut still follows the name score.
+     */
+    private ScoreDoc[] relevantByName(IndexSearcher searcher, String keyword, List<String> placeGroups,
+                                      boolean includeInactive, int maxHits, Double latitude, Double longitude)
+            throws IOException {
         List<LuceneKeywordQuery.Word> words = LuceneKeywordQuery.words(keyword, MAX_KEYWORD_WORDS);
         if (words.isEmpty()) {
             return new ScoreDoc[0];
         }
         List<String> groups = normalizeUpper(placeGroups);
-        for (LuceneKeywordQuery.Match match : LuceneKeywordQuery.STRICT_TIERS) {
+        for (LuceneKeywordQuery.Match match : LuceneKeywordQuery.NAME_TIERS) {
             BooleanQuery.Builder query = new BooleanQuery.Builder()
                     .add(LuceneKeywordQuery.build(words, NAME_FIELDS, match), BooleanClause.Occur.MUST);
             if (!includeInactive) {
                 query.add(new TermQuery(new Term(VISIBILITY_FIELD, "ACTIVE")), BooleanClause.Occur.FILTER);
             }
             addTermSetFilter(query, PLACE_GROUP_FIELD, groups);
+            if (latitude != null && longitude != null) {
+                query.add(LatLonPoint.newDistanceFeatureQuery(LOCATION_FIELD, DISTANCE_SCORE_WEIGHT,
+                        latitude, longitude, NAME_SEARCH_PIVOT_METERS), BooleanClause.Occur.SHOULD);
+            }
             ScoreDoc[] hits = searcher.search(query.build(), maxHits).scoreDocs;
             if (hits.length > 0) {
                 return LuceneKeywordQuery.relevant(hits);
@@ -649,7 +755,7 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         List<String> groups = normalizeUpper(placeGroups);
         IndexSearcher searcher = searcherManager.acquire();
         try {
-            for (LuceneKeywordQuery.Match match : LuceneKeywordQuery.STRICT_TIERS) {
+            for (LuceneKeywordQuery.Match match : LuceneKeywordQuery.NAME_TIERS) {
                 BooleanQuery.Builder query = new BooleanQuery.Builder()
                         .add(LuceneKeywordQuery.build(words, NAME_FIELDS, match), BooleanClause.Occur.MUST)
                         .add(new TermQuery(new Term(VISIBILITY_FIELD, "ACTIVE")), BooleanClause.Occur.FILTER);
@@ -695,6 +801,9 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
 
         if (!criteria.includeInactive()) {
             query.add(new TermQuery(new Term(VISIBILITY_FIELD, "ACTIVE")), BooleanClause.Occur.FILTER);
+        }
+        if (criteria.sort() == PlaceSearchSort.POPULARITY) {
+            query.add(PERMANENTLY_CLOSED, BooleanClause.Occur.MUST_NOT);
         }
         if (criteria.category() != null && !criteria.category().isBlank()) {
             query.add(new TermQuery(new Term(CATEGORY_FIELD, normalizeLower(criteria.category()))),
@@ -851,6 +960,7 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         BooleanQuery.Builder query = new BooleanQuery.Builder();
         query.add(LatLonPoint.newBoxQuery(LOCATION_FIELD, south, north, west, east), BooleanClause.Occur.FILTER);
         query.add(new TermQuery(new Term(VISIBILITY_FIELD, "ACTIVE")), BooleanClause.Occur.FILTER);
+        query.add(PERMANENTLY_CLOSED, BooleanClause.Occur.MUST_NOT);
         addTermSetFilter(query, PLACE_GROUP_FIELD, normalizeUpper(placeGroups));
         addSubTypeFilter(query, normalizeUpper(subTypes));
 
@@ -1008,8 +1118,13 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         Document doc = new Document();
         doc.add(new StringField(ID_FIELD, place.getId().toString(), Field.Store.YES));
         doc.add(new StringField("schema_version", INDEX_SCHEMA_VERSION, Field.Store.YES));
-        doc.add(new TextField(NAME_FIELD, LuceneKeywordQuery.normalize(buildSearchableName(place, translations)),
-                Field.Store.YES));
+        Set<String> names = searchableNames(place, translations);
+        doc.add(new TextField(NAME_FIELD, LuceneKeywordQuery.normalize(String.join(" ", names)), Field.Store.YES));
+        Set<String> joined = new LinkedHashSet<>();
+        names.forEach(name -> joined.addAll(LuceneKeywordQuery.joinedWords(name)));
+        if (!joined.isEmpty()) {
+            doc.add(new TextField(NAME_JOINED_FIELD, String.join(" ", joined), Field.Store.NO));
+        }
 
         if (place.getLatitude() != null && place.getLongitude() != null) {
             double latitude = place.getLatitude().doubleValue();
@@ -1022,6 +1137,10 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         if (place.getVisibilityStatus() != null) {
             doc.add(new StringField(VISIBILITY_FIELD, place.getVisibilityStatus().name(), Field.Store.NO));
         }
+        doc.add(new StringField(CLOSED_FIELD,
+                PlaceBusinessStatus.fromStoredStatus(place.getStatus()) == PlaceBusinessStatus.PERMANENTLY_CLOSED
+                        ? "1" : "0",
+                Field.Store.NO));
         addKeywordField(doc, CATEGORY_FIELD, normalizeLower(place.getCategory()));
         if (place.getPlaceGroup() != null) {
             addKeywordField(doc, PLACE_GROUP_FIELD, place.getPlaceGroup().name());
@@ -1084,13 +1203,32 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         return result;
     }
 
-    private String buildSearchableName(Place place, List<PlaceTranslation> translations) {
+    /** Every name the place is found by: its title, its search aliases (V284) and its translated names. */
+    private Set<String> searchableNames(Place place, List<PlaceTranslation> translations) {
         Set<String> names = new LinkedHashSet<>();
         addSearchName(names, place.getTitle());
+        for (String alias : searchAliases(place)) {
+            addSearchName(names, alias);
+        }
         if (translations != null) {
             translations.forEach(translation -> addSearchName(names, translation.getName()));
         }
-        return String.join(" ", names);
+        return names;
+    }
+
+    /**
+     * The place's search aliases. A place loaded from its row has them (an empty array when it
+     * has none); one built by its caller or read through a projection without the column has
+     * null, and they are read back, so indexing such an object never drops them.
+     */
+    private String[] searchAliases(Place place) {
+        if (place.getSearchAliases() != null) {
+            return place.getSearchAliases();
+        }
+        String[] stored = placeRepository.findSearchIndexRow(place.getId())
+                .map(Place::getSearchAliases)
+                .orElse(null);
+        return stored != null ? stored : new String[0];
     }
 
     private void addSearchName(Set<String> names, String name) {

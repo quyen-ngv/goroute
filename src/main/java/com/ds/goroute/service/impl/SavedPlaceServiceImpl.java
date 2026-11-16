@@ -57,6 +57,7 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
     private final PlaceMapper placeMapper;
     private final LocationImageRepository locationImageRepository;
     private final ObjectMapper objectMapper;
+    private final com.ds.goroute.mapper.PlaceTranslationMapper placeTranslationMapper;
 
     @Override
     public List<SavedPlaceResponse> getSavedPlaces(UUID userId, String category, String itemType, Integer page, Integer size) {
@@ -322,13 +323,22 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
         }
 
         Set<UUID> areaIds = new HashSet<>();
+        String language = com.ds.goroute.config.filter.AcceptLanguageFilter.currentCode();
         for (List<UUID> batch : Lists.partition(List.copyOf(byId.keySet()), CATALOG_BATCH_SIZE)) {
+            // The places' names in the reader's language, one query for the batch.
+            Map<UUID, List<com.ds.goroute.entity.PlaceTranslation>> translations = new java.util.HashMap<>();
+            for (com.ds.goroute.entity.PlaceTranslation translation : placeTranslationMapper.findByPlaceIds(batch)) {
+                translations.computeIfAbsent(translation.getPlaceId(), ignored -> new java.util.ArrayList<>())
+                        .add(translation);
+            }
             for (Place place : placeMapper.findSavedSummaryByIds(batch)) {
                 RecentSavedPlaceAccumulator saved = byId.get(place.getId());
                 if (saved == null) {
                     continue;
                 }
                 saved.applyCatalog(place);
+                saved.applyLocalizedName(com.ds.goroute.service.PlaceTranslationService.localizedName(
+                        translations.get(place.getId()), language));
                 if (place.getLocationImageId() != null) {
                     areaIds.add(place.getLocationImageId());
                 }
@@ -498,6 +508,13 @@ public class SavedPlaceServiceImpl implements SavedPlaceService {
                 categories.put(categoryKey, SavedPlaceCategoryResponse.builder()
                         .name(normalizedCategory == null || normalizedCategory.isEmpty() ? null : normalizedCategory)
                         .build());
+            }
+        }
+
+        /** The catalogue name in the reader's language, when the place has one. */
+        private void applyLocalizedName(String localizedName) {
+            if (localizedName != null) {
+                name = localizedName;
             }
         }
 

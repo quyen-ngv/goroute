@@ -5,6 +5,8 @@
 
 # GoRoute backend refactor plan
 
+> Trạng thái (11/11/2026, đối chiếu code): PARTIAL — Phase 0 DONE; phần còn lại chuyển sang BACKEND_REFACTOR_PLAN_2026-10.md — xem .docs/STATUS_INDEX.md
+
 ## Baseline audit (2026-08-23)
 
 Scope inspected: all 66 controller classes and all 399 mapped controller

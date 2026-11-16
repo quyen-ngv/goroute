@@ -145,7 +145,7 @@ public class MapSearchService {
         if (areasOnly) {
             return mapboxAreaAutocomplete(query, input, latitude, longitude, limit, language, cacheKey, catalogueOnly);
         }
-        List<MapPlaceCacheEntry> picked = pickedPlaces(normalized, latitude, longitude, radiusKm, limit);
+        List<MapPlaceCacheEntry> picked = pickedPlaces(normalized, latitude, longitude, radiusKm, limit, language);
         // Without a point, picked places come from the whole country ranked by name alone:
         // "Hồ Chí Minh" found five Hà Nội venues named after him and never the city. They answer
         // alone only near a point; elsewhere Mapbox is asked.
@@ -170,7 +170,7 @@ public class MapSearchService {
                         .toList();
             }
             places = places.stream().limit(limit).toList();
-            places.forEach(this::rememberPlace);
+            places.forEach(place -> rememberPlace(place, language));
             ObjectNode answer = shape.autocomplete(places);
             storeResponse(cacheKey, "AUTOCOMPLETE", answer, AUTOCOMPLETE_TTL);
             return json(answer);
@@ -201,7 +201,7 @@ public class MapSearchService {
         try {
             List<MapPlaceCacheEntry> places = MapboxResults.clean(
                     MapboxResults.places(mapbox.geocodeAreas(input, latitude, longitude, language, limit)), language);
-            places.forEach(this::rememberPlace);
+            places.forEach(place -> rememberPlace(place, language));
             ObjectNode answer = shape.autocomplete(places);
             storeResponse(cacheKey, "AUTOCOMPLETE", answer, AUTOCOMPLETE_TTL);
             return json(answer);
@@ -240,7 +240,8 @@ public class MapSearchService {
         if (!MAPBOX_ID.matcher(id).matches()) {
             return json(shape.emptyDetail());
         }
-        MapPlaceCacheEntry place = findPlace(id);
+        String language = language(acceptLanguage);
+        MapPlaceCacheEntry place = findPlace(id, language);
         if (place == null) {
             if (!mapbox.isConfigured()) {
                 return json(shape.emptyDetail());
@@ -251,12 +252,12 @@ public class MapSearchService {
             }
             try {
                 List<MapPlaceCacheEntry> found = MapboxResults.places(
-                        mapbox.retrieve(id, language(acceptLanguage)), this::area);
+                        mapbox.retrieve(id, language), this::area);
                 if (found.isEmpty()) {
                     return json(shape.emptyDetail());
                 }
                 place = found.get(0);
-                rememberPlace(place);
+                rememberPlace(place, language);
             } catch (MapboxException exception) {
                 log.warn("Mapbox retrieve failed for {}: {}", id, exception.getMessage());
                 return upstreamError();
@@ -272,7 +273,7 @@ public class MapSearchService {
                                           String acceptLanguage) {
         Optional<MapProvider> provider = resolver.forUser(userId);
         if (provider.isPresent() && provider.get() == MapProvider.GOONG) {
-            return goongGeocode(address, latlng, limit);
+            return latlng != null ? goongReverse(latlng, limit) : goongGeocode(address, null, limit);
         }
         boolean catalogueOnly = provider.isEmpty();
         String language = language(acceptLanguage);
@@ -281,7 +282,7 @@ public class MapSearchService {
             if (point == null) {
                 return json(shape.geocode(List.of(), null));
             }
-            return reverse(point[0], point[1], limit, language, catalogueOnly, () -> goongGeocode(null, latlng, limit));
+            return reverse(point[0], point[1], limit, language, catalogueOnly, () -> goongReverse(latlng, limit));
         }
         if (address == null || address.isBlank()) {
             return json(shape.geocode(List.of(), null));
@@ -319,7 +320,7 @@ public class MapSearchService {
             if (places.isEmpty() && canFallBack(latitude, longitude)) {
                 return fallback.get();
             }
-            places.forEach(this::rememberPlace);
+            places.forEach(place -> rememberPlace(place, language));
             ObjectNode answer = shape.geocode(places, compound);
             storeResponse(cacheKey, "REVERSE", answer, REVERSE_TTL);
             return json(answer);
@@ -365,32 +366,71 @@ public class MapSearchService {
         return goong.forward("/Geocode", params);
     }
 
+    /**
+     * Goong's reverse geocode with each result's {@code compound} replaced by the ward and
+     * province of the boundary dataset, as the Mapbox path answers. Goong still names the wards
+     * and districts abolished in 2025, and the app builds a check-in's area name from this.
+     * Left as Goong sent it when the point resolves to no ward or the body is not JSON.
+     */
+    private ResponseEntity<String> goongReverse(String latlng, Integer limit) {
+        ResponseEntity<String> response = goongGeocode(null, latlng, limit);
+        double[] point = parsePoint(latlng);
+        String body = response.getBody();
+        if (point == null || body == null || !response.getStatusCode().is2xxSuccessful()
+                || !inVietnam(point[0], point[1])) {
+            return response;
+        }
+        GoongShape.Compound official = compound(point[0], point[1]);
+        if (official == null) {
+            return response;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(body);
+            JsonNode results = root.path("results");
+            if (!results.isArray()) {
+                return response;
+            }
+            for (JsonNode result : results) {
+                if (result instanceof ObjectNode resultNode) {
+                    ObjectNode compoundNode = resultNode.putObject("compound");
+                    compoundNode.put("commune", official.commune());
+                    compoundNode.put("province", official.province());
+                }
+            }
+            return json(root);
+        } catch (JsonProcessingException exception) {
+            return response;
+        }
+    }
+
     // --- caches -------------------------------------------------------------------------
 
     private List<MapPlaceCacheEntry> pickedPlaces(String normalized, Double latitude, Double longitude,
-                                                  Integer radiusKm, int limit) {
+                                                  Integer radiusKm, int limit, String language) {
         if (normalized.length() < 3) {
             return List.of();
         }
         try {
             double radius = radiusKm != null ? radiusKm : PICKED_RADIUS_KM;
-            return cache.searchPicked(normalized, latitude, longitude, radius, limit);
+            return cache.searchPicked(language, normalized, latitude, longitude, radius, limit);
         } catch (RuntimeException exception) {
             log.warn("Picked-place lookup failed: {}", exception.getMessage());
             return List.of();
         }
     }
 
-    private MapPlaceCacheEntry findPlace(String id) {
+    private MapPlaceCacheEntry findPlace(String id, String language) {
         try {
-            return cache.findPlace(MapProvider.MAPBOX.name(), id);
+            return cache.findPlace(MapProvider.MAPBOX.name(), id, language);
         } catch (RuntimeException exception) {
             log.warn("Place cache read failed for {}: {}", id, exception.getMessage());
             return null;
         }
     }
 
-    private void rememberPlace(MapPlaceCacheEntry place) {
+    /** Stores the place under the language Mapbox answered in, so it is only shown in it. */
+    private void rememberPlace(MapPlaceCacheEntry place, String language) {
+        place.setLanguage(language);
         try {
             cache.upsertPlace(place);
         } catch (RuntimeException exception) {
@@ -400,7 +440,7 @@ public class MapSearchService {
 
     private void markPicked(MapPlaceCacheEntry place) {
         try {
-            cache.incrementPicked(place.getProvider(), place.getProviderPlaceId());
+            cache.incrementPicked(place.getProvider(), place.getProviderPlaceId(), place.getLanguage());
         } catch (RuntimeException exception) {
             log.warn("Could not mark {} picked: {}", place.getProviderPlaceId(), exception.getMessage());
         }
@@ -456,8 +496,10 @@ public class MapSearchService {
         }
     }
 
+    /** The ward with its unit ("Phường Kinh Bắc"), as check-ins store it; no district since 2025. */
     private static GoongShape.Compound compoundOf(Ward ward) {
-        return new GoongShape.Compound(ward.getName(), null, ward.getProvinceName());
+        String wardName = ward.getFullName() != null ? ward.getFullName() : ward.getName();
+        return new GoongShape.Compound(wardName, null, ward.getProvinceName());
     }
 
     // --- helpers ------------------------------------------------------------------------

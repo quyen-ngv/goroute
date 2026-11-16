@@ -35,4 +35,9 @@ public class AdminPlaceResponse extends PlaceResponse {
     private Integer authenticLowStarCount;
     private BigDecimal avgAuthenticityScore;
     private LocalDateTime scoreCalculatedAt;
+    /**
+     * PlaceEditField names an approved user suggestion locked against the re-scrape (epic 09).
+     * Only the single-place read fills it; the console never sends it back on save.
+     */
+    private java.util.List<String> lockedFields;
 }

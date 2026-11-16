@@ -29,6 +29,12 @@ public interface PlaceRepository {
 
     List<String> findExistingCids(List<String> cids);
 
+    /** Only {@code id}, {@code place_id} and {@code cid} of the places with these Google place ids. */
+    List<Place> findReferencesByPlaceIds(List<String> placeIds);
+
+    /** Only {@code id}, {@code place_id} and {@code cid} of the places with these Google cids. */
+    List<Place> findReferencesByCids(List<String> cids);
+
     Place findNearCoordinates(BigDecimal latitude, BigDecimal longitude, BigDecimal maxDistanceMeters);
 
     /**
@@ -55,7 +61,7 @@ public interface PlaceRepository {
      * last {@code days} days, most used first, at most {@code limit}.
      */
     List<PlaceTrendingRow> findTrendingUsage(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusMeters,
-                                             List<String> placeGroups, int days, int limit);
+                                             List<String> placeGroups, int days, boolean excludeAiTrips, int limit);
 
     /** Map-pin columns for the ids that a guest may see, in no particular order. */
     List<Place> findMapPinsByIds(List<UUID> ids);
@@ -79,6 +85,20 @@ public interface PlaceRepository {
     List<Place> findSearchIndexPage(UUID afterId, int limit);
 
     Optional<Place> findSearchIndexRow(UUID id);
+
+    /**
+     * Every translated name and description of the given places, grouped by place: what a
+     * response that names places (a check-in, an activity, a saved place) resolves the
+     * reader's language from. One query per 500 ids; a place with no translation is absent.
+     */
+    java.util.Map<UUID, List<com.ds.goroute.entity.PlaceTranslation>> findTranslationsByPlaceIds(
+            java.util.Collection<UUID> placeIds);
+
+    /**
+     * Place id → hash of what the search index reads of it by name (visibility, title, aliases,
+     * every translated name), for every place.
+     */
+    java.util.Map<UUID, String> findSearchNameHashes();
 
     List<Place> findAll();
 
@@ -120,6 +140,11 @@ public interface PlaceRepository {
     List<Place> findActiveForAiInArea(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm,
                                       com.ds.goroute.entity.LocationImage area, List<String> placeGroups, int limit);
 
+    /** {@link #findActiveForAiInArea} limited to the given place ids (an empty list finds nothing). */
+    List<Place> findActiveForAiInArea(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm,
+                                      com.ds.goroute.entity.LocationImage area, List<String> placeGroups,
+                                      List<UUID> ids, int limit);
+
     void delete(UUID id);
 
     /** Replaces the drawn verification area; null clears it. */
@@ -129,6 +154,9 @@ public interface PlaceRepository {
 
     /** Replaces the place's sub-types; the generic {@link #update} never touches them. */
     void updateSubTypes(UUID id, String[] subTypes);
+
+    /** Replaces the place's search aliases; the generic {@link #update} never touches them. */
+    void updateSearchAliases(UUID id, String[] searchAliases);
 
     /** Point-in-polygon against the ward table; returns rows changed (0 outside every boundary). */
     int assignWard(UUID id);
@@ -141,6 +169,52 @@ public interface PlaceRepository {
 
     /** Validity, reason and area (km²) of a GeoJSON geometry, as PostGIS sees it. */
     GeometryValidation validateGeometry(String geoJson);
+
+    /** Image columns and compression record of a place (epic 06 §2.13). */
+    Optional<com.ds.goroute.entity.PlaceImageState> findImageState(UUID id);
+
+    /** Writes the compression record unless the place already has one; false when it did. */
+    boolean recordImageCompression(UUID id, String recordJson);
+
+    /** Ids of places with images and no compression record, in id order after {@code afterId}. */
+    List<UUID> findImageCompressionPendingIds(UUID afterId, int limit);
+
+    long countImageCompressionPending();
+
+    // Place edit suggestions (epic 09, V286): narrow writes, never the whole-row update.
+
+    /** PlaceEditField names locked against the re-scrape; empty when none. */
+    List<String> findLockedFields(UUID id);
+
+    void addLockedFields(UUID id, Collection<String> fields);
+
+    void removeLockedField(UUID id, String field);
+
+    /** What decides whether a place takes edit suggestions. */
+    Optional<com.ds.goroute.entity.PlaceEditGuard> findEditGuard(UUID id);
+
+    void updateAddress(UUID id, String address);
+
+    void updateLocation(UUID id, BigDecimal latitude, BigDecimal longitude);
+
+    /** {@code open_hours} and {@code regular} together, as JSON text. */
+    void updateOpenHours(UUID id, String openHoursJson);
+
+    void updatePhone(UUID id, String phone);
+
+    void updateWebsite(UUID id, String website);
+
+    void updatePriceRange(UUID id, String priceRange);
+
+    /** Google's business status text ({@code places.status}); empty while open. */
+    void updateStatusText(UUID id, String status);
+
+    /** Visibility, and the place it was merged into when not null. */
+    void updateVisibility(UUID id, com.ds.goroute.type.PlaceVisibilityStatus visibility, UUID mergedIntoPlaceId);
+
+    void updatePlaceGroup(UUID id, com.ds.goroute.type.PlaceGroup placeGroup);
+
+    void updateAttributes(UUID id, String attributesJson);
 
     record GeometryValidation(boolean valid, String reason, double areaKm2, String geometryType) {
     }

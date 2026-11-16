@@ -16,10 +16,34 @@ import java.util.UUID;
 @Repository
 public class PlaceRepositoryImpl implements PlaceRepository {
 
-    private final PlaceMapper placeMapper;
+    private static final int TRANSLATION_ID_BATCH_SIZE = 500;
 
-    public PlaceRepositoryImpl(PlaceMapper placeMapper) {
+    private final PlaceMapper placeMapper;
+    private final com.ds.goroute.mapper.PlaceTranslationMapper placeTranslationMapper;
+
+    public PlaceRepositoryImpl(PlaceMapper placeMapper,
+                               com.ds.goroute.mapper.PlaceTranslationMapper placeTranslationMapper) {
         this.placeMapper = placeMapper;
+        this.placeTranslationMapper = placeTranslationMapper;
+    }
+
+    @Override
+    public java.util.Map<UUID, List<com.ds.goroute.entity.PlaceTranslation>> findTranslationsByPlaceIds(
+            Collection<UUID> placeIds) {
+        java.util.Map<UUID, List<com.ds.goroute.entity.PlaceTranslation>> byPlace = new java.util.HashMap<>();
+        if (placeIds == null || placeIds.isEmpty()) {
+            return byPlace;
+        }
+        List<UUID> distinctIds = placeIds.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        for (int from = 0; from < distinctIds.size(); from += TRANSLATION_ID_BATCH_SIZE) {
+            List<UUID> batch = distinctIds.subList(
+                    from, Math.min(from + TRANSLATION_ID_BATCH_SIZE, distinctIds.size()));
+            for (com.ds.goroute.entity.PlaceTranslation translation : placeTranslationMapper.findByPlaceIds(batch)) {
+                byPlace.computeIfAbsent(translation.getPlaceId(), ignored -> new java.util.ArrayList<>())
+                        .add(translation);
+            }
+        }
+        return byPlace;
     }
 
     @Override
@@ -66,6 +90,16 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     }
 
     @Override
+    public List<Place> findReferencesByPlaceIds(List<String> placeIds) {
+        return placeIds == null || placeIds.isEmpty() ? List.of() : placeMapper.findReferencesByPlaceIds(placeIds);
+    }
+
+    @Override
+    public List<Place> findReferencesByCids(List<String> cids) {
+        return cids == null || cids.isEmpty() ? List.of() : placeMapper.findReferencesByCids(cids);
+    }
+
+    @Override
     public Place findNearCoordinates(BigDecimal latitude, BigDecimal longitude, BigDecimal maxDistanceMeters) {
         if (latitude == null || longitude == null || maxDistanceMeters == null) {
             return null;
@@ -103,8 +137,8 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     @Override
     public List<PlaceTrendingRow> findTrendingUsage(BigDecimal latitude, BigDecimal longitude,
                                                     BigDecimal radiusMeters, List<String> placeGroups,
-                                                    int days, int limit) {
-        return placeMapper.findTrendingUsage(latitude, longitude, radiusMeters, placeGroups, days, limit);
+                                                    int days, boolean excludeAiTrips, int limit) {
+        return placeMapper.findTrendingUsage(latitude, longitude, radiusMeters, placeGroups, days, excludeAiTrips, limit);
     }
 
     @Override
@@ -151,6 +185,15 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     @Override
     public Optional<Place> findSearchIndexRow(UUID id) {
         return id == null ? Optional.empty() : Optional.ofNullable(placeMapper.findSearchIndexRow(id));
+    }
+
+    @Override
+    public java.util.Map<UUID, String> findSearchNameHashes() {
+        java.util.Map<UUID, String> hashes = new java.util.HashMap<>();
+        for (com.ds.goroute.entity.PlaceSearchNameHash row : placeMapper.findSearchNameHashes()) {
+            hashes.put(row.getId(), row.getNameHash());
+        }
+        return hashes;
     }
 
     @Override
@@ -225,22 +268,31 @@ public class PlaceRepositoryImpl implements PlaceRepository {
             return List.of();
         }
         return placeMapper.findActiveForAiWithinRadius(latitude, longitude, radiusKm, null, null, null, null,
-                placeGroups, limit);
+                placeGroups, null, limit);
     }
 
     @Override
     public List<Place> findActiveForAiInArea(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm,
                                              com.ds.goroute.entity.LocationImage area, List<String> placeGroups,
                                              int limit) {
-        if (area == null || area.getId() == null || area.getLatitude() == null || area.getLongitude() == null) {
-            return findActiveForAiWithinRadius(latitude, longitude, radiusKm, placeGroups, limit);
-        }
-        if (latitude == null || longitude == null || radiusKm == null || limit <= 0) {
+        return findActiveForAiInArea(latitude, longitude, radiusKm, area, placeGroups, null, limit);
+    }
+
+    @Override
+    public List<Place> findActiveForAiInArea(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm,
+                                             com.ds.goroute.entity.LocationImage area, List<String> placeGroups,
+                                             List<UUID> ids, int limit) {
+        if (latitude == null || longitude == null || radiusKm == null || limit <= 0
+                || (ids != null && ids.isEmpty())) {
             return List.of();
+        }
+        if (area == null || area.getId() == null || area.getLatitude() == null || area.getLongitude() == null) {
+            return placeMapper.findActiveForAiWithinRadius(latitude, longitude, radiusKm, null, null, null, null,
+                    placeGroups, ids, limit);
         }
         BigDecimal areaRadius = area.getCoverageRadiusKm() == null ? BigDecimal.valueOf(30) : area.getCoverageRadiusKm();
         return placeMapper.findActiveForAiWithinRadius(latitude, longitude, radiusKm, area.getId(),
-                area.getLatitude(), area.getLongitude(), areaRadius, placeGroups, limit);
+                area.getLatitude(), area.getLongitude(), areaRadius, placeGroups, ids, limit);
     }
 
     @Override
@@ -264,6 +316,11 @@ public class PlaceRepositoryImpl implements PlaceRepository {
     }
 
     @Override
+    public void updateSearchAliases(UUID id, String[] searchAliases) {
+        placeMapper.updateSearchAliases(id, searchAliases == null ? new String[0] : searchAliases);
+    }
+
+    @Override
     public int assignWard(UUID id) {
         return placeMapper.assignWard(id);
     }
@@ -283,5 +340,99 @@ public class PlaceRepositoryImpl implements PlaceRepository {
                 row.get("reason") == null ? null : row.get("reason").toString(),
                 area instanceof Number number ? number.doubleValue() : 0d,
                 row.get("geometry_type") == null ? null : row.get("geometry_type").toString());
+    }
+
+    @Override
+    public Optional<com.ds.goroute.entity.PlaceImageState> findImageState(UUID id) {
+        return Optional.ofNullable(placeMapper.findImageState(id));
+    }
+
+    @Override
+    public boolean recordImageCompression(UUID id, String recordJson) {
+        return placeMapper.recordImageCompression(id, recordJson) == 1;
+    }
+
+    @Override
+    public List<UUID> findImageCompressionPendingIds(UUID afterId, int limit) {
+        return placeMapper.findImageCompressionPendingIds(afterId, limit);
+    }
+
+    @Override
+    public long countImageCompressionPending() {
+        return placeMapper.countImageCompressionPending();
+    }
+
+    @Override
+    public List<String> findLockedFields(UUID id) {
+        List<String> fields = placeMapper.findLockedFields(id);
+        return fields == null ? List.of() : fields;
+    }
+
+    @Override
+    public void addLockedFields(UUID id, Collection<String> fields) {
+        if (fields == null || fields.isEmpty()) {
+            return;
+        }
+        placeMapper.addLockedFields(id, fields.stream().distinct().toArray(String[]::new));
+    }
+
+    @Override
+    public void removeLockedField(UUID id, String field) {
+        placeMapper.removeLockedField(id, field);
+    }
+
+    @Override
+    public Optional<com.ds.goroute.entity.PlaceEditGuard> findEditGuard(UUID id) {
+        return Optional.ofNullable(placeMapper.findEditGuard(id));
+    }
+
+    @Override
+    public void updateAddress(UUID id, String address) {
+        placeMapper.updateAddress(id, address);
+    }
+
+    @Override
+    public void updateLocation(UUID id, BigDecimal latitude, BigDecimal longitude) {
+        placeMapper.updateLocation(id, latitude, longitude);
+    }
+
+    @Override
+    public void updateOpenHours(UUID id, String openHoursJson) {
+        placeMapper.updateOpenHours(id, openHoursJson, openHoursJson);
+    }
+
+    @Override
+    public void updatePhone(UUID id, String phone) {
+        placeMapper.updatePhone(id, phone);
+    }
+
+    @Override
+    public void updateWebsite(UUID id, String website) {
+        placeMapper.updateWebsite(id, website);
+    }
+
+    @Override
+    public void updatePriceRange(UUID id, String priceRange) {
+        placeMapper.updatePriceRange(id, priceRange);
+    }
+
+    @Override
+    public void updateStatusText(UUID id, String status) {
+        placeMapper.updateStatusText(id, status);
+    }
+
+    @Override
+    public void updateVisibility(UUID id, com.ds.goroute.type.PlaceVisibilityStatus visibility, UUID mergedIntoPlaceId) {
+        placeMapper.updateVisibility(id, visibility.name(), mergedIntoPlaceId);
+    }
+
+    @Override
+    public void updatePlaceGroup(UUID id, com.ds.goroute.type.PlaceGroup placeGroup) {
+        placeMapper.updatePlaceGroup(id, placeGroup.name());
+    }
+
+    @Override
+    public void updateAttributes(UUID id, String attributesJson) {
+        placeMapper.updateAttributes(id, attributesJson);
     }
 }

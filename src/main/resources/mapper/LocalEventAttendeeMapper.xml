@@ -32,4 +32,10 @@
         ORDER BY joined_at ASC, user_id ASC
         LIMIT #{limit}
     </select>
+
+    <select id="findGoingEventIds" resultType="java.util.UUID">
+        SELECT event_id FROM local_event_attendees
+        WHERE user_id = #{userId} AND event_id IN
+        <foreach item="eventId" collection="eventIds" open="(" separator="," close=")">#{eventId}</foreach>
+    </select>
 </mapper>

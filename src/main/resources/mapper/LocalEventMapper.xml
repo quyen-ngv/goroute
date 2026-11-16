@@ -215,6 +215,54 @@
         LIMIT 500
     </select>
 
+    <!--
+         "My events" (V285): published events this person saved or is going to that end after
+         `from` (UTC), soonest first. Online events are kept: the person chose them.
+    -->
+    <select id="findSavedOrGoing" resultType="com.ds.goroute.localevent.domain.LocalEvent">
+        SELECT <include refid="SummaryColumns"/>,
+               jsonb_array_length(e.sessions) AS session_count
+        FROM local_events e
+        WHERE e.is_deleted = FALSE
+          AND e.publish_status = 'PUBLISHED'
+          AND e.end_at &gt; #{from}
+          AND (EXISTS (SELECT 1 FROM local_event_saves s WHERE s.event_id = e.id AND s.user_id = #{userId})
+               OR EXISTS (SELECT 1 FROM local_event_attendees a WHERE a.event_id = e.id AND a.user_id = #{userId}))
+        ORDER BY e.start_at ASC, e.id ASC
+        LIMIT #{limit}
+    </select>
+
+    <!--
+         Reminder job (V285): published, saved events not over yet that start within
+         `startBefore`, end within `endBefore`, or changed status. The job decides in the event's
+         own zone which reminder, if any, is due.
+    -->
+    <select id="findReminderCandidates" resultType="com.ds.goroute.localevent.domain.LocalEvent">
+        SELECT <include refid="SummaryColumns"/>
+        FROM local_events e
+        WHERE e.is_deleted = FALSE
+          AND e.publish_status = 'PUBLISHED'
+          AND e.end_at &gt; #{now}
+          AND (e.start_at &lt; #{startBefore}
+               OR e.end_at &lt; #{endBefore}
+               OR e.event_status IN ('CANCELLED', 'POSTPONED', 'RESCHEDULED'))
+          AND EXISTS (SELECT 1 FROM local_event_saves s WHERE s.event_id = e.id)
+        ORDER BY e.start_at ASC, e.id ASC
+        LIMIT #{limit}
+    </select>
+
+    <!-- Cards for other features (a check-in made at an event, a trip stop that is one): any
+         publish status, never a deleted event. -->
+    <select id="findLiveSummariesByIds" resultType="com.ds.goroute.localevent.domain.LocalEvent">
+        SELECT <include refid="SummaryColumns"/>
+        FROM local_events e
+        WHERE e.id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">#{id}</foreach>
+          AND e.is_deleted = FALSE
+        ORDER BY e.id
+        LIMIT 500
+    </select>
+
     <!-- pg_trgm similarity on the normalised title, within ±1 local day and nearby or same province. -->
     <select id="findDuplicateCandidates" resultType="com.ds.goroute.localevent.domain.LocalEventDuplicateCandidate">
         SELECT e.id, e.title, e.start_at, e.venue_name,

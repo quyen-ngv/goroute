@@ -85,6 +85,15 @@ public interface UserCheckinMapper {
                                       @Param("from") LocalDateTime from, @Param("to") LocalDateTime to,
                                       @Param("limit") int limit);
 
+    List<UserCheckin> findByLocalEvent(@Param("eventId") UUID eventId,
+                                       @Param("limit") int limit,
+                                       @Param("offset") int offset);
+
+    long countByLocalEvent(@Param("eventId") UUID eventId);
+
+    List<UUID> findCheckedInLocalEventIds(@Param("userId") UUID userId,
+                                          @Param("eventIds") java.util.Collection<UUID> eventIds);
+
     long countByUserAndPlace(@Param("userId") UUID userId,
                              @Param("placeId") UUID placeId);
 
@@ -221,4 +230,7 @@ public interface UserCheckinMapper {
             @Param("limit") int limit);
 
     java.time.LocalDateTime selectSearchIndexMaxUpdatedAt();
+
+    /** Up to {@code limit} reviews with no check-in become check-ins; returns each new check-in's place. */
+    List<UUID> convertLegacyReviews(@Param("limit") int limit);
 }

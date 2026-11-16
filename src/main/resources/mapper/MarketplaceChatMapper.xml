@@ -81,7 +81,9 @@
   FROM (
    SELECT pc.id FROM marketplace_conversation_members pm
    JOIN marketplace_conversations pc ON pc.id=pm.conversation_id
-   WHERE pm.user_id=#{viewerId} AND pm.left_at IS NULL AND pc.status &lt;&gt; 'ARCHIVED'
+   WHERE pm.user_id=#{viewerId} AND pm.left_at IS NULL
+   -- A deleted trip's group stays listed (read-only) unless its owner deleted the chat with it.
+   AND (pc.status &lt;&gt; 'ARCHIVED' OR (pc.conversation_type='TRIP' AND pc.archived_at IS NULL))
    AND (pc.conversation_type &lt;&gt; 'ASSISTANT' OR pc.id=(
      SELECT ac.id FROM marketplace_conversations ac
      WHERE ac.conversation_type='ASSISTANT' AND ac.assistant_user_id=#{viewerId} AND ac.archived_at IS NULL
@@ -307,6 +309,12 @@
     <update id="setAssistantTitleIfEmpty">
         UPDATE marketplace_conversations SET title = #{title}, updated_at = #{at}
         WHERE id = #{id} AND conversation_type = 'ASSISTANT' AND title IS NULL
+    </update>
+
+    <!-- A trip deleted together with its chat: nobody reads or lists the group any more. -->
+    <update id="archiveTripConversation">
+        UPDATE marketplace_conversations SET status = 'ARCHIVED', archived_at = COALESCE(archived_at, #{at}), updated_at = #{at}
+        WHERE id = #{id} AND conversation_type = 'TRIP'
     </update>
 
     <!-- Archiving twice keeps the first time, so a retried delete still finds its row. -->

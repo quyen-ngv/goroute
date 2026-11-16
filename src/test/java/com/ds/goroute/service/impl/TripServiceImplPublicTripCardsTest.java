@@ -116,7 +116,8 @@ class TripServiceImplPublicTripCardsTest {
                 mock(UserCheckinService.class),
                 Runnable::run,
                 contentCommentRepository,
-                mock(org.springframework.context.ApplicationEventPublisher.class));
+                mock(org.springframework.context.ApplicationEventPublisher.class),
+                mock(com.ds.goroute.repository.PlaceRepository.class));
     }
 
     @Test

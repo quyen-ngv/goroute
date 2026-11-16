@@ -12,6 +12,7 @@ import com.ds.goroute.dto.response.CheckinVideoUploadResponse;
 import com.ds.goroute.dto.response.CheckinLikeResponse;
 import com.ds.goroute.dto.response.CheckinLinkedReviewResponse;
 import com.ds.goroute.dto.response.UserCheckinResponse;
+import com.ds.goroute.dto.response.MusicTrackResponse;
 import com.ds.goroute.dto.response.MemoryImageResponse;
 import com.ds.goroute.entity.Activity;
 import com.ds.goroute.entity.Checkin;
@@ -25,6 +26,7 @@ import com.ds.goroute.entity.UserReview;
 import com.ds.goroute.entity.MediaAsset;
 import com.ds.goroute.event.CheckinCreatedEvent;
 import com.ds.goroute.event.CheckinRemovedEvent;
+import com.ds.goroute.event.PlaceUsageChangedEvent;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.AiTripRepository;
@@ -41,6 +43,7 @@ import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.ContentModerationService;
 import com.ds.goroute.service.FeedImpressionService;
 import com.ds.goroute.service.FileUploadService;
+import com.ds.goroute.service.MusicTrackService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.ReviewScoringService;
 import com.ds.goroute.service.ReviewService;
@@ -49,6 +52,7 @@ import com.ds.goroute.service.UserGuideService;
 import com.ds.goroute.service.checkin.CheckinRewardCalculator;
 import com.ds.goroute.service.checkin.CheckinRewardService;
 import com.ds.goroute.service.checkin.CheckinVerifier;
+import com.ds.goroute.service.checkin.VerificationTarget;
 import com.ds.goroute.dto.response.VisitedWardResponse;
 import com.ds.goroute.type.CheckinVerificationScope;
 import com.ds.goroute.service.UserCheckinService;
@@ -145,6 +149,8 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     private final FileUploadService fileUploadService;
     private final BetaAccessService betaAccess;
     private final UserGuideService userGuideService;
+    private final MusicTrackService musicTrackService;
+    private final com.ds.goroute.localevent.persistence.LocalEventRepository localEventRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -192,6 +198,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .maxPhotos(config.getInt(BusinessConfigKey.CHECKIN_MAX_PHOTOS))
                 .videoAllowed(isVideoAllowed(userId))
                 .maxVideoSeconds(config.getInt(BusinessConfigKey.CHECKIN_MAX_VIDEO_SECONDS))
+                .musicAllowed(isMusicAllowed(userId))
                 .maxCaptionLength(config.getInt(BusinessConfigKey.CHECKIN_MAX_CAPTION_LENGTH))
                 .verifyRadiusMeters(assessment.effectiveRadiusMeters())
                 .placeSpecificRadius(place.map(Place::getVerificationRadiusMeters)
@@ -236,14 +243,32 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                     "Choosing photos from your library is not available on your plan right now.");
         }
         requireAllowedMedia(userId, photos, Set.of());
+        requireAllowedMusic(userId, request.getMusicTrackId(), null);
 
-        Place place = request.getPlaceId() == null ? null
-                : placeRepository.findById(request.getPlaceId())
-                        .orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND, "Place not found"));
+        // A check-in made at a local event. An event that was unpublished or deleted while the
+        // post waited in the offline queue must not fail the post: it is simply not linked.
+        com.ds.goroute.localevent.domain.LocalEvent localEvent = request.getLocalEventId() == null ? null
+                : localEventRepository.findPublishedById(request.getLocalEventId()).orElse(null);
+
+        // An event held at a catalogue place is a visit to that place too, whether or not the
+        // app knew the link when the author picked the event.
+        UUID placeId = request.getPlaceId() != null ? request.getPlaceId()
+                : localEvent == null ? null : localEvent.getPlaceId();
+        Place place = placeId == null ? null
+                : request.getPlaceId() != null
+                ? placeRepository.findById(placeId)
+                        .orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND, "Place not found"))
+                : placeRepository.findById(placeId).orElse(null);
 
         // Checked before anything is written: the trip id decides who gets notified, so an
         // unverified one would let anybody post into a stranger's trip.
         Activity activity = requireTripContext(request.getTripId(), request.getActivityId(), userId);
+
+        // A check-in filed under a trip stop that is an event is a check-in at that event,
+        // whether or not the app said so.
+        if (localEvent == null && activity != null && activity.getLocalEventId() != null) {
+            localEvent = localEventRepository.findPublishedById(activity.getLocalEventId()).orElse(null);
+        }
 
         LocalDateTime now = LocalDateTime.now();
         UserCheckin checkin = UserCheckin.builder()
@@ -263,6 +288,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .provinceCode(blankToNull(request.getProvinceCode()))
                 .locationSource(request.getLocationSource())
                 .questRunId(request.getQuestRunId())
+                .localEventId(localEvent == null ? null : localEvent.getId())
                 // A catalogued place keys on the place, so everyone who checks in there
                 // lands in one cluster whichever door they were standing at.
                 .locationKey(place != null
@@ -270,6 +296,9 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                         : locationKeyFactory.forCoordinates(request.getLatitude(), request.getLongitude()))
                 .caption(blankToNull(request.getCaption()))
                 .frameStyle(request.getFrameStyle())
+                // A catalogue place has its own kind, and it is the one that counts.
+                .placeKind(place == null ? request.getPlaceKind() : null)
+                .musicTrackId(request.getMusicTrackId())
                 .overallRating(request.getOverallRating())
                 .foodRating(request.getFoodRating())
                 .priceRating(request.getPriceRating())
@@ -287,7 +316,12 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .updatedAt(now)
                 .build();
 
-        verifier.apply(checkin, place);
+        VerificationTarget eventVenue = eventVenueTarget(localEvent, place);
+        if (eventVenue != null) {
+            verifier.applyTo(checkin, eventVenue);
+        } else {
+            verifier.apply(checkin, place);
+        }
         checkinRepository.insert(checkin);
         storePhotos(checkin.getId(), photos, now);
 
@@ -326,6 +360,27 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                     activity != null ? activity.getName() : displayName(checkin));
         }
         return toResponse(checkin, true, userId);
+    }
+
+    /**
+     * The venue of a local event as the thing to verify against, when the event has no catalogue
+     * place and is on right now (its times are stored in UTC). Null in every other case, which
+     * leaves the ordinary place / ward ladder in charge: an event at a catalogue place is
+     * verified against that place, and a post written before or after the event proves nothing
+     * about having been at it.
+     */
+    private VerificationTarget eventVenueTarget(com.ds.goroute.localevent.domain.LocalEvent event, Place place) {
+        if (event == null || place != null || event.getLatitude() == null || event.getLongitude() == null) {
+            return null;
+        }
+        LocalDateTime nowUtc = LocalDateTime.now(java.time.ZoneOffset.UTC);
+        boolean ongoing = event.getStartAt() != null && event.getEndAt() != null
+                && !nowUtc.isBefore(event.getStartAt()) && !nowUtc.isAfter(event.getEndAt());
+        if (!ongoing) {
+            return null;
+        }
+        return VerificationTarget.forEventVenue(event.getLatitude(), event.getLongitude(),
+                config.getInt(BusinessConfigKey.CHECKIN_EVENT_VERIFY_RADIUS_METERS));
     }
 
     /**
@@ -404,9 +459,14 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .map(UserCheckinPhoto::getUrl)
                 .collect(Collectors.toSet());
         requireAllowedMedia(userId, photos, videosAlreadyPosted);
+        requireAllowedMusic(userId, request.getMusicTrackId(), checkin.getMusicTrackId());
 
         checkin.setCaption(blankToNull(request.getCaption()));
         checkin.setFrameStyle(request.getFrameStyle());
+        if (request.getPlaceKind() != null && !checkin.hasCataloguePlace()) {
+            checkin.setPlaceKind(request.getPlaceKind());
+        }
+        checkin.setMusicTrackId(request.getMusicTrackId());
         checkin.setCustomName(blankToNull(request.getCustomName()));
         checkin.setOverallRating(request.getOverallRating());
         checkin.setFoodRating(request.getFoodRating());
@@ -653,6 +713,13 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<UserCheckinResponse> byLocalEvent(UUID viewerId, UUID eventId, int page, int size) {
+        return toResponses(checkinRepository.findByLocalEvent(
+                eventId, boundedSize(size), boundedPage(page) * boundedSize(size)), Set.of(), viewerId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<UserCheckinResponse> byTrip(UUID viewerId, UUID tripId) {
         return toResponses(checkinRepository.findByTrip(tripId, MAX_TRIP_CHECKINS), Set.of(), viewerId);
     }
@@ -675,6 +742,18 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     @Transactional(readOnly = true)
     public List<VisitedWardResponse> visitedWards(UUID viewerId, UUID userId) {
         return checkinRepository.findVisitedWards(userId, userId.equals(viewerId));
+    }
+
+    @Override
+    @Transactional
+    public int convertLegacyReviews(int batchSize) {
+        List<UUID> placeIds = checkinRepository.convertLegacyReviews(batchSize);
+        // checkin_count of these places is recounted after the commit (PlaceUsageStatsJob).
+        if (!placeIds.isEmpty()) {
+            events.publishEvent(new PlaceUsageChangedEvent(
+                    placeIds.stream().map(UUID::toString).collect(Collectors.toSet())));
+        }
+        return placeIds.size();
     }
 
     // --- rules -----------------------------------------------------------------------
@@ -814,8 +893,31 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         }
     }
 
+    /** Open to everyone through CHECKIN.VIDEO_ENABLED; until then, beta testers and PRO members. */
     private boolean isVideoAllowed(UUID userId) {
-        return config.getBoolean(BusinessConfigKey.CHECKIN_VIDEO_ENABLED) || betaAccess.isBetaUser(userId);
+        return config.getBoolean(BusinessConfigKey.CHECKIN_VIDEO_ENABLED)
+                || betaAccess.isBetaUser(userId)
+                || isPro(userId);
+    }
+
+    /**
+     * A track must be in the active catalogue, and adding one needs the music switch (or beta).
+     * Keeping the track the visit already has is always allowed, like a video after the switch
+     * is turned off.
+     */
+    private void requireAllowedMusic(UUID userId, UUID trackId, UUID currentTrackId) {
+        if (trackId == null || trackId.equals(currentTrackId)) {
+            return;
+        }
+        if (!isMusicAllowed(userId)) {
+            throw new BusinessException(ErrorConstant.CHECKIN_MUSIC_NOT_ALLOWED,
+                    "Music on check-ins is not available yet.");
+        }
+        musicTrackService.requireActive(trackId);
+    }
+
+    private boolean isMusicAllowed(UUID userId) {
+        return config.getBoolean(BusinessConfigKey.CHECKIN_MUSIC_ENABLED) || betaAccess.isBetaUser(userId);
     }
 
     /** What the linked review shows: the photos, or a video's still frame. */
@@ -859,10 +961,14 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     }
 
     private boolean isGalleryAllowed(UUID userId) {
-        if (PRO_TIER.equalsIgnoreCase(subscriptionRepository.getSubscriptionTier(userId))) {
+        if (isPro(userId)) {
             return true;
         }
         return config.getBoolean(BusinessConfigKey.CHECKIN_GALLERY_ALLOWED_FOR_FREE);
+    }
+
+    private boolean isPro(UUID userId) {
+        return PRO_TIER.equalsIgnoreCase(subscriptionRepository.getSubscriptionTier(userId));
     }
 
     private boolean supportsAspectRatings(Place place) {
@@ -926,6 +1032,9 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                         .stream()
                         .collect(Collectors.groupingBy(MediaAsset::getEntityId));
         Map<UUID, Place> places = loadPlaces(checkins);
+        // The places' names in the reader's language, one query for the page.
+        Map<UUID, List<com.ds.goroute.entity.PlaceTranslation>> placeTranslations =
+                placeRepository.findTranslationsByPlaceIds(places.keySet());
         Map<UUID, Integer> commentCounts = commentCounts(checkins);
 
         List<UserCheckinResponse> responses = checkins.stream()
@@ -937,11 +1046,57 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                         likeCounts.getOrDefault(checkin.getId(), 0),
                         likedIds.contains(checkin.getId()),
                         checkin.getPlaceId() == null ? null : places.get(checkin.getPlaceId()),
+                        checkin.getPlaceId() == null ? null : placeTranslations.get(checkin.getPlaceId()),
                         commentCounts.getOrDefault(checkin.getId(), 0)))
                 .toList();
         markSaved(responses, viewerId);
         markGuides(responses);
+        markMusic(checkins, responses);
+        markEvents(checkins, responses);
         return responses;
+    }
+
+    /**
+     * Names the local event of every check-in made at one, with one query for the page.
+     * {@code responses} is in the order of {@code checkins}. A deleted event leaves the fields
+     * null, so the post reads as an ordinary check-in at the venue.
+     */
+    private void markEvents(List<UserCheckin> checkins, List<UserCheckinResponse> responses) {
+        List<UUID> eventIds = checkins.stream()
+                .map(UserCheckin::getLocalEventId).filter(Objects::nonNull).distinct().toList();
+        if (eventIds.isEmpty()) {
+            return;
+        }
+        Map<UUID, com.ds.goroute.localevent.domain.LocalEvent> events =
+                localEventRepository.findLiveSummariesByIds(eventIds);
+        for (int index = 0; index < checkins.size(); index++) {
+            com.ds.goroute.localevent.domain.LocalEvent event = events.get(checkins.get(index).getLocalEventId());
+            if (event != null) {
+                UserCheckinResponse response = responses.get(index);
+                response.setLocalEventId(event.getId());
+                response.setEventTitle(event.getTitle());
+                response.setEventCoverUrl(event.getCoverUrl());
+                response.setEventVenueName(event.getVenueName());
+            }
+        }
+    }
+
+    /**
+     * Sets the background music of the whole page with one query. {@code responses} is in the
+     * order of {@code checkins}. A track switched off in the catalogue is simply not shown.
+     */
+    private void markMusic(List<UserCheckin> checkins, List<UserCheckinResponse> responses) {
+        List<UUID> trackIds = checkins.stream().map(UserCheckin::getMusicTrackId).filter(Objects::nonNull).toList();
+        if (trackIds.isEmpty()) {
+            return;
+        }
+        Map<UUID, MusicTrackResponse> tracks = musicTrackService.findActiveByIds(trackIds);
+        for (int index = 0; index < checkins.size(); index++) {
+            UUID trackId = checkins.get(index).getMusicTrackId();
+            if (trackId != null) {
+                responses.get(index).setMusic(tracks.get(trackId));
+            }
+        }
     }
 
     /**
@@ -1035,16 +1190,33 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 userRepository.findById(checkin.getUserId()).orElse(null), false,
                 linkedReview, linkedReviewMedia, checkinRepository.countLikes(checkin.getId()),
                 viewerId != null && checkinRepository.hasLike(checkin.getId(), viewerId), place,
+                place == null ? null
+                        : placeRepository.findTranslationsByPlaceIds(List.of(place.getId())).get(place.getId()),
                 commentCounts(List.of(checkin)).getOrDefault(checkin.getId(), 0));
         markSaved(List.of(response), viewerId);
         markGuides(List.of(response));
+        markMusic(List.of(checkin), List.of(response));
+        markEvents(List.of(checkin), List.of(response));
         return response;
     }
 
     private UserCheckinResponse toResponse(UserCheckin checkin, List<UserCheckinPhoto> photos, User author,
                                            boolean latestReview, UserReview linkedReview,
                                            List<MediaAsset> linkedReviewMedia, int likeCount,
-                                           boolean hasLiked, Place place, int commentCount) {
+                                           boolean hasLiked, Place place,
+                                           List<com.ds.goroute.entity.PlaceTranslation> placeTranslations,
+                                           int commentCount) {
+        // The linked place in the reader's language, written into the fields every client
+        // already shows. The location name was copied from the place when the author picked
+        // it, so it follows the place's name while it is still one of its names; a name the
+        // author or the map gave it stays as written.
+        String language = com.ds.goroute.config.filter.AcceptLanguageFilter.currentCode();
+        String localizedPlaceName = com.ds.goroute.service.PlaceTranslationService.localizedName(
+                placeTranslations, language);
+        String localizedLocationName = place == null ? null
+                : com.ds.goroute.service.PlaceTranslationService.localizedCopy(
+                        checkin.getLocationName(), place.getTitle(), placeTranslations, language);
+        String locationName = localizedLocationName != null ? localizedLocationName : checkin.getLocationName();
         List<MemoryImageResponse> photoResponses = photos.stream()
                 .sorted(Comparator.comparing(UserCheckinPhoto::getPosition,
                         Comparator.nullsLast(Comparator.naturalOrder())))
@@ -1066,7 +1238,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                         .longitude(photo.getLongitude())
                         .accuracyMeters(photo.getAccuracyMeters())
                         .placeId(checkin.getPlaceId())
-                        .locationName(checkin.getLocationName())
+                        .locationName(locationName)
                         .locationSource(checkin.getLocationSource() == null
                                 ? null : checkin.getLocationSource().name())
                         .createdAt(photo.getCreatedAt())
@@ -1087,7 +1259,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .activityId(checkin.getActivityId())
                 .placeId(checkin.getPlaceId())
                 .reviewId(checkin.getReviewId())
-                .locationName(checkin.getLocationName())
+                .locationName(locationName)
                 .customName(checkin.getCustomName())
                 .latitude(checkin.getLatitude())
                 .longitude(checkin.getLongitude())
@@ -1097,7 +1269,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .provinceCode(checkin.getProvinceCode())
                 .locationSource(checkin.getLocationSource())
                 .locationKey(checkin.getLocationKey())
-                .placeName(place == null ? null : place.getTitle())
+                .placeName(place == null ? null : localizedPlaceName != null ? localizedPlaceName : place.getTitle())
                 .placeAddress(place == null ? null : place.getAddress())
                 .placeThumbnail(place == null ? null : place.getThumbnail())
                 .placeReviewCount(place == null ? null : place.getReviewCount())
@@ -1107,6 +1279,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .placeLongitude(place == null ? null : place.getLongitude())
                 .caption(checkin.getCaption())
                 .frameStyle(checkin.getFrameStyle())
+                .placeKind(checkin.getPlaceKind())
                 .overallRating(checkin.getOverallRating())
                 .foodRating(checkin.getFoodRating())
                 .priceRating(checkin.getPriceRating())

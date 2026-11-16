@@ -65,6 +65,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/v1/api/weather").permitAll()
                         .requestMatchers("/v1/api/city-stories/feed").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/location-images/*/stories").permitAll()
+                        // Place edit suggestions (epic 09): any signed-in user, never a guest. Must precede
+                        // the public GET /places/** rule and the admin-only /places/** rule below.
+                        .requestMatchers("/v1/api/places/*/edit-suggestions",
+                                "/v1/api/places/*/edit-suggestions/**").authenticated()
                         // Must precede the public GET rule below: this one can expose INACTIVE places.
                         .requestMatchers(HttpMethod.GET, "/v1/api/places/detail-refresh-candidates")
                         .hasAnyAuthority("ROLE_ADMIN", "ROLE_API_KEY")
@@ -114,7 +118,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/v1/api/posts/policy", "/v1/api/posts/feed",
                                 "/v1/api/posts/*", "/v1/api/users/*/posts").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/checkins/places/*",
-                                "/v1/api/checkins/locations/*").permitAll()
+                                "/v1/api/checkins/locations/*",
+                                "/v1/api/checkins/events/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/api/contributions/check").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/contributions/places/*/contributors").permitAll()
                         .requestMatchers("/share/**").permitAll()
