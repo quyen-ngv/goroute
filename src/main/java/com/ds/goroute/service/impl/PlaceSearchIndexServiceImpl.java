@@ -5,11 +5,14 @@ import com.ds.goroute.dto.PlaceSearchCriteria;
 import com.ds.goroute.entity.FoodTagRow;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.PlaceTranslation;
+import com.ds.goroute.entity.Ward;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.PlaceTranslationMapper;
 import com.ds.goroute.repository.FoodRepository;
 import com.ds.goroute.repository.PlaceRepository;
+import com.ds.goroute.repository.WardRepository;
 import com.ds.goroute.service.PlaceSearchIndexService;
+import com.ds.goroute.service.ProvinceNameResolver;
 import com.ds.goroute.type.PlaceBusinessStatus;
 import com.ds.goroute.type.PlaceSearchSort;
 import com.ds.goroute.type.PlaceSubType;
@@ -18,6 +21,8 @@ import com.ds.goroute.utils.DestinationMatchUtils;
 import com.ds.goroute.utils.JsonUtils;
 import com.ds.goroute.utils.LuceneKeywordQuery;
 import com.ds.goroute.utils.MapTile;
+import com.ds.goroute.utils.PlaceAddressTerms;
+import com.ds.goroute.utils.PlaceCategoryTerms;
 import com.ds.goroute.utils.PlaceProminence;
 import com.fasterxml.jackson.core.type.TypeReference;
 import jakarta.annotation.PostConstruct;
@@ -99,7 +104,7 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     private static final int REINDEX_BATCH_SIZE = 500;
     /** Largest page the location-free name search serves (the console picker asks for 500). */
     static final int MAX_NAME_SEARCH_SIZE = 500;
-    private static final String INDEX_SCHEMA_VERSION = "14";
+    private static final String INDEX_SCHEMA_VERSION = "15";
     private static final String ID_FIELD = "id";
     private static final Set<String> ID_ONLY = Set.of(ID_FIELD);
     private static final String NAME_FIELD = "name";
@@ -116,9 +121,36 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     private static final List<LuceneKeywordQuery.Field> NAME_FIELDS = List.of(
             new LuceneKeywordQuery.Field(NAME_FIELD, 4f, 2f, 0.75f, 10f, 1, 4),
             new LuceneKeywordQuery.Field(NAME_JOINED_FIELD, 3f, 1.5f, 0.5f, 0f, 4, 6));
+    /**
+     * Where the place is (schema 15): pairs of neighbouring words of its address and of the
+     * names of its ward and province ("nha_chung", "cua_nam", "ha_noi"), and the parts that are
+     * one word ({@link PlaceAddressTerms}).
+     */
+    private static final String ADDRESS_PAIR_FIELD = "addr_2g";
+    private static final String ADDRESS_SINGLE_FIELD = "addr_1";
+    private static final String HOUSE_NUMBER_FIELD = "house_no";
+    /** What the place is, in words ({@link PlaceCategoryTerms}): "ca_phe", "coffee". */
+    private static final String KIND_PAIR_FIELD = "kind_2g";
+    private static final String KIND_SINGLE_FIELD = "kind_1";
+    /** Each name whole, folded ("pho mai"): a keyword that says a whole name scores on it. */
+    private static final String NAME_EXACT_FIELD = "name_exact";
+    private static final int MAX_EXACT_NAME_WORDS = 12;
+    /**
+     * A word explained by where or what the place is weighs less than one in its name, and a
+     * whole name said in the keyword lifts the place over longer names holding the same words.
+     */
+    private static final LuceneKeywordQuery.Extras PLACE_EXTRAS = new LuceneKeywordQuery.Extras(
+            List.of(new LuceneKeywordQuery.TermField(ADDRESS_PAIR_FIELD, ADDRESS_SINGLE_FIELD, 2f, true),
+                    new LuceneKeywordQuery.TermField(KIND_PAIR_FIELD, KIND_SINGLE_FIELD, 1f, false)),
+            HOUSE_NUMBER_FIELD, 1f, NAME_EXACT_FIELD, 5f, PlaceAddressTerms::markers);
     /** More places than this differing from the database: rebuild instead of indexing one by one. */
     private static final int SYNC_REBUILD_THRESHOLD = 1_000;
     private static final int MAX_KEYWORD_WORDS = 8;
+    /**
+     * Lucene refuses a query of more leaf clauses than its limit (1,024). A place keyword of six
+     * words read in every spelling, over the name, address and kind fields, with typos, passes it.
+     */
+    private static final int MAX_QUERY_CLAUSES = 16_384;
     private static final String LOCATION_FIELD = "location";
     private static final String VISIBILITY_FIELD = "visibility";
     /**
@@ -160,6 +192,8 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     private final PlaceRepository placeRepository;
     private final PlaceTranslationMapper placeTranslationMapper;
     private final FoodRepository foodRepository;
+    private final WardRepository wardRepository;
+    private final ProvinceNameResolver provinceNameResolver;
 
     @Value("${goroute.search.place-index-path:data/lucene-index/places}")
     private String indexPath;
@@ -204,6 +238,9 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     @PostConstruct
     public void init() throws IOException {
         analyzer = LuceneKeywordQuery.createAnalyzer();
+        if (IndexSearcher.getMaxClauseCount() < MAX_QUERY_CLAUSES) {
+            IndexSearcher.setMaxClauseCount(MAX_QUERY_CLAUSES);
+        }
         Path indexDir = Paths.get(indexPath);
         Files.createDirectories(indexDir);
         directory = FSDirectory.open(indexDir);
@@ -288,7 +325,8 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         }
         try {
             Document document = toDocument(
-                    place, placeTranslationMapper.findByPlaceId(place.getId()), findFoodIds(place.getId()));
+                    place, placeTranslationMapper.findByPlaceId(place.getId()), findFoodIds(place.getId()),
+                    whereOf(place));
             writeLock.lock();
             try {
                 markUncommitted();
@@ -506,11 +544,15 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
                     .stream()
                     .collect(Collectors.groupingBy(PlaceTranslation::getPlaceId));
             Map<UUID, Set<UUID>> foodIdsByPlaceId = groupFoodIds(foodRepository.findFoodTagsByPlaceIds(placeIds));
+            Map<String, Ward> wardsByCode = findWards(batch);
             for (Place place : batch) {
                 Document document = toDocument(
                         place,
                         translationsByPlaceId.getOrDefault(place.getId(), List.of()),
-                        foodIdsByPlaceId.getOrDefault(place.getId(), Set.of()));
+                        foodIdsByPlaceId.getOrDefault(place.getId(), Set.of()),
+                        whereOf(place.getAddress(),
+                                place.getWardCode() == null ? null : wardsByCode.get(place.getWardCode()),
+                                place.getProvinceCode()));
                 document.add(new StringField(REBUILD_GENERATION_FIELD, generation, Field.Store.NO));
                 target.addDocument(document);
             }
@@ -542,7 +584,7 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
                     writer.deleteDocuments(idTerm);
                 } else {
                     writer.updateDocument(idTerm, toDocument(
-                            current, placeTranslationMapper.findByPlaceId(id), findFoodIds(id)));
+                            current, placeTranslationMapper.findByPlaceId(id), findFoodIds(id), whereOfRow(current)));
                 }
             }
             writer.commit();
@@ -628,9 +670,10 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
             return new ScoreDoc[0];
         }
         List<String> groups = normalizeUpper(placeGroups);
-        for (LuceneKeywordQuery.Match match : LuceneKeywordQuery.NAME_TIERS) {
+        for (LuceneKeywordQuery.Match match
+                : LuceneKeywordQuery.tiersFor(LuceneKeywordQuery.NAME_TIERS, words.size())) {
             BooleanQuery.Builder query = new BooleanQuery.Builder()
-                    .add(LuceneKeywordQuery.build(words, NAME_FIELDS, match), BooleanClause.Occur.MUST);
+                    .add(placeQuery(words, match), BooleanClause.Occur.MUST);
             if (!includeInactive) {
                 query.add(new TermQuery(new Term(VISIBILITY_FIELD, "ACTIVE")), BooleanClause.Occur.FILTER);
             }
@@ -641,10 +684,20 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
             }
             ScoreDoc[] hits = searcher.search(query.build(), maxHits).scoreDocs;
             if (hits.length > 0) {
-                return LuceneKeywordQuery.relevant(hits);
+                return withoutWeakTail(hits, match);
             }
         }
         return new ScoreDoc[0];
+    }
+
+    /**
+     * The hits less the weak tail of the best one. A tier that explains every word of a longer
+     * keyword ({@link LuceneKeywordQuery.Match#ALL}) has no weak tail: "bún chả hà nội" keeps
+     * the bún chả places in Hà Nội under the one named "Bún Chả Hà Nội", whose whole-name bonus
+     * would otherwise cut them.
+     */
+    private static ScoreDoc[] withoutWeakTail(ScoreDoc[] hits, LuceneKeywordQuery.Match match) {
+        return match == LuceneKeywordQuery.Match.ALL ? hits : LuceneKeywordQuery.relevant(hits);
     }
 
     @Override
@@ -705,16 +758,26 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         if (words.isEmpty()) {
             return new MatchNoDocsQuery();
         }
-        return LuceneKeywordQuery.build(words, NAME_FIELDS, areaTier(searcher, words, criteria));
+        return placeQuery(words, areaTier(searcher, words, criteria));
+    }
+
+    /**
+     * The keyword as a place search reads it: each word explained by a name of the place, by
+     * where it is (street, ward, old district, province) or by what it is, so "phở mai nhà
+     * chung" finds the Phở Mai on Nhà Chung street ({@link #PLACE_EXTRAS}).
+     */
+    private static Query placeQuery(List<LuceneKeywordQuery.Word> words, LuceneKeywordQuery.Match match) {
+        return LuceneKeywordQuery.build(words, NAME_FIELDS, PLACE_EXTRAS, match);
     }
 
     /** The first of {@link LuceneKeywordQuery#AREA_TIERS} that finds a place in the area; the last when none does. */
     private LuceneKeywordQuery.Match areaTier(IndexSearcher searcher, List<LuceneKeywordQuery.Word> words,
                                               PlaceSearchCriteria criteria) throws IOException {
         PlaceSearchCriteria area = withoutSubTypes(criteria);
-        List<LuceneKeywordQuery.Match> tiers = LuceneKeywordQuery.AREA_TIERS;
+        List<LuceneKeywordQuery.Match> tiers =
+                LuceneKeywordQuery.tiersFor(LuceneKeywordQuery.AREA_TIERS, words.size());
         for (LuceneKeywordQuery.Match match : tiers) {
-            if (searcher.count(withAreaFilters(LuceneKeywordQuery.build(words, NAME_FIELDS, match), area)) > 0) {
+            if (searcher.count(withAreaFilters(placeQuery(words, match), area)) > 0) {
                 return match;
             }
         }
@@ -755,9 +818,10 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         List<String> groups = normalizeUpper(placeGroups);
         IndexSearcher searcher = searcherManager.acquire();
         try {
-            for (LuceneKeywordQuery.Match match : LuceneKeywordQuery.NAME_TIERS) {
+            for (LuceneKeywordQuery.Match match
+                    : LuceneKeywordQuery.tiersFor(LuceneKeywordQuery.NAME_TIERS, words.size())) {
                 BooleanQuery.Builder query = new BooleanQuery.Builder()
-                        .add(LuceneKeywordQuery.build(words, NAME_FIELDS, match), BooleanClause.Occur.MUST)
+                        .add(placeQuery(words, match), BooleanClause.Occur.MUST)
                         .add(new TermQuery(new Term(VISIBILITY_FIELD, "ACTIVE")), BooleanClause.Occur.FILTER);
                 addTermSetFilter(query, PLACE_GROUP_FIELD, groups);
                 if (Double.isFinite(radiusMeters) && radiusMeters > 0) {
@@ -771,7 +835,7 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
                 ScoreDoc[] hits = searcher.search(query.build(), limit, SCORE_THEN_PROMINENCE_SORT, true).scoreDocs;
                 if (hits.length > 0) {
                     List<UUID> ids = new ArrayList<>(hits.length);
-                    for (ScoreDoc hit : LuceneKeywordQuery.relevant(hits)) {
+                    for (ScoreDoc hit : withoutWeakTail(hits, match)) {
                         ids.add(UUID.fromString(searcher.doc(hit.doc, ID_ONLY).get(ID_FIELD)));
                     }
                     return ids;
@@ -1114,7 +1178,71 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         return placeRepository.findUsageCounts(place.getId()).orElse(place);
     }
 
-    private Document toDocument(Place place, List<PlaceTranslation> translations, Set<UUID> foodIds) {
+    /**
+     * Where a place is, as the index reads it: its address and the names of the ward and
+     * province it lies in.
+     */
+    private record Where(String address, List<String> areaNames) {
+    }
+
+    /**
+     * {@link Where} of a place handed in by its caller. Such an object may not carry the address
+     * or the ward (a new place, an edit; the ward is resolved outside the generic update), so
+     * what it lacks is read back from its row.
+     */
+    private Where whereOf(Place place) {
+        if (place.getAddress() != null && place.getWardCode() != null) {
+            return whereOfRow(place);
+        }
+        Place row = placeRepository.findSearchIndexRow(place.getId()).orElse(null);
+        if (row == null) {
+            return whereOfRow(place);
+        }
+        String wardCode = place.getWardCode() != null ? place.getWardCode() : row.getWardCode();
+        return whereOf(
+                place.getAddress() != null ? place.getAddress() : row.getAddress(),
+                wardCode == null ? null : wardRepository.findByCode(wardCode).orElse(null),
+                place.getProvinceCode() != null ? place.getProvinceCode() : row.getProvinceCode());
+    }
+
+    /** {@link Where} of a place read with the columns the index reads. */
+    private Where whereOfRow(Place place) {
+        Ward ward = place.getWardCode() == null ? null : wardRepository.findByCode(place.getWardCode()).orElse(null);
+        return whereOf(place.getAddress(), ward, place.getProvinceCode());
+    }
+
+    private Where whereOf(String address, Ward ward, String provinceCode) {
+        List<String> areaNames = new ArrayList<>();
+        String provinceName = null;
+        if (ward != null) {
+            areaNames.add(ward.getName());
+            areaNames.add(ward.getNameEn());
+            provinceName = ward.getProvinceName();
+        }
+        if (provinceName == null) {
+            provinceName = provinceNameResolver.nameOf(provinceCode);
+        }
+        areaNames.add(provinceName);
+        return new Where(address, areaNames);
+    }
+
+    /** The wards of a page of places, by code, in one read. */
+    private Map<String, Ward> findWards(List<Place> places) {
+        Set<String> codes = places.stream()
+                .map(Place::getWardCode)
+                .filter(code -> code != null && !code.isBlank())
+                .collect(Collectors.toSet());
+        if (codes.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Ward> wards = new HashMap<>();
+        for (Ward ward : wardRepository.findByCodes(codes)) {
+            wards.put(ward.getCode(), ward);
+        }
+        return wards;
+    }
+
+    private Document toDocument(Place place, List<PlaceTranslation> translations, Set<UUID> foodIds, Where where) {
         Document doc = new Document();
         doc.add(new StringField(ID_FIELD, place.getId().toString(), Field.Store.YES));
         doc.add(new StringField("schema_version", INDEX_SCHEMA_VERSION, Field.Store.YES));
@@ -1125,6 +1253,20 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
         if (!joined.isEmpty()) {
             doc.add(new TextField(NAME_JOINED_FIELD, String.join(" ", joined), Field.Store.NO));
         }
+        names.stream()
+                .map(name -> LuceneKeywordQuery.tokens(name, MAX_EXACT_NAME_WORDS).stream()
+                        .map(LuceneKeywordQuery.Word::folded)
+                        .collect(Collectors.joining(" ")))
+                .distinct()
+                .forEach(name -> addKeywordField(doc, NAME_EXACT_FIELD, name));
+        PlaceAddressTerms.Terms address = PlaceAddressTerms.of(where.address(), where.areaNames());
+        address.pairs().forEach(pair -> addKeywordField(doc, ADDRESS_PAIR_FIELD, pair));
+        address.singles().forEach(single -> addKeywordField(doc, ADDRESS_SINGLE_FIELD, single));
+        address.houseNumbers().forEach(number -> addKeywordField(doc, HOUSE_NUMBER_FIELD, number));
+        PlaceCategoryTerms.Terms kind = PlaceCategoryTerms.of(
+                place.getPlaceGroup(), place.getSubTypes(), place.getCategory());
+        kind.pairs().forEach(pair -> addKeywordField(doc, KIND_PAIR_FIELD, pair));
+        kind.singles().forEach(single -> addKeywordField(doc, KIND_SINGLE_FIELD, single));
 
         if (place.getLatitude() != null && place.getLongitude() != null) {
             double latitude = place.getLatitude().doubleValue();

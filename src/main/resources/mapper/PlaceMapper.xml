@@ -551,20 +551,25 @@
 
     <sql id="PlaceSearchIndexColumns">
         id, title, search_aliases, latitude, longitude, visibility_status, category, place_group, sub_types,
-        review_rating, adjusted_rating, review_count, destinations, trip_use_count, checkin_count, status
+        review_rating, adjusted_rating, review_count, destinations, trip_use_count, checkin_count, status,
+        address, province_code, ward_code
     </sql>
 
     <!--
-      One hash per place of what the search index reads of it by name: visibility, title,
-      aliases and every translated name. The index compares these with the ones it was built
-      from, so names written straight into the database (a SQL import) are picked up without a
-      restart. The locale order is byte order, so the hash does not depend on the collation.
+      One hash per place of the words the search index finds it by: visibility, title, aliases,
+      every translated name, and where and what it is (address, ward, province, category, kinds;
+      the ward is assigned by SQL after a place is created). The index compares these with the
+      ones it was built from, so what is written straight into the database (a SQL import, the
+      ward job) is picked up without a restart. The locale order is byte order, so the hash does
+      not depend on the collation.
     -->
     <select id="findSearchNameHashes" resultType="com.ds.goroute.entity.PlaceSearchNameHash">
         SELECT p.id AS id,
                md5(concat_ws(E'\n', p.visibility_status, p.title, array_to_string(p.search_aliases, E'\n'),
                    (SELECT string_agg(t.locale || '=' || COALESCE(t.name, ''), E'\n' ORDER BY t.locale COLLATE "C")
-                    FROM place_translations t WHERE t.place_id = p.id))) AS nameHash
+                    FROM place_translations t WHERE t.place_id = p.id),
+                   COALESCE(p.address, ''), COALESCE(p.ward_code, ''), COALESCE(p.province_code, ''),
+                   COALESCE(p.category, ''), COALESCE(array_to_string(p.sub_types, ','), ''))) AS nameHash
         FROM places p
     </select>
 

@@ -2,9 +2,12 @@ package com.ds.goroute.service.impl;
 
 import com.ds.goroute.dto.PlaceSearchCriteria;
 import com.ds.goroute.entity.Place;
+import com.ds.goroute.entity.Ward;
 import com.ds.goroute.mapper.PlaceTranslationMapper;
 import com.ds.goroute.repository.FoodRepository;
 import com.ds.goroute.repository.PlaceRepository;
+import com.ds.goroute.repository.WardRepository;
+import com.ds.goroute.service.ProvinceNameResolver;
 import com.ds.goroute.type.PlaceGroup;
 import com.ds.goroute.type.PlaceSubType;
 import com.ds.goroute.type.PlaceVisibilityStatus;
@@ -49,12 +52,16 @@ class PlaceSearchIndexServiceImplTest {
     private PlaceRepository placeRepository;
     private PlaceTranslationMapper translationMapper;
     private FoodRepository foodRepository;
+    private WardRepository wardRepository;
+    private ProvinceNameResolver provinceNameResolver;
 
     @BeforeEach
     void setUp() throws Exception {
         placeRepository = mock(PlaceRepository.class);
         translationMapper = mock(PlaceTranslationMapper.class);
         foodRepository = mock(FoodRepository.class);
+        wardRepository = mock(WardRepository.class);
+        provinceNameResolver = mock(ProvinceNameResolver.class);
         when(placeRepository.countAll()).thenReturn(0L);
         when(translationMapper.findByPlaceId(any())).thenReturn(List.of());
         when(foodRepository.findFoodTagsByPlaceIds(any())).thenReturn(List.of());
@@ -63,7 +70,8 @@ class PlaceSearchIndexServiceImplTest {
     }
 
     private PlaceSearchIndexServiceImpl startService() throws Exception {
-        PlaceSearchIndexServiceImpl service = new PlaceSearchIndexServiceImpl(placeRepository, translationMapper, foodRepository);
+        PlaceSearchIndexServiceImpl service = new PlaceSearchIndexServiceImpl(
+                placeRepository, translationMapper, foodRepository, wardRepository, provinceNameResolver);
         ReflectionTestUtils.setField(service, "indexPath", tempDir.resolve("places").toString());
         service.init();
         return service;
@@ -601,6 +609,179 @@ class PlaceSearchIndexServiceImplTest {
         assertThat(found).containsOnlyKeys(asked, empty);
         assertThat(found.get(asked)).containsExactly(here.getId());
         assertThat(found.get(empty)).isEmpty();
+    }
+
+    // --- a keyword that says where the place is (schema 15) ---------------------------------
+
+    /** The eight spellings the owner tried for the Phở Mai at 40 P. Nhà Chung, ward Cửa Nam, Hà Nội. */
+    @Test
+    void findsAPlaceByItsNameAndAnyPartOfWhereItIs() throws Exception {
+        Place phoMai = phoMaiNhaChung();
+        indexLookAlikes();
+        searchService.indexPlace(phoMai);
+
+        for (String keyword : List.of(
+                "phở mai",
+                "phở mai hà nội",
+                "phở mai nhà chung",
+                "phở mai phố nhà chung",
+                "phở mai nhà chung hà nội",
+                "phở mai phố nhà chung hà nội",
+                "phở mai phường cửa nam",
+                "phở mai cửa nam",
+                "phở mai hoàn kiếm",
+                "phở mai 40 nhà chung",
+                "pho mai nha chung",
+                "pho mai hanoi")) {
+            assertThat(searchService.searchPlaceIdsByName(keyword, null, false, 0, 20))
+                    .as("name search for '%s'", keyword)
+                    .first()
+                    .isEqualTo(phoMai.getId());
+            assertThat(searchService.searchPlaceIds(criteria(keyword, null, 20_000)))
+                    .as("area search for '%s'", keyword)
+                    .first()
+                    .isEqualTo(phoMai.getId());
+        }
+    }
+
+    @Test
+    void aPlaceWhoseNameHoldsOnlySomeOfTheWordsNoLongerStandsInForTheRightOne() throws Exception {
+        Place phoMai = phoMaiNhaChung();
+        Place coMai = addressed("Bánh tráng nướng Cô Mai Nhà Chung", "12 Đường Trần Phú, Đà Lạt, Lâm Đồng, Vietnam");
+        searchService.indexPlace(phoMai);
+        searchService.indexPlace(coMai);
+
+        assertThat(searchService.searchPlaceIdsByName("phở mai nhà chung", null, false, 0, 20))
+                .containsExactly(phoMai.getId());
+    }
+
+    @Test
+    void oneSyllableOfAnAddressExplainsNothing() throws Exception {
+        // "hà" and "nội" each occur in this address, but not side by side.
+        Place elsewhere = addressed("Phở Mai", "5 Đường Hà Huy Tập, Nội Bài, Nghệ An, Vietnam");
+        searchService.indexPlace(elsewhere);
+
+        assertThat(searchService.searchPlaceIdsByName("phở mai hà nội", null, false, 0, 20)).isEmpty();
+    }
+
+    @Test
+    void findsPlacesOfAKindOnAStreetWhenNoNameSaysEither() throws Exception {
+        Place cafe = addressed("Mây", "C12 Đường Đặng Thái Thân, Xuân Hương - Đà Lạt, Lâm Đồng, Vietnam");
+        cafe.setSubTypes(new String[] {PlaceSubType.CAFE.name()});
+        Place noodles = addressed("Bún Riêu Cua Đồng 279", "104 Phan Chu Trinh, Lâm Viên - Đà Lạt, Lâm Đồng, Vietnam");
+        searchService.indexPlace(cafe);
+        searchService.indexPlace(noodles);
+
+        assertThat(searchService.searchPlaceIdsByName("cà phê đặng thái thân", null, false, 0, 20))
+                .containsExactly(cafe.getId());
+        assertThat(searchService.searchPlaceIdsByName("104 phan chu trinh đà lạt", null, false, 0, 20))
+                .containsExactly(noodles.getId());
+        assertThat(searchService.searchPlaceIdsByName("bún riêu phan chu trinh", null, false, 0, 20))
+                .containsExactly(noodles.getId());
+    }
+
+    @Test
+    void aStreetBeingTypedAlreadyFindsThePlace() throws Exception {
+        Place phoMai = phoMaiNhaChung();
+        searchService.indexPlace(phoMai);
+
+        assertThat(searchService.searchPlaceIdsByName("phở mai nhà", null, false, 0, 20))
+                .containsExactly(phoMai.getId());
+        assertThat(searchService.searchPlaceIdsByName("phở mai nhà ch", null, false, 0, 20))
+                .containsExactly(phoMai.getId());
+    }
+
+    @Test
+    void forgivesATypoInTheStreet() throws Exception {
+        Place phoMai = phoMaiNhaChung();
+        searchService.indexPlace(phoMai);
+
+        assertThat(searchService.searchPlaceIdsByName("phở mai nhà chugn", null, false, 0, 20))
+                .containsExactly(phoMai.getId());
+    }
+
+    @Test
+    void theNameStillOutranksTheAddress() throws Exception {
+        Place named = addressed("Bún Chả Hà Nội", "26 Lê Thị Riêng, Bến Thành, Hồ Chí Minh, Vietnam");
+        Place located = addressed("Bún Chả Đắc Kim", "1 P. Hàng Mành, Hoàn Kiếm, Hà Nội, Vietnam");
+        searchService.indexPlace(located);
+        searchService.indexPlace(named);
+
+        assertThat(searchService.searchPlaceIdsByName("bún chả hà nội", null, false, 0, 20))
+                .containsExactly(named.getId(), located.getId());
+    }
+
+    @Test
+    void readsTheWardOfAPlaceBackWhenItsCallerDidNotCarryIt() throws Exception {
+        Place edited = addressed("Phở Mai", null);
+        Place row = addressed("Phở Mai", "40 P. Nhà Chung, Hoàn Kiếm, Hà Nội, Vietnam");
+        row.setWardCode("00070");
+        when(placeRepository.findSearchIndexRow(edited.getId())).thenReturn(Optional.of(row));
+        when(wardRepository.findByCode("00070")).thenReturn(Optional.of(cuaNam()));
+
+        searchService.indexPlace(edited);
+
+        assertThat(searchService.searchPlaceIdsByName("phở mai cửa nam", null, false, 0, 20))
+                .containsExactly(edited.getId());
+        assertThat(searchService.searchPlaceIdsByName("phở mai nhà chung", null, false, 0, 20))
+                .containsExactly(edited.getId());
+    }
+
+    @Test
+    void aLongKeywordWalksEveryTierWithoutFailing() throws Exception {
+        Place phoMai = phoMaiNhaChung();
+        indexLookAlikes();
+        searchService.indexPlace(phoMai);
+
+        for (String keyword : List.of(
+                "xyzq wvut abcd efgh ijkl mnop",
+                "bamh cuom nomg thamh trjh truyem",
+                "phở bò tái chín nạm gầu gân sách",
+                "phuong cuaa namm quann hoann kiemm")) {
+            assertThat(searchService.searchPlaceIdsByName(keyword, null, false, 0, 20))
+                    .as("name search for '%s'", keyword)
+                    .doesNotContain(phoMai.getId());
+            assertThat(searchService.areaKeywordTier(criteria(keyword, null, 20_000))).isNotNull();
+        }
+    }
+
+    private Place phoMaiNhaChung() {
+        Place place = addressed("Phở Mai", "40 P. Nhà Chung, Hoàn Kiếm, Hà Nội, Vietnam");
+        place.setWardCode("00070");
+        place.setProvinceCode("01");
+        when(wardRepository.findByCode("00070")).thenReturn(Optional.of(cuaNam()));
+        return place;
+    }
+
+    private Ward cuaNam() {
+        Ward ward = new Ward();
+        ward.setCode("00070");
+        ward.setName("Cửa Nam");
+        ward.setNameEn("Cua Nam");
+        ward.setProvinceName("Hà Nội");
+        return ward;
+    }
+
+    /** The places prod answered with instead of Phở Mai on 17/11/2026. */
+    private void indexLookAlikes() {
+        searchService.indexPlace(addressed(
+                "Hanoi Ngon - Số 7 Huỳnh Thúc Kháng, Quận 1 | Ăn vặt chuẩn Hà Nội Ngon, Nem chua rán, "
+                        + "Bánh gà sốt phô mai, Bánh mì nem khoai",
+                "7 Huỳnh Thúc Kháng, Sài Gòn, Hồ Chí Minh, Vietnam"));
+        searchService.indexPlace(addressed("Phở Hà Nội", "25 Lê Lợi, Bến Thành, Hồ Chí Minh, Vietnam"));
+        searchService.indexPlace(addressed("Phở Bò Hà Nội", "3 Trần Phú, Nha Trang, Khánh Hòa, Vietnam"));
+        searchService.indexPlace(addressed(
+                "Bánh tráng nướng Cô Mai Nhà Chung", "12 Đường Trần Phú, Xuân Hương - Đà Lạt, Lâm Đồng, Vietnam"));
+        searchService.indexPlace(addressed(
+                "Phở cuốn Hương Mai 25 Ngũ Xã", "25 P. Ngũ Xã, Ba Đình, Hà Nội, Vietnam"));
+        searchService.indexPlace(addressed("Tiệm Ốc Phô Mai", "260 Bà Triệu, Tuy Hòa, Đắk Lắk 56000, Vietnam"));
+        searchService.indexPlace(addressed("Phở Việt Nam", "14 Phạm Hồng Thái, Bến Thành, Hồ Chí Minh, Vietnam"));
+    }
+
+    private Place addressed(String title, String address) {
+        Place place = place(title, "restaurant", 10.0, 106.0);
+        place.setAddress(address);
+        return place;
     }
 
     private Place mapPlace(String title, double latitude, double longitude, double rating, int reviews) {
