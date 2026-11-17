@@ -299,6 +299,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 // A catalogue place has its own kind, and it is the one that counts.
                 .placeKind(place == null ? request.getPlaceKind() : null)
                 .musicTrackId(request.getMusicTrackId())
+                .muteVideoSound(Boolean.TRUE.equals(request.getMuteVideoSound()))
                 .overallRating(request.getOverallRating())
                 .foodRating(request.getFoodRating())
                 .priceRating(request.getPriceRating())
@@ -467,6 +468,9 @@ public class UserCheckinServiceImpl implements UserCheckinService {
             checkin.setPlaceKind(request.getPlaceKind());
         }
         checkin.setMusicTrackId(request.getMusicTrackId());
+        if (request.getMuteVideoSound() != null) {
+            checkin.setMuteVideoSound(request.getMuteVideoSound());
+        }
         checkin.setCustomName(blankToNull(request.getCustomName()));
         checkin.setOverallRating(request.getOverallRating());
         checkin.setFoodRating(request.getFoodRating());
@@ -1280,6 +1284,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .caption(checkin.getCaption())
                 .frameStyle(checkin.getFrameStyle())
                 .placeKind(checkin.getPlaceKind())
+                .muteVideoSound(checkin.isMuteVideoSound())
                 .overallRating(checkin.getOverallRating())
                 .foodRating(checkin.getFoodRating())
                 .priceRating(checkin.getPriceRating())

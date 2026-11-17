@@ -95,6 +95,9 @@ public class UserCheckinResponse {
     /** The background music played with the post; null when none or the track was switched off. */
     private MusicTrackResponse music;
 
+    /** A video with music plays only the music (true) or mixes in its own sound (false). */
+    private boolean muteVideoSound;
+
     private Integer overallRating;
     private Integer foodRating;
     private Integer priceRating;

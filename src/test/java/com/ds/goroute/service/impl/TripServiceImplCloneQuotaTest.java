@@ -102,7 +102,8 @@ class TripServiceImplCloneQuotaTest {
                 Runnable::run,
                 mock(com.ds.goroute.repository.ContentCommentRepository.class),
                 mock(org.springframework.context.ApplicationEventPublisher.class),
-                mock(com.ds.goroute.repository.PlaceRepository.class));
+                mock(com.ds.goroute.repository.PlaceRepository.class),
+                mock(com.ds.goroute.service.expense.GuestLedgerMover.class));
     }
 
     private CloneTripRequest request() {

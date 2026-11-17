@@ -43,6 +43,9 @@ public class UpdateUserCheckinRequest {
     /** The background music; saved whole like the frame, so absent removes it. */
     private UUID musicTrackId;
 
+    /** Whether a video with music plays only the music; absent keeps what is saved. */
+    private Boolean muteVideoSound;
+
     /**
      * The kind of spot, for a check-in without a catalogue place. Unlike the frame, absent
      * keeps the one saved: an app built before this field must not wipe it on every edit.

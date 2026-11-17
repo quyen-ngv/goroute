@@ -21,9 +21,6 @@ public interface ExpenseRepository {
     
     List<Expense> findByPaidBy(UUID userId);
 
-    /** How many expenses still name this guest trip member as the payer. */
-    int countByPaidByGuestMemberId(UUID guestMemberId);
-
     /** Moves the payer of that guest's expenses onto the user the guest became. */
     int reassignGuestPayerToUser(UUID guestMemberId, UUID userId);
 

@@ -16,6 +16,8 @@ public interface ExpensePayerMapper {
 
     int deleteByExpenseId(@Param("expenseId") UUID expenseId);
 
+    int countExpensesPaidByGuest(@Param("guestMemberId") UUID guestMemberId);
+
     int addGuestAmountsToUser(@Param("guestMemberId") UUID guestMemberId, @Param("userId") UUID userId);
 
     int deleteGuestRowsMergedIntoUser(@Param("guestMemberId") UUID guestMemberId, @Param("userId") UUID userId);

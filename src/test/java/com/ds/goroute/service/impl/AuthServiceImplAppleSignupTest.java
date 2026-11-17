@@ -46,7 +46,8 @@ class AuthServiceImplAppleSignupTest {
     private final AuthServiceImpl service = new AuthServiceImpl(
             users, mock(com.ds.goroute.service.LoginAttemptGuard.class), mock(RefreshTokenRepository.class), tripMembers, mock(ExpenseSplitRepository.class),
             mock(ExpenseRepository.class), jwt, mock(PasswordEncoder.class),
-            mock(GoogleTokenVerifier.class), appleVerifier, animalNames);
+            mock(GoogleTokenVerifier.class), appleVerifier, animalNames,
+            mock(com.ds.goroute.service.expense.GuestLedgerMover.class));
 
     @BeforeEach
     void setUp() {

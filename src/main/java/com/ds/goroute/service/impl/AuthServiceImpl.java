@@ -20,6 +20,7 @@ import com.ds.goroute.repository.ExpenseSplitRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.service.AuthService;
 import com.ds.goroute.service.LoginAttemptGuard;
+import com.ds.goroute.service.expense.GuestLedgerMover;
 import com.ds.goroute.thirdparty.apple.AppleTokenInfo;
 import com.ds.goroute.thirdparty.apple.AppleTokenVerifier;
 import com.ds.goroute.thirdparty.google.GoogleTokenInfo;
@@ -59,21 +60,26 @@ public class AuthServiceImpl implements AuthService {
     private final GoogleTokenVerifier googleTokenVerifier;
     private final AppleTokenVerifier appleTokenVerifier;
     private final AnimalUsernameGenerator animalUsernameGenerator;
+    private final GuestLedgerMover guestLedgerMover;
 
     private static final String APPLE_PRIVATE_RELAY_DOMAIN = "@privaterelay.appleid.com";
 
-    private static final long REFRESH_TOKEN_EXPIRY = 2592000000L; // 30 days in ms
+    /**
+     * Lifetime of a refresh token. Sliding: every refresh hands out a new one with the full
+     * lifetime, so only a year without opening the app signs a user out.
+     */
+    private static final long REFRESH_TOKEN_DAYS = 365L;
 
     /**
      * How long a refresh token stays usable after it has been exchanged. It is deliberately
      * generous rather than tight: the client only learns the replacement token from the
      * response body, so a refresh that commits here and then loses its response on a flaky
-     * mobile connection leaves the device holding the old token. A day of overlap means
-     * that device recovers on its next attempt instead of being signed out, while a stolen
-     * token still dies a day after the real owner next refreshes rather than lasting the
-     * full thirty.
+     * mobile connection leaves the device holding the old token. Thirty days of overlap
+     * means that device recovers whenever it is next opened in that month instead of being
+     * signed out, while a stolen token still dies thirty days after the real owner next
+     * refreshes rather than lasting the full year.
      */
-    private static final long ROTATION_GRACE_SECONDS = 86400L;
+    private static final long ROTATION_GRACE_SECONDS = 30L * 24 * 60 * 60;
 
     @Override
     @Transactional
@@ -341,12 +347,12 @@ public class AuthServiceImpl implements AuthService {
         claims.put("email", user.getEmail());
         String accessToken = jwtUtils.generateToken(claims, user.getId().toString());
 
-        // Generate refresh token (30 days)
+        // Generate refresh token (REFRESH_TOKEN_DAYS)
         RefreshToken refreshToken = RefreshToken.builder()
                 .id(UUID.randomUUID())
                 .userId(user.getId())
                 .token(UUID.randomUUID().toString())
-                .expiresAt(LocalDateTime.now().plusDays(30))
+                .expiresAt(LocalDateTime.now().plusDays(REFRESH_TOKEN_DAYS))
                 .build();
         refreshTokenRepository.insert(refreshToken);
 
@@ -481,6 +487,9 @@ public class AuthServiceImpl implements AuthService {
             // laid out stayed invisible to the account they were just linked to, the same
             // way the splits above would have. Same person, same email, same member row.
             int movedExpenses = expenseRepository.reassignGuestPayerToUser(guestMember.getId(), user.getId());
+            // The ledger reads payer rows and settlements: they move too, or the account would
+            // show up twice in the trip's balances (owing its shares, owed what the guest paid).
+            guestLedgerMover.moveToUser(guestMember.getId(), user.getId());
 
             // Link guest to real user
             guestMember.setUserId(user.getId());

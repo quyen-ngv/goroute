@@ -25,9 +25,6 @@ public interface ExpenseMapper {
     
     List<Expense> selectByPaidBy(@Param("paidBy") UUID paidBy);
 
-    /** How many expenses still name this guest trip member as the payer. */
-    int countByPaidByGuestMemberId(@Param("guestMemberId") UUID guestMemberId);
-
     /**
      * Moves the payer of every expense this guest paid onto the real user the guest
      * member has just become. For a guest payer both paid_by and

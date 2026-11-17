@@ -47,11 +47,6 @@ public class ExpenseRepositoryImpl implements ExpenseRepository {
     }
     
     @Override
-    public int countByPaidByGuestMemberId(UUID guestMemberId) {
-        return expenseMapper.countByPaidByGuestMemberId(guestMemberId);
-    }
-
-    @Override
     public int reassignGuestPayerToUser(UUID guestMemberId, UUID userId) {
         return expenseMapper.reassignGuestPayerToUser(guestMemberId, userId);
     }

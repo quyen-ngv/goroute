@@ -37,6 +37,16 @@
         DELETE FROM expense_payers WHERE expense_id = #{expenseId,javaType=java.util.UUID,jdbcType=OTHER}
     </delete>
 
+    <!-- Expenses a guest paid towards: a payer row, or the legacy payer column on a row
+         written before V268's backfill. -->
+    <select id="countExpensesPaidByGuest" resultType="int">
+        SELECT COUNT(*) FROM expenses e
+        WHERE e.paid_by_guest_member_id = #{guestMemberId,javaType=java.util.UUID,jdbcType=OTHER}
+           OR EXISTS (SELECT 1 FROM expense_payers p
+                      WHERE p.expense_id = e.id
+                        AND p.guest_member_id = #{guestMemberId,javaType=java.util.UUID,jdbcType=OTHER})
+    </select>
+
     <!-- Guest linked to an account, step 1: where the user already paid towards the same
          expense, the guest's amount joins the user's row. -->
     <update id="addGuestAmountsToUser">

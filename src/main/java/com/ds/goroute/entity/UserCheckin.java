@@ -79,6 +79,9 @@ public class UserCheckin {
     /** The background-music track (music_tracks.id); null is none. */
     private UUID musicTrackId;
 
+    /** A video with music plays only the music (true) or mixes in its own sound (false). V290. */
+    private boolean muteVideoSound;
+
     private Integer overallRating;
     private Integer foodRating;
     private Integer priceRating;

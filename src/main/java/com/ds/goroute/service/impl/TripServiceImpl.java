@@ -115,6 +115,7 @@ public class TripServiceImpl implements TripService {
     private final org.springframework.context.ApplicationEventPublisher eventPublisher;
     /** Read only for the translated names of the places a shared trip's stops are linked to. */
     private final com.ds.goroute.repository.PlaceRepository placeRepository;
+    private final com.ds.goroute.service.expense.GuestLedgerMover guestLedgerMover;
 
     private List<TripDestination> buildDestinationsForTrip(
             UUID tripId,
@@ -1431,7 +1432,8 @@ public class TripServiceImpl implements TripService {
         // payer is moved to the target user below, the same way signup auto-link does it. That
         // move is never silent: the first call is refused with the count, the app shows it to
         // the user, and only a call carrying confirmMoveExpenses goes through.
-        int paidExpenses = expenseRepository.countByPaidByGuestMemberId(guestMemberId);
+        // Counts an expense the guest paid only part of, too: its payment moves as well.
+        int paidExpenses = guestLedgerMover.countExpensesPaidBy(guestMemberId);
         if (paidExpenses > 0 && !Boolean.TRUE.equals(request.getConfirmMoveExpenses())) {
             throw new BusinessException(
                     ErrorConstant.TRIP_GUEST_HAS_EXPENSES,
@@ -1441,9 +1443,10 @@ public class TripServiceImpl implements TripService {
 
         List<ExpenseSplit> guestSplits = expenseSplitRepository.findByGuestMemberId(guestMemberId);
         int mergedSplits = moveGuestSplitsToUser(guestSplits, targetUserId);
-        int movedExpenses = paidExpenses > 0
-                ? expenseRepository.reassignGuestPayerToUser(guestMemberId, targetUserId)
-                : 0;
+        int movedExpenses = expenseRepository.reassignGuestPayerToUser(guestMemberId, targetUserId);
+        // The ledger reads payer rows and settlements, not the columns above: move them too,
+        // or the user would be two people in the balances.
+        guestLedgerMover.moveToUser(guestMemberId, targetUserId);
 
         tripMemberRepository.deleteById(guestMemberId);
 
@@ -1470,6 +1473,8 @@ public class TripServiceImpl implements TripService {
         // no account behind it, so nobody loses access here.
         tripRealtimePublisher.publishAfterCommit(
                 TripRealtimeEventType.EXPENSE_UPDATED, tripId, null, currentUserId);
+        tripRealtimePublisher.publishAfterCommit(
+                TripRealtimeEventType.LEDGER_UPDATED, tripId, tripId, currentUserId);
     }
 
     /**

@@ -117,6 +117,9 @@ public class CreateUserCheckinRequest {
     /** Optional. An active track of the music catalogue played with the post (V282). */
     private UUID musicTrackId;
 
+    /** Optional, for a video with music: true plays only the music; absent or false mixes in the clip's sound. */
+    private Boolean muteVideoSound;
+
     /**
      * The day of the visit, for someone posting after they got home. Absent means now.
      *

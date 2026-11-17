@@ -38,6 +38,11 @@ public class ExpensePayerRepository {
         mapper.deleteByExpenseId(expenseId);
     }
 
+    /** Expenses the guest paid towards, from a payer row or, before V268, the legacy payer column. */
+    public int countExpensesPaidByGuest(UUID guestMemberId) {
+        return mapper.countExpensesPaidByGuest(guestMemberId);
+    }
+
     /** A guest became this user: their payments become the user's, merged per expense. */
     public void moveGuestToUser(UUID guestMemberId, UUID userId) {
         mapper.addGuestAmountsToUser(guestMemberId, userId);
