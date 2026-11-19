@@ -1184,7 +1184,8 @@ public class TripServiceImpl implements TripService {
         try {
             return UUID.fromString(placeId);
         } catch (IllegalArgumentException e) {
-            log.warn("Activity placeId is not a backend UUID: {}", placeId);
+            // Expected data, not a fault: a typed-in stop ("manual") or a map provider id.
+            log.debug("Activity placeId is not a backend UUID: {}", placeId);
             return null;
         }
     }

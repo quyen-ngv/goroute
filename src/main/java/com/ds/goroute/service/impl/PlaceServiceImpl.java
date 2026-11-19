@@ -160,6 +160,16 @@ public class PlaceServiceImpl implements PlaceService {
     /** How far a same-named place may be from an imported one and still be that place. */
     private static final BigDecimal IMPORT_MATCH_RADIUS_METERS = BigDecimal.valueOf(15);
 
+    /** Review-count tiers for how many gallery images an import keeps ({@link #maxImportImages}). */
+    private static final int MANY_REVIEWS = 1000;
+    private static final int SOME_REVIEWS = 200;
+    private static final int IMAGES_FOR_MANY_REVIEWS = 4;
+    private static final int IMAGES_FOR_SOME_REVIEWS = 3;
+    private static final int IMAGES_FOR_FEW_REVIEWS = 1;
+
+    /** Request fields that carry storage URLs and are left out of a Google source snapshot. */
+    private static final List<String> SNAPSHOT_IMAGE_FIELDS = List.of("images", "thumbnail", "menu");
+
     /** GET /places page ceiling for guests and app users. */
     static final int PUBLIC_LIST_MAX_SIZE = 50;
 
@@ -180,6 +190,9 @@ public class PlaceServiceImpl implements PlaceService {
         log.info("Importing place: {}", request.getPlaceId());
 
         try {
+            // Trim before migrating, so the dropped images are never uploaded.
+            request.setImages(keepFirstImages(request.getImages(), maxImportImages(request.getReviewCount())));
+
             // Migrate images before creating place (only if imageMigrationService is available)
             if (imageMigrationService != null) {
                 String targetPath = "places/" + request.getPlaceId() + "/";
@@ -1028,10 +1041,43 @@ public class PlaceServiceImpl implements PlaceService {
         }
     }
 
+    /**
+     * How many gallery images an imported place keeps. Storage policy set by the owner on
+     * 2026-11-18, when place photos filled the disk: the more reviews, the more photos are worth it.
+     */
+    static int maxImportImages(Integer reviewCount) {
+        int reviews = reviewCount == null ? 0 : reviewCount;
+        if (reviews > MANY_REVIEWS) return IMAGES_FOR_MANY_REVIEWS;
+        if (reviews > SOME_REVIEWS) return IMAGES_FOR_SOME_REVIEWS;
+        return IMAGES_FOR_FEW_REVIEWS;
+    }
+
+    /** The first {@code max} entries of an images JSON array; anything that is not an array is left as it is. */
+    String keepFirstImages(String imagesJson, int max) {
+        if (imagesJson == null || imagesJson.isBlank()) return imagesJson;
+        try {
+            JsonNode images = objectMapper.readTree(imagesJson);
+            if (!images.isArray() || images.size() <= max) return imagesJson;
+            ArrayNode kept = objectMapper.createArrayNode();
+            for (int index = 0; index < max; index++) {
+                kept.add(images.get(index));
+            }
+            return objectMapper.writeValueAsString(kept);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+            log.warn("Place images are not valid JSON; keeping them untrimmed: {}", exception.getOriginalMessage());
+            return imagesJson;
+        }
+    }
+
     private void syncGoogleSource(UUID canonicalPlaceId, ImportPlaceRequest request) {
         if (request.getPlaceId() == null || request.getPlaceId().isBlank()) return;
         try {
-            String payload = objectMapper.writeValueAsString(request);
+            // Image URLs stay out of the snapshot: the orphan sweep reads every JSON column, so a
+            // URL kept here would keep a replaced or trimmed image on storage forever. Nothing
+            // reads snapshots back; the place row holds the images.
+            ObjectNode snapshot = objectMapper.valueToTree(request);
+            snapshot.remove(SNAPSHOT_IMAGE_FIELDS);
+            String payload = objectMapper.writeValueAsString(snapshot);
             String checksum = HexFormat.of().formatHex(
                     MessageDigest.getInstance("SHA-256").digest(payload.getBytes(StandardCharsets.UTF_8)));
             LocalDateTime observedAt = LocalDateTime.now();
