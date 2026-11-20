@@ -567,24 +567,30 @@ public class PlaceSearchIndexServiceImpl implements PlaceSearchIndexService {
     /**
      * Adds the rebuilt documents first and only then deletes every document of an older
      * generation: a failure part way leaves the old documents searchable, never an empty
-     * index.
+     * index. The places written during the rebuild are read from the database (the step that
+     * can fail: a pool timeout) before the writer is touched, so such a failure leaves the
+     * live index exactly as it was instead of a half-applied swap that the next refresh and
+     * commit would publish.
      */
     private void swapIn(Directory rebuilt, String generation) throws IOException {
         writeLock.lock();
         try {
+            Map<Term, Document> replay = new LinkedHashMap<>();
+            for (UUID id : changedDuringReindex) {
+                Place current = placeRepository.findSearchIndexRow(id).orElse(null);
+                replay.put(new Term(ID_FIELD, id.toString()), current == null ? null : toDocument(
+                        current, placeTranslationMapper.findByPlaceId(id), findFoodIds(id), whereOfRow(current)));
+            }
             writer.addIndexes(rebuilt);
             writer.deleteDocuments(new BooleanQuery.Builder()
                     .add(new MatchAllDocsQuery(), BooleanClause.Occur.MUST)
                     .add(new TermQuery(new Term(REBUILD_GENERATION_FIELD, generation)), BooleanClause.Occur.MUST_NOT)
                     .build());
-            for (UUID id : changedDuringReindex) {
-                Term idTerm = new Term(ID_FIELD, id.toString());
-                Place current = placeRepository.findSearchIndexRow(id).orElse(null);
-                if (current == null) {
-                    writer.deleteDocuments(idTerm);
+            for (Map.Entry<Term, Document> entry : replay.entrySet()) {
+                if (entry.getValue() == null) {
+                    writer.deleteDocuments(entry.getKey());
                 } else {
-                    writer.updateDocument(idTerm, toDocument(
-                            current, placeTranslationMapper.findByPlaceId(id), findFoodIds(id), whereOfRow(current)));
+                    writer.updateDocument(entry.getKey(), entry.getValue());
                 }
             }
             writer.commit();

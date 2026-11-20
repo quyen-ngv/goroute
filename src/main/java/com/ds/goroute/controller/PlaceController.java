@@ -105,6 +105,16 @@ public class PlaceController extends BaseController {
                 .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
     }
 
+    /**
+     * Whether a radius search may return INACTIVE places. The app asks for them only with a
+     * keyword (check-in and Explore look a named place up even before an operator turns it on);
+     * without one, the flag would let anyone list every hidden place of an area, so only an
+     * admin gets that.
+     */
+    private static boolean mayIncludeInactive(boolean includeInactive, String keyword, Authentication authentication) {
+        return includeInactive && ((keyword != null && !keyword.isBlank()) || isAdmin(authentication));
+    }
+
     @GetMapping("/detail-refresh-candidates")
     public ResponseEntity<BaseResponse<Map<String, Object>>> detailRefreshCandidates(
             @RequestParam(required = false) UUID placeId,
@@ -146,12 +156,14 @@ public class PlaceController extends BaseController {
             @RequestParam(defaultValue = "false") boolean includeInactive,
             @RequestParam(required = false) Float minLuceneScore,
             @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(PlaceSearchCriteria.MAX_PAGE_SIZE) int size
+            @RequestParam(defaultValue = "20") @Min(1) @Max(PlaceSearchCriteria.MAX_PAGE_SIZE) int size,
+            Authentication authentication
     ) {
         List<PlaceResponse> responses = placeService.searchPlaces(
                 keyword, latitude, longitude, radius, category, placeGroups, PlaceSubType.filterCodes(subTypes),
                 minRating, sortBy != null ? sortBy : (sortByRating ? PlaceSearchSort.RATING : PlaceSearchSort.RELEVANCE),
-                citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, minLuceneScore, page, size);
+                citySlug, foodIds, excludeLinkedFoodPlaces,
+                mayIncludeInactive(includeInactive, keyword, authentication), minLuceneScore, page, size);
         // The search cache is shared by callers a few metres apart: distance is this caller's own.
         return ResponseEntity.ok(ofSucceeded(PlaceService.withDistanceFrom(responses, latitude, longitude)));
     }
@@ -180,12 +192,14 @@ public class PlaceController extends BaseController {
             @RequestParam(defaultValue = "false") boolean includeInactive,
             @RequestParam(required = false) Float minLuceneScore,
             @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(PlaceSearchCriteria.MAX_PAGE_SIZE) int size
+            @RequestParam(defaultValue = "20") @Min(1) @Max(PlaceSearchCriteria.MAX_PAGE_SIZE) int size,
+            Authentication authentication
     ) {
         return ResponseEntity.ok(ofSucceeded(placeGroupedSearchService.search(
                 keyword, latitude, longitude, radius, category, placeGroups, PlaceSubType.filterCodes(subTypes),
                 minRating, sortBy != null ? sortBy : (sortByRating ? PlaceSearchSort.RATING : PlaceSearchSort.RELEVANCE),
-                citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, minLuceneScore, page, size)));
+                citySlug, foodIds, excludeLinkedFoodPlaces,
+                mayIncludeInactive(includeInactive, keyword, authentication), minLuceneScore, page, size)));
     }
 
     /**
@@ -198,9 +212,11 @@ public class PlaceController extends BaseController {
             @RequestParam @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
             @RequestParam @DecimalMin(value = "0", inclusive = false) BigDecimal radius,
             @RequestParam(required = false) List<String> placeGroups,
-            @RequestParam(defaultValue = "false") boolean includeInactive) {
+            @RequestParam(defaultValue = "false") boolean includeInactive,
+            Authentication authentication) {
+        // No keyword here, so hidden places are counted for admins only (see mayIncludeInactive).
         return ResponseEntity.ok(ofSucceeded(placeService.countPlacesBySubType(
-                latitude, longitude, radius, placeGroups, includeInactive)));
+                latitude, longitude, radius, placeGroups, includeInactive && isAdmin(authentication))));
     }
 
     /**

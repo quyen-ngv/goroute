@@ -140,6 +140,13 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
     private final AtomicBoolean reindexRunning = new AtomicBoolean();
     /** Guarded by {@link #syncLock}. Empty until the first rebuild: nothing to catch up on before it. */
     private final Map<SocialSearchType, LocalDateTime> changedUntil = new EnumMap<>(SocialSearchType.class);
+    /**
+     * Guarded by {@link #syncLock}. Set only while a kind has more changes than one pass reads:
+     * the id of the last row read at {@link #changedUntil}, so the next pass resumes after it
+     * instead of re-reading the same rows (more than a pass's worth inside the overlap window
+     * would otherwise never let the start move).
+     */
+    private final Map<SocialSearchType, UUID> resumeAfterId = new EnumMap<>(SocialSearchType.class);
     /** Guarded by {@link #syncLock}: the generation catch-up writes stamp. */
     private String generation = UUID.randomUUID().toString();
 
@@ -369,6 +376,7 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
             searcherManager.maybeRefreshBlocking();
             generation = rebuildGeneration;
             changedUntil.putAll(startedAt);
+            resumeAfterId.clear();
             log.info("Social search reindexed {} documents in {} ms", total, System.currentTimeMillis() - started);
         } catch (Exception e) {
             // The documents already rewritten are current; the older ones stay until a rebuild
@@ -431,10 +439,12 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
 
     private boolean catchUp(SocialSearchType kind) throws IOException {
         LocalDateTime from = changedUntil.get(kind);
+        UUID resumeId = resumeAfterId.get(kind);
         LocalDateTime cursorAt = from;
-        UUID cursorId = MIN_UUID;
+        UUID cursorId = resumeId != null ? resumeId : MIN_UUID;
         LocalDateTime newest = null;
         boolean changed = false;
+        boolean drained = false;
         for (int pages = 0; pages < MAX_CATCH_UP_PAGES; pages++) {
             List<SocialSearchIndexRow> batch = changes(kind, cursorAt, cursorId);
             for (SocialSearchIndexRow row : batch) {
@@ -453,14 +463,24 @@ public class SocialSearchIndexServiceImpl implements SocialSearchIndexService {
                 newest = last.getUpdatedAt();
             }
             if (batch.size() < BATCH_SIZE) {
+                drained = true;
                 break;
             }
         }
-        if (newest != null) {
+        if (!drained) {
+            // A backlog bigger than one pass (a bulk update): resume exactly after the last row
+            // read, with no overlap, until it is drained.
+            changedUntil.put(kind, cursorAt);
+            resumeAfterId.put(kind, cursorId);
+        } else if (newest != null) {
             LocalDateTime next = newest.minus(CATCH_UP_OVERLAP);
-            if (next.isAfter(from)) {
-                changedUntil.put(kind, next);
-            }
+            changedUntil.put(kind, next.isAfter(from) ? next : from);
+            resumeAfterId.remove(kind);
+        } else if (resumeId != null) {
+            // The backlog ended exactly on a pass boundary: go back to reading with the overlap,
+            // which also picks up rows committed late while it was being drained.
+            changedUntil.put(kind, from.minus(CATCH_UP_OVERLAP));
+            resumeAfterId.remove(kind);
         }
         return changed;
     }

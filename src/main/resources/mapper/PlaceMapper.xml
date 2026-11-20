@@ -558,7 +558,9 @@
     <!--
       One hash per place of the words the search index finds it by: visibility, title, aliases,
       every translated name, and where and what it is (address, ward, province, category, kinds;
-      the ward is assigned by SQL after a place is created). The index compares these with the
+      the ward is assigned by SQL after a place is created), plus the fields the index filters
+      on (coordinates, group, city slugs, Google business status: a SQL fix of a wrong pin or
+      group, or a place marked closed, must reach radius search and tiles). The index compares these with the
       ones it was built from, so what is written straight into the database (a SQL import, the
       ward job) is picked up without a restart. The locale order is byte order, so the hash does
       not depend on the collation.
@@ -569,7 +571,9 @@
                    (SELECT string_agg(t.locale || '=' || COALESCE(t.name, ''), E'\n' ORDER BY t.locale COLLATE "C")
                     FROM place_translations t WHERE t.place_id = p.id),
                    COALESCE(p.address, ''), COALESCE(p.ward_code, ''), COALESCE(p.province_code, ''),
-                   COALESCE(p.category, ''), COALESCE(array_to_string(p.sub_types, ','), ''))) AS nameHash
+                   COALESCE(p.category, ''), COALESCE(array_to_string(p.sub_types, ','), ''),
+                   COALESCE(p.latitude::text, ''), COALESCE(p.longitude::text, ''), COALESCE(p.place_group, ''),
+                   COALESCE(p.destinations::text, ''), COALESCE(p.status, ''))) AS nameHash
         FROM places p
     </select>
 

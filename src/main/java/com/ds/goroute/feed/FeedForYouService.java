@@ -20,6 +20,7 @@ import com.ds.goroute.feed.source.CandidateSource;
 import com.ds.goroute.service.ParallelReads;
 import com.ds.goroute.service.ReviewService;
 import com.ds.goroute.service.TripService;
+import com.ds.goroute.service.UserBlockService;
 import com.ds.goroute.service.UserCheckinService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -75,6 +76,7 @@ public class FeedForYouService {
     private final TripService tripService;
     private final ParallelReads parallelReads;
     private final FeedEventLogger eventLogger;
+    private final UserBlockService userBlockService;
     /** Field-injected and optional so the hand-built service in unit tests keeps its constructor. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.ds.goroute.service.trip.FeedTripRulesProvider tripRulesProvider;
@@ -244,7 +246,16 @@ public class FeedForYouService {
             }
             CandidateSource source = toRun.get(i);
             for (FeedItemRow row : results.get(i)) {
-                pool.computeIfAbsent(row.key().key(), key -> new FeedCandidate(row)).sources().add(source.kind());
+                FeedCandidate known = pool.get(row.key().key());
+                if (known != null) {
+                    known.sources().add(source.kind());
+                } else if (pool.size() < maxCandidates) {
+                    // caps.maxCandidates bounds the pool, not only the sources started: at L4
+                    // Fresh alone reads 1,400 rows, and every row kept is scored and reranked.
+                    FeedCandidate candidate = new FeedCandidate(row);
+                    candidate.sources().add(source.kind());
+                    pool.put(row.key().key(), candidate);
+                }
             }
         }
     }
@@ -360,7 +371,9 @@ public class FeedForYouService {
 
     /**
      * The page's posts as the three feeds return them, in ranked order. A post that went
-     * private, was deleted or taken down since it was ranked is left out of the page.
+     * private, was deleted or taken down since it was ranked is left out of the page, and so is
+     * a post whose author blocked the viewer (or was blocked by them) since: blocks are checked
+     * when the session is ranked, and a session lives up to 30 minutes.
      */
     private List<FeedForYouPageResponse.Item> enrich(UUID viewerId, List<FeedKey> slice, int offset,
                                                      FeedSession session, List<FeedEventRow> served) {
@@ -385,6 +398,7 @@ public class FeedForYouService {
         Map<UUID, UserReviewResponse> reviews = (Map<UUID, UserReviewResponse>) loaded.get(1);
         @SuppressWarnings("unchecked")
         Map<UUID, PublicTripResponse> trips = (Map<UUID, PublicTripResponse>) loaded.get(2);
+        Set<UUID> blocked = blockedAuthors(viewerId, checkins, reviews, trips);
 
         List<FeedForYouPageResponse.Item> items = new ArrayList<>(slice.size());
         for (int index = 0; index < slice.size(); index++) {
@@ -393,21 +407,21 @@ public class FeedForYouService {
             switch (key.getItemType()) {
                 case "CHECKIN" -> {
                     UserCheckinResponse checkin = checkins.get(key.getItemId());
-                    if (checkin == null) {
+                    if (checkin == null || blocked.contains(checkin.getUserId())) {
                         continue;
                     }
                     item.checkin(checkin);
                 }
                 case "REVIEW" -> {
                     UserReviewResponse review = reviews.get(key.getItemId());
-                    if (review == null) {
+                    if (review == null || blocked.contains(review.getUserId())) {
                         continue;
                     }
                     item.review(review);
                 }
                 case "TRIP" -> {
                     PublicTripResponse trip = trips.get(key.getItemId());
-                    if (trip == null) {
+                    if (trip == null || blocked.contains(trip.getOwnerId())) {
                         continue;
                     }
                     item.trip(trip);
@@ -423,6 +437,20 @@ public class FeedForYouService {
             served.add(servedRow(viewerId, key, session, offset + index));
         }
         return items;
+    }
+
+    /** Authors of the loaded page with a block either way with the viewer: one query per page. */
+    private Set<UUID> blockedAuthors(UUID viewerId, Map<UUID, UserCheckinResponse> checkins,
+                                     Map<UUID, UserReviewResponse> reviews, Map<UUID, PublicTripResponse> trips) {
+        if (viewerId == null) {
+            return Set.of();
+        }
+        Set<UUID> authors = new HashSet<>();
+        checkins.values().forEach(checkin -> authors.add(checkin.getUserId()));
+        reviews.values().forEach(review -> authors.add(review.getUserId()));
+        trips.values().forEach(trip -> authors.add(trip.getOwnerId()));
+        authors.remove(null);
+        return authors.isEmpty() ? Set.of() : userBlockService.blockedAmong(viewerId, authors);
     }
 
     // ---------------------------------------------------------------------------------------

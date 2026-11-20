@@ -145,7 +145,8 @@
     <!-- Likes (a check-in heart, a helpful vote on a review or trip), comments and saves of
          the people the viewer follows: GraphJet's "what your people engaged with", in SQL. -->
     <select id="selectSocialProof" resultMap="SocialProofMap">
-        SELECT item_type, item_id, COUNT(DISTINCT user_id) AS people
+        SELECT touched.item_type AS item_type, touched.item_id AS item_id,
+               COUNT(DISTINCT touched.user_id) AS people
         FROM (
             SELECT 'CHECKIN'::varchar AS item_type, l.checkin_id AS item_id, l.user_id
             FROM user_checkin_likes l
@@ -174,8 +175,11 @@
             WHERE s.user_id IN <foreach collection="userIds" item="id" open="(" separator="," close=")">#{id}</foreach>
               AND s.created_at &gt; #{since}
         ) touched
-        GROUP BY item_type, item_id
-        ORDER BY people DESC, item_id
+        <!-- An author replying under their own post is not "your people engaged with it". -->
+        JOIN feed_items fi ON fi.item_type = touched.item_type AND fi.item_id = touched.item_id
+        WHERE fi.author_id &lt;&gt; touched.user_id
+        GROUP BY touched.item_type, touched.item_id
+        ORDER BY people DESC, touched.item_id
         LIMIT #{limit}
     </select>
 

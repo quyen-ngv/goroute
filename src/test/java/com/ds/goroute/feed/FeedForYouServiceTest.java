@@ -59,6 +59,7 @@ class FeedForYouServiceTest {
     private final TripService tripService = mock(TripService.class);
     private final BusinessConfigService config = mock(BusinessConfigService.class);
     private final FeedEventLogger eventLogger = mock(FeedEventLogger.class);
+    private final com.ds.goroute.service.UserBlockService userBlocks = mock(com.ds.goroute.service.UserBlockService.class);
 
     /** Every source query answers with this pool, as if the whole app matched. */
     private List<FeedItemRow> pool = new ArrayList<>();
@@ -103,7 +104,7 @@ class FeedForYouServiceTest {
         service = new FeedForYouService(rollout, contexts, provider, new SqlCandidateBackend(itemMapper), sources,
                 factors, reranker,
                 new CaffeineFeedSessionStore(), checkinService, reviewService, tripService,
-                com.ds.goroute.service.ParallelReads.sequential(), eventLogger);
+                com.ds.goroute.service.ParallelReads.sequential(), eventLogger, userBlocks);
     }
 
     /** {@code count} check-ins by distinct authors, newest first, scores falling. */

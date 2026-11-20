@@ -105,6 +105,7 @@ public final class FeedCandidate {
 
     /** No memory photos: the card shows the city's stock picture. */
     public boolean photolessTrip() {
-        return row.isTrip() && row.getPhotoCount() == 0;
+        // A cover the owner set is a photo the card shows, as Q's no-image penalty counts it.
+        return row.isTrip() && row.getPhotoCount() == 0 && !row.isHasCover();
     }
 }
