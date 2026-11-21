@@ -53,4 +53,20 @@ public record FeedSession(
     public boolean full(int sessionSize) {
         return ranked.size() >= sessionSize;
     }
+
+    /**
+     * Ranking again after this one may find more: it was cut at its size cap, or it stopped at
+     * a fill level below L4, where the next level reads wider (B141).
+     */
+    public boolean continues(int sessionSize) {
+        return full(sessionSize) || !fillLevel.atLeast(FeedTypes.FillLevel.L4);
+    }
+
+    /** Where the ranking after this one starts: the same level when it was cut, else the next. */
+    public FeedTypes.FillLevel nextLevel(int sessionSize) {
+        if (fillLevel.atLeast(FeedTypes.FillLevel.L4)) {
+            return FeedTypes.FillLevel.L4;
+        }
+        return full(sessionSize) ? fillLevel : FeedTypes.FillLevel.values()[fillLevel.ordinal() + 1];
+    }
 }

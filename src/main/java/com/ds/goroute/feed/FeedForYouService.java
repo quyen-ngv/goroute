@@ -106,19 +106,23 @@ public class FeedForYouService {
         int offset = session == null ? 0 : Math.max(0, at.offset());
 
         if (session == null) {
-            session = rank(viewerId, surface, spec, w, Set.of(), deviceLat, deviceLng, contextOff, contextOffTrips, explain);
-        } else if (offset >= session.ranked().size() && session.full(sessionSize)) {
-            // The end of a full ranking: rank again without everything this scroll served.
+            session = rank(viewerId, surface, spec, w, Set.of(), FillLevel.L1,
+                    deviceLat, deviceLng, contextOff, contextOffTrips, explain);
+        } else if (offset >= session.ranked().size() && session.continues(sessionSize)) {
+            // The end of a ranking that may have more after it: rank again without everything
+            // this scroll served, from the next fill level when this one ran short.
             Set<String> served = new HashSet<>(session.servedBefore());
             session.ranked().forEach(key -> served.add(key.key()));
-            session = rank(viewerId, surface, spec, w, served, deviceLat, deviceLng, contextOff, contextOffTrips, explain);
+            session = rank(viewerId, surface, spec, w, served, session.nextLevel(sessionSize),
+                    deviceLat, deviceLng, contextOff, contextOffTrips, explain);
             offset = 0;
         }
 
         List<FeedKey> slice = offset >= session.ranked().size() ? List.of()
                 : session.ranked().subList(offset, Math.min(offset + pageSize, session.ranked().size()));
         int nextOffset = offset + slice.size();
-        boolean hasMore = nextOffset < session.ranked().size() || (session.full(sessionSize) && !slice.isEmpty());
+        boolean hasMore = nextOffset < session.ranked().size()
+                || (session.continues(sessionSize) && !slice.isEmpty());
         List<FeedEventRow> servedRows = new ArrayList<>(slice.size());
         List<FeedForYouPageResponse.Item> items = enrich(viewerId, slice, offset, session, servedRows);
         if (viewerId != null) {
@@ -142,7 +146,7 @@ public class FeedForYouService {
     // Ranking
 
     private FeedSession rank(UUID viewerId, SurfaceSpec surface, FeedFilterSpec spec, FeedWeights w,
-                             Set<String> exclude,
+                             Set<String> exclude, FillLevel fromLevel,
                              Double deviceLat, Double deviceLng, boolean contextOff, Set<UUID> contextOffTrips,
                              boolean explain) {
         LocalDateTime now = LocalDateTime.now();
@@ -152,9 +156,12 @@ public class FeedForYouService {
 
         Map<String, FeedCandidate> pool = new LinkedHashMap<>();
         Set<FeedCandidateQuery> alreadyRead = new HashSet<>();
-        FillLevel level = FillLevel.L1;
+        FillLevel level = fromLevel;
         List<FeedCandidate> usable = List.of();
         for (FillLevel attempt : List.of(FillLevel.L1, FillLevel.L2, FillLevel.L3, FillLevel.L4)) {
+            if (!attempt.atLeast(fromLevel)) {
+                continue;
+            }
             level = attempt;
             collect(pool, alreadyRead, surface, context, spec, w, attempt, maxCandidates);
             usable = usable(pool, exclude, context, spec, w, attempt, now);

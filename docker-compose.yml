@@ -98,7 +98,9 @@ services:
       - GOROUTE_AWS_SECRET_ACCESS_KEY=${GOROUTE_AWS_SECRET_ACCESS_KEY:?set GOROUTE_AWS_SECRET_ACCESS_KEY in the deploy .env}
       - GOROUTE_AWS_REGION=us-east-1
       - GOROUTE_AWS_S3_BUCKET_NAME=vietdetour
-      - GOROUTE_AWS_ENDPOINT=http://minio:9000
+      # Object storage: MinIO on this host by default; set GOROUTE_AWS_ENDPOINT (and the two
+      # keys above) in the deploy .env to use Vietnix S3 (deployment/storage-migration/README.md).
+      - GOROUTE_AWS_ENDPOINT=${GOROUTE_AWS_ENDPOINT:-http://minio:9000}
       - GOROUTE_AWS_CLOUDFRONT_DOMAIN=onestudy.id.vn/resource
     # goroute-app-healthcheck: a hung app (see the 2026-09-02 AI-trip deadlock) used to look
     # perfectly fine because nothing ever probed it. This marks it unhealthy so 

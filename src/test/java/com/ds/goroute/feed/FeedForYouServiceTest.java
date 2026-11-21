@@ -176,7 +176,7 @@ class FeedForYouServiceTest {
     }
 
     @Test
-    void postsSeenRepeatedlyLatelyAreLeftOutWhenThereIsEnoughElse() {
+    void postsSeenRepeatedlyLatelyComeOnlyAfterEverythingElse() {
         pool = checkins(150);
         FeedItemRow seenTwice = pool.get(0);
         context = context.toBuilder().seen(Map.of(seenTwice.key().key(),
@@ -190,7 +190,10 @@ class FeedForYouServiceTest {
             cursor = page.getNextCursor();
         } while (cursor != null);
 
-        assertThat(everythingRanked).doesNotContain(seenTwice.getItemId()).hasSize(149);
+        // Left out of the first ranking (L1); once that runs out the next one climbs the
+        // ladder to L3, where seen posts come back (B141).
+        assertThat(everythingRanked).hasSize(150).doesNotHaveDuplicates();
+        assertThat(everythingRanked.get(149)).isEqualTo(seenTwice.getItemId());
     }
 
     @Test

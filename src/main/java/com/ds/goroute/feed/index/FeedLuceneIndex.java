@@ -53,6 +53,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * A Lucene copy of feed_items for candidate selection (.docs/FEED_NEARBY_TIME_PLAN_2026-11-04.md
@@ -101,6 +103,12 @@ public class FeedLuceneIndex {
     private volatile boolean ready;
     /** The generation documents are written with; a rebuild drops every other one. */
     private volatile String generation = UUID.randomUUID().toString();
+    /**
+     * A refresh writes each document under the read lock with the generation current at that
+     * moment; a rebuild switches the generation under the write lock. So no refresh write can
+     * land with the old generation after the switch, where the rebuild's last step would drop it.
+     */
+    private final ReadWriteLock generationLock = new ReentrantReadWriteLock();
 
     public FeedLuceneIndex(FeedItemMapper itemMapper,
                            @Value("${goroute.feed.index-path:data/lucene-index/feed}") String indexPath) {
@@ -177,7 +185,12 @@ public class FeedLuceneIndex {
         try {
             String rebuildGeneration = UUID.randomUUID().toString();
             // From here on, updates from FeedIndexService are written with the new generation too.
-            generation = rebuildGeneration;
+            generationLock.writeLock().lock();
+            try {
+                generation = rebuildGeneration;
+            } finally {
+                generationLock.writeLock().unlock();
+            }
             int total = 0;
             String afterType = "";
             UUID afterId = new UUID(0, 0);
@@ -223,14 +236,18 @@ public class FeedLuceneIndex {
         }
         try {
             List<FeedKey> all = new ArrayList<>(keys);
-            String current = generation;
             for (int from = 0; from < all.size(); from += 1000) {
                 List<FeedKey> slice = all.subList(from, Math.min(from + 1000, all.size()));
                 Set<String> found = new HashSet<>();
                 for (FeedItemRow row : itemMapper.selectByKeys(slice)) {
                     String key = key(row);
                     found.add(key);
-                    writer.updateDocument(new Term(KEY, key), document(row, current));
+                    generationLock.readLock().lock();
+                    try {
+                        writer.updateDocument(new Term(KEY, key), document(row, generation));
+                    } finally {
+                        generationLock.readLock().unlock();
+                    }
                 }
                 for (FeedKey key : slice) {
                     if (!found.contains(key.key())) {

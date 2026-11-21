@@ -210,12 +210,14 @@
 
     <!-- A trip sits at its primary destination (else the first with coordinates, else the
          trip's own destination point). stop_kind_counts counts the stops that point at a
-         catalogue place, by place group and by sub type, for the place chips. -->
+         catalogue place, by place group and by sub type; stop_sub_types keeps each such
+         stop's sub types, so a chip asking for several counts a stop once (V292). -->
     <insert id="upsertTrips">
         INSERT INTO feed_items (item_type, item_id, author_id, published_at, province_code, place_id,
                                 place_group, sub_types, point, has_photo, photo_count, text_len,
                                 author_trust, stop_count, linked_stop_count, day_count, has_cover,
-                                has_cost, trip_end_date, stop_kind_counts, copy_count, eligible,
+                                has_cost, trip_end_date, stop_kind_counts, stop_sub_types,
+                                copy_count, eligible,
                                 stats_dirty, indexed_at)
         SELECT 'TRIP', t.id, t.owner_id, COALESCE(t.public_shared_at, t.created_at),
                goroute_province_at(pt.lat, pt.lng),
@@ -235,6 +237,7 @@
                (COALESCE(t.budget, 0) > 0 OR EXISTS (SELECT 1 FROM expenses e WHERE e.trip_id = t.id)),
                t.end_date,
                kinds.counts,
+               stop_subs.stops,
                COALESCE(t.copy_count, 0),
                (t.visibility = 'PUBLIC'
                    AND t.is_deleted = FALSE
@@ -283,6 +286,14 @@
                 GROUP BY kind
             ) grouped
         ) kinds ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT jsonb_agg(to_jsonb(p.sub_types)) AS stops
+            FROM activities a
+            JOIN places p ON p.id = a.place_ref_id
+            WHERE a.trip_id = t.id
+              AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+              AND cardinality(p.sub_types) &gt; 0
+        ) stop_subs ON TRUE
         WHERE t.id IN <include refid="idList"/>
         ON CONFLICT (item_type, item_id) DO UPDATE SET
             author_id         = EXCLUDED.author_id,
@@ -300,6 +311,7 @@
             has_cost          = EXCLUDED.has_cost,
             trip_end_date     = EXCLUDED.trip_end_date,
             stop_kind_counts  = EXCLUDED.stop_kind_counts,
+            stop_sub_types    = EXCLUDED.stop_sub_types,
             copy_count        = EXCLUDED.copy_count,
             eligible          = EXCLUDED.eligible,
             stats_dirty       = TRUE,
@@ -416,6 +428,25 @@
          request's filters are the same for all; each source sets one selector and an order.
          ================================================================================ -->
 
+    <!-- How many of a trip's stops are a chip's kind. A stop has one place group, so the
+         counts by group add up; it can have several of the chip's sub types, so those
+         count the stops having any of them (B140). -->
+    <sql id="chipTripStops">
+        <choose>
+            <when test="q.subTypes != null and !q.subTypes.isEmpty()">
+                (SELECT COUNT(*)
+                 FROM jsonb_array_elements(COALESCE(fi.stop_sub_types, '[]'::jsonb)) AS stop
+                 WHERE EXISTS (
+                     SELECT 1 FROM jsonb_array_elements_text(stop) AS kind
+                     WHERE kind = ANY(<include refid="chipKinds"/>)))
+            </when>
+            <otherwise>
+                (SELECT COALESCE(SUM((fi.stop_kind_counts ->> kind)::int), 0)
+                 FROM unnest(<include refid="chipKinds"/>) AS kind)
+            </otherwise>
+        </choose>
+    </sql>
+
     <sql id="chipKinds">
         <choose>
             <when test="q.subTypes != null and !q.subTypes.isEmpty()">
@@ -475,11 +506,8 @@
                     <!-- A trip about the kind: enough of its stops are that kind, and they are a
                          real share of the trip, so one cafe on a ten-stop trip does not count. -->
                     OR (fi.item_type = 'TRIP'
-                        AND fi.stop_kind_counts IS NOT NULL
-                        AND (SELECT COALESCE(SUM((fi.stop_kind_counts ->> kind)::int), 0)
-                             FROM unnest(<include refid="chipKinds"/>) AS kind) &gt;= #{q.chipTripMinStops}
-                        AND (SELECT COALESCE(SUM((fi.stop_kind_counts ->> kind)::int), 0)
-                             FROM unnest(<include refid="chipKinds"/>) AS kind)
+                        AND <include refid="chipTripStops"/> &gt;= #{q.chipTripMinStops}
+                        AND <include refid="chipTripStops"/>
                             &gt;= #{q.chipTripMinRatio} * GREATEST(fi.stop_count, 1))
                 </if>
             )
