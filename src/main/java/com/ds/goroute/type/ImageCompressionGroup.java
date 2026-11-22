@@ -7,8 +7,9 @@ import java.util.Optional;
  * The storage folders whose images the console may compress (epic 00 §9b). Compression works on
  * the object under its key, so a group is a key prefix, not a table: every file under it is
  * covered whichever rows point at it. Folders left out on purpose: partner verification
- * documents ({@code partners/verification/}, licences and IDs must stay legible), and video,
- * audio and AR folders, which hold no photos.
+ * documents ({@code partners/verification/}, licences and IDs must stay legible), camera looks
+ * ({@code camera-looks/}: a LUT or a frame PNG must stay pixel-exact, so it must never be added
+ * here), and video, audio and AR folders, which hold no photos.
  */
 public enum ImageCompressionGroup {
     PLACES("places/", false),

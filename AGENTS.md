@@ -192,6 +192,7 @@ Current typed business keys (all registered in `BusinessConfigKey`, read through
 | `CHECKIN` | `VIDEO_ENABLED` | boolean (beta users always on); gates `POST /v1/api/checkins/videos` and a VIDEO item | safe fallback false | users via `GET /v1/api/checkins/context` (`videoAllowed`) |
 | `CHECKIN` | `MAX_VIDEO_SECONDS` | seconds, 5..300 | safe fallback 60 | users via check-in context (`maxVideoSeconds`) |
 | `CHECKIN` | `MUSIC_ENABLED` | boolean (beta users always on); gates adding a `musicTrackId` (V282) | safe fallback false | users via check-in context (`musicAllowed`) |
+| `CHECKIN` | `CAMERA_LOOKS_ENABLED` | boolean (beta users always on); lets the check-in camera offer filters and frames (V293). Never rejects a `filterKey`/`frameKey` | safe fallback false | users via check-in context (`cameraLooksAllowed`) |
 | `CHECKIN` | `LOCATION_KEY_PRECISION` | decimal places, 2..6 | safe fallback 4 | private/admin |
 | `CHECKIN` | `GALLERY_ALLOWED_FOR_FREE` | boolean | safe fallback true | public |
 | `CHECKIN` | `GUIDE_SCREEN_ENABLED` / `GUIDE_SCREEN_MAX_VIEWS` | boolean / count 0..50 | safe fallback true / 3 | public |

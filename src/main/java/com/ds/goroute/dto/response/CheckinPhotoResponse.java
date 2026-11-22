@@ -39,4 +39,8 @@ public class CheckinPhotoResponse {
     private CheckinMediaType mediaType;
     private String thumbnailUrl;
     private Integer durationSeconds;
+
+    /** The camera filter and frame the photo was taken with; null when none or unknown. */
+    private String filterKey;
+    private String frameKey;
 }

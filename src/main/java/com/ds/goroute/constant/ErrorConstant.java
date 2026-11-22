@@ -319,6 +319,9 @@ public class ErrorConstant {
 
     /** Place edit suggestions: no such suggestion among the caller's own (or, for admins, at all). */
     public static final int PLACE_EDIT_NOT_FOUND = 4040621;
+
+    /** Camera looks (epic 08): no such filter or frame. */
+    public static final int CAMERA_LOOK_NOT_FOUND = 4040801;
     
     /**
      * Write the error code prefixed with 409 below
@@ -343,6 +346,12 @@ public class ErrorConstant {
 
     /** Place image compression (epic 06 §2.13): the place's images were already compressed (files overwritten). */
     public static final int PLACE_IMAGES_ALREADY_COMPRESSED = 4090613;
+
+    /** Camera looks (epic 08): another look of the same kind already has this key. */
+    public static final int CAMERA_LOOK_KEY_TAKEN = 4090801;
+
+    /** Camera looks: check-in photos were taken with this look, so it cannot be deleted (archive it). */
+    public static final int CAMERA_LOOK_IN_USE = 4090802;
 
     /** Image compression (epic 00 §9b): a bulk run is already going in this backend instance. */
     public static final int IMAGE_COMPRESSION_RUN_ACTIVE = 4090614;

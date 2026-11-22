@@ -65,6 +65,13 @@
         <result property="mediaType" column="media_type"/>
         <result property="thumbnailUrl" column="thumbnail_url"/>
         <result property="durationSeconds" column="duration_seconds"/>
+        <result property="filterKey" column="filter_key"/>
+        <result property="frameKey" column="frame_key"/>
+    </resultMap>
+
+    <resultMap id="cameraLookUsageMap" type="com.ds.goroute.entity.CameraLookUsageRow">
+        <result property="lookKey" column="look_key"/>
+        <result property="usageCount" column="usage_count"/>
     </resultMap>
 
     <resultMap id="clusterMap" type="com.ds.goroute.entity.CheckinCluster">
@@ -627,12 +634,13 @@
     <insert id="insertPhoto" parameterType="com.ds.goroute.entity.UserCheckinPhoto">
         INSERT INTO media_assets
             (id, trip_id, activity_id, entity_type, entity_id, media_type, url, thumbnail_url,
-             duration_seconds, asset_role,
+             duration_seconds, filter_key, frame_key, asset_role,
              position, caption, description, taken_at, latitude, longitude, accuracy_meters,
              capture_source, date_source, place_id, location_name, location_source,
              uploaded_by, created_at, updated_at)
         SELECT #{id}, c.trip_id, c.activity_id, 'USER_CHECKIN', c.id, #{mediaType},
-               #{url}, #{thumbnailUrl,jdbcType=VARCHAR}, #{durationSeconds,jdbcType=INTEGER}, 'PHOTO',
+               #{url}, #{thumbnailUrl,jdbcType=VARCHAR}, #{durationSeconds,jdbcType=INTEGER},
+               #{filterKey,jdbcType=VARCHAR}, #{frameKey,jdbcType=VARCHAR}, 'PHOTO',
                #{position}, #{title}, #{description}, #{capturedAt}, #{latitude}, #{longitude},
                #{accuracyMeters}, #{source},
                <choose>
@@ -647,7 +655,8 @@
     <select id="findPhotos" resultMap="photoMap">
         SELECT id, entity_id AS checkin_id, url, capture_source AS source, position,
                caption AS title, description, taken_at AS captured_at, latitude, longitude,
-               accuracy_meters, created_at, media_type, thumbnail_url, duration_seconds
+               accuracy_meters, created_at, media_type, thumbnail_url, duration_seconds,
+               filter_key, frame_key
         FROM media_assets
         WHERE entity_type = 'USER_CHECKIN'
           AND entity_id = #{checkinId}
@@ -660,7 +669,8 @@
     <select id="findPhotosForCheckins" resultMap="photoMap">
         SELECT id, entity_id AS checkin_id, url, capture_source AS source, position,
                caption AS title, description, taken_at AS captured_at, latitude, longitude,
-               accuracy_meters, created_at, media_type, thumbnail_url, duration_seconds
+               accuracy_meters, created_at, media_type, thumbnail_url, duration_seconds,
+               filter_key, frame_key
         FROM media_assets
         WHERE entity_type = 'USER_CHECKIN'
           AND entity_id IN
@@ -679,6 +689,31 @@
           AND entity_id = #{checkinId}
           AND deleted_at IS NULL
     </delete>
+
+    <!-- Camera looks (V293): how many live check-in photos were taken with each filter. -->
+    <select id="countPhotosByFilterKeys" resultMap="cameraLookUsageMap">
+        SELECT filter_key AS look_key, COUNT(*) AS usage_count
+        FROM media_assets
+        WHERE entity_type = 'USER_CHECKIN'
+          AND deleted_at IS NULL
+          AND filter_key IN
+        <foreach item="key" collection="keys" open="(" separator="," close=")">
+            #{key}
+        </foreach>
+        GROUP BY filter_key
+    </select>
+
+    <select id="countPhotosByFrameKeys" resultMap="cameraLookUsageMap">
+        SELECT frame_key AS look_key, COUNT(*) AS usage_count
+        FROM media_assets
+        WHERE entity_type = 'USER_CHECKIN'
+          AND deleted_at IS NULL
+          AND frame_key IN
+        <foreach item="key" collection="keys" open="(" separator="," close=")">
+            #{key}
+        </foreach>
+        GROUP BY frame_key
+    </select>
 
     <select id="hasLike" resultType="boolean">
         SELECT EXISTS(SELECT 1 FROM user_checkin_likes

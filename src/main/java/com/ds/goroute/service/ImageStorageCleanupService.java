@@ -806,6 +806,16 @@ public class ImageStorageCleanupService {
                         "SELECT image_url FROM asset_library WHERE image_url IS NOT NULL",
                         "SELECT image_url FROM asset_library WHERE id = ? AND image_url IS NOT NULL",
                         "asset-library/"),
+                // Camera looks (epic 08, V293): the thumbnail, and the LUT and frame PNGs named
+                // inside the definition JSON. A replaced file is freed by the sweep once no row
+                // mentions it; nothing under camera-looks/ is ever compressed.
+                spec("CAMERA_LOOK",
+                        """
+                        SELECT thumbnail_url AS ref FROM camera_looks WHERE thumbnail_url IS NOT NULL
+                        UNION ALL SELECT definition::text FROM camera_looks
+                        """,
+                        "SELECT thumbnail_url, definition::text FROM camera_looks WHERE id = ?",
+                        "camera-looks/"),
                 spec("ROOM_TYPE",
                         "SELECT images FROM room_types WHERE images IS NOT NULL",
                         "SELECT images FROM room_types WHERE id = ? AND images IS NOT NULL",

@@ -98,6 +98,8 @@ public enum BusinessConfigKey {
     CHECKIN_MAX_VIDEO_SECONDS("CHECKIN", "MAX_VIDEO_SECONDS", 60, 5, 300),
     /** Lets everyone add background music to a check-in; beta users always can. */
     CHECKIN_MUSIC_ENABLED("CHECKIN", "MUSIC_ENABLED", false),
+    /** Lets everyone use the camera's filters and frames; beta users always can. */
+    CHECKIN_CAMERA_LOOKS_ENABLED("CHECKIN", "CAMERA_LOOKS_ENABLED", false),
     CHECKIN_LOCATION_KEY_PRECISION("CHECKIN", "LOCATION_KEY_PRECISION", 4, 2, 6),
     CHECKIN_GALLERY_ALLOWED_FOR_FREE("CHECKIN", "GALLERY_ALLOWED_FOR_FREE", true),
     CHECKIN_GUIDE_SCREEN_ENABLED("CHECKIN", "GUIDE_SCREEN_ENABLED", true),

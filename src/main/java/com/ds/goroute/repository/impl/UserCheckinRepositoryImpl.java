@@ -7,6 +7,7 @@ import com.ds.goroute.entity.CheckinCluster;
 import com.ds.goroute.entity.CheckinClusterDecision;
 import com.ds.goroute.entity.UserCheckin;
 import com.ds.goroute.entity.UserCheckinLocationHistory;
+import com.ds.goroute.entity.CameraLookUsageRow;
 import com.ds.goroute.entity.UserCheckinPhoto;
 import com.ds.goroute.entity.CheckinLikeCount;
 import com.ds.goroute.event.PlaceUsageChangedEvent;
@@ -212,6 +213,16 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     @Override
     public int deletePhotos(UUID checkinId) {
         return mapper.deletePhotos(checkinId);
+    }
+
+    @Override
+    public List<CameraLookUsageRow> countPhotosByFilterKeys(List<String> filterKeys) {
+        return filterKeys.isEmpty() ? List.of() : mapper.countPhotosByFilterKeys(filterKeys);
+    }
+
+    @Override
+    public List<CameraLookUsageRow> countPhotosByFrameKeys(List<String> frameKeys) {
+        return frameKeys.isEmpty() ? List.of() : mapper.countPhotosByFrameKeys(frameKeys);
     }
 
     @Override

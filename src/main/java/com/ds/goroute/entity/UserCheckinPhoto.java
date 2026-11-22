@@ -52,6 +52,14 @@ public class UserCheckinPhoto {
     private String thumbnailUrl;
     private Integer durationSeconds;
 
+    /**
+     * The camera filter and frame the photo was taken with (V293); null when none or unknown.
+     * A record only: the look is already in the pixels. Not checked against {@code camera_looks},
+     * because the app's bundled looks have no row there.
+     */
+    private String filterKey;
+    private String frameKey;
+
     public boolean isVideo() {
         return mediaType == CheckinMediaType.VIDEO;
     }

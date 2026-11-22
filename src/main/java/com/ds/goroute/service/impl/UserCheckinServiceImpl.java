@@ -199,6 +199,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .videoAllowed(isVideoAllowed(userId))
                 .maxVideoSeconds(config.getInt(BusinessConfigKey.CHECKIN_MAX_VIDEO_SECONDS))
                 .musicAllowed(isMusicAllowed(userId))
+                .cameraLooksAllowed(isCameraLooksAllowed(userId))
                 .maxCaptionLength(config.getInt(BusinessConfigKey.CHECKIN_MAX_CAPTION_LENGTH))
                 .verifyRadiusMeters(assessment.effectiveRadiusMeters())
                 .placeSpecificRadius(place.map(Place::getVerificationRadiusMeters)
@@ -324,7 +325,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
             verifier.apply(checkin, place);
         }
         checkinRepository.insert(checkin);
-        storePhotos(checkin.getId(), photos, now);
+        storePhotos(checkin.getId(), photos, now, List.of());
 
         // A check-in made to satisfy a quest checkpoint is linked back to the run (D13); the
         // checkpoint then counts as passed. Best-effort so a quest hiccup never fails the check-in.
@@ -455,7 +456,8 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                     "Choosing photos from your library is not available on your plan right now.");
         }
         // A video already on this visit stays editable after the switch is turned off.
-        Set<String> videosAlreadyPosted = checkinRepository.findPhotos(checkinId).stream()
+        List<UserCheckinPhoto> photosBeforeEdit = checkinRepository.findPhotos(checkinId);
+        Set<String> videosAlreadyPosted = photosBeforeEdit.stream()
                 .filter(UserCheckinPhoto::isVideo)
                 .map(UserCheckinPhoto::getUrl)
                 .collect(Collectors.toSet());
@@ -506,7 +508,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         imageStorageCleanupService.deleteImagesForEntityRecord("USER_CHECKIN_PHOTO", checkinId, keptUrls);
 
         checkinRepository.deletePhotos(checkinId);
-        storePhotos(checkinId, photos, checkin.getUpdatedAt());
+        storePhotos(checkinId, photos, checkin.getUpdatedAt(), photosBeforeEdit);
 
         if (checkinRepository.update(checkin) != 1) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Check-in not found");
@@ -924,6 +926,11 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         return config.getBoolean(BusinessConfigKey.CHECKIN_MUSIC_ENABLED) || betaAccess.isBetaUser(userId);
     }
 
+    /** Camera filters and frames: open to everyone through the switch; until then, beta testers. */
+    private boolean isCameraLooksAllowed(UUID userId) {
+        return config.getBoolean(BusinessConfigKey.CHECKIN_CAMERA_LOOKS_ENABLED) || betaAccess.isBetaUser(userId);
+    }
+
     /** What the linked review shows: the photos, or a video's still frame. */
     private List<String> reviewImageUrls(List<CreateUserCheckinRequest.CheckinPhotoInput> photos) {
         return photos.stream()
@@ -939,11 +946,20 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .orElse(CheckinPhotoSource.GALLERY);
     }
 
+    /**
+     * @param photosBeforeEdit the rows an edit is replacing; empty on create. A photo whose URL
+     *                         is unchanged keeps its camera look keys when the request sends none,
+     *                         because an app built before camera looks sends none on every edit.
+     */
     private void storePhotos(UUID checkinId, List<CreateUserCheckinRequest.CheckinPhotoInput> photos,
-                             LocalDateTime now) {
+                             LocalDateTime now, List<UserCheckinPhoto> photosBeforeEdit) {
+        Map<String, UserCheckinPhoto> savedByUrl = photosBeforeEdit.stream()
+                .filter(saved -> saved.getUrl() != null)
+                .collect(Collectors.toMap(UserCheckinPhoto::getUrl, saved -> saved, (first, second) -> first));
         int position = 0;
         for (CreateUserCheckinRequest.CheckinPhotoInput photo : photos) {
             boolean isVideo = photo.getMediaType() == CheckinMediaType.VIDEO;
+            UserCheckinPhoto saved = savedByUrl.get(photo.getUrl());
             checkinRepository.insertPhoto(UserCheckinPhoto.builder()
                     .id(UUID.randomUUID())
                     .checkinId(checkinId)
@@ -951,6 +967,10 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                     .mediaType(isVideo ? CheckinMediaType.VIDEO : CheckinMediaType.IMAGE)
                     .thumbnailUrl(isVideo ? photo.getThumbnailUrl() : null)
                     .durationSeconds(isVideo ? photo.getDurationSeconds() : null)
+                    .filterKey(photo.getFilterKey() != null || saved == null
+                            ? photo.getFilterKey() : saved.getFilterKey())
+                    .frameKey(photo.getFrameKey() != null || saved == null
+                            ? photo.getFrameKey() : saved.getFrameKey())
                     .source(photo.getSource())
                     .position(position++)
                     .title(photo.getTitle())
@@ -1232,6 +1252,8 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                         .mediaType(photo.isVideo() ? CheckinMediaType.VIDEO.name() : CheckinMediaType.IMAGE.name())
                         .thumbnailUrl(photo.getThumbnailUrl())
                         .durationSeconds(photo.getDurationSeconds())
+                        .filterKey(photo.getFilterKey())
+                        .frameKey(photo.getFrameKey())
                         .position(photo.getPosition())
                         .title(photo.getTitle())
                         .description(photo.getDescription())
@@ -1325,6 +1347,8 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                                 .mediaType(photo.isVideo() ? CheckinMediaType.VIDEO : CheckinMediaType.IMAGE)
                                 .thumbnailUrl(photo.getThumbnailUrl())
                                 .durationSeconds(photo.getDurationSeconds())
+                                .filterKey(photo.getFilterKey())
+                                .frameKey(photo.getFrameKey())
                                 .build())
                         .toList())
                 .photosV2(photoResponses)

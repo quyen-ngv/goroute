@@ -5,6 +5,7 @@ import com.ds.goroute.entity.CheckinCluster;
 import com.ds.goroute.entity.CheckinClusterDecision;
 import com.ds.goroute.entity.UserCheckin;
 import com.ds.goroute.entity.UserCheckinLocationHistory;
+import com.ds.goroute.entity.CameraLookUsageRow;
 import com.ds.goroute.entity.UserCheckinPhoto;
 import com.ds.goroute.entity.CheckinLikeCount;
 import org.apache.ibatis.annotations.Mapper;
@@ -146,6 +147,10 @@ public interface UserCheckinMapper {
     List<UserCheckinPhoto> findPhotosForCheckins(@Param("checkinIds") List<UUID> checkinIds);
 
     int deletePhotos(@Param("checkinId") UUID checkinId);
+
+    List<CameraLookUsageRow> countPhotosByFilterKeys(@Param("keys") List<String> keys);
+
+    List<CameraLookUsageRow> countPhotosByFrameKeys(@Param("keys") List<String> keys);
 
     boolean hasLike(@Param("checkinId") UUID checkinId, @Param("userId") UUID userId);
 

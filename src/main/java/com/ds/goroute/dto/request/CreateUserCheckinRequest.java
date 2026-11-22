@@ -17,6 +17,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
@@ -203,5 +204,18 @@ public class CreateUserCheckinRequest {
         private BigDecimal latitude;
         private BigDecimal longitude;
         private BigDecimal accuracyMeters;
+
+        /**
+         * Optional. The camera filter and frame the photo was taken with. Only the format is
+         * checked: the app's bundled looks have no row on the server. On an edit, absent keeps
+         * the keys of a photo whose URL is unchanged, so an older app cannot wipe them.
+         */
+        @Size(max = CameraLookKeys.MAX_LENGTH)
+        @Pattern(regexp = CameraLookKeys.PATTERN, message = "filterKey must be lowercase snake_case")
+        private String filterKey;
+
+        @Size(max = CameraLookKeys.MAX_LENGTH)
+        @Pattern(regexp = CameraLookKeys.PATTERN, message = "frameKey must be lowercase snake_case")
+        private String frameKey;
     }
 }

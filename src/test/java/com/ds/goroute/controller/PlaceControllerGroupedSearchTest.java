@@ -57,7 +57,7 @@ class PlaceControllerGroupedSearchTest {
 
         BaseResponse<GroupedPlaceSearchResponse> body = controller.searchPlacesGrouped(
                 "phở thìn", LAT, LNG, new BigDecimal("30"), null, List.of("FOOD_AND_DRINK"), null, null,
-                true, null, null, null, null, false, null, 0, 20).getBody();
+                true, null, null, null, null, false, null, 0, 20, null).getBody();
 
         assertThat(body.getData().getElsewhere()).containsExactly(far);
         verify(groupedSearchService).search(eq("phở thìn"), eq(LAT), eq(LNG), eq(new BigDecimal("30")), eq(null),
@@ -73,7 +73,7 @@ class PlaceControllerGroupedSearchTest {
                 any(), any(), anyBoolean(), any(), anyInt(), anyInt())).thenReturn(List.of(local));
 
         Object body = controller.searchPlaces("phở", LAT, LNG, new BigDecimal("30"), null, null, null, null,
-                false, null, null, null, null, false, null, 0, 20).getBody();
+                false, null, null, null, null, false, null, 0, 20, null).getBody();
         String json = new ObjectMapper().writeValueAsString(body);
 
         assertThat(json).contains("\"data\":[{").doesNotContain("provinceName").doesNotContain("elsewhere");

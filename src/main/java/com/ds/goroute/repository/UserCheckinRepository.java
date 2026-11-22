@@ -7,6 +7,7 @@ import com.ds.goroute.entity.CheckinCluster;
 import com.ds.goroute.entity.CheckinClusterDecision;
 import com.ds.goroute.entity.UserCheckin;
 import com.ds.goroute.entity.UserCheckinLocationHistory;
+import com.ds.goroute.entity.CameraLookUsageRow;
 import com.ds.goroute.entity.UserCheckinPhoto;
 import com.ds.goroute.entity.CheckinLikeCount;
 
@@ -118,6 +119,12 @@ public interface UserCheckinRepository {
     List<UserCheckinPhoto> findPhotosForCheckins(List<UUID> checkinIds);
 
     int deletePhotos(UUID checkinId);
+
+    /** Live check-in photos per filter key (camera looks, V293); keys with none are absent. */
+    List<CameraLookUsageRow> countPhotosByFilterKeys(List<String> filterKeys);
+
+    /** Live check-in photos per frame key (camera looks, V293); keys with none are absent. */
+    List<CameraLookUsageRow> countPhotosByFrameKeys(List<String> frameKeys);
 
     boolean hasLike(UUID checkinId, UUID userId);
 

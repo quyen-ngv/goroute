@@ -62,6 +62,12 @@ public record ImageUploadRequest(UUID userId,
         public static final String ASSET_LIBRARY = "admin-asset-library";
 
         /**
+         * Operators: LUT, frame and thumbnail PNGs of the check-in camera's filters and frames,
+         * stored under camera-looks/ and never compressed (epic 08, V293).
+         */
+        public static final String CAMERA_LOOK = "admin-camera-look";
+
+        /**
          * Users, and operators writing for a managed account: a blog post's photos and video
          * posters, stored under post-media/{postId} (epic 20).
          */

@@ -84,4 +84,8 @@ public class MemoryImageResponse {
     /** The still frame of a VIDEO; null for an image. Set by check-in videos only. */
     private String thumbnailUrl;
     private Integer durationSeconds;
+
+    /** The camera filter and frame a check-in photo was taken with; null otherwise. */
+    private String filterKey;
+    private String frameKey;
 }
