@@ -19,15 +19,25 @@ import java.util.regex.Pattern;
  * <p>FILTER: {@code adjust} (brightness, contrast, saturation, warmth, tint, fade), {@code matrix}
  * (20 numbers), {@code lut} (URL), {@code strength}, {@code effects} (grain, vignette). At least
  * one of adjust/matrix is required even with a LUT: it is what the app draws where the LUT
- * shader cannot run.
+ * shader cannot run. {@code group} (the shelf it is listed on) and {@code icon} (the icon on
+ * its chip) are names the app looks up; one it does not know falls back to a default.
  *
  * <p>FRAME: {@code images}, {@code photoRect} and {@code texts}, each keyed by shape
- * ({@code threeTwo}, {@code square}); at least one image.
+ * ({@code threeTwo}, {@code square}); at least one image. {@code canvas} ([width, height]) gives
+ * the frame a shape of its own instead of the camera's. {@code camera} (body, color, film) is
+ * how it is drawn in the app's camera picker and the filter it loads. A text slot may carry
+ * {@code background}, the colour of a pill drawn behind the line.
  */
 public final class CameraLookDefinitionValidator {
 
-    private static final Set<String> FILTER_FIELDS = Set.of("adjust", "matrix", "lut", "strength", "effects");
-    private static final Set<String> FRAME_FIELDS = Set.of("images", "photoRect", "texts");
+    private static final Set<String> FILTER_FIELDS =
+            Set.of("adjust", "matrix", "lut", "strength", "effects", "group", "icon");
+    private static final Set<String> FRAME_FIELDS = Set.of("images", "photoRect", "texts", "canvas", "camera");
+    private static final Set<String> CAMERA_FIELDS = Set.of("body", "color", "film");
+    private static final Set<String> CAMERA_BODIES = Set.of("compact", "slr", "mini", "box", "toy");
+    /** A group id, an icon name or a filter id: the app looks each up and ignores one it does not know. */
+    private static final Pattern NAME = Pattern.compile("^[a-z0-9]+(_[a-z0-9]+)*$");
+    private static final int MAX_NAME_LENGTH = 40;
     private static final Set<String> SHAPES = Set.of("threeTwo", "square");
 
     /** Field to {min, max}, both inclusive. */
@@ -48,7 +58,7 @@ public final class CameraLookDefinitionValidator {
 
     private static final Set<String> TEXT_FIELDS = Set.of(
             "source", "x", "y", "size", "color", "weight", "align", "uppercase", "maxWidth", "dateFormat",
-            "rotation");
+            "rotation", "background");
     private static final Set<String> TEXT_SOURCES = Set.of("placeName", "province", "date", "time", "caption");
     private static final Set<String> TEXT_ALIGNS = Set.of("left", "center", "right");
     private static final Set<Integer> TEXT_WEIGHTS = Set.of(400, 500, 600, 700, 800);
@@ -103,6 +113,12 @@ public final class CameraLookDefinitionValidator {
         if (definition.has("effects")) {
             validateRanges(definition.get("effects"), EFFECT_RANGES, "effects");
         }
+        if (definition.has("group")) {
+            requireName(definition.get("group"), "group");
+        }
+        if (definition.has("icon")) {
+            requireName(definition.get("icon"), "icon");
+        }
     }
 
     private static void validateFrame(JsonNode definition, Predicate<String> isLookAssetUrl) {
@@ -114,6 +130,33 @@ public final class CameraLookDefinitionValidator {
         requireKnownFields(images, SHAPES, "images");
         for (Map.Entry<String, JsonNode> image : (Iterable<Map.Entry<String, JsonNode>>) images::fields) {
             requireAssetUrl(image.getValue(), "images." + image.getKey(), isLookAssetUrl);
+        }
+
+        JsonNode canvas = definition.get("canvas");
+        if (canvas != null) {
+            // The frame's own shape, as the pixel size of its images: [width, height].
+            if (!canvas.isArray() || canvas.size() != 2) {
+                throw invalid("canvas must be [width, height]");
+            }
+            for (JsonNode side : canvas) {
+                requireInRange(side, 1, 8192, "canvas");
+            }
+        }
+        JsonNode camera = definition.get("camera");
+        if (camera != null) {
+            if (!camera.isObject()) {
+                throw invalid("camera must be an object");
+            }
+            requireKnownFields(camera, CAMERA_FIELDS, "camera");
+            if (camera.has("body")) {
+                requireOneOf(camera.get("body"), CAMERA_BODIES, "camera.body");
+            }
+            if (camera.has("color")) {
+                requireColor(camera.get("color"), "camera.color");
+            }
+            if (camera.has("film")) {
+                requireName(camera.get("film"), "camera.film");
+            }
         }
 
         JsonNode photoRect = definition.get("photoRect");
@@ -167,9 +210,9 @@ public final class CameraLookDefinitionValidator {
         requireInRange(slot.get("x"), 0, 1, path + ".x");
         requireInRange(slot.get("y"), 0, 1, path + ".y");
         requireInRange(slot.get("size"), 0.01, 0.2, path + ".size");
-        JsonNode color = slot.get("color");
-        if (color == null || !color.isTextual() || !COLOR.matcher(color.asText()).matches()) {
-            throw invalid(path + ".color must be #RRGGBB or #AARRGGBB");
+        requireColor(slot.get("color"), path + ".color");
+        if (slot.has("background")) {
+            requireColor(slot.get("background"), path + ".background");
         }
         JsonNode weight = slot.get("weight");
         if (weight == null || !weight.isIntegralNumber() || !TEXT_WEIGHTS.contains(weight.asInt())) {
@@ -213,6 +256,20 @@ public final class CameraLookDefinitionValidator {
             if (!images.has(shape)) {
                 throw invalid(path + "." + shape + " has no image of that shape");
             }
+        }
+    }
+
+    private static void requireColor(JsonNode color, String path) {
+        if (color == null || !color.isTextual() || !COLOR.matcher(color.asText()).matches()) {
+            throw invalid(path + " must be #RRGGBB or #AARRGGBB");
+        }
+    }
+
+    private static void requireName(JsonNode value, String path) {
+        if (value == null || !value.isTextual() || value.asText().length() > MAX_NAME_LENGTH
+                || !NAME.matcher(value.asText()).matches()) {
+            throw invalid(path + " must be lowercase letters, digits and underscores, at most "
+                    + MAX_NAME_LENGTH + " characters");
         }
     }
 
