@@ -97,6 +97,7 @@ public class AssistantTurnService {
     private final ApplicationEventPublisher events;
     private final ObjectMapper objectMapper;
     private final ConsentService consents;
+    private final AssistantAskerLocations askerLocations;
 
     /** Decides whether a stored message asks Pengoo something, and if so queues or starts a turn. */
     @Transactional
@@ -130,6 +131,11 @@ public class AssistantTurnService {
         AssistantTurn turn = newTurn(conversation, message,
                 busy ? AssistantTurnStatus.QUEUED : AssistantTurnStatus.RUNNING, true, now, question, language);
         repository.insertTurn(turn);
+        // The device position answers "near me" in the 1:1 chat only: in a trip chat the other
+        // members read the answer, which would tell them where the asker is.
+        if (MarketplaceConversationType.ASSISTANT.name().equals(conversation.getConversationType())) {
+            askerLocations.remember(turn.getId(), message.senderLocation());
+        }
         broadcastAfterCommit(turn.getId());
         if (!busy) events.publishEvent(new AssistantTurnDispatchEvent(turn.getId()));
     }
@@ -164,6 +170,8 @@ public class AssistantTurnService {
     @Transactional
     public UUID complete(UUID turnId, AssistantReplyRequest reply) {
         AssistantTurn turn = repository.lockTurn(turnId).orElseThrow(this::notFound);
+        // The answer is written: no tool will ask where the asker is again.
+        askerLocations.forget(turnId);
         if (AssistantTurnStatus.COMPLETED.name().equals(turn.getStatus())) return turn.getReplyMessageId();
         if (!AssistantTurnStatus.RUNNING.name().equals(turn.getStatus())) return null;
         MarketplaceConversation conversation = chatRepository.find(turn.getConversationId(), null)
@@ -218,6 +226,7 @@ public class AssistantTurnService {
     /** Ends an open turn with an apology to the asker; the credits it used are refunded. */
     @Transactional
     public void fail(UUID turnId, String error) {
+        askerLocations.forget(turnId);
         AssistantTurn turn = repository.lockTurn(turnId).orElse(null);
         if (turn == null || !AssistantTurnStatus.valueOf(turn.getStatus()).isOpen()) return;
         MarketplaceConversation conversation = chatRepository.find(turn.getConversationId(), null).orElse(null);

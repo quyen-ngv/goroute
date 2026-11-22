@@ -4,11 +4,13 @@ import com.ds.goroute.config.AiTripWorkerProperties;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.entity.AssistantHistoryMessage;
 import com.ds.goroute.entity.AssistantTurn;
+import com.ds.goroute.entity.LocationImage;
 import com.ds.goroute.entity.MarketplaceConversation;
 import com.ds.goroute.entity.Place;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.AssistantRepository;
+import com.ds.goroute.repository.LocationImageRepository;
 import com.ds.goroute.repository.MarketplaceChatRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.TripRepository;
@@ -83,6 +85,8 @@ public class AssistantContextBuilder {
     private final AssistantProposalService proposals;
     private final ObjectMapper objectMapper;
     private final ConsentService consents;
+    private final AssistantAskerLocations askerLocations;
+    private final LocationImageRepository areas;
 
     @Transactional(readOnly = true)
     public Map<String, Object> build(UUID turnId) {
@@ -121,7 +125,33 @@ public class AssistantContextBuilder {
                 "webSearch", businessConfig.getBoolean(BusinessConfigKey.ASSISTANT_WEB_SEARCH_ENABLED),
                 "timeoutSeconds", Math.max(30, turnTimeout - WORKER_TIMEOUT_MARGIN_SECONDS)));
         payload.put("logPayloads", businessConfig.getBoolean(BusinessConfigKey.ASSISTANT_LOG_PAYLOADS));
+        // 1:1 threads only (a trip chat never keeps a position), and last: a failed area lookup
+        // must not spoil the read-only transaction for a query after it.
+        if (MarketplaceConversationType.ASSISTANT.name().equals(conversation.getConversationType())) {
+            payload.put("askerLocation", askerLocation(turn.getId()));
+        }
         return payload;
+    }
+
+    /**
+     * Whether the asker's device position is known for this turn, and the tourist area it falls
+     * in when there is one. The coordinates stay here: the worker only needs to know that the
+     * tools' {@code near_me} will work, and the model reads an area name, never a position.
+     */
+    private Map<String, Object> askerLocation(UUID turnId) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        AssistantAskerLocation here = askerLocations.find(turnId).orElse(null);
+        out.put("known", here != null);
+        if (here == null) return out;
+        try {
+            areas.findAreaIdForPoint(here.lat(), here.lng()).flatMap(areas::findById)
+                    .map(LocationImage::getFullAddress)
+                    .filter(name -> !name.isBlank())
+                    .ifPresent(name -> out.put("area", name));
+        } catch (RuntimeException e) {
+            // The area name is a hint for the model; "known" alone is enough to search near the asker.
+        }
+        return out;
     }
 
     private List<Map<String, Object>> history(MarketplaceConversation conversation, long beforeSequence) {

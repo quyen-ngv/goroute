@@ -16,14 +16,16 @@ class TranslationLocaleTest {
             "zh-TW, ZH_TW", "zh-Hant, ZH_TW", "zh-Hant-TW, ZH_TW", "zh-HK, ZH_TW", "zh-MO, ZH_TW",
             "pt, PT", "pt-BR, PT", "pt-PT, PT",
             "fr, FR", "fr-CA, FR", "it-IT, IT", "de-AT, DE", "es-419, ES", "ja-JP, JA", "ko-KR, KO",
-            "ZH_TW, ZH_TW"
+            "ZH_TW, ZH_TW",
+            "ms, MS", "ms-MY, MS", "id, ID", "id-ID, ID", "lo, LO", "km, KM", "fil, FIL", "fil-PH, FIL",
+            "ar, AR", "ar-EG, AR"
     })
     void normalisesLanguageTags(String tag, TranslationLocale expected) {
         assertThat(TranslationLocale.fromCode(tag)).contains(expected);
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"", " ", "xx", "nl", "nl-BE", "ar-EG", "*"})
+    @ValueSource(strings = {"", " ", "xx", "nl", "nl-BE", "sw-KE", "*"})
     void unknownLanguagesAreEmpty(String tag) {
         assertThat(TranslationLocale.fromCode(tag)).isEmpty();
     }

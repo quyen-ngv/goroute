@@ -16,6 +16,7 @@ import com.ds.goroute.service.FileUploadService;
 import com.ds.goroute.service.ImageUploadOutcome;
 import com.ds.goroute.service.ImageUploadRequest;
 import com.ds.goroute.service.StorageService;
+import com.ds.goroute.service.external.FirebaseService;
 import com.ds.goroute.type.CameraLookKind;
 import com.ds.goroute.type.CameraLookStatus;
 import com.ds.goroute.utils.CameraLookDefinitionValidator;
@@ -49,6 +50,13 @@ public class CameraLookServiceImpl implements CameraLookService {
      */
     static final String STORAGE_PREFIX = "camera-looks";
 
+    /**
+     * The FCM topic every signed-in app subscribes to, and the {@code type} of the data message
+     * sent on it. Both are read by the app (push_notification_service.dart); change them together.
+     */
+    static final String CHANGED_TOPIC = "camera_looks";
+    static final String CHANGED_TYPE = "CAMERA_LOOKS_CHANGED";
+
     /** The catalogue is curated by hand; this only keeps the reads bounded. */
     private static final int MAX_LOOKS = 500;
 
@@ -62,6 +70,7 @@ public class CameraLookServiceImpl implements CameraLookService {
     private final UserCheckinRepository userCheckinRepository;
     private final FileUploadService fileUploadService;
     private final StorageService storageService;
+    private final FirebaseService firebaseService;
 
     @Override
     @Transactional(readOnly = true)
@@ -206,13 +215,18 @@ public class CameraLookServiceImpl implements CameraLookService {
         List<CameraLook> looks = cameraLookRepository.findActive(LocalDateTime.now(), MAX_LOOKS);
         List<Map<String, Object>> filters = new ArrayList<>();
         List<Map<String, Object>> frames = new ArrayList<>();
+        List<Map<String, Object>> groups = new ArrayList<>();
         long newestUpdate = 0;
         for (CameraLook look : looks) {
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("id", look.getLookKey());
             entry.put("name", parseNames(look.getNames()));
             entry.putAll(parseDefinitionFields(look.getDefinition()));
-            (CameraLookKind.FILTER.name().equals(look.getKind()) ? filters : frames).add(entry);
+            switch (CameraLookKind.valueOf(look.getKind())) {
+                case FILTER -> filters.add(entry);
+                case FRAME -> frames.add(entry);
+                case GROUP -> groups.add(entry);
+            }
             if (look.getUpdatedAt() != null) {
                 newestUpdate = Math.max(newestUpdate, look.getUpdatedAt().toEpochSecond(ZoneOffset.UTC));
             }
@@ -223,7 +237,16 @@ public class CameraLookServiceImpl implements CameraLookService {
                 .version(newestUpdate + "-" + looks.size())
                 .filters(filters)
                 .frames(frames)
+                .groups(groups)
                 .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public String adminAnnounce() {
+        String version = publicManifest().getVersion();
+        firebaseService.sendDataToTopic(CHANGED_TOPIC, Map.of("type", CHANGED_TYPE, "version", version));
+        return version;
     }
 
     private List<CameraLookResponse> withUsage(List<CameraLook> looks) {

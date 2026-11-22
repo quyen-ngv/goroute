@@ -18,7 +18,15 @@ public enum TranslationLocale {
     DE("de", "German"),
     ES("es", "Spanish"),
     IT("it", "Italian"),
-    PT("pt", "Portuguese");
+    PT("pt", "Portuguese"),
+    // Owner 2026-11-22: a place abroad stores its country's own name, also in languages the app does not
+    // offer yet (stored and served by locale; no UI change).
+    MS("ms", "Malay"),
+    ID("id", "Indonesian"),
+    LO("lo", "Lao"),
+    KM("km", "Khmer"),
+    FIL("fil", "Filipino"),
+    AR("ar", "Arabic");
 
     public static final TranslationLocale DEFAULT = VI;
     public static final TranslationLocale FALLBACK = EN;

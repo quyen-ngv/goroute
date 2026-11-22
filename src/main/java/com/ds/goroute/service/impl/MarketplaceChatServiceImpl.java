@@ -93,7 +93,8 @@ public class MarketplaceChatServiceImpl implements MarketplaceChatService {
         conversationNotifier.notifyNewMessage(id, a, saved, mentionedMembers(id, r.getMentionedUserIds()));
         events.publishEvent(new com.ds.goroute.event.ChatMessageCreatedEvent(id, saved.getId(), a, saved.getMessageType(),
                 saved.getContent(), r.getMentionedUserIds() == null ? List.of() : List.copyOf(r.getMentionedUserIds()),
-                replyTo, com.ds.goroute.config.filter.AcceptLanguageFilter.currentCode()));
+                replyTo, com.ds.goroute.config.filter.AcceptLanguageFilter.currentCode(),
+                com.ds.goroute.service.assistant.AssistantAskerLocation.of(r.getSenderLocation())));
         return saved;
     }
 

@@ -336,6 +336,31 @@ public class FirebaseService {
         apns.accept(apnsConfigBuilder.setAps(apsBuilder.build()).build());
     }
 
+    /**
+     * A data-only message to every app subscribed to {@code topic}: nothing is shown, the app
+     * acts on it. Best effort: a phone that is off, or an app the system has put to sleep, may
+     * never get it, so the receiver must also have a way to catch up by itself.
+     */
+    public void sendDataToTopic(String topic, Map<String, String> data) {
+        try {
+            Message message = Message.builder()
+                    .setTopic(topic)
+                    .putAllData(data)
+                    // iOS delivers a message with no alert only as a background push.
+                    .setApnsConfig(ApnsConfig.builder()
+                            .putHeader("apns-push-type", "background")
+                            .putHeader("apns-priority", "5")
+                            .setAps(Aps.builder().setContentAvailable(true).build())
+                            .build())
+                    .build();
+            String response = FirebaseMessaging.getInstance().send(message);
+            log.info("Sent FCM data message to topic {}: {}", topic, response);
+        } catch (FirebaseMessagingException e) {
+            log.error("Error sending FCM data message to topic {}: {}", topic, e.getMessage(), e);
+            throw new RuntimeException("Failed to send push notification", e);
+        }
+    }
+
     public void sendPush(String fcmToken, String title, String body, Map<String, Object> data) {
         try {
             Message.Builder messageBuilder = Message.builder().setToken(fcmToken);

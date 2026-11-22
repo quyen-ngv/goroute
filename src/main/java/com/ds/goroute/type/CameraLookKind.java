@@ -7,6 +7,8 @@ package com.ds.goroute.type;
 public enum CameraLookKind {
     /** A colour look: adjust values or a colour matrix, optionally a LUT image. */
     FILTER,
-    /** A transparent PNG laid over the photo, optionally with text slots. */
-    FRAME
+    /** A transparent PNG laid over the photo and/or text slots; shown in the app as a camera. */
+    FRAME,
+    /** A shelf the filters are sorted onto (V294): a key, names and an order, no definition. */
+    GROUP
 }

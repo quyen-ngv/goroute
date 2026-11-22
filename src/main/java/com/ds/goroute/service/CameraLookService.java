@@ -36,4 +36,10 @@ public interface CameraLookService {
 
     /** ACTIVE looks inside their date window, in the app's manifest shape. */
     CameraLookManifestResponse publicManifest();
+
+    /**
+     * Tells every running app that the served set changed, so it fetches the manifest now
+     * instead of the next time it comes to the foreground. Returns the version announced.
+     */
+    String adminAnnounce();
 }

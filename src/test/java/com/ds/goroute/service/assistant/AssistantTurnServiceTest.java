@@ -78,13 +78,15 @@ class AssistantTurnServiceTest {
     @Mock private ApplicationEventPublisher events;
     @Mock private ConsentService consents;
 
+    private final AssistantAskerLocations askerLocations = new AssistantAskerLocations();
     private AssistantTurnService service;
 
     @BeforeEach
     void setUp() {
         ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
         service = new AssistantTurnService(repository, chatRepository, chatService, access, credits,
-                new AssistantTurnSnapshots(mapper), proposals, actions, places, shareValidator, moderation, webSocketService, events, mapper, consents);
+                new AssistantTurnSnapshots(mapper), proposals, actions, places, shareValidator, moderation, webSocketService, events, mapper, consents,
+                askerLocations);
         when(chatRepository.find(eq(CONVERSATION), any())).thenReturn(Optional.of(tripConversation()));
         when(access.isAvailable(ASKER)).thenReturn(true);
         when(credits.canStart(ASKER, AiCreditFeature.ASSISTANT)).thenReturn(true);
@@ -433,6 +435,92 @@ class AssistantTurnServiceTest {
             ref.setPlaceId(id.toString());
             ref.setNote(note);
             return ref;
+        }
+    }
+
+    @Nested
+    @DisplayName("the asker's device position")
+    class AskerPosition {
+
+        private final AssistantAskerLocation here =
+                new AssistantAskerLocation(new BigDecimal("11.8000"), new BigDecimal("108.3000"));
+
+        private ChatMessageCreatedEvent located(List<UUID> mentions) {
+            return new ChatMessageCreatedEvent(CONVERSATION, MESSAGE, ASKER, "TEXT", "tối nay ăn gì gần đây?",
+                    mentions, null, "vi", here);
+        }
+
+        private void oneToOneChat() {
+            when(chatRepository.find(eq(CONVERSATION), any())).thenReturn(Optional.of(MarketplaceConversation.builder()
+                    .id(CONVERSATION).assistantUserId(ASKER)
+                    .conversationType(MarketplaceConversationType.ASSISTANT.name()).build()));
+        }
+
+        private UUID insertedTurnId() {
+            ArgumentCaptor<AssistantTurn> turn = ArgumentCaptor.forClass(AssistantTurn.class);
+            verify(repository).insertTurn(turn.capture());
+            return turn.getValue().getId();
+        }
+
+        @Test
+        void aOneToOneQuestionKeepsItForItsTurnOnly() {
+            oneToOneChat();
+
+            service.onMessage(located(List.of()));
+
+            UUID turnId = insertedTurnId();
+            assertThat(askerLocations.find(turnId)).contains(here);
+            assertThat(askerLocations.size()).isEqualTo(1);
+        }
+
+        @Test
+        void aQuestionWithoutAPositionKeepsNothing() {
+            oneToOneChat();
+
+            service.onMessage(new ChatMessageCreatedEvent(CONVERSATION, MESSAGE, ASKER, "TEXT", "ăn gì?",
+                    List.of(), null, "vi"));
+
+            assertThat(askerLocations.find(insertedTurnId())).isEmpty();
+            assertThat(askerLocations.size()).isZero();
+        }
+
+        @Test
+        void aTripChatNeverKeepsIt() {
+            service.onMessage(located(List.of(BOT)));
+
+            assertThat(askerLocations.find(insertedTurnId())).isEmpty();
+            assertThat(askerLocations.size()).isZero();
+        }
+
+        @Test
+        void aRejectedQuestionNeverKeepsIt() {
+            oneToOneChat();
+            when(credits.canStart(ASKER, AiCreditFeature.ASSISTANT)).thenReturn(false);
+
+            service.onMessage(located(List.of()));
+
+            assertThat(askerLocations.size()).isZero();
+        }
+
+        @Test
+        void theAnswerAndAFailureBothDropIt() {
+            UUID answered = UUID.randomUUID();
+            UUID failed = UUID.randomUUID();
+            for (UUID turnId : List.of(answered, failed)) {
+                AssistantTurn turn = AssistantTurn.builder().id(turnId).conversationId(CONVERSATION).userId(ASKER)
+                        .triggerMessageId(MESSAGE).status(AssistantTurnStatus.RUNNING.name()).locale("vi").steps("[]")
+                        .build();
+                when(repository.lockTurn(turnId)).thenReturn(Optional.of(turn));
+                when(repository.findTurn(turnId)).thenReturn(Optional.of(turn));
+                askerLocations.remember(turnId, here);
+            }
+            AssistantReplyRequest reply = new AssistantReplyRequest();
+            reply.setMarkdown("ok");
+
+            service.complete(answered, reply);
+            service.fail(failed, "worker failure");
+
+            assertThat(askerLocations.size()).isZero();
         }
     }
 

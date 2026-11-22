@@ -84,12 +84,14 @@ class AssistantToolServiceTest {
     @Mock private AssistantMapSearch mapSearch;
 
     private AssistantToolService service;
+    private AssistantAskerLocations askerLocations;
 
     @BeforeEach
     void setUp() {
+        askerLocations = new AssistantAskerLocations();
         service = new AssistantToolService(turns, trips, activities, places, placeService, areas, weatherService,
                 eventService, meetupService, foodService, expenseService, tripAccessGuard, tripService,
-                checkinService, reviewService, tripSnapshots, mapSearch, new ObjectMapper());
+                checkinService, reviewService, tripSnapshots, mapSearch, askerLocations, new ObjectMapper());
         when(turns.requireRunning(TURN)).thenReturn(AssistantTurn.builder().id(TURN).tripId(TRIP).userId(ASKER).build());
         when(trips.findById(TRIP)).thenReturn(Optional.of(Trip.builder().id(TRIP).name("Đà Lạt")
                 .destination("Đà Lạt").destinationLat(new BigDecimal("11.94")).destinationLng(new BigDecimal("108.44"))
@@ -250,5 +252,137 @@ class AssistantToolServiceTest {
     private static UserCheckinResponse checkin(UUID placeId, String name, String by, int day) {
         return UserCheckinResponse.builder().id(UUID.randomUUID()).placeId(placeId).placeName(name)
                 .userDisplayName(by).visitedAt(LocalDateTime.of(2026, 10, day, 10, 0)).build();
+    }
+
+    // ---------------------------------------------------------------- near_me
+
+    private static final AssistantAskerLocation HERE =
+            new AssistantAskerLocation(new BigDecimal("11.8000"), new BigDecimal("108.3000"));
+
+    private static AssistantTurn runningTurn() {
+        return AssistantTurn.builder().id(TURN).tripId(TRIP).userId(ASKER).build();
+    }
+
+    private Trip trip() {
+        return trips.findById(TRIP).orElseThrow();
+    }
+
+    @Test
+    void nearMeAnchorsOnTheAskersDeviceWithTheShortRadius() {
+        askerLocations.remember(TURN, HERE);
+        UUID areaId = UUID.randomUUID();
+        LocationImage area = LocationImage.builder().id(areaId).fullAddress("Đức Trọng").build();
+        when(areas.findAreaIdForPoint(HERE.lat(), HERE.lng())).thenReturn(Optional.of(areaId));
+        when(areas.findById(areaId)).thenReturn(Optional.of(area));
+
+        AssistantToolService.Anchor anchor = service.anchor(runningTurn(), trip(), Map.of("near_me", true));
+
+        assertThat(anchor.lat()).isEqualByComparingTo("11.8");
+        assertThat(anchor.lng()).isEqualByComparingTo("108.3");
+        assertThat(anchor.nearActivity()).isTrue();
+        assertThat(anchor.area()).isSameAs(area);
+        assertThat(anchor.label()).isEqualTo("your location (Đức Trọng)");
+        assertThat(anchor.date()).isNull();
+    }
+
+    @Test
+    void nearMeOutsideEveryTouristAreaHasNoAreaFilter() {
+        askerLocations.remember(TURN, HERE);
+        when(areas.findAreaIdForPoint(any(), any())).thenReturn(Optional.empty());
+
+        AssistantToolService.Anchor anchor = service.anchor(runningTurn(), null, Map.of("near_me", "true"));
+
+        assertThat(anchor.area()).isNull();
+        assertThat(anchor.label()).isEqualTo("your location");
+    }
+
+    @Test
+    void nearMeWinsOverCityAndActivity() {
+        askerLocations.remember(TURN, HERE);
+        when(areas.findAreaIdForPoint(any(), any())).thenReturn(Optional.empty());
+
+        AssistantToolService.Anchor anchor = service.anchor(runningTurn(), trip(),
+                Map.of("near_me", true, "city", "Đà Lạt", "activity_id", UUID.randomUUID().toString()));
+
+        assertThat(anchor.lat()).isEqualByComparingTo("11.8");
+        verify(areas, never()).findBestMatch(any());
+        verify(activities, never()).findById(any());
+    }
+
+    @Test
+    void nearMeWithoutAPositionIsAnErrorTheModelCanActOnNotTheCity() {
+        Map<String, Object> out = service.execute(TURN, "search_places",
+                Map.of("near_me", true, "city", "Đà Lạt", "kind", "food"));
+
+        assertThat(out).containsOnlyKeys("error");
+        assertThat((String) out.get("error")).startsWith("Device location unknown").contains("city or activity_id");
+        verify(places, never()).findActiveForAiInArea(any(), any(), any(), any(), any(), anyInt());
+        verify(areas, never()).findBestMatch(any());
+    }
+
+    @Test
+    void aPositionKeptForAnotherTurnIsNotUsed() {
+        askerLocations.remember(UUID.randomUUID(), HERE);
+
+        assertThat(service.execute(TURN, "get_weather", Map.of("near_me", true))).containsOnlyKeys("error");
+    }
+
+    @Test
+    void withoutNearMeAKnownPositionChangesNothing() {
+        askerLocations.remember(TURN, HERE);
+
+        AssistantToolService.Anchor unset = service.anchor(runningTurn(), trip(), Map.of());
+        AssistantToolService.Anchor off = service.anchor(runningTurn(), trip(), Map.of("near_me", false));
+
+        assertThat(unset.lat()).isEqualByComparingTo("11.94");
+        assertThat(unset.label()).isEqualTo("Đà Lạt");
+        assertThat(unset.nearActivity()).isFalse();
+        assertThat(off.lat()).isEqualByComparingTo("11.94");
+    }
+
+    @Test
+    void anchorOrderWithoutNearMeIsActivityThenCityThenDayThenTrip() {
+        UUID activityId = UUID.randomUUID();
+        when(activities.findById(activityId)).thenReturn(Optional.of(Activity.builder().id(activityId).tripId(TRIP)
+                .name("Chợ Đêm").lat(new BigDecimal("11.95")).lng(new BigDecimal("108.45")).build()));
+        UUID cityId = UUID.randomUUID();
+        LocationImage hoiAn = LocationImage.builder().id(cityId).fullAddress("Hội An")
+                .latitude(new BigDecimal("15.88")).longitude(new BigDecimal("108.33")).build();
+        when(areas.findBestMatch("hoi an")).thenReturn(Optional.of(hoiAn));
+        when(areas.findById(cityId)).thenReturn(Optional.of(hoiAn));
+        when(activities.findByTripIdAndDayNumber(TRIP, 2)).thenReturn(List.of(Activity.builder().tripId(TRIP)
+                .lat(new BigDecimal("11.90")).lng(new BigDecimal("108.40")).build()));
+
+        AssistantToolService.Anchor byActivity = service.anchor(runningTurn(), trip(),
+                Map.of("activity_id", activityId.toString(), "city", "Hội An", "day", 2));
+        AssistantToolService.Anchor byCity = service.anchor(runningTurn(), trip(), Map.of("city", "Hội An", "day", 2));
+        AssistantToolService.Anchor byDay = service.anchor(runningTurn(), trip(), Map.of("day", 2));
+        AssistantToolService.Anchor byTrip = service.anchor(runningTurn(), trip(), Map.of());
+
+        assertThat(byActivity.label()).isEqualTo("Chợ Đêm");
+        assertThat(byActivity.nearActivity()).isTrue();
+        assertThat(byCity.label()).isEqualTo("Hội An");
+        assertThat(byDay.label()).isEqualTo("day 2");
+        assertThat(byTrip.label()).isEqualTo("Đà Lạt");
+    }
+
+    @Test
+    void aNearMeSearchLooksThreeKilometresAroundTheAskerAndNamesNoCoordinates() {
+        askerLocations.remember(TURN, HERE);
+        when(areas.findAreaIdForPoint(any(), any())).thenReturn(Optional.empty());
+        UUID diner = UUID.randomUUID();
+        Place near = place(diner, "Cơm Nhà", 3, 1);
+        near.setLatitude(new BigDecimal("11.8010"));
+        near.setLongitude(new BigDecimal("108.3010"));
+        when(places.findActiveForAiInArea(eq(HERE.lat()), eq(HERE.lng()), eq(BigDecimal.valueOf(3.0)), isNull(), any(),
+                anyInt())).thenReturn(List.of(near));
+
+        Map<String, Object> out = service.execute(TURN, "search_places", Map.of("near_me", true, "kind", "food"));
+
+        assertThat(out).containsEntry("near", "your location").containsEntry("radiusKm", 3.0);
+        assertThat(out.toString()).doesNotContain("11.8").doesNotContain("108.3");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) out.get("places");
+        assertThat(rows).singleElement().satisfies(row -> assertThat(row).containsEntry("name", "Cơm Nhà"));
     }
 }

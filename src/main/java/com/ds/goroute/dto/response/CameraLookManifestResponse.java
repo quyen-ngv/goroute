@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The looks the app adds to its bundled set, in the bundled manifest's own shape
+ * The looks the app offers, in the bundled manifest's own shape
  * ({@code assets/camera_looks/looks.json}): each entry is {@code id}, {@code name} and the
  * fields of its definition laid flat beside them.
  */
@@ -22,4 +22,6 @@ public class CameraLookManifestResponse {
     private String version;
     private List<Map<String, Object>> filters;
     private List<Map<String, Object>> frames;
+    /** The film shelves in order, each {@code id} and {@code name}; a filter names one in {@code group}. */
+    private List<Map<String, Object>> groups;
 }

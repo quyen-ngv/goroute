@@ -30,11 +30,13 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
- * Photo filters and frames of the check-in camera (epic 08, V293). The app bundles a default
- * set; what is managed here is added on top, and a look whose key equals a bundled one replaces it.
+ * Photo filters, frames and film shelves of the check-in camera (epic 08, V293, V294). Once this
+ * holds at least one filter (or frame, or shelf), the app offers the server's list of that kind
+ * in the server's order; its bundled set is only what it shows before it has reached the server.
  */
 @RestController
 @RequestMapping("/v1/api/admin/camera-looks")
@@ -95,6 +97,16 @@ public class AdminCameraLookController extends BaseController {
             @RequestPart("file") MultipartFile file,
             @CurrentUser UUID adminId) {
         return ResponseEntity.ok(ofSucceeded(cameraLookService.adminUpload(file, adminId)));
+    }
+
+    /**
+     * Pushes "the set changed" to every running app. Edits are served as soon as they are saved;
+     * this only saves waiting for each app's next return to the foreground.
+     */
+    @PostMapping("/announce")
+    @PreAuthorize("@adminAuthorization.can(authentication,'camera-looks','update')")
+    public ResponseEntity<BaseResponse<Map<String, String>>> announce() {
+        return ResponseEntity.ok(ofSucceeded(Map.of("version", cameraLookService.adminAnnounce())));
     }
 
     @DeleteMapping("/{lookId}")

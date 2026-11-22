@@ -4,6 +4,7 @@ import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.type.CameraLookKind;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 
 import java.util.Iterator;
 import java.util.Map;
@@ -17,22 +18,26 @@ import java.util.regex.Pattern;
  * here instead of being discovered on a phone.
  *
  * <p>FILTER: {@code adjust} (brightness, contrast, saturation, warmth, tint, fade), {@code matrix}
- * (20 numbers), {@code lut} (URL), {@code strength}, {@code effects} (grain, vignette). At least
- * one of adjust/matrix is required even with a LUT: it is what the app draws where the LUT
- * shader cannot run. {@code group} (the shelf it is listed on) and {@code icon} (the icon on
+ * (20 numbers), {@code lut} (URL), {@code strength}, {@code effects} (grain, vignette). A filter
+ * with a LUT needs adjust or matrix too: it is what the app draws where the LUT shader cannot
+ * run. One with none of the three is the plain look (the photo as taken). {@code group} (the shelf it is listed on) and {@code icon} (the icon on
  * its chip) are names the app looks up; one it does not know falls back to a default.
  *
  * <p>FRAME: {@code images}, {@code photoRect} and {@code texts}, each keyed by shape
- * ({@code threeTwo}, {@code square}); at least one image. {@code canvas} ([width, height]) gives
+ * ({@code threeTwo}, {@code square}). A frame may be text only, and one with neither an image
+ * nor a text is the plain frame. {@code canvas} ([width, height]) gives
  * the frame a shape of its own instead of the camera's. {@code camera} (body, color, film) is
- * how it is drawn in the app's camera picker and the filter it loads. A text slot may carry
+ * how it is drawn in the app's camera picker and the filter it loads. {@code bulge} (0..1) bends
+ * the photo like the image in a convex mirror. A text slot may carry
  * {@code background}, the colour of a pill drawn behind the line.
+ *
+ * <p>GROUP: a film shelf has no definition; the object must be empty.
  */
 public final class CameraLookDefinitionValidator {
 
     private static final Set<String> FILTER_FIELDS =
             Set.of("adjust", "matrix", "lut", "strength", "effects", "group", "icon");
-    private static final Set<String> FRAME_FIELDS = Set.of("images", "photoRect", "texts", "canvas", "camera");
+    private static final Set<String> FRAME_FIELDS = Set.of("images", "photoRect", "texts", "canvas", "camera", "bulge");
     private static final Set<String> CAMERA_FIELDS = Set.of("body", "color", "film");
     private static final Set<String> CAMERA_BODIES = Set.of("compact", "slr", "mini", "box", "toy");
     /** A group id, an icon name or a filter id: the app looks each up and ignores one it does not know. */
@@ -79,10 +84,14 @@ public final class CameraLookDefinitionValidator {
         if (definition == null || !definition.isObject()) {
             throw invalid("definition must be a JSON object");
         }
-        if (kind == CameraLookKind.FILTER) {
-            validateFilter(definition, isLookAssetUrl);
-        } else {
-            validateFrame(definition, isLookAssetUrl);
+        switch (kind) {
+            case FILTER -> validateFilter(definition, isLookAssetUrl);
+            case FRAME -> validateFrame(definition, isLookAssetUrl);
+            case GROUP -> {
+                if (!definition.isEmpty()) {
+                    throw invalid("A film shelf has no definition; send {}");
+                }
+            }
         }
     }
 
@@ -90,8 +99,8 @@ public final class CameraLookDefinitionValidator {
         requireKnownFields(definition, FILTER_FIELDS, "definition");
         JsonNode adjust = definition.get("adjust");
         JsonNode matrix = definition.get("matrix");
-        if (adjust == null && matrix == null) {
-            throw invalid("definition needs adjust or matrix (the fallback where the LUT shader cannot run)");
+        if (definition.has("lut") && adjust == null && matrix == null) {
+            throw invalid("A filter with a lut needs adjust or matrix (the fallback where the LUT shader cannot run)");
         }
         if (adjust != null) {
             validateRanges(adjust, ADJUST_RANGES, "adjust");
@@ -123,9 +132,12 @@ public final class CameraLookDefinitionValidator {
 
     private static void validateFrame(JsonNode definition, Predicate<String> isLookAssetUrl) {
         requireKnownFields(definition, FRAME_FIELDS, "definition");
-        JsonNode images = definition.get("images");
-        if (images == null || !images.isObject() || images.isEmpty()) {
-            throw invalid("images needs threeTwo or square");
+        // A text-only frame, or the plain one, has no images.
+        JsonNode images = definition.has("images")
+                ? definition.get("images")
+                : JsonNodeFactory.instance.objectNode();
+        if (!images.isObject()) {
+            throw invalid("images must be an object keyed by threeTwo / square");
         }
         requireKnownFields(images, SHAPES, "images");
         for (Map.Entry<String, JsonNode> image : (Iterable<Map.Entry<String, JsonNode>>) images::fields) {
@@ -141,6 +153,9 @@ public final class CameraLookDefinitionValidator {
             for (JsonNode side : canvas) {
                 requireInRange(side, 1, 8192, "canvas");
             }
+        }
+        if (definition.has("bulge")) {
+            requireInRange(definition.get("bulge"), 0, 1, "bulge");
         }
         JsonNode camera = definition.get("camera");
         if (camera != null) {
@@ -169,7 +184,11 @@ public final class CameraLookDefinitionValidator {
 
         JsonNode texts = definition.get("texts");
         if (texts != null) {
-            requireShapesOf(texts, images, "texts");
+            // Text needs no image under it, so any shape may carry text.
+            if (!texts.isObject()) {
+                throw invalid("texts must be an object keyed by threeTwo / square");
+            }
+            requireKnownFields(texts, SHAPES, "texts");
             for (Map.Entry<String, JsonNode> shape : (Iterable<Map.Entry<String, JsonNode>>) texts::fields) {
                 String path = "texts." + shape.getKey();
                 JsonNode slots = shape.getValue();

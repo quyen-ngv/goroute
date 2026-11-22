@@ -222,7 +222,8 @@ public class PlaceController extends BaseController {
     /**
      * Trending places around a point: the public places trips and check-ins used most over
      * {@code period} (WEEK, MONTH or YEAR, rolling back from now). Only places used in the
-     * window are listed, so fewer than {@code size} may come back. Public, like the search.
+     * window are listed, so fewer than {@code size} may come back. Trips an AI job created are
+     * not counted. Public, like the search.
      */
     @GetMapping("/trending")
     public ResponseEntity<BaseResponse<List<PlaceResponse>>> getTrendingPlaces(

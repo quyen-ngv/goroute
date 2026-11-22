@@ -617,7 +617,8 @@ public class PlaceServiceImpl implements PlaceService {
                                                  List<String> placeGroups, PlaceTrendingPeriod period, int size) {
         List<UUID> orderedIds = placeRepository.findTrendingUsage(
                         latitude, longitude, radiusKm.multiply(BigDecimal.valueOf(1000)),
-                        normalizedPlaceGroups(placeGroups), period.getDays(), false, size).stream()
+                        // A trip an AI job wrote is not a traveller's choice: left out, as for the planner.
+                        normalizedPlaceGroups(placeGroups), period.getDays(), true, size).stream()
                 .map(PlaceTrendingRow::getPlaceId)
                 .toList();
         if (orderedIds.isEmpty()) {

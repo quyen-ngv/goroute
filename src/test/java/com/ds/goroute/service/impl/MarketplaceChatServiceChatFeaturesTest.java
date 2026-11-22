@@ -338,8 +338,32 @@ class MarketplaceChatServiceChatFeaturesTest {
             assertThat(event.getValue().requestedMentionIds())
                     .containsExactly(com.ds.goroute.service.assistant.AssistantIdentity.BOT_USER_ID);
             assertThat(event.getValue().senderUserId()).isEqualTo(ME);
+            // An app that sends no device position (every older version) is told apart by null.
+            assertThat(event.getValue().senderLocation()).isNull();
             // Pengoo is not a member row, so the push mention list stays empty
             verify(conversationNotifier).notifyNewMessage(eq(CONVERSATION), eq(ME), any(), eq(List.of()));
+        }
+
+        @Test
+        @DisplayName("hands the assistant the sender's position rounded, and keeps it out of the stored message")
+        void publishesTheSendersPositionRoundedAndStoresNoneOfIt() {
+            SendMarketplaceMessageRequest request = send("ăn gì gần đây?");
+            com.ds.goroute.dto.request.SenderLocationRequest location = new com.ds.goroute.dto.request.SenderLocationRequest();
+            location.setLatitude(new java.math.BigDecimal("11.80004999"));
+            location.setLongitude(new java.math.BigDecimal("108.30005001"));
+            request.setSenderLocation(location);
+
+            service.send(ME, CONVERSATION, request);
+
+            ArgumentCaptor<com.ds.goroute.event.ChatMessageCreatedEvent> event =
+                    ArgumentCaptor.forClass(com.ds.goroute.event.ChatMessageCreatedEvent.class);
+            verify(events).publishEvent(event.capture());
+            assertThat(event.getValue().senderLocation().lat()).isEqualTo(new java.math.BigDecimal("11.8000"));
+            assertThat(event.getValue().senderLocation().lng()).isEqualTo(new java.math.BigDecimal("108.3001"));
+            ArgumentCaptor<MarketplaceMessage> stored = ArgumentCaptor.forClass(MarketplaceMessage.class);
+            verify(repo).insertMessage(stored.capture());
+            assertThat(stored.getValue().getContent()).isEqualTo("ăn gì gần đây?");
+            assertThat(String.valueOf(stored.getValue())).doesNotContain("11.8").doesNotContain("108.3");
         }
 
         @Test

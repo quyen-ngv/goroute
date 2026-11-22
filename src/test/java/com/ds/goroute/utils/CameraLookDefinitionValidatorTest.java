@@ -38,8 +38,17 @@ class CameraLookDefinitionValidatorTest {
                 "{\"matrix\":[1,0,0,0,0, 0,1,0,0,0, 0,0,1,0,0, 0,0,0,1,0]}"));
     }
 
+    @Test
+    @DisplayName("Should accept the plain filter, and a shelf and an icon on a filter")
+    void acceptsPlainAndShelvedFilter() {
+        assertThatNoException().isThrownBy(() -> validate(CameraLookKind.FILTER, "{}"));
+        assertThatNoException().isThrownBy(() -> validate(CameraLookKind.FILTER,
+                "{\"adjust\":{},\"group\":\"stock\",\"icon\":\"sun\"}"));
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {
+            "{\"adjust\":{},\"group\":\"Film Stock\"}",
             // A LUT alone has no fallback for devices where the shader cannot run.
             "{\"lut\":\"https://cdn.example/camera-looks/a.png\"}",
             "{\"adjust\":{\"contrast\":3.5}}",
@@ -68,9 +77,38 @@ class CameraLookDefinitionValidatorTest {
                 """.formatted(OWN, OWN)));
     }
 
+    @Test
+    @DisplayName("Should accept the plain frame and a text-only frame drawn as a camera")
+    void acceptsPlainAndTextOnlyFrame() {
+        assertThatNoException().isThrownBy(() -> validate(CameraLookKind.FRAME, "{}"));
+        assertThatNoException().isThrownBy(() -> validate(CameraLookKind.FRAME, """
+                {"camera":{"body":"mini","color":"#FFC93C","film":"gold"},
+                 "texts":{"threeTwo":[{"source":"time","x":0.5,"y":0.08,"size":0.04,"color":"#FFFFFF",
+                   "background":"#66000000","weight":600,"align":"center","uppercase":false,"maxWidth":0.6}]}}
+                """));
+    }
+
+    @Test
+    @DisplayName("Should accept a frame with a shape of its own")
+    void acceptsCanvasFrame() {
+        assertThatNoException().isThrownBy(() -> validate(CameraLookKind.FRAME, """
+                {"images":{"threeTwo":"%s"},"canvas":[1620,1296],"photoRect":{"threeTwo":[0.02,0.125,0.96,0.75]},"bulge":0.55}
+                """.formatted(OWN)));
+    }
+
+    @Test
+    @DisplayName("Should accept a film shelf only with an empty definition")
+    void shelfHasNoDefinition() {
+        assertThatNoException().isThrownBy(() -> validate(CameraLookKind.GROUP, "{}"));
+        assertThatThrownBy(() -> validate(CameraLookKind.GROUP, "{\"icon\":\"sun\"}"))
+                .isInstanceOf(BusinessException.class);
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {
-            "{\"images\":{}}",
+            "{\"canvas\":[0,100]}",
+            "{\"bulge\":1.5}",
+            "{\"camera\":{\"body\":\"drone\"}}",
             "{\"images\":{\"wide\":\"https://cdn.example/camera-looks/a.png\"}}",
             "{\"images\":{\"square\":\"https://elsewhere.example/a.png\"}}",
             // A rectangle for a shape the frame has no image of.

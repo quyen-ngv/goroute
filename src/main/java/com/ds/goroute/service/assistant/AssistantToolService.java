@@ -91,6 +91,10 @@ public class AssistantToolService {
     static final int MAX_COMMUNITY_ROWS = 5;
     static final int MAX_TRIP_CHECKINS = 15;
     static final int MAX_GUIDE_CHARS = 1500;
+    static final String NEAR_ME_LABEL = "your location";
+    /** The answer to {@code near_me} without a position; worded so the model can act on it. */
+    static final String NEAR_ME_UNKNOWN = "Device location unknown: near_me cannot be used. Ask the user which area "
+            + "they are in, or search again with city or activity_id instead of near_me.";
     /** Guide section type -> the key the model reads. */
     private static final Map<String, String> GUIDE_KEYS = guideKeys();
     private static final ZoneId LOCAL_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
@@ -112,6 +116,7 @@ public class AssistantToolService {
     private final ReviewService reviewService;
     private final AssistantTripSnapshots tripSnapshots;
     private final AssistantMapSearch mapSearch;
+    private final AssistantAskerLocations askerLocations;
     private final ObjectMapper objectMapper;
 
     public Map<String, Object> execute(UUID turnId, String tool, Map<String, Object> args) {
@@ -122,10 +127,10 @@ public class AssistantToolService {
             return switch (tool) {
                 case "search_places" -> searchPlaces(turn, trip, input);
                 case "get_place_details" -> placeDetails(input);
-                case "get_weather" -> weather(trip, input);
-                case "search_events" -> events(trip, input);
+                case "get_weather" -> weather(turn, trip, input);
+                case "search_events" -> events(turn, trip, input);
                 case "search_meetups" -> meetups(turn, trip, input);
-                case "get_local_dishes" -> localDishes(trip, input);
+                case "get_local_dishes" -> localDishes(turn, trip, input);
                 case "travel_time" -> travelTime(trip, input);
                 case "list_my_trips" -> myTrips(turn);
                 case "get_trip" -> tripDetails(turn, input);
@@ -158,7 +163,7 @@ public class AssistantToolService {
      * rows. When it finds one, neither relaxation runs: they stand in for a name the map found.
      */
     private Map<String, Object> searchPlaces(AssistantTurn turn, Trip trip, Map<String, Object> args) {
-        Anchor anchor = anchor(trip, args);
+        Anchor anchor = anchor(turn, trip, args);
         PlaceQuery request = PlaceQuery.of(text(args.get("query")), strings(args.get("types")), text(args.get("kind")));
         double radius = clamp(number(args.get("radius_km")),
                 anchor.nearActivity() ? NEAR_ACTIVITY_RADIUS_KM : DEFAULT_RADIUS_KM, 0.5, MAX_RADIUS_KM);
@@ -278,8 +283,8 @@ public class AssistantToolService {
         return out;
     }
 
-    private Map<String, Object> weather(Trip trip, Map<String, Object> args) {
-        Anchor anchor = anchor(trip, args);
+    private Map<String, Object> weather(AssistantTurn turn, Trip trip, Map<String, Object> args) {
+        Anchor anchor = anchor(turn, trip, args);
         CityWeatherResponse weather = weatherService.getCurrentWeather(anchor.lat(), anchor.lng());
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("near", anchor.label());
@@ -312,8 +317,8 @@ public class AssistantToolService {
      * nothing, the next upcoming events nearby are returned instead and marked as such, so
      * "nothing on Sunday" can still offer what is on soon.
      */
-    private Map<String, Object> events(Trip trip, Map<String, Object> args) {
-        Anchor anchor = anchor(trip, args);
+    private Map<String, Object> events(AssistantTurn turn, Trip trip, Map<String, Object> args) {
+        Anchor anchor = anchor(turn, trip, args);
         ZoneId zone = trip == null ? LOCAL_ZONE : com.ds.goroute.service.time.TripTimeZones.zoneOf(trip);
         LocalDate today = LocalDate.now(zone);
         LocalDate from = firstNonNull(date(args.get("from")), anchor.date());
@@ -388,7 +393,7 @@ public class AssistantToolService {
 
     /** Approved meetups (people inviting strangers to coffee, a walk, a game night) near the anchor. */
     private Map<String, Object> meetups(AssistantTurn turn, Trip trip, Map<String, Object> args) {
-        Anchor anchor = anchor(trip, args);
+        Anchor anchor = anchor(turn, trip, args);
         List<MeetupCategory> categories = new ArrayList<>();
         for (String code : Optional.ofNullable(strings(args.get("categories"))).orElse(List.of())) {
             try {
@@ -422,8 +427,8 @@ public class AssistantToolService {
         return out;
     }
 
-    private Map<String, Object> localDishes(Trip trip, Map<String, Object> args) {
-        Anchor anchor = anchor(trip, args);
+    private Map<String, Object> localDishes(AssistantTurn turn, Trip trip, Map<String, Object> args) {
+        Anchor anchor = anchor(turn, trip, args);
         String slug = citySlug(anchor.area());
         if (slug == null) return error("No dish list for this area");
         List<Map<String, Object>> rows = new ArrayList<>();
@@ -562,7 +567,7 @@ public class AssistantToolService {
             out.put("withPlace", place.getTitle());
             found = tripService.getPublicTripsWithPlace(placeId, 0, limit + 1, turn.getUserId());
         } else {
-            Anchor anchor = anchor(trip, args);
+            Anchor anchor = anchor(turn, trip, args);
             out.put("near", anchor.label());
             found = tripService.searchPublicTrips(anchor.lat(), anchor.lng(), BigDecimal.valueOf(PUBLIC_TRIP_RADIUS_KM),
                     null, words, false, null, false, words == null, null, 0, limit + 1, turn.getUserId(), turn.getUserId());
@@ -813,11 +818,34 @@ public class AssistantToolService {
 
     // ---------------------------------------------------------------- anchoring
 
-    /** Where a question is about, in priority order: an activity, a named city, a trip day, the trip. */
+    /**
+     * Where a question is about, in priority order: the asker's device ({@code near_me}), an
+     * activity, a named city, a trip day, the trip. {@code nearActivity} marks an anchor that is
+     * one exact point (a stop, the asker), around which a search stays within walking or a short
+     * ride ({@link #NEAR_ACTIVITY_RADIUS_KM}) rather than covering a whole destination.
+     */
     record Anchor(BigDecimal lat, BigDecimal lng, LocationImage area, String label, LocalDate date, boolean nearActivity) {
     }
 
-    Anchor anchor(Trip trip, Map<String, Object> args) {
+    /**
+     * {@code near_me: true} wins over every other argument: the model sets it only for "near me /
+     * gần đây", while it fills {@code city} from the trip out of habit, which is how a traveller
+     * 17 km from the trip's destination got the destination's restaurants. {@code day} still gives
+     * the date (opening hours, the events window). Without a known position it is an error, never
+     * a silent fall back to the city: that fall back is the wrong answer this argument exists for.
+     */
+    Anchor anchor(AssistantTurn turn, Trip trip, Map<String, Object> args) {
+        if (isTrue(args.get("near_me"))) {
+            AssistantAskerLocation here = askerLocations.find(turn.getId())
+                    .orElseThrow(() -> new IllegalArgumentException(NEAR_ME_UNKNOWN));
+            Integer askedDay = integer(args.get("day"));
+            LocalDate date = trip == null || askedDay == null ? null
+                    : AssistantTripSnapshots.dateOfDay(trip, askedDay).orElse(null);
+            LocationImage area = areaFor(here.lat(), here.lng());
+            String label = area == null || area.getFullAddress() == null ? NEAR_ME_LABEL
+                    : NEAR_ME_LABEL + " (" + area.getFullAddress() + ")";
+            return new Anchor(here.lat(), here.lng(), area, label, date, true);
+        }
         UUID activityId = uuid(args.get("activity_id"));
         if (activityId != null && trip != null) {
             Activity activity = activities.findById(activityId).filter(a -> trip.getId().equals(a.getTripId()))
@@ -1075,6 +1103,11 @@ public class AssistantToolService {
 
     private static <T> T firstNonNull(T first, T second) {
         return first != null ? first : second;
+    }
+
+    /** A flag argument: JSON true, or the text "true" some models write. */
+    private static boolean isTrue(Object value) {
+        return Boolean.TRUE.equals(value) || (value instanceof String text && "true".equalsIgnoreCase(text.trim()));
     }
 
     private static Integer integer(Object value) {
