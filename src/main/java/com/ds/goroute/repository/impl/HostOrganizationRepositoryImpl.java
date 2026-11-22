@@ -1,5 +1,6 @@
 package com.ds.goroute.repository.impl;
 
+import com.ds.goroute.config.cache.AuthSubjectCache;
 import com.ds.goroute.entity.HostOrganization;
 import com.ds.goroute.entity.OrganizationMember;
 import com.ds.goroute.entity.OrganizationMemberScope;
@@ -18,8 +19,14 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class HostOrganizationRepositoryImpl implements HostOrganizationRepository {
     private final HostOrganizationMapper mapper;
+    /** Owning or joining an organization is what makes a user ROLE_PARTNER in the JWT filter. */
+    private final AuthSubjectCache authSubjectCache;
 
-    @Override public int insert(HostOrganization organization) { return mapper.insertOrganization(organization); }
+    @Override public int insert(HostOrganization organization) {
+        int inserted = mapper.insertOrganization(organization);
+        authSubjectCache.evict(organization.getOwnerUserId());
+        return inserted;
+    }
     @Override public int update(HostOrganization organization) { return mapper.updateOrganization(organization); }
     @Override public int updateVerificationState(HostOrganization organization) { return mapper.updateVerificationState(organization); }
     @Override public int updateBillingProfile(UUID id, long dataVersion, BigDecimal commissionPercent, String billingEmail,
@@ -39,9 +46,15 @@ public class HostOrganizationRepositoryImpl implements HostOrganizationRepositor
         return Optional.ofNullable(mapper.findMember(organizationId, userId));
     }
     @Override public List<OrganizationMember> findMembers(UUID organizationId) { return mapper.findMembers(organizationId); }
-    @Override public int upsertMember(OrganizationMember member) { return mapper.upsertMember(member); }
+    @Override public int upsertMember(OrganizationMember member) {
+        int upserted = mapper.upsertMember(member);
+        authSubjectCache.evict(member.getUserId());
+        return upserted;
+    }
     @Override public int updateMemberStatus(UUID organizationId, UUID userId, String status, LocalDateTime updatedAt) {
-        return mapper.updateMemberStatus(organizationId, userId, status, updatedAt);
+        int updated = mapper.updateMemberStatus(organizationId, userId, status, updatedAt);
+        authSubjectCache.evict(userId);
+        return updated;
     }
     @Override public List<OrganizationMemberScope> findMemberScopes(UUID membershipId,String resourceType){return mapper.findMemberScopes(membershipId,resourceType);}
     @Override public Optional<OrganizationMemberScope> findMemberScope(UUID id){return Optional.ofNullable(mapper.findMemberScope(id));}

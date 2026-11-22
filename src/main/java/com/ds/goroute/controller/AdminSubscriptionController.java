@@ -1,7 +1,10 @@
 package com.ds.goroute.controller;
 
 import com.ds.goroute.annotations.CurrentUser;
+import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.GrantSubscriptionRequest;
+import com.ds.goroute.dto.request.UpdatePlanAiCreditsRequest;
+import com.ds.goroute.entity.SubscriptionPlan;
 import com.ds.goroute.service.SubscriptionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +14,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -35,6 +39,14 @@ public class AdminSubscriptionController extends BaseController {
     @PreAuthorize("@adminAuthorization.can(authentication,'subscriptions','get')")
     public ResponseEntity<?> plans() {
         return ResponseEntity.ok(ofSucceeded(subscriptionService.plans(false)));
+    }
+
+    @PutMapping("/plans/{code}/ai-credits")
+    @PreAuthorize("@adminAuthorization.can(authentication,'subscriptions','update')")
+    public ResponseEntity<BaseResponse<SubscriptionPlan>> updatePlanAiCredits(
+            @PathVariable String code, @Valid @RequestBody UpdatePlanAiCreditsRequest request) {
+        return ResponseEntity.ok(ofSucceeded(subscriptionService.updatePlanAiCredits(
+                code, request.getCreditsPerRefill(), request.getRefillMonths())));
     }
 
     @GetMapping("/users/{userId}")

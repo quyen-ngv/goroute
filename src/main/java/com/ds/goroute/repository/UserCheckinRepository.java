@@ -1,9 +1,13 @@
 package com.ds.goroute.repository;
 
+import com.ds.goroute.dto.FeedCursor;
+import com.ds.goroute.dto.FeedGeoFilter;
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.entity.CheckinCluster;
 import com.ds.goroute.entity.CheckinClusterDecision;
 import com.ds.goroute.entity.UserCheckin;
 import com.ds.goroute.entity.UserCheckinLocationHistory;
+import com.ds.goroute.entity.CameraLookUsageRow;
 import com.ds.goroute.entity.UserCheckinPhoto;
 import com.ds.goroute.entity.CheckinLikeCount;
 
@@ -21,6 +25,8 @@ public interface UserCheckinRepository {
 
     Optional<UserCheckin> findById(UUID id);
 
+    List<UserCheckin> findByIds(java.util.Collection<UUID> ids);
+
     /**
      * The author's own check-in for a given activity, place or trip, newest first.
      *
@@ -31,10 +37,23 @@ public interface UserCheckinRepository {
 
     Optional<UserCheckin> findByIdempotencyKey(UUID userId, String idempotencyKey);
 
-    List<UserCheckin> findFeed(UUID excludeUserId, int limit, int offset);
+    /**
+     * {@code geo} limits the feed to an area; null means everywhere. {@code after} resumes
+     * after a post's sort key (keyset paging); null pages by {@code offset}.
+     */
+    List<UserCheckin> findFeed(UUID excludeUserId, FeedGeoFilter geo, FeedPlaceKind kind, FeedCursor after,
+                               int limit, int offset);
+
+    /**
+     * Public check-ins by the people {@code viewerId} follows, newest first, without
+     * deleted authors, taken-down posts or blocks in either direction.
+     */
+    List<UserCheckin> findFollowingFeed(UUID viewerId, Double focusLat, Double focusLng, FeedPlaceKind kind,
+                                        int limit, int offset);
 
     List<UserCheckin> findByUser(UUID userId, boolean includePrivate, int limit, int offset);
 
+    /** How many rows {@link #findByUser} pages through for the same arguments. */
     long countByUser(UUID userId, boolean includePrivate);
 
     List<UserCheckin> findByPlace(UUID placeId, int limit, int offset);
@@ -46,6 +65,20 @@ public interface UserCheckinRepository {
      * visibility filter is in the query rather than left to the caller.
      */
     List<UserCheckin> findByTrip(UUID tripId, int limit);
+
+    /**
+     * The author's own check-ins for a trip story, every visibility, oldest first: recorded on the
+     * trip, or (when {@code from}/{@code to} are given) made in that window without a trip.
+     */
+    List<UserCheckin> findMineForTrip(UUID userId, UUID tripId, LocalDateTime from, LocalDateTime to, int limit);
+
+    /** Public, live check-ins made at a local event, newest visit first. */
+    List<UserCheckin> findByLocalEvent(UUID eventId, int limit, int offset);
+
+    long countByLocalEvent(UUID eventId);
+
+    /** Of {@code eventIds}, the events this person has a live check-in at. */
+    java.util.Set<UUID> findCheckedInLocalEventIds(UUID userId, java.util.Collection<UUID> eventIds);
 
     long countByUserAndPlace(UUID userId, UUID placeId);
 
@@ -87,6 +120,12 @@ public interface UserCheckinRepository {
 
     int deletePhotos(UUID checkinId);
 
+    /** Live check-in photos per filter key (camera looks, V293); keys with none are absent. */
+    List<CameraLookUsageRow> countPhotosByFilterKeys(List<String> filterKeys);
+
+    /** Live check-in photos per frame key (camera looks, V293); keys with none are absent. */
+    List<CameraLookUsageRow> countPhotosByFrameKeys(List<String> frameKeys);
+
     boolean hasLike(UUID checkinId, UUID userId);
 
     int insertLike(UUID checkinId, UUID userId);
@@ -122,12 +161,15 @@ public interface UserCheckinRepository {
      *
      * @param hidden null for both, true for only the ones a takedown currently hides
      */
-    List<UserCheckin> findAllForAdmin(String search, UUID userId, Boolean hidden, int limit, int offset);
+    List<UserCheckin> findAllForAdmin(String search, UUID userId, Boolean hidden, boolean needsPlace,
+                                      int limit, int offset);
 
-    long countAllForAdmin(String search, UUID userId, Boolean hidden);
+    long countAllForAdmin(String search, UUID userId, Boolean hidden, boolean needsPlace);
 
     /** Moves a check-in onto a catalogue place, keeping the author's own wording. */
     int assignPlace(UUID id, UUID placeId, String locationKey, String provinceCode);
+
+    int dismissPlace(UUID id, UUID adminId);
 
     int insertLocationHistory(UserCheckinLocationHistory history);
 
@@ -139,4 +181,23 @@ public interface UserCheckinRepository {
     int updateVerification(UserCheckin checkin);
 
     List<com.ds.goroute.dto.response.VisitedWardResponse> findVisitedWards(UUID userId, boolean includePrivate);
+
+    // --- Feed search index -----------------------------------------------------------
+
+    /** The next {@code limit} check-ins anyone may find, after {@code afterId} (null: from the start). */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexPage(UUID afterId, int limit);
+
+    /** Check-ins changed after ({@code afterUpdatedAt}, {@code afterId}), each saying whether it is still findable. */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexChanges(
+            LocalDateTime afterUpdatedAt, UUID afterId, int limit);
+
+    Optional<LocalDateTime> findSearchIndexMaxUpdatedAt();
+
+    // --- legacy reviews --------------------------------------------------------------
+
+    /**
+     * Turns up to {@code limit} reviews that no check-in carries into check-ins with the
+     * review's photos, oldest first. Returns the place of each check-in created.
+     */
+    List<UUID> convertLegacyReviews(int limit);
 }

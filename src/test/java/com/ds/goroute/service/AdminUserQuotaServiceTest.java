@@ -42,7 +42,6 @@ class AdminUserQuotaServiceTest {
         assertThat(response.getFreeTrip().getGlobalLimit()).isEqualTo(3);
         assertThat(response.getFreeTrip().getOverrideLimit()).isEqualTo(7);
         assertThat(response.getFreeTrip().getEffectiveLimit()).isEqualTo(7);
-        assertThat(response.getAiTripFree().getEffectiveLimit()).isEqualTo(3);
     }
 
     @Test
@@ -51,19 +50,19 @@ class AdminUserQuotaServiceTest {
         when(overrideRepository.findByUserId(userId))
                 .thenReturn(Optional.empty());
         UserQuotaOverride saved = UserQuotaOverride.builder()
-                .userId(userId).dataVersion(1L).aiTripProQuota(20).build();
+                .userId(userId).dataVersion(1L).freeTripQuota(20).build();
         when(policy.findOverride(userId)).thenReturn(Optional.of(saved));
         when(overrideRepository.insert(any(UserQuotaOverride.class))).thenReturn(1);
         stubGlobalQuotas();
 
         UpdateUserQuotaOverridesRequest request = new UpdateUserQuotaOverridesRequest();
-        request.setAiTripProQuota(20);
+        request.setFreeTripQuota(20);
         AdminUserQuotaResponse response = service.update(userId, request);
 
         verify(overrideRepository).insert(any(UserQuotaOverride.class));
         verify(policy).evict(userId);
-        assertThat(response.getAiTripPro().getOverrideLimit()).isEqualTo(20);
-        assertThat(response.getAiTripPro().getEffectiveLimit()).isEqualTo(20);
+        assertThat(response.getFreeTrip().getOverrideLimit()).isEqualTo(20);
+        assertThat(response.getFreeTrip().getEffectiveLimit()).isEqualTo(20);
     }
 
     @Test
@@ -84,8 +83,5 @@ class AdminUserQuotaServiceTest {
 
     private void stubGlobalQuotas() {
         when(businessConfig.getInt(BusinessConfigKey.TRIP_FREE_CREATION_QUOTA)).thenReturn(3);
-        when(businessConfig.getInt(BusinessConfigKey.AI_TRIP_FREE_QUOTA)).thenReturn(3);
-        when(businessConfig.getInt(BusinessConfigKey.AI_TRIP_PRO_QUOTA)).thenReturn(10);
-        when(businessConfig.getInt(BusinessConfigKey.SOCIAL_LOCATION_DAILY_JOB_LIMIT)).thenReturn(5);
     }
 }

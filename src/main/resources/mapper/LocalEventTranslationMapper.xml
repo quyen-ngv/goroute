@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.localevent.persistence.LocalEventTranslationMapper">
+
+    <!-- Columns are auto-mapped (mapUnderscoreToCamelCase). -->
+    <sql id="Columns">
+        event_id, locale, summary, description, schedule_note, price_note, lunar_date_text,
+        translation_source, status, source_hash, attempts, created_at, updated_at
+    </sql>
+
+    <select id="find" resultType="com.ds.goroute.localevent.domain.LocalEventTranslation">
+        SELECT <include refid="Columns"/>
+        FROM local_event_translations
+        WHERE event_id = #{eventId} AND locale = #{locale}
+    </select>
+
+    <select id="findByEvent" resultType="com.ds.goroute.localevent.domain.LocalEventTranslation">
+        SELECT <include refid="Columns"/>
+        FROM local_event_translations
+        WHERE event_id = #{eventId}
+        ORDER BY locale
+        LIMIT 50
+    </select>
+
+    <!--
+        The language an event is written in is never a target for it (compared on the primary
+        subtag, so "vi-VN" still skips "vi"). An event with no free text has nothing to translate.
+    -->
+    <select id="findPending" resultType="com.ds.goroute.localevent.domain.LocalEventTranslationTask">
+        SELECT e.id AS event_id, l.locale AS locale
+        FROM local_events e
+        CROSS JOIN unnest(ARRAY[<foreach item="locale" collection="locales" separator=",">#{locale}</foreach>]::varchar[]) AS l(locale)
+        LEFT JOIN local_event_translations t ON t.event_id = e.id AND t.locale = l.locale
+        WHERE e.is_deleted = FALSE
+          AND e.publish_status = 'PUBLISHED'
+          AND e.end_at &gt; #{now}
+          AND split_part(lower(l.locale), '-', 1)
+              &lt;&gt; split_part(lower(COALESCE(NULLIF(e.language, ''), 'vi')), '-', 1)
+          AND (COALESCE(e.summary, '') &lt;&gt; '' OR COALESCE(e.description, '') &lt;&gt; ''
+               OR COALESCE(e.schedule_note, '') &lt;&gt; '' OR COALESCE(e.price_note, '') &lt;&gt; ''
+               OR COALESCE(e.lunar_date_text, '') &lt;&gt; '')
+          AND (t.event_id IS NULL
+               OR (t.translation_source = 'AI'
+                   AND (t.source_hash IS DISTINCT FROM e.content_hash
+                        OR (t.status = 'FAILED' AND t.attempts &lt; #{maxAttempts}))))
+        ORDER BY e.start_at ASC, e.id ASC, l.locale ASC
+        LIMIT #{limit}
+    </select>
+
+    <insert id="upsertAi">
+        INSERT INTO local_event_translations (
+            event_id, locale, summary, description, schedule_note, price_note, lunar_date_text,
+            translation_source, status, source_hash, attempts, created_at, updated_at
+        ) VALUES (
+            #{t.eventId}, #{t.locale}, #{t.summary}, #{t.description}, #{t.scheduleNote}, #{t.priceNote},
+            #{t.lunarDateText}, 'AI', 'DONE', #{t.sourceHash}, 0, #{t.updatedAt}, #{t.updatedAt}
+        )
+        ON CONFLICT (event_id, locale) DO UPDATE
+        SET summary = EXCLUDED.summary,
+            description = EXCLUDED.description,
+            schedule_note = EXCLUDED.schedule_note,
+            price_note = EXCLUDED.price_note,
+            lunar_date_text = EXCLUDED.lunar_date_text,
+            status = 'DONE',
+            source_hash = EXCLUDED.source_hash,
+            attempts = 0,
+            updated_at = EXCLUDED.updated_at
+        WHERE local_event_translations.translation_source = 'AI'
+    </insert>
+
+    <!-- Attempts restart when the event's content moved since the last failure. -->
+    <insert id="upsertFailed">
+        INSERT INTO local_event_translations (
+            event_id, locale, translation_source, status, source_hash, attempts, created_at, updated_at
+        ) VALUES (
+            #{eventId}, #{locale}, 'AI', 'FAILED', #{sourceHash}, 1, #{now}, #{now}
+        )
+        ON CONFLICT (event_id, locale) DO UPDATE
+        SET summary = NULL,
+            description = NULL,
+            schedule_note = NULL,
+            price_note = NULL,
+            lunar_date_text = NULL,
+            status = 'FAILED',
+            attempts = CASE
+                WHEN local_event_translations.status = 'FAILED'
+                     AND local_event_translations.source_hash IS NOT DISTINCT FROM EXCLUDED.source_hash
+                THEN local_event_translations.attempts + 1
+                ELSE 1
+            END,
+            source_hash = EXCLUDED.source_hash,
+            updated_at = EXCLUDED.updated_at
+        WHERE local_event_translations.translation_source = 'AI'
+    </insert>
+
+    <insert id="upsertManual">
+        INSERT INTO local_event_translations (
+            event_id, locale, summary, description, schedule_note, price_note, lunar_date_text,
+            translation_source, status, source_hash, attempts, created_at, updated_at
+        ) VALUES (
+            #{t.eventId}, #{t.locale}, #{t.summary}, #{t.description}, #{t.scheduleNote}, #{t.priceNote},
+            #{t.lunarDateText}, 'MANUAL', 'DONE', #{t.sourceHash}, 0, #{t.updatedAt}, #{t.updatedAt}
+        )
+        ON CONFLICT (event_id, locale) DO UPDATE
+        SET summary = EXCLUDED.summary,
+            description = EXCLUDED.description,
+            schedule_note = EXCLUDED.schedule_note,
+            price_note = EXCLUDED.price_note,
+            lunar_date_text = EXCLUDED.lunar_date_text,
+            translation_source = 'MANUAL',
+            status = 'DONE',
+            source_hash = EXCLUDED.source_hash,
+            attempts = 0,
+            updated_at = EXCLUDED.updated_at
+    </insert>
+
+    <delete id="delete">
+        DELETE FROM local_event_translations
+        WHERE event_id = #{eventId} AND locale = #{locale}
+    </delete>
+</mapper>

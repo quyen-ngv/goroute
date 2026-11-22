@@ -27,6 +27,8 @@ import com.ds.goroute.service.StarService;
 import com.ds.goroute.service.TripAccessGuard;
 import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.service.UserCheckinService;
+import com.ds.goroute.service.expense.GuestLedgerMover;
+import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.type.MemberRole;
@@ -47,10 +49,12 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -64,6 +68,7 @@ class TripServiceImplRealtimeTest {
     private final ExchangeRateService exchangeRateService = mock(ExchangeRateService.class);
     private final TripRealtimePublisher tripRealtimePublisher = mock(TripRealtimePublisher.class);
     private final NotificationHelper notificationHelper = mock(NotificationHelper.class);
+    private final GuestLedgerMover guestLedgerMover = mock(GuestLedgerMover.class);
 
     private TripServiceImpl service;
 
@@ -71,6 +76,7 @@ class TripServiceImplRealtimeTest {
     void setUp() {
         service = new TripServiceImpl(
                 mock(StarService.class),
+                mock(com.ds.goroute.service.AiCreditService.class),
                 tripRepository,
                 mock(TripAccessGuard.class),
                 mock(com.ds.goroute.service.TripChatService.class),
@@ -93,10 +99,15 @@ class TripServiceImplRealtimeTest {
                 mock(MediaAssetRepository.class),
                 mock(ImageStorageCleanupService.class),
                 tripRealtimePublisher,
+                mock(com.ds.goroute.service.TrackService.class),
                 mock(TripDestinationRepository.class),
                 mock(SocialNotificationService.class),
                 mock(UserCheckinService.class),
-                Runnable::run);
+                Runnable::run,
+                mock(com.ds.goroute.repository.ContentCommentRepository.class),
+                mock(org.springframework.context.ApplicationEventPublisher.class),
+                mock(com.ds.goroute.repository.PlaceRepository.class),
+                guestLedgerMover);
         // Notification payloads are immutable maps, which refuse the null a bare mock returns.
         when(notificationHelper.actorName(any())).thenReturn("Someone");
         when(notificationHelper.tripName(any())).thenReturn("Trip");
@@ -195,6 +206,46 @@ class TripServiceImplRealtimeTest {
 
         verify(tripRealtimePublisher).publishAfterCommit(
                 eq(TripRealtimeEventType.EXPENSE_UPDATED), eq(tripId), isNull(), eq(editorId));
+    }
+
+    @Test
+    void linkingAGuestMovesTheirPaymentsAndSettlementsSoTheLedgerSeesOnePerson() {
+        UUID tripId = UUID.randomUUID();
+        UUID editorId = UUID.randomUUID();
+        UUID targetUserId = UUID.randomUUID();
+        TripMember guest = guest(tripId);
+        when(tripMemberRepository.findById(guest.getId())).thenReturn(Optional.of(guest));
+        when(tripMemberRepository.findByTripIdAndUserId(tripId, targetUserId))
+                .thenReturn(Optional.of(member(tripId, targetUserId, MemberStatus.ACCEPTED)));
+        when(expenseSplitRepository.findByGuestMemberId(guest.getId())).thenReturn(List.of());
+        when(guestLedgerMover.countExpensesPaidBy(guest.getId())).thenReturn(2);
+
+        service.linkGuestToUser(tripId, guest.getId(), LinkGuestRequest.builder()
+                .targetUserId(targetUserId).confirmMoveExpenses(true).build(), editorId);
+
+        verify(guestLedgerMover).moveToUser(guest.getId(), targetUserId);
+        verify(expenseRepository).reassignGuestPayerToUser(guest.getId(), targetUserId);
+        verify(tripRealtimePublisher).publishAfterCommit(
+                eq(TripRealtimeEventType.LEDGER_UPDATED), eq(tripId), eq(tripId), eq(editorId));
+    }
+
+    @Test
+    void aGuestWhoPaidOnlyPartOfAnExpenseStillNeedsTheMoveConfirmed() {
+        UUID tripId = UUID.randomUUID();
+        UUID editorId = UUID.randomUUID();
+        UUID targetUserId = UUID.randomUUID();
+        TripMember guest = guest(tripId);
+        when(tripMemberRepository.findById(guest.getId())).thenReturn(Optional.of(guest));
+        when(tripMemberRepository.findByTripIdAndUserId(tripId, targetUserId))
+                .thenReturn(Optional.of(member(tripId, targetUserId, MemberStatus.ACCEPTED)));
+        // Counted from expense_payers too, not only from the main-payer column.
+        when(guestLedgerMover.countExpensesPaidBy(guest.getId())).thenReturn(1);
+
+        assertThatThrownBy(() -> service.linkGuestToUser(tripId, guest.getId(),
+                LinkGuestRequest.builder().targetUserId(targetUserId).build(), editorId))
+                .isInstanceOf(BusinessException.class);
+
+        verify(guestLedgerMover, never()).moveToUser(any(), any());
     }
 
     @Test

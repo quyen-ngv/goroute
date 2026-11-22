@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ds.goroute.mapper.TripPreferenceMapper">
+    <insert id="upsert" parameterType="com.ds.goroute.entity.TripPreference">
+        INSERT INTO trip_preferences (
+            trip_id, source, companion, with_children, with_elderly, pace, discovery_style,
+            dietary_note, preference_text, created_at, updated_at
+        ) VALUES (
+            #{tripId}, #{source}, #{companion}, #{withChildren}, #{withElderly}, #{pace}, #{discoveryStyle},
+            #{dietaryNote}, #{preferenceText}, NOW(), NOW()
+        )
+        ON CONFLICT (trip_id) DO UPDATE SET
+            source = EXCLUDED.source,
+            companion = EXCLUDED.companion,
+            with_children = EXCLUDED.with_children,
+            with_elderly = EXCLUDED.with_elderly,
+            pace = EXCLUDED.pace,
+            discovery_style = EXCLUDED.discovery_style,
+            dietary_note = EXCLUDED.dietary_note,
+            preference_text = EXCLUDED.preference_text,
+            updated_at = NOW()
+    </insert>
+
+    <delete id="deleteTags">
+        DELETE FROM trip_preference_tags WHERE trip_id = #{tripId}
+    </delete>
+
+    <insert id="insertTags">
+        INSERT INTO trip_preference_tags (trip_id, kind, value) VALUES
+        <foreach collection="values" item="value" separator=",">
+            (#{tripId}, #{kind}, #{value})
+        </foreach>
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <select id="findByTripId" resultType="com.ds.goroute.entity.TripPreference">
+        SELECT trip_id AS tripId, source, companion, with_children AS withChildren, with_elderly AS withElderly,
+               pace, discovery_style AS discoveryStyle, dietary_note AS dietaryNote,
+               preference_text AS preferenceText, created_at AS createdAt, updated_at AS updatedAt
+        FROM trip_preferences
+        WHERE trip_id = #{tripId}
+    </select>
+
+    <select id="findTags" resultType="string">
+        SELECT value FROM trip_preference_tags WHERE trip_id = #{tripId} AND kind = #{kind} ORDER BY value
+    </select>
+</mapper>

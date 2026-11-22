@@ -2,9 +2,12 @@ package com.ds.goroute.mapper;
 
 import com.ds.goroute.dto.ExpenseSplitCount;
 import com.ds.goroute.entity.Expense;
+import com.ds.goroute.type.ExpenseCategory;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -22,9 +25,6 @@ public interface ExpenseMapper {
     
     List<Expense> selectByPaidBy(@Param("paidBy") UUID paidBy);
 
-    /** How many expenses still name this guest trip member as the payer. */
-    int countByPaidByGuestMemberId(@Param("guestMemberId") UUID guestMemberId);
-
     /**
      * Moves the payer of every expense this guest paid onto the real user the guest
      * member has just become. For a guest payer both paid_by and
@@ -36,6 +36,12 @@ public interface ExpenseMapper {
 
     /** Split counts for every expense of a trip, so a list does not count them one by one. */
     List<ExpenseSplitCount> selectSplitCountsByTripId(@Param("tripId") UUID tripId);
+
+    /** One page of a trip's expenses, newest spending first; category null means all. */
+    List<Expense> selectByTripIdPage(@Param("tripId") UUID tripId,
+                                     @Param("category") ExpenseCategory category,
+                                     @Param("limit") int limit,
+                                     @Param("offset") int offset);
 
     int updateById(Expense expense);
     

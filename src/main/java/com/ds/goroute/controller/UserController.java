@@ -5,15 +5,20 @@ import com.ds.goroute.dto.request.UpdateProfileRequest;
 import com.ds.goroute.dto.request.UpdateSettingsRequest;
 import com.ds.goroute.dto.response.DiscoverUserResponse;
 import com.ds.goroute.dto.response.PublicUserProfileResponse;
+import com.ds.goroute.dto.response.TopActiveUserResponse;
 import com.ds.goroute.dto.response.UserProfileResponse;
 import com.ds.goroute.dto.response.UserReviewResponse;
 import com.ds.goroute.dto.response.TripResponse;
 import com.ds.goroute.service.UserService;
+import com.ds.goroute.type.TopActivePeriod;
 import com.ds.goroute.service.ReviewService;
 import com.ds.goroute.service.TripService;
 import com.ds.goroute.dto.BaseResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
+import org.springframework.validation.annotation.Validated;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +29,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
+@Validated
 @RequestMapping("/v1/api/users")
 @RequiredArgsConstructor
 @Slf4j
@@ -63,6 +69,27 @@ public class UserController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(userService.discoverUsers(userId, limit)));
     }
 
+    /**
+     * Feed "Top active users" board for the current day, week, month or year (Vietnam time);
+     * open to guests, who see it unfiltered by blocks.
+     */
+    @GetMapping("/top-active")
+    public ResponseEntity<BaseResponse<List<TopActiveUserResponse>>> getTopActiveUsers(
+            @RequestParam(defaultValue = "WEEK") TopActivePeriod period,
+            @RequestParam(defaultValue = "10") @Min(1) @Max(20) int limit,
+            @CurrentUser(required = false) UUID viewerId) {
+        return ResponseEntity.ok(ofSucceeded(userService.getTopActiveUsers(viewerId, period, limit)));
+    }
+
+    /** People by username or name, for the user picker and the Feed's people search. */
+    @GetMapping("/search")
+    public ResponseEntity<BaseResponse<List<DiscoverUserResponse>>> searchUsers(
+            @RequestParam("q") String query,
+            @RequestParam(defaultValue = "20") int limit,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(userService.searchUsers(userId, query, limit)));
+    }
+
     @GetMapping("/me/followers")
     public ResponseEntity<BaseResponse<List<DiscoverUserResponse>>> getFollowers(
             @CurrentUser UUID userId) {
@@ -91,6 +118,14 @@ public class UserController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(null));
     }
 
+    /** Self-declared birth year for the meetup age rules (epic 18); never shown to other users. */
+    @PutMapping("/me/birth-year")
+    public ResponseEntity<BaseResponse<com.ds.goroute.dto.response.BirthYearResponse>> updateBirthYear(
+            @Valid @RequestBody com.ds.goroute.dto.request.UpdateBirthYearRequest request,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(userService.updateBirthYear(userId, request.getBirthYear())));
+    }
+
     @GetMapping("/{userId}")
     public ResponseEntity<BaseResponse<PublicUserProfileResponse>> getPublicProfile(
             @PathVariable UUID userId,
@@ -108,8 +143,8 @@ public class UserController extends BaseController {
     @GetMapping("/{userId}/reviews")
     public ResponseEntity<BaseResponse<List<UserReviewResponse>>> getUserReviews(
             @PathVariable UUID userId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "50") @Min(1) @Max(100) int size,
             @CurrentUser(required = false) UUID viewerId) {
         return ResponseEntity.ok(ofSucceeded(
                 reviewService.getUserReviewsForProfile(userId, viewerId, page, size)));

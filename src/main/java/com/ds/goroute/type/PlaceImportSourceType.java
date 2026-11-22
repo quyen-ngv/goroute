@@ -5,6 +5,8 @@ public enum PlaceImportSourceType {
     ACTIVITY,
     MANUAL,
     ADMIN_LINKS,
+    /** An AI agent's proposed place for an unlinked activity; a human approves the link. */
+    AGENT_PROPOSAL,
     NATIONWIDE,
     PLACE_DETAILS_REFRESH
 }

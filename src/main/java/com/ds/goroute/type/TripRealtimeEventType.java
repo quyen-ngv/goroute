@@ -18,6 +18,10 @@ public enum TripRealtimeEventType {
     EXPENSE_DELETED("expense.deleted"),
     EXPENSE_SPLITS_UPDATED("expense.splitsUpdated"),
     EXPENSE_PAYMENT_UPDATED("expense.paymentUpdated"),
+    /** A comment on an expense; entityId is the expense, payload {@code commentId}. */
+    EXPENSE_COMMENT_ADDED("expense.commentAdded"),
+    /** Balances may have moved: an expense, a settlement or the ledger settings changed. */
+    LEDGER_UPDATED("ledger.updated"),
     NOTE_CREATED("note.created"),
     NOTE_UPDATED("note.updated"),
     NOTE_DELETED("note.deleted"),
@@ -33,7 +37,9 @@ public enum TripRealtimeEventType {
     COMMENT_CREATED("comment.created"),
     COMMENT_UPDATED("comment.updated"),
     COMMENT_DELETED("comment.deleted"),
-    COMMENT_REACTED("comment.reacted");
+    COMMENT_REACTED("comment.reacted"),
+    /** A member's recorded route changed; entityId is that member, payload {@code dates}. */
+    TRACK_UPDATED("track.updated");
 
     private final String wireValue;
 

@@ -18,8 +18,30 @@ public class MarketplaceConversation {
     private String tripName;
     private String tripCoverImageUrl;
 
+    /** The meetup this is the group chat of, {@code null} for every other kind. */
+    private UUID meetupId;
+    private String meetupTitle;
+    /** The meetup category code, so a client can draw the category emoji as the thread picture. */
+    private String meetupCategory;
+    /** The meetup host, so a member row can be given the CREATOR role without a second read. */
+    private UUID meetupHostUserId;
+
+    /** The local event this is the group chat of, {@code null} for every other kind. */
+    private UUID localEventId;
+    private String eventTitle;
+    /** The event's re-hosted cover, used as the thread picture. */
+    private String eventCoverUrl;
+    /** The event category code, so a client can draw the category icon when there is no cover. */
+    private String eventCategory;
+
     /** Kept at the top of the thread for everyone; {@code null} when nothing is pinned. */
     private UUID pinnedMessageId;
+    /** Owner of an ASSISTANT conversation: the one person chatting with Pengoo. */
+    private UUID assistantUserId;
+    /** ASSISTANT only: the thread's name, from Pengoo's first answer or the owner; null until then. */
+    private String title;
+    /** ASSISTANT only: when the owner deleted the thread; an archived thread is gone for them. */
+    private LocalDateTime archivedAt;
 
     /**
      * Enough of the last message to draw an inbox row without opening the thread: who said
@@ -28,6 +50,8 @@ public class MarketplaceConversation {
     private UUID lastMessageSenderId;
     private String lastMessageSenderName;
     private String lastMessageType;
+    /** What a SHARE last message points at ({@code ChatShareType}), so the row can say "shared a place". */
+    private String lastMessageShareType;
 
     /** How many people are in it, for the "N members" subtitle of a group. */
     private Long memberCount;

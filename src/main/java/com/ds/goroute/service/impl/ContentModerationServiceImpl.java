@@ -39,6 +39,8 @@ public class ContentModerationServiceImpl implements ContentModerationService {
     private final ModerationFlagRepository flagRepository;
     private final ContentCommentRepository contentCommentRepository;
     private final ActivityCommentRepository activityCommentRepository;
+    private final com.ds.goroute.meetup.persistence.MeetupRepository meetupRepository;
+    private final com.ds.goroute.repository.PostRepository postRepository;
 
     @Override
     @Transactional
@@ -133,7 +135,7 @@ public class ContentModerationServiceImpl implements ContentModerationService {
                     throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
                             "Comment is no longer available");
                 }
-                yield new ContentReportMetadata(comment.getUserId(), comment.getContent());
+                yield new ContentReportMetadata(comment.getUserId(), reportSnapshot("content", comment.getContent()));
             }
             case ACTIVITY_COMMENT -> {
                 ActivityComment comment = activityCommentRepository.findById(request.getContentId())
@@ -142,13 +144,38 @@ public class ContentModerationServiceImpl implements ContentModerationService {
                     throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
                             "Comment is no longer available");
                 }
-                yield new ContentReportMetadata(comment.getUserId(), comment.getContent());
+                yield new ContentReportMetadata(comment.getUserId(), reportSnapshot("content", comment.getContent()));
+            }
+            case MEETUP -> {
+                // The host owns the meetup, so a takedown notifies them; the title is the snapshot.
+                com.ds.goroute.meetup.domain.Meetup meetup = meetupRepository.findById(request.getContentId())
+                        .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Meetup not found"));
+                yield new ContentReportMetadata(meetup.getHostUserId(), reportSnapshot("title", meetup.getTitle()));
+            }
+            case POST -> {
+                // The author owns the post, so a takedown notifies them; the title is the snapshot.
+                com.ds.goroute.entity.Post post = postRepository.findById(request.getContentId())
+                        .filter(found -> !Boolean.TRUE.equals(found.getIsRemoved()))
+                        .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Post not found"));
+                yield new ContentReportMetadata(post.getUserId(), reportSnapshot("title", post.getTitle()));
             }
             default -> new ContentReportMetadata(null, null);
         };
     }
 
     private record ContentReportMetadata(UUID ownerId, String contextSnapshot) {
+    }
+
+    /**
+     * {@code moderation_flags.context_snapshot} is JSONB and the console reads it back as a JSON
+     * object, so the reported text goes in as {@code {"field", "text"}} -- the shape the text
+     * filter writes -- never as a bare string, which PostgreSQL rejects.
+     */
+    static String reportSnapshot(String field, String text) {
+        if (text == null) {
+            return null;
+        }
+        return com.ds.goroute.utils.JsonUtils.toJson(java.util.Map.of("field", field, "text", text));
     }
 
     @Override

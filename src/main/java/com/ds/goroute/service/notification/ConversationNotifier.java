@@ -35,8 +35,9 @@ import java.util.stream.Collectors;
  * the time a message matters: the interesting case is the partner whose phone is in a pocket.
  * So a message also becomes a notification.
  *
- * <p>One row per conversation, not one per line: a conversation that is already waiting unread
- * has its existing row refreshed instead of a new one added. The push is not coalesced — every
+ * <p>One row per conversation, not one per line and not one per burst: the conversation's
+ * existing row — unread or already read — is refreshed and brought back unread to the top
+ * instead of a new one added. The push is not coalesced — every
  * message still rings, and the phone stacks them by conversation. Being mentioned by name gets
  * its own row, because that is the one a person is waiting for.
  *
@@ -117,6 +118,48 @@ public class ConversationNotifier {
     }
 
     /**
+     * Announces a message to one member only, after commit: the assistant's answer goes to the
+     * person who asked, not to the whole group (everybody else just sees it unread).
+     */
+    public void notifyOnly(UUID conversationId, UUID senderId, MarketplaceMessageResponse message, UUID recipientId) {
+        Runnable announce = () -> {
+            try {
+                executor.execute(() -> deliverTo(conversationId, senderId, message, recipientId));
+            } catch (RuntimeException exception) {
+                log.warn("Could not queue the announcement of a message in {}: {}",
+                        conversationId, exception.getMessage());
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    announce.run();
+                }
+            });
+        } else {
+            announce.run();
+        }
+    }
+
+    void deliverTo(UUID conversationId, UUID senderId, MarketplaceMessageResponse message, UUID recipientId) {
+        try {
+            if (recipientId == null || recipientId.equals(senderId)) return;
+            MarketplaceConversation conversation = conversations.find(conversationId, null).orElse(null);
+            if (conversation == null) return;
+            if (!conversations.findNotifiableMemberIds(conversationId).contains(recipientId)) return;
+            if (hasAlreadyRead(readMarkers(conversationId), recipientId, message)) return;
+            boolean isPrivate = MarketplaceConversationType.isPrivate(
+                    conversation.getConversationType(), conversation.getOrganizationId());
+            String title = threadTitle(conversation);
+            inOwnTransaction(recipientId, conversationId,
+                    () -> notifyOne(recipientId, senderId, conversationId, message, isPrivate, title));
+        } catch (RuntimeException exception) {
+            log.warn("Could not notify {} of conversation {}: {}", recipientId, conversationId, exception.getMessage());
+        }
+    }
+
+    /**
      * The reader caught up with a conversation: its chat notifications are read too. Joins the
      * caller's transaction, since it is part of the same "I read this" action.
      */
@@ -167,7 +210,7 @@ public class ConversationNotifier {
      * a row and a banner for what they are looking at is noise.
      */
     private Map<UUID, Long> readMarkers(UUID conversationId) {
-        List<MarketplaceMemberInboxState> states = conversations.findMemberInboxStates(conversationId);
+        List<MarketplaceMemberInboxState> states = conversations.findMemberReadSequences(conversationId);
         if (states == null) return Map.of();
         return states.stream()
                 .filter(state -> state.getUserId() != null && state.getReadSequenceNo() != null)
@@ -186,8 +229,7 @@ public class ConversationNotifier {
         // Two messages announced at once must not both miss the unread row and add two.
         notifications.lockTarget(recipientId, NotificationType.MARKETPLACE_MESSAGE, TARGET_TYPE, conversationId);
         Notification existing = notifications
-                .findRecentUnreadSocialNotification(recipientId, NotificationType.MARKETPLACE_MESSAGE,
-                        TARGET_TYPE, conversationId)
+                .findLatestConversationNotification(recipientId, conversationId)
                 .orElse(null);
         if (existing == null) {
             NotificationMessage rendered = templateRenderer.render(
@@ -196,7 +238,8 @@ public class ConversationNotifier {
                     rendered.title(), rendered.body(), data, senderId);
             return;
         }
-        // Already waiting unread: the row shows the newest line, and this line still rings.
+        // The conversation's row, unread or already read: it comes back unread at the top with the
+        // newest line, and this line still rings.
         // Announcements run in parallel, so an older line arriving second keeps the newer text.
         Map<String, Object> stored = readData(existing.getData());
         boolean isOlder = sequenceOf(stored.get(SEQUENCE_NO)) > sequenceOf(message.getSequenceNo());
@@ -262,6 +305,8 @@ public class ConversationNotifier {
 
     private String threadTitle(MarketplaceConversation conversation) {
         if (conversation.getTripName() != null) return conversation.getTripName();
+        if (conversation.getMeetupTitle() != null) return conversation.getMeetupTitle();
+        if (conversation.getEventTitle() != null) return conversation.getEventTitle();
         if (conversation.getOrganizationName() != null) return conversation.getOrganizationName();
         if (conversation.getBookingCode() != null) return conversation.getBookingCode();
         return conversation.getOrderCode();

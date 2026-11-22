@@ -5,6 +5,7 @@ import com.ds.goroute.dto.request.CreateHostOrganizationRequest;
 import com.ds.goroute.dto.request.PartnerRegisterRequest;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.service.HostOrganizationService;
+import com.ds.goroute.service.LoginAttemptGuard;
 import com.ds.goroute.type.AccountStatus;
 import com.ds.goroute.type.AuthProvider;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -29,12 +30,17 @@ import static com.ds.goroute.constant.ErrorConstant.UNAUTHORIZED;
 public class AdminAuthServiceImpl implements AdminAuthService {
  private final UserRepository users; private final AdminMapper adminMapper; private final PasswordEncoder encoder; private final JwtUtils jwt;
  private final HostOrganizationService organizations;
+ private final LoginAttemptGuard loginAttemptGuard;
 
  public AuthResponse login(AdminLoginRequest request){
   var user=users.findByUsername(request.getUsername()).or(()->users.findByEmail(request.getUsername()))
           .orElseThrow(()->new BusinessException(UNAUTHORIZED,"Invalid username or password"));
-  if(user.getPasswordHash()==null||!encoder.matches(request.getPassword(),user.getPasswordHash()))
+  loginAttemptGuard.requireNotLocked(user.getId());
+  if(user.getPasswordHash()==null||!encoder.matches(request.getPassword(),user.getPasswordHash())){
+      loginAttemptGuard.recordFailure(user.getId());
       throw new BusinessException(UNAUTHORIZED,"Invalid username or password");
+  }
+  loginAttemptGuard.recordSuccess(user.getId());
   if("LOCKED".equals(user.getAccountStatus())||"DISABLED".equals(user.getAccountStatus()))
       throw new BusinessException(UNAUTHORIZED,"Account is not active");
   boolean admin=adminMapper.hasAnyRole(user.getId());

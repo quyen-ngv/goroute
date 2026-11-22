@@ -49,6 +49,15 @@ public class AcceptCurrencyFilter implements Filter {
         return (c != null) ? c : DEFAULT_CURRENCY;
     }
 
+    /** Binds {@code currency} to this thread for work handed over by {@link RequestContextTaskDecorator}. */
+    static void bind(String currency) {
+        CURRENCY_HOLDER.set(currency);
+    }
+
+    static void unbind() {
+        CURRENCY_HOLDER.remove();
+    }
+
     private static String normalize(String raw) {
         if (raw == null || raw.isBlank()) return DEFAULT_CURRENCY;
         String upper = raw.trim().toUpperCase();

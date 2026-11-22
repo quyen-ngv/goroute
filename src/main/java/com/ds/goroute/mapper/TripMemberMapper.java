@@ -1,5 +1,6 @@
 package com.ds.goroute.mapper;
 
+import com.ds.goroute.entity.TripCount;
 import com.ds.goroute.entity.TripMember;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -25,6 +26,11 @@ public interface TripMemberMapper {
      */
     List<TripMember> selectByTripIdsAndUserId(@Param("tripIds") List<UUID> tripIds,
                                               @Param("userId") UUID userId);
+
+    /** ACCEPTED member rows per trip; trips without any have no row. */
+    List<TripCount> countAcceptedByTripIds(@Param("tripIds") List<UUID> tripIds);
+
+    List<TripMember> selectByIds(@Param("ids") java.util.Collection<UUID> ids);
 
     int updateById(TripMember member);
     

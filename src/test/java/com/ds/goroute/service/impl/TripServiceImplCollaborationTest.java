@@ -67,6 +67,7 @@ class TripServiceImplCollaborationTest {
     void setUp() {
         service = new TripServiceImpl(
                 mock(StarService.class),
+                mock(com.ds.goroute.service.AiCreditService.class),
                 tripRepository,
                 mock(TripAccessGuard.class),
                 mock(com.ds.goroute.service.TripChatService.class),
@@ -89,10 +90,15 @@ class TripServiceImplCollaborationTest {
                 mediaAssetRepository,
                 mock(ImageStorageCleanupService.class),
                 mock(TripRealtimePublisher.class),
+                mock(com.ds.goroute.service.TrackService.class),
                 tripDestinationRepository,
                 mock(SocialNotificationService.class),
                 mock(UserCheckinService.class),
-                Runnable::run);
+                Runnable::run,
+                mock(com.ds.goroute.repository.ContentCommentRepository.class),
+                mock(org.springframework.context.ApplicationEventPublisher.class),
+                mock(com.ds.goroute.repository.PlaceRepository.class),
+                mock(com.ds.goroute.service.expense.GuestLedgerMover.class));
     }
 
     @Test

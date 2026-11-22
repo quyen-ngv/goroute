@@ -18,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-/** Admin read/update use case for per-user quota overrides. */
+/** Admin read/update use case for per-user quota overrides (trip creation; AI is limited by credits). */
 @Service
 @RequiredArgsConstructor
 public class AdminUserQuotaService {
@@ -50,9 +50,6 @@ public class AdminUserQuotaService {
             UserQuotaOverride created = UserQuotaOverride.builder()
                     .userId(userId)
                     .freeTripQuota(request.getFreeTripQuota())
-                    .aiTripFreeQuota(request.getAiTripFreeQuota())
-                    .aiTripProQuota(request.getAiTripProQuota())
-                    .socialLocationDailyLimit(request.getSocialLocationDailyLimit())
                     .dataVersion(1L)
                     .createdAt(now)
                     .updatedAt(now)
@@ -64,9 +61,6 @@ public class AdminUserQuotaService {
             }
         } else {
             current.setFreeTripQuota(request.getFreeTripQuota());
-            current.setAiTripFreeQuota(request.getAiTripFreeQuota());
-            current.setAiTripProQuota(request.getAiTripProQuota());
-            current.setSocialLocationDailyLimit(request.getSocialLocationDailyLimit());
             current.setDataVersion(expectedVersion);
             current.setUpdatedAt(now);
             if (overrideRepository.update(current) != 1) {
@@ -79,17 +73,10 @@ public class AdminUserQuotaService {
 
     private AdminUserQuotaResponse response(UUID userId, UserQuotaOverride override) {
         int globalFreeTrip = businessConfig.getInt(BusinessConfigKey.TRIP_FREE_CREATION_QUOTA);
-        int globalAiFree = businessConfig.getInt(BusinessConfigKey.AI_TRIP_FREE_QUOTA);
-        int globalAiPro = businessConfig.getInt(BusinessConfigKey.AI_TRIP_PRO_QUOTA);
-        int globalSocial = businessConfig.getInt(BusinessConfigKey.SOCIAL_LOCATION_DAILY_JOB_LIMIT);
         return AdminUserQuotaResponse.builder()
                 .userId(userId)
                 .dataVersion(override == null ? 0L : override.getDataVersion())
                 .freeTrip(limit(globalFreeTrip, override == null ? null : override.getFreeTripQuota()))
-                .aiTripFree(limit(globalAiFree, override == null ? null : override.getAiTripFreeQuota()))
-                .aiTripPro(limit(globalAiPro, override == null ? null : override.getAiTripProQuota()))
-                .socialLocationDaily(limit(globalSocial,
-                        override == null ? null : override.getSocialLocationDailyLimit()))
                 .build();
     }
 

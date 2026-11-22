@@ -4,6 +4,8 @@ import com.ds.goroute.entity.ReviewHelpfulVote;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 @Mapper
@@ -20,6 +22,9 @@ public interface ReviewHelpfulVoteMapper {
     int countByReviewId(@Param("reviewId") UUID reviewId);
     
     ReviewHelpfulVote findByReviewIdAndUserId(@Param("reviewId") UUID reviewId, @Param("userId") UUID userId);
+
+    List<ReviewHelpfulVote> findByReviewIdsAndUserId(@Param("reviewIds") Collection<UUID> reviewIds,
+                                                     @Param("userId") UUID userId);
     
     int countByReviewIdAndIsHelpful(@Param("reviewId") UUID reviewId, @Param("isHelpful") boolean isHelpful);
 }

@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.ExpensePayerMapper">
+
+    <resultMap id="ExpensePayerResultMap" type="com.ds.goroute.entity.ExpensePayer">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="expense_id" property="expenseId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="user_id" property="userId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="guest_member_id" property="guestMemberId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="amount" property="amount" jdbcType="DECIMAL"/>
+        <result column="position" property="position" jdbcType="INTEGER"/>
+        <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <sql id="Columns">id, expense_id, user_id, guest_member_id, amount, position, created_at</sql>
+
+    <insert id="insertBatch">
+        INSERT INTO expense_payers (id, expense_id, user_id, guest_member_id, amount, position, created_at)
+        VALUES
+        <foreach item="payer" collection="payers" separator=",">
+            (#{payer.id,javaType=java.util.UUID,jdbcType=OTHER}, #{payer.expenseId,javaType=java.util.UUID,jdbcType=OTHER},
+             #{payer.userId,javaType=java.util.UUID,jdbcType=OTHER}, #{payer.guestMemberId,javaType=java.util.UUID,jdbcType=OTHER},
+             #{payer.amount}, #{payer.position}, NOW())
+        </foreach>
+    </insert>
+
+    <select id="selectByExpenseIds" resultMap="ExpensePayerResultMap">
+        SELECT <include refid="Columns"/> FROM expense_payers
+        WHERE expense_id IN
+        <foreach item="expenseId" collection="expenseIds" open="(" separator="," close=")">
+            #{expenseId,javaType=java.util.UUID,jdbcType=OTHER}
+        </foreach>
+        ORDER BY expense_id, position, id
+    </select>
+
+    <delete id="deleteByExpenseId">
+        DELETE FROM expense_payers WHERE expense_id = #{expenseId,javaType=java.util.UUID,jdbcType=OTHER}
+    </delete>
+
+    <!-- Expenses a guest paid towards: a payer row, or the legacy payer column on a row
+         written before V268's backfill. -->
+    <select id="countExpensesPaidByGuest" resultType="int">
+        SELECT COUNT(*) FROM expenses e
+        WHERE e.paid_by_guest_member_id = #{guestMemberId,javaType=java.util.UUID,jdbcType=OTHER}
+           OR EXISTS (SELECT 1 FROM expense_payers p
+                      WHERE p.expense_id = e.id
+                        AND p.guest_member_id = #{guestMemberId,javaType=java.util.UUID,jdbcType=OTHER})
+    </select>
+
+    <!-- Guest linked to an account, step 1: where the user already paid towards the same
+         expense, the guest's amount joins the user's row. -->
+    <update id="addGuestAmountsToUser">
+        UPDATE expense_payers u
+        SET amount = u.amount + g.amount
+        FROM expense_payers g
+        WHERE g.guest_member_id = #{guestMemberId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND u.expense_id = g.expense_id
+          AND u.user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <!-- Step 2: drop the guest rows that step 1 merged. -->
+    <delete id="deleteGuestRowsMergedIntoUser">
+        DELETE FROM expense_payers g
+        WHERE g.guest_member_id = #{guestMemberId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND EXISTS (SELECT 1 FROM expense_payers u
+                      WHERE u.expense_id = g.expense_id
+                        AND u.user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER})
+    </delete>
+
+    <!-- Step 3: the remaining guest rows become the user's. -->
+    <update id="moveGuestRowsToUser">
+        UPDATE expense_payers
+        SET user_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER}, guest_member_id = NULL
+        WHERE guest_member_id = #{guestMemberId,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+</mapper>

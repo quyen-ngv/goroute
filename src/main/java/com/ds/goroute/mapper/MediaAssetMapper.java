@@ -1,6 +1,7 @@
 package com.ds.goroute.mapper;
 
 import com.ds.goroute.entity.MediaAsset;
+import com.ds.goroute.entity.TripCount;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -28,4 +29,9 @@ public interface MediaAssetMapper {
     int softDelete(@Param("id") UUID id);
     int softDeleteByEntity(@Param("entityType") String entityType,
                            @Param("entityId") UUID entityId);
+    /** The first {@code perTrip} memories of each trip, in gallery order (trip card previews). */
+    List<MediaAsset> selectTripMemoryPreviewsByTripIds(@Param("tripIds") List<UUID> tripIds,
+                                                       @Param("perTrip") int perTrip);
+    /** Memory count per trip; trips without memories have no row. */
+    List<TripCount> countTripMemoriesByTripIds(@Param("tripIds") List<UUID> tripIds);
 }

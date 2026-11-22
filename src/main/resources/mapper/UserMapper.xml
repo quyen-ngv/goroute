@@ -27,6 +27,10 @@
         <result column="password_changed_at" property="passwordChangedAt" jdbcType="TIMESTAMP"/>
         <result column="account_status" property="accountStatus" jdbcType="VARCHAR"/>
         <result column="last_login_at" property="lastLoginAt" jdbcType="TIMESTAMP"/>
+        <result column="managed_by_admin" property="managedByAdmin" jdbcType="BOOLEAN"/>
+        <result column="managed_since" property="managedSince" jdbcType="TIMESTAMP"/>
+        <result column="handed_over_at" property="handedOverAt" jdbcType="TIMESTAMP"/>
+        <result column="handed_over_by" property="handedOverBy" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
         <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
         <result column="deleted_at" property="deletedAt" jdbcType="TIMESTAMP"/>
@@ -98,15 +102,24 @@
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </update>
 
+    <!-- GET /users/me calls this on every app open and tab return. Writing at most once per
+         five minutes keeps last_login_at accurate to that and spares the row (and its
+         idx_users_last_login_at entry) a new version on every read. -->
     <update id="updateLastLoginAt" parameterType="java.util.UUID">
         UPDATE users
         SET last_login_at = NOW()
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
           AND deleted_at IS NULL
+          AND (last_login_at IS NULL OR last_login_at &lt; NOW() - INTERVAL '5 minutes')
     </update>
 
     <select id="selectByUsername" parameterType="String" resultMap="UserResultMap">
         SELECT * FROM users WHERE username = #{username} AND deleted_at IS NULL
+    </select>
+
+    <!-- No deleted_at filter: the UNIQUE constraint on username covers soft-deleted rows. -->
+    <select id="existsByUsername" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM users WHERE username = #{username})
     </select>
 
     <select id="selectAll" resultMap="UserResultMap">
@@ -162,6 +175,38 @@
          then newest first, which is the order selectAll produced before the stable
          sort by review count in the service.
     -->
+    <!--
+         People search for the app (user picker, Feed). The query arrives lower-cased with
+         % _ \ escaped. Username prefix is served by idx_users_username_lower_prefix (V238);
+         the name match is a contains, fine at the size of users. Ranked: exact username,
+         username prefix, then name, then by followers.
+    -->
+    <select id="selectSearchUsers" resultType="com.ds.goroute.dto.response.DiscoverUserResponse">
+        WITH candidates AS (
+            SELECT u.id, u.full_name, u.username, u.avatar_url, u.created_at,
+                   CASE WHEN lower(u.username) = #{query} THEN 0
+                        WHEN lower(u.username) LIKE #{query} || '%' THEN 1
+                        ELSE 2 END AS match_rank
+            FROM users u
+            WHERE u.deleted_at IS NULL
+              AND u.account_type = 'HUMAN'
+              AND u.id &lt;&gt; #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+              AND (lower(u.username) LIKE #{query} || '%'
+                   OR lower(u.full_name) LIKE '%' || #{query} || '%')
+              AND NOT EXISTS (
+                  SELECT 1 FROM user_blocks b
+                  WHERE (b.blocker_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER} AND b.blocked_id = u.id)
+                     OR (b.blocker_id = u.id AND b.blocked_id = #{userId,javaType=java.util.UUID,jdbcType=OTHER})
+              )
+            ORDER BY match_rank, length(u.username), u.created_at DESC
+            LIMIT #{limit}
+        )
+        SELECT u.id, u.full_name, u.username, u.avatar_url,
+               <include refid="DiscoverCountColumns"/>
+        FROM candidates u
+        ORDER BY u.match_rank, followers_count DESC, length(u.username)
+    </select>
+
     <select id="selectDiscoverUsers" resultType="com.ds.goroute.dto.response.DiscoverUserResponse">
         WITH candidates AS (
             SELECT u.id, u.full_name, u.username, u.avatar_url, u.created_at
@@ -172,6 +217,7 @@
                 GROUP BY user_id
             ) r ON r.user_id = u.id
             WHERE u.deleted_at IS NULL
+              AND u.account_type = 'HUMAN'
               AND u.id &lt;&gt; #{userId,javaType=java.util.UUID,jdbcType=OTHER}
               AND NOT EXISTS (
                   SELECT 1 FROM user_follows f
@@ -185,6 +231,66 @@
                <include refid="DiscoverCountColumns"/>
         FROM candidates u
         ORDER BY review_count DESC, u.created_at DESC
+    </select>
+
+    <!--
+         Feed "Top active users" for the period starting at `since` (UTC). Only what others
+         can see scores: a public check-in posted since then earns checkinWithReviewPoints
+         when it carries a review, else checkinPoints; a trip made public since then
+         (public_shared_at, created_at for old rows) with more than minTripActivities
+         activities earns one point per activity, at most maxTripPoints. Anyone blocked
+         either way is left out; the viewer is not, so they can find themselves on the board.
+    -->
+    <select id="selectTopActiveUsers" resultType="com.ds.goroute.dto.response.TopActiveUserResponse">
+        WITH checkin_points AS (
+            SELECT c.user_id,
+                   COUNT(*) AS checkin_count,
+                   SUM(CASE WHEN c.review_id IS NOT NULL THEN #{checkinWithReviewPoints}
+                            ELSE #{checkinPoints} END) AS points
+            FROM user_checkins c
+            WHERE c.visibility = 'PUBLIC'
+              AND c.is_removed = FALSE
+              AND c.created_at &gt;= #{since}
+            GROUP BY c.user_id
+        ),
+        trip_scores AS (
+            SELECT t.owner_id AS user_id,
+                   LEAST(COUNT(*), #{maxTripPoints}) AS points
+            FROM trips t
+            JOIN activities a ON a.trip_id = t.id
+            WHERE t.visibility = 'PUBLIC'
+              AND t.is_deleted = FALSE
+              AND COALESCE(t.public_shared_at, t.created_at) &gt;= #{since}
+            GROUP BY t.owner_id, t.id
+            HAVING COUNT(*) &gt; #{minTripActivities}
+        ),
+        trip_points AS (
+            SELECT user_id, COUNT(*) AS trip_count, SUM(points) AS points
+            FROM trip_scores
+            GROUP BY user_id
+        )
+        SELECT u.id, u.full_name, u.username, u.avatar_url,
+               COALESCE(cp.checkin_count, 0) AS checkin_count,
+               COALESCE(tp.trip_count, 0) AS trip_count,
+               COALESCE(cp.points, 0) + COALESCE(tp.points, 0) AS score
+        FROM users u
+        LEFT JOIN checkin_points cp ON cp.user_id = u.id
+        LEFT JOIN trip_points tp ON tp.user_id = u.id
+        WHERE u.deleted_at IS NULL
+          AND u.account_type = 'HUMAN'
+          <!-- A managed account (V276) posts on the team's schedule, not a traveller's: it would
+               crowd the ranking of people who actually went somewhere. Everywhere else it shows. -->
+          AND u.managed_by_admin = FALSE
+          AND (cp.user_id IS NOT NULL OR tp.user_id IS NOT NULL)
+          <if test="viewerId != null">
+              AND NOT EXISTS (
+                  SELECT 1 FROM user_blocks b
+                  WHERE (b.blocker_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER} AND b.blocked_id = u.id)
+                     OR (b.blocker_id = u.id AND b.blocked_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER})
+              )
+          </if>
+        ORDER BY score DESC, checkin_count DESC, u.created_at
+        LIMIT #{limit}
     </select>
 
     <select id="selectFollowerProfiles" resultType="com.ds.goroute.dto.response.DiscoverUserResponse">
@@ -246,12 +352,42 @@
         )
     </select>
 
+    <!-- Follower fan-out (epic 12): the next chunk of an author's followers who may be told,
+         keyset by follower_id on idx_user_follows_following_follower (V242). Skips deleted,
+         locked and non-human accounts, and anyone in a block with the author either way.
+         betaUsernames, when given, narrows the chunk to the beta list (lower-cased). -->
+    <select id="selectFollowerIdChunk" resultType="java.util.UUID">
+        SELECT f.follower_id
+        FROM user_follows f
+        JOIN users u ON u.id = f.follower_id
+        WHERE f.following_id = #{authorId,javaType=java.util.UUID,jdbcType=OTHER}
+          <if test="afterFollowerId != null">
+              AND f.follower_id &gt; #{afterFollowerId,javaType=java.util.UUID,jdbcType=OTHER}
+          </if>
+          AND u.deleted_at IS NULL
+          AND u.account_status = 'ACTIVE'
+          AND u.account_type = 'HUMAN'
+          <if test="betaUsernames != null">
+              AND LOWER(TRIM(u.username)) IN
+              <foreach collection="betaUsernames" item="username" open="(" separator="," close=")">
+                  #{username}
+              </foreach>
+          </if>
+          AND NOT EXISTS (
+              SELECT 1 FROM user_blocks b
+              WHERE (b.blocker_id = f.follower_id AND b.blocked_id = f.following_id)
+                 OR (b.blocker_id = f.following_id AND b.blocked_id = f.follower_id))
+        ORDER BY f.follower_id
+        LIMIT #{limit}
+    </select>
+
     <delete id="deleteById" parameterType="java.util.UUID">
         DELETE FROM users WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </delete>
 
     <update id="softDeleteById" parameterType="java.util.UUID">
-        UPDATE users SET deleted_at = NOW(), updated_at = NOW()
+        <!-- onboarding_completed is reset so a sign-in that restores the row sets the profile up again. -->
+        UPDATE users SET deleted_at = NOW(), onboarding_completed = FALSE, updated_at = NOW()
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
     </update>
 
@@ -260,6 +396,173 @@
         SET password_hash = #{passwordHash}, must_change_password = #{mustChangePassword},
             password_changed_at = #{changedAt}, updated_at = #{changedAt}
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
+    </update>
+
+    <update id="updateTimeZone">
+        UPDATE users
+        SET time_zone = #{timeZone}
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
+          AND time_zone IS DISTINCT FROM #{timeZone}
+    </update>
+
+    <select id="selectTimeZone" resultType="java.lang.String">
+        SELECT time_zone FROM users WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </select>
+
+    <update id="updateBirthYear">
+        UPDATE users
+        SET birth_year = #{birthYear}, updated_at = #{updatedAt}
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
+    </update>
+
+    <!-- Feed search result cards: the people the index found, with the four discover counts. -->
+    <select id="selectDiscoverProfilesByIds" resultType="com.ds.goroute.dto.response.DiscoverUserResponse">
+        SELECT u.id, u.full_name, u.username, u.avatar_url,
+               <include refid="DiscoverCountColumns"/>
+        FROM users u
+        WHERE u.deleted_at IS NULL
+          AND u.account_type = 'HUMAN'
+          AND u.id IN
+          <foreach collection="ids" item="id" open="(" separator="," close=")">
+              #{id,javaType=java.util.UUID,jdbcType=OTHER}
+          </foreach>
+    </select>
+
+    <!--
+         Feed search index (epic 12 §4.4): a person is found by name, username and bio, and
+         ranks higher with more followers. Findable while the account is a live human one,
+         the same people the user search lists.
+    -->
+    <sql id="SearchIndexRowColumns">
+        u.id, u.id AS owner_id, u.full_name AS title, u.username AS handle, u.bio AS body,
+        (SELECT COUNT(*) FROM user_follows f WHERE f.following_id = u.id) AS popularity,
+        u.created_at AS published_at, u.updated_at,
+        (u.deleted_at IS NULL AND u.account_type = 'HUMAN') AS eligible
+    </sql>
+
+    <select id="selectSearchIndexPage" resultType="com.ds.goroute.entity.SocialSearchIndexRow">
+        SELECT <include refid="SearchIndexRowColumns"/>
+        FROM users u
+        WHERE u.deleted_at IS NULL
+          AND u.account_type = 'HUMAN'
+          <if test="afterId != null">
+              AND u.id &gt; #{afterId,javaType=java.util.UUID,jdbcType=OTHER}
+          </if>
+        ORDER BY u.id
+        LIMIT #{limit}
+    </select>
+
+    <!-- Served by idx_users_updated_at (V246). -->
+    <select id="selectSearchIndexChanges" resultType="com.ds.goroute.entity.SocialSearchIndexRow">
+        SELECT <include refid="SearchIndexRowColumns"/>
+        FROM users u
+        WHERE (u.updated_at, u.id) &gt; (#{afterUpdatedAt}, #{afterId,javaType=java.util.UUID,jdbcType=OTHER})
+        ORDER BY u.updated_at, u.id
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectSearchIndexMaxUpdatedAt" resultType="java.time.LocalDateTime">
+        SELECT MAX(updated_at) FROM users
+    </select>
+
+    <!-- ===== Managed accounts (epic 20, V276) ===================================================
+         Accounts an admin holds and posts for. The flag is only ever written by the statements
+         below, never by updateById, so an ordinary profile save cannot hand an account over or
+         take it back. -->
+
+    <sql id="ManagedAccountColumns">
+        u.id, u.full_name, u.username, u.email, u.avatar_url, u.bio,
+        u.managed_by_admin, u.managed_since, u.handed_over_at,
+        (g.user_id IS NOT NULL) AS guide,
+        g.display_title AS guide_title,
+        (SELECT COUNT(*) FROM posts p WHERE p.user_id = u.id AND p.is_removed = FALSE) AS post_count,
+        (SELECT COUNT(*) FROM user_checkins c WHERE c.user_id = u.id AND c.is_removed = FALSE) AS checkin_count,
+        (SELECT COUNT(*) FROM user_follows f WHERE f.following_id = u.id) AS follower_count
+    </sql>
+
+    <!-- A handed-over account stays listable (HANDED_OVER / ALL) so the console can still read what
+         was posted for it; it is recognised by handed_over_at. -->
+    <sql id="ManagedAccountWhere">
+        WHERE u.deleted_at IS NULL
+        <choose>
+            <when test="status == 'HANDED_OVER'">
+                AND u.managed_by_admin = FALSE AND u.handed_over_at IS NOT NULL
+            </when>
+            <when test="status == 'ALL'">
+                AND (u.managed_by_admin = TRUE OR u.handed_over_at IS NOT NULL)
+            </when>
+            <otherwise>
+                AND u.managed_by_admin = TRUE
+            </otherwise>
+        </choose>
+        <if test="search != null and search != ''">
+            AND (u.username ILIKE '%' || #{search} || '%'
+                 OR u.full_name ILIKE '%' || #{search} || '%'
+                 OR u.email ILIKE '%' || #{search} || '%')
+        </if>
+    </sql>
+
+    <select id="selectManagedAccounts" resultType="com.ds.goroute.entity.ManagedAccountRow">
+        SELECT <include refid="ManagedAccountColumns"/>
+        FROM users u
+        LEFT JOIN user_guide_grants g ON g.user_id = u.id AND g.status = 'ACTIVE'
+        <include refid="ManagedAccountWhere"/>
+        ORDER BY COALESCE(u.managed_since, u.created_at) DESC, u.id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countManagedAccounts" resultType="long">
+        SELECT COUNT(*)
+        FROM users u
+        <include refid="ManagedAccountWhere"/>
+    </select>
+
+    <!-- One account, managed or handed over; an ordinary account is absent. -->
+    <select id="selectManagedAccount" resultType="com.ds.goroute.entity.ManagedAccountRow">
+        SELECT <include refid="ManagedAccountColumns"/>
+        FROM users u
+        LEFT JOIN user_guide_grants g ON g.user_id = u.id AND g.status = 'ACTIVE'
+        WHERE u.id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+          AND u.deleted_at IS NULL
+          AND (u.managed_by_admin = TRUE OR u.handed_over_at IS NOT NULL)
+    </select>
+
+    <update id="markManaged">
+        UPDATE users
+        SET managed_by_admin = TRUE, managed_since = NOW(), updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
+    </update>
+
+    <!-- Only while still managed: a handed-over profile belongs to its owner. -->
+    <update id="updateManagedProfile">
+        UPDATE users
+        SET full_name = #{fullName},
+            username = #{username},
+            email = #{email},
+            bio = #{bio},
+            avatar_url = #{avatarUrl},
+            updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+          AND managed_by_admin = TRUE
+          AND deleted_at IS NULL
+    </update>
+
+    <!-- The real email replaces the placeholder; a password is set only when the admin gave one,
+         otherwise the owner signs in with Google on that email (AuthServiceImpl links it). -->
+    <update id="handOverManagedAccount">
+        UPDATE users
+        SET email = #{email},
+            <if test="passwordHash != null">
+                password_hash = #{passwordHash},
+                password_changed_at = NOW(),
+            </if>
+            managed_by_admin = FALSE,
+            handed_over_at = NOW(),
+            handed_over_by = #{handedOverBy,javaType=java.util.UUID,jdbcType=OTHER},
+            updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+          AND managed_by_admin = TRUE
+          AND deleted_at IS NULL
     </update>
 
 </mapper>

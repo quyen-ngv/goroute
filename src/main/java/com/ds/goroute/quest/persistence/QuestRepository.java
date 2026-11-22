@@ -45,6 +45,10 @@ public interface QuestRepository {
 
     long countQuestsByCreatorAndStatuses(UUID creatorId, List<String> statuses);
 
+    List<Quest> findAllQuests(String status, int limit, int offset);
+
+    long countAllQuests(String status);
+
     boolean updateDraftPointer(UUID id, long expectedVersion, UUID draftVersionId, LocalDateTime updatedAt);
 
     boolean updateStatus(UUID id, long expectedVersion, String status, String pausedBy, LocalDateTime updatedAt);
@@ -78,6 +82,9 @@ public interface QuestRepository {
     long countPublicQuests(String provinceCode, String language);
 
     Optional<com.ds.goroute.quest.domain.QuestListItem> findPublicQuestDetail(UUID id);
+
+    /** The detail page's projection with no discovery gate; callers must check who may see it. */
+    Optional<com.ds.goroute.quest.domain.QuestListItem> findQuestDetailUngated(UUID id);
 
     void insertVersion(QuestVersion version);
 

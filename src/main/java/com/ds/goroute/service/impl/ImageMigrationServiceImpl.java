@@ -2,6 +2,7 @@ package com.ds.goroute.service.impl;
 
 import com.ds.goroute.service.ImageMigrationService;
 import com.ds.goroute.service.StorageService;
+import com.ds.goroute.thirdparty.caesium.CaesiumClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -9,11 +10,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.*;
@@ -28,10 +26,8 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
     private final StorageService storageService;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
-    
-    @Value("${imgpress.service.url:http://imgpress:3000}")
-    private String imgpressUrl;
-    
+    private final CaesiumClient caesiumClient;
+
     @Value("${image.migration.max-threads:10}")
     private int maxThreads;
     
@@ -65,10 +61,10 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
                 return requireCompression ? null : imageUrl;
             }
             
-            // 2. Compress via imgpress
+            // 2. Compress via caesium
             byte[] compressedBytes;
             try {
-                compressedBytes = compressImage(imageBytes, extractFilename(imageUrl));
+                compressedBytes = caesiumClient.compressToWebp(imageBytes);
                 log.debug("Image compressed: {} -> {} bytes", imageBytes.length, compressedBytes.length);
             } catch (Exception e) {
                 if (requireCompression) {
@@ -417,60 +413,4 @@ public class ImageMigrationServiceImpl implements ImageMigrationService {
         throw new Exception("HTTP " + response.getStatusCode());
     }
     
-    private byte[] compressImage(byte[] imageBytes, String filename) throws Exception {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-        
-        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-        body.add("file", new ByteArrayResource(imageBytes) {
-            @Override
-            public String getFilename() {
-                return filename;
-            }
-        });
-        
-        HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
-        
-        String url = imgpressUrl + "/compress/one?format=webp&quality=40&width=1600&autoOrient=true";
-        ResponseEntity<Map> response = restTemplate.postForEntity(url, requestEntity, Map.class);
-        
-        if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
-            Map<String, Object> responseBody = response.getBody();
-            Boolean error = (Boolean) responseBody.get("error");
-            
-            if (error != null && error) {
-                throw new Exception("Compression service returned error: " + responseBody.get("message"));
-            }
-            
-            String base64Data = (String) responseBody.get("data");
-            if (base64Data != null) {
-                return Base64.getDecoder().decode(base64Data);
-            }
-        }
-        
-        throw new Exception("Invalid response from compression service");
-    }
-    
-    private String extractFilename(String url) {
-        try {
-            String[] parts = url.split("/");
-            String lastPart = parts[parts.length - 1];
-            
-            // Remove query params
-            int queryIndex = lastPart.indexOf("?");
-            if (queryIndex > 0) {
-                lastPart = lastPart.substring(0, queryIndex);
-            }
-            
-            // Remove size params
-            int paramIndex = lastPart.indexOf("=");
-            if (paramIndex > 0) {
-                lastPart = lastPart.substring(0, paramIndex);
-            }
-            
-            return lastPart.isEmpty() ? "image.jpg" : lastPart;
-        } catch (Exception e) {
-            return "image.jpg";
-        }
-    }
 }

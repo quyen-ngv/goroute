@@ -1,10 +1,14 @@
 package com.ds.goroute.mapper;
 
 import com.ds.goroute.entity.Activity;
+import com.ds.goroute.entity.TripCount;
+import com.ds.goroute.entity.UnlinkedActivityRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Mapper
@@ -18,7 +22,16 @@ public interface ActivityMapper {
     List<Activity> selectByTripId(@Param("tripId") UUID tripId);
     
     int countByTripId(@Param("tripId") UUID tripId);
-    
+
+    /** Activity count per trip; trips without activities have no row. */
+    List<TripCount> countByTripIds(@Param("tripIds") List<UUID> tripIds);
+
+    /** Id, trip id and name only: enough to label photos with the stop they belong to. */
+    List<Activity> selectNamesByIds(@Param("ids") List<UUID> ids);
+
+    /** id, trip_id, place_id and place_ref_id of the trip's activities that name a place. */
+    List<Activity> selectPlaceReferencesByTripId(@Param("tripId") UUID tripId);
+
     List<Activity> selectByTripIdAndDay(@Param("tripId") UUID tripId, @Param("dayNumber") Integer dayNumber);
     
     List<Activity> selectByTripIdAndDayNumber(@Param("tripId") UUID tripId, @Param("dayNumber") int dayNumber);
@@ -30,4 +43,28 @@ public interface ActivityMapper {
     int deleteByTripId(@Param("tripId") UUID tripId);
     
     int updateSortOrder(@Param("id") UUID id, @Param("sortOrder") Integer sortOrder);
+
+    List<UnlinkedActivityRow> selectUnlinkedForAdmin(
+            @Param("search") String search, @Param("dismissed") boolean dismissed,
+            @Param("categories") List<String> categories, @Param("excludedCategories") List<String> excludedCategories,
+            @Param("limit") int limit, @Param("offset") int offset);
+
+    long countUnlinkedForAdmin(@Param("search") String search, @Param("dismissed") boolean dismissed,
+            @Param("categories") List<String> categories, @Param("excludedCategories") List<String> excludedCategories);
+
+    int dismissPlaceReview(@Param("id") UUID id, @Param("adminId") UUID adminId);
+
+    int restorePlaceReview(@Param("id") UUID id);
+
+    int assignPlace(@Param("id") UUID id, @Param("placeId") String placeId, @Param("placeRefId") UUID placeRefId,
+                    @Param("lat") BigDecimal lat, @Param("lng") BigDecimal lng);
+
+    int assignMapPlace(@Param("id") UUID id, @Param("tripId") UUID tripId, @Param("lat") BigDecimal lat,
+                       @Param("lng") BigDecimal lng, @Param("mapboxId") String mapboxId);
+
+    int setMapboxId(@Param("id") UUID id, @Param("tripId") UUID tripId, @Param("mapboxId") String mapboxId);
+
+    int relayoutDays(@Param("tripId") UUID tripId, @Param("oldDays") int oldDays,
+                     @Param("moves") Map<Integer, Integer> moves, @Param("outsideDelta") int outsideDelta,
+                     @Param("startDelta") int startDelta);
 }

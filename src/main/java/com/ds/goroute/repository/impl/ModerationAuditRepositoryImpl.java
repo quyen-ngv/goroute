@@ -28,6 +28,21 @@ public class ModerationAuditRepositoryImpl implements ModerationAuditRepository 
     }
 
     @Override
+    public int completeImageResult(ImageModerationResult result) {
+        return mapper.completeImageResult(result);
+    }
+
+    @Override
+    public List<ImageModerationResult> findStalePendingImageResults(LocalDateTime before, int limit) {
+        return mapper.findStalePendingImageResults(before, limit);
+    }
+
+    @Override
+    public List<String> findHiddenImageKeys() {
+        return mapper.findHiddenImageKeys();
+    }
+
+    @Override
     public List<Map<String, Object>> summarizeDecisions(LocalDateTime from, LocalDateTime to) {
         return mapper.summarizeDecisions(from, to);
     }

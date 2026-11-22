@@ -37,6 +37,30 @@ public class ActivityBookingRepositoryImpl implements ActivityBookingRepository 
     }
 
     @Override
+    public List<ActivityBooking> findCatalogueByIds(java.util.Collection<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return mapper.findCatalogueByIds(ids);
+    }
+
+    @Override
+    public List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexPage(UUID afterId, int limit) {
+        return mapper.selectSearchIndexPage(afterId, limit);
+    }
+
+    @Override
+    public List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexChanges(
+            java.time.LocalDateTime afterUpdatedAt, UUID afterId, int limit) {
+        return mapper.selectSearchIndexChanges(afterUpdatedAt, afterId, limit);
+    }
+
+    @Override
+    public Optional<java.time.LocalDateTime> findSearchIndexMaxUpdatedAt() {
+        return Optional.ofNullable(mapper.selectSearchIndexMaxUpdatedAt());
+    }
+
+    @Override
     public Optional<ActivityBooking> findByExternalId(String externalId) {
         return Optional.ofNullable(mapper.findByExternalId(externalId));
     }
@@ -64,6 +88,19 @@ public class ActivityBookingRepositoryImpl implements ActivityBookingRepository 
     @Override
     public List<ActivityBooking> findWithinRadius(ActivityBookingGeoSearchParams params) {
         return mapper.findWithinRadius(params);
+    }
+
+    @Override
+    public List<ActivityBooking> findRadiusCandidates(ActivityBookingGeoSearchParams params) {
+        return mapper.findRadiusCandidates(params);
+    }
+
+    @Override
+    public List<ActivityBooking> findListByIds(List<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return mapper.findListByIds(ids);
     }
 
     @Override

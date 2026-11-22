@@ -16,9 +16,6 @@ import java.util.UUID;
 public class UserQuotaOverride {
     private UUID userId;
     private Integer freeTripQuota;
-    private Integer aiTripFreeQuota;
-    private Integer aiTripProQuota;
-    private Integer socialLocationDailyLimit;
     private Long dataVersion;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

@@ -1,13 +1,11 @@
 package com.ds.goroute.repository.impl;
 
-import com.ds.goroute.entity.AiTripDraft;
 import com.ds.goroute.mapper.AiTripMapper;
 import com.ds.goroute.repository.AiTripRepository;
 import com.ds.goroute.service.UserSubscriptionBootstrapService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
-import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -37,16 +35,6 @@ public class AiTripRepositoryImpl implements AiTripRepository {
         subscriptionBootstrap.ensureExists(userId);
     }
 
-    @Override
-    public int consumeAiTripQuota(UUID userId, int limit) {
-        return aiTripMapper.consumeAiTripQuota(userId, limit);
-    }
-
-    @Override
-    public int releaseAiTripQuota(UUID userId) {
-        return aiTripMapper.releaseAiTripQuota(userId);
-    }
-
     /**
      * The hot read path: social submit, check-in and quota reserve all call it from inside their
      * own transaction. Reading before bootstrapping keeps that to the one connection the caller
@@ -65,37 +53,5 @@ public class AiTripRepositoryImpl implements AiTripRepository {
     @Override
     public java.time.LocalDateTime getSubscriptionExpiresAt(UUID userId) {
         return aiTripMapper.getSubscriptionExpiresAt(userId);
-    }
-
-    @Override
-    public int getAiTripsUsed(UUID userId) {
-        // Deliberately NO ensureSubscription() here. ensureExists runs REQUIRES_NEW on a second
-        // connection; when the caller's transaction has already locked the user's row (quota
-        // consume UPDATE in AiTripQuotaService.reserve), that nested INSERT ... ON CONFLICT waits
-        // on our own lock forever — a self-deadlock Postgres cannot detect. Callers that may run
-        // before the row exists (getUsage/reserve) call ensureSubscription() explicitly first,
-        // while the row is still unlocked.
-        Integer used = aiTripMapper.getAiTripsUsed(userId);
-        return used != null ? used : 0;
-    }
-
-    @Override
-    public void insertDraft(AiTripDraft draft) {
-        aiTripMapper.insertDraft(draft);
-    }
-
-    @Override
-    public Optional<AiTripDraft> findDraftForUpdate(UUID draftId, UUID userId) {
-        return Optional.ofNullable(aiTripMapper.findDraftForUpdate(draftId, userId));
-    }
-
-    @Override
-    public Optional<AiTripDraft> findDraft(UUID draftId, UUID userId) {
-        return Optional.ofNullable(aiTripMapper.findDraft(draftId, userId));
-    }
-
-    @Override
-    public void completeDraft(UUID draftId, UUID userId, String idempotencyKey, UUID tripId) {
-        aiTripMapper.completeDraft(draftId, userId, idempotencyKey, tripId);
     }
 }

@@ -11,17 +11,21 @@ import com.ds.goroute.type.*;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ds.goroute.repository.AppConfigRepository;
-import com.ds.goroute.thirdparty.goong.GoongClient;
-import com.fasterxml.jackson.databind.JsonNode;
+import com.ds.goroute.service.placelookup.PlaceHit;
+import com.ds.goroute.service.placelookup.PlaceLookupProvider;
+import com.ds.goroute.service.placelookup.PlaceLookupProviderType;
+import com.ds.goroute.service.placelookup.PlaceLookupProviders;
+import com.ds.goroute.service.placelookup.PlaceLookupQuery;
+import com.ds.goroute.service.placelookup.PlaceLookupRouter;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.ds.goroute.type.TripCreationCharge;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import org.springframework.util.LinkedMultiValueMap;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -37,6 +41,7 @@ import java.util.concurrent.TimeUnit;
 public class AiTripGenerationService {
     private final AiTripGenerationMapper mapper;
     private final AiTripQuotaService quotaService;
+    private final AiCreditService credits;
     private final PlaceRepository placeRepository;
     private final TripService tripService;
     private final ActivityRepository activityRepository;
@@ -44,14 +49,33 @@ public class AiTripGenerationService {
     private final AiTripSseService sseService;
     private final AppConfigRepository appConfigRepository;
     private final NotificationService notificationService;
-    private final GoongClient goongClient;
+    /** Field-injected and optional so the hand-built service in unit tests keeps its constructor. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private TripPreferenceService tripPreferenceService;
+    /** Same as above: absent in hand-built tests, which then resolve with Goong inside Vietnam as before. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private PlaceLookupRouter placeLookupRouter;
+    /** Same as above: absent in hand-built tests, which then search the plain 50 km circle as before. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private LocationImageRepository locationImageRepository;
+    /** Outer bound of every candidate search; the destination's tourist area narrows it further. */
+    private static final BigDecimal CANDIDATE_RADIUS_KM = BigDecimal.valueOf(50);
+    private static final int MENU_ITEMS_FOR_AI = 10;
+    /** Most-used places read per trending window (7 and 30 days) for one destination. */
+    private static final int TRENDING_PLACES_FOR_AI = 40;
+    private static final int EXTERNAL_SEARCH_RADIUS_METERS = 50_000;
+    private static final int EXTERNAL_SEARCH_LIMIT = 5;
+    /** Error prefix the worker reports when it stopped a run because the user ran out of AI credits. */
+    static final String CREDIT_EXHAUSTED = "CREDIT_EXHAUSTED";
+
+    private final PlaceLookupProviders placeLookupProviders;
     /** Local cache only: it reduces repeated resolver calls; it is never a source of truth. */
     private final Cache<String, Map<String, Object>> candidateResolutionCache = Caffeine.newBuilder()
             .maximumSize(10_000).expireAfterWrite(6, TimeUnit.HOURS).build();
 
     /**
      * Creates the durable AI job in its own transaction. Social-video completion first stores
-     * the extracted spots and then calls this method; an exhausted AI quota must not roll back
+     * the extracted spots and then calls this method; running out of AI credits must not roll back
      * those already-useful saved spots in the surrounding social-job transaction.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -68,7 +92,10 @@ public class AiTripGenerationService {
             if (!existing.getRequestHash().equals(hash)) throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Idempotency key was already used for another request");
             return existing;
         }
-        quotaService.reserve(userId);
+        if (mapper.findActiveByUser(userId) != null) {
+            throw new BusinessException(ErrorConstant.AI_TASK_ALREADY_RUNNING, "An AI itinerary is already being generated");
+        }
+        quotaService.ensureCanGenerate(userId);
         AiTripGenerationJob job = new AiTripGenerationJob();
         job.setId(UUID.randomUUID()); job.setUserId(userId); job.setIdempotencyKey(key); job.setRequestHash(hash);
         job.setRequestPayload(payload); job.setLocale(normalizeLocale(locale)); job.setAttemptId(UUID.randomUUID().toString());
@@ -109,6 +136,12 @@ public class AiTripGenerationService {
         mapper.insertEvent(event); sseService.publish(event);
     }
 
+    /** Owner of a job, for attributing the worker's AI call logs; null when the job is gone. */
+    public UUID jobUserId(UUID jobId) {
+        AiTripGenerationJob job = mapper.findById(jobId);
+        return job == null ? null : job.getUserId();
+    }
+
     /** Editable prompt rules for the AI worker: every active row under config label AI_TRIP. */
     public Map<String,String> promptConfig(UUID jobId, String attemptId) {
         verifyAttempt(mapper.findById(jobId), attemptId);
@@ -120,44 +153,106 @@ public class AiTripGenerationService {
     public List<Map<String,Object>> candidates(UUID jobId, String attemptId, AiTripCandidateQueryRequest request) {
         AiTripGenerationJob job = mapper.findById(jobId);
         verifyAttempt(job, attemptId);
-        List<Place> places = placeRepository.findActiveForAiWithinRadius(request.getLatitude(), request.getLongitude(),
-                BigDecimal.valueOf(50), request.getPlaceGroups(), request.getLimit());
+        LocationImage area = destinationArea(request.getLocationImageId(), request.getLatitude(), request.getLongitude());
+        List<Place> places = placeRepository.findActiveForAiInArea(request.getLatitude(), request.getLongitude(),
+                CANDIDATE_RADIUS_KM, area, PlaceGroup.normalizeCodes(request.getPlaceGroups()), request.getLimit());
         List<Map<String,Object>> result = new ArrayList<>();
-        for (Place p : places) {
-            Map<String,Object> row = new LinkedHashMap<>();
-            row.put("id", p.getId()); row.put("googlePlaceId", p.getPlaceId()); row.put("title", p.getTitle()); row.put("address", p.getAddress());
-            row.put("openHours", tree(p.getOpenHours()));
-            row.put("latitude", p.getLatitude()); row.put("longitude", p.getLongitude()); row.put("placeGroup", p.getPlaceGroup());
-            row.put("category", p.getCategory()); row.put("reviewCount", p.getReviewCount()); row.put("reviewRating", p.getReviewRating());
-            row.put("score", p.getPlaceOverallScore()); row.put("distanceKm", p.getDistance()); row.put("visitDurationMinutes", p.getVisitDurationMinutes());
-            row.put("description", localizedDescription(p, job.getLocale()));
-            row.put("attributes", valuedAttributes(p.getAttributes()));
-            row.put("menuHighlights", highlightTitles(p.getMenu()));
-            result.add(row);
-        }
-        log.info("AI trip candidates: job {} groups={} -> {} places", jobId, request.getPlaceGroups(), result.size());
+        for (Place p : places) result.add(catalogueRow(p));
+        log.info("AI trip candidates: job {} groups={} area={} -> {} places", jobId, request.getPlaceGroups(),
+                area == null ? null : area.getFullAddress(), result.size());
         return result;
     }
 
     /**
+     * The destination's places travellers used most lately, as catalogue rows plus how often:
+     * {@code tripsLast7Days}/{@code checkinsLast7Days} and the same over 30 days. Same tourist
+     * area and groups as {@link #candidates}; trips created by AI jobs are not counted, so the
+     * planner never reads its own earlier picks back as a trend. Places unused in both windows
+     * are not listed, so a new destination returns nothing.
+     */
+    public List<Map<String,Object>> trending(UUID jobId, String attemptId, AiTripCandidateQueryRequest request) {
+        verifyAttempt(mapper.findById(jobId), attemptId);
+        LocationImage area = destinationArea(request.getLocationImageId(), request.getLatitude(), request.getLongitude());
+        List<String> groups = PlaceGroup.normalizeCodes(request.getPlaceGroups());
+        BigDecimal radiusMeters = CANDIDATE_RADIUS_KM.multiply(BigDecimal.valueOf(1000));
+        Map<UUID, PlaceTrendingRow> week = new HashMap<>();
+        Map<UUID, PlaceTrendingRow> month = new HashMap<>();
+        for (PlaceTrendingRow row : placeRepository.findTrendingUsage(request.getLatitude(), request.getLongitude(),
+                radiusMeters, groups, PlaceTrendingPeriod.WEEK.getDays(), true, TRENDING_PLACES_FOR_AI)) {
+            week.put(row.getPlaceId(), row);
+        }
+        for (PlaceTrendingRow row : placeRepository.findTrendingUsage(request.getLatitude(), request.getLongitude(),
+                radiusMeters, groups, PlaceTrendingPeriod.MONTH.getDays(), true, TRENDING_PLACES_FOR_AI)) {
+            month.put(row.getPlaceId(), row);
+        }
+        Set<UUID> ids = new LinkedHashSet<>(week.keySet());
+        ids.addAll(month.keySet());
+        List<Map<String,Object>> result = new ArrayList<>();
+        for (Place p : placeRepository.findActiveForAiInArea(request.getLatitude(), request.getLongitude(),
+                CANDIDATE_RADIUS_KM, area, groups, new ArrayList<>(ids), ids.size())) {
+            Map<String,Object> row = catalogueRow(p);
+            PlaceTrendingRow w = week.get(p.getId());
+            PlaceTrendingRow m = month.get(p.getId());
+            int weekTrips = w == null ? 0 : w.getTripCount();
+            int weekCheckins = w == null ? 0 : w.getCheckinCount();
+            row.put("tripsLast7Days", weekTrips);
+            row.put("checkinsLast7Days", weekCheckins);
+            // A week's top place can miss the month's top list; the month still contains the week.
+            row.put("tripsLast30Days", Math.max(weekTrips, m == null ? 0 : m.getTripCount()));
+            row.put("checkinsLast30Days", Math.max(weekCheckins, m == null ? 0 : m.getCheckinCount()));
+            result.add(row);
+        }
+        log.info("AI trip trending: job {} groups={} area={} -> {} places ({} this week)", jobId, groups,
+                area == null ? null : area.getFullAddress(), result.size(), week.size());
+        return result;
+    }
+
+    /**
+     * The tourist area a destination belongs to: the area it was picked from, otherwise the area
+     * its coordinates fall in. Null outside every curated area (abroad), or in hand-built tests.
+     *
+     * <p>Planning inside one area rather than a radius is what keeps Hoi An out of a Da Nang trip:
+     * since the 2025 merger Hoi An is part of Da Nang city, but travellers treat it as a
+     * destination of its own, and the area table (not the province) encodes exactly that.
+     */
+    LocationImage destinationArea(UUID locationImageId, BigDecimal latitude, BigDecimal longitude) {
+        if (locationImageRepository == null) return null;
+        try {
+            if (locationImageId != null) {
+                Optional<LocationImage> picked = locationImageRepository.findById(locationImageId);
+                if (picked.isPresent()) return picked.get();
+            }
+            return locationImageRepository.findAreaIdForPoint(latitude, longitude)
+                    .flatMap(locationImageRepository::findById)
+                    .orElse(null);
+        } catch (RuntimeException e) {
+            log.warn("AI trip: could not resolve the tourist area of {},{}: {}", latitude, longitude, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * Resolve names discovered by cited Web research. Catalogue matches must be a unique exact
-     * normalized title; otherwise Goong is queried server-side and is accepted only when its
-     * returned canonical name is also an exact normalized match near the destination.  An
+     * normalized title; otherwise the requester's map provider (Goong or Mapbox) is queried
+     * server-side and is accepted only when its returned canonical name is also an exact
+     * normalized match near the destination.  An
      * unresolved row deliberately has no address or coordinates.
      */
     public List<Map<String, Object>> resolveCandidates(UUID jobId, String attemptId, AiTripCandidateResolutionRequest request) {
         AiTripGenerationJob job = mapper.findById(jobId);
         verifyAttempt(job, attemptId);
         if (request.getCandidates() == null || request.getCandidates().isEmpty()) return List.of();
-        List<String> groups = request.getCandidates().stream().map(AiTripCandidateResolutionRequest.Candidate::getPlaceGroup)
-                .filter(Objects::nonNull).distinct().toList();
-        List<Place> catalogue = placeRepository.findActiveForAiWithinRadius(request.getLatitude(), request.getLongitude(),
-                BigDecimal.valueOf(50), groups, 500);
+        List<String> groups = PlaceGroup.normalizeCodes(request.getCandidates().stream()
+                .map(AiTripCandidateResolutionRequest.Candidate::getPlaceGroup).toList());
+        LocationImage area = destinationArea(request.getLocationImageId(), request.getLatitude(), request.getLongitude());
+        List<Place> catalogue = placeRepository.findActiveForAiInArea(request.getLatitude(), request.getLongitude(),
+                CANDIDATE_RADIUS_KM, area, groups, 500);
+        PlaceLookupProviderType lookup = lookupProviderFor(job.getUserId(), request.getLatitude(), request.getLongitude());
         List<Map<String, Object>> resolved = new ArrayList<>();
         for (AiTripCandidateResolutionRequest.Candidate candidate : request.getCandidates()) {
-            String key = resolutionKey(request, candidate);
+            String key = lookup + "|" + resolutionKey(request, candidate);
             Map<String, Object> value = candidateResolutionCache.get(key,
-                    ignored -> resolveCandidate(candidate, request.getLatitude(), request.getLongitude(), catalogue, job.getLocale()));
+                    ignored -> resolveCandidate(candidate, request.getLatitude(), request.getLongitude(), catalogue, area, lookup));
             Map<String, Object> row = new LinkedHashMap<>(value);
             row.put("candidateId", candidate.getCandidateId());
             resolved.add(row);
@@ -168,71 +263,108 @@ public class AiTripGenerationService {
     }
 
     private Map<String, Object> resolveCandidate(AiTripCandidateResolutionRequest.Candidate candidate, BigDecimal latitude,
-                                                   BigDecimal longitude, List<Place> catalogue, String locale) {
+                                                   BigDecimal longitude, List<Place> catalogue, LocationImage area,
+                                                   PlaceLookupProviderType lookup) {
         List<Place> exact = catalogue.stream()
-                .filter(place -> Objects.equals(place.getPlaceGroup(), candidate.getPlaceGroup()))
+                .filter(place -> place.getPlaceGroup() == PlaceGroup.fromCode(candidate.getPlaceGroup()))
                 .filter(place -> normalizedName(place.getTitle()).equals(normalizedName(candidate.getTitle())))
                 .toList();
         if (exact.size() == 1) {
             Place place = exact.get(0);
-            Map<String, Object> row = catalogueRow(place, locale);
+            Map<String, Object> row = catalogueRow(place);
             row.put("resolvedBy", "CATALOGUE");
             row.put("resolutionStatus", "RESOLVED");
             row.put("externalResolutionVerified", false);
             return row;
         }
-        Map<String, Object> goong = resolveWithGoong(candidate, latitude, longitude);
-        if (goong != null) return goong;
+        Map<String, Object> external = resolveExternally(candidate, latitude, longitude, lookup);
+        if (external != null) {
+            return outsideArea(area, (BigDecimal) external.get("latitude"), (BigDecimal) external.get("longitude"))
+                    ? outOfAreaRow(candidate) : external;
+        }
         return unresolvedRow(candidate);
     }
 
-    private Map<String, Object> catalogueRow(Place p, String locale) {
-        Map<String,Object> row = new LinkedHashMap<>();
-        row.put("id", p.getId()); row.put("googlePlaceId", p.getPlaceId()); row.put("title", p.getTitle()); row.put("address", p.getAddress());
-        row.put("openHours", tree(p.getOpenHours())); row.put("latitude", p.getLatitude()); row.put("longitude", p.getLongitude());
-        row.put("placeGroup", p.getPlaceGroup()); row.put("category", p.getCategory()); row.put("reviewCount", p.getReviewCount());
-        row.put("reviewRating", p.getReviewRating()); row.put("score", p.getPlaceOverallScore()); row.put("distanceKm", p.getDistance());
-        row.put("visitDurationMinutes", p.getVisitDurationMinutes()); row.put("description", localizedDescription(p, locale));
-        row.put("attributes", valuedAttributes(p.getAttributes())); row.put("menuHighlights", highlightTitles(p.getMenu()));
+    /**
+     * Whether a map hit lies in another tourist area than the destination's. A point in no area
+     * at all still counts as inside when it is within the destination area's own radius.
+     */
+    private boolean outsideArea(LocationImage area, BigDecimal latitude, BigDecimal longitude) {
+        if (area == null || locationImageRepository == null || latitude == null || longitude == null) return false;
+        Optional<UUID> hitArea;
+        try {
+            hitArea = locationImageRepository.findAreaIdForPoint(latitude, longitude);
+        } catch (RuntimeException e) {
+            return false;
+        }
+        if (hitArea.isPresent()) return !hitArea.get().equals(area.getId());
+        if (area.getLatitude() == null || area.getLongitude() == null) return false;
+        double radius = area.getCoverageRadiusKm() == null ? 30 : area.getCoverageRadiusKm().doubleValue();
+        return haversineKm(area.getLatitude(), area.getLongitude(), latitude, longitude) > radius;
+    }
+
+    /** A Web discovery that resolved to another destination (Hoi An for a Da Nang trip); the worker drops it. */
+    private Map<String, Object> outOfAreaRow(AiTripCandidateResolutionRequest.Candidate candidate) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("title", candidate.getTitle()); row.put("placeGroup", candidate.getPlaceGroup());
+        row.put("resolutionStatus", "OUT_OF_AREA"); row.put("externalResolutionVerified", false);
         return row;
     }
 
-    private Map<String, Object> resolveWithGoong(AiTripCandidateResolutionRequest.Candidate candidate,
-                                                  BigDecimal latitude, BigDecimal longitude) {
+    /**
+     * One catalogue place as the planner reads it. Besides identity, location and ratings it
+     * carries the facts that decide a plan but used to be guessed from the name: a short price
+     * label, whitelisted "about" tags (breakfast, kids, wheelchair, veg, halal...) and dish names.
+     */
+    private Map<String, Object> catalogueRow(Place p) {
+        Map<String,Object> row = new LinkedHashMap<>();
+        row.put("id", p.getId()); row.put("googlePlaceId", p.getPlaceId()); row.put("title", p.getTitle()); row.put("address", p.getAddress());
+        row.put("openHours", tree(p.getOpenHours())); row.put("latitude", p.getLatitude()); row.put("longitude", p.getLongitude());
+        row.put("placeGroup", p.getPlaceGroup()); row.put("category", p.getCategory());
+        row.put("subTypes", p.getSubTypes() != null ? List.of(p.getSubTypes()) : List.of()); row.put("reviewCount", p.getReviewCount());
+        row.put("reviewRating", p.getReviewRating()); row.put("score", p.getPlaceOverallScore()); row.put("distanceKm", p.getDistance());
+        row.put("visitDurationMinutes", p.getVisitDurationMinutes());
+        // The free-text `descriptions` column is not sent: only the AI description.
+        row.put("aiDescription", aiDescription(p));
+        row.put("menuHighlights", com.ds.goroute.utils.PlaceAiFacts.menuHighlights(p.getMenu(), MENU_ITEMS_FOR_AI));
+        row.put("priceRange", com.ds.goroute.utils.PlaceAiFacts.priceLabel(p.getPriceRange(), p.getAttributes()));
+        row.put("tags", com.ds.goroute.utils.PlaceAiFacts.aboutTags(p.getAbout()));
+        return row;
+    }
+
+    /** The shared rule ({@link PlaceLookupRouter}); hand-built tests get it without a resolver. */
+    private PlaceLookupProviderType lookupProviderFor(UUID userId, BigDecimal latitude, BigDecimal longitude) {
+        PlaceLookupRouter router = placeLookupRouter != null ? placeLookupRouter
+                : new PlaceLookupRouter(placeLookupProviders, null);
+        return router.providerFor(userId, latitude, longitude);
+    }
+
+    private Map<String, Object> resolveExternally(AiTripCandidateResolutionRequest.Candidate candidate,
+                                                  BigDecimal latitude, BigDecimal longitude,
+                                                  PlaceLookupProviderType lookup) {
+        PlaceLookupProvider provider = placeLookupProviders.get(lookup);
         try {
-            LinkedMultiValueMap<String, String> params = new LinkedMultiValueMap<>();
-            params.add("input", candidate.getTitle());
-            params.add("location", latitude + "," + longitude);
-            params.add("radius", "50000");
-            params.add("limit", "5");
-            var autocomplete = goongClient.forward("/Place/AutoComplete", params);
-            if (!autocomplete.getStatusCode().is2xxSuccessful() || autocomplete.getBody() == null) return null;
-            JsonNode predictions = objectMapper.readTree(autocomplete.getBody()).path("predictions");
-            if (!predictions.isArray()) return null;
-            for (JsonNode prediction : predictions) {
-                String predictionName = text(prediction.path("structured_formatting").path("main_text"));
-                if (predictionName == null) predictionName = text(prediction.path("name"));
-                String placeId = text(prediction.path("place_id"));
-                if (placeId == null || !normalizedName(candidate.getTitle()).equals(normalizedName(predictionName))) continue;
-                LinkedMultiValueMap<String, String> detailParams = new LinkedMultiValueMap<>();
-                detailParams.add("place_id", placeId);
-                var detail = goongClient.forward("/Place/Detail", detailParams);
-                if (!detail.getStatusCode().is2xxSuccessful() || detail.getBody() == null) continue;
-                JsonNode result = objectMapper.readTree(detail.getBody()).path("result");
-                String canonicalName = text(result.path("name"));
-                BigDecimal lat = decimal(result.path("geometry").path("location").path("lat"));
-                BigDecimal lng = decimal(result.path("geometry").path("location").path("lng"));
-                if (!normalizedName(candidate.getTitle()).equals(normalizedName(canonicalName)) || lat == null || lng == null
+            List<PlaceHit> predictions = provider.searchText(new PlaceLookupQuery(candidate.getTitle(), latitude, longitude,
+                    EXTERNAL_SEARCH_RADIUS_METERS, EXTERNAL_SEARCH_LIMIT));
+            for (PlaceHit prediction : predictions) {
+                if (!normalizedName(candidate.getTitle()).equals(normalizedName(prediction.name()))) continue;
+                Optional<PlaceHit> detail = provider.getDetails(prediction.providerPlaceId());
+                if (detail.isEmpty()) continue;
+                PlaceHit place = detail.get();
+                BigDecimal lat = place.latitude();
+                BigDecimal lng = place.longitude();
+                if (!normalizedName(candidate.getTitle()).equals(normalizedName(place.name())) || lat == null || lng == null
                         || haversineKm(latitude, longitude, lat, lng) > 50) continue;
+                // Historical wire name: this carries a Goong or Mapbox ID, not a Google place ID (ISSUES.md).
                 Map<String, Object> row = new LinkedHashMap<>();
-                row.put("googlePlaceId", placeId); row.put("title", canonicalName); row.put("address", text(result.path("formatted_address")));
+                row.put("googlePlaceId", prediction.providerPlaceId()); row.put("title", place.name()); row.put("address", place.address());
                 row.put("latitude", lat); row.put("longitude", lng); row.put("placeGroup", candidate.getPlaceGroup());
-                row.put("category", text(result.path("types").isArray() && result.path("types").size() > 0 ? result.path("types").get(0) : null));
-                row.put("resolvedBy", "GOONG"); row.put("resolutionStatus", "RESOLVED"); row.put("externalResolutionVerified", true);
+                row.put("category", place.primaryType());
+                row.put("resolvedBy", lookup.name()); row.put("resolutionStatus", "RESOLVED"); row.put("externalResolutionVerified", true);
                 return row;
             }
         } catch (Exception e) {
-            log.warn("AI trip Goong resolver failed for '{}': {}", candidate.getTitle(), e.getMessage());
+            log.warn("AI trip {} resolver failed for '{}': {}", lookup, candidate.getTitle(), e.getMessage());
         }
         return null;
     }
@@ -253,14 +385,6 @@ public class AiTripGenerationService {
         if (value == null) return "";
         return Normalizer.normalize(value, Normalizer.Form.NFD).replaceAll("\\p{M}", "")
                 .toLowerCase(Locale.ROOT).replaceAll("[^\\p{Alnum}]+", " ").trim().replaceAll("\\s+", " ");
-    }
-
-    private String text(JsonNode node) {
-        return node != null && node.isTextual() && !node.asText().isBlank() ? node.asText().trim() : null;
-    }
-
-    private BigDecimal decimal(JsonNode node) {
-        try { return node != null && node.isNumber() ? node.decimalValue() : null; } catch (Exception ignored) { return null; }
     }
 
     private double haversineKm(BigDecimal aLat, BigDecimal aLng, BigDecimal bLat, BigDecimal bLng) {
@@ -292,18 +416,34 @@ public class AiTripGenerationService {
         TripResponse trip = tripService.createTrip(CreateTripRequest.builder().name(original.getTripName() == null || original.getTripName().isBlank() ? original.getCityName() : original.getTripName())
                 .startDate(first.getStartDate()).endDate(last.getEndDate()).destination(original.getCityName())
                 .destinationLat(first.getLatitude()).destinationLng(first.getLongitude()).destinations(destinations)
-                .budget(original.getBudgetMax()).currency(original.getBudgetCurrency()).build(), job.getUserId());
+                .budget(original.getBudgetMax()).currency(original.getBudgetCurrency()).build(), job.getUserId(),
+                // The balance was checked when the job started; refusing now would leave the AI bill paid
+                // and nothing saved.
+                TripCreationCharge.ALLOW_OVERDRAFT);
+        if (tripPreferenceService != null) {
+            tripPreferenceService.save(trip.getId(), tripPreferenceService.fromAiRequest(original), TripPreference.SOURCE_AI);
+        }
         if (request.getTripDescription() != null) tripService.updateTrip(trip.getId(), UpdateTripRequest.builder().description(request.getTripDescription()).build(), job.getUserId());
-        for (AiTripCommitRequest.Item item : request.getItems()) activityRepository.insert(toActivity(item, trip.getId(), job.getUserId()));
+        Map<String, String> mapboxIds = socialMapboxIds(original);
+        for (AiTripCommitRequest.Item item : request.getItems()) {
+            Activity activity = toActivity(item, trip.getId(), job.getUserId());
+            if (activity.getPlaceRefId() == null && item.getSourceSocialCandidateRef() != null) {
+                activity.setMapboxId(trunc(mapboxIds.get(item.getSourceSocialCandidateRef()), 255));
+            }
+            activityRepository.insert(activity);
+        }
         int completed = mapper.markCompleted(jobId, job.getAttemptId(), trip.getId());
         log.info("AI trip commit: job {} COMPLETED -> trip {}", jobId, trip.getId());
         AiTripGenerationEvent event = event(job, "COMPLETED", "COMPLETED", 100, "ai_trip.completed", Map.of("tripId", trip.getId()));
         mapper.insertEvent(event); sseService.publish(event);
         if (completed == 1) {
+            // "source" picks the wording: only a plan built from a social video says "from the video".
+            boolean fromVideo = original.getSocialContext() != null && !original.getSocialContext().isEmpty();
             notificationService.createNotification(
                     job.getUserId(), trip.getId(), NotificationType.AI_TRIP_CREATED,
                     null, null,
-                    Map.of("tripId", trip.getId().toString(), "deepLink", "/trip/" + trip.getId()),
+                    Map.of("tripId", trip.getId().toString(), "deepLink", "/trip/" + trip.getId(),
+                            "source", fromVideo ? "VIDEO" : "AI"),
                     null);
         }
         return trip.getId();
@@ -314,8 +454,16 @@ public class AiTripGenerationService {
 
     private void terminal(AiTripGenerationJob job, String status, String error) {
         log.info("AI trip terminal: job {} -> {}{}", job.getId(), status, error == null ? "" : " (" + error + ")");
-        if (mapper.markTerminalAndRelease(job.getId(), status, error) == 1) quotaService.release(job.getUserId());
-        AiTripGenerationEvent event=event(job,status,status,job.getProgress(),"ai_trip."+status.toLowerCase(Locale.ROOT),Map.of());
+        // A run that failed on our side, or that the user cancelled, gives its credits back; one the
+        // worker stopped because the user ran out of credit (CREDIT_EXHAUSTED) keeps the charges.
+        if (mapper.markTerminalAndRelease(job.getId(), status, error) == 1
+                && (error == null || !error.startsWith(CREDIT_EXHAUSTED))) {
+            credits.refundTask(job.getUserId(), job.getId().toString(), "AI trip " + status.toLowerCase(Locale.ROOT));
+        }
+        // The app tells "credit ran out" apart from a failure by this reason, without fetching the job.
+        Map<String, Object> params = error != null && error.startsWith(CREDIT_EXHAUSTED)
+                ? Map.of("reason", CREDIT_EXHAUSTED) : Map.of();
+        AiTripGenerationEvent event=event(job,status,status,job.getProgress(),"ai_trip."+status.toLowerCase(Locale.ROOT),params);
         mapper.insertEvent(event); sseService.publish(event);
     }
     private Activity toActivity(AiTripCommitRequest.Item i, UUID tripId, UUID userId) {
@@ -324,8 +472,9 @@ public class AiTripGenerationService {
         TransportMode mode=null; if (i.getTransportMode()!=null) try { mode=TransportMode.valueOf(i.getTransportMode()); } catch(Exception e){ throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,"Invalid transport mode"); }
         // places.title is VARCHAR(500) but activities.name is VARCHAR(255): a long Google Maps
         // title (or a transport label built from it) must be truncated, not fail the whole commit.
+        // The worker names the resolver that verified the location (GOONG or MAPBOX).
         boolean unresolvedWebCandidate = i.getCandidateId() != null && i.getCandidateId().startsWith("web:")
-                && !"GOONG".equals(i.getExternalPlaceResolution());
+                && (i.getExternalPlaceResolution() == null || i.getExternalPlaceResolution().isBlank());
         String address = p != null && p.getAddress() != null && !p.getAddress().isBlank()
                 ? p.getAddress() : unresolvedWebCandidate ? null : i.getAddress();
         BigDecimal latitude = p != null && p.getLatitude() != null ? p.getLatitude() : unresolvedWebCandidate ? null : i.getLatitude();
@@ -341,6 +490,19 @@ public class AiTripGenerationService {
                 .optionGroupId(trunc(i.getOptionGroupId(), 128)).optionIndex(i.getOptionIndex()).relation(trunc(i.getRelation(), 32))
                 .sourceSocialJobId(uuid(i.getSourceSocialJobId())).sourceSocialCandidateRef(trunc(i.getSourceSocialCandidateRef(), 128))
                 .build();
+    }
+    /** Social candidate ref to the Mapbox id the video's place search found for it. */
+    private static Map<String, String> socialMapboxIds(AiTripGenerateRequest request) {
+        Map<String, String> ids = new HashMap<>();
+        Object candidates = request.getSocialContext() == null ? null : request.getSocialContext().get("candidates");
+        if (!(candidates instanceof List<?> rows)) return ids;
+        for (Object row : rows) {
+            if (row instanceof Map<?, ?> map && map.get("candidateId") instanceof String ref
+                    && map.get("mapboxId") instanceof String mapboxId && !mapboxId.isBlank()) {
+                ids.put(ref, mapboxId);
+            }
+        }
+        return ids;
     }
     private String trunc(String s, int max) {
         if (s == null || s.length() <= max) return s;
@@ -407,12 +569,7 @@ public class AiTripGenerationService {
     private boolean terminal(String s){return Set.of("COMPLETED","FAILED","CANCELLED").contains(s);}
     private AiTripGenerationEvent event(AiTripGenerationJob j,String stage,String status,int progress,String key,Map<String,Object> params){AiTripGenerationEvent e=new AiTripGenerationEvent();e.setJobId(j.getId());e.setAttemptId(j.getAttemptId());e.setStage(stage);e.setStatus(status);e.setProgress(progress);e.setMessageKey(key);e.setParams(json(params));return e;}
     private String normalizeLocale(String s){return s!=null&&s.toLowerCase().startsWith("vi")?"vi":"en";}
-    private String localizedDescription(Place p,String locale){if(p.getAiDescription()!=null&&!p.getAiDescription().isBlank())return p.getAiDescription(); Object x=treeValue(p.getDescriptions(),locale);return x==null?null:String.valueOf(x);}
-    private Object valuedAttributes(String raw){Object x=prune(tree(raw));return x==null?Map.of():x;}
-    private Object prune(Object x){if(x==null)return null;if(x instanceof String s)return s.isBlank()?null:s;if(x instanceof Map<?,?> m){Map<String,Object> out=new LinkedHashMap<>();for(var e:m.entrySet()){Object v=prune(e.getValue());if(v!=null)out.put(String.valueOf(e.getKey()),v);}return out.isEmpty()?null:out;}if(x instanceof List<?> l){List<Object> out=l.stream().map(this::prune).filter(Objects::nonNull).toList();return out.isEmpty()?null:out;}return x;}
-    private List<String> highlightTitles(String raw){Object x=tree(raw);List<String> out=new ArrayList<>();collectTitles(x,out);return out.stream().filter(t->!t.matches("(?i)photo \\d+ of \\d+")).distinct().limit(30).toList();}
-    @SuppressWarnings("unchecked") private void collectTitles(Object x,List<String> out){if(x instanceof Map<?,?> m){Object h=m.get("highlightTitle");Object t=m.get("title");if(h!=null)out.add(String.valueOf(h));else if(t!=null)out.add(String.valueOf(t));for(Object v:m.values())collectTitles(v,out);}else if(x instanceof List<?> l)for(Object v:l)collectTitles(v,out);}
-    private Object treeValue(String raw,String key){Object x=tree(raw);return x instanceof Map<?,?>m?m.get(key):x;}
+    private String aiDescription(Place p){return p.getAiDescription()==null||p.getAiDescription().isBlank()?null:p.getAiDescription();}
     private Object tree(String raw){try{return raw==null?null:objectMapper.readValue(raw,new TypeReference<Object>(){});}catch(Exception e){return null;}}
     private <T>T read(String raw,Class<T> type){try{return objectMapper.readValue(raw,type);}catch(Exception e){throw new IllegalStateException(e);}}
     private String json(Object x){try{return objectMapper.writeValueAsString(x);}catch(Exception e){throw new IllegalStateException(e);}}

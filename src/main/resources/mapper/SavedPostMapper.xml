@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.SavedPostMapper">
+    <resultMap id="SavedPostResultMap" type="com.ds.goroute.entity.SavedPost">
+        <result property="userId" column="user_id"/>
+        <result property="postType" column="post_type"/>
+        <result property="postId" column="post_id"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO saved_posts (user_id, post_type, post_id, created_at)
+        VALUES (#{userId}, #{postType}, #{postId}, NOW())
+        ON CONFLICT (user_id, post_type, post_id) DO NOTHING
+    </insert>
+
+    <delete id="delete">
+        DELETE FROM saved_posts
+        WHERE user_id = #{userId} AND post_type = #{postType} AND post_id = #{postId}
+    </delete>
+
+    <!-- Keyset page over (created_at, post_type, post_id), newest or oldest first. -->
+    <select id="findPage" resultMap="SavedPostResultMap">
+        SELECT user_id, post_type, post_id, created_at
+        FROM saved_posts
+        WHERE user_id = #{userId}
+        <if test="afterCreatedAt != null and afterPostType != null and afterPostId != null">
+            <choose>
+                <when test="oldestFirst">
+                    AND (created_at, post_type, post_id) &gt; (#{afterCreatedAt}, #{afterPostType}, #{afterPostId})
+                </when>
+                <otherwise>
+                    AND (created_at, post_type, post_id) &lt; (#{afterCreatedAt}, #{afterPostType}, #{afterPostId})
+                </otherwise>
+            </choose>
+        </if>
+        <choose>
+            <when test="oldestFirst">
+                ORDER BY created_at ASC, post_type ASC, post_id ASC
+            </when>
+            <otherwise>
+                ORDER BY created_at DESC, post_type DESC, post_id DESC
+            </otherwise>
+        </choose>
+        LIMIT #{limit}
+    </select>
+
+    <select id="countByUser" resultType="int">
+        SELECT COUNT(*) FROM saved_posts WHERE user_id = #{userId}
+    </select>
+
+    <select id="findSavedIds" resultType="java.util.UUID">
+        SELECT post_id FROM saved_posts
+        WHERE user_id = #{userId} AND post_type = #{postType} AND post_id IN
+        <foreach collection="postIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+</mapper>

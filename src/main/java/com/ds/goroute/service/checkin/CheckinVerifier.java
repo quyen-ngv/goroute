@@ -113,7 +113,15 @@ public class CheckinVerifier {
 
     /** Writes the verdict, the distance and the resolved ward onto the check-in. */
     public void apply(UserCheckin checkin, Place place) {
-        Assessment assessment = assess(place, checkin.getLatitude(), checkin.getLongitude(), checkin.getAccuracyMeters());
+        applyTo(checkin, VerificationTarget.forPlace(place, effectiveRadius(place)));
+    }
+
+    /**
+     * The same verdict against any target. A check-in at a local event whose venue is not in
+     * the catalogue is measured against the venue's own coordinates (epic 17).
+     */
+    public void applyTo(UserCheckin checkin, VerificationTarget target) {
+        Assessment assessment = assess(target, checkin.getLatitude(), checkin.getLongitude(), checkin.getAccuracyMeters());
         if (assessment.distanceMeters() != null) {
             checkin.setDistanceMeters(BigDecimal.valueOf(assessment.distanceMeters()));
         }

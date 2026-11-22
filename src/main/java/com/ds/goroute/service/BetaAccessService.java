@@ -24,4 +24,9 @@ public interface BetaAccessService {
 
     /** False for an unknown account, an account with no username, or an empty list. */
     boolean isBetaUser(UUID userId);
+
+    /** The beta usernames, lower-cased; empty when the list is. */
+    default java.util.Set<String> betaUsernames() {
+        return java.util.Set.of();
+    }
 }

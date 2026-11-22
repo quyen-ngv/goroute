@@ -21,6 +21,10 @@
         <result property="locationSource" column="location_source"/>
         <result property="locationKey" column="location_key"/>
         <result property="caption" column="caption"/>
+        <result property="frameStyle" column="frame_style"/>
+        <result property="placeKind" column="place_kind"/>
+        <result property="musicTrackId" column="music_track_id"/>
+        <result property="muteVideoSound" column="mute_video_sound"/>
         <result property="overallRating" column="overall_rating"/>
         <result property="foodRating" column="food_rating"/>
         <result property="priceRating" column="price_rating"/>
@@ -36,10 +40,13 @@
         <result property="rewardPoints" column="reward_points"/>
         <result property="rewardReason" column="reward_reason"/>
         <result property="isRemoved" column="is_removed"/>
+        <result property="placeDismissedAt" column="place_dismissed_at"/>
         <result property="visitedAt" column="visited_at"/>
         <result property="editedAt" column="edited_at"/>
         <result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
+        <result property="hasPhoto" column="has_photo"/>
+        <result property="localEventId" column="local_event_id"/>
     </resultMap>
 
     <resultMap id="photoMap" type="com.ds.goroute.entity.UserCheckinPhoto">
@@ -55,6 +62,16 @@
         <result property="longitude" column="longitude"/>
         <result property="accuracyMeters" column="accuracy_meters"/>
         <result property="createdAt" column="created_at"/>
+        <result property="mediaType" column="media_type"/>
+        <result property="thumbnailUrl" column="thumbnail_url"/>
+        <result property="durationSeconds" column="duration_seconds"/>
+        <result property="filterKey" column="filter_key"/>
+        <result property="frameKey" column="frame_key"/>
+    </resultMap>
+
+    <resultMap id="cameraLookUsageMap" type="com.ds.goroute.entity.CameraLookUsageRow">
+        <result property="lookKey" column="look_key"/>
+        <result property="usageCount" column="usage_count"/>
     </resultMap>
 
     <resultMap id="clusterMap" type="com.ds.goroute.entity.CheckinCluster">
@@ -85,31 +102,65 @@
         <result property="checkinCountAtDecision" column="checkin_count_at_decision"/>
     </resultMap>
 
+    <!-- The Feed's place-kind chips (FeedPlaceKind, as the parameter "kind") on a place
+         aliased kp: in one of the groups, and with any of the sub types. The same fragment
+         sits in UserReviewMapper.xml and TripMapper.xml: each mapper is parsed on its own. -->
+    <sql id="feedPlaceKind">
+        <if test="kind.placeGroups != null and kind.placeGroups.size() > 0">
+            AND kp.place_group IN
+            <foreach item="kindGroup" collection="kind.placeGroups" open="(" separator="," close=")">#{kindGroup}</foreach>
+        </if>
+        <if test="kind.subTypes != null and kind.subTypes.size() > 0">
+            AND kp.sub_types &amp;&amp; ARRAY[<foreach item="kindSubType" collection="kind.subTypes" separator=",">#{kindSubType}</foreach>]::varchar[]
+        </if>
+    </sql>
+
+    <!-- A check-in under a place-kind chip: through its catalogue place when it has one,
+         else through the kind its author declared (place_kind, V289). The place always
+         wins, so a place attached later by an operator decides from then on. -->
+    <sql id="checkinPlaceKind">
+        AND (
+            EXISTS (
+                SELECT 1 FROM places kp
+                WHERE kp.id = user_checkins.place_id
+                <include refid="feedPlaceKind"/>)
+            OR (user_checkins.place_id IS NULL
+                AND user_checkins.place_kind IS NOT NULL
+                <if test="kind.placeGroups != null and kind.placeGroups.size() > 0">
+                    AND goroute_checkin_kind_group(user_checkins.place_kind) IN
+                    <foreach item="kindGroup" collection="kind.placeGroups" open="(" separator="," close=")">#{kindGroup}</foreach>
+                </if>
+                <if test="kind.subTypes != null and kind.subTypes.size() > 0">
+                    AND goroute_checkin_kind_sub_types(user_checkins.place_kind) &amp;&amp; ARRAY[<foreach item="kindSubType" collection="kind.subTypes" separator=",">#{kindSubType}</foreach>]::varchar[]
+                </if>)
+        )
+    </sql>
+
     <sql id="columns">
         id, user_id, trip_id, activity_id, place_id, review_id, location_name, custom_name,
         latitude, longitude, accuracy_meters, ward, district, province, province_code,
-        location_source, location_key, caption, overall_rating, food_rating, price_rating,
+        location_source, location_key, caption, frame_style, place_kind, music_track_id, mute_video_sound, overall_rating, food_rating, price_rating,
         ambiance_rating, service_rating, photo_source, visibility, verification_status,
         verification_scope, ward_code,
         distance_meters, idempotency_key, reward_points, reward_reason, is_removed,
-        visited_at, edited_at, created_at, updated_at
+        visited_at, edited_at, created_at, updated_at, has_photo, place_dismissed_at, local_event_id
     </sql>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.UserCheckin">
         INSERT INTO user_checkins
             (id, user_id, trip_id, activity_id, place_id, review_id, location_name, custom_name,
              latitude, longitude, accuracy_meters, ward, district, province, province_code,
-             location_source, location_key, caption, overall_rating, food_rating, price_rating,
+             location_source, location_key, caption, frame_style, place_kind, music_track_id, mute_video_sound, overall_rating, food_rating, price_rating,
              ambiance_rating, service_rating, photo_source, visibility, verification_status,
-             verification_scope, ward_code, quest_run_id,
+             verification_scope, ward_code, quest_run_id, local_event_id,
              distance_meters, idempotency_key, is_removed, visited_at, created_at, updated_at)
         VALUES
             (#{id}, #{userId}, #{tripId}, #{activityId}, #{placeId}, #{reviewId}, #{locationName},
              #{customName}, #{latitude}, #{longitude}, #{accuracyMeters}, #{ward}, #{district},
-             #{province}, #{provinceCode}, #{locationSource}, #{locationKey}, #{caption},
-             #{overallRating}, #{foodRating}, #{priceRating}, #{ambianceRating}, #{serviceRating},
+             #{province}, #{provinceCode}, #{locationSource}, #{locationKey}, #{caption}, #{frameStyle},
+             #{placeKind}, #{musicTrackId}, #{muteVideoSound}, #{overallRating}, #{foodRating}, #{priceRating}, #{ambianceRating}, #{serviceRating},
              #{photoSource}, #{visibility}, #{verificationStatus},
-             COALESCE(#{verificationScope}, 'NONE'), #{wardCode}, #{questRunId}, #{distanceMeters},
+             COALESCE(#{verificationScope}, 'NONE'), #{wardCode}, #{questRunId}, #{localEventId}, #{distanceMeters},
              #{idempotencyKey}, FALSE, COALESCE(#{visitedAt}, #{createdAt}), #{createdAt}, #{updatedAt})
     </insert>
 
@@ -180,6 +231,10 @@
     <update id="update" parameterType="com.ds.goroute.entity.UserCheckin">
         UPDATE user_checkins
         SET caption = #{caption},
+            frame_style = #{frameStyle},
+            place_kind = #{placeKind},
+            music_track_id = #{musicTrackId},
+            mute_video_sound = #{muteVideoSound},
             custom_name = #{customName},
             overall_rating = #{overallRating},
             food_rating = #{foodRating},
@@ -196,6 +251,11 @@
 
     <select id="findById" resultMap="checkinMap">
         SELECT <include refid="columns"/> FROM user_checkins WHERE id = #{id}
+    </select>
+
+    <select id="findByIds" resultMap="checkinMap">
+        SELECT <include refid="columns"/> FROM user_checkins WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
     </select>
 
     <!-- "Have I already checked in here?"
@@ -220,25 +280,145 @@
         WHERE user_id = #{userId} AND idempotency_key = #{idempotencyKey}
     </select>
 
-    <!-- Keyset pagination: with new check-ins arriving constantly, offset paging shows
-         some posts twice and skips others. -->
+    <!-- The public feed: posts with photos first, then newest. has_photo is kept by a trigger
+         (V215), so the order is a range read of idx_user_checkins_feed_photo.
+
+         Two ways to page. With a cursor (the sort key of the last post shown) the next page is
+         every row with a smaller key: a post arriving mid-scroll can neither repeat a row nor
+         skip one. Without one, the old offset paging, for app builds that do not send a cursor.
+
+         "Near you": a check-in sits at its catalogue place when that place has coordinates (a
+         gallery photo posted from home carries the phone's position, not the place's), and
+         where it was posted otherwise. Each half of the IN list is driven by a GiST index
+         (V214) - the post's own point, or the place's point joined back by place_id - so the
+         radius never means scanning the table. -->
     <select id="findFeed" resultMap="checkinMap">
         SELECT <include refid="columns"/> FROM user_checkins
         WHERE visibility = 'PUBLIC'
           AND is_removed = FALSE
           <if test="excludeUserId != null">AND user_id &lt;&gt; #{excludeUserId}</if>
+          <if test="latitude != null and longitude != null and radiusKm != null">
+              AND id IN (
+                  SELECT own.id
+                  FROM user_checkins own
+                  LEFT JOIN places own_place ON own_place.id = own.place_id
+                  WHERE ST_DWithin(goroute_point(own.latitude, own.longitude),
+                                   goroute_point(#{latitude}, #{longitude}), #{radiusKm} * 1000)
+                    AND (own_place.latitude IS NULL OR own_place.longitude IS NULL)
+                  UNION ALL
+                  SELECT at_place.id
+                  FROM places p
+                  JOIN user_checkins at_place ON at_place.place_id = p.id
+                  WHERE ST_DWithin(goroute_point(p.latitude, p.longitude),
+                                   goroute_point(#{latitude}, #{longitude}), #{radiusKm} * 1000))
+          </if>
+          <if test="cursorCreatedAt != null and cursorId != null">
+              AND (has_photo, created_at, id) &lt; (#{cursorHasPhoto}, #{cursorCreatedAt}, #{cursorId})
+          </if>
+          <if test="kind != null">
+              <include refid="checkinPlaceKind"/>
+          </if>
           AND NOT EXISTS (
               SELECT 1 FROM content_takedowns t
               WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
                 AND t.restored_at IS NULL)
-        ORDER BY EXISTS (
-                     SELECT 1 FROM media_assets ma
-                     WHERE ma.entity_type = 'USER_CHECKIN'
-                       AND ma.entity_id = user_checkins.id
-                       AND (ma.asset_role IS NULL OR ma.asset_role = 'PHOTO')
-                       AND ma.deleted_at IS NULL) DESC,
-                 created_at DESC,
-                 id DESC
+          <!-- A deleted account's posts go with it, as on the Friends tab. -->
+          AND EXISTS (
+              SELECT 1 FROM users au
+              WHERE au.id = user_checkins.user_id AND au.deleted_at IS NULL)
+          <if test="excludeUserId != null">
+              <!-- Blocks hide posts in both directions (D9), and so do the viewer's own
+                   "hide this post" / "hide posts from this person" (feed_feedback, V245). -->
+              AND NOT EXISTS (
+                  SELECT 1 FROM user_blocks b
+                  WHERE (b.blocker_id = #{excludeUserId} AND b.blocked_id = user_checkins.user_id)
+                     OR (b.blocker_id = user_checkins.user_id AND b.blocked_id = #{excludeUserId}))
+              AND NOT EXISTS (
+                  SELECT 1 FROM feed_feedback ff
+                  WHERE ff.user_id = #{excludeUserId}
+                    AND ff.revoked_at IS NULL
+                    AND ((ff.kind = 'HIDE_POST' AND ff.item_type = 'CHECKIN' AND ff.item_id = user_checkins.id)
+                      OR (ff.kind = 'HIDE_AUTHOR' AND ff.target_user_id = user_checkins.user_id
+                          AND ff.expires_at &gt; NOW())))
+          </if>
+        ORDER BY has_photo DESC, created_at DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <resultMap id="followingCheckinMap" type="com.ds.goroute.entity.UserCheckin" extends="checkinMap">
+        <result property="focusRank" column="focus_rank"/>
+    </resultMap>
+
+    <!-- The Home "Friends" tab: public posts by the people the viewer follows. Blocks are
+         checked in both directions because blocking does not remove a follow, and a deleted
+         account's posts go with it.
+
+         With a focus point (the city Home is on) the posts rank by focus_rank first:
+         0 inside the province that covers the point (its ward's province, the stored code,
+         or the coordinates), then 1, 2, ... for each 100 km ring further out, and posts
+         without coordinates last; newest first inside each rank. Without one, or when no
+         province covers it, it is newest first throughout, as before.
+
+         The focus province is found once (the focus CTE), not once per post: every row then
+         tests against the same geometry, which PostGIS prepares once and reuses. -->
+    <select id="findFollowingFeed" resultMap="followingCheckinMap">
+        <if test="focusLat != null and focusLng != null">
+        WITH focus AS MATERIALIZED (
+            SELECT fp.code, fp.geom
+            FROM provinces fp
+            WHERE fp.geom IS NOT NULL
+              AND ST_Covers(fp.geom, ST_SetSRID(ST_MakePoint(#{focusLng}::float8, #{focusLat}::float8), 4326))
+        )
+        </if>
+        SELECT <include refid="columns"/>,
+        <choose>
+            <when test="focusLat != null and focusLng != null">
+               CASE
+                   WHEN EXISTS (
+                       SELECT 1 FROM focus fp
+                       WHERE (fp.code = COALESCE(
+                                  (SELECT w.province_code FROM wards w WHERE w.code = user_checkins.ward_code),
+                                  user_checkins.province_code)
+                              <!-- Qualified: provinces has latitude/longitude columns of its own. -->
+                              OR (user_checkins.latitude IS NOT NULL AND user_checkins.longitude IS NOT NULL
+                                  AND ST_Covers(fp.geom, ST_SetSRID(ST_MakePoint(
+                                          user_checkins.longitude::float8, user_checkins.latitude::float8), 4326)))))
+                       THEN 0
+                   WHEN latitude IS NULL OR longitude IS NULL THEN NULL
+                   ELSE 1 + FLOOR(ST_Distance(
+                                goroute_point(latitude::float8, longitude::float8),
+                                goroute_point(#{focusLat}::float8, #{focusLng}::float8)) / 100000)::int
+               END
+            </when>
+            <otherwise>NULL::int</otherwise>
+        </choose> AS focus_rank
+        FROM user_checkins
+        WHERE user_id IN (
+                SELECT f.following_id
+                FROM user_follows f
+                JOIN users u ON u.id = f.following_id AND u.deleted_at IS NULL
+                WHERE f.follower_id = #{viewerId})
+          AND visibility = 'PUBLIC'
+          AND is_removed = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM user_blocks b
+              WHERE (b.blocker_id = #{viewerId} AND b.blocked_id = user_checkins.user_id)
+                 OR (b.blocker_id = user_checkins.user_id AND b.blocked_id = #{viewerId}))
+          <if test="kind != null">
+              <include refid="checkinPlaceKind"/>
+          </if>
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns t
+              WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
+                AND t.restored_at IS NULL)
+          AND NOT EXISTS (
+              SELECT 1 FROM feed_feedback ff
+              WHERE ff.user_id = #{viewerId}
+                AND ff.revoked_at IS NULL
+                AND ((ff.kind = 'HIDE_POST' AND ff.item_type = 'CHECKIN' AND ff.item_id = user_checkins.id)
+                  OR (ff.kind = 'HIDE_AUTHOR' AND ff.target_user_id = user_checkins.user_id
+                      AND ff.expires_at &gt; NOW())))
+        ORDER BY focus_rank ASC NULLS LAST, created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
@@ -253,14 +433,23 @@
                   AND t.restored_at IS NULL)
         </if>
         <!-- A history reads by when the person was there, not by when they got round to posting. -->
-        ORDER BY visited_at DESC, created_at DESC
+        ORDER BY visited_at DESC, created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
+    <!-- The profile's check-in count: exactly the rows findByUser can page through for the
+         same viewer, so the number on the profile matches the list behind it. Served by
+         idx_user_checkins_user (user_id, ...). -->
     <select id="countByUser" resultType="long">
         SELECT COUNT(*) FROM user_checkins
         WHERE user_id = #{userId} AND is_removed = FALSE
         <if test="!includePrivate">AND visibility = 'PUBLIC'</if>
+        <if test="!includePrivate">
+            AND NOT EXISTS (
+                SELECT 1 FROM content_takedowns t
+                WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
+                  AND t.restored_at IS NULL)
+        </if>
     </select>
 
     <select id="findByPlace" resultMap="checkinMap">
@@ -270,8 +459,37 @@
               SELECT 1 FROM content_takedowns t
               WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
                 AND t.restored_at IS NULL)
-        ORDER BY visited_at DESC, created_at DESC
+        ORDER BY visited_at DESC, created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- Public check-ins made at one local event (epic 17), newest visit first. -->
+    <select id="findByLocalEvent" resultMap="checkinMap">
+        SELECT <include refid="columns"/> FROM user_checkins
+        WHERE local_event_id = #{eventId} AND visibility = 'PUBLIC' AND is_removed = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns t
+              WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
+                AND t.restored_at IS NULL)
+        ORDER BY visited_at DESC, created_at DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- The same visibility rule as findByLocalEvent, so the count matches the list. -->
+    <select id="countByLocalEvent" resultType="long">
+        SELECT COUNT(*) FROM user_checkins
+        WHERE local_event_id = #{eventId} AND visibility = 'PUBLIC' AND is_removed = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns t
+              WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
+                AND t.restored_at IS NULL)
+    </select>
+
+    <!-- Of these events, the ones this person has a live check-in at. -->
+    <select id="findCheckedInLocalEventIds" resultType="java.util.UUID">
+        SELECT DISTINCT local_event_id FROM user_checkins
+        WHERE user_id = #{userId} AND is_removed = FALSE AND local_event_id IN
+        <foreach collection="eventIds" item="eventId" open="(" separator="," close=")">#{eventId}</foreach>
     </select>
 
     <!-- Every public check-in written during one trip, oldest first.
@@ -285,6 +503,22 @@
               SELECT 1 FROM content_takedowns t
               WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
                 AND t.restored_at IS NULL)
+        ORDER BY visited_at ASC, created_at ASC
+        LIMIT #{limit}
+    </select>
+
+    <!-- The author's own check-ins for their trip story: the ones they recorded on the trip, plus
+         (when the trip has dates) the ones they made in that window without picking the trip:
+         a Home-camera check-in during the trip is still their material. Every visibility: the
+         author decides what goes into the story; a private check-in is theirs to publish. -->
+    <select id="findMineForTrip" resultMap="checkinMap">
+        SELECT <include refid="columns"/> FROM user_checkins
+        WHERE user_id = #{userId} AND is_removed = FALSE
+          AND (trip_id = #{tripId}
+            <if test="from != null and to != null">
+              OR (trip_id IS NULL AND visited_at &gt;= #{from} AND visited_at &lt; #{to})
+            </if>
+          )
         ORDER BY visited_at ASC, created_at ASC
         LIMIT #{limit}
     </select>
@@ -315,7 +549,7 @@
               SELECT 1 FROM content_takedowns t
               WHERE t.content_type = 'CHECKIN' AND t.content_id = user_checkins.id
                 AND t.restored_at IS NULL)
-        ORDER BY visited_at DESC, created_at DESC
+        ORDER BY visited_at DESC, created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
@@ -399,11 +633,14 @@
 
     <insert id="insertPhoto" parameterType="com.ds.goroute.entity.UserCheckinPhoto">
         INSERT INTO media_assets
-            (id, trip_id, activity_id, entity_type, entity_id, media_type, url, asset_role,
+            (id, trip_id, activity_id, entity_type, entity_id, media_type, url, thumbnail_url,
+             duration_seconds, filter_key, frame_key, asset_role,
              position, caption, description, taken_at, latitude, longitude, accuracy_meters,
              capture_source, date_source, place_id, location_name, location_source,
              uploaded_by, created_at, updated_at)
-        SELECT #{id}, c.trip_id, c.activity_id, 'USER_CHECKIN', c.id, 'IMAGE', #{url}, 'PHOTO',
+        SELECT #{id}, c.trip_id, c.activity_id, 'USER_CHECKIN', c.id, #{mediaType},
+               #{url}, #{thumbnailUrl,jdbcType=VARCHAR}, #{durationSeconds,jdbcType=INTEGER},
+               #{filterKey,jdbcType=VARCHAR}, #{frameKey,jdbcType=VARCHAR}, 'PHOTO',
                #{position}, #{title}, #{description}, #{capturedAt}, #{latitude}, #{longitude},
                #{accuracyMeters}, #{source},
                <choose>
@@ -418,7 +655,8 @@
     <select id="findPhotos" resultMap="photoMap">
         SELECT id, entity_id AS checkin_id, url, capture_source AS source, position,
                caption AS title, description, taken_at AS captured_at, latitude, longitude,
-               accuracy_meters, created_at
+               accuracy_meters, created_at, media_type, thumbnail_url, duration_seconds,
+               filter_key, frame_key
         FROM media_assets
         WHERE entity_type = 'USER_CHECKIN'
           AND entity_id = #{checkinId}
@@ -431,7 +669,8 @@
     <select id="findPhotosForCheckins" resultMap="photoMap">
         SELECT id, entity_id AS checkin_id, url, capture_source AS source, position,
                caption AS title, description, taken_at AS captured_at, latitude, longitude,
-               accuracy_meters, created_at
+               accuracy_meters, created_at, media_type, thumbnail_url, duration_seconds,
+               filter_key, frame_key
         FROM media_assets
         WHERE entity_type = 'USER_CHECKIN'
           AND entity_id IN
@@ -450,6 +689,31 @@
           AND entity_id = #{checkinId}
           AND deleted_at IS NULL
     </delete>
+
+    <!-- Camera looks (V293): how many live check-in photos were taken with each filter. -->
+    <select id="countPhotosByFilterKeys" resultMap="cameraLookUsageMap">
+        SELECT filter_key AS look_key, COUNT(*) AS usage_count
+        FROM media_assets
+        WHERE entity_type = 'USER_CHECKIN'
+          AND deleted_at IS NULL
+          AND filter_key IN
+        <foreach item="key" collection="keys" open="(" separator="," close=")">
+            #{key}
+        </foreach>
+        GROUP BY filter_key
+    </select>
+
+    <select id="countPhotosByFrameKeys" resultMap="cameraLookUsageMap">
+        SELECT frame_key AS look_key, COUNT(*) AS usage_count
+        FROM media_assets
+        WHERE entity_type = 'USER_CHECKIN'
+          AND deleted_at IS NULL
+          AND frame_key IN
+        <foreach item="key" collection="keys" open="(" separator="," close=")">
+            #{key}
+        </foreach>
+        GROUP BY frame_key
+    </select>
 
     <select id="hasLike" resultType="boolean">
         SELECT EXISTS(SELECT 1 FROM user_checkin_likes
@@ -489,6 +753,7 @@
         LEFT JOIN checkin_cluster_decisions d ON d.location_key = c.location_key
         WHERE c.place_id IS NULL
           AND c.is_removed = FALSE
+          AND c.local_event_id IS NULL
           AND (d.location_key IS NULL
                OR (d.status = 'IGNORED'
                    AND (SELECT COUNT(*) FROM user_checkins x WHERE x.location_key = c.location_key)
@@ -513,7 +778,7 @@
                MIN(c.created_at) AS first_seen_at,
                MAX(c.created_at) AS last_seen_at,
                (SELECT string_agg(p.url, ',')
-                  FROM (SELECT url FROM media_assets ph
+                  FROM (SELECT COALESCE(ph.thumbnail_url, ph.url) AS url FROM media_assets ph
                         JOIN user_checkins uc ON uc.id = ph.entity_id
                         WHERE ph.entity_type = 'USER_CHECKIN'
                           AND (ph.asset_role IS NULL OR ph.asset_role = 'PHOTO')
@@ -595,6 +860,15 @@
         FROM user_checkins
         WHERE is_removed = FALSE
         <if test="userId != null">AND user_id = #{userId}</if>
+        <!-- The queue of check-ins waiting for a catalogue place: every check-in with none,
+             whatever the author picked it from (a trip activity, map search, a typed name).
+             Assigning a place takes the row out; so does an approver's "not a place" (V272).
+             Quest checkpoints are left out: the quest decides where those are. -->
+        <if test="needsPlace">
+            AND place_id IS NULL AND place_dismissed_at IS NULL
+            AND location_source &lt;&gt; 'QUEST_CHECKPOINT'
+            AND local_event_id IS NULL
+        </if>
         <if test="search != null and search != ''">
             AND (location_name ILIKE CONCAT('%', #{search}, '%')
                  OR custom_name ILIKE CONCAT('%', #{search}, '%')
@@ -618,10 +892,16 @@
         </if>
     </sql>
 
+    <update id="dismissPlace">
+        UPDATE user_checkins
+        SET place_dismissed_at = NOW(), place_dismissed_by = #{adminId}
+        WHERE id = #{id} AND is_removed = FALSE AND place_id IS NULL
+    </update>
+
     <select id="findAllForAdmin" resultMap="checkinMap">
         SELECT <include refid="columns"/>
         <include refid="adminFilter"/>
-        ORDER BY created_at DESC
+        ORDER BY created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
@@ -674,5 +954,163 @@
         SELECT DISTINCT checkin_id FROM user_checkin_location_history
         WHERE checkin_id IN
         <foreach collection="checkinIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <!--
+         Feed search index (epic 12 §4.4): a check-in is found by its place (the author's own
+         name, the catalogue title, the reverse-geocoded name), then by caption and area, and
+         ranks higher with more likes. Findable while public, not removed and by a live account;
+         takedowns are checked when results are read.
+    -->
+    <sql id="searchIndexRowColumns">
+        c.id, c.user_id AS owner_id,
+        concat_ws(' ', NULLIF(c.custom_name, ''), p.title, NULLIF(c.location_name, '')) AS title,
+        NULL AS handle,
+        concat_ws(' ', c.caption, c.ward, c.district, c.province) AS body,
+        (SELECT COUNT(*) FROM user_checkin_likes l WHERE l.checkin_id = c.id) AS popularity,
+        c.created_at AS published_at, c.updated_at,
+        (c.visibility = 'PUBLIC' AND c.is_removed = FALSE AND u.deleted_at IS NULL) AS eligible
+    </sql>
+
+    <sql id="searchIndexRowSource">
+        FROM user_checkins c
+        JOIN users u ON u.id = c.user_id
+        LEFT JOIN places p ON p.id = c.place_id
+    </sql>
+
+    <select id="selectSearchIndexPage" resultType="com.ds.goroute.entity.SocialSearchIndexRow">
+        SELECT <include refid="searchIndexRowColumns"/>
+        <include refid="searchIndexRowSource"/>
+        WHERE c.visibility = 'PUBLIC'
+          AND c.is_removed = FALSE
+          AND u.deleted_at IS NULL
+          <if test="afterId != null">
+              AND c.id &gt; #{afterId}
+          </if>
+        ORDER BY c.id
+        LIMIT #{limit}
+    </select>
+
+    <!-- Served by idx_user_checkins_updated_at (V246). -->
+    <select id="selectSearchIndexChanges" resultType="com.ds.goroute.entity.SocialSearchIndexRow">
+        SELECT <include refid="searchIndexRowColumns"/>
+        <include refid="searchIndexRowSource"/>
+        WHERE (c.updated_at, c.id) &gt; (#{afterUpdatedAt}, #{afterId})
+        ORDER BY c.updated_at, c.id
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectSearchIndexMaxUpdatedAt" resultType="java.time.LocalDateTime">
+        SELECT MAX(updated_at) FROM user_checkins
+    </select>
+
+    <!--
+         Reviews written outside the check-in flow (the old review composer, contributions)
+         become check-ins, so they are posts like every newer one. One statement: the
+         check-in, then its photos at the review's own URLs (one file, two media_assets rows,
+         as the live flow does). The review stays, linked through review_id, which takes it
+         out of the review feed. Kept as the review's date, so old posts do not jump to the
+         top of the feed; no reward, no notification, no passport event.
+
+         Left alone: booking reviews, deleted accounts, taken-down reviews, places without
+         coordinates or a name, and anyone already holding a live check-in at that place. The
+         review_id test counts removed check-ins too: a check-in its author deleted is not
+         brought back. location_key matches LocationKeyFactory.forPlace. Returns the place of
+         each new check-in.
+    -->
+    <select id="convertLegacyReviews" resultType="java.util.UUID" flushCache="true" useCache="false">
+        WITH picked AS (
+            SELECT r.id AS review_id,
+                   gen_random_uuid() AS checkin_id,
+                   r.user_id,
+                   CASE WHEN EXISTS (SELECT 1 FROM trips t WHERE t.id = r.trip_id AND t.is_deleted = FALSE)
+                        THEN r.trip_id END AS trip_id,
+                   r.place_id,
+                   LEFT(COALESCE(NULLIF(TRIM(p.title), ''), NULLIF(TRIM(p.address), '')), 300) AS location_name,
+                   COALESCE(r.checkin_lat, p.latitude) AS latitude,
+                   COALESCE(r.checkin_lng, p.longitude) AS longitude,
+                   r.checkin_accuracy_m,
+                   p.province_code,
+                   p.ward_code,
+                   NULLIF(TRIM(r.text), '') AS caption,
+                   r.overall_rating, r.food_rating, r.price_rating, r.ambiance_rating, r.service_rating,
+                   r.location_verified,
+                   r.created_at,
+                   CASE WHEN r.photos ~ '^\s*\[' THEN r.photos::jsonb END AS legacy_photos
+            FROM user_reviews r
+            JOIN users u ON u.id = r.user_id AND u.deleted_at IS NULL
+            JOIN places p ON p.id = r.place_id
+            WHERE r.hotel_booking_id IS NULL
+              AND r.activity_order_id IS NULL
+              AND NOT EXISTS (SELECT 1 FROM user_checkins c WHERE c.review_id = r.id)
+              AND NOT EXISTS (SELECT 1 FROM content_takedowns t
+                              WHERE t.content_type = 'REVIEW' AND t.content_id = r.id AND t.restored_at IS NULL)
+              AND COALESCE(r.checkin_lat, p.latitude) IS NOT NULL
+              AND COALESCE(r.checkin_lng, p.longitude) IS NOT NULL
+              AND COALESCE(NULLIF(TRIM(p.title), ''), NULLIF(TRIM(p.address), '')) IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM user_checkins c
+                              WHERE c.user_id = r.user_id AND c.place_id = r.place_id AND c.is_removed = FALSE)
+            ORDER BY r.created_at, r.id
+            LIMIT #{limit}
+        ),
+        created AS (
+            INSERT INTO user_checkins
+                (id, user_id, trip_id, activity_id, place_id, review_id, location_name, custom_name,
+                 latitude, longitude, accuracy_meters, province_code, ward_code,
+                 location_source, location_key, caption,
+                 overall_rating, food_rating, price_rating, ambiance_rating, service_rating,
+                 photo_source, visibility, verification_status, verification_scope,
+                 idempotency_key, is_removed, visited_at, created_at, updated_at)
+            SELECT checkin_id, user_id, trip_id, NULL, place_id, review_id, location_name, NULL,
+                   latitude, longitude, checkin_accuracy_m, province_code, ward_code,
+                   'CATALOGUE_PLACE', 'p:' || place_id, caption,
+                   overall_rating, food_rating, price_rating, ambiance_rating, service_rating,
+                   'GALLERY', 'PUBLIC',
+                   CASE WHEN location_verified THEN 'VERIFIED' ELSE 'UNVERIFIED' END,
+                   CASE WHEN location_verified THEN 'PLACE' ELSE 'NONE' END,
+                   'review-to-checkin:' || review_id, FALSE, created_at, created_at, NOW()
+            FROM picked
+            ON CONFLICT ON CONSTRAINT uq_user_checkin_idempotency DO NOTHING
+            RETURNING id, review_id, user_id, trip_id, place_id, location_name, location_source, created_at
+        ),
+        review_photos AS (
+            INSERT INTO media_assets
+                (id, trip_id, activity_id, entity_type, entity_id, media_type, url, thumbnail_url,
+                 duration_seconds, asset_role, position, caption, description, taken_at, latitude, longitude,
+                 accuracy_meters, capture_source, date_source, place_id, location_name, location_source,
+                 uploaded_by, created_at, updated_at)
+            SELECT gen_random_uuid(), c.trip_id, NULL, 'USER_CHECKIN', c.id, m.media_type, m.url, m.thumbnail_url,
+                   m.duration_seconds, 'PHOTO',
+                   (ROW_NUMBER() OVER (PARTITION BY c.id ORDER BY m.position NULLS LAST, m.created_at, m.id) - 1)::smallint,
+                   m.caption, m.description, m.taken_at, m.latitude, m.longitude,
+                   m.accuracy_meters, 'GALLERY', CASE WHEN m.taken_at IS NOT NULL THEN 'CAPTURE' ELSE 'UPLOAD' END,
+                   c.place_id, c.location_name, c.location_source, c.user_id, m.created_at, NOW()
+            FROM created c
+            JOIN media_assets m
+              ON m.entity_type = 'USER_REVIEW' AND m.entity_id = c.review_id AND m.deleted_at IS NULL
+            RETURNING id
+        ),
+        legacy_photos AS (
+            <!-- Reviews whose photos only ever lived in the legacy user_reviews.photos array. -->
+            INSERT INTO media_assets
+                (id, trip_id, activity_id, entity_type, entity_id, media_type, url, asset_role, position,
+                 capture_source, date_source, place_id, location_name, location_source,
+                 uploaded_by, created_at, updated_at)
+            SELECT gen_random_uuid(), c.trip_id, NULL, 'USER_CHECKIN', c.id, 'IMAGE', j.elem #>> '{}', 'PHOTO',
+                   (j.ord - 1)::smallint, 'GALLERY', 'UPLOAD', c.place_id, c.location_name, c.location_source,
+                   c.user_id, c.created_at, NOW()
+            FROM created c
+            JOIN picked x ON x.review_id = c.review_id
+            CROSS JOIN LATERAL jsonb_array_elements(
+                    CASE WHEN jsonb_typeof(x.legacy_photos) = 'array' THEN x.legacy_photos ELSE '[]'::jsonb END
+                ) WITH ORDINALITY AS j(elem, ord)
+            WHERE jsonb_typeof(j.elem) = 'string'
+              AND NULLIF(TRIM(j.elem #>> '{}'), '') IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM media_assets m
+                              WHERE m.entity_type = 'USER_REVIEW' AND m.entity_id = c.review_id
+                                AND m.deleted_at IS NULL)
+            RETURNING id
+        )
+        SELECT place_id FROM created
     </select>
 </mapper>

@@ -12,17 +12,5 @@ public class UpdateUserQuotaOverridesRequest {
     private Integer freeTripQuota;
 
     @Min(0)
-    @Max(1000)
-    private Integer aiTripFreeQuota;
-
-    @Min(0)
-    @Max(1000)
-    private Integer aiTripProQuota;
-
-    @Min(0)
-    @Max(1000)
-    private Integer socialLocationDailyLimit;
-
-    @Min(0)
     private Long expectedVersion;
 }

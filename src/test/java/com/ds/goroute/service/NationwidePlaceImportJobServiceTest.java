@@ -136,4 +136,47 @@ class NationwidePlaceImportJobServiceTest {
         assertThat(itemCaptor.getValue().getImportedPlaceId()).isEqualTo(importedPlaceId);
         assertThat(itemCaptor.getValue().getOutcomeReason()).isEqualTo("SAVED_INACTIVE_REVIEW_COUNT");
     }
+
+    @Test
+    void duplicatePreCheckDoesNotCallANamelessNeighbourADuplicate() {
+        UUID jobId = UUID.randomUUID();
+        when(jobMapper.findJobById(jobId)).thenReturn(PlaceImportJob.builder()
+                .id(jobId).sourceType(PlaceImportSourceType.NATIONWIDE).pythonJobId("python-job").build());
+
+        var response = service.findExistingCandidates(com.ds.goroute.dto.request.NationwideDuplicateCheckRequest.builder()
+                .jobId(jobId)
+                .pythonJobId("python-job")
+                .candidates(List.of(com.ds.goroute.dto.request.NationwideDuplicateCheckRequest.Candidate.builder()
+                        .candidateKey("k1").latitude(BigDecimal.TEN).longitude(BigDecimal.ONE).build()))
+                .build());
+
+        assertThat(response.getExistingCandidateKeys()).isEmpty();
+        verify(placeRepository, never()).findNearCoordinates(any(), any(), any());
+        verify(placeRepository, never()).findNearbyIdentityCandidates(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void aDifferentlyNamedPlaceNearbyIsImportedNotSkipped() {
+        UUID jobId = UUID.randomUUID();
+        when(jobMapper.findJobById(jobId)).thenReturn(PlaceImportJob.builder()
+                .id(jobId).sourceType(PlaceImportSourceType.NATIONWIDE).status(PlaceImportJobStatus.PROCESSING)
+                .minReviewCount(101).minAdjustedRating(BigDecimal.valueOf(3)).maxReviews(200).selectedReviews(20)
+                .requestPayload("{}").build());
+        when(placeRepository.findNearbyIdentityCandidates(any(), any(), any(), anyInt()))
+                .thenReturn(List.of(Place.builder().id(UUID.randomUUID()).title("Shop next door").build()));
+        UUID importedId = UUID.randomUUID();
+        when(placeService.importPlace(any())).thenReturn(PlaceResponse.builder().id(importedId).build());
+        when(placeRepository.findById(importedId)).thenReturn(Optional.of(Place.builder().id(importedId).build()));
+
+        var response = service.importCandidate(NationwidePlaceImportRequest.builder()
+                .jobId(jobId).pythonJobId("python-job").regionCode("t").regionName("T")
+                .place(ImportPlaceRequest.builder().placeId("google-2").title("My restaurant")
+                        .latitude(BigDecimal.TEN).longitude(BigDecimal.ONE).reviewCount(5)
+                        .reviewRating(BigDecimal.valueOf(4.5)).build())
+                .reviews(List.of())
+                .build());
+
+        assertThat(response.getOutcome()).isNotEqualTo("EXISTING_PLACE");
+        verify(placeService).importPlace(any());
+    }
 }

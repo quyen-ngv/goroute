@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.FollowerFanoutLogMapper">
+
+    <insert id="insert" parameterType="com.ds.goroute.entity.FollowerFanoutLog">
+        INSERT INTO follower_fanout_logs (id, post_type, post_id, author_id, status, push_enabled, post_count,
+                                          follower_total, notified_count, pushed_count, started_at)
+        VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{postType}, #{postId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{authorId,javaType=java.util.UUID,jdbcType=OTHER}, #{status}, #{pushEnabled}, #{postCount},
+                0, 0, 0, NOW())
+    </insert>
+
+    <update id="updateProgress" parameterType="com.ds.goroute.entity.FollowerFanoutLog">
+        UPDATE follower_fanout_logs
+        SET follower_total = #{followerTotal},
+            notified_count = #{notifiedCount},
+            pushed_count = #{pushedCount},
+            last_follower_id = #{lastFollowerId,javaType=java.util.UUID,jdbcType=OTHER}
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <update id="finish">
+        UPDATE follower_fanout_logs
+        SET status = #{status},
+            error = #{error},
+            finished_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <!-- Whether the author's push cooldown is running: a fan-out that was allowed to push started
+         less than `minutes` ago. Time is the database's, the same clock started_at was written with. -->
+    <select id="existsPushWithinMinutes" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM follower_fanout_logs
+            WHERE author_id = #{authorId,javaType=java.util.UUID,jdbcType=OTHER}
+              AND push_enabled = TRUE
+              AND started_at &gt; NOW() - make_interval(mins =&gt; #{minutes}))
+    </select>
+
+    <!-- Posts of the author held back by the cooldown since its last push (at most a day back);
+         the next push announces them together with its own post. -->
+    <select id="countHeldBackSinceLastPush" resultType="int">
+        SELECT COUNT(*)
+        FROM follower_fanout_logs l
+        WHERE l.author_id = #{authorId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND l.push_enabled = FALSE
+          AND l.status IN ('RUNNING', 'DONE')
+          AND l.started_at &gt; GREATEST(
+                NOW() - INTERVAL '24 hours',
+                COALESCE((SELECT MAX(p.started_at) FROM follower_fanout_logs p
+                          WHERE p.author_id = l.author_id AND p.push_enabled = TRUE),
+                         '-infinity'::timestamp))
+    </select>
+</mapper>

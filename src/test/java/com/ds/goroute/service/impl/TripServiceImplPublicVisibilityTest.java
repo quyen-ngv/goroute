@@ -1,7 +1,6 @@
 package com.ds.goroute.service.impl;
 
 import com.ds.goroute.entity.Trip;
-import com.ds.goroute.entity.TripMember;
 import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.CheckinRepository;
 import com.ds.goroute.repository.ExpenseRepository;
@@ -27,26 +26,22 @@ import com.ds.goroute.service.TripRealtimePublisher;
 import com.ds.goroute.service.UserCheckinService;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.service.notification.SocialNotificationService;
-import com.ds.goroute.type.MemberStatus;
 import com.ds.goroute.type.TripVisibility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
- * Guards the anonymous public-trip endpoint against reading a SHARED (members-only) trip.
+ * Pins who can read a trip through the anonymous public endpoint, which backs every shared link.
  *
- * <p>{@code getPublicTrip} used to check only for PRIVATE; a SHARED trip fell through to
- * fully open access because "not PRIVATE" is not the same claim as "safe to show anyone".
- * These tests exist so that mistake cannot silently come back -- a green build now means
- * a stranger genuinely cannot read a members-only trip through this door.
+ * <p>SHARED is the share dialog's "Link only": unlisted, but readable by anyone holding the link.
+ * It was once restricted to members, which made every shared link answer "Trip not found" to
+ * the people it was sent to. PRIVATE stays closed to everyone, the owner included.
  */
 class TripServiceImplPublicVisibilityTest {
 
@@ -58,6 +53,7 @@ class TripServiceImplPublicVisibilityTest {
     void setUp() {
         service = new TripServiceImpl(
                 mock(StarService.class),
+                mock(com.ds.goroute.service.AiCreditService.class),
                 mock(TripRepository.class),
                 // getPublicTrip answers for anonymous readers and never consults the guard.
                 mock(TripAccessGuard.class),
@@ -81,74 +77,45 @@ class TripServiceImplPublicVisibilityTest {
                 mock(MediaAssetRepository.class),
                 mock(ImageStorageCleanupService.class),
                 mock(TripRealtimePublisher.class),
+                mock(com.ds.goroute.service.TrackService.class),
                 mock(TripDestinationRepository.class),
                 mock(SocialNotificationService.class),
                 mock(UserCheckinService.class),
                 // Same-thread executor: the fire-and-forget view counter has to have run
                 // by the time the assertions look at it.
-                Runnable::run);
+                Runnable::run,
+                mock(com.ds.goroute.repository.ContentCommentRepository.class),
+                mock(org.springframework.context.ApplicationEventPublisher.class),
+                mock(com.ds.goroute.repository.PlaceRepository.class),
+                mock(com.ds.goroute.service.expense.GuestLedgerMover.class));
     }
 
     @Test
     void publicTripIsOpenToAnyone() {
         Trip trip = trip(TripVisibility.PUBLIC, UUID.randomUUID());
 
-        assertTrue(service.canViewPublicTrip(trip, null));
-        assertTrue(service.canViewPublicTrip(trip, UUID.randomUUID()));
+        assertTrue(service.canViewPublicTrip(trip));
     }
 
     @Test
     void privateTripIsNeverViewableHere() {
-        UUID ownerId = UUID.randomUUID();
-        Trip trip = trip(TripVisibility.PRIVATE, ownerId);
+        Trip trip = trip(TripVisibility.PRIVATE, UUID.randomUUID());
 
-        assertFalse(service.canViewPublicTrip(trip, null));
-        assertFalse(service.canViewPublicTrip(trip, ownerId));
+        assertFalse(service.canViewPublicTrip(trip));
     }
 
     @Test
-    void sharedTripBlocksAnAnonymousViewer() {
+    void sharedTripIsOpenToAnyoneHoldingTheLink() {
         Trip trip = trip(TripVisibility.SHARED, UUID.randomUUID());
 
-        assertFalse(service.canViewPublicTrip(trip, null));
+        assertTrue(service.canViewPublicTrip(trip));
     }
 
     @Test
-    void sharedTripBlocksASignedInStrangerWhoIsNotAMember() {
-        Trip trip = trip(TripVisibility.SHARED, UUID.randomUUID());
-        UUID stranger = UUID.randomUUID();
-        when(tripMemberRepository.findByTripIdAndUserId(trip.getId(), stranger))
-                .thenReturn(Optional.empty());
+    void tripWithoutAVisibilityIsTreatedAsPrivate() {
+        Trip trip = trip(null, UUID.randomUUID());
 
-        assertFalse(service.canViewPublicTrip(trip, stranger));
-    }
-
-    @Test
-    void sharedTripBlocksAMemberWhoseInviteIsStillPending() {
-        Trip trip = trip(TripVisibility.SHARED, UUID.randomUUID());
-        UUID invitee = UUID.randomUUID();
-        when(tripMemberRepository.findByTripIdAndUserId(trip.getId(), invitee))
-                .thenReturn(Optional.of(TripMember.builder().status(MemberStatus.PENDING).build()));
-
-        assertFalse(service.canViewPublicTrip(trip, invitee));
-    }
-
-    @Test
-    void sharedTripAllowsTheOwnerWithoutAMembershipRow() {
-        UUID ownerId = UUID.randomUUID();
-        Trip trip = trip(TripVisibility.SHARED, ownerId);
-
-        assertTrue(service.canViewPublicTrip(trip, ownerId));
-    }
-
-    @Test
-    void sharedTripAllowsAnAcceptedMember() {
-        Trip trip = trip(TripVisibility.SHARED, UUID.randomUUID());
-        UUID member = UUID.randomUUID();
-        when(tripMemberRepository.findByTripIdAndUserId(trip.getId(), member))
-                .thenReturn(Optional.of(TripMember.builder().status(MemberStatus.ACCEPTED).build()));
-
-        assertTrue(service.canViewPublicTrip(trip, member));
+        assertFalse(service.canViewPublicTrip(trip));
     }
 
     private Trip trip(TripVisibility visibility, UUID ownerId) {

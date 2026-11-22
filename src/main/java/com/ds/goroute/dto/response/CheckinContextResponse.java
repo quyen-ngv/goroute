@@ -40,6 +40,13 @@ public class CheckinContextResponse {
 
     private boolean galleryAllowed;
     private int maxPhotos;
+    /** Whether this user may post a video check-in (CHECKIN.VIDEO_ENABLED, beta, or PRO). */
+    private boolean videoAllowed;
+    private int maxVideoSeconds;
+    /** Whether this user may add background music (CHECKIN.MUSIC_ENABLED, or beta). */
+    private boolean musicAllowed;
+    /** Whether this user may use camera filters and frames (CHECKIN.CAMERA_LOOKS_ENABLED, or beta). */
+    private boolean cameraLooksAllowed;
     private int maxCaptionLength;
     private int verifyRadiusMeters;
     /** True when the effective radius came from the selected Place instead of global config. */

@@ -3,6 +3,8 @@ package com.ds.goroute.controller;
 import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.CreateTripNoteRequest;
+import com.ds.goroute.dto.request.TodoItemRequest;
+import com.ds.goroute.dto.request.UpdateTodoItemRequest;
 import com.ds.goroute.dto.request.UpdateTripNoteRequest;
 import com.ds.goroute.dto.response.TripNoteResponse;
 import com.ds.goroute.service.TripNoteService;
@@ -65,5 +67,37 @@ public class TripNoteController extends BaseController {
             @CurrentUser UUID userId) {
         tripNoteService.deleteTripNote(tripId, noteId, userId);
         return ResponseEntity.ok(ofSucceeded(null));
+    }
+
+    // Todo-list items (epic 04 §2.4). Any accepted member may change them; each call
+    // returns the whole note so the client replaces it in one go.
+
+    @PostMapping("/{noteId}/todo-items")
+    public ResponseEntity<BaseResponse<TripNoteResponse>> addTodoItem(
+            @PathVariable UUID tripId,
+            @PathVariable UUID noteId,
+            @Valid @RequestBody TodoItemRequest request,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ofSucceeded(tripNoteService.addTodoItem(tripId, noteId, request, userId)));
+    }
+
+    @PatchMapping("/{noteId}/todo-items/{itemId}")
+    public ResponseEntity<BaseResponse<TripNoteResponse>> updateTodoItem(
+            @PathVariable UUID tripId,
+            @PathVariable UUID noteId,
+            @PathVariable UUID itemId,
+            @Valid @RequestBody UpdateTodoItemRequest request,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(tripNoteService.updateTodoItem(tripId, noteId, itemId, request, userId)));
+    }
+
+    @DeleteMapping("/{noteId}/todo-items/{itemId}")
+    public ResponseEntity<BaseResponse<TripNoteResponse>> deleteTodoItem(
+            @PathVariable UUID tripId,
+            @PathVariable UUID noteId,
+            @PathVariable UUID itemId,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(tripNoteService.deleteTodoItem(tripId, noteId, itemId, userId)));
     }
 }

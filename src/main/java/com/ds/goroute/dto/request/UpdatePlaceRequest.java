@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.ds.goroute.type.PlaceSubType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -27,6 +28,14 @@ public class UpdatePlaceRequest {
 
     private String category;
     private String placeGroup;
+    /** Null keeps the stored sub-types; an empty list clears them. Each must fit {@link #placeGroup}. */
+    private List<PlaceSubType> subTypes;
+    /**
+     * Other names the place is searched by, in any language ("lăng bác", "hồ gươm"). Null keeps
+     * the stored ones; an empty list clears them. Blank and repeated entries are dropped.
+     */
+    @jakarta.validation.constraints.Size(max = 30, message = "At most 30 search aliases")
+    private List<@jakarta.validation.constraints.Size(max = 200, message = "A search alias is at most 200 characters") String> searchAliases;
     private String address;
     private List<String> destinations;
 

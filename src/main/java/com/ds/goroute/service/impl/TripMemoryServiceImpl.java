@@ -118,6 +118,8 @@ public class TripMemoryServiceImpl implements TripMemoryService {
                 .build();
 
         mediaAssetRepository.insert(mediaAsset);
+        // Public trip search ranks on this count (trips.memory_count, V216).
+        tripRepository.refreshMemoryCount(tripId);
         notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.MEMORY_ADDED,
                 memoryNotificationData(trip, mediaAsset, userId), null);
         publishMemoryChange(TripRealtimeEventType.MEMORY_CREATED, tripId, mediaAsset, userId);
@@ -152,6 +154,8 @@ public class TripMemoryServiceImpl implements TripMemoryService {
                 .build();
 
         mediaAssetRepository.insert(mediaAsset);
+        // Public trip search ranks on this count (trips.memory_count, V216).
+        tripRepository.refreshMemoryCount(tripId);
         notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.MEMORY_ADDED,
                 memoryNotificationData(trip, mediaAsset, userId), null);
         publishMemoryChange(TripRealtimeEventType.MEMORY_CREATED, tripId, mediaAsset, userId);
@@ -201,6 +205,7 @@ public class TripMemoryServiceImpl implements TripMemoryService {
 
         imageStorageCleanupService.deleteImagesForEntityRecord("MEDIA_ASSET", memoryId);
         mediaAssetRepository.softDelete(memoryId);
+        tripRepository.refreshMemoryCount(tripId);
         notificationHelper.emitGenericToMembers(tripId, userId, NotificationType.MEMORY_DELETED,
                 memoryNotificationData(
                         tripRepository.findById(tripId).orElseThrow(), asset, userId), null);

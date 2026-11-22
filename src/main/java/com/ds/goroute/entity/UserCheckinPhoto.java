@@ -1,5 +1,6 @@
 package com.ds.goroute.entity;
 
+import com.ds.goroute.type.CheckinMediaType;
 import com.ds.goroute.type.CheckinPhotoSource;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -43,4 +44,28 @@ public class UserCheckinPhoto {
     private BigDecimal longitude;
     private BigDecimal accuracyMeters;
     private LocalDateTime createdAt;
+
+    /** Null on rows written before videos; read as IMAGE. */
+    private CheckinMediaType mediaType;
+
+    /** The still frame of a video. Null for an image. */
+    private String thumbnailUrl;
+    private Integer durationSeconds;
+
+    /**
+     * The camera filter and frame the photo was taken with (V293); null when none or unknown.
+     * A record only: the look is already in the pixels. Not checked against {@code camera_looks},
+     * because the app's bundled looks have no row there.
+     */
+    private String filterKey;
+    private String frameKey;
+
+    public boolean isVideo() {
+        return mediaType == CheckinMediaType.VIDEO;
+    }
+
+    /** What a surface that can only draw an image shows: the photo, or the video's still frame. */
+    public String imageUrl() {
+        return isVideo() ? thumbnailUrl : url;
+    }
 }

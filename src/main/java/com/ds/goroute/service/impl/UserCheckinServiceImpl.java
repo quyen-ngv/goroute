@@ -1,13 +1,18 @@
 package com.ds.goroute.service.impl;
 
 import com.ds.goroute.constant.ErrorConstant;
+import com.ds.goroute.dto.FeedCursor;
+import com.ds.goroute.dto.FeedGeoFilter;
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.request.CreateUserCheckinRequest;
 import com.ds.goroute.dto.request.UpdateUserCheckinRequest;
 import com.ds.goroute.dto.response.CheckinContextResponse;
 import com.ds.goroute.dto.response.CheckinPhotoResponse;
+import com.ds.goroute.dto.response.CheckinVideoUploadResponse;
 import com.ds.goroute.dto.response.CheckinLikeResponse;
 import com.ds.goroute.dto.response.CheckinLinkedReviewResponse;
 import com.ds.goroute.dto.response.UserCheckinResponse;
+import com.ds.goroute.dto.response.MusicTrackResponse;
 import com.ds.goroute.dto.response.MemoryImageResponse;
 import com.ds.goroute.entity.Activity;
 import com.ds.goroute.entity.Checkin;
@@ -21,24 +26,33 @@ import com.ds.goroute.entity.UserReview;
 import com.ds.goroute.entity.MediaAsset;
 import com.ds.goroute.event.CheckinCreatedEvent;
 import com.ds.goroute.event.CheckinRemovedEvent;
+import com.ds.goroute.event.PlaceUsageChangedEvent;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.AiTripRepository;
 import com.ds.goroute.repository.CheckinRepository;
+import com.ds.goroute.repository.ContentCommentRepository;
 import com.ds.goroute.repository.PlaceRepository;
 import com.ds.goroute.repository.UserCheckinRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.repository.UserReviewRepository;
 import com.ds.goroute.repository.MediaAssetRepository;
+import com.ds.goroute.mapper.SavedPostMapper;
+import com.ds.goroute.service.BetaAccessService;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.ContentModerationService;
+import com.ds.goroute.service.FeedImpressionService;
+import com.ds.goroute.service.FileUploadService;
+import com.ds.goroute.service.MusicTrackService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.ReviewScoringService;
 import com.ds.goroute.service.ReviewService;
 import com.ds.goroute.service.TripAccessGuard;
+import com.ds.goroute.service.UserGuideService;
 import com.ds.goroute.service.checkin.CheckinRewardCalculator;
 import com.ds.goroute.service.checkin.CheckinRewardService;
 import com.ds.goroute.service.checkin.CheckinVerifier;
+import com.ds.goroute.service.checkin.VerificationTarget;
 import com.ds.goroute.dto.response.VisitedWardResponse;
 import com.ds.goroute.type.CheckinVerificationScope;
 import com.ds.goroute.service.UserCheckinService;
@@ -47,23 +61,32 @@ import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.service.notification.SocialNotificationService;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.NotificationType;
+import com.ds.goroute.type.CheckinMediaType;
 import com.ds.goroute.type.CheckinPhotoSource;
 import com.ds.goroute.type.CheckinVerificationStatus;
 import com.ds.goroute.type.ContentVisibility;
+import com.ds.goroute.type.FeedItemType;
 import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.SavedPostType;
 import com.ds.goroute.utils.GeoDistance;
 import com.ds.goroute.utils.JsonUtils;
+import com.ds.goroute.utils.Mp4Duration;
 import com.ds.goroute.utils.MediaAssetResponseMapper;
+import com.ds.goroute.utils.PlaceDisplayRating;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -73,6 +96,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -88,6 +112,9 @@ public class UserCheckinServiceImpl implements UserCheckinService {
      */
     private static final int MAX_TRIP_CHECKINS = 200;
     private static final String PRO_TIER = "PRO";
+
+    /** Storage prefix of check-in videos; the user id follows. */
+    private static final String VIDEO_PREFIX = "checkin-videos/";
 
     /** How close to a stop of the itinerary counts as having been there. */
     private static final double ACTIVITY_VISIT_RADIUS_METERS = 200;
@@ -116,6 +143,14 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     private final NotificationHelper notificationHelper;
     private final CheckinVerifier verifier;
     private final com.ds.goroute.quest.service.QuestPlayService questPlayService;
+    private final ContentCommentRepository contentCommentRepository;
+    private final SavedPostMapper savedPostMapper;
+    private final FeedImpressionService feedImpressionService;
+    private final FileUploadService fileUploadService;
+    private final BetaAccessService betaAccess;
+    private final UserGuideService userGuideService;
+    private final MusicTrackService musicTrackService;
+    private final com.ds.goroute.localevent.persistence.LocalEventRepository localEventRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -161,6 +196,10 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .previousCheckinCount(previousVisits)
                 .galleryAllowed(isGalleryAllowed(userId))
                 .maxPhotos(config.getInt(BusinessConfigKey.CHECKIN_MAX_PHOTOS))
+                .videoAllowed(isVideoAllowed(userId))
+                .maxVideoSeconds(config.getInt(BusinessConfigKey.CHECKIN_MAX_VIDEO_SECONDS))
+                .musicAllowed(isMusicAllowed(userId))
+                .cameraLooksAllowed(isCameraLooksAllowed(userId))
                 .maxCaptionLength(config.getInt(BusinessConfigKey.CHECKIN_MAX_CAPTION_LENGTH))
                 .verifyRadiusMeters(assessment.effectiveRadiusMeters())
                 .placeSpecificRadius(place.map(Place::getVerificationRadiusMeters)
@@ -204,14 +243,33 @@ public class UserCheckinServiceImpl implements UserCheckinService {
             throw new BusinessException(ErrorConstant.CHECKIN_GALLERY_NOT_ALLOWED,
                     "Choosing photos from your library is not available on your plan right now.");
         }
+        requireAllowedMedia(userId, photos, Set.of());
+        requireAllowedMusic(userId, request.getMusicTrackId(), null);
 
-        Place place = request.getPlaceId() == null ? null
-                : placeRepository.findById(request.getPlaceId())
-                        .orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND, "Place not found"));
+        // A check-in made at a local event. An event that was unpublished or deleted while the
+        // post waited in the offline queue must not fail the post: it is simply not linked.
+        com.ds.goroute.localevent.domain.LocalEvent localEvent = request.getLocalEventId() == null ? null
+                : localEventRepository.findPublishedById(request.getLocalEventId()).orElse(null);
+
+        // An event held at a catalogue place is a visit to that place too, whether or not the
+        // app knew the link when the author picked the event.
+        UUID placeId = request.getPlaceId() != null ? request.getPlaceId()
+                : localEvent == null ? null : localEvent.getPlaceId();
+        Place place = placeId == null ? null
+                : request.getPlaceId() != null
+                ? placeRepository.findById(placeId)
+                        .orElseThrow(() -> new BusinessException(ErrorConstant.PLACE_NOT_FOUND, "Place not found"))
+                : placeRepository.findById(placeId).orElse(null);
 
         // Checked before anything is written: the trip id decides who gets notified, so an
         // unverified one would let anybody post into a stranger's trip.
         Activity activity = requireTripContext(request.getTripId(), request.getActivityId(), userId);
+
+        // A check-in filed under a trip stop that is an event is a check-in at that event,
+        // whether or not the app said so.
+        if (localEvent == null && activity != null && activity.getLocalEventId() != null) {
+            localEvent = localEventRepository.findPublishedById(activity.getLocalEventId()).orElse(null);
+        }
 
         LocalDateTime now = LocalDateTime.now();
         UserCheckin checkin = UserCheckin.builder()
@@ -231,12 +289,18 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .provinceCode(blankToNull(request.getProvinceCode()))
                 .locationSource(request.getLocationSource())
                 .questRunId(request.getQuestRunId())
+                .localEventId(localEvent == null ? null : localEvent.getId())
                 // A catalogued place keys on the place, so everyone who checks in there
                 // lands in one cluster whichever door they were standing at.
                 .locationKey(place != null
                         ? locationKeyFactory.forPlace(place.getId())
                         : locationKeyFactory.forCoordinates(request.getLatitude(), request.getLongitude()))
                 .caption(blankToNull(request.getCaption()))
+                .frameStyle(request.getFrameStyle())
+                // A catalogue place has its own kind, and it is the one that counts.
+                .placeKind(place == null ? request.getPlaceKind() : null)
+                .musicTrackId(request.getMusicTrackId())
+                .muteVideoSound(Boolean.TRUE.equals(request.getMuteVideoSound()))
                 .overallRating(request.getOverallRating())
                 .foodRating(request.getFoodRating())
                 .priceRating(request.getPriceRating())
@@ -254,9 +318,14 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .updatedAt(now)
                 .build();
 
-        verifier.apply(checkin, place);
+        VerificationTarget eventVenue = eventVenueTarget(localEvent, place);
+        if (eventVenue != null) {
+            verifier.applyTo(checkin, eventVenue);
+        } else {
+            verifier.apply(checkin, place);
+        }
         checkinRepository.insert(checkin);
-        storePhotos(checkin.getId(), photos, now);
+        storePhotos(checkin.getId(), photos, now, List.of());
 
         // A check-in made to satisfy a quest checkpoint is linked back to the run (D13); the
         // checkpoint then counts as passed. Best-effort so a quest hiccup never fails the check-in.
@@ -269,9 +338,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         // uncatalogued one keeps the score on the check-in until the cluster is promoted,
         // where it becomes a review without the author having to do anything again.
         if (checkin.hasRating() && checkin.hasCataloguePlace()) {
-            UUID reviewId = upsertReview(userId, checkin, photos.stream()
-                    .map(CreateUserCheckinRequest.CheckinPhotoInput::getUrl)
-                    .toList());
+            UUID reviewId = upsertReview(userId, checkin, reviewImageUrls(photos));
             checkin.setReviewId(reviewId);
             checkinRepository.attachReview(checkin.getId(), reviewId);
             scoringService.recalculatePlaceScores(checkin.getPlaceId());
@@ -295,6 +362,27 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                     activity != null ? activity.getName() : displayName(checkin));
         }
         return toResponse(checkin, true, userId);
+    }
+
+    /**
+     * The venue of a local event as the thing to verify against, when the event has no catalogue
+     * place and is on right now (its times are stored in UTC). Null in every other case, which
+     * leaves the ordinary place / ward ladder in charge: an event at a catalogue place is
+     * verified against that place, and a post written before or after the event proves nothing
+     * about having been at it.
+     */
+    private VerificationTarget eventVenueTarget(com.ds.goroute.localevent.domain.LocalEvent event, Place place) {
+        if (event == null || place != null || event.getLatitude() == null || event.getLongitude() == null) {
+            return null;
+        }
+        LocalDateTime nowUtc = LocalDateTime.now(java.time.ZoneOffset.UTC);
+        boolean ongoing = event.getStartAt() != null && event.getEndAt() != null
+                && !nowUtc.isBefore(event.getStartAt()) && !nowUtc.isAfter(event.getEndAt());
+        if (!ongoing) {
+            return null;
+        }
+        return VerificationTarget.forEventVenue(event.getLatitude(), event.getLongitude(),
+                config.getInt(BusinessConfigKey.CHECKIN_EVENT_VERIFY_RADIUS_METERS));
     }
 
     /**
@@ -367,8 +455,24 @@ public class UserCheckinServiceImpl implements UserCheckinService {
             throw new BusinessException(ErrorConstant.CHECKIN_GALLERY_NOT_ALLOWED,
                     "Choosing photos from your library is not available on your plan right now.");
         }
+        // A video already on this visit stays editable after the switch is turned off.
+        List<UserCheckinPhoto> photosBeforeEdit = checkinRepository.findPhotos(checkinId);
+        Set<String> videosAlreadyPosted = photosBeforeEdit.stream()
+                .filter(UserCheckinPhoto::isVideo)
+                .map(UserCheckinPhoto::getUrl)
+                .collect(Collectors.toSet());
+        requireAllowedMedia(userId, photos, videosAlreadyPosted);
+        requireAllowedMusic(userId, request.getMusicTrackId(), checkin.getMusicTrackId());
 
         checkin.setCaption(blankToNull(request.getCaption()));
+        checkin.setFrameStyle(request.getFrameStyle());
+        if (request.getPlaceKind() != null && !checkin.hasCataloguePlace()) {
+            checkin.setPlaceKind(request.getPlaceKind());
+        }
+        checkin.setMusicTrackId(request.getMusicTrackId());
+        if (request.getMuteVideoSound() != null) {
+            checkin.setMuteVideoSound(request.getMuteVideoSound());
+        }
         checkin.setCustomName(blankToNull(request.getCustomName()));
         checkin.setOverallRating(request.getOverallRating());
         checkin.setFoodRating(request.getFoodRating());
@@ -383,15 +487,17 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         checkin.setEditedAt(LocalDateTime.now());
         checkin.setUpdatedAt(LocalDateTime.now());
 
+        // A video keeps two files alive: the video and its still frame.
         List<String> keptUrls = photos.stream()
-                .map(CreateUserCheckinRequest.CheckinPhotoInput::getUrl)
+                .flatMap(photo -> Stream.of(photo.getUrl(), photo.getThumbnailUrl()))
+                .filter(Objects::nonNull)
                 .toList();
 
         // The review goes first so the cleanup below asks it what it shows *after* this
         // edit. Asked before, it would still be listing the photo the author just removed
         // and would keep the file alive for a post that no longer has it.
         if (checkin.hasRating() && checkin.hasCataloguePlace()) {
-            checkin.setReviewId(upsertReview(userId, checkin, keptUrls));
+            checkin.setReviewId(upsertReview(userId, checkin, reviewImageUrls(photos)));
         }
 
         // A photo taken off the visit is taken off it now. The orphan sweep is run by hand
@@ -402,7 +508,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         imageStorageCleanupService.deleteImagesForEntityRecord("USER_CHECKIN_PHOTO", checkinId, keptUrls);
 
         checkinRepository.deletePhotos(checkinId);
-        storePhotos(checkinId, photos, checkin.getUpdatedAt());
+        storePhotos(checkinId, photos, checkin.getUpdatedAt(), photosBeforeEdit);
 
         if (checkinRepository.update(checkin) != 1) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Check-in not found");
@@ -443,7 +549,21 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     @Override
     @Transactional
     public void delete(UUID userId, UUID checkinId, boolean deleteReview) {
-        UserCheckin checkin = requireOwned(userId, checkinId);
+        remove(requireOwned(userId, checkinId), deleteReview);
+    }
+
+    @Override
+    @Transactional
+    public void removeAsAdmin(UUID checkinId, boolean deleteReview) {
+        UserCheckin checkin = checkinRepository.findById(checkinId)
+                .filter(found -> !Boolean.TRUE.equals(found.getIsRemoved()))
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Check-in not found"));
+        remove(checkin, deleteReview);
+    }
+
+    private void remove(UserCheckin checkin, boolean deleteReview) {
+        UUID userId = checkin.getUserId();
+        UUID checkinId = checkin.getId();
         // Collected before the row is marked removed, because the photo rows are read
         // through the check-in and the retain query only spares files the surviving
         // review still shows. The delete itself runs after this transaction commits.
@@ -495,8 +615,27 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Map<UUID, UserCheckinResponse> findVisibleByIds(UUID viewerId, Collection<UUID> checkinIds) {
+        if (checkinIds.isEmpty()) {
+            return Map.of();
+        }
+        List<UserCheckin> live = checkinRepository.findByIds(checkinIds).stream()
+                .filter(checkin -> checkin.getVisibility() == ContentVisibility.PUBLIC
+                        && !Boolean.TRUE.equals(checkin.getIsRemoved()))
+                .toList();
+        Set<UUID> takenDown = contentModerationService.takenDownIds(ModeratedContentType.CHECKIN,
+                live.stream().map(UserCheckin::getId).toList());
+        List<UserCheckin> visible = live.stream()
+                .filter(checkin -> !takenDown.contains(checkin.getId()))
+                .toList();
+        return toResponses(visible, Set.of(), viewerId).stream()
+                .collect(Collectors.toMap(UserCheckinResponse::getId, response -> response));
+    }
+
+    @Override
     @Transactional
-    public CheckinLikeResponse toggleLike(UUID userId, UUID checkinId) {
+    public CheckinLikeResponse setLike(UUID userId, UUID checkinId, Boolean liked) {
         UserCheckin checkin = checkinRepository.findById(checkinId)
                 .filter(found -> found.getVisibility() == ContentVisibility.PUBLIC
                         && !Boolean.TRUE.equals(found.getIsRemoved()))
@@ -505,9 +644,10 @@ public class UserCheckinServiceImpl implements UserCheckinService {
             throw new BusinessException(ErrorConstant.CONTENT_TAKEN_DOWN, "This content has been removed.");
         }
         boolean hasLiked = checkinRepository.hasLike(checkinId, userId);
-        if (hasLiked) {
+        boolean wantLiked = liked == null ? !hasLiked : liked;
+        if (hasLiked && !wantLiked) {
             checkinRepository.deleteLike(checkinId, userId);
-        } else {
+        } else if (!hasLiked && wantLiked) {
             checkinRepository.insertLike(checkinId, userId);
             socialNotificationService.notifyLike(
                     checkin.getUserId(), userId, ModeratedContentType.CHECKIN.name(), checkinId);
@@ -515,15 +655,45 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         return CheckinLikeResponse.builder()
                 .checkinId(checkinId)
                 .likeCount(checkinRepository.countLikes(checkinId))
-                .hasLiked(!hasLiked)
+                .hasLiked(wantLiked)
                 .build();
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserCheckinResponse> feed(UUID viewerId, int page, int size) {
-        return toResponses(checkinRepository.findFeed(
-                viewerId, boundedSize(size), boundedPage(page) * boundedSize(size)), Set.of(), viewerId);
+    public List<UserCheckinResponse> feed(UUID viewerId, FeedGeoFilter geo, FeedPlaceKind kind,
+                                          int page, int size, String cursor) {
+        FeedCursor after = FeedCursor.decode(cursor);
+        List<UserCheckin> checkins = checkinRepository.findFeed(viewerId, geo, kind, after,
+                boundedSize(size), after != null ? 0 : boundedPage(page) * boundedSize(size));
+        List<UserCheckinResponse> responses = toResponses(checkins, Set.of(), viewerId);
+        // Same order as the rows, so each post carries the key the next page resumes after.
+        for (int index = 0; index < responses.size(); index++) {
+            UserCheckin checkin = checkins.get(index);
+            responses.get(index).setFeedCursor(FeedCursor.encodeAfter(
+                    checkin.getHasPhoto(), checkin.getCreatedAt(), checkin.getId()));
+        }
+        return responses;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserCheckinResponse> followingFeed(UUID viewerId, Double focusLat, Double focusLng,
+                                                   FeedPlaceKind kind, int page, int size) {
+        boolean focused = focusLat != null && focusLng != null;
+        List<UserCheckin> checkins = checkinRepository.findFollowingFeed(viewerId,
+                focused ? focusLat : null, focused ? focusLng : null, kind,
+                boundedSize(size), boundedPage(page) * boundedSize(size));
+        List<UserCheckinResponse> responses = toResponses(checkins, Set.of(), viewerId);
+        // The Friends tab keeps its order and marks what the viewer has not seen yet.
+        Set<UUID> seen = feedImpressionService.seenIds(viewerId, FeedItemType.CHECKIN,
+                checkins.stream().map(UserCheckin::getId).toList());
+        // toResponses keeps the order, so row i is response i.
+        for (int i = 0; i < responses.size(); i++) {
+            responses.get(i).setFocusRank(checkins.get(i).getFocusRank());
+            responses.get(i).setSeen(seen.contains(checkins.get(i).getId()));
+        }
+        return responses;
     }
 
     @Override
@@ -536,13 +706,22 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserCheckinResponse> byPlace(UUID placeId, int page, int size) {
+    public List<UserCheckinResponse> byPlace(UUID viewerId, UUID placeId, int page, int size) {
         List<UserCheckin> checkins = checkinRepository.findByPlace(
                 placeId, boundedSize(size), boundedPage(page) * boundedSize(size));
         Set<UUID> latestReviewCheckinIds = checkinRepository.findLatestRatedPerUserForPlace(placeId).stream()
                 .map(UserCheckin::getId)
                 .collect(Collectors.toSet());
-        return toResponses(checkins, latestReviewCheckinIds, null);
+        // The viewer's own like/saved state rides on every row: a heart drawn empty for a
+        // post the viewer already liked turns the next tap into an unlike.
+        return toResponses(checkins, latestReviewCheckinIds, viewerId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserCheckinResponse> byLocalEvent(UUID viewerId, UUID eventId, int page, int size) {
+        return toResponses(checkinRepository.findByLocalEvent(
+                eventId, boundedSize(size), boundedPage(page) * boundedSize(size)), Set.of(), viewerId);
     }
 
     @Override
@@ -553,15 +732,34 @@ public class UserCheckinServiceImpl implements UserCheckinService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserCheckinResponse> byLocationKey(String locationKey, int page, int size) {
+    public List<UserCheckinResponse> byTripForMember(UUID userId, UUID tripId) {
+        tripAccessGuard.requireAccess(tripId, userId);
+        return byTrip(userId, tripId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserCheckinResponse> byLocationKey(UUID viewerId, String locationKey, int page, int size) {
         return toResponses(checkinRepository.findByLocationKey(
-                locationKey, boundedSize(size), boundedPage(page) * boundedSize(size)), Set.of(), null);
+                locationKey, boundedSize(size), boundedPage(page) * boundedSize(size)), Set.of(), viewerId);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<VisitedWardResponse> visitedWards(UUID viewerId, UUID userId) {
         return checkinRepository.findVisitedWards(userId, userId.equals(viewerId));
+    }
+
+    @Override
+    @Transactional
+    public int convertLegacyReviews(int batchSize) {
+        List<UUID> placeIds = checkinRepository.convertLegacyReviews(batchSize);
+        // checkin_count of these places is recounted after the commit (PlaceUsageStatsJob).
+        if (!placeIds.isEmpty()) {
+            events.publishEvent(new PlaceUsageChangedEvent(
+                    placeIds.stream().map(UUID::toString).collect(Collectors.toSet())));
+        }
+        return placeIds.size();
     }
 
     // --- rules -----------------------------------------------------------------------
@@ -627,6 +825,120 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         return review.getId();
     }
 
+    @Override
+    public CheckinVideoUploadResponse uploadVideo(UUID userId, MultipartFile file) {
+        requireFeatureEnabled();
+        requireVideoAllowed(userId);
+        // Checked before the upload so a too-long clip costs no storage. The length is read
+        // from the file's own header; WEBM has none we read and is left to the app's limit.
+        Integer durationSeconds = readDurationSeconds(file);
+        requireVideoLength(durationSeconds);
+        String url = fileUploadService.uploadVideo(VIDEO_PREFIX + userId, file);
+        return CheckinVideoUploadResponse.builder()
+                .url(url)
+                .durationSeconds(durationSeconds)
+                .build();
+    }
+
+    private Integer readDurationSeconds(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            return null;
+        }
+        try (InputStream input = file.getInputStream()) {
+            return Mp4Duration.seconds(input);
+        } catch (IOException exception) {
+            return null;
+        }
+    }
+
+    /**
+     * A check-in is photos or exactly one video. The video must be one this user uploaded
+     * through {@link #uploadVideo}, and carries the still frame the app cut from it.
+     *
+     * @param videosAlreadyPosted video URLs the check-in being edited already shows; those
+     *                            stay allowed when the feature switch is off
+     */
+    private void requireAllowedMedia(UUID userId, List<CreateUserCheckinRequest.CheckinPhotoInput> photos,
+                                     Set<String> videosAlreadyPosted) {
+        List<CreateUserCheckinRequest.CheckinPhotoInput> videos = photos.stream()
+                .filter(photo -> photo.getMediaType() == CheckinMediaType.VIDEO)
+                .toList();
+        if (videos.isEmpty()) {
+            return;
+        }
+        if (photos.size() != 1) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                    "A video check-in carries the video alone");
+        }
+        CreateUserCheckinRequest.CheckinPhotoInput video = videos.get(0);
+        if (!videosAlreadyPosted.contains(video.getUrl())) {
+            requireVideoAllowed(userId);
+            if (!video.getUrl().contains(VIDEO_PREFIX + userId + "/")) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
+                        "Upload the video through the check-in video upload first");
+            }
+        }
+        if (video.getThumbnailUrl() == null || video.getThumbnailUrl().isBlank()) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "A video needs its still frame");
+        }
+        requireVideoLength(video.getDurationSeconds());
+    }
+
+    private void requireVideoLength(Integer durationSeconds) {
+        int maxSeconds = config.getInt(BusinessConfigKey.CHECKIN_MAX_VIDEO_SECONDS);
+        if (durationSeconds != null && durationSeconds > maxSeconds) {
+            throw new BusinessException(ErrorConstant.CHECKIN_VIDEO_TOO_LONG,
+                    "A check-in video can be at most " + maxSeconds + " seconds long");
+        }
+    }
+
+    private void requireVideoAllowed(UUID userId) {
+        if (!isVideoAllowed(userId)) {
+            throw new BusinessException(ErrorConstant.CHECKIN_VIDEO_NOT_ALLOWED,
+                    "Video check-ins are not available yet.");
+        }
+    }
+
+    /** Open to everyone through CHECKIN.VIDEO_ENABLED; until then, beta testers and PRO members. */
+    private boolean isVideoAllowed(UUID userId) {
+        return config.getBoolean(BusinessConfigKey.CHECKIN_VIDEO_ENABLED)
+                || betaAccess.isBetaUser(userId)
+                || isPro(userId);
+    }
+
+    /**
+     * A track must be in the active catalogue, and adding one needs the music switch (or beta).
+     * Keeping the track the visit already has is always allowed, like a video after the switch
+     * is turned off.
+     */
+    private void requireAllowedMusic(UUID userId, UUID trackId, UUID currentTrackId) {
+        if (trackId == null || trackId.equals(currentTrackId)) {
+            return;
+        }
+        if (!isMusicAllowed(userId)) {
+            throw new BusinessException(ErrorConstant.CHECKIN_MUSIC_NOT_ALLOWED,
+                    "Music on check-ins is not available yet.");
+        }
+        musicTrackService.requireActive(trackId);
+    }
+
+    private boolean isMusicAllowed(UUID userId) {
+        return config.getBoolean(BusinessConfigKey.CHECKIN_MUSIC_ENABLED) || betaAccess.isBetaUser(userId);
+    }
+
+    /** Camera filters and frames: open to everyone through the switch; until then, beta testers. */
+    private boolean isCameraLooksAllowed(UUID userId) {
+        return config.getBoolean(BusinessConfigKey.CHECKIN_CAMERA_LOOKS_ENABLED) || betaAccess.isBetaUser(userId);
+    }
+
+    /** What the linked review shows: the photos, or a video's still frame. */
+    private List<String> reviewImageUrls(List<CreateUserCheckinRequest.CheckinPhotoInput> photos) {
+        return photos.stream()
+                .map(photo -> photo.getMediaType() == CheckinMediaType.VIDEO ? photo.getThumbnailUrl() : photo.getUrl())
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
     private CheckinPhotoSource resolvePhotoSource(List<CreateUserCheckinRequest.CheckinPhotoInput> photos) {
         return photos.stream()
                 .map(CreateUserCheckinRequest.CheckinPhotoInput::getSource)
@@ -634,14 +946,31 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .orElse(CheckinPhotoSource.GALLERY);
     }
 
+    /**
+     * @param photosBeforeEdit the rows an edit is replacing; empty on create. A photo whose URL
+     *                         is unchanged keeps its camera look keys when the request sends none,
+     *                         because an app built before camera looks sends none on every edit.
+     */
     private void storePhotos(UUID checkinId, List<CreateUserCheckinRequest.CheckinPhotoInput> photos,
-                             LocalDateTime now) {
+                             LocalDateTime now, List<UserCheckinPhoto> photosBeforeEdit) {
+        Map<String, UserCheckinPhoto> savedByUrl = photosBeforeEdit.stream()
+                .filter(saved -> saved.getUrl() != null)
+                .collect(Collectors.toMap(UserCheckinPhoto::getUrl, saved -> saved, (first, second) -> first));
         int position = 0;
         for (CreateUserCheckinRequest.CheckinPhotoInput photo : photos) {
+            boolean isVideo = photo.getMediaType() == CheckinMediaType.VIDEO;
+            UserCheckinPhoto saved = savedByUrl.get(photo.getUrl());
             checkinRepository.insertPhoto(UserCheckinPhoto.builder()
                     .id(UUID.randomUUID())
                     .checkinId(checkinId)
                     .url(photo.getUrl())
+                    .mediaType(isVideo ? CheckinMediaType.VIDEO : CheckinMediaType.IMAGE)
+                    .thumbnailUrl(isVideo ? photo.getThumbnailUrl() : null)
+                    .durationSeconds(isVideo ? photo.getDurationSeconds() : null)
+                    .filterKey(photo.getFilterKey() != null || saved == null
+                            ? photo.getFilterKey() : saved.getFilterKey())
+                    .frameKey(photo.getFrameKey() != null || saved == null
+                            ? photo.getFrameKey() : saved.getFrameKey())
                     .source(photo.getSource())
                     .position(position++)
                     .title(photo.getTitle())
@@ -656,10 +985,14 @@ public class UserCheckinServiceImpl implements UserCheckinService {
     }
 
     private boolean isGalleryAllowed(UUID userId) {
-        if (PRO_TIER.equalsIgnoreCase(subscriptionRepository.getSubscriptionTier(userId))) {
+        if (isPro(userId)) {
             return true;
         }
         return config.getBoolean(BusinessConfigKey.CHECKIN_GALLERY_ALLOWED_FOR_FREE);
+    }
+
+    private boolean isPro(UUID userId) {
+        return PRO_TIER.equalsIgnoreCase(subscriptionRepository.getSubscriptionTier(userId));
     }
 
     private boolean supportsAspectRatings(Place place) {
@@ -716,15 +1049,129 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         Map<UUID, UserReview> linkedReviews = reviewRepository.findByIds(reviewIds).stream()
                 .filter(review -> !takenDownReviewIds.contains(review.getId()))
                 .collect(Collectors.toMap(UserReview::getId, review -> review));
+        // The linked reviews' photos for the whole page in one query, not one per review.
+        Map<UUID, List<MediaAsset>> linkedReviewMedia = linkedReviews.isEmpty()
+                ? Map.of()
+                : mediaAssetRepository.findByEntityIds("USER_REVIEW", List.copyOf(linkedReviews.keySet()))
+                        .stream()
+                        .collect(Collectors.groupingBy(MediaAsset::getEntityId));
         Map<UUID, Place> places = loadPlaces(checkins);
+        // The places' names in the reader's language, one query for the page.
+        Map<UUID, List<com.ds.goroute.entity.PlaceTranslation>> placeTranslations =
+                placeRepository.findTranslationsByPlaceIds(places.keySet());
+        Map<UUID, Integer> commentCounts = commentCounts(checkins);
 
-        return checkins.stream()
+        List<UserCheckinResponse> responses = checkins.stream()
                 .map(checkin -> toResponse(checkin, photos.getOrDefault(checkin.getId(), List.of()),
                         authors.getOrDefault(checkin.getUserId(), null), latestReviewCheckinIds.contains(checkin.getId()),
-                        linkedReviews.get(checkin.getReviewId()), likeCounts.getOrDefault(checkin.getId(), 0),
-                        likedIds.contains(checkin.getId()), 
-                        checkin.getPlaceId() == null ? null : places.get(checkin.getPlaceId())))
+                        linkedReviews.get(checkin.getReviewId()),
+                        checkin.getReviewId() == null ? List.of()
+                                : linkedReviewMedia.getOrDefault(checkin.getReviewId(), List.of()),
+                        likeCounts.getOrDefault(checkin.getId(), 0),
+                        likedIds.contains(checkin.getId()),
+                        checkin.getPlaceId() == null ? null : places.get(checkin.getPlaceId()),
+                        checkin.getPlaceId() == null ? null : placeTranslations.get(checkin.getPlaceId()),
+                        commentCounts.getOrDefault(checkin.getId(), 0)))
                 .toList();
+        markSaved(responses, viewerId);
+        markGuides(responses);
+        markMusic(checkins, responses);
+        markEvents(checkins, responses);
+        return responses;
+    }
+
+    /**
+     * Names the local event of every check-in made at one, with one query for the page.
+     * {@code responses} is in the order of {@code checkins}. A deleted event leaves the fields
+     * null, so the post reads as an ordinary check-in at the venue.
+     */
+    private void markEvents(List<UserCheckin> checkins, List<UserCheckinResponse> responses) {
+        List<UUID> eventIds = checkins.stream()
+                .map(UserCheckin::getLocalEventId).filter(Objects::nonNull).distinct().toList();
+        if (eventIds.isEmpty()) {
+            return;
+        }
+        Map<UUID, com.ds.goroute.localevent.domain.LocalEvent> events =
+                localEventRepository.findLiveSummariesByIds(eventIds);
+        for (int index = 0; index < checkins.size(); index++) {
+            com.ds.goroute.localevent.domain.LocalEvent event = events.get(checkins.get(index).getLocalEventId());
+            if (event != null) {
+                UserCheckinResponse response = responses.get(index);
+                response.setLocalEventId(event.getId());
+                response.setEventTitle(event.getTitle());
+                response.setEventCoverUrl(event.getCoverUrl());
+                response.setEventVenueName(event.getVenueName());
+            }
+        }
+    }
+
+    /**
+     * Sets the background music of the whole page with one query. {@code responses} is in the
+     * order of {@code checkins}. A track switched off in the catalogue is simply not shown.
+     */
+    private void markMusic(List<UserCheckin> checkins, List<UserCheckinResponse> responses) {
+        List<UUID> trackIds = checkins.stream().map(UserCheckin::getMusicTrackId).filter(Objects::nonNull).toList();
+        if (trackIds.isEmpty()) {
+            return;
+        }
+        Map<UUID, MusicTrackResponse> tracks = musicTrackService.findActiveByIds(trackIds);
+        for (int index = 0; index < checkins.size(); index++) {
+            UUID trackId = checkins.get(index).getMusicTrackId();
+            if (trackId != null) {
+                responses.get(index).setMusic(tracks.get(trackId));
+            }
+        }
+    }
+
+    /**
+     * Sets the guide badge of every author on the page with one query (user_guide_grants), so a
+     * Local Guide's check-in carries the badge wherever it is listed.
+     */
+    private void markGuides(List<UserCheckinResponse> responses) {
+        if (responses.isEmpty()) {
+            return;
+        }
+        Map<UUID, String> guideTitles = userGuideService.activeGuideTitles(
+                responses.stream().map(UserCheckinResponse::getUserId).toList());
+        if (guideTitles.isEmpty()) {
+            return;
+        }
+        responses.forEach(response -> {
+            if (guideTitles.containsKey(response.getUserId())) {
+                response.setUserGuide(true);
+                response.setUserGuideTitle(guideTitles.get(response.getUserId()));
+            }
+        });
+    }
+
+    /** Sets {@code hasSaved} on the whole page with one query. Guests have saved nothing. */
+    private void markSaved(List<UserCheckinResponse> responses, UUID viewerId) {
+        if (viewerId == null || responses.isEmpty()) {
+            return;
+        }
+        Set<UUID> savedIds = new java.util.HashSet<>(savedPostMapper.findSavedIds(viewerId, SavedPostType.CHECKIN,
+                responses.stream().map(UserCheckinResponse::getId).toList()));
+        responses.forEach(response -> response.setHasSaved(savedIds.contains(response.getId())));
+    }
+
+    /**
+     * The comment count GET /content-comments/count would answer for each check-in, in one
+     * grouped query. That endpoint only opens the thread of a public, live check-in that is
+     * not taken down, so any other check-in counts 0 here; the takedown half is applied in
+     * the query itself.
+     */
+    private Map<UUID, Integer> commentCounts(List<UserCheckin> checkins) {
+        List<UUID> commentable = checkins.stream()
+                .filter(UserCheckinServiceImpl::hasCommentThread)
+                .map(UserCheckin::getId)
+                .toList();
+        return commentable.isEmpty()
+                ? Map.of()
+                : contentCommentRepository.countActiveByTargets(ModeratedContentType.CHECKIN, commentable);
+    }
+
+    private static boolean hasCommentThread(UserCheckin checkin) {
+        return checkin.getVisibility() == ContentVisibility.PUBLIC && !Boolean.TRUE.equals(checkin.getIsRemoved());
     }
 
     /**
@@ -740,18 +1187,16 @@ public class UserCheckinServiceImpl implements UserCheckinService {
         if (placeIds.isEmpty()) {
             return Map.of();
         }
-        return placeRepository.findByIds(placeIds).stream()
+        return placeRepository.findCardsByIds(placeIds).stream()
                 .collect(Collectors.toMap(Place::getId, place -> place, (first, second) -> first));
     }
 
+    /** One query for every author on the page. */
     private Map<UUID, User> loadAuthors(List<UserCheckin> checkins) {
         Set<UUID> authorIds = checkins.stream()
                 .map(UserCheckin::getUserId)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
-        return authorIds.stream()
-                .map(userRepository::findById)
-                .filter(Optional::isPresent)
-                .map(Optional::get)
+        return userRepository.findByIds(authorIds).stream()
                 .collect(Collectors.toMap(User::getId, user -> user, (first, second) -> first));
     }
 
@@ -763,14 +1208,39 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 : reviewRepository.findById(checkin.getReviewId()).orElse(null);
         Place place = checkin.getPlaceId() == null ? null
                 : placeRepository.findById(checkin.getPlaceId()).orElse(null);
-        return toResponse(checkin, photos, userRepository.findById(checkin.getUserId()).orElse(null), false,
-                linkedReview, checkinRepository.countLikes(checkin.getId()),
-                viewerId != null && checkinRepository.hasLike(checkin.getId(), viewerId), place);
+        List<MediaAsset> linkedReviewMedia = linkedReview == null ? List.of()
+                : mediaAssetRepository.findByEntity("USER_REVIEW", linkedReview.getId());
+        UserCheckinResponse response = toResponse(checkin, photos,
+                userRepository.findById(checkin.getUserId()).orElse(null), false,
+                linkedReview, linkedReviewMedia, checkinRepository.countLikes(checkin.getId()),
+                viewerId != null && checkinRepository.hasLike(checkin.getId(), viewerId), place,
+                place == null ? null
+                        : placeRepository.findTranslationsByPlaceIds(List.of(place.getId())).get(place.getId()),
+                commentCounts(List.of(checkin)).getOrDefault(checkin.getId(), 0));
+        markSaved(List.of(response), viewerId);
+        markGuides(List.of(response));
+        markMusic(List.of(checkin), List.of(response));
+        markEvents(List.of(checkin), List.of(response));
+        return response;
     }
 
     private UserCheckinResponse toResponse(UserCheckin checkin, List<UserCheckinPhoto> photos, User author,
-                                           boolean latestReview, UserReview linkedReview, int likeCount,
-                                           boolean hasLiked, Place place) {
+                                           boolean latestReview, UserReview linkedReview,
+                                           List<MediaAsset> linkedReviewMedia, int likeCount,
+                                           boolean hasLiked, Place place,
+                                           List<com.ds.goroute.entity.PlaceTranslation> placeTranslations,
+                                           int commentCount) {
+        // The linked place in the reader's language, written into the fields every client
+        // already shows. The location name was copied from the place when the author picked
+        // it, so it follows the place's name while it is still one of its names; a name the
+        // author or the map gave it stays as written.
+        String language = com.ds.goroute.config.filter.AcceptLanguageFilter.currentCode();
+        String localizedPlaceName = com.ds.goroute.service.PlaceTranslationService.localizedName(
+                placeTranslations, language);
+        String localizedLocationName = place == null ? null
+                : com.ds.goroute.service.PlaceTranslationService.localizedCopy(
+                        checkin.getLocationName(), place.getTitle(), placeTranslations, language);
+        String locationName = localizedLocationName != null ? localizedLocationName : checkin.getLocationName();
         List<MemoryImageResponse> photoResponses = photos.stream()
                 .sorted(Comparator.comparing(UserCheckinPhoto::getPosition,
                         Comparator.nullsLast(Comparator.naturalOrder())))
@@ -779,7 +1249,11 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                         .url(photo.getUrl())
                         .entityType("USER_CHECKIN")
                         .entityId(checkin.getId())
-                        .mediaType("IMAGE")
+                        .mediaType(photo.isVideo() ? CheckinMediaType.VIDEO.name() : CheckinMediaType.IMAGE.name())
+                        .thumbnailUrl(photo.getThumbnailUrl())
+                        .durationSeconds(photo.getDurationSeconds())
+                        .filterKey(photo.getFilterKey())
+                        .frameKey(photo.getFrameKey())
                         .position(photo.getPosition())
                         .title(photo.getTitle())
                         .description(photo.getDescription())
@@ -790,7 +1264,7 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                         .longitude(photo.getLongitude())
                         .accuracyMeters(photo.getAccuracyMeters())
                         .placeId(checkin.getPlaceId())
-                        .locationName(checkin.getLocationName())
+                        .locationName(locationName)
                         .locationSource(checkin.getLocationSource() == null
                                 ? null : checkin.getLocationSource().name())
                         .createdAt(photo.getCreatedAt())
@@ -805,12 +1279,13 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .id(checkin.getId())
                 .userId(checkin.getUserId())
                 .userDisplayName(author == null ? null : author.getFullName())
+                .userUsername(author == null ? null : author.getUsername())
                 .userAvatarUrl(author == null ? null : author.getAvatarUrl())
                 .tripId(checkin.getTripId())
                 .activityId(checkin.getActivityId())
                 .placeId(checkin.getPlaceId())
                 .reviewId(checkin.getReviewId())
-                .locationName(checkin.getLocationName())
+                .locationName(locationName)
                 .customName(checkin.getCustomName())
                 .latitude(checkin.getLatitude())
                 .longitude(checkin.getLongitude())
@@ -820,15 +1295,18 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .provinceCode(checkin.getProvinceCode())
                 .locationSource(checkin.getLocationSource())
                 .locationKey(checkin.getLocationKey())
-                .placeName(place == null ? null : place.getTitle())
+                .placeName(place == null ? null : localizedPlaceName != null ? localizedPlaceName : place.getTitle())
                 .placeAddress(place == null ? null : place.getAddress())
                 .placeThumbnail(place == null ? null : place.getThumbnail())
                 .placeReviewCount(place == null ? null : place.getReviewCount())
                 .placeReviewRating(place == null ? null : place.getReviewRating())
-                .placeAdjustedRating(place == null ? null : place.getAdjustedRating())
+                .placeAdjustedRating(PlaceDisplayRating.of(place))
                 .placeLatitude(place == null ? null : place.getLatitude())
                 .placeLongitude(place == null ? null : place.getLongitude())
                 .caption(checkin.getCaption())
+                .frameStyle(checkin.getFrameStyle())
+                .placeKind(checkin.getPlaceKind())
+                .muteVideoSound(checkin.isMuteVideoSound())
                 .overallRating(checkin.getOverallRating())
                 .foodRating(checkin.getFoodRating())
                 .priceRating(checkin.getPriceRating())
@@ -848,9 +1326,10 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                 .createdAt(checkin.getCreatedAt())
                 .linkedToReview(checkin.getReviewId() != null)
                 .latestReview(latestReview)
-                .linkedReview(toLinkedReview(linkedReview))
+                .linkedReview(toLinkedReview(linkedReview, linkedReviewMedia))
                 .likeCount(likeCount)
                 .hasLiked(hasLiked)
+                .commentCount(commentCount)
                 .photos(photos.stream()
                         .sorted(Comparator.comparing(UserCheckinPhoto::getPosition,
                                 Comparator.nullsLast(Comparator.naturalOrder())))
@@ -865,18 +1344,22 @@ public class UserCheckinServiceImpl implements UserCheckinService {
                                 .latitude(photo.getLatitude())
                                 .longitude(photo.getLongitude())
                                 .accuracyMeters(photo.getAccuracyMeters())
+                                .mediaType(photo.isVideo() ? CheckinMediaType.VIDEO : CheckinMediaType.IMAGE)
+                                .thumbnailUrl(photo.getThumbnailUrl())
+                                .durationSeconds(photo.getDurationSeconds())
+                                .filterKey(photo.getFilterKey())
+                                .frameKey(photo.getFrameKey())
                                 .build())
                         .toList())
                 .photosV2(photoResponses)
                 .build();
     }
 
-    private CheckinLinkedReviewResponse toLinkedReview(UserReview review) {
+    private CheckinLinkedReviewResponse toLinkedReview(UserReview review, List<MediaAsset> media) {
         if (review == null) {
             return null;
         }
-        List<MemoryImageResponse> photoResponses = MediaAssetResponseMapper.toImageResponses(
-                mediaAssetRepository.findByEntity("USER_REVIEW", review.getId()));
+        List<MemoryImageResponse> photoResponses = MediaAssetResponseMapper.toImageResponses(media);
         List<String> photos = photoResponses.isEmpty()
                 ? List.of()
                 : MediaAssetResponseMapper.toUrls(photoResponses);

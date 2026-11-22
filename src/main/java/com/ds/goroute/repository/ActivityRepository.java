@@ -1,10 +1,22 @@
 package com.ds.goroute.repository;
 
 import com.ds.goroute.entity.Activity;
+import com.ds.goroute.entity.UnlinkedActivityRow;
+
+import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
+/**
+ * Activities of a trip. Every insert and delete here also recounts the owning trip's
+ * {@code trips.activity_count} (V216), the ranking input of public trip search, and every
+ * write that may change which places the trip uses publishes a {@code PlaceUsageChangedEvent}
+ * (V225 usage counts), so no caller has to remember either.
+ */
 public interface ActivityRepository {
     void insert(Activity activity);
     
@@ -16,7 +28,13 @@ public interface ActivityRepository {
     
     /** Number of activities on a trip, for list payloads that do not carry the activities themselves. */
     int countByTripId(UUID tripId);
-    
+
+    /** Activity count per trip for a page of trips, in one grouped query; absent trips have 0. */
+    Map<UUID, Integer> countByTripIds(Collection<UUID> tripIds);
+
+    /** Names of the given activities, keyed by id; unnamed or missing activities are absent. */
+    Map<UUID, String> findNamesByIds(Collection<UUID> activityIds);
+
     List<Activity> findByTripIdAndDayNumber(UUID tripId, int dayNumber);
     
     void updateById(Activity activity);
@@ -26,4 +44,46 @@ public interface ActivityRepository {
     void deleteById(UUID id);
     
     void deleteByTripId(UUID tripId);
+
+    /**
+     * The place references (place_ref_id, place_id) of the trip's activities: what a change
+     * to the whole trip, such as deleting it, may change the usage counts of (V225).
+     */
+    Set<String> tripPlaceReferences(UUID tripId);
+
+    /**
+     * Activities with an address that resolves to no catalogue place: still in the admin queue,
+     * newest first, or ({@code dismissed}) taken out of it, most recently dismissed first.
+     */
+    List<UnlinkedActivityRow> findUnlinkedForAdmin(String search, boolean dismissed, List<String> categories,
+                                                   List<String> excludedCategories, int limit, int offset);
+
+    long countUnlinkedForAdmin(String search, boolean dismissed, List<String> categories,
+                               List<String> excludedCategories);
+
+    /** Takes the activity out of the admin queue; 0 when it is missing or already out. */
+    int dismissPlaceReview(UUID activityId, UUID adminId);
+
+    /** Puts a dismissed activity back in the admin queue; 0 when it is missing or not dismissed. */
+    int restorePlaceReview(UUID activityId);
+
+    /** Points the activity at a catalogue place; returns the number of rows changed. */
+    int assignPlace(UUID activityId, UUID placeId, BigDecimal lat, BigDecimal lng);
+
+    /**
+     * Unlinks the trip's activity from any catalogue place and puts it at a map place's point,
+     * with that place's Mapbox id (null clears it). Returns the number of rows changed.
+     */
+    int assignMapPlace(UUID tripId, UUID activityId, BigDecimal lat, BigDecimal lng, String mapboxId);
+
+    /** Records the Mapbox place an activity of the trip was made from. Returns the rows changed. */
+    int setMapboxId(UUID tripId, UUID activityId, String mapboxId);
+
+    /**
+     * Renumbers the trip's days in one statement: each day in {@code moves} (old number to new)
+     * takes its new number, the other days 1..{@code oldDays} keep theirs, and activities outside
+     * those days move by {@code outsideDelta}. A starting point's date moves with its day's date;
+     * {@code startDelta} is how many days later the trip now starts. Returns the activities changed.
+     */
+    int relayoutDays(UUID tripId, int oldDays, Map<Integer, Integer> moves, int outsideDelta, int startDelta);
 }

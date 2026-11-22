@@ -1,7 +1,7 @@
 package com.ds.goroute.config;
 
 import com.ds.goroute.config.filter.ApiKeyAuthenticationFilter;
-import com.ds.goroute.config.filter.CorsFilter;
+import com.ds.goroute.config.filter.RequestContextFilter;
 import com.ds.goroute.config.filter.InternalApiAuthenticationFilter;
 import com.ds.goroute.config.filter.JwtAuthenticationFilter;
 import com.ds.goroute.mapper.AdminMapper;
@@ -71,9 +71,11 @@ class WebSocketHandshakeTest {
             WebSocketConfig.class,
             JwtUtils.class,
             JwtAuthenticationFilter.class,
+            com.ds.goroute.config.cache.AuthSubjectCache.class,
             ApiKeyAuthenticationFilter.class,
+            com.ds.goroute.config.filter.AdminApiKeyAuthenticationFilter.class,
             InternalApiAuthenticationFilter.class,
-            CorsFilter.class,
+            RequestContextFilter.class,
             ApiAuthenticationEntryPoint.class,
             ApiAccessDeniedHandler.class,
             RealtimeSessionRegistry.class,
@@ -83,6 +85,8 @@ class WebSocketHandshakeTest {
 
     @MockitoBean
     private AdminMapper adminMapper;
+    @MockitoBean
+    private com.ds.goroute.localevent.service.AdminApiKeyService adminApiKeyService;
     @MockitoBean
     private UserRepository userRepository;
     @MockitoBean

@@ -1,6 +1,8 @@
 package com.ds.goroute.controller;
 
 import com.ds.goroute.annotations.CurrentUser;
+import com.ds.goroute.dto.FeedGeoFilter;
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.request.CreateReviewRequest;
 import com.ds.goroute.dto.request.UpdateReviewRequest;
 import com.ds.goroute.dto.response.PlaceScoreResponse;
@@ -10,11 +12,16 @@ import com.ds.goroute.dto.response.UserReviewProfileResponse;
 import com.ds.goroute.dto.response.UserReviewResponse;
 import com.ds.goroute.service.ReviewService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -22,7 +29,11 @@ import java.util.UUID;
 @RequestMapping("/v1/api/reviews")
 @RequiredArgsConstructor
 @Slf4j
+@Validated
 public class ReviewController extends BaseController {
+
+    /** The app asks for up to 100 of its own reviews at once (the "my reviews" lookup). */
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final ReviewService reviewService;
 
@@ -75,8 +86,8 @@ public class ReviewController extends BaseController {
     @GetMapping("/places/{placeId}")
     public ResponseEntity getPlaceReviews(
             @PathVariable UUID placeId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
             @CurrentUser(required = false) UUID userId) {
         List<UserReviewResponse> reviews = reviewService.getPlaceReviews(placeId, userId, page, size);
         return ResponseEntity.ok(ofSucceeded(reviews));
@@ -85,8 +96,8 @@ public class ReviewController extends BaseController {
     @GetMapping("/activity-bookings/{activityBookingId}")
     public ResponseEntity getActivityBookingReviews(
             @PathVariable UUID activityBookingId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
             @CurrentUser(required = false) UUID userId) {
         List<UserReviewResponse> reviews = reviewService.getActivityBookingReviews(activityBookingId, userId, page, size);
         return ResponseEntity.ok(ofSucceeded(reviews));
@@ -94,20 +105,36 @@ public class ReviewController extends BaseController {
 
     @GetMapping("/users/me")
     public ResponseEntity getMyReviews(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
             @CurrentUser UUID userId) {
         List<UserReviewResponse> reviews = reviewService.getUserReviews(userId, page, size);
         return ResponseEntity.ok(ofSucceeded(reviews));
     }
 
+    /**
+     * Photos first, then newest. Each review carries a {@code feedCursor}; sending the last
+     * one back as {@code cursor} returns the page after it and ignores {@code page}. Without a
+     * cursor, or with {@code randomSeed}, the feed pages by number.
+     */
     @GetMapping("/feed")
     public ResponseEntity getFeedReviews(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
             @RequestParam(required = false) String randomSeed,
+            // Scope to an area for the Feed's "near you" tab; without a point, everywhere.
+            @RequestParam(required = false) BigDecimal latitude,
+            @RequestParam(required = false) BigDecimal longitude,
+            @RequestParam(defaultValue = "50") BigDecimal radiusKm,
+            @RequestParam(required = false) @Size(max = 200) String cursor,
+            // The Feed's place-kind chips: PlaceGroup and PlaceSubType codes. A post matches
+            // through its catalogue place, a trip through any of its stops.
+            @RequestParam(required = false) List<String> placeGroups,
+            @RequestParam(required = false) List<String> subTypes,
             @CurrentUser(required = false) UUID userId) {
-        List<UserReviewResponse> reviews = reviewService.getFeedReviews(userId, page, size, randomSeed);
+        List<UserReviewResponse> reviews = reviewService.getFeedReviews(
+                userId, FeedGeoFilter.of(latitude, longitude, radiusKm), FeedPlaceKind.of(placeGroups, subTypes),
+                page, size, randomSeed, cursor);
         return ResponseEntity.ok(ofSucceeded(reviews));
     }
 

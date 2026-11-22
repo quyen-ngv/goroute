@@ -18,6 +18,7 @@
         <result column="receipt_url" property="receiptUrl" jdbcType="VARCHAR"/>
         <result column="photo_urls" property="photoUrls" jdbcType="ARRAY" typeHandler="org.apache.ibatis.type.ArrayTypeHandler"/>
         <result column="expense_date" property="expenseDate" jdbcType="TIMESTAMP"/>
+        <result column="split_method" property="splitMethod" jdbcType="VARCHAR"/>
         <result column="created_by" property="createdBy" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
         <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
@@ -25,7 +26,8 @@
 
     <insert id="insert" parameterType="com.ds.goroute.entity.Expense">
         INSERT INTO expenses (id, trip_id, activity_id, amount, currency, exchange_rate, amount_in_trip_currency,
-                             category, description, paid_by, paid_by_guest_name, paid_by_guest_member_id, expense_date, created_by, created_at, updated_at)
+                             category, description, paid_by, paid_by_guest_name, paid_by_guest_member_id, expense_date,
+                             split_method, created_by, created_at, updated_at)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{tripId,javaType=java.util.UUID,jdbcType=OTHER},
                 #{activityId,javaType=java.util.UUID,jdbcType=OTHER}, #{amount}, #{currency}, #{exchangeRate},
                 #{amountInTripCurrency},
@@ -33,6 +35,7 @@
                 #{description},
                 #{paidBy,javaType=java.util.UUID,jdbcType=OTHER}, #{paidByGuestName}, #{paidByGuestMemberId,javaType=java.util.UUID,jdbcType=OTHER},
                 COALESCE(#{expenseDate,jdbcType=TIMESTAMP}, NOW()),
+                #{splitMethod,jdbcType=VARCHAR},
                 #{createdBy,javaType=java.util.UUID,jdbcType=OTHER}, NOW(), NOW())
     </insert>
 
@@ -57,6 +60,7 @@
             paid_by_guest_name = #{paidByGuestName},
             paid_by_guest_member_id = #{paidByGuestMemberId,javaType=java.util.UUID,jdbcType=OTHER},
             expense_date = COALESCE(#{expenseDate,jdbcType=TIMESTAMP}, expense_date),
+            split_method = #{splitMethod,jdbcType=VARCHAR},
             updated_at = NOW()
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </update>
@@ -73,11 +77,6 @@
     <select id="selectByPaidBy" parameterType="java.util.UUID" resultMap="ExpenseResultMap">
         SELECT * FROM expenses WHERE paid_by = #{paidBy,javaType=java.util.UUID,jdbcType=OTHER}
         ORDER BY expense_date DESC, created_at DESC
-    </select>
-
-    <select id="countByPaidByGuestMemberId" parameterType="java.util.UUID" resultType="int">
-        SELECT COUNT(*) FROM expenses
-        WHERE paid_by_guest_member_id = #{guestMemberId,javaType=java.util.UUID,jdbcType=OTHER}
     </select>
 
     <update id="reassignGuestPayerToUser">
@@ -101,6 +100,17 @@
     <delete id="deleteByTripId" parameterType="java.util.UUID">
         DELETE FROM expenses WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
     </delete>
+
+    <!-- One page of a trip's expenses, in the same order as selectByTripId. -->
+    <select id="selectByTripIdPage" resultMap="ExpenseResultMap">
+        SELECT * FROM expenses
+        WHERE trip_id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+        <if test="category != null">
+            AND category = #{category,jdbcType=VARCHAR}
+        </if>
+        ORDER BY expense_date DESC, created_at DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
 
     <select id="selectAll" resultMap="ExpenseResultMap">
         SELECT * FROM expenses ORDER BY created_at DESC

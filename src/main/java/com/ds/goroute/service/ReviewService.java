@@ -1,5 +1,7 @@
 package com.ds.goroute.service;
 
+import com.ds.goroute.dto.FeedGeoFilter;
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.request.CreateReviewRequest;
 import com.ds.goroute.dto.request.UpdateReviewRequest;
 import com.ds.goroute.dto.response.PlaceScoreResponse;
@@ -8,7 +10,9 @@ import com.ds.goroute.dto.response.ReviewScoreResponse;
 import com.ds.goroute.dto.response.UserReviewProfileResponse;
 import com.ds.goroute.dto.response.UserReviewResponse;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public interface ReviewService {
@@ -31,6 +35,12 @@ public interface ReviewService {
      */
     UserReviewResponse getReview(UUID reviewId, UUID currentUserId);
 
+    /**
+     * The reviews among {@code reviewIds} that still exist and are not taken down, keyed by id;
+     * missing ids are not visible. Blocks are the caller's business.
+     */
+    Map<UUID, UserReviewResponse> findVisibleByIds(UUID currentUserId, Collection<UUID> reviewIds);
+
     List<UserReviewResponse> getPlaceReviews(UUID placeId, UUID currentUserId, int page, int size);
 
     List<UserReviewResponse> getActivityBookingReviews(UUID activityBookingId, UUID currentUserId, int page, int size);
@@ -39,7 +49,20 @@ public interface ReviewService {
 
     List<UserReviewResponse> getUserReviewsForProfile(UUID targetUserId, UUID viewerId, int page, int size);
 
-    List<UserReviewResponse> getFeedReviews(UUID currentUserId, int page, int size, String randomSeed);
+    /**
+     * Reviews for the Feed, without the viewer's own and without those a public check-in
+     * already shows. {@code geo} limits them to an area; null means everywhere.
+     */
+    List<UserReviewResponse> getFeedReviews(UUID currentUserId, FeedGeoFilter geo, FeedPlaceKind kind,
+                                            int page, int size, String randomSeed);
+
+    /**
+     * {@link #getFeedReviews(UUID, FeedGeoFilter, FeedPlaceKind, int, int, String)} resuming after
+     * {@code cursor}, the {@code feedCursor} of the last review the client holds; {@code page}
+     * is then ignored. A shuffled order ({@code randomSeed}) always pages by number.
+     */
+    List<UserReviewResponse> getFeedReviews(UUID currentUserId, FeedGeoFilter geo, FeedPlaceKind kind,
+                                            int page, int size, String randomSeed, String cursor);
 
     UserReviewResponse voteHelpful(UUID userId, UUID reviewId);
 

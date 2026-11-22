@@ -1,5 +1,7 @@
 package com.ds.goroute.config;
 
+import com.ds.goroute.config.filter.RequestContextTaskDecorator;
+import com.ds.goroute.service.ParallelReads;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.aop.interceptor.AsyncUncaughtExceptionHandler;
 import org.springframework.aop.interceptor.SimpleAsyncUncaughtExceptionHandler;
@@ -77,6 +79,71 @@ public class AsyncConfig implements AsyncConfigurer {
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.initialize();
         log.info("Notification executor initialized: core=5, max=10, queue=100");
+        return executor;
+    }
+
+    /**
+     * Telling an author's followers about a new post (FollowerFanoutListener). Its own small pool so
+     * that one author with ten thousand followers walks them chunk by chunk without taking threads
+     * from trip, chat and booking notifications.
+     *
+     * <p>Never CallerRuns: the caller is the after-commit hook of a check-in or trip update, and
+     * running a fan-out there would hold that HTTP request for the whole walk. A full queue drops
+     * the fan-out with an error log instead; the post itself is already saved.
+     */
+    @Bean(name = "followerFanoutExecutor")
+    public Executor followerFanoutExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(500);
+        executor.setThreadNamePrefix("follower-fanout-");
+        executor.setRejectedExecutionHandler((task, pool) ->
+                log.error("FOLLOWER_FANOUT_REJECTED queue full ({} queued); a post's followers were not told",
+                        pool.getQueue().size()));
+        executor.initialize();
+        log.info("Follower fan-out executor initialized: core=1, max=2, queue=500");
+        return executor;
+    }
+
+    /**
+     * Independent reads split off one HTTP request and joined before it answers
+     * (ParallelReads): feed candidate sources, card hydration. Each thread holds a database
+     * connection while it runs, so the pool stays well under the Hikari maximum (20) that
+     * request threads share. A full queue runs the read on the request thread, which is
+     * exactly the sequential behaviour this replaced.
+     */
+    @Bean(name = ParallelReads.EXECUTOR)
+    public ThreadPoolTaskExecutor requestReadExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(8);
+        executor.setMaxPoolSize(8);
+        executor.setQueueCapacity(64);
+        executor.setThreadNamePrefix(ParallelReads.THREAD_PREFIX);
+        executor.setTaskDecorator(new RequestContextTaskDecorator());
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.initialize();
+        log.info("Request read executor initialized: core=8, max=8, queue=64");
+        return executor;
+    }
+
+    /**
+     * Scoring uploaded images (ImageModerationService). Never CallerRuns: the caller is the
+     * upload request, and a provider call there held every photo upload for seconds as soon
+     * as the shared pool filled up, which is when uploads started timing out on the phone.
+     * Each queued task holds the image bytes, so the queue stays short; a rejected task
+     * leaves its row PENDING and ImageModerationRetryJob reads the image back from storage.
+     */
+    @Bean(name = "imageModerationExecutor")
+    public Executor imageModerationExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(8);
+        executor.setThreadNamePrefix("image-moderation-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.initialize();
+        log.info("Image moderation executor initialized: core=1, max=2, queue=8");
         return executor;
     }
 

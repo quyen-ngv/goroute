@@ -44,6 +44,7 @@ import static org.mockito.Mockito.when;
 class UserCheckinServiceImplUpdateTest {
 
     @Mock private UserCheckinRepository checkins;
+    @Mock private com.ds.goroute.mapper.SavedPostMapper savedPosts;
     @Mock private UserReviewRepository reviews;
     @Mock private PlaceRepository places;
     @Mock private UserRepository users;
@@ -61,6 +62,10 @@ class UserCheckinServiceImplUpdateTest {
     @Mock private ActivityRepository activities;
     @Mock private CheckinRepository activityVisits;
     @Mock private NotificationHelper notifications;
+
+    @Mock private com.ds.goroute.repository.ContentCommentRepository contentComments;
+
+    @Mock private com.ds.goroute.service.UserGuideService userGuides;
 
     @InjectMocks private UserCheckinServiceImpl service;
 

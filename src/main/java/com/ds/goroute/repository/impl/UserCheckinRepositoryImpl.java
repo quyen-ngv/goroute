@@ -1,19 +1,27 @@
 package com.ds.goroute.repository.impl;
 
+import com.ds.goroute.dto.FeedCursor;
+import com.ds.goroute.dto.FeedGeoFilter;
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.entity.CheckinCluster;
 import com.ds.goroute.entity.CheckinClusterDecision;
 import com.ds.goroute.entity.UserCheckin;
 import com.ds.goroute.entity.UserCheckinLocationHistory;
+import com.ds.goroute.entity.CameraLookUsageRow;
 import com.ds.goroute.entity.UserCheckinPhoto;
 import com.ds.goroute.entity.CheckinLikeCount;
+import com.ds.goroute.event.PlaceUsageChangedEvent;
 import com.ds.goroute.mapper.UserCheckinMapper;
 import com.ds.goroute.repository.UserCheckinRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Repository
@@ -21,6 +29,7 @@ import java.util.UUID;
 public class UserCheckinRepositoryImpl implements UserCheckinRepository {
 
     private final UserCheckinMapper mapper;
+    private final ApplicationEventPublisher events;
 
     @Override
     public int insert(UserCheckin checkin) {
@@ -38,6 +47,11 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     }
 
     @Override
+    public List<UserCheckin> findByIds(java.util.Collection<UUID> ids) {
+        return ids.isEmpty() ? List.of() : mapper.findByIds(ids);
+    }
+
+    @Override
     public Optional<UserCheckin> findMine(UUID userId, UUID activityId, UUID placeId, UUID tripId) {
         return Optional.ofNullable(mapper.findMine(userId, activityId, placeId, tripId));
     }
@@ -48,8 +62,23 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     }
 
     @Override
-    public List<UserCheckin> findFeed(UUID excludeUserId, int limit, int offset) {
-        return mapper.findFeed(excludeUserId, limit, offset);
+    public List<UserCheckin> findFeed(UUID excludeUserId, FeedGeoFilter geo, FeedPlaceKind kind,
+                                      FeedCursor after, int limit, int offset) {
+        return mapper.findFeed(excludeUserId,
+                geo == null ? null : geo.latitude(),
+                geo == null ? null : geo.longitude(),
+                geo == null ? null : geo.radiusKm(),
+                kind,
+                after == null ? null : after.hasPhoto(),
+                after == null ? null : after.createdAt(),
+                after == null ? null : after.id(),
+                limit, after == null ? offset : 0);
+    }
+
+    @Override
+    public List<UserCheckin> findFollowingFeed(UUID viewerId, Double focusLat, Double focusLng,
+                                               FeedPlaceKind kind, int limit, int offset) {
+        return mapper.findFollowingFeed(viewerId, focusLat, focusLng, kind, limit, offset);
     }
 
     @Override
@@ -70,6 +99,30 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     @Override
     public List<UserCheckin> findByTrip(UUID tripId, int limit) {
         return mapper.findByTrip(tripId, limit);
+    }
+
+    @Override
+    public List<UserCheckin> findMineForTrip(UUID userId, UUID tripId, LocalDateTime from, LocalDateTime to,
+                                             int limit) {
+        return mapper.findMineForTrip(userId, tripId, from, to, limit);
+    }
+
+    @Override
+    public List<UserCheckin> findByLocalEvent(UUID eventId, int limit, int offset) {
+        return mapper.findByLocalEvent(eventId, limit, offset);
+    }
+
+    @Override
+    public long countByLocalEvent(UUID eventId) {
+        return mapper.countByLocalEvent(eventId);
+    }
+
+    @Override
+    public java.util.Set<UUID> findCheckedInLocalEventIds(UUID userId, java.util.Collection<UUID> eventIds) {
+        if (userId == null || eventIds == null || eventIds.isEmpty()) {
+            return java.util.Set.of();
+        }
+        return new java.util.HashSet<>(mapper.findCheckedInLocalEventIds(userId, eventIds));
     }
 
     @Override
@@ -114,7 +167,11 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
 
     @Override
     public int attachPlaceToCluster(String locationKey, UUID placeId) {
-        return mapper.attachPlaceToCluster(locationKey, placeId);
+        int attached = mapper.attachPlaceToCluster(locationKey, placeId);
+        if (attached > 0) {
+            publishPlaceUsageChange(Set.of(placeId.toString()));
+        }
+        return attached;
     }
 
     @Override
@@ -156,6 +213,16 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     @Override
     public int deletePhotos(UUID checkinId) {
         return mapper.deletePhotos(checkinId);
+    }
+
+    @Override
+    public List<CameraLookUsageRow> countPhotosByFilterKeys(List<String> filterKeys) {
+        return filterKeys.isEmpty() ? List.of() : mapper.countPhotosByFilterKeys(filterKeys);
+    }
+
+    @Override
+    public List<CameraLookUsageRow> countPhotosByFrameKeys(List<String> frameKeys) {
+        return frameKeys.isEmpty() ? List.of() : mapper.countPhotosByFrameKeys(frameKeys);
     }
 
     @Override
@@ -230,18 +297,39 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     }
 
     @Override
-    public List<UserCheckin> findAllForAdmin(String search, UUID userId, Boolean hidden, int limit, int offset) {
-        return mapper.findAllForAdmin(search, userId, hidden, limit, offset);
+    public List<UserCheckin> findAllForAdmin(String search, UUID userId, Boolean hidden, boolean needsPlace,
+                                             int limit, int offset) {
+        return mapper.findAllForAdmin(search, userId, hidden, needsPlace, limit, offset);
     }
 
     @Override
-    public long countAllForAdmin(String search, UUID userId, Boolean hidden) {
-        return mapper.countAllForAdmin(search, userId, hidden);
+    public long countAllForAdmin(String search, UUID userId, Boolean hidden, boolean needsPlace) {
+        return mapper.countAllForAdmin(search, userId, hidden, needsPlace);
+    }
+
+    @Override
+    public int dismissPlace(UUID id, UUID adminId) {
+        return mapper.dismissPlace(id, adminId);
     }
 
     @Override
     public int assignPlace(UUID id, UUID placeId, String locationKey, String provinceCode) {
-        return mapper.assignPlace(id, placeId, locationKey, provinceCode);
+        UserCheckin before = mapper.findById(id);
+        int assigned = mapper.assignPlace(id, placeId, locationKey, provinceCode);
+        if (assigned > 0) {
+            Set<String> places = new HashSet<>();
+            places.add(placeId.toString());
+            if (before != null && before.getPlaceId() != null) {
+                places.add(before.getPlaceId().toString());
+            }
+            publishPlaceUsageChange(places);
+        }
+        return assigned;
+    }
+
+    /** A check-in moved to a place changes the place's usage counts (V225). */
+    private void publishPlaceUsageChange(Set<String> places) {
+        events.publishEvent(new PlaceUsageChangedEvent(places));
     }
 
     @Override
@@ -267,5 +355,26 @@ public class UserCheckinRepositoryImpl implements UserCheckinRepository {
     @Override
     public List<com.ds.goroute.dto.response.VisitedWardResponse> findVisitedWards(UUID userId, boolean includePrivate) {
         return mapper.findVisitedWards(userId, includePrivate);
+    }
+
+    @Override
+    public List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexPage(UUID afterId, int limit) {
+        return mapper.selectSearchIndexPage(afterId, limit);
+    }
+
+    @Override
+    public List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexChanges(
+            LocalDateTime afterUpdatedAt, UUID afterId, int limit) {
+        return mapper.selectSearchIndexChanges(afterUpdatedAt, afterId, limit);
+    }
+
+    @Override
+    public Optional<LocalDateTime> findSearchIndexMaxUpdatedAt() {
+        return Optional.ofNullable(mapper.selectSearchIndexMaxUpdatedAt());
+    }
+
+    @Override
+    public List<UUID> convertLegacyReviews(int limit) {
+        return mapper.convertLegacyReviews(limit);
     }
 }

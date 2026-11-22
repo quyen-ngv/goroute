@@ -1,5 +1,6 @@
 package com.ds.goroute.entity;
 
+import com.ds.goroute.type.ImageModerationStatus;
 import com.ds.goroute.type.ModerationAction;
 import com.ds.goroute.type.ModerationCategory;
 import lombok.AllArgsConstructor;
@@ -19,13 +20,18 @@ import java.util.UUID;
 public class ImageModerationResult {
     private UUID id;
     private String objectKey;
+    private String url;
+    private String mimeType;
     private String checksum;
     private UUID userId;
     private String entryPoint;
+    private ImageModerationStatus status;
+    /** Null while {@link #status} is PENDING. */
     private ModerationAction decision;
     private ModerationCategory category;
     private BigDecimal confidence;
     private String provider;
     private String rawScores;
     private LocalDateTime createdAt;
+    private LocalDateTime completedAt;
 }

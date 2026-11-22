@@ -1,5 +1,6 @@
 package com.ds.goroute.service.impl;
 
+import com.ds.goroute.config.InternalApiProperties;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.*;
 import com.ds.goroute.dto.response.*;
@@ -63,6 +64,7 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
     private final StorageService storageService;
     private final MediaAssetRepository mediaAssetRepository;
     private final ScrapeServiceClient scrapeServiceClient;
+    private final InternalApiProperties internalApiProperties;
     private final ApplicationEventPublisher eventPublisher;
     private final PlatformTransactionManager transactionManager;
 
@@ -106,7 +108,7 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
                     .matchType("GOOGLE_PLACE_ID")
                     .existingPlace(toExistingPlaceSummary(existingPlace))
                     .canContributeReview(true)
-                    .message("Place already exists on GoRoute. You can write a review directly on the place page.")
+                    .message("Place already exists on OnDetour. You can write a review directly on the place page.")
                     .build();
         }
 
@@ -124,7 +126,7 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
         return CheckContributionResponse.builder()
                 .exists(false)
                 .canContributeReview(true)
-                .message("This place is not on GoRoute yet. You can contribute it.")
+                .message("This place is not on OnDetour yet. You can contribute it.")
                 .build();
     }
 
@@ -654,7 +656,14 @@ public class PlaceContributionServiceImpl implements PlaceContributionService {
                 .distinct()
                 .collect(Collectors.toList());
 
-        Map<String, String> headers = Map.of("Content-Type", "application/json");
+        String callbackToken = internalApiProperties.scrapeCallbackToken();
+        if (callbackToken == null || callbackToken.isBlank()) {
+            throw new BusinessException(ErrorConstant.INTERNAL_SERVER_ERROR,
+                    "Scrape callback authentication is not configured");
+        }
+        Map<String, String> headers = Map.of(
+                "Content-Type", "application/json",
+                "X-Internal-Token", callbackToken);
 
         return ScrapeContributionJobRequest.builder()
                 .url(group.getGoogleMapsUrl())

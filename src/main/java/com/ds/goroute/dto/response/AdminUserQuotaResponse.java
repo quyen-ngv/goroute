@@ -15,7 +15,4 @@ public class AdminUserQuotaResponse {
     private UUID userId;
     private Long dataVersion;
     private UserQuotaLimitResponse freeTrip;
-    private UserQuotaLimitResponse aiTripFree;
-    private UserQuotaLimitResponse aiTripPro;
-    private UserQuotaLimitResponse socialLocationDaily;
 }

@@ -120,10 +120,21 @@ public class SocialSavedSpotServiceImpl implements SocialSavedSpotService {
                 .identityStatus(limit(identityStatus, 32))
                 .resolutionStatus(limit(resolutionStatus, 32))
                 .evidence(json(candidate.get("evidence")))
-                .imageUrl(mapCandidate == null ? null : limit(firstText(mapCandidate, "thumbnail", "thumbnailUrl", "imageUrl", "photoUrl"), 1000))
+                .imageUrl(limit(spotImageUrl(candidate, mapCandidate, mapping), 1000))
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
+    }
+
+    /**
+     * The catalogue place's own picture when the spot matched one, otherwise the frame of the
+     * video the AI named it from.
+     */
+    private String spotImageUrl(JsonNode candidate, JsonNode mapCandidate, JsonNode mapping) {
+        String catalogueImage = firstText(mapping, "thumbnail", "thumbnailUrl");
+        if (catalogueImage != null) return catalogueImage;
+        String mapImage = firstText(mapCandidate, "thumbnail", "thumbnailUrl", "imageUrl", "photoUrl");
+        return mapImage != null ? mapImage : firstText(candidate, "imageUrl");
     }
 
     private SocialSavedSpotResponse toResponse(SocialSavedSpot spot) {

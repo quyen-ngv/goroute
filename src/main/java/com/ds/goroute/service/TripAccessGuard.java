@@ -8,6 +8,8 @@ import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.type.MemberRole;
 import com.ds.goroute.type.MemberStatus;
+import com.ds.goroute.type.ModeratedContentType;
+import com.ds.goroute.type.TripVisibility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -32,6 +34,9 @@ public class TripAccessGuard {
 
     private final TripRepository tripRepository;
     private final TripMemberRepository tripMemberRepository;
+    /** Field-injected and optional so the hand-built guard in unit tests keeps its constructor. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ContentModerationService contentModerationService;
 
     /**
      * @return the trip, so a caller that needs it does not have to load it a second time
@@ -83,6 +88,33 @@ public class TripAccessGuard {
         return tripRepository.findById(tripId)
                 .map(trip -> hasAccess(trip, userId))
                 .orElse(false);
+    }
+
+    /**
+     * The public trip page's rule, for things shown next to it (the public route): PUBLIC and
+     * SHARED ("Link only": unlisted, but anyone holding the link) are open to anyone, PRIVATE to
+     * nobody. Mirrors {@code TripServiceImpl.canViewPublicTrip}; keep the two in step.
+     *
+     * @param viewerId null for an anonymous visitor
+     * @throws BusinessException 404 when the trip is gone, 403 when it is not shared with the viewer
+     */
+    public Trip requirePublicView(UUID tripId, UUID viewerId) {
+        Trip trip = requireTrip(tripId);
+        TripVisibility visibility = trip.getVisibility() == null ? TripVisibility.PRIVATE : trip.getVisibility();
+        boolean isVisible = switch (visibility) {
+            case PUBLIC, SHARED -> true;
+            case PRIVATE -> false;
+        };
+        if (!isVisible) {
+            throw new BusinessException(ErrorConstant.FORBIDDEN_ERROR, "Trip is not shared");
+        }
+        // A taken-down trip stays open to its owner and members, as on the public trip page.
+        if (contentModerationService != null
+                && contentModerationService.isTakenDown(ModeratedContentType.TRIP, tripId)
+                && (viewerId == null || !hasAccess(trip, viewerId))) {
+            throw new BusinessException(ErrorConstant.CONTENT_TAKEN_DOWN, "This content has been removed.");
+        }
+        return trip;
     }
 
     private boolean canEdit(MemberRole role) {

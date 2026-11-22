@@ -2,26 +2,40 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.request.BatchUpdatePlaceImagesRequest;
 import com.ds.goroute.dto.PlaceSearchCriteria;
+import com.ds.goroute.type.PlaceSubType;
 import com.ds.goroute.dto.request.ImportPlaceRequest;
 import com.ds.goroute.dto.request.UpdatePlaceRequest;
 import com.ds.goroute.dto.BaseResponse;
+import com.ds.goroute.dto.response.GroupedPlaceSearchResponse;
+import com.ds.goroute.dto.response.PlaceMapTileResponse;
 import com.ds.goroute.dto.response.PlaceResponse;
 import com.ds.goroute.dto.response.PlaceReviewResponse;
 import com.ds.goroute.dto.response.FoodSummaryResponse;
 import com.ds.goroute.dto.response.FoodTagResponse;
 import com.ds.goroute.service.FoodService;
+import com.ds.goroute.service.PlaceGroupedSearchService;
+import com.ds.goroute.service.PlaceMapTileService;
 import com.ds.goroute.service.PlaceService;
+import com.ds.goroute.service.ProvinceNameResolver;
+import com.ds.goroute.utils.MapTile;
+import com.ds.goroute.type.PlaceSearchSort;
+import com.ds.goroute.type.PlaceTrendingPeriod;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -30,10 +44,17 @@ import java.util.UUID;
 @RequestMapping("/v1/api/places")
 @RequiredArgsConstructor
 @Slf4j
+@Validated
 public class PlaceController extends BaseController {
+
+    /** Page ceiling of a place's imported Google review list. */
+    private static final int MAX_REVIEW_PAGE_SIZE = 100;
 
     private final PlaceService placeService;
     private final FoodService foodService;
+    private final PlaceMapTileService placeMapTileService;
+    private final PlaceGroupedSearchService placeGroupedSearchService;
+    private final ProvinceNameResolver provinceNameResolver;
 
     @PostMapping("/import")
     public ResponseEntity importPlace(@Valid @RequestBody ImportPlaceRequest request) {
@@ -47,14 +68,51 @@ public class PlaceController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(responses));
     }
 
+    /**
+     * Public type-ahead/catalogue page. Guests and app users see ACTIVE places only, at most
+     * 50 per page; an admin sees every place, at most 500 (the console's linkable-place
+     * picker). Larger sizes are clamped, not refused.
+     */
     @GetMapping
     public ResponseEntity<BaseResponse<List<PlaceResponse>>> getAllPlaces(
-            @RequestParam(required = false) String search,
+            @RequestParam(required = false) @Size(max = 200) String search,
             @RequestParam(required = false) List<String> placeGroups,
-            @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(500) int size) {
-        List<PlaceResponse> responses = placeService.getAllPlaces(search, placeGroups, page, size);
-        return ResponseEntity.ok(ofSucceeded(responses));
+            // Both or neither: a point the name search leans towards (nearer alike names first)
+            // and measures distance from. Nothing is excluded for being far.
+            @RequestParam(required = false) @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
+            @RequestParam(required = false) @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
+            @RequestParam(defaultValue = "0") @Min(0) @Max(10_000) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(500) int size,
+            Authentication authentication) {
+        boolean leaning = latitude != null && longitude != null;
+        List<PlaceResponse> responses = placeService.getAllPlaces(
+                search, placeGroups, isAdmin(authentication), page, size,
+                leaning ? latitude : null, leaning ? longitude : null);
+        return ResponseEntity.ok(ofSucceeded(withProvinceNames(responses)));
+    }
+
+    /** Copies with the province name, so a list spanning the country says where each place is. */
+    private List<PlaceResponse> withProvinceNames(List<PlaceResponse> responses) {
+        return responses.stream()
+                .map(place -> place.getProvinceCode() == null ? place
+                        : place.toBuilder().provinceName(provinceNameResolver.nameOf(place.getProvinceCode())).build())
+                .toList();
+    }
+
+    private static boolean isAdmin(Authentication authentication) {
+        return authentication != null && authentication.isAuthenticated()
+                && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+    }
+
+    /**
+     * Whether a radius search may return INACTIVE places. The app asks for them only with a
+     * keyword (check-in and Explore look a named place up even before an operator turns it on);
+     * without one, the flag would let anyone list every hidden place of an area, so only an
+     * admin gets that.
+     */
+    private static boolean mayIncludeInactive(boolean includeInactive, String keyword, Authentication authentication) {
+        return includeInactive && ((keyword != null && !keyword.isBlank()) || isAdmin(authentication));
     }
 
     @GetMapping("/detail-refresh-candidates")
@@ -86,27 +144,143 @@ public class PlaceController extends BaseController {
             @RequestParam(defaultValue = "0.1") @DecimalMin(value = "0", inclusive = false) BigDecimal radius,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) List<String> placeGroups,
+            // PlaceSubType codes, and OTHER for places with none of them.
+            @RequestParam(required = false) List<String> subTypes,
             @RequestParam(required = false) BigDecimal minRating,
+            // Kept for older clients: true means sortBy=RATING. sortBy wins when both are sent.
             @RequestParam(defaultValue = "false") boolean sortByRating,
+            @RequestParam(required = false) PlaceSearchSort sortBy,
             @RequestParam(required = false) String citySlug,
             @RequestParam(required = false) List<UUID> foodIds,
             @RequestParam(required = false) Boolean excludeLinkedFoodPlaces,
             @RequestParam(defaultValue = "false") boolean includeInactive,
             @RequestParam(required = false) Float minLuceneScore,
             @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(PlaceSearchCriteria.MAX_PAGE_SIZE) int size
+            @RequestParam(defaultValue = "20") @Min(1) @Max(PlaceSearchCriteria.MAX_PAGE_SIZE) int size,
+            Authentication authentication
     ) {
         List<PlaceResponse> responses = placeService.searchPlaces(
-                keyword, latitude, longitude, radius, category, placeGroups, minRating, sortByRating,
-                citySlug, foodIds, excludeLinkedFoodPlaces, includeInactive, minLuceneScore, page, size);
-        return ResponseEntity.ok(ofSucceeded(responses));
+                keyword, latitude, longitude, radius, category, placeGroups, PlaceSubType.filterCodes(subTypes),
+                minRating, sortBy != null ? sortBy : (sortByRating ? PlaceSearchSort.RATING : PlaceSearchSort.RELEVANCE),
+                citySlug, foodIds, excludeLinkedFoodPlaces,
+                mayIncludeInactive(includeInactive, keyword, authentication), minLuceneScore, page, size);
+        // The search cache is shared by callers a few metres apart: distance is this caller's own.
+        return ResponseEntity.ok(ofSucceeded(PlaceService.withDistanceFrom(responses, latitude, longitude)));
+    }
+
+    /**
+     * {@link #searchPlaces} as {@code nearby}, plus {@code elsewhere}: places beyond the radius
+     * named like the keyword, when the area finds none or only names sharing one word with it.
+     * A separate path so the flat list of /search, which older apps draw on the map, never
+     * changes.
+     */
+    @GetMapping("/search/grouped")
+    public ResponseEntity<BaseResponse<GroupedPlaceSearchResponse>> searchPlacesGrouped(
+            @RequestParam(required = false) String keyword,
+            @RequestParam @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
+            @RequestParam @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
+            @RequestParam(defaultValue = "0.1") @DecimalMin(value = "0", inclusive = false) BigDecimal radius,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) List<String> placeGroups,
+            @RequestParam(required = false) List<String> subTypes,
+            @RequestParam(required = false) BigDecimal minRating,
+            @RequestParam(defaultValue = "false") boolean sortByRating,
+            @RequestParam(required = false) PlaceSearchSort sortBy,
+            @RequestParam(required = false) String citySlug,
+            @RequestParam(required = false) List<UUID> foodIds,
+            @RequestParam(required = false) Boolean excludeLinkedFoodPlaces,
+            @RequestParam(defaultValue = "false") boolean includeInactive,
+            @RequestParam(required = false) Float minLuceneScore,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(PlaceSearchCriteria.MAX_PAGE_SIZE) int size,
+            Authentication authentication
+    ) {
+        return ResponseEntity.ok(ofSucceeded(placeGroupedSearchService.search(
+                keyword, latitude, longitude, radius, category, placeGroups, PlaceSubType.filterCodes(subTypes),
+                minRating, sortBy != null ? sortBy : (sortByRating ? PlaceSearchSort.RATING : PlaceSearchSort.RELEVANCE),
+                citySlug, foodIds, excludeLinkedFoodPlaces,
+                mayIncludeInactive(includeInactive, keyword, authentication), minLuceneScore, page, size)));
+    }
+
+    /**
+     * Places per sub type around a point, for the numbers on the filter chips: one entry per
+     * sub type fitting {@code placeGroups}, then {@code OTHER} (no sub type).
+     */
+    @GetMapping("/search/sub-type-counts")
+    public ResponseEntity<BaseResponse<Map<String, Integer>>> countPlacesBySubType(
+            @RequestParam @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
+            @RequestParam @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
+            @RequestParam @DecimalMin(value = "0", inclusive = false) BigDecimal radius,
+            @RequestParam(required = false) List<String> placeGroups,
+            @RequestParam(defaultValue = "false") boolean includeInactive,
+            Authentication authentication) {
+        // No keyword here, so hidden places are counted for admins only (see mayIncludeInactive).
+        return ResponseEntity.ok(ofSucceeded(placeService.countPlacesBySubType(
+                latitude, longitude, radius, placeGroups, includeInactive && isAdmin(authentication))));
+    }
+
+    /**
+     * Trending places around a point: the public places trips and check-ins used most over
+     * {@code period} (WEEK, MONTH or YEAR, rolling back from now). Only places used in the
+     * window are listed, so fewer than {@code size} may come back. Trips an AI job created are
+     * not counted. Public, like the search.
+     */
+    @GetMapping("/trending")
+    public ResponseEntity<BaseResponse<List<PlaceResponse>>> getTrendingPlaces(
+            @RequestParam @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
+            @RequestParam @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
+            // Kilometres, like the search.
+            @RequestParam(defaultValue = "30") @DecimalMin(value = "0", inclusive = false)
+            @DecimalMax("1000") BigDecimal radius,
+            @RequestParam(defaultValue = "MONTH") PlaceTrendingPeriod period,
+            @RequestParam(required = false) List<String> placeGroups,
+            @RequestParam(defaultValue = "50") @Min(1) @Max(50) int size) {
+        return ResponseEntity.ok(ofSucceeded(placeService.getTrendingPlaces(
+                latitude, longitude, radius, placeGroups, period, size)));
+    }
+
+    /**
+     * The places a map draws, by slippy-map tile (Web Mercator, as Mapbox and Google Maps):
+     * {@code tiles} are {@code x:y} pairs at zoom {@code z}; each tile holds the most
+     * prominent ACTIVE place of each sixteenth of it. Public, like the search.
+     */
+    @GetMapping("/map-tiles")
+    public ResponseEntity<BaseResponse<List<PlaceMapTileResponse>>> getMapTiles(
+            @RequestParam @Min(PlaceMapTileService.MIN_ZOOM) @Max(PlaceMapTileService.MAX_ZOOM) int z,
+            @RequestParam @Size(min = 1, max = PlaceMapTileService.MAX_TILES) List<String> tiles,
+            @RequestParam(required = false) List<String> placeGroups,
+            // PlaceSubType codes, and OTHER for places with none of them.
+            @RequestParam(required = false) List<String> subTypes) {
+        return ResponseEntity.ok(ofSucceeded(placeMapTileService.getTiles(
+                parseMapTiles(z, tiles), placeGroups, PlaceSubType.filterCodes(subTypes))));
+    }
+
+    private static List<MapTile> parseMapTiles(int zoom, List<String> tiles) {
+        List<MapTile> parsed = new ArrayList<>(tiles.size());
+        for (String tile : tiles) {
+            String[] parts = tile == null ? new String[0] : tile.trim().split(":");
+            if (parts.length == 2) {
+                try {
+                    int x = Integer.parseInt(parts[0]);
+                    int y = Integer.parseInt(parts[1]);
+                    if (MapTile.isValid(zoom, x, y)) {
+                        parsed.add(new MapTile(zoom, x, y));
+                        continue;
+                    }
+                } catch (NumberFormatException ignored) {
+                    // Reported below with every other malformed tile.
+                }
+            }
+            throw new IllegalArgumentException("tiles must be x:y pairs inside zoom " + zoom);
+        }
+        return parsed;
     }
 
     @GetMapping("/{id}/reviews")
     public ResponseEntity getPlaceReviews(
             @PathVariable UUID id,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "0") @Min(0) @Max(10_000) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_REVIEW_PAGE_SIZE) int size) {
         List<PlaceReviewResponse> reviews = placeService.getPlaceReviews(id, page, size);
         return ResponseEntity.ok(ofSucceeded(reviews));
     }
@@ -137,10 +311,11 @@ public class PlaceController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(null));
     }
 
+    /** Starts the rebuild in the background: 202, with started=false when one is already running. */
     @PostMapping("/indexing/trigger")
-    public ResponseEntity triggerSearchReindex() {
-        placeService.triggerSearchReindex();
-        return ResponseEntity.ok(ofSucceeded(null));
+    public ResponseEntity<BaseResponse<Map<String, Boolean>>> triggerSearchReindex() {
+        boolean started = placeService.triggerSearchReindex();
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(ofSucceeded(Map.of("started", started)));
     }
 
     @DeleteMapping("/{id}")

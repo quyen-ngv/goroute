@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  Erasing a deleted account (AccountErasureService). Rows other people depend on (trip chat
+  messages, shared-trip expenses, partner bookings, credit ledgers, moderation records) are left
+  in place: the anonymised users row is what makes them anonymous.
+-->
+<mapper namespace="com.ds.goroute.mapper.AccountErasureMapper">
+
+    <select id="findLiveCheckinIds" resultType="java.util.UUID">
+        SELECT id FROM user_checkins
+        WHERE user_id = #{userId} AND is_removed = FALSE
+    </select>
+
+    <select id="findReviewIds" resultType="java.util.UUID">
+        SELECT id FROM user_reviews WHERE user_id = #{userId}
+    </select>
+
+    <select id="findSoloOwnedTripIds" resultType="java.util.UUID">
+        SELECT t.id FROM trips t
+        WHERE t.owner_id = #{userId}
+          AND COALESCE(t.is_deleted, FALSE) = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM trip_members m
+              WHERE m.trip_id = t.id
+                AND m.user_id IS NOT NULL
+                AND m.user_id &lt;&gt; #{userId}
+                AND m.status = 'ACCEPTED')
+    </select>
+
+    <select id="findUnerasedDeletedUserIds" resultType="java.util.UUID">
+        SELECT id FROM users
+        WHERE deleted_at IS NOT NULL
+          AND email NOT LIKE '%' || #{emailSuffix}
+        ORDER BY deleted_at
+        LIMIT #{limit}
+    </select>
+
+    <delete id="deleteFollows">
+        DELETE FROM user_follows WHERE follower_id = #{userId} OR following_id = #{userId}
+    </delete>
+
+    <delete id="deleteBlocks">
+        DELETE FROM user_blocks WHERE blocker_id = #{userId} OR blocked_id = #{userId}
+    </delete>
+
+    <delete id="deleteSavedPlaceMarks">
+        DELETE FROM saved_place_marks WHERE user_id = #{userId}
+    </delete>
+
+    <delete id="deleteSavedPosts">
+        DELETE FROM saved_posts WHERE user_id = #{userId}
+    </delete>
+
+    <delete id="deleteFeedImpressions">
+        DELETE FROM feed_impressions WHERE user_id = #{userId}
+    </delete>
+
+    <delete id="deleteFeedFeedback">
+        DELETE FROM feed_feedback WHERE user_id = #{userId} OR target_user_id = #{userId}
+    </delete>
+
+    <delete id="deleteAuthorAffinity">
+        DELETE FROM user_author_affinity WHERE viewer_id = #{userId} OR author_id = #{userId}
+    </delete>
+
+    <delete id="deleteMapSearchUsage">
+        DELETE FROM map_search_usage_daily WHERE user_id = #{userId}
+    </delete>
+
+    <delete id="deleteNotifications">
+        DELETE FROM notifications WHERE user_id = #{userId}
+    </delete>
+
+    <delete id="deleteScheduledDeliveries">
+        DELETE FROM scheduled_notification_deliveries WHERE recipient_id = #{userId}
+    </delete>
+
+    <delete id="deleteAssistantProfile">
+        DELETE FROM assistant_profiles WHERE user_id = #{userId}
+    </delete>
+
+    <delete id="deleteAssistantMemories">
+        DELETE FROM assistant_memories WHERE conversation_id IN (
+            SELECT id FROM marketplace_conversations WHERE assistant_user_id = #{userId})
+    </delete>
+
+    <delete id="deleteAssistantProposals">
+        DELETE FROM assistant_proposals WHERE conversation_id IN (
+            SELECT id FROM marketplace_conversations WHERE assistant_user_id = #{userId})
+    </delete>
+
+    <delete id="deleteAssistantTurns">
+        DELETE FROM assistant_turns WHERE conversation_id IN (
+            SELECT id FROM marketplace_conversations WHERE assistant_user_id = #{userId})
+    </delete>
+
+    <delete id="deleteAssistantThreads">
+        DELETE FROM marketplace_conversations WHERE assistant_user_id = #{userId}
+    </delete>
+
+    <update id="clearAiCallPayloads">
+        UPDATE ai_api_calls
+        SET request_payload = NULL, response_payload = NULL, error_payload = NULL
+        WHERE user_id = #{userId}
+          AND (request_payload IS NOT NULL OR response_payload IS NOT NULL OR error_payload IS NOT NULL)
+    </update>
+
+    <update id="softDeleteContentComments">
+        UPDATE content_comments SET is_deleted = TRUE
+        WHERE user_id = #{userId} AND is_deleted = FALSE
+    </update>
+
+    <update id="softDeleteActivityComments">
+        UPDATE activity_comments SET is_deleted = TRUE
+        WHERE user_id = #{userId} AND COALESCE(is_deleted, FALSE) = FALSE
+    </update>
+
+    <update id="cancelHostedMeetups">
+        UPDATE meetups
+        SET status = 'CANCELLED', cancelled_at = NOW(), updated_at = NOW()
+        WHERE host_user_id = #{userId} AND status IN ('PENDING_REVIEW', 'APPROVED')
+    </update>
+
+    <update id="leaveMeetups">
+        UPDATE meetup_participants
+        SET status = CASE WHEN status = 'REQUESTED' THEN 'WITHDRAWN' ELSE 'LEFT' END,
+            updated_at = NOW()
+        WHERE user_id = #{userId} AND status IN ('REQUESTED', 'JOINED')
+    </update>
+
+    <update id="anonymiseUser">
+        UPDATE users
+        SET email = #{email},
+            full_name = #{fullName},
+            username = NULL,
+            avatar_url = NULL,
+            bio = NULL,
+            social_links = '{}'::jsonb,
+            password_hash = NULL,
+            provider = NULL,
+            provider_id = NULL,
+            birth_year = NULL,
+            time_zone = NULL,
+            last_login_at = NULL,
+            account_status = 'DISABLED',
+            onboarding_completed = FALSE,
+            deleted_at = COALESCE(deleted_at, NOW()),
+            updated_at = NOW()
+        WHERE id = #{userId}
+    </update>
+</mapper>

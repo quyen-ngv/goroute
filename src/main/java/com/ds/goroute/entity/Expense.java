@@ -1,6 +1,7 @@
 package com.ds.goroute.entity;
 
 import com.ds.goroute.type.ExpenseCategory;
+import com.ds.goroute.type.SplitMethod;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -32,6 +33,8 @@ public class Expense {
     private String[] photoUrls;
     /** The day the money was spent, which is not always the day the row was written. */
     private LocalDateTime expenseDate;
+    /** Null on rows written before V268 or by an old app build. */
+    private SplitMethod splitMethod;
     private UUID createdBy;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

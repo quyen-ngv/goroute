@@ -79,6 +79,40 @@ public class FirebaseService {
         return sent;
     }
 
+    /**
+     * One message to the devices of many people, for a push whose wording does not depend on who
+     * receives it (the follower fan-out). Devices are grouped by language and sent 500 tokens per
+     * multicast, so a chunk of 500 followers costs a handful of calls instead of 500.
+     *
+     * <p>No per-person badge and no notification id ride along: a multicast shares one payload.
+     * The app reads its badge on open and marks the row read by the post it opens.
+     *
+     * @return how many people had at least one device accept the push
+     */
+    public int sendPushToUsers(java.util.Collection<UUID> userIds, NotificationType type, Map<String, Object> data) {
+        if (userIds == null || userIds.isEmpty()) {
+            return 0;
+        }
+        List<UserDevice> devices = userDeviceMapper.findActiveByUserIds(userIds);
+        java.util.Set<UUID> reached = new java.util.HashSet<>();
+        for (Map.Entry<String, List<UserDevice>> group : groupByLanguage(devices).entrySet()) {
+            NotificationMessage message;
+            try {
+                message = templateRenderer.render(type, data, group.getKey().isEmpty() ? null : group.getKey());
+            } catch (Exception e) {
+                log.error("Failed to render push {} for language {}: {}", type, group.getKey(), e.getMessage(), e);
+                continue;
+            }
+            List<UserDevice> languageDevices = group.getValue();
+            for (int start = 0; start < languageDevices.size(); start += MULTICAST_BATCH_SIZE) {
+                List<UserDevice> batch = languageDevices.subList(
+                        start, Math.min(languageDevices.size(), start + MULTICAST_BATCH_SIZE));
+                reached.addAll(sendMulticastReporting(batch, message, data, PushOptions.NONE));
+            }
+        }
+        return reached.size();
+    }
+
     private Map<String, List<UserDevice>> groupByLanguage(List<UserDevice> devices) {
         Map<String, List<UserDevice>> grouped = new LinkedHashMap<>();
         for (UserDevice device : devices) {
@@ -120,6 +154,21 @@ public class FirebaseService {
      */
     private boolean sendMulticast(List<UserDevice> devices, NotificationMessage message,
                                   Map<String, Object> data, PushOptions options) {
+        return multicast(devices, message, data, options).successCount() > 0;
+    }
+
+    /** {@link #sendMulticast}, reporting whose devices accepted the push. */
+    private java.util.Set<UUID> sendMulticastReporting(List<UserDevice> devices, NotificationMessage message,
+                                                       Map<String, Object> data, PushOptions options) {
+        return multicast(devices, message, data, options).reachedUserIds();
+    }
+
+    private record MulticastOutcome(int successCount, java.util.Set<UUID> reachedUserIds) {
+        static final MulticastOutcome FAILED = new MulticastOutcome(0, java.util.Set.of());
+    }
+
+    private MulticastOutcome multicast(List<UserDevice> devices, NotificationMessage message,
+                                       Map<String, Object> data, PushOptions options) {
         List<String> tokens = devices.stream().map(UserDevice::getFcmToken).toList();
         MulticastMessage.Builder builder = MulticastMessage.builder().addAllTokens(tokens);
         applyContent(builder::setNotification, builder::setAndroidConfig, builder::setApnsConfig,
@@ -134,13 +183,17 @@ public class FirebaseService {
             response = FirebaseMessaging.getInstance().sendEachForMulticast(builder.build());
         } catch (Exception e) {
             log.error("Error sending FCM multicast to {} device(s): {}", tokens.size(), e.getMessage(), e);
-            return false;
+            return MulticastOutcome.FAILED;
         }
 
+        java.util.Set<UUID> reached = new java.util.HashSet<>();
         List<SendResponse> results = response.getResponses();
         for (int index = 0; index < results.size() && index < devices.size(); index++) {
             SendResponse result = results.get(index);
             if (result.isSuccessful()) {
+                if (devices.get(index).getUserId() != null) {
+                    reached.add(devices.get(index).getUserId());
+                }
                 continue;
             }
             FirebaseMessagingException error = result.getException();
@@ -153,7 +206,7 @@ public class FirebaseService {
         }
         log.info("Sent FCM multicast: success={} failure={}",
                 response.getSuccessCount(), response.getFailureCount());
-        return response.getSuccessCount() > 0;
+        return new MulticastOutcome(response.getSuccessCount(), reached);
     }
 
     /**
@@ -281,6 +334,31 @@ public class FirebaseService {
                 .setNotification(androidNotificationBuilder.build())
                 .build());
         apns.accept(apnsConfigBuilder.setAps(apsBuilder.build()).build());
+    }
+
+    /**
+     * A data-only message to every app subscribed to {@code topic}: nothing is shown, the app
+     * acts on it. Best effort: a phone that is off, or an app the system has put to sleep, may
+     * never get it, so the receiver must also have a way to catch up by itself.
+     */
+    public void sendDataToTopic(String topic, Map<String, String> data) {
+        try {
+            Message message = Message.builder()
+                    .setTopic(topic)
+                    .putAllData(data)
+                    // iOS delivers a message with no alert only as a background push.
+                    .setApnsConfig(ApnsConfig.builder()
+                            .putHeader("apns-push-type", "background")
+                            .putHeader("apns-priority", "5")
+                            .setAps(Aps.builder().setContentAvailable(true).build())
+                            .build())
+                    .build();
+            String response = FirebaseMessaging.getInstance().send(message);
+            log.info("Sent FCM data message to topic {}: {}", topic, response);
+        } catch (FirebaseMessagingException e) {
+            log.error("Error sending FCM data message to topic {}: {}", topic, e.getMessage(), e);
+            throw new RuntimeException("Failed to send push notification", e);
+        }
     }
 
     public void sendPush(String fcmToken, String title, String body, Map<String, Object> data) {

@@ -51,7 +51,8 @@ class QuestBuilderServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new QuestBuilderServiceImpl(repository, validator, creatorGate, new MarketplaceJson(new ObjectMapper()));
+        service = new QuestBuilderServiceImpl(repository, validator, creatorGate, new MarketplaceJson(new ObjectMapper()),
+                new com.ds.goroute.quest.service.QuestLifecycleRules(org.mockito.Mockito.mock(com.ds.goroute.service.BusinessConfigService.class)));
     }
 
     private Quest draftQuest() {
@@ -233,6 +234,29 @@ class QuestBuilderServiceImplTest {
         verify(repository, never()).clearVersionContent(any());
         verify(repository, never()).updateStatus(any(), anyLong(), any(), any(), any());
         verify(validator).validateForSubmit(any());
+    }
+
+    @Test
+    @DisplayName("saving a paused quest writes a new version the same way and keeps it paused")
+    void pausedSaveIsANewVersionAndStaysPaused() {
+        UUID liveVersionId = UUID.randomUUID();
+        Quest paused = draftQuest();
+        paused.setStatus(QuestStatus.PAUSED.name());
+        paused.setPublishedVersionId(liveVersionId);
+        paused.setDraftVersionId(liveVersionId);
+        when(repository.findQuestById(questId)).thenReturn(Optional.of(paused));
+        when(repository.findCreatorById(creatorId)).thenReturn(Optional.of(creator(owner)));
+        when(repository.findVersionById(liveVersionId))
+                .thenReturn(Optional.of(QuestVersion.builder().id(liveVersionId).version(2).contentLanguage("vi").build()));
+        when(repository.publishEdit(eq(questId), eq(3L), any(), any())).thenReturn(true);
+        when(repository.loadVersionGraph(any()))
+                .thenReturn(Optional.of(QuestVersion.builder().id(liveVersionId).amenityTags("[]").build()));
+
+        service.saveDraft(questId, owner, requestWithImages(List.of()));
+
+        verify(repository).publishEdit(eq(questId), eq(3L), any(), any());
+        verify(repository, never()).updateStatus(any(), anyLong(), any(), any(), any());
+        verify(repository, never()).clearVersionContent(any());
     }
 
     @Test

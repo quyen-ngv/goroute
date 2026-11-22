@@ -16,6 +16,12 @@ import java.util.ResourceBundle;
 public final class ErrorMessages {
 
     private static final String BUNDLE = "i18n/errors";
+    /**
+     * Skips the JVM default locale: a language with no bundle of its own (ko, ja, zh-TW…)
+     * reads {@code errors.properties} (English), not whatever the server happens to run in.
+     */
+    private static final ResourceBundle.Control NO_DEFAULT_LOCALE_FALLBACK =
+            ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_PROPERTIES);
 
     private ErrorMessages() {
     }
@@ -26,7 +32,8 @@ public final class ErrorMessages {
      */
     public static String of(String key) {
         try {
-            return ResourceBundle.getBundle(BUNDLE, LocaleContextHolder.getLocale()).getString(key);
+            return ResourceBundle.getBundle(BUNDLE, LocaleContextHolder.getLocale(), NO_DEFAULT_LOCALE_FALLBACK)
+                    .getString(key);
         } catch (MissingResourceException exception) {
             return key;
         }

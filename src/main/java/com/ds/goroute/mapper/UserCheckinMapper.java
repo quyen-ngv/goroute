@@ -1,14 +1,17 @@
 package com.ds.goroute.mapper;
 
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.entity.CheckinCluster;
 import com.ds.goroute.entity.CheckinClusterDecision;
 import com.ds.goroute.entity.UserCheckin;
 import com.ds.goroute.entity.UserCheckinLocationHistory;
+import com.ds.goroute.entity.CameraLookUsageRow;
 import com.ds.goroute.entity.UserCheckinPhoto;
 import com.ds.goroute.entity.CheckinLikeCount;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -27,6 +30,8 @@ public interface UserCheckinMapper {
 
     UserCheckin findById(@Param("id") UUID id);
 
+    List<UserCheckin> findByIds(@Param("ids") java.util.Collection<UUID> ids);
+
     /** Resolves a repeated submit of the same composition back to the row it created. */
     UserCheckin findMine(@Param("userId") UUID userId,
                          @Param("activityId") UUID activityId,
@@ -36,10 +41,32 @@ public interface UserCheckinMapper {
     UserCheckin findByIdempotencyKey(@Param("userId") UUID userId,
                                      @Param("idempotencyKey") String idempotencyKey);
 
-    /** Public feed: posts with photos first, newest first within each group. */
+    /**
+     * Public feed: posts with photos first, newest first within each group. With a cursor
+     * (all three cursor values set) it returns the rows after that sort key and the offset
+     * should be 0.
+     */
     List<UserCheckin> findFeed(@Param("excludeUserId") UUID excludeUserId,
+                               @Param("latitude") BigDecimal latitude,
+                               @Param("longitude") BigDecimal longitude,
+                               @Param("radiusKm") BigDecimal radiusKm,
+                               @Param("kind") FeedPlaceKind kind,
+                               @Param("cursorHasPhoto") Boolean cursorHasPhoto,
+                               @Param("cursorCreatedAt") LocalDateTime cursorCreatedAt,
+                               @Param("cursorId") UUID cursorId,
                                @Param("limit") int limit,
                                @Param("offset") int offset);
+
+    /**
+     * Public check-ins by the people {@code viewerId} follows, newest first; with a focus
+     * point, those in its province first, then by 100 km ring (see the XML).
+     */
+    List<UserCheckin> findFollowingFeed(@Param("viewerId") UUID viewerId,
+                                        @Param("focusLat") Double focusLat,
+                                        @Param("focusLng") Double focusLng,
+                                        @Param("kind") FeedPlaceKind kind,
+                                        @Param("limit") int limit,
+                                        @Param("offset") int offset);
 
     List<UserCheckin> findByUser(@Param("userId") UUID userId,
                                  @Param("includePrivate") boolean includePrivate,
@@ -54,6 +81,19 @@ public interface UserCheckinMapper {
 
     /** Public check-ins written during one trip, oldest first. */
     List<UserCheckin> findByTrip(@Param("tripId") UUID tripId, @Param("limit") int limit);
+
+    List<UserCheckin> findMineForTrip(@Param("userId") UUID userId, @Param("tripId") UUID tripId,
+                                      @Param("from") LocalDateTime from, @Param("to") LocalDateTime to,
+                                      @Param("limit") int limit);
+
+    List<UserCheckin> findByLocalEvent(@Param("eventId") UUID eventId,
+                                       @Param("limit") int limit,
+                                       @Param("offset") int offset);
+
+    long countByLocalEvent(@Param("eventId") UUID eventId);
+
+    List<UUID> findCheckedInLocalEventIds(@Param("userId") UUID userId,
+                                          @Param("eventIds") java.util.Collection<UUID> eventIds);
 
     long countByUserAndPlace(@Param("userId") UUID userId,
                              @Param("placeId") UUID placeId);
@@ -108,6 +148,10 @@ public interface UserCheckinMapper {
 
     int deletePhotos(@Param("checkinId") UUID checkinId);
 
+    List<CameraLookUsageRow> countPhotosByFilterKeys(@Param("keys") List<String> keys);
+
+    List<CameraLookUsageRow> countPhotosByFrameKeys(@Param("keys") List<String> keys);
+
     boolean hasLike(@Param("checkinId") UUID checkinId, @Param("userId") UUID userId);
 
     int insertLike(@Param("checkinId") UUID checkinId, @Param("userId") UUID userId);
@@ -151,12 +195,14 @@ public interface UserCheckinMapper {
     List<UserCheckin> findAllForAdmin(@Param("search") String search,
                                       @Param("userId") UUID userId,
                                       @Param("hidden") Boolean hidden,
+                                      @Param("needsPlace") boolean needsPlace,
                                       @Param("limit") int limit,
                                       @Param("offset") int offset);
 
     long countAllForAdmin(@Param("search") String search,
                           @Param("userId") UUID userId,
-                          @Param("hidden") Boolean hidden);
+                          @Param("hidden") Boolean hidden,
+                          @Param("needsPlace") boolean needsPlace);
 
     /**
      * Moves a check-in onto a catalogue place. The author's own name for the spot is left
@@ -168,10 +214,28 @@ public interface UserCheckinMapper {
                     @Param("locationKey") String locationKey,
                     @Param("provinceCode") String provinceCode);
 
+    /** Takes a check-in with no place out of the queue for one: it names no real place. */
+    int dismissPlace(@Param("id") UUID id, @Param("adminId") UUID adminId);
+
     int insertLocationHistory(UserCheckinLocationHistory history);
 
     List<UserCheckinLocationHistory> findLocationHistory(@Param("checkinId") UUID checkinId);
 
     /** Which of these check-ins an operator has already moved, for the list badge. */
     List<UUID> findReassignedCheckinIds(@Param("checkinIds") List<UUID> checkinIds);
+
+    /** Feed search index: the next {@code limit} findable check-ins after {@code afterId}, by id. */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> selectSearchIndexPage(@Param("afterId") UUID afterId,
+                                                                          @Param("limit") int limit);
+
+    /** Feed search index: check-ins changed after the cursor, findable or not, oldest change first. */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> selectSearchIndexChanges(
+            @Param("afterUpdatedAt") java.time.LocalDateTime afterUpdatedAt,
+            @Param("afterId") UUID afterId,
+            @Param("limit") int limit);
+
+    java.time.LocalDateTime selectSearchIndexMaxUpdatedAt();
+
+    /** Up to {@code limit} reviews with no check-in become check-ins; returns each new check-in's place. */
+    List<UUID> convertLegacyReviews(@Param("limit") int limit);
 }

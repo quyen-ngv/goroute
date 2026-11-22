@@ -68,7 +68,8 @@ class QuestArObjectBuilderTest {
 
     @BeforeEach
     void setUp() {
-        service = new QuestBuilderServiceImpl(repository, validator, creatorGate, json);
+        service = new QuestBuilderServiceImpl(repository, validator, creatorGate, json,
+                new com.ds.goroute.quest.service.QuestLifecycleRules(org.mockito.Mockito.mock(com.ds.goroute.service.BusinessConfigService.class)));
         when(repository.findQuestById(questId)).thenReturn(Optional.of(Quest.builder().id(questId)
                 .creatorId(creatorId).origin("COMMUNITY").status(QuestStatus.DRAFT.name())
                 .draftVersionId(versionId).dataVersion(1L).build()));

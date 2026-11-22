@@ -37,6 +37,7 @@ class PlaceReviewRefreshServiceTest {
     private ImageMigrationService imageMigrationService;
     private StorageService storageService;
     private PlaceReviewService service;
+    private PlaceSearchIndexService placeSearchIndexService;
     private Place place;
 
     @BeforeEach
@@ -45,6 +46,7 @@ class PlaceReviewRefreshServiceTest {
         placeRepository = mock(PlaceRepository.class);
         imageMigrationService = mock(ImageMigrationService.class);
         storageService = mock(StorageService.class);
+        placeSearchIndexService = mock(PlaceSearchIndexService.class);
         service = new PlaceReviewService(
                 reviewRepository,
                 placeRepository,
@@ -52,7 +54,8 @@ class PlaceReviewRefreshServiceTest {
                 storageService,
                 mock(PlaceReviewScoringService.class),
                 new PlaceReviewScoreCalculator(),
-                mock(BusinessConfigService.class));
+                mock(BusinessConfigService.class),
+                placeSearchIndexService);
 
         place = Place.builder()
                 .id(UUID.randomUUID())
@@ -117,6 +120,8 @@ class PlaceReviewRefreshServiceTest {
         assertThat(place.getScoreSource()).isEqualTo("SCRAPED_REVIEWS");
         assertThat(place.getLastScrapedAt()).isNotNull();
         verify(placeRepository).updateReviewRefreshMetadata(place);
+        // The new adjusted rating reaches the rating-sorted search at once.
+        verify(placeSearchIndexService).indexPlace(place);
         InOrder replacementOrder = inOrder(reviewRepository, placeRepository, storageService);
         replacementOrder.verify(reviewRepository).deleteByPlaceId(place.getId());
         replacementOrder.verify(reviewRepository).insertBatch(anyList());

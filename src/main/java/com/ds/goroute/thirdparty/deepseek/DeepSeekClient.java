@@ -14,6 +14,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import com.ds.goroute.thirdparty.ai.AiCallLoggingInterceptor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.web.client.RestClient;
 
 import java.util.List;
@@ -26,6 +29,16 @@ import java.util.Optional;
 public class DeepSeekClient implements AiClient {
 
     private final RestClient.Builder restClientBuilder;
+
+    /** Optional so unit tests can build the client by hand; writes the ai_api_calls row. */
+    @Autowired(required = false)
+    private AiCallLoggingInterceptor aiCallLogging;
+
+    private void addCallLogging(java.util.List<ClientHttpRequestInterceptor> interceptors) {
+        if (aiCallLogging != null) {
+            interceptors.add(aiCallLogging.forProvider("deepseek", "AI_TEXT", "COMPLETE_JSON"));
+        }
+    }
 
     @Value("${AI_CONNECT_TIMEOUT_SECONDS:10}")
     private int connectTimeoutSeconds;
@@ -42,10 +55,10 @@ public class DeepSeekClient implements AiClient {
         return factory;
     }
 
-    @Value("${AI_API_KEY:}")
+    @Value("${DEEPSEEK_API_KEY:${AI_API_KEY:}}")
     private String apiKey;
 
-    @Value("${AI_MODEL:deepseek-v4-flash}")
+    @Value("${DEEPSEEK_CHEAP_MODEL:${DEEPSEEK_MODEL:${AI_MODEL:deepseek-v4-flash}}}")
     private String model;
 
     @Value("${AI_API_URL:https://api.deepseek.com/chat/completions}")
@@ -57,7 +70,7 @@ public class DeepSeekClient implements AiClient {
     @Override
     public Optional<String> completeJson(String systemPrompt, String userPrompt) {
         if (apiKey == null || apiKey.isBlank()) {
-            log.warn("AI_API_KEY is not configured for DeepSeek; using local AI-trip fallback");
+            log.warn("DEEPSEEK_API_KEY is not configured; DeepSeek text calls return nothing");
             return Optional.empty();
         }
 
@@ -72,7 +85,7 @@ public class DeepSeekClient implements AiClient {
                     .thinking(DeepSeekThinking.builder().type("disabled").build())
                     .build();
 
-            DeepSeekChatResponse response = restClientBuilder.clone().requestFactory(aiRequestFactory()).build()
+            DeepSeekChatResponse response = restClientBuilder.clone().requestFactory(aiRequestFactory()).requestInterceptors(this::addCallLogging).build()
                     .post()
                     .uri(apiUrl)
                     .contentType(MediaType.APPLICATION_JSON)

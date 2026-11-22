@@ -19,8 +19,19 @@ public class PublicTripResponse {
     private UUID id;
     private String name;
     private String coverImageUrl;
+    /**
+     * Deprecated: the urls of {@link #memoryImageUrlsV2}, kept only for app versions that
+     * predate V2. Remove once those versions are gone. Same cap as V2 in list payloads.
+     */
     private List<String> memoryImageUrls;
+    /**
+     * Memory photos. Search and Friends-tab cards carry at most the first
+     * {@code TripServiceImpl.CARD_MEMORY_PREVIEW_LIMIT} (6); the trip detail carries all of
+     * them. {@link #totalMemoryCount} is the full number either way.
+     */
     private List<MemoryImageResponse> memoryImageUrlsV2;
+    /** Every memory photo of the trip, including those a list card leaves out. */
+    private Integer totalMemoryCount;
     private String description;
     private String destination;
     private BigDecimal lat;
@@ -50,9 +61,15 @@ public class PublicTripResponse {
     private Integer helpfulVotes;
     private Integer unhelpfulVotes;
     private Boolean hasVotedHelpful;
+    /** Active comments on this trip's thread, the number GET /content-comments/count returns. */
+    private int commentCount;
     private Boolean isOwnTrip;
     private Integer totalMembers;
     /** Number of activities on the trip. Carried separately because list payloads leave { activities} out. */
     private Integer totalActivities;
     private LocalDateTime publicSharedAt;
+    /** Home "Friends" tab only (GET /trips/following); the same ranks as UserCheckinResponse#focusRank. */
+    private Integer focusRank;
+    /** Feed "Friends" tab only (GET /trips/following); the same meaning as UserCheckinResponse#seen. */
+    private Boolean seen;
 }

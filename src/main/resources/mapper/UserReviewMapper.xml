@@ -34,6 +34,7 @@
         <result property="partnerResponseText" column="partner_response_text"/>
         <result property="partnerResponderName" column="partner_responder_name"/>
         <result property="partnerRespondedAt" column="partner_responded_at"/>
+        <result property="hasPhoto" column="has_photo"/>
     </resultMap>
 
     <!--
@@ -41,6 +42,19 @@
         each public list (place, activity booking, feed, mine) shows it without a second query.
         LATERAL + LIMIT 1 keeps one row per review even if more than one organization answered.
     -->
+    <!-- The Feed's place-kind chips (FeedPlaceKind, as the parameter "kind") on a place
+         aliased kp: in one of the groups, and with any of the sub types. The same fragment
+         sits in UserCheckinMapper.xml and TripMapper.xml: each mapper is parsed on its own. -->
+    <sql id="feedPlaceKind">
+        <if test="kind.placeGroups != null and kind.placeGroups.size() > 0">
+            AND kp.place_group IN
+            <foreach item="kindGroup" collection="kind.placeGroups" open="(" separator="," close=")">#{kindGroup}</foreach>
+        </if>
+        <if test="kind.subTypes != null and kind.subTypes.size() > 0">
+            AND kp.sub_types &amp;&amp; ARRAY[<foreach item="kindSubType" collection="kind.subTypes" separator=",">#{kindSubType}</foreach>]::varchar[]
+        </if>
+    </sql>
+
     <sql id="ReviewSelect">
         SELECT r.*,
                pr.response_text AS partner_response_text,
@@ -143,24 +157,36 @@
     <select id="findByPlaceId" resultMap="UserReviewResultMap">
         <include refid="ReviewSelect"/>
         WHERE r.place_id = #{placeId}
-        ORDER BY r.created_at DESC
+        ORDER BY r.created_at DESC, r.id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <select id="findByActivityBookingId" resultMap="UserReviewResultMap">
         <include refid="ReviewSelect"/>
         WHERE r.activity_booking_id = #{activityBookingId}
-        ORDER BY r.created_at DESC
+        ORDER BY r.created_at DESC, r.id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <select id="findByUserId" resultMap="UserReviewResultMap">
         <include refid="ReviewSelect"/>
         WHERE r.user_id = #{userId}
-        ORDER BY r.created_at DESC
+        ORDER BY r.created_at DESC, r.id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
+    <!-- The Feed's reviews: not the viewer's own, not taken down, not already shown through a
+         public check-in, and with something to read or look at. Ordered like the check-in
+         feed - photos first, then newest - over idx_user_reviews_feed_photo, whose predicate
+         is the text-or-photo condition below spelled the same way.
+
+         With a cursor (the sort key of the last review shown) the next page is every row with
+         a smaller key; without one, offset paging for older app builds. The shuffled order
+         (randomSeed) is stable for a seed and keeps offset paging.
+
+         "Near you": a review sits at its place when the place has coordinates, and at the
+         coordinates it was written from otherwise (an activity review has no place). Both
+         halves of the IN list are GiST-driven (V214). -->
     <select id="findFeedReviews" resultMap="UserReviewResultMap">
         <include refid="ReviewSelect"/>
         WHERE (#{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER} IS NULL
@@ -169,38 +195,68 @@
             SELECT 1 FROM content_takedowns t
             WHERE t.content_type = 'REVIEW' AND t.content_id = r.id
               AND t.restored_at IS NULL)
-        AND (
-            NULLIF(TRIM(COALESCE(r.text, '')), '') IS NOT NULL
-            OR EXISTS (
-                SELECT 1 FROM media_assets ma
-                WHERE ma.entity_type = 'USER_REVIEW'
-                  AND ma.entity_id = r.id
-                  AND ma.deleted_at IS NULL
-            )
-        )
-        ORDER BY
-            <choose>
-                <when test="randomSeed != null and randomSeed != ''">
-                    MD5(r.id::text || #{randomSeed})
-                </when>
-                <otherwise>
-            (
-                (r.overall_rating * 8)
-                + (LEAST(r.helpful_votes, 20) * 2)
-                + CASE WHEN NULLIF(TRIM(COALESCE(r.text, '')), '') IS NOT NULL THEN 10 ELSE 0 END
-                + CASE WHEN EXISTS (
-                    SELECT 1 FROM media_assets ma
-                    WHERE ma.entity_type = 'USER_REVIEW'
-                      AND ma.entity_id = r.id
-                      AND ma.deleted_at IS NULL
-                  ) THEN 8 ELSE 0 END
-                + GREATEST(0, 30 - EXTRACT(EPOCH FROM (NOW() - r.created_at)) / 86400)
-                + MOD(ABS(('x' || SUBSTR(MD5(r.id::text || TO_CHAR(NOW(), 'YYYY-MM-DD-HH12')), 1, 8))::bit(32)::bigint), 10)
-            ) DESC,
-            r.created_at DESC
-                </otherwise>
-            </choose>
-        LIMIT #{limit} OFFSET #{offset}
+        <!-- A rated check-in carries its review on the same post; listing the review too
+             would show one moment twice. -->
+        AND NOT EXISTS (
+            SELECT 1 FROM user_checkins c
+            WHERE c.review_id = r.id
+              AND c.visibility = 'PUBLIC'
+              AND c.is_removed = FALSE)
+        <if test="latitude != null and longitude != null and radiusKm != null">
+            AND r.id IN (
+                SELECT own.id
+                FROM user_reviews own
+                LEFT JOIN places own_place ON own_place.id = own.place_id
+                WHERE own.checkin_lat IS NOT NULL AND own.checkin_lng IS NOT NULL
+                  AND ST_DWithin(goroute_point(own.checkin_lat, own.checkin_lng),
+                                 goroute_point(#{latitude}, #{longitude}), #{radiusKm} * 1000)
+                  AND (own_place.latitude IS NULL OR own_place.longitude IS NULL)
+                UNION ALL
+                SELECT at_place.id
+                FROM places p
+                JOIN user_reviews at_place ON at_place.place_id = p.id
+                WHERE ST_DWithin(goroute_point(p.latitude, p.longitude),
+                                 goroute_point(#{latitude}, #{longitude}), #{radiusKm} * 1000))
+        </if>
+        AND (NULLIF(TRIM(COALESCE(r.text, '')), '') IS NOT NULL OR r.has_photo)
+        <!-- A deleted account's reviews leave the feed with it. -->
+        AND EXISTS (
+            SELECT 1 FROM users au
+            WHERE au.id = r.user_id AND au.deleted_at IS NULL)
+        <if test="excludeUserId != null">
+            <!-- Blocks hide reviews in both directions (D9), and so do the viewer's own
+                 "hide this post" / "hide posts from this person" (feed_feedback, V245). -->
+            AND NOT EXISTS (
+                SELECT 1 FROM user_blocks b
+                WHERE (b.blocker_id = #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER} AND b.blocked_id = r.user_id)
+                   OR (b.blocker_id = r.user_id AND b.blocked_id = #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}))
+            AND NOT EXISTS (
+                SELECT 1 FROM feed_feedback ff
+                WHERE ff.user_id = #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
+                  AND ff.revoked_at IS NULL
+                  AND ((ff.kind = 'HIDE_POST' AND ff.item_type = 'REVIEW' AND ff.item_id = r.id)
+                    OR (ff.kind = 'HIDE_AUTHOR' AND ff.target_user_id = r.user_id
+                        AND ff.expires_at &gt; NOW())))
+        </if>
+        <if test="kind != null">
+            AND EXISTS (
+                SELECT 1 FROM places kp
+                WHERE kp.id = r.place_id
+                <include refid="feedPlaceKind"/>)
+        </if>
+        <choose>
+            <when test="randomSeed != null and randomSeed != ''">
+                ORDER BY MD5(r.id::text || #{randomSeed}), r.id
+                LIMIT #{limit} OFFSET #{offset}
+            </when>
+            <otherwise>
+                <if test="cursorCreatedAt != null and cursorId != null">
+                    AND (r.has_photo, r.created_at, r.id) &lt; (#{cursorHasPhoto}, #{cursorCreatedAt}, #{cursorId})
+                </if>
+                ORDER BY r.has_photo DESC, r.created_at DESC, r.id DESC
+                LIMIT #{limit} OFFSET #{offset}
+            </otherwise>
+        </choose>
     </select>
 
     <select id="countByPlaceId" resultType="int">

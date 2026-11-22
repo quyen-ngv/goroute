@@ -1,5 +1,6 @@
 package com.ds.goroute.config.cache;
 
+import com.ds.goroute.service.PlaceMapTileService;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -42,15 +43,43 @@ public class LocalCacheConfig {
     @Bean("searchCacheManager")
     public CacheManager searchCacheManager() {
         CaffeineCacheManager cacheManager = new CaffeineCacheManager(
-                "placeSearch",
                 "activityBookingSearch",
-                "activityBookingByPlaceSearch",
-                "publicTripSearch");
+                "activityBookingByPlaceSearch");
         cacheManager.setCaffeine(
                 Caffeine.newBuilder()
                         .expireAfterWrite(2, TimeUnit.MINUTES)
                         .maximumSize(2_000));
+        // One entry holds up to 100 places, so a count bound let the cache grow to 200,000
+        // place responses. Bounded by the places held instead.
+        cacheManager.registerCustomCache("placeSearch",
+                Caffeine.newBuilder()
+                        .expireAfterWrite(2, TimeUnit.MINUTES)
+                        .maximumWeight(PLACE_SEARCH_MAX_CACHED_PLACES)
+                        .weigher((Object key, Object value) -> value instanceof java.util.Collection<?> list
+                                ? list.size() + 1 : 1)
+                        .build());
+        // Map tiles are the same for every caller, so they live longer than a search: a busy
+        // city is read from the index once per 10 minutes. Bounded by the pins held.
+        cacheManager.registerCustomCache(PlaceMapTileService.CACHE,
+                Caffeine.newBuilder()
+                        .expireAfterWrite(10, TimeUnit.MINUTES)
+                        .maximumWeight(PLACE_MAP_TILE_MAX_CACHED_PINS)
+                        .weigher((Object key, Object value) -> value instanceof java.util.Collection<?> list
+                                ? list.size() + 1 : 1)
+                        .build());
         return cacheManager;
+    }
+
+    /** Place responses the place search cache may hold across all its entries. */
+    static final long PLACE_SEARCH_MAX_CACHED_PLACES = 20_000;
+
+    /** Map pins the tile cache may hold across all its tiles (16 at most per tile). */
+    static final long PLACE_MAP_TILE_MAX_CACHED_PINS = 60_000;
+
+    @Bean("placeSearchCacheKeyGenerator")
+    public KeyGenerator placeSearchCacheKeyGenerator() {
+        // searchPlaces(keyword, latitude, longitude, ...): parameters 1 and 2 are the point.
+        return new SearchCacheKeyGenerator(java.util.Set.of(1, 2));
     }
 
     /** Dedicated 6-hour cache for exchange rates (daily updated, low churn). */

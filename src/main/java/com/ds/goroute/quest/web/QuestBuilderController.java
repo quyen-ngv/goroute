@@ -5,9 +5,13 @@ import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.response.PageResponse;
 import com.ds.goroute.quest.dto.CreateQuestRequest;
 import com.ds.goroute.quest.dto.QuestDraftResponse;
+import com.ds.goroute.quest.dto.QuestStatusChangeRequest;
+import com.ds.goroute.quest.dto.QuestStatusChangeResponse;
 import com.ds.goroute.quest.dto.QuestSummaryResponse;
 import com.ds.goroute.quest.dto.SaveQuestDraftRequest;
 import com.ds.goroute.quest.service.QuestBuilderService;
+import com.ds.goroute.quest.service.QuestLifecycleService;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +43,7 @@ import java.util.UUID;
 public class QuestBuilderController {
 
     private final QuestBuilderService builderService;
+    private final QuestLifecycleService lifecycleService;
     private final com.ds.goroute.quest.service.QuestArObjectLibraryService arLibrary;
 
     /** The AR objects a creator may place (§3.15): their own uploads, then the shared library. */
@@ -112,6 +117,15 @@ public class QuestBuilderController {
             @RequestParam(required = false) Long expectedVersion) {
         builderService.delete(questId, userId, expectedVersion);
         return ResponseEntity.ok(BaseResponse.ofSucceeded(null));
+    }
+
+    /** Pause, archive or resume the creator's own live quest; {@code allowedStatuses} on the list says which. */
+    @PostMapping("/quests/{questId}/status")
+    public ResponseEntity<BaseResponse<QuestStatusChangeResponse>> changeStatus(
+            @CurrentUser UUID userId,
+            @PathVariable UUID questId,
+            @Valid @RequestBody QuestStatusChangeRequest request) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(lifecycleService.changeStatusAsCreator(questId, userId, request)));
     }
 
     @PostMapping("/quests/{questId}/submit")

@@ -1,6 +1,8 @@
 package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.request.CreateActivityPlaceImportJobRequest;
+import com.ds.goroute.dto.request.CreateActivityPlaceProposalsRequest;
+import com.ds.goroute.dto.request.CreateCheckinPlaceProposalsRequest;
 import com.ds.goroute.dto.request.CreateAdminLinksPlaceImportJobRequest;
 import com.ds.goroute.dto.request.CreateManualPlaceImportJobRequest;
 import com.ds.goroute.dto.request.CreateSocialPlaceImportJobRequest;
@@ -106,6 +108,29 @@ public class PlaceImportJobController extends BaseController {
     public ResponseEntity createFromLinks(
             @Valid @RequestBody CreateAdminLinksPlaceImportJobRequest request) {
         return ResponseEntity.ok(ofSucceeded(placeImportJobService.adminRunLinkImport(request)));
+    }
+
+    /**
+     * The place-linking agent's proposals for unlinked activities (admin API key scope
+     * {@code activity-places:propose}). Places are imported now; each activity waits for a human
+     * to approve its mapping, from Telegram or the Import Mappings page.
+     */
+    @PostMapping("/activity-proposals")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','create')")
+    public ResponseEntity createActivityProposals(
+            @Valid @RequestBody CreateActivityPlaceProposalsRequest request) {
+        return ResponseEntity.ok(ofSucceeded(placeImportJobService.adminRunActivityProposals(request)));
+    }
+
+    /**
+     * The same for check-ins with no catalogue place: each check-in is linked only when a human
+     * approves its mapping.
+     */
+    @PostMapping("/checkin-proposals")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','create')")
+    public ResponseEntity createCheckinProposals(
+            @Valid @RequestBody CreateCheckinPlaceProposalsRequest request) {
+        return ResponseEntity.ok(ofSucceeded(placeImportJobService.adminRunCheckinProposals(request)));
     }
 
     @GetMapping

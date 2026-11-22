@@ -1,6 +1,8 @@
 package com.ds.goroute.dto.request;
 
 import com.ds.goroute.annotations.ModeratedText;
+import com.ds.goroute.type.CheckinFrameStyle;
+import com.ds.goroute.type.CheckinPlaceKind;
 import com.ds.goroute.type.ContentVisibility;
 import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.ModerationVisibility;
@@ -13,6 +15,7 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Editing a check-in.
@@ -30,6 +33,24 @@ public class UpdateUserCheckinRequest {
     @Size(max = 5000)
     @ModeratedText(contentType = ModeratedContentType.CHECKIN, visibility = ModerationVisibility.PUBLIC)
     private String caption;
+
+    /**
+     * The frame the photos are shown in. The edit saves the visit whole, like the caption:
+     * absent clears it, so the editor always sends the one it shows.
+     */
+    private CheckinFrameStyle frameStyle;
+
+    /** The background music; saved whole like the frame, so absent removes it. */
+    private UUID musicTrackId;
+
+    /** Whether a video with music plays only the music; absent keeps what is saved. */
+    private Boolean muteVideoSound;
+
+    /**
+     * The kind of spot, for a check-in without a catalogue place. Unlike the frame, absent
+     * keeps the one saved: an app built before this field must not wipe it on every edit.
+     */
+    private CheckinPlaceKind placeKind;
 
     @Size(max = 300)
     @ModeratedText(contentType = ModeratedContentType.CHECKIN, visibility = ModerationVisibility.PUBLIC)

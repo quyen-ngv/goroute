@@ -92,7 +92,7 @@ public class CheckinClusterAdminServiceImpl implements CheckinClusterAdminServic
                 .placeId(CLUSTER_PLACE_NAMESPACE + locationKey)
                 .title(request.getTitle().trim())
                 .address(request.getAddress())
-                .placeGroup(request.getPlaceGroup() == null ? PlaceGroup.OTHER : request.getPlaceGroup())
+                .placeGroup(request.getPlaceGroup() == null ? PlaceGroup.ATTRACTIONS : request.getPlaceGroup())
                 .latitude(request.getLatitude() == null ? cluster.getCentroidLatitude() : request.getLatitude())
                 .longitude(request.getLongitude() == null ? cluster.getCentroidLongitude() : request.getLongitude())
                 .visibilityStatus(PlaceVisibilityStatus.ACTIVE)
@@ -164,7 +164,8 @@ public class CheckinClusterAdminServiceImpl implements CheckinClusterAdminServic
 
         for (UserCheckin rated : checkinRepository.findLatestRatedPerUserForLocationKey(locationKey)) {
             List<String> photoUrls = checkinRepository.findPhotos(rated.getId()).stream()
-                    .map(photo -> photo.getUrl())
+                    .map(photo -> photo.imageUrl())
+                    .filter(java.util.Objects::nonNull)
                     .toList();
             UUID reviewId = reviewConverter.convert(rated, placeId, photoUrls);
             checkinRepository.attachReview(rated.getId(), reviewId);

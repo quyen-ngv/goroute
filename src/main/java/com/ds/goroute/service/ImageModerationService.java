@@ -1,26 +1,35 @@
 package com.ds.goroute.service;
 
-import com.ds.goroute.service.moderation.ModerationVerdict;
-
+import java.time.Duration;
 import java.util.UUID;
 
 /**
  * Content check for every image entering the product (MOD-04).
  *
- * <p>The check runs <em>before</em> the object is stored and before a URL exists. Storing
- * first and checking after leaves a window in which a rejected image is already
- * shareable, and for sexual or violent content minutes are already too late.
+ * <p>The check runs in the background, after the image is stored: calling the provider
+ * inside the upload request added seconds to every photo. The trade-off is a short window
+ * in which an image that will be blocked is already visible; a BLOCK closes it by hiding
+ * the image everywhere ({@link HiddenImageService}) and telling the uploader, a FLAG puts
+ * it in the review queue and leaves it up.
  */
 public interface ImageModerationService {
 
     /**
-     * Inspects raw image bytes.
+     * Records a PENDING check for a stored image and schedules it. Returns at once; does
+     * nothing when image moderation is switched off or no provider is configured.
      *
-     * @param entryPoint which upload path this came from, so MOD-05 can tell an ordinary
-     *                   user upload apart from an administrator one and so the inventory
-     *                   of entry points is verifiable from data rather than from a list
-     * @return BLOCK to reject the image, FLAG to accept it and queue it for a human,
-     *         ALLOW otherwise
+     * @param entryPoint which upload path this came from, so an administrator upload runs
+     *                   one notch looser and the inventory of entry points is verifiable
+     *                   from data rather than from a list
      */
-    ModerationVerdict inspect(byte[] bytes, String contentType, UUID userId, String entryPoint);
+    void submit(UUID userId, String entryPoint, String objectKey, String url,
+                byte[] bytes, String contentType);
+
+    /**
+     * Re-runs checks still PENDING after {@code olderThan} -- the worker was lost to a
+     * restart or a full pool -- reading the image back from storage.
+     *
+     * @return how many rows were picked up
+     */
+    int resumeStale(Duration olderThan, int limit);
 }

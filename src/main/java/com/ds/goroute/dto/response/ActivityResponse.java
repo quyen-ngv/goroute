@@ -25,6 +25,11 @@ public class ActivityResponse {
     private UUID customPlaceId;
     private UUID placeRefId;
     private ActivityPlaceSummaryResponse place;
+    /**
+     * The activity's name. When it is still the name of its linked place (it was copied from
+     * the place when the activity was added), it is that place's name in the reader's
+     * language; a name written by hand comes back as written.
+     */
     private String name;
     private String address;
     private BigDecimal lat;
@@ -74,4 +79,12 @@ public class ActivityResponse {
     /** Linked activity booking (Klook, etc.) when added from Explore. */
     private UUID bookingId;
     private String bookingSource;
+
+    /**
+     * The local event this stop is (epic 17): its id and its current card (dates, status, cover),
+     * so the itinerary shows a cancelled or rescheduled event as such. {@code localEvent} is null
+     * when the event was deleted.
+     */
+    private UUID localEventId;
+    private com.ds.goroute.localevent.dto.LocalEventSummaryResponse localEvent;
 }

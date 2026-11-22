@@ -7,6 +7,7 @@ import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.ContentModerationService;
 import com.ds.goroute.service.moderation.ModerationVerdict;
 import com.ds.goroute.thirdparty.ai.AiClient;
+import com.ds.goroute.thirdparty.ai.AiCallScope;
 import com.ds.goroute.type.BusinessConfigKey;
 import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.ModerationAction;
@@ -70,7 +71,8 @@ public class AiTextModerationServiceImpl implements AiTextModerationService {
         String payload = text.length() > maxLength ? text.substring(0, maxLength) : text;
 
         try {
-            Optional<String> answer = client.completeJson(SYSTEM_PROMPT, payload);
+            Optional<String> answer = AiCallScope.call("TEXT_MODERATION", "REVIEW_TEXT", ownerId,
+                    contentType + ":" + contentId, () -> client.completeJson(SYSTEM_PROMPT, payload));
             answer.flatMap(this::parse)
                     .ifPresent(verdict -> raise(contentType, contentId, ownerId, fieldLabel, verdict));
         } catch (RuntimeException exception) {

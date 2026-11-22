@@ -8,6 +8,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import com.ds.goroute.thirdparty.ai.AiCallLoggingInterceptor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.web.client.RestClient;
 
 import java.util.Base64;
@@ -48,12 +51,22 @@ public class OpenAiImageModerationProvider implements ImageModerationProvider {
         }
         synchronized (this) {
             if (restClient == null) {
-                restClient = restClientBuilder.build();
+                restClient = restClientBuilder.clone().requestInterceptors(this::addCallLogging).build();
             }
             return restClient;
         }
     }
     private final RestClient.Builder restClientBuilder;
+
+    /** Optional so unit tests can build the client by hand; writes the ai_api_calls row. */
+    @Autowired(required = false)
+    private AiCallLoggingInterceptor aiCallLogging;
+
+    private void addCallLogging(java.util.List<ClientHttpRequestInterceptor> interceptors) {
+        if (aiCallLogging != null) {
+            interceptors.add(aiCallLogging.forProvider("openai", "IMAGE_MODERATION", "SCORE_IMAGE"));
+        }
+    }
 
     @Override
     public String name() {

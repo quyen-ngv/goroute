@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- image_compressions (V280): storage keys already handled by compression, epic 00 §9b. -->
+<mapper namespace="com.ds.goroute.mapper.ImageCompressionMapper">
+
+    <insert id="upsert">
+        INSERT INTO image_compressions (object_key, group_code, source, outcome, tier, quality,
+                                        max_long_edge, original_bytes, compressed_bytes, compressed_at)
+        VALUES (#{record.objectKey}, #{record.groupCode}, #{record.source}, #{record.outcome},
+                #{record.tier}, #{record.quality}, #{record.maxLongEdge}, #{record.originalBytes},
+                #{record.compressedBytes}, CURRENT_TIMESTAMP)
+        ON CONFLICT (object_key) DO UPDATE SET
+            group_code = EXCLUDED.group_code,
+            source = EXCLUDED.source,
+            outcome = EXCLUDED.outcome,
+            tier = EXCLUDED.tier,
+            quality = EXCLUDED.quality,
+            max_long_edge = EXCLUDED.max_long_edge,
+            original_bytes = EXCLUDED.original_bytes,
+            compressed_bytes = EXCLUDED.compressed_bytes,
+            compressed_at = EXCLUDED.compressed_at
+    </insert>
+
+    <select id="findRecordedKeys" resultType="java.lang.String">
+        SELECT object_key FROM image_compressions
+        WHERE object_key IN
+        <foreach collection="keys" item="key" open="(" separator="," close=")">#{key}</foreach>
+    </select>
+
+    <select id="totalsByGroup" resultType="com.ds.goroute.entity.ImageCompressionGroupTotal">
+        SELECT group_code, outcome, COUNT(*) AS image_count,
+               COALESCE(SUM(original_bytes), 0) AS original_bytes,
+               COALESCE(SUM(compressed_bytes), 0) AS compressed_bytes
+        FROM image_compressions
+        GROUP BY group_code, outcome
+    </select>
+</mapper>

@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.http.apache.ApacheHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.polly.PollyClient;
 import software.amazon.awssdk.services.polly.model.*;
@@ -53,7 +54,12 @@ public class AwsService implements StorageService {
 
         var s3Builder = S3Client.builder()
                 .credentialsProvider(provider)
-                .region(region);
+                .region(region)
+                .httpClientBuilder(ApacheHttpClient.builder()
+                        .maxConnections(awsProperties.getS3MaxConnections())
+                        .connectionAcquisitionTimeout(awsProperties.getS3ConnectionAcquisitionTimeout())
+                        .connectionTimeout(awsProperties.getS3ConnectionTimeout())
+                        .socketTimeout(awsProperties.getS3SocketTimeout()));
 
         if (awsProperties.getEndpoint() != null && !awsProperties.getEndpoint().isBlank()) {
             s3Builder.endpointOverride(java.net.URI.create(awsProperties.getEndpoint()))
@@ -138,6 +144,23 @@ public class AwsService implements StorageService {
         }
     }
 
+    @Override
+    public StorageService.DownloadedFile downloadPublicFile(String fileUrl) {
+        Path temporaryFile = null;
+        try {
+            DownloadedRemoteFile downloadedFile = downloadRemoteFile(fileUrl, null);
+            temporaryFile = downloadedFile.path();
+            return new StorageService.DownloadedFile(Files.readAllBytes(temporaryFile), downloadedFile.contentType());
+        } catch (IllegalArgumentException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            log.warn("Failed to download remote file: {}", exception.getClass().getSimpleName());
+            throw new IllegalArgumentException("Remote file could not be downloaded", exception);
+        } finally {
+            deleteTemporaryFile(temporaryFile);
+        }
+    }
+
     private DownloadedRemoteFile downloadRemoteFile(String fileUrl, String bearerToken) throws IOException {
         URI originalUri = RemoteFileUrlPolicy.requirePublicHttps(fileUrl);
         URI currentUri = originalUri;
@@ -186,7 +209,7 @@ public class AwsService implements StorageService {
         connection.setInstanceFollowRedirects(false);
         connection.setConnectTimeout(Math.toIntExact(remoteFileDownloadProperties.getConnectTimeout().toMillis()));
         connection.setReadTimeout(Math.toIntExact(remoteFileDownloadProperties.getReadTimeout().toMillis()));
-        connection.setRequestProperty("User-Agent", "GoRoute remote media importer");
+        connection.setRequestProperty("User-Agent", "OnDetour remote media importer");
         if (bearerToken != null
                 && !bearerToken.isBlank()
                 && RemoteFileUrlPolicy.isSameOrigin(originalUri, currentUri)) {
@@ -385,6 +408,21 @@ public class AwsService implements StorageService {
         } while (continuationToken != null);
 
         return objects;
+    }
+
+    @Override
+    public List<StorageService.ObjectEntry> listObjectPage(String prefix, String startAfter, int limit) {
+        var requestBuilder = ListObjectsV2Request.builder()
+                .bucket(awsProperties.getS3BucketName())
+                .prefix(prefix == null ? "" : prefix)
+                .maxKeys(Math.max(1, Math.min(limit, 1000)));
+        if (startAfter != null && !startAfter.isBlank()) {
+            requestBuilder.startAfter(startAfter);
+        }
+        return s3Client.listObjectsV2(requestBuilder.build()).contents().stream()
+                .map(object -> new StorageService.ObjectEntry(object.key(),
+                        object.size() == null ? 0L : object.size()))
+                .toList();
     }
 
     @Override

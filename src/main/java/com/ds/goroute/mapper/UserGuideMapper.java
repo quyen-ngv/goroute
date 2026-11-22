@@ -17,6 +17,9 @@ public interface UserGuideMapper {
     /** Ids among the given ones that are guides right now, for badging a list in one query. */
     List<UUID> findActiveIds(@Param("userIds") Collection<UUID> userIds);
 
+    /** user_id and display_title of the active guides among these accounts; other fields stay null. */
+    List<UserGuideGrant> findActiveTitles(@Param("userIds") Collection<UUID> userIds);
+
     int upsertActive(UserGuideGrant grant);
 
     int revoke(@Param("userId") UUID userId,

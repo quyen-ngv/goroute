@@ -23,6 +23,8 @@ public interface UserDeviceMapper {
 
     List<UserDevice> findActiveByUserId(@Param("userId") UUID userId);
 
+    List<UserDevice> findActiveByUserIds(@Param("userIds") java.util.Collection<UUID> userIds);
+
     UserDevice findByUserIdAndToken(@Param("userId") UUID userId, @Param("fcmToken") String fcmToken);
 
     void updateToken(@Param("id") UUID id, @Param("fcmToken") String fcmToken);

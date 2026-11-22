@@ -22,6 +22,10 @@ public class SubscriptionPlan {
     private String priceCurrency;
     private Boolean isActive;
     private Integer sortOrder;
+    /** AI credits the plan bucket is reset to every refill period (V254). */
+    private BigDecimal aiCreditsPerRefill;
+    /** Refill period in months: 1 monthly, 3 quarterly, 12 yearly. */
+    private Integer aiCreditRefillMonths;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

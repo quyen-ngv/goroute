@@ -24,6 +24,7 @@ import com.ds.goroute.service.UserBlockService;
 import com.ds.goroute.service.StorageService;
 import com.ds.goroute.service.WebSocketService;
 import com.ds.goroute.service.marketplace.ChatAttachmentValidator;
+import com.ds.goroute.service.marketplace.ChatShareValidator;
 import com.ds.goroute.entity.MarketplaceMemberInboxState;
 import com.ds.goroute.service.notification.ConversationNotifier;
 import com.ds.goroute.type.MarketplaceConversationStatus;
@@ -94,6 +95,9 @@ class MarketplaceChatServiceChatFeaturesTest {
     @Mock private UserBlockService userBlocks;
     @Mock private TripMemberRepository tripMembers;
     @Mock private StorageService storageService;
+    @Mock private ChatShareValidator shareValidator;
+    @Mock private org.springframework.context.ApplicationEventPublisher events;
+    @Mock private com.ds.goroute.service.ChatAssistantHooks assistantHooks;
 
     private MarketplaceChatServiceImpl service;
 
@@ -101,7 +105,8 @@ class MarketplaceChatServiceChatFeaturesTest {
     void setUp() {
         service = new MarketplaceChatServiceImpl(repo, chatMapper, hotelRepo, activityRepo, orgRepo, userRepo,
                 authorization, history, webSocketService, new ObjectMapper().registerModule(new JavaTimeModule()), businessConfig,
-                conversationNotifier, userBlocks, tripMembers, new ChatAttachmentValidator(storageService));
+                conversationNotifier, userBlocks, tripMembers, new ChatAttachmentValidator(storageService), shareValidator,
+                events, assistantHooks);
         when(storageService.urlFor(anyString())).thenAnswer(invocation -> CDN + invocation.getArgument(0));
         when(storageService.extractObjectKey(anyString())).thenAnswer(invocation -> {
             String url = invocation.getArgument(0);
@@ -153,6 +158,72 @@ class MarketplaceChatServiceChatFeaturesTest {
             assertThatThrownBy(() -> service.start(ME, request))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("through its trip");
+        }
+    }
+
+    @Nested
+    @DisplayName("access to a meetup thread")
+    class MeetupThreadAccess {
+
+        private final UUID meetup = UUID.randomUUID();
+
+        @BeforeEach
+        void meetupThread() {
+            when(repo.find(eq(CONVERSATION), any())).thenReturn(Optional.of(meetupConversation(meetup)));
+        }
+
+        @Test
+        @DisplayName("is decided by the meetup, live: its host or a JOINED participant")
+        void asksTheMeetup() {
+            when(repo.isMeetupHostOrJoined(meetup, ME)).thenReturn(true);
+
+            service.get(ME, CONVERSATION);
+
+            verify(repo).isMeetupHostOrJoined(meetup, ME);
+            verify(repo, never()).canAccess(CONVERSATION, ME);
+        }
+
+        @Test
+        @DisplayName("is refused to somebody who left or was never seated")
+        void refusesSomebodyNotSeated() {
+            when(repo.isMeetupHostOrJoined(meetup, FRIEND)).thenReturn(false);
+
+            assertThatThrownBy(() -> service.get(FRIEND, CONVERSATION)).isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("cannot be obtained by asking the generic start endpoint for a MEETUP thread")
+        void refusesStartingAMeetupThreadDirectly() {
+            StartMarketplaceConversationRequest request = new StartMarketplaceConversationRequest();
+            request.setConversationType(MarketplaceConversationType.MEETUP);
+
+            assertThatThrownBy(() -> service.start(ME, request))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("through its meetup");
+        }
+
+        @Test
+        @DisplayName("is titled by the meetup and refused to an operator")
+        void isTitledByTheMeetupAndPrivate() {
+            when(repo.isMeetupHostOrJoined(meetup, ME)).thenReturn(true);
+
+            assertThat(service.get(ME, CONVERSATION).getTitle()).isEqualTo("chạy bộ quanh hồ Tây");
+            assertThat(service.get(ME, CONVERSATION).getMeetupId()).isEqualTo(meetup);
+            assertThatThrownBy(() -> service.adminMessages(OPERATOR, CONVERSATION, null, 50, "a reason"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("private");
+        }
+
+        @Test
+        @DisplayName("writes system lines about the group, not a trip")
+        void systemLinesSayGroup() {
+            when(repo.findMessage(any())).thenAnswer(invocation -> Optional.empty());
+
+            service.postSystemMessage(CONVERSATION, "MEMBER_JOINED", FRIEND, "Linh");
+
+            ArgumentCaptor<MarketplaceMessage> captor = ArgumentCaptor.forClass(MarketplaceMessage.class);
+            verify(repo).insertMessage(captor.capture());
+            assertThat(captor.getValue().getContent()).isEqualTo("Linh joined the group");
         }
     }
 
@@ -253,6 +324,59 @@ class MarketplaceChatServiceChatFeaturesTest {
         }
 
         @Test
+        @DisplayName("tells the assistant about the message with the mentions as sent")
+        void publishesTheMessageWithTheRawMentionsForTheAssistant() {
+            SendMarketplaceMessageRequest request = send("@Pengoo ăn gì?");
+            request.setMentionedUserIds(List.of(com.ds.goroute.service.assistant.AssistantIdentity.BOT_USER_ID));
+            when(repo.findActiveMemberIds(CONVERSATION)).thenReturn(List.of(ME, FRIEND));
+
+            service.send(ME, CONVERSATION, request);
+
+            ArgumentCaptor<com.ds.goroute.event.ChatMessageCreatedEvent> event =
+                    ArgumentCaptor.forClass(com.ds.goroute.event.ChatMessageCreatedEvent.class);
+            verify(events).publishEvent(event.capture());
+            assertThat(event.getValue().requestedMentionIds())
+                    .containsExactly(com.ds.goroute.service.assistant.AssistantIdentity.BOT_USER_ID);
+            assertThat(event.getValue().senderUserId()).isEqualTo(ME);
+            // An app that sends no device position (every older version) is told apart by null.
+            assertThat(event.getValue().senderLocation()).isNull();
+            // Pengoo is not a member row, so the push mention list stays empty
+            verify(conversationNotifier).notifyNewMessage(eq(CONVERSATION), eq(ME), any(), eq(List.of()));
+        }
+
+        @Test
+        @DisplayName("hands the assistant the sender's position rounded, and keeps it out of the stored message")
+        void publishesTheSendersPositionRoundedAndStoresNoneOfIt() {
+            SendMarketplaceMessageRequest request = send("ăn gì gần đây?");
+            com.ds.goroute.dto.request.SenderLocationRequest location = new com.ds.goroute.dto.request.SenderLocationRequest();
+            location.setLatitude(new java.math.BigDecimal("11.80004999"));
+            location.setLongitude(new java.math.BigDecimal("108.30005001"));
+            request.setSenderLocation(location);
+
+            service.send(ME, CONVERSATION, request);
+
+            ArgumentCaptor<com.ds.goroute.event.ChatMessageCreatedEvent> event =
+                    ArgumentCaptor.forClass(com.ds.goroute.event.ChatMessageCreatedEvent.class);
+            verify(events).publishEvent(event.capture());
+            assertThat(event.getValue().senderLocation().lat()).isEqualTo(new java.math.BigDecimal("11.8000"));
+            assertThat(event.getValue().senderLocation().lng()).isEqualTo(new java.math.BigDecimal("108.3001"));
+            ArgumentCaptor<MarketplaceMessage> stored = ArgumentCaptor.forClass(MarketplaceMessage.class);
+            verify(repo).insertMessage(stored.capture());
+            assertThat(stored.getValue().getContent()).isEqualTo("ăn gì gần đây?");
+            assertThat(String.valueOf(stored.getValue())).doesNotContain("11.8").doesNotContain("108.3");
+        }
+
+        @Test
+        @DisplayName("refuses a client posing as the assistant")
+        void refusesAssistantMessagesFromClients() {
+            SendMarketplaceMessageRequest request = send("hi");
+            request.setMessageType(MarketplaceMessageType.ASSISTANT);
+
+            assertThatThrownBy(() -> service.send(ME, CONVERSATION, request)).isInstanceOf(BusinessException.class);
+            verify(repo, never()).insertMessage(any());
+        }
+
+        @Test
         @DisplayName("answers a repeated client id with the message already stored")
         void isIdempotentOnTheClientId() {
             MarketplaceMessage already = MarketplaceMessage.builder()
@@ -306,6 +430,35 @@ class MarketplaceChatServiceChatFeaturesTest {
                     Map.<String, Object>of("url", CDN + "chat/" + CONVERSATION + "/a.webp")));
 
             assertThatThrownBy(() -> service.send(ME, CONVERSATION, request)).isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("stores a share as the reference the share validator returned")
+        void storesAShareReference() {
+            String targetId = UUID.randomUUID().toString();
+            SendMarketplaceMessageRequest request = send(null);
+            request.setMessageType(MarketplaceMessageType.SHARE);
+            request.setAttachments(List.of(Map.of("shareType", "PLACE", "targetId", targetId)));
+            when(shareValidator.validate(ME, request.getAttachments()))
+                    .thenReturn(List.of(Map.of("shareType", "PLACE", "targetId", targetId)));
+
+            service.send(ME, CONVERSATION, request);
+
+            ArgumentCaptor<MarketplaceMessage> captor = ArgumentCaptor.forClass(MarketplaceMessage.class);
+            verify(repo).insertMessage(captor.capture());
+            assertThat(captor.getValue().getMessageType()).isEqualTo("SHARE");
+            assertThat(captor.getValue().getAttachments()).contains(targetId).doesNotContain("url");
+        }
+
+        @Test
+        @DisplayName("refuses text on a share, which is sent as its own message")
+        void refusesTextOnAShare() {
+            SendMarketplaceMessageRequest request = send("look at this");
+            request.setMessageType(MarketplaceMessageType.SHARE);
+            request.setAttachments(List.of(Map.of("shareType", "PLACE", "targetId", UUID.randomUUID().toString())));
+
+            assertThatThrownBy(() -> service.send(ME, CONVERSATION, request)).isInstanceOf(BusinessException.class);
+            verify(repo, never()).insertMessage(any());
         }
 
         @Test
@@ -495,7 +648,7 @@ class MarketplaceChatServiceChatFeaturesTest {
         void aMessage() {
             when(repo.findMessage(MESSAGE)).thenReturn(Optional.of(MarketplaceMessage.builder()
                     .id(MESSAGE).conversationId(CONVERSATION).sequenceNo(9L).build()));
-            when(repo.findMemberInboxStates(CONVERSATION)).thenReturn(List.of(state(ME, 0), state(FRIEND, 3)));
+            when(repo.findMemberInboxState(CONVERSATION, ME)).thenReturn(List.of(state(ME, 0)));
         }
 
         @Test
@@ -528,6 +681,18 @@ class MarketplaceChatServiceChatFeaturesTest {
 
             assertThat(inboxUpdateFor(ME)).containsEntry("reason", "read").containsEntry("unreadCount", 0);
             verify(webSocketService, never()).broadcastToUser(eq(FRIEND), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("counts only the reader's unread, and reads the conversation once")
+        void readsOnlyWhatTheReaderNeeds() {
+            when(repo.markRead(CONVERSATION, ME, MESSAGE)).thenReturn(1);
+
+            service.markRead(ME, CONVERSATION, MESSAGE);
+
+            verify(repo).findMemberInboxState(CONVERSATION, ME);
+            verify(repo, never()).findMemberInboxStates(CONVERSATION);
+            verify(repo).find(CONVERSATION, ME);
         }
 
         @Test
@@ -575,15 +740,35 @@ class MarketplaceChatServiceChatFeaturesTest {
         @Test
         @DisplayName("passes the chips through, upper-cased")
         void normalisesTypes() {
-            service.listMine(ME, List.of("trip", "direct"), 0, 30);
+            service.listMine(ME, List.of("trip", "direct"), false, 0, 30);
 
-            verify(repo).findForUser(ME, List.of("TRIP", "DIRECT"), 30, 0);
+            verify(repo).findForUser(ME, List.of("TRIP", "DIRECT"), false, 30, 0);
+        }
+
+        @Test
+        @DisplayName("carries a few members per row, not every member of every group")
+        void carriesAParticipantPreview() {
+            when(repo.findForUser(ME, List.of(), false, 30, 0)).thenReturn(List.of(tripConversation()));
+
+            service.listMine(ME, null, false, 0, 30);
+
+            verify(repo).findParticipantPreviews(List.of(CONVERSATION),
+                    MarketplaceChatServiceImpl.INBOX_PARTICIPANT_PREVIEW);
+            verify(repo, never()).findParticipants(anyList());
+        }
+
+        @Test
+        @DisplayName("passes the unread chip through")
+        void passesUnreadOnly() {
+            service.listMine(ME, null, true, 0, 30);
+
+            verify(repo).findForUser(ME, List.of(), true, 30, 0);
         }
 
         @Test
         @DisplayName("refuses a filter that is not a conversation kind")
         void refusesNonsense() {
-            assertThatThrownBy(() -> service.listMine(ME, List.of("everything"), 0, 30))
+            assertThatThrownBy(() -> service.listMine(ME, List.of("everything"), false, 0, 30))
                     .isInstanceOf(BusinessException.class);
         }
     }
@@ -653,6 +838,18 @@ class MarketplaceChatServiceChatFeaturesTest {
                 .conversationType(MarketplaceConversationType.TRIP.name())
                 .tripId(TRIP)
                 .tripName("Đà Lạt")
+                .status(MarketplaceConversationStatus.OPEN.name())
+                .createdAt(LocalDateTime.now())
+                .build();
+    }
+
+    private MarketplaceConversation meetupConversation(UUID meetupId) {
+        return MarketplaceConversation.builder()
+                .id(CONVERSATION)
+                .conversationType(MarketplaceConversationType.MEETUP.name())
+                .meetupId(meetupId)
+                .meetupTitle("chạy bộ quanh hồ Tây")
+                .meetupHostUserId(ME)
                 .status(MarketplaceConversationStatus.OPEN.name())
                 .createdAt(LocalDateTime.now())
                 .build();

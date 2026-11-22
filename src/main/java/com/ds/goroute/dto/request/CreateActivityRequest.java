@@ -6,6 +6,7 @@ import com.ds.goroute.type.ModerationVisibility;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -25,6 +26,7 @@ public class CreateActivityRequest {
     private UUID customPlaceId;
 
     @NotBlank(message = "Activity name is required")
+    @Size(max = 1000, message = "Activity name must be at most 1000 characters")
     @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)
     private String name;
 
@@ -62,4 +64,11 @@ public class CreateActivityRequest {
     // Booking reference (optional â€” when adding from activity catalog)
     private UUID bookingId;
     private String bookingSource; // KLOOK, VIATOR
+
+    /**
+     * Set when the stop is a published local event (epic 17). The name, coordinates and times
+     * still come from this request; the server links the event, its catalogue place when it has
+     * one, and its cover photo.
+     */
+    private UUID localEventId;
 }

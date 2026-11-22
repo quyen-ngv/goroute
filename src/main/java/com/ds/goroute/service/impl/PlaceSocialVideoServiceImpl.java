@@ -7,6 +7,7 @@ import com.ds.goroute.entity.SocialLocationJob;
 import com.ds.goroute.mapper.PlaceMapper;
 import com.ds.goroute.mapper.PlaceSocialVideoMapper;
 import com.ds.goroute.service.PlaceSocialVideoService;
+import com.ds.goroute.utils.PlaceIdentityMatcher;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -143,9 +144,17 @@ public class PlaceSocialVideoServiceImpl implements PlaceSocialVideoService {
         }
         BigDecimal latitude = decimal(mapCandidate, "latitude");
         BigDecimal longitude = decimal(mapCandidate, "longitude");
-        return latitude == null || longitude == null
-                ? null
-                : placeMapper.findNearCoordinates(latitude, longitude, MATCH_DISTANCE_METERS);
+        if (latitude == null || longitude == null) {
+            return null;
+        }
+        // Distance alone would link the video to the shop next door; the nearby place
+        // must also carry the same name or address.
+        return PlaceIdentityMatcher.firstSameIdentity(
+                        placeMapper.findNearbyIdentityCandidates(latitude, longitude,
+                                MATCH_DISTANCE_METERS, PlaceIdentityMatcher.NEARBY_CANDIDATE_LIMIT),
+                        text(mapCandidate, "title", "name"), text(mapCandidate, "address"))
+                .map(placeMapper::findById)
+                .orElse(null);
     }
 
     private JsonNode parse(String value) {

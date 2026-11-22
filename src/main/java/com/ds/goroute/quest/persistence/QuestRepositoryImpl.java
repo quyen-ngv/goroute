@@ -95,6 +95,16 @@ public class QuestRepositoryImpl implements QuestRepository {
     }
 
     @Override
+    public List<Quest> findAllQuests(String status, int limit, int offset) {
+        return mapper.findAllQuests(status, limit, offset);
+    }
+
+    @Override
+    public long countAllQuests(String status) {
+        return mapper.countAllQuests(status);
+    }
+
+    @Override
     public boolean updateDraftPointer(UUID id, long expectedVersion, UUID draftVersionId, LocalDateTime updatedAt) {
         return mapper.updateDraftPointer(id, expectedVersion, draftVersionId, updatedAt) == 1;
     }
@@ -123,6 +133,11 @@ public class QuestRepositoryImpl implements QuestRepository {
     @Override
     public long countPublicQuests(String provinceCode, String language) {
         return mapper.countPublicQuests(provinceCode, language);
+    }
+
+    @Override
+    public Optional<com.ds.goroute.quest.domain.QuestListItem> findQuestDetailUngated(UUID id) {
+        return Optional.ofNullable(mapper.findQuestDetailUngated(id));
     }
 
     @Override

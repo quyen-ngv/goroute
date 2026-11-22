@@ -5,6 +5,7 @@ import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.ModerationVisibility;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -30,6 +31,8 @@ public class SavePlaceRequest {
     private String address;
     private Double lat;
     private Double lng;
+    /** saved_places.category is VARCHAR(50). */
+    @Size(max = 50)
     private String category;
     private Double rating;
     private String photoUrl;

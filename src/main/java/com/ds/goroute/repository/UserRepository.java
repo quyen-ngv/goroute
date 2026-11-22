@@ -15,7 +15,10 @@ public interface UserRepository {
     Optional<User> findByEmailIncludingDeleted(String email);
     
     Optional<User> findByUsername(String username);
-    
+
+    /** Counts soft-deleted rows too: the UNIQUE constraint on {@code users.username} does. */
+    boolean existsByUsername(String username);
+
     Optional<User> findByProviderId(String providerId);
     
     /** Batch form of {@link #findById}. Ids not found — or soft-deleted — are simply absent. */
@@ -34,6 +37,13 @@ public interface UserRepository {
     /** Discover page: the top {@code limit} candidates plus their four counts, in one query. */
     List<com.ds.goroute.dto.response.DiscoverUserResponse> findDiscoverUsers(UUID userId, int limit);
 
+    List<com.ds.goroute.dto.response.DiscoverUserResponse> searchUsers(UUID viewerId, String query, int limit);
+
+    /** Highest scorers first; see {@code UserMapper.selectTopActiveUsers} for what scores. */
+    List<com.ds.goroute.dto.response.TopActiveUserResponse> findTopActiveUsers(
+            UUID viewerId, java.time.LocalDateTime since, int checkinPoints, int checkinWithReviewPoints,
+            int minTripActivities, int maxTripPoints, int limit);
+
     /** {@link #findFollowers} plus the four counts each card shows, in one query. */
     List<com.ds.goroute.dto.response.DiscoverUserResponse> findFollowerProfiles(UUID userId);
 
@@ -45,7 +55,14 @@ public interface UserRepository {
     void unfollow(UUID followerId, UUID followingId);
 
     boolean isFollowing(UUID followerId, UUID followingId);
-    
+
+    /**
+     * The next {@code limit} followers of {@code authorId} after {@code afterFollowerId}, in id
+     * order, who may be told about the author's posts: active human accounts with no block
+     * either way. {@code betaUsernames} non-null narrows them to the beta list.
+     */
+    List<UUID> findNotifiableFollowerIds(UUID authorId, UUID afterFollowerId,
+                                         java.util.Collection<String> betaUsernames, int limit);    
     void updateById(User user);
 
     void updateLastLoginAt(UUID id);
@@ -57,4 +74,43 @@ public interface UserRepository {
     void softDeleteById(UUID id);
 
     int updatePassword(UUID id, String passwordHash, boolean mustChangePassword, java.time.LocalDateTime changedAt);
+
+    /** Rows changed: 1, or 0 when the user does not exist or is deleted. */
+    int updateBirthYear(UUID id, int birthYear, java.time.LocalDateTime updatedAt);
+
+    /** Discover cards (with the four counts) of these people; deleted and non-human accounts are absent. */
+    List<com.ds.goroute.dto.response.DiscoverUserResponse> findDiscoverProfilesByIds(java.util.Collection<UUID> ids);
+
+    // --- Feed search index -----------------------------------------------------------
+
+    /** The next {@code limit} people anyone may find, after {@code afterId} (null: from the start). */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexPage(UUID afterId, int limit);
+
+    /** Accounts changed after ({@code afterUpdatedAt}, {@code afterId}), each saying whether it is still findable. */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexChanges(
+            java.time.LocalDateTime afterUpdatedAt, UUID afterId, int limit);
+
+    Optional<java.time.LocalDateTime> findSearchIndexMaxUpdatedAt();
+
+    // --- Managed accounts (epic 20) ---------------------------------------------------
+
+    List<com.ds.goroute.entity.ManagedAccountRow> findManagedAccounts(
+            String search, com.ds.goroute.type.ManagedAccountStatus status, int limit, int offset);
+
+    long countManagedAccounts(String search, com.ds.goroute.type.ManagedAccountStatus status);
+
+    /** A managed or handed-over account with its counts; empty for an ordinary account. */
+    Optional<com.ds.goroute.entity.ManagedAccountRow> findManagedAccount(UUID id);
+
+    /** Marks a freshly inserted account as held by the console (managed_since = now). */
+    void markManaged(UUID id);
+
+    /** Rows changed: 1, or 0 when the account is gone or no longer managed. */
+    int updateManagedProfile(UUID id, String fullName, String username, String email, String bio, String avatarUrl);
+
+    /**
+     * Gives the account to its owner: real email, optional password hash (null keeps the random
+     * one), managed flag off for good. Rows changed: 1, or 0 when it was not managed any more.
+     */
+    int handOverManagedAccount(UUID id, String email, String passwordHash, UUID handedOverBy);
 }

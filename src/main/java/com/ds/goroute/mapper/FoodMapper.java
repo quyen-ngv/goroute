@@ -1,6 +1,7 @@
 package com.ds.goroute.mapper;
 
 import com.ds.goroute.entity.Food;
+import com.ds.goroute.entity.FoodAssetUsageRow;
 import com.ds.goroute.entity.FoodCityScore;
 import com.ds.goroute.entity.FoodPlaceRow;
 import com.ds.goroute.entity.FoodTagRow;
@@ -9,6 +10,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -36,6 +38,8 @@ public interface FoodMapper {
             @Param("offset") int offset);
 
     FoodWithScoreRow findFoodDetailByCity(@Param("foodId") UUID foodId, @Param("citySlug") String citySlug);
+
+    FoodWithScoreRow findFoodDetailDefault(@Param("foodId") UUID foodId);
 
     void insertCityScore(FoodCityScore score);
 
@@ -79,4 +83,6 @@ public interface FoodMapper {
     List<FoodWithScoreRow> findFoodsByPlaceId(
             @Param("placeId") UUID placeId,
             @Param("citySlug") String citySlug);
+
+    List<FoodAssetUsageRow> findIngredientAssetUsages(@Param("assetIds") Collection<UUID> assetIds);
 }

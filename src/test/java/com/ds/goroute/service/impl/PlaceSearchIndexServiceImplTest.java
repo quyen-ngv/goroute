@@ -2,24 +2,44 @@ package com.ds.goroute.service.impl;
 
 import com.ds.goroute.dto.PlaceSearchCriteria;
 import com.ds.goroute.entity.Place;
+import com.ds.goroute.entity.Ward;
 import com.ds.goroute.mapper.PlaceTranslationMapper;
 import com.ds.goroute.repository.FoodRepository;
 import com.ds.goroute.repository.PlaceRepository;
+import com.ds.goroute.repository.WardRepository;
+import com.ds.goroute.service.ProvinceNameResolver;
 import com.ds.goroute.type.PlaceGroup;
+import com.ds.goroute.type.PlaceSubType;
 import com.ds.goroute.type.PlaceVisibilityStatus;
+import com.ds.goroute.utils.LuceneKeywordQuery;
+import com.ds.goroute.utils.MapTile;
+import com.ds.goroute.type.PlaceSearchSort;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.apache.lucene.index.IndexWriter;
+import org.apache.lucene.search.SearcherManager;
+import org.apache.lucene.store.Directory;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -29,19 +49,47 @@ class PlaceSearchIndexServiceImplTest {
     Path tempDir;
 
     private PlaceSearchIndexServiceImpl searchService;
+    private PlaceRepository placeRepository;
+    private PlaceTranslationMapper translationMapper;
+    private FoodRepository foodRepository;
+    private WardRepository wardRepository;
+    private ProvinceNameResolver provinceNameResolver;
 
     @BeforeEach
     void setUp() throws Exception {
-        PlaceRepository placeRepository = mock(PlaceRepository.class);
-        PlaceTranslationMapper translationMapper = mock(PlaceTranslationMapper.class);
-        FoodRepository foodRepository = mock(FoodRepository.class);
+        placeRepository = mock(PlaceRepository.class);
+        translationMapper = mock(PlaceTranslationMapper.class);
+        foodRepository = mock(FoodRepository.class);
+        wardRepository = mock(WardRepository.class);
+        provinceNameResolver = mock(ProvinceNameResolver.class);
         when(placeRepository.countAll()).thenReturn(0L);
         when(translationMapper.findByPlaceId(any())).thenReturn(List.of());
         when(foodRepository.findFoodTagsByPlaceIds(any())).thenReturn(List.of());
 
-        searchService = new PlaceSearchIndexServiceImpl(placeRepository, translationMapper, foodRepository);
-        ReflectionTestUtils.setField(searchService, "indexPath", tempDir.resolve("places").toString());
-        searchService.init();
+        searchService = startService();
+    }
+
+    private PlaceSearchIndexServiceImpl startService() throws Exception {
+        PlaceSearchIndexServiceImpl service = new PlaceSearchIndexServiceImpl(
+                placeRepository, translationMapper, foodRepository, wardRepository, provinceNameResolver);
+        ReflectionTestUtils.setField(service, "indexPath", tempDir.resolve("places").toString());
+        service.init();
+        return service;
+    }
+
+    /** kill -9: the process goes away without the shutdown commit. */
+    private void crash(PlaceSearchIndexServiceImpl service) throws Exception {
+        ((ExecutorService) ReflectionTestUtils.getField(service, "reindexExecutor")).shutdownNow();
+        ((SearcherManager) ReflectionTestUtils.getField(service, "searcherManager")).close();
+        ((IndexWriter) ReflectionTestUtils.getField(service, "writer")).rollback();
+        ((Directory) ReflectionTestUtils.getField(service, "directory")).close();
+    }
+
+    private void awaitReindex(PlaceSearchIndexServiceImpl service) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (service.isReindexRunning() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20);
+        }
     }
 
     @AfterEach
@@ -70,6 +118,71 @@ class PlaceSearchIndexServiceImplTest {
 
         assertThat(searchService.searchPlaceIds(criteria("pho thin", null, 2.0)))
                 .containsExactly(phoThin.getId());
+    }
+
+    @Test
+    void subTypeFilterMatchesAnyOfTheChosenKinds() throws Exception {
+        Place halalSeafood = place("Halal seafood", "restaurant", 10.0001, 106.0);
+        halalSeafood.setSubTypes(new String[] {"SEAFOOD", "HALAL"});
+        Place vegetarian = place("Quán chay", "restaurant", 10.0002, 106.0);
+        vegetarian.setSubTypes(new String[] {"VEGETARIAN"});
+        Place plain = place("Plain restaurant", "restaurant", 10.0003, 106.0);
+        searchService.indexPlace(halalSeafood);
+        searchService.indexPlace(vegetarian);
+        searchService.indexPlace(plain);
+
+        assertThat(searchService.searchPlaceIds(subTypeCriteria(List.of("halal", "VEGETARIAN"))))
+                .containsExactlyInAnyOrder(halalSeafood.getId(), vegetarian.getId());
+        assertThat(searchService.searchPlaceIds(subTypeCriteria(List.of("SEAFOOD"))))
+                .containsExactly(halalSeafood.getId());
+    }
+
+    @Test
+    void otherMatchesPlacesWithoutAnyKindAlongsideTheChosenOnes() throws Exception {
+        Place halal = place("Halal", "restaurant", 10.0001, 106.0);
+        halal.setSubTypes(new String[] {"HALAL"});
+        Place cafe = place("Cafe", "restaurant", 10.0002, 106.0);
+        cafe.setSubTypes(new String[] {"CAFE"});
+        Place plain = place("Plain restaurant", "restaurant", 10.0003, 106.0);
+        searchService.indexPlace(halal);
+        searchService.indexPlace(cafe);
+        searchService.indexPlace(plain);
+
+        assertThat(searchService.searchPlaceIds(subTypeCriteria(List.of("other"))))
+                .containsExactly(plain.getId());
+        assertThat(searchService.searchPlaceIds(subTypeCriteria(List.of("HALAL", "OTHER"))))
+                .containsExactlyInAnyOrder(halal.getId(), plain.getId());
+    }
+
+    @Test
+    void countsEachKindInTheAreaAndThePlacesWithNone() throws Exception {
+        Place halalSeafood = place("Halal seafood", "restaurant", 10.0001, 106.0);
+        halalSeafood.setSubTypes(new String[] {"SEAFOOD", "HALAL"});
+        Place seafood = place("Seafood", "restaurant", 10.0002, 106.0);
+        seafood.setSubTypes(new String[] {"SEAFOOD"});
+        Place plain = place("Plain restaurant", "restaurant", 10.0003, 106.0);
+        Place farSeafood = place("Far seafood", "restaurant", 11.0, 106.0);
+        farSeafood.setSubTypes(new String[] {"SEAFOOD"});
+        for (Place place : List.of(halalSeafood, seafood, plain, farSeafood)) {
+            searchService.indexPlace(place);
+        }
+
+        // The area's own sub-type filter is ignored: the counts are for choosing one.
+        Map<String, Integer> counts = searchService.countBySubType(
+                subTypeCriteria(List.of("HALAL")),
+                List.of(PlaceSubType.SEAFOOD, PlaceSubType.HALAL, PlaceSubType.CAFE));
+
+        assertThat(counts).containsExactly(
+                Map.entry("SEAFOOD", 2),
+                Map.entry("HALAL", 1),
+                Map.entry("CAFE", 0),
+                Map.entry(PlaceSubType.UNTYPED_FILTER, 1));
+    }
+
+    private PlaceSearchCriteria subTypeCriteria(List<String> subTypes) {
+        return new PlaceSearchCriteria(null, BigDecimal.valueOf(10.0), BigDecimal.valueOf(106.0),
+                BigDecimal.valueOf(2.0), null, null, subTypes, null, null, null, null,
+                false, PlaceSearchSort.RELEVANCE, null, 0, 20);
     }
 
     @Test
@@ -111,6 +224,573 @@ class PlaceSearchIndexServiceImplTest {
                 .containsExactly(lowRated.getId(), noCalculatedRating.getId());
     }
 
+    @Test
+    void ratingChangeReordersRatingSortWithoutWaitingForACommit() throws Exception {
+        Place first = place("First", "cafe", 10.0001, 106.0, 4.5, 4.8);
+        Place second = place("Second", "cafe", 10.0002, 106.0, 4.5, 4.0);
+        searchService.indexPlace(first);
+        searchService.indexPlace(second);
+        assertThat(searchService.searchPlaceIds(ratingCriteria(0, 2)))
+                .containsExactly(first.getId(), second.getId());
+
+        second.setAdjustedRating(BigDecimal.valueOf(4.9));
+        searchService.indexPlace(second);
+
+        assertThat(searchService.searchPlaceIds(ratingCriteria(0, 2)))
+                .containsExactly(second.getId(), first.getId());
+    }
+
+    @Test
+    void nameSearchNeedsNoLocationFoldsAccentsAndHidesInactivePlaces() throws Exception {
+        Place active = place("Bún Chả Hương Liên", "restaurant", 21.0, 105.8);
+        Place inactive = place("Bún Chả Đắc Kim", "restaurant", 10.0, 106.0);
+        inactive.setVisibilityStatus(PlaceVisibilityStatus.INACTIVE);
+        searchService.indexPlace(active);
+        searchService.indexPlace(inactive);
+
+        assertThat(searchService.searchPlaceIdsByName("bun cha", null, false, 0, 20))
+                .containsExactly(active.getId());
+        assertThat(searchService.searchPlaceIdsByName("bun cha", null, true, 0, 20))
+                .containsExactlyInAnyOrder(active.getId(), inactive.getId());
+    }
+
+    @Test
+    void nameSearchNeedsEveryWordAndPrefersTheAccentsTyped() throws Exception {
+        Place phoThin = place("Phở Thìn", "restaurant", 21.0, 105.8);
+        Place phoCo = place("Phố Cổ Bún", "restaurant", 21.0, 105.8);
+        Place bunCha = place("Bún Chả Hàng Mành", "restaurant", 21.0, 105.8);
+        for (Place place : List.of(phoThin, phoCo, bunCha)) {
+            searchService.indexPlace(place);
+        }
+
+        // Typed with accents: phở before phố; without, both are the same word.
+        assertThat(searchService.searchPlaceIdsByName("phở", null, false, 0, 20))
+                .containsExactly(phoThin.getId(), phoCo.getId());
+        // "Phố Cổ Bún" has bun but not cha.
+        assertThat(searchService.searchPlaceIdsByName("bun cha", null, false, 0, 20))
+                .containsExactly(bunCha.getId());
+        assertThat(searchService.countPlacesByName("bun cha", null)).isEqualTo(1);
+    }
+
+    @Test
+    void nameSearchTriesTyposOnlyWhenNothingMatchesAsTyped() throws Exception {
+        Place ninhBinh = place("Ninh Bình Homestay", "hotel", 20.25, 105.97);
+        Place minhBinh = place("Minh Bình Hotel", "hotel", 20.25, 105.97);
+        searchService.indexPlace(ninhBinh);
+        searchService.indexPlace(minhBinh);
+
+        assertThat(searchService.searchPlaceIdsByName("ninh binh", null, false, 0, 20))
+                .containsExactly(ninhBinh.getId());
+        assertThat(searchService.searchPlaceIdsByName("nihn binh", null, false, 0, 20))
+                .containsExactly(ninhBinh.getId());
+    }
+
+    @Test
+    void areaSearchFallsBackToAnyWordWhenNoNameHasThemAll() throws Exception {
+        Place cafe = place("Cafe Mây", "cafe", 10.0001, 106.0);
+        Place exact = place("Cafe Đà Lạt", "cafe", 10.0002, 106.0);
+        searchService.indexPlace(cafe);
+
+        assertThat(searchService.searchPlaceIds(criteria("cafe da lat", null, 2.0)))
+                .containsExactly(cafe.getId());
+
+        searchService.indexPlace(exact);
+        assertThat(searchService.searchPlaceIds(criteria("cafe da lat", null, 2.0)))
+                .containsExactly(exact.getId());
+    }
+
+    @Test
+    void areaKeywordTierTellsWhenOnlyOneWordMatchesInTheArea() throws Exception {
+        searchService.indexPlace(place("Cafe Mây", "cafe", 10.0001, 106.0));
+
+        assertThat(searchService.areaKeywordTier(criteria("cafe da lat", null, 2.0)))
+                .isEqualTo(LuceneKeywordQuery.Match.ANY_WORD);
+        assertThat(searchService.areaKeywordTier(criteria("cafe may", null, 2.0)))
+                .isEqualTo(LuceneKeywordQuery.Match.EXACT);
+        assertThat(searchService.areaKeywordTier(criteria(null, null, 2.0))).isNull();
+    }
+
+    @Test
+    void searchPlaceIdsKeepsItsResultsBesideTheTierLookup() throws Exception {
+        Place cafe = place("Cafe Mây", "cafe", 10.0001, 106.0);
+        searchService.indexPlace(cafe);
+        PlaceSearchCriteria loose = criteria("cafe da lat", null, 2.0);
+
+        searchService.areaKeywordTier(loose);
+
+        assertThat(searchService.searchPlaceIds(loose)).containsExactly(cafe.getId());
+    }
+
+    @Test
+    void nameSearchLeansTowardsThePointWithoutLeavingAnythingOut() throws Exception {
+        Place hanoi = place("Highlands Coffee", "cafe", 21.0285, 105.8542);
+        Place saigon = place("Highlands Coffee", "cafe", 10.7769, 106.7009);
+        Place danang = place("Highlands Coffee", "cafe", 16.0544, 108.2022);
+        searchService.indexPlace(hanoi);
+        searchService.indexPlace(saigon);
+        searchService.indexPlace(danang);
+
+        assertThat(searchService.searchPlaceIdsByName("highlands coffee", null, false, 0, 10, 10.78, 106.70))
+                .containsExactly(saigon.getId(), danang.getId(), hanoi.getId());
+        assertThat(searchService.searchPlaceIdsByName("highlands coffee", null, false, 0, 10, 21.03, 105.85))
+                .containsExactly(hanoi.getId(), danang.getId(), saigon.getId());
+    }
+
+    @Test
+    void outsideSearchFindsTheNameBeyondTheRadiusOnly() throws Exception {
+        // Hồ Chí Minh City is the point; Hà Nội is ~1,140 km north.
+        Place inSaigon = place("Phở Thìn", "restaurant", 10.7770, 106.7010);
+        Place inHanoi = place("Phở Thìn Bờ Hồ", "restaurant", 21.0285, 105.8542);
+        searchService.indexPlace(inSaigon);
+        searchService.indexPlace(inHanoi);
+
+        assertThat(searchService.searchPlaceIdsByNameOutside("pho thin", null, 10.7769, 106.7009, 30.0, 10))
+                .containsExactly(inHanoi.getId());
+    }
+
+    @Test
+    void outsideSearchNeverFallsBackToAnyOneWord() throws Exception {
+        searchService.indexPlace(place("Phở 24", "restaurant", 21.0285, 105.8542));
+
+        assertThat(searchService.searchPlaceIdsByNameOutside("pho thin", null, 10.7769, 106.7009, 30.0, 10))
+                .isEmpty();
+    }
+
+    @Test
+    void outsideSearchOrdersEqualMatchesByProminence() throws Exception {
+        Place quiet = place("Highlands Coffee", "cafe", 21.0285, 105.8542);
+        Place busy = place("Highlands Coffee", "cafe", 16.0544, 108.2022);
+        busy.setCheckinCount(40);
+        busy.setTripUseCount(12);
+        Place middling = place("Highlands Coffee", "cafe", 12.2388, 109.1967);
+        middling.setTripUseCount(2);
+        middling.setCheckinCount(0);
+        searchService.indexPlace(quiet);
+        searchService.indexPlace(busy);
+        searchService.indexPlace(middling);
+
+        assertThat(searchService.searchPlaceIdsByNameOutside("highlands coffee", null, 10.7769, 106.7009, 30.0, 10))
+                .containsExactly(busy.getId(), middling.getId(), quiet.getId());
+    }
+
+    @Test
+    void outsideSearchSkipsInactivePlacesAndOtherGroups() throws Exception {
+        Place hidden = place("Chùa Một Cột", "temple", 21.0359, 105.8338);
+        hidden.setVisibilityStatus(PlaceVisibilityStatus.INACTIVE);
+        Place temple = place("Chùa Một Cột", "temple", 21.0360, 105.8339);
+        temple.setPlaceGroup(PlaceGroup.ATTRACTIONS);
+        searchService.indexPlace(hidden);
+        searchService.indexPlace(temple);
+
+        assertThat(searchService.searchPlaceIdsByNameOutside("chua mot cot", List.of("ATTRACTIONS"),
+                10.7769, 106.7009, 30.0, 10)).containsExactly(temple.getId());
+        assertThat(searchService.searchPlaceIdsByNameOutside("chua mot cot", List.of("FOOD_AND_DRINK"),
+                10.7769, 106.7009, 30.0, 10)).isEmpty();
+    }
+
+    @Test
+    void reindexRunsInTheBackgroundAndReplacesStaleDocuments() throws Exception {
+        Place stale = place("Stale cafe", "cafe", 10.0001, 106.0);
+        searchService.indexPlace(stale);
+        Place fresh = place("Fresh cafe", "cafe", 10.0002, 106.0);
+        CountDownLatch release = new CountDownLatch(1);
+        when(placeRepository.findSearchIndexPage(any(), anyInt())).thenAnswer(invocation -> {
+            release.await(5, TimeUnit.SECONDS);
+            return List.of(fresh);
+        });
+
+        assertThat(searchService.triggerReindex()).isTrue();
+        // A second trigger while the first runs starts nothing, and the old index still answers.
+        assertThat(searchService.triggerReindex()).isFalse();
+        assertThat(searchService.searchPlaceIds(criteria(null, null, 2.0))).containsExactly(stale.getId());
+
+        release.countDown();
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (searchService.isReindexRunning() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20);
+        }
+
+        assertThat(searchService.isReindexRunning()).isFalse();
+        assertThat(searchService.searchPlaceIds(criteria(null, null, 2.0))).containsExactly(fresh.getId());
+        verify(placeRepository, never()).findPage(anyInt(), anyInt());
+    }
+
+    @Test
+    void aPlaceWrittenDuringAReindexSurvivesTheSwap() throws Exception {
+        Place existing = place("Existing cafe", "cafe", 10.0001, 106.0);
+        Place addedMeanwhile = place("Added cafe", "cafe", 10.0003, 106.0);
+        CountDownLatch release = new CountDownLatch(1);
+        when(placeRepository.findSearchIndexPage(any(), anyInt())).thenAnswer(invocation -> {
+            release.await(5, TimeUnit.SECONDS);
+            return List.of(existing);
+        });
+        when(placeRepository.findSearchIndexRow(addedMeanwhile.getId())).thenReturn(Optional.of(addedMeanwhile));
+
+        searchService.triggerReindex();
+        searchService.indexPlace(addedMeanwhile);
+        release.countDown();
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (searchService.isReindexRunning() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20);
+        }
+
+        assertThat(searchService.searchPlaceIds(criteria(null, null, 2.0)))
+                .containsExactlyInAnyOrder(existing.getId(), addedMeanwhile.getId());
+    }
+
+    @Test
+    void writesLostToACrashBeforeTheBatchedCommitAreRebuiltAtStartup() throws Exception {
+        Place written = place("Uncommitted cafe", "cafe", 10.0001, 106.0);
+        searchService.indexPlace(written);
+        crash(searchService);
+        when(placeRepository.findSearchIndexPage(any(), anyInt())).thenReturn(List.of(written));
+
+        searchService = startService();
+        awaitReindex(searchService);
+
+        assertThat(searchService.searchPlaceIds(criteria(null, null, 2.0))).containsExactly(written.getId());
+        assertThat(tempDir.resolve("places.uncommitted")).doesNotExist();
+    }
+
+    @Test
+    void aCommittedIndexKeepsServingWhileTheStartupRefreshRebuildsItFromTheDatabase() throws Exception {
+        Place written = place("Committed cafe", "cafe", 10.0001, 106.0);
+        searchService.indexPlace(written);
+        searchService.commitPendingChanges();
+        assertThat(tempDir.resolve("places.uncommitted")).doesNotExist();
+        crash(searchService);
+        // While the app was down the database changed behind its back (a migration, a manual fix).
+        Place fresh = place("Fresh cafe", "cafe", 10.0002, 106.0);
+        CountDownLatch release = new CountDownLatch(1);
+        when(placeRepository.findSearchIndexPage(any(), anyInt())).thenAnswer(invocation -> {
+            release.await(5, TimeUnit.SECONDS);
+            return List.of(fresh);
+        });
+
+        searchService = startService();
+
+        assertThat(searchService.isReindexRunning()).isTrue();
+        assertThat(searchService.searchPlaceIds(criteria(null, null, 2.0))).containsExactly(written.getId());
+        release.countDown();
+        awaitReindex(searchService);
+        assertThat(searchService.searchPlaceIds(criteria(null, null, 2.0))).containsExactly(fresh.getId());
+    }
+
+    @Test
+    void aRecoveryRebuildKeepsTheMarkerAcrossPeriodicCommitsUntilItSwapsIn() throws Exception {
+        Place written = place("Lost cafe", "cafe", 10.0001, 106.0);
+        searchService.indexPlace(written);
+        crash(searchService);
+        CountDownLatch release = new CountDownLatch(1);
+        when(placeRepository.findSearchIndexPage(any(), anyInt())).thenAnswer(invocation -> {
+            release.await(5, TimeUnit.SECONDS);
+            return List.of(written);
+        });
+
+        searchService = startService();
+        searchService.commitPendingChanges();
+
+        assertThat(tempDir.resolve("places.uncommitted")).exists();
+        release.countDown();
+        awaitReindex(searchService);
+        assertThat(tempDir.resolve("places.uncommitted")).doesNotExist();
+    }
+
+    @Test
+    void mapTileKeepsTheMostProminentPlaceOfEachCell() throws Exception {
+        MapTile tile = MapTile.containing(21.0287, 105.8524, 12);
+        double cornerLat = tile.north() - 0.0005;
+        double cornerLng = tile.west() + 0.0005;
+        Place landmark = mapPlace("Landmark", cornerLat, cornerLng, 4.6, 30_000);
+        Place nextDoor = mapPlace("Next door", cornerLat - 0.0001, cornerLng + 0.0001, 4.9, 12);
+        Place farCorner = mapPlace("Far corner", tile.south() + 0.0005, tile.east() - 0.0005, 4.0, 50);
+        searchService.indexPlace(landmark);
+        searchService.indexPlace(nextDoor);
+        searchService.indexPlace(farCorner);
+
+        Map<MapTile, List<UUID>> found = searchService.findMapTilePlaceIds(List.of(tile), null, null);
+
+        assertThat(found.get(tile)).containsExactly(landmark.getId(), farCorner.getId());
+    }
+
+    @Test
+    void mapTileKeepsThePlaceTravellersUseOverTheMostReviewed() throws Exception {
+        MapTile tile = MapTile.containing(21.0287, 105.8524, 12);
+        double cornerLat = tile.north() - 0.0005;
+        double cornerLng = tile.west() + 0.0005;
+        Place reviewed = mapPlace("Reviewed", cornerLat, cornerLng, 4.9, 500_000);
+        Place used = mapPlace("Used", cornerLat - 0.0001, cornerLng + 0.0001, 3.2, 40);
+        used.setTripUseCount(2);
+        used.setCheckinCount(1);
+        searchService.indexPlace(reviewed);
+        searchService.indexPlace(used);
+
+        Map<MapTile, List<UUID>> found = searchService.findMapTilePlaceIds(List.of(tile), null, null);
+
+        assertThat(found.get(tile)).containsExactly(used.getId());
+    }
+
+    @Test
+    void popularitySortRanksByTripsAndCheckinsNotStars() throws Exception {
+        Place starred = place("Starred cafe", "cafe", 10.0, 106.0, 5.0, 5.0);
+        Place visited = place("Visited cafe", "cafe", 10.0005, 106.0005, 3.0, 3.0);
+        visited.setCheckinCount(4);
+        Place planned = place("Planned cafe", "cafe", 10.001, 106.001, 4.0, 4.0);
+        planned.setTripUseCount(1);
+        searchService.indexPlace(starred);
+        searchService.indexPlace(visited);
+        searchService.indexPlace(planned);
+
+        List<UUID> ids = searchService.searchPlaceIds(new PlaceSearchCriteria(
+                null, BigDecimal.valueOf(10.0), BigDecimal.valueOf(106.0), BigDecimal.valueOf(5.0),
+                null, null, null, null, null, null, null, false, PlaceSearchSort.POPULARITY, null, 0, 10));
+
+        assertThat(ids).containsExactly(visited.getId(), planned.getId(), starred.getId());
+    }
+
+    @Test
+    void aPlaceKeptOnATileIsKeptOnTheCloserTileItFallsIn() throws Exception {
+        Random random = new Random(42);
+        Map<UUID, Place> placesById = new HashMap<>();
+        for (int index = 0; index < 120; index++) {
+            Place place = mapPlace("Place " + index,
+                    21.0 + random.nextDouble() * 0.08,
+                    105.8 + random.nextDouble() * 0.08,
+                    3.0 + random.nextDouble() * 2.0,
+                    random.nextInt(5_000));
+            placesById.put(place.getId(), place);
+            searchService.indexPlace(place);
+        }
+
+        for (int zoom = 9; zoom <= 14; zoom++) {
+            MapTile tile = MapTile.containing(21.04, 105.84, zoom);
+            List<UUID> kept = searchService.findMapTilePlaceIds(List.of(tile), null, null).get(tile);
+            for (UUID id : kept) {
+                Place place = placesById.get(id);
+                MapTile closer = MapTile.containing(
+                        place.getLatitude().doubleValue(), place.getLongitude().doubleValue(), zoom + 1);
+                assertThat(searchService.findMapTilePlaceIds(List.of(closer), null, null).get(closer))
+                        .as("zoom %d keeps %s", zoom, place.getTitle())
+                        .contains(id);
+            }
+        }
+    }
+
+    @Test
+    void mapTileLeavesOutHiddenPlacesAndOtherGroups() throws Exception {
+        MapTile tile = MapTile.containing(21.0287, 105.8524, 12);
+        Place sight = mapPlace("Sight", tile.north() - 0.0005, tile.west() + 0.0005, 4.5, 900);
+        Place hidden = mapPlace("Hidden", tile.south() + 0.0005, tile.east() - 0.0005, 4.5, 900);
+        hidden.setVisibilityStatus(PlaceVisibilityStatus.INACTIVE);
+        Place restaurant = mapPlace("Restaurant", tile.south() + 0.0005, tile.west() + 0.0005, 4.5, 900);
+        restaurant.setPlaceGroup(PlaceGroup.FOOD_AND_DRINK);
+        searchService.indexPlace(sight);
+        searchService.indexPlace(hidden);
+        searchService.indexPlace(restaurant);
+
+        Map<MapTile, List<UUID>> found = searchService.findMapTilePlaceIds(
+                List.of(tile), List.of(PlaceGroup.ATTRACTIONS.name()), null);
+
+        assertThat(found.get(tile)).containsExactly(sight.getId());
+    }
+
+    @Test
+    void mapTilesAnswerEveryTileAskedAndNoOther() throws Exception {
+        MapTile asked = MapTile.containing(21.0287, 105.8524, 12);
+        MapTile neighbour = new MapTile(12, asked.x() + 1, asked.y());
+        MapTile empty = new MapTile(12, asked.x() - 1, asked.y());
+        Place here = mapPlace("Here", asked.north() - 0.0005, asked.west() + 0.0005, 4.5, 900);
+        Place there = mapPlace("There", neighbour.north() - 0.0005, neighbour.west() + 0.0005, 4.5, 900);
+        searchService.indexPlace(here);
+        searchService.indexPlace(there);
+
+        Map<MapTile, List<UUID>> found = searchService.findMapTilePlaceIds(List.of(asked, empty), null, null);
+
+        assertThat(found).containsOnlyKeys(asked, empty);
+        assertThat(found.get(asked)).containsExactly(here.getId());
+        assertThat(found.get(empty)).isEmpty();
+    }
+
+    // --- a keyword that says where the place is (schema 15) ---------------------------------
+
+    /** The eight spellings the owner tried for the Phở Mai at 40 P. Nhà Chung, ward Cửa Nam, Hà Nội. */
+    @Test
+    void findsAPlaceByItsNameAndAnyPartOfWhereItIs() throws Exception {
+        Place phoMai = phoMaiNhaChung();
+        indexLookAlikes();
+        searchService.indexPlace(phoMai);
+
+        for (String keyword : List.of(
+                "phở mai",
+                "phở mai hà nội",
+                "phở mai nhà chung",
+                "phở mai phố nhà chung",
+                "phở mai nhà chung hà nội",
+                "phở mai phố nhà chung hà nội",
+                "phở mai phường cửa nam",
+                "phở mai cửa nam",
+                "phở mai hoàn kiếm",
+                "phở mai 40 nhà chung",
+                "pho mai nha chung",
+                "pho mai hanoi")) {
+            assertThat(searchService.searchPlaceIdsByName(keyword, null, false, 0, 20))
+                    .as("name search for '%s'", keyword)
+                    .first()
+                    .isEqualTo(phoMai.getId());
+            assertThat(searchService.searchPlaceIds(criteria(keyword, null, 20_000)))
+                    .as("area search for '%s'", keyword)
+                    .first()
+                    .isEqualTo(phoMai.getId());
+        }
+    }
+
+    @Test
+    void aPlaceWhoseNameHoldsOnlySomeOfTheWordsNoLongerStandsInForTheRightOne() throws Exception {
+        Place phoMai = phoMaiNhaChung();
+        Place coMai = addressed("Bánh tráng nướng Cô Mai Nhà Chung", "12 Đường Trần Phú, Đà Lạt, Lâm Đồng, Vietnam");
+        searchService.indexPlace(phoMai);
+        searchService.indexPlace(coMai);
+
+        assertThat(searchService.searchPlaceIdsByName("phở mai nhà chung", null, false, 0, 20))
+                .containsExactly(phoMai.getId());
+    }
+
+    @Test
+    void oneSyllableOfAnAddressExplainsNothing() throws Exception {
+        // "hà" and "nội" each occur in this address, but not side by side.
+        Place elsewhere = addressed("Phở Mai", "5 Đường Hà Huy Tập, Nội Bài, Nghệ An, Vietnam");
+        searchService.indexPlace(elsewhere);
+
+        assertThat(searchService.searchPlaceIdsByName("phở mai hà nội", null, false, 0, 20)).isEmpty();
+    }
+
+    @Test
+    void findsPlacesOfAKindOnAStreetWhenNoNameSaysEither() throws Exception {
+        Place cafe = addressed("Mây", "C12 Đường Đặng Thái Thân, Xuân Hương - Đà Lạt, Lâm Đồng, Vietnam");
+        cafe.setSubTypes(new String[] {PlaceSubType.CAFE.name()});
+        Place noodles = addressed("Bún Riêu Cua Đồng 279", "104 Phan Chu Trinh, Lâm Viên - Đà Lạt, Lâm Đồng, Vietnam");
+        searchService.indexPlace(cafe);
+        searchService.indexPlace(noodles);
+
+        assertThat(searchService.searchPlaceIdsByName("cà phê đặng thái thân", null, false, 0, 20))
+                .containsExactly(cafe.getId());
+        assertThat(searchService.searchPlaceIdsByName("104 phan chu trinh đà lạt", null, false, 0, 20))
+                .containsExactly(noodles.getId());
+        assertThat(searchService.searchPlaceIdsByName("bún riêu phan chu trinh", null, false, 0, 20))
+                .containsExactly(noodles.getId());
+    }
+
+    @Test
+    void aStreetBeingTypedAlreadyFindsThePlace() throws Exception {
+        Place phoMai = phoMaiNhaChung();
+        searchService.indexPlace(phoMai);
+
+        assertThat(searchService.searchPlaceIdsByName("phở mai nhà", null, false, 0, 20))
+                .containsExactly(phoMai.getId());
+        assertThat(searchService.searchPlaceIdsByName("phở mai nhà ch", null, false, 0, 20))
+                .containsExactly(phoMai.getId());
+    }
+
+    @Test
+    void forgivesATypoInTheStreet() throws Exception {
+        Place phoMai = phoMaiNhaChung();
+        searchService.indexPlace(phoMai);
+
+        assertThat(searchService.searchPlaceIdsByName("phở mai nhà chugn", null, false, 0, 20))
+                .containsExactly(phoMai.getId());
+    }
+
+    @Test
+    void theNameStillOutranksTheAddress() throws Exception {
+        Place named = addressed("Bún Chả Hà Nội", "26 Lê Thị Riêng, Bến Thành, Hồ Chí Minh, Vietnam");
+        Place located = addressed("Bún Chả Đắc Kim", "1 P. Hàng Mành, Hoàn Kiếm, Hà Nội, Vietnam");
+        searchService.indexPlace(located);
+        searchService.indexPlace(named);
+
+        assertThat(searchService.searchPlaceIdsByName("bún chả hà nội", null, false, 0, 20))
+                .containsExactly(named.getId(), located.getId());
+    }
+
+    @Test
+    void readsTheWardOfAPlaceBackWhenItsCallerDidNotCarryIt() throws Exception {
+        Place edited = addressed("Phở Mai", null);
+        Place row = addressed("Phở Mai", "40 P. Nhà Chung, Hoàn Kiếm, Hà Nội, Vietnam");
+        row.setWardCode("00070");
+        when(placeRepository.findSearchIndexRow(edited.getId())).thenReturn(Optional.of(row));
+        when(wardRepository.findByCode("00070")).thenReturn(Optional.of(cuaNam()));
+
+        searchService.indexPlace(edited);
+
+        assertThat(searchService.searchPlaceIdsByName("phở mai cửa nam", null, false, 0, 20))
+                .containsExactly(edited.getId());
+        assertThat(searchService.searchPlaceIdsByName("phở mai nhà chung", null, false, 0, 20))
+                .containsExactly(edited.getId());
+    }
+
+    @Test
+    void aLongKeywordWalksEveryTierWithoutFailing() throws Exception {
+        Place phoMai = phoMaiNhaChung();
+        indexLookAlikes();
+        searchService.indexPlace(phoMai);
+
+        for (String keyword : List.of(
+                "xyzq wvut abcd efgh ijkl mnop",
+                "bamh cuom nomg thamh trjh truyem",
+                "phở bò tái chín nạm gầu gân sách",
+                "phuong cuaa namm quann hoann kiemm")) {
+            assertThat(searchService.searchPlaceIdsByName(keyword, null, false, 0, 20))
+                    .as("name search for '%s'", keyword)
+                    .doesNotContain(phoMai.getId());
+            assertThat(searchService.areaKeywordTier(criteria(keyword, null, 20_000))).isNotNull();
+        }
+    }
+
+    private Place phoMaiNhaChung() {
+        Place place = addressed("Phở Mai", "40 P. Nhà Chung, Hoàn Kiếm, Hà Nội, Vietnam");
+        place.setWardCode("00070");
+        place.setProvinceCode("01");
+        when(wardRepository.findByCode("00070")).thenReturn(Optional.of(cuaNam()));
+        return place;
+    }
+
+    private Ward cuaNam() {
+        Ward ward = new Ward();
+        ward.setCode("00070");
+        ward.setName("Cửa Nam");
+        ward.setNameEn("Cua Nam");
+        ward.setProvinceName("Hà Nội");
+        return ward;
+    }
+
+    /** The places prod answered with instead of Phở Mai on 17/11/2026. */
+    private void indexLookAlikes() {
+        searchService.indexPlace(addressed(
+                "Hanoi Ngon - Số 7 Huỳnh Thúc Kháng, Quận 1 | Ăn vặt chuẩn Hà Nội Ngon, Nem chua rán, "
+                        + "Bánh gà sốt phô mai, Bánh mì nem khoai",
+                "7 Huỳnh Thúc Kháng, Sài Gòn, Hồ Chí Minh, Vietnam"));
+        searchService.indexPlace(addressed("Phở Hà Nội", "25 Lê Lợi, Bến Thành, Hồ Chí Minh, Vietnam"));
+        searchService.indexPlace(addressed("Phở Bò Hà Nội", "3 Trần Phú, Nha Trang, Khánh Hòa, Vietnam"));
+        searchService.indexPlace(addressed(
+                "Bánh tráng nướng Cô Mai Nhà Chung", "12 Đường Trần Phú, Xuân Hương - Đà Lạt, Lâm Đồng, Vietnam"));
+        searchService.indexPlace(addressed(
+                "Phở cuốn Hương Mai 25 Ngũ Xã", "25 P. Ngũ Xã, Ba Đình, Hà Nội, Vietnam"));
+        searchService.indexPlace(addressed("Tiệm Ốc Phô Mai", "260 Bà Triệu, Tuy Hòa, Đắk Lắk 56000, Vietnam"));
+        searchService.indexPlace(addressed("Phở Việt Nam", "14 Phạm Hồng Thái, Bến Thành, Hồ Chí Minh, Vietnam"));
+    }
+
+    private Place addressed(String title, String address) {
+        Place place = place(title, "restaurant", 10.0, 106.0);
+        place.setAddress(address);
+        return place;
+    }
+
+    private Place mapPlace(String title, double latitude, double longitude, double rating, int reviews) {
+        Place place = place(title, "tourist_attraction", latitude, longitude, rating);
+        place.setPlaceGroup(PlaceGroup.ATTRACTIONS);
+        place.setReviewCount(reviews);
+        return place;
+    }
+
     private PlaceSearchCriteria criteria(String keyword, String category, double radiusKm) {
         return new PlaceSearchCriteria(
                 keyword,
@@ -123,8 +803,9 @@ class PlaceSearchIndexServiceImplTest {
                 null,
                 null,
                 null,
+                null,
                 false,
-                false,
+                PlaceSearchSort.RELEVANCE,
                 null,
                 0,
                 20);
@@ -142,8 +823,9 @@ class PlaceSearchIndexServiceImplTest {
                 null,
                 null,
                 null,
+                null,
                 false,
-                true,
+                PlaceSearchSort.RATING,
                 null,
                 page,
                 size);

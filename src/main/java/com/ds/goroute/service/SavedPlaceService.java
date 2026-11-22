@@ -14,4 +14,13 @@ public interface SavedPlaceService {
     SavedPlaceResponse savePlace(UUID userId, SavePlaceRequest request);
     void unsavePlace(UUID userId, UUID savedPlaceId);
     SavedPlaceResponse updateTags(UUID userId, UUID savedPlaceId, List<String> tags);
+
+    /**
+     * Takes places off the saved list: out of {@code category} only when it is set, else off
+     * the list altogether, places found in the user's videos included.
+     */
+    void removeFromList(UUID userId, List<String> placeIds, String category);
+
+    /** Marks a place as been there, or takes the mark off. */
+    void setVisited(UUID userId, String placeId, boolean visited);
 }

@@ -4,7 +4,9 @@ import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.AssignCheckinPlaceRequest;
 import com.ds.goroute.dto.request.HideCheckinRequest;
+import com.ds.goroute.dto.request.RemoveCheckinRequest;
 import com.ds.goroute.dto.response.AdminCheckinResponse;
+import com.ds.goroute.dto.response.AdminUnlinkedCheckinResponse;
 import com.ds.goroute.dto.response.CheckinLocationHistoryResponse;
 import com.ds.goroute.dto.response.PageResponse;
 import com.ds.goroute.service.CheckinAdminService;
@@ -43,11 +45,40 @@ public class AdminUserCheckinController extends BaseController {
             @RequestParam(required = false) String search,
             @RequestParam(required = false) UUID userId,
             @RequestParam(required = false) Boolean hidden,
+            @RequestParam(required = false) Boolean needsPlace,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size) {
-        List<AdminCheckinResponse> items = service.list(search, userId, hidden, page, size);
-        long total = service.count(search, userId, hidden);
+        boolean onlyNeedsPlace = Boolean.TRUE.equals(needsPlace);
+        List<AdminCheckinResponse> items = service.list(search, userId, hidden, onlyNeedsPlace, page, size);
+        long total = service.count(search, userId, hidden, onlyNeedsPlace);
         return ResponseEntity.ok(ofSucceeded(PageResponse.of(items, total, page, size)));
+    }
+
+    /**
+     * Check-ins waiting for a catalogue place, for the place-linking agent (admin API key scope
+     * {@code activity-places:propose}). Same queue as {@code needsPlace=true}, without author details.
+     */
+    @GetMapping("/unlinked")
+    @PreAuthorize("@adminAuthorization.can(authentication,'checkins','get')")
+    public ResponseEntity<BaseResponse<PageResponse<AdminUnlinkedCheckinResponse>>> unlinked(
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "100") @Min(1) @Max(MAX_PAGE_SIZE) int size) {
+        List<AdminUnlinkedCheckinResponse> items = service.listUnlinked(page, size);
+        long total = service.count(null, null, null, true);
+        return ResponseEntity.ok(ofSucceeded(PageResponse.of(items, total, page, size)));
+    }
+
+    /**
+     * "Not a place": takes the check-in out of the queue for one. Used by the Telegram approver
+     * (admin API key scope {@code activity-places:approve}).
+     */
+    @PostMapping("/{checkinId}/dismiss-place")
+    @PreAuthorize("@adminAuthorization.can(authentication,'checkins','update')")
+    public ResponseEntity<BaseResponse<Void>> dismissPlace(
+            @PathVariable UUID checkinId,
+            @CurrentUser UUID adminId) {
+        service.dismissPlace(adminId, checkinId);
+        return ResponseEntity.ok(ofSucceeded(null));
     }
 
     @PostMapping("/{checkinId}/hide")
@@ -66,6 +97,17 @@ public class AdminUserCheckinController extends BaseController {
             @PathVariable UUID checkinId,
             @CurrentUser UUID adminId) {
         service.show(adminId, checkinId);
+        return ResponseEntity.ok(ofSucceeded(null));
+    }
+
+    /** Deletes an unsuitable check-in, as its author would; unlike hide it cannot be undone. */
+    @PostMapping("/{checkinId}/remove")
+    @PreAuthorize("@adminAuthorization.can(authentication,'checkins','update')")
+    public ResponseEntity<BaseResponse<Void>> remove(
+            @PathVariable UUID checkinId,
+            @Valid @RequestBody RemoveCheckinRequest request,
+            @CurrentUser UUID adminId) {
+        service.remove(adminId, checkinId, request);
         return ResponseEntity.ok(ofSucceeded(null));
     }
 

@@ -4,6 +4,8 @@ import com.ds.goroute.type.CheckinLocationSource;
 import com.ds.goroute.type.CheckinPhotoSource;
 import com.ds.goroute.type.CheckinVerificationScope;
 import com.ds.goroute.type.CheckinVerificationStatus;
+import com.ds.goroute.type.CheckinFrameStyle;
+import com.ds.goroute.type.CheckinPlaceKind;
 import com.ds.goroute.type.ContentVisibility;
 import lombok.Builder;
 import lombok.Data;
@@ -20,7 +22,17 @@ public class UserCheckinResponse {
     private UUID id;
     private UUID userId;
     private String userDisplayName;
+    /** The author's handle, which the map names them by. */
+    private String userUsername;
     private String userAvatarUrl;
+
+    /**
+     * The author holds an active guide grant (user_guide_grants), so the card shows the guide
+     * badge next to the name. {@link #userGuideTitle} is the badge text; null means the app's
+     * default label.
+     */
+    private boolean userGuide;
+    private String userGuideTitle;
 
     private UUID tripId;
     private UUID activityId;
@@ -63,7 +75,28 @@ public class UserCheckinResponse {
     private BigDecimal placeLatitude;
     private BigDecimal placeLongitude;
 
+    /**
+     * The local event this check-in was made at (epic 17), with what a card needs to name it
+     * and link to it. All null for an ordinary check-in or when the event was deleted.
+     */
+    private UUID localEventId;
+    private String eventTitle;
+    private String eventCoverUrl;
+    private String eventVenueName;
+
     private String caption;
+
+    /** The frame the app shows the photos in; null is none. */
+    private CheckinFrameStyle frameStyle;
+
+    /** The kind of spot the author declared; only ever set on a check-in without a catalogue place. */
+    private CheckinPlaceKind placeKind;
+
+    /** The background music played with the post; null when none or the track was switched off. */
+    private MusicTrackResponse music;
+
+    /** A video with music plays only the music (true) or mixes in its own sound (false). */
+    private boolean muteVideoSound;
 
     private Integer overallRating;
     private Integer foodRating;
@@ -124,4 +157,33 @@ public class UserCheckinResponse {
 
     private int likeCount;
     private boolean hasLiked;
+
+    /** The viewer saved this check-in to read later (saved_posts). Always false for guests. */
+    private boolean hasSaved;
+
+    /**
+     * Active comments on this check-in's thread, the number GET /content-comments/count
+     * returns. 0 when the viewer cannot open the thread (not public, removed, taken down).
+     */
+    private int commentCount;
+
+    /**
+     * Opaque keyset cursor of this post in the public feed (GET /checkins/feed): send the last
+     * item's value back as {@code cursor} to get the page after it. Null outside that feed.
+     */
+    private String feedCursor;
+
+    /**
+     * Home "Friends" tab only (GET /checkins/following with a focus point): 0 inside the
+     * province Home is on, 1, 2, ... per 100 km ring further out, null when the post cannot
+     * be placed. The list is ordered by it (nulls last), then newest first. Null elsewhere.
+     */
+    private Integer focusRank;
+
+    /**
+     * Feed "Friends" tab only (GET /checkins/following): whether the viewer already had this
+     * post on screen or opened it (feed_impressions, V245). The app marks the unseen ones;
+     * the order does not change. Null elsewhere.
+     */
+    private Boolean seen;
 }

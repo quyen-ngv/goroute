@@ -7,14 +7,14 @@ import com.ds.goroute.dto.response.ContentCommentPageResponse;
 import com.ds.goroute.dto.response.ContentCommentResponse;
 import com.ds.goroute.dto.response.UserResponse;
 import com.ds.goroute.entity.ContentComment;
-import com.ds.goroute.entity.PlaceCollection;
+import com.ds.goroute.entity.Post;
 import com.ds.goroute.entity.Trip;
 import com.ds.goroute.entity.TripMember;
 import com.ds.goroute.entity.User;
 import com.ds.goroute.entity.UserCheckin;
 import com.ds.goroute.exception.BusinessException;
-import com.ds.goroute.mapper.PlaceCollectionMapper;
 import com.ds.goroute.repository.ContentCommentRepository;
+import com.ds.goroute.repository.PostRepository;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.repository.UserCheckinRepository;
@@ -41,8 +41,8 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Owns comments on the four social targets.  Visibility is decided here, before both a
- * read and a write, so a private check-in or collection cannot accidentally gain a
+ * Owns comments on the social targets: trips, check-ins, reviews and blog posts.  Visibility is decided here, before both a
+ * read and a write, so a private check-in cannot accidentally gain a
  * discussion thread through a new endpoint.
  */
 @Service
@@ -54,7 +54,7 @@ public class ContentCommentServiceImpl implements ContentCommentService {
     private final TripMemberRepository tripMemberRepository;
     private final UserCheckinRepository checkinRepository;
     private final UserReviewRepository reviewRepository;
-    private final PlaceCollectionMapper collectionMapper;
+    private final PostRepository postRepository;
     private final UserRepository userRepository;
     private final ContentModerationService contentModerationService;
     private final SocialNotificationService socialNotificationService;
@@ -246,14 +246,14 @@ public class ContentCommentServiceImpl implements ContentCommentService {
     private void verifyTargetReadable(ModeratedContentType contentType, UUID contentId, UUID viewerId) {
         if (!isCommentableType(contentType)) {
             throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
-                    "Comments are only available for trips, check-ins, reviews and public collections");
+                    "Comments are only available for trips, check-ins, reviews and posts");
         }
         switch (contentType) {
             case TRIP -> verifyTripReadable(contentId, viewerId);
             case CHECKIN -> verifyPublicCheckin(contentId);
+            case POST -> verifyPublicPost(contentId);
             case REVIEW -> reviewRepository.findById(contentId)
                     .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Review not found"));
-            case PLACE_COLLECTION -> verifyPublicCollection(contentId);
             default -> throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Unsupported comment target");
         }
     }
@@ -262,16 +262,15 @@ public class ContentCommentServiceImpl implements ContentCommentService {
         return contentType == ModeratedContentType.TRIP
                 || contentType == ModeratedContentType.CHECKIN
                 || contentType == ModeratedContentType.REVIEW
-                || contentType == ModeratedContentType.PLACE_COLLECTION;
+                || contentType == ModeratedContentType.POST;
     }
 
     private java.util.Optional<UUID> ownerOf(ModeratedContentType contentType, UUID contentId) {
         return switch (contentType) {
             case TRIP -> tripRepository.findById(contentId).map(Trip::getOwnerId);
             case CHECKIN -> checkinRepository.findById(contentId).map(UserCheckin::getUserId);
+            case POST -> postRepository.findById(contentId).map(Post::getUserId);
             case REVIEW -> reviewRepository.findById(contentId).map(review -> review.getUserId());
-            case PLACE_COLLECTION -> java.util.Optional.ofNullable(collectionMapper.findById(contentId))
-                    .map(PlaceCollection::getOwnerId);
             default -> java.util.Optional.empty();
         };
     }
@@ -302,12 +301,13 @@ public class ContentCommentServiceImpl implements ContentCommentService {
         }
     }
 
-    private void verifyPublicCollection(UUID collectionId) {
-        PlaceCollection collection = collectionMapper.findById(collectionId);
-        if (collection == null || collection.getVisibility() != ContentVisibility.PUBLIC
-                || Boolean.TRUE.equals(collection.getIsRemoved()) || contentModerationService.isTakenDown(
-                ModeratedContentType.PLACE_COLLECTION, collectionId)) {
-            throw new BusinessException(ErrorConstant.NOT_FOUND, "Collection not found");
+    /** A post has a thread only while anyone may read it: published, public, live, not taken down. */
+    private void verifyPublicPost(UUID postId) {
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Post not found"));
+        if (!post.isPubliclyReadable()
+                || contentModerationService.isTakenDown(ModeratedContentType.POST, postId)) {
+            throw new BusinessException(ErrorConstant.NOT_FOUND, "Post not found");
         }
     }
 

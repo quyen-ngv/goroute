@@ -12,12 +12,13 @@ public enum ModeratedContentType {
     TRIP,
     ACTIVITY,
     ACTIVITY_COMMENT,
-    /** A comment on a trip, check-in, review or public collection. */
+    /** A comment on a trip, check-in or review. */
     CONTENT_COMMENT,
     TRIP_NOTE,
     TRIP_MEMORY,
     EXPENSE,
     CITY_STORY,
+    /** Removed feature. Kept only so old moderation and comment rows still deserialize. */
     PLACE_COLLECTION,
     /** A place name or address typed by a user: saved places and place contributions. */
     USER_PLACE,
@@ -28,5 +29,14 @@ public enum ModeratedContentType {
     /** Quest-level text a creator writes: title, summary, description, safety notes. */
     QUEST,
     /** Per-checkpoint text: names, stories, question prompts, hints. */
-    QUEST_CHECKPOINT
+    QUEST_CHECKPOINT,
+    /** A user-hosted meetup (epic 18): title, description, place text, join message. */
+    MEETUP,
+    /** A blog post (epic 20): title, excerpt and markdown body. Commentable, savable, reportable. */
+    POST,
+    /**
+     * One stored image, whatever it was uploaded for. The id is the
+     * {@code image_moderation_results} row; a takedown hides the image URL in every response.
+     */
+    IMAGE
 }

@@ -40,6 +40,14 @@ public record VerificationTarget(
         return new VerificationTarget(latitude, longitude, radiusMeters, false, null);
     }
 
+    /**
+     * A target at a local event's venue that has no catalogue place: radius only, and a point
+     * that misses it still falls back to its ward like any free-form check-in.
+     */
+    public static VerificationTarget forEventVenue(BigDecimal latitude, BigDecimal longitude, int radiusMeters) {
+        return new VerificationTarget(latitude, longitude, radiusMeters, true, null);
+    }
+
     public boolean hasCoordinates() {
         return latitude != null && longitude != null;
     }

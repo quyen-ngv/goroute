@@ -11,6 +11,7 @@ import com.ds.goroute.entity.User;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.mapper.PlaceContributionMapper;
 import com.ds.goroute.repository.RefreshTokenRepository;
+import com.ds.goroute.repository.UserCheckinRepository;
 import com.ds.goroute.repository.UserReviewRepository;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.repository.TripRepository;
@@ -18,11 +19,12 @@ import com.ds.goroute.service.FileUploadService;
 import com.ds.goroute.service.ImageUploadOutcome;
 import com.ds.goroute.service.ImageUploadRequest;
 import com.ds.goroute.service.UserDeviceService;
+import com.ds.goroute.service.account.AccountErasureService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.UserGuideService;
 import com.ds.goroute.service.UserService;
-import com.ds.goroute.service.StorageService;
 import com.ds.goroute.utils.JsonUtils;
+import com.ds.goroute.utils.AppBuildGate;
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,17 +50,42 @@ public class UserServiceImpl implements UserService {
             new RankTier("local_guide", 700),
             new RankTier("super_traveller", 1500)
     );
-    
+    // Feed "Top active users" scoring, set by product: a check-in is worth 1, or 2 with a
+    // review; a public trip scores only past 5 activities, 1 per activity, capped at 10.
+    private static final int TOP_ACTIVE_CHECKIN_POINTS = 1;
+    private static final int TOP_ACTIVE_CHECKIN_WITH_REVIEW_POINTS = 2;
+    private static final int TOP_ACTIVE_MIN_TRIP_ACTIVITIES = 5;
+    private static final int TOP_ACTIVE_MAX_TRIP_POINTS = 10;
+    private static final int TOP_ACTIVE_MAX_LIMIT = 20;
+    /**
+     * Rows the shared board keeps beyond the largest page, so a viewer who blocked (or was
+     * blocked by) a few of the leaders still gets a full page once those are taken out.
+     */
+    private static final int TOP_ACTIVE_BOARD_HEADROOM = 20;
+
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final UserGuideService guideService;
     private final UserReviewRepository userReviewRepository;
     private final TripRepository tripRepository;
     private final PlaceContributionMapper placeContributionMapper;
-    private final StorageService storageService;
     private final FileUploadService fileUploadService;
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final UserDeviceService userDeviceService;
+    private final AccountErasureService accountErasureService;
+    private final com.ds.goroute.service.TrackService trackService;
+    private final UserCheckinRepository userCheckinRepository;
+    private final com.ds.goroute.service.UserBlockService userBlockService;
+    /**
+     * The board is the same for every viewer apart from blocks, and the Feed asks for it on
+     * every open: computed once a minute per period, blocks applied per viewer afterwards.
+     */
+    private final com.github.benmanes.caffeine.cache.Cache<
+            String, List<com.ds.goroute.dto.response.TopActiveUserResponse>> topActiveBoards =
+            com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+                    .expireAfterWrite(java.time.Duration.ofSeconds(60))
+                    .maximumSize(16)
+                    .build();
 
     @Override
     @Transactional
@@ -143,6 +170,46 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<com.ds.goroute.dto.response.TopActiveUserResponse> getTopActiveUsers(
+            UUID viewerId, com.ds.goroute.type.TopActivePeriod period, int limit) {
+        int pageLimit = Math.max(1, Math.min(limit, TOP_ACTIVE_MAX_LIMIT));
+        // Keyed by period and its start: a new day, week or month starts a new board, and DAY
+        // and WEEK share a start every Monday.
+        java.time.LocalDateTime since = period.startUtc(java.time.Instant.now());
+        List<com.ds.goroute.dto.response.TopActiveUserResponse> board = topActiveBoards.get(
+                period.name() + '@' + since,
+                key -> List.copyOf(userRepository.findTopActiveUsers(
+                        null,
+                        since,
+                        TOP_ACTIVE_CHECKIN_POINTS,
+                        TOP_ACTIVE_CHECKIN_WITH_REVIEW_POINTS,
+                        TOP_ACTIVE_MIN_TRIP_ACTIVITIES,
+                        TOP_ACTIVE_MAX_TRIP_POINTS,
+                        TOP_ACTIVE_MAX_LIMIT + TOP_ACTIVE_BOARD_HEADROOM)));
+        java.util.Set<UUID> blocked = viewerId == null || board.isEmpty() || userBlockService == null
+                ? java.util.Set.of()
+                : userBlockService.blockedAmong(viewerId,
+                        board.stream().map(com.ds.goroute.dto.response.TopActiveUserResponse::getId).toList());
+        return board.stream()
+                .filter(row -> !blocked.contains(row.getId()))
+                .limit(pageLimit)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DiscoverUserResponse> searchUsers(UUID userId, String query, int limit) {
+        String term = query == null ? "" : query.trim();
+        if (term.startsWith("@")) term = term.substring(1).trim();
+        if (term.length() < 2) return List.of();
+        if (term.length() > 50) term = term.substring(0, 50);
+        String escaped = term.toLowerCase(java.util.Locale.ROOT)
+                .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+        return userRepository.searchUsers(userId, escaped, Math.max(1, Math.min(limit, 30)));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<DiscoverUserResponse> getFollowers(UUID userId) {
         ensureUserExists(userId);
         return userRepository.findFollowerProfiles(userId);
@@ -185,7 +252,6 @@ public class UserServiceImpl implements UserService {
     public String updateAvatar(UUID userId, MultipartFile file) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
-        String oldAvatarUrl = user.getAvatarUrl();
 
         ImageUploadOutcome outcome = fileUploadService.uploadImage(
                 ImageUploadRequest.of(userId, ImageUploadRequest.ImageEntryPoint.USER_AVATAR,
@@ -202,9 +268,6 @@ public class UserServiceImpl implements UserService {
         String avatarUrl = outcome.url();
         user.setAvatarUrl(avatarUrl);
         userRepository.updateById(user);
-        if (oldAvatarUrl != null && !oldAvatarUrl.equals(avatarUrl)) {
-            storageService.deleteFile(oldAvatarUrl);
-        }
 
         log.info("User avatar updated: {} -> {}", userId, avatarUrl);
         return avatarUrl;
@@ -217,21 +280,37 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
 
         imageStorageCleanupService.deleteImagesForEntityRecord("USER", userId);
-        // Soft delete user
-        userRepository.softDeleteById(userId);
+        // Erased, not only hidden: content removed, private records deleted, the row anonymised
+        // so the same email or Google/Apple sign-in later starts a new account.
+        accountErasureService.erase(userId);
         // The account is gone, so its refresh tokens must go with it: otherwise a
         // token held by anyone keeps minting access tokens for up to 30 more days.
         refreshTokenRepository.deleteByUserId(userId);
         // Its phones as well: a deleted account must stop receiving pushes, and a token left
         // behind would be handed to nobody until the phone registers for someone else.
         userDeviceService.deleteAllForUser(userId);
+        // Recorded routes are location history; they go with the account, not with a delay.
+        trackService.onUserDeleted(userId);
 
-        log.info("User account soft deleted: {}", userId);
+        log.info("User account deleted and erased: {}", userId);
     }
 
     private void ensureUserExists(UUID userId) {
         userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "User not found"));
+    }
+
+    @Override
+    @Transactional
+    public com.ds.goroute.dto.response.BirthYearResponse updateBirthYear(UUID userId, int birthYear) {
+        int currentYear = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).getYear();
+        if (birthYear < 1900 || birthYear > currentYear) {
+            throw new BusinessException(ErrorConstant.MEETUP_INVALID_BIRTH_YEAR, "Birth year must be 1900.." + currentYear);
+        }
+        if (userRepository.updateBirthYear(userId, birthYear, java.time.LocalDateTime.now(java.time.ZoneOffset.UTC)) != 1) {
+            throw new BusinessException(ErrorConstant.USER_NOT_FOUND, "User not found");
+        }
+        return new com.ds.goroute.dto.response.BirthYearResponse(birthYear);
     }
 
     @Override
@@ -265,9 +344,11 @@ public class UserServiceImpl implements UserService {
                 .hiddenGemContributionCount(stats.hiddenGemContributionCount())
                 .followersCount(stats.followersCount())
                 .followingCount(stats.followingCount())
+                .checkinCount(stats.checkinCount())
                 .rank(buildRankProgress(stats))
                 .guide(guideBadge != null)
                 .guideTitle(guideBadge)
+                .managedAccount(Boolean.TRUE.equals(user.getManagedByAdmin()))
                 .isFollowing(isFollowing)
                 .isFollowedBy(isFollowedBy)
                 .build();
@@ -289,7 +370,8 @@ public class UserServiceImpl implements UserService {
                 .lastLoginAt(user.getLastLoginAt())
                 .language(user.getLanguage())
                 .theme(user.getTheme())
-                .onboardingCompleted(user.getOnboardingCompleted())
+                // Builds before 1.0.19 loop on /profile-onboarding; they still get true.
+                .onboardingCompleted(AppBuildGate.onboardingCompletedForApp(user.getOnboardingCompleted()))
                 .tripCount(stats.tripCount())
                 .reviewCount(stats.reviewCount())
                 .likeCount(stats.likeCount())
@@ -298,6 +380,7 @@ public class UserServiceImpl implements UserService {
                 .hiddenGemContributionCount(stats.hiddenGemContributionCount())
                 .followersCount(stats.followersCount())
                 .followingCount(stats.followingCount())
+                .checkinCount(stats.checkinCount())
                 .rank(buildRankProgress(stats))
                 .guide(guideBadge != null)
                 .guideTitle(guideBadge)
@@ -317,6 +400,10 @@ public class UserServiceImpl implements UserService {
                 .orElse(null);
     }
 
+    /**
+     * @param includePrivateTrips the viewer is the profile's owner: their private trips and
+     *                            check-ins count too, exactly as their own lists show them
+     */
     private ProfileStats getProfileStats(UUID userId, boolean includePrivateTrips) {
         int tripCount = includePrivateTrips
                 ? tripRepository.countTripsByOwnerId(userId)
@@ -336,7 +423,9 @@ public class UserServiceImpl implements UserService {
                 contributionCount,
                 hiddenGemContributionCount,
                 userRepository.countFollowers(userId),
-                userRepository.countFollowing(userId)
+                userRepository.countFollowing(userId),
+                // The same rows GET /checkins/users/{userId} pages through for this viewer.
+                userCheckinRepository.countByUser(userId, includePrivateTrips)
         );
     }
 
@@ -429,7 +518,8 @@ public class UserServiceImpl implements UserService {
             int contributionCount,
             int hiddenGemContributionCount,
             int followersCount,
-            int followingCount
+            int followingCount,
+            long checkinCount
     ) {
     }
 

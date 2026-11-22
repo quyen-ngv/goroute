@@ -54,6 +54,7 @@ class ModeratedFieldCoverageTest {
             Map.entry("PromoteCheckinClusterRequest.note", "Operator decision note on a promotion"),
             Map.entry("RejectContributionRequest.reason", "Operator decision note"),
             Map.entry("ResolveModerationFlagRequest.note", "Operator decision note"),
+            Map.entry("ReviewPlaceEditSuggestionRequest.note", "Operator note on a place edit review; never shown to a user"),
             Map.entry("GrantSubscriptionRequest.note", "Operator records why a plan was granted; never shown to a user"),
             Map.entry("GrantGuideRequest.note", "Operator records why a guide was vouched for; never shown to a user"),
             Map.entry("UpsertModerationTermRequest.note", "Operator note on a term list entry"),
@@ -68,6 +69,13 @@ class ModeratedFieldCoverageTest {
             Map.entry("ReportContentRequest.note", "The reporter describes the violation; filtering it would silence the report"),
             Map.entry("BlockUserRequest.reason", "The blocker's own note about why; filtering it would filter the complaint"),
             Map.entry("ModerationPreviewRequest.text", "This IS the filter being asked for its opinion"),
+
+            // Identity-provider data, not typed in our app.
+            Map.entry("AppleLoginRequest.fullName",
+                    "Name from the user's Apple ID, like the name in a Google token; filtering it would block sign-in"),
+
+            // Private labels: shown to their author only, never to anyone else.
+            Map.entry("PrivacyZoneRequest.name", "Label of a privacy zone; only its owner ever sees it"),
 
             // Bulk import from external sources. Blocking mid-import would abort a batch of
             // thousands; these paths are reviewed through the queue instead, and they are
@@ -86,7 +94,23 @@ class ModeratedFieldCoverageTest {
             Map.entry("UpdateActivityBookingRequest.text", "Bulk supplier import, admin/API-key only"),
             Map.entry("UpdateActivityBookingRequest.content", "Bulk supplier import, admin/API-key only"),
             Map.entry("UpdateActivityBookingRequest.description", "Bulk supplier import, admin/API-key only"),
-            Map.entry("GorouteContributionReviewInput.text", "Internal import payload, not a user entry point"));
+            Map.entry("GorouteContributionReviewInput.text", "Internal import payload, not a user entry point"),
+
+            // Pengoo's own words, posted by the AI worker over the internal callback. Filtered
+            // field by field in AssistantTurnService before anything is shown: a blocked part is
+            // dropped, where a request-level block would throw away the whole answer.
+            Map.entry("AssistantStepRequest.text", "AI worker narration; filtered in AssistantTurnService"),
+            Map.entry("AssistantReplyRequest.note", "AI worker place note; filtered in AssistantTurnService"),
+            Map.entry("AssistantReplyRequest.summary", "AI worker proposal summary; filtered in AssistantTurnService"),
+            Map.entry("AssistantReplyRequest.title", "AI worker thread title and plan day titles; filtered in "
+                    + "AssistantTurnService and AssistantTripPlans"),
+            Map.entry("AssistantReplyRequest.name", "AI worker plan and map place names; filtered in "
+                    + "AssistantTripPlans and AssistantTurnService"),
+            Map.entry("AssistantReplyRequest.address", "AI worker plan and map place addresses; filtered in "
+                    + "AssistantTripPlans and AssistantTurnService"),
+            Map.entry("AssistantReplyRequest.description", "AI worker plan text; filtered in AssistantTripPlans"),
+            Map.entry("AssistantReplyRequest.notes", "AI worker plan stop notes; filtered in AssistantTripPlans"),
+            Map.entry("AssistantReplyRequest.text", "AI worker question text; filtered in AssistantTurnService"));
 
     @Test
     void everyFreeTextRequestFieldIsFilteredOrDeliberatelyExempt() {

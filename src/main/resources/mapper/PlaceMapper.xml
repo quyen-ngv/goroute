@@ -13,6 +13,8 @@
         <result property="title" column="title"/>
         <result property="placeGroup" column="place_group" javaType="com.ds.goroute.type.PlaceGroup"/>
         <result property="category" column="category"/>
+        <result property="subTypes" column="sub_types" typeHandler="org.apache.ibatis.type.ArrayTypeHandler"/>
+        <result property="searchAliases" column="search_aliases" typeHandler="org.apache.ibatis.type.ArrayTypeHandler"/>
         <result property="address" column="address"/>
         <result property="provinceCode" column="province_code"/>
         <result property="destinations" column="destinations"/>
@@ -65,12 +67,14 @@
         <result property="updatedAt" column="updated_at"/>
         <result property="distance" column="distance"/>
         <result property="locationImageId" column="location_image_id"/>
+        <result property="tripUseCount" column="trip_use_count"/>
+        <result property="checkinCount" column="checkin_count"/>
     </resultMap>
 
     <insert id="insert" parameterType="com.ds.goroute.entity.Place">
         INSERT INTO places (
             id, place_id, cid, data_id, input_id,
-            title, place_group, category, address, destinations, latitude, longitude, verification_radius_meters,
+            title, place_group, category, sub_types, address, destinations, latitude, longitude, verification_radius_meters,
             plus_code, timezone, phone, website, google_maps_link,
             review_count, review_rating, reviews_per_rating,
             thumbnail, images, descriptions, ai_description, ai_references, status, visibility_status, price_range,
@@ -83,7 +87,8 @@
             created_at, updated_at
         ) VALUES (
             #{id}, #{placeId}, #{cid}, #{dataId}, #{inputId},
-            #{title}, #{placeGroup,typeHandler=org.apache.ibatis.type.EnumTypeHandler}, #{category}, #{address}, #{destinations}::jsonb, #{latitude}, #{longitude}, #{verificationRadiusMeters},
+            #{title}, #{placeGroup,typeHandler=org.apache.ibatis.type.EnumTypeHandler}, #{category},
+            COALESCE(#{subTypes,jdbcType=ARRAY,typeHandler=org.apache.ibatis.type.ArrayTypeHandler}::varchar[], '{}'), #{address}, #{destinations}::jsonb, #{latitude}, #{longitude}, #{verificationRadiusMeters},
             #{plusCode}, #{timezone}, #{phone}, #{website}, #{googleMapsLink},
             #{reviewCount}, #{reviewRating}, #{reviewsPerRating},
             #{thumbnail}, #{images}, #{descriptions}, #{aiDescription}, #{aiReferences}::jsonb, #{status}, #{visibilityStatus,javaType=com.ds.goroute.type.PlaceVisibilityStatus}, #{priceRange},
@@ -114,6 +119,24 @@
         WHERE id = #{id}
     </update>
 
+    <!-- Sub-types sit outside the generic update for the same reason: jobs re-save Place
+         objects loaded by projections that never carry them, and an import refresh must not
+         erase the kinds an operator chose. -->
+    <update id="updateSubTypes">
+        UPDATE places
+        SET sub_types = #{subTypes,jdbcType=ARRAY,typeHandler=org.apache.ibatis.type.ArrayTypeHandler}::varchar[],
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- Search aliases too: only the place editor sets them, never an import or a job. -->
+    <update id="updateSearchAliases">
+        UPDATE places
+        SET search_aliases = #{searchAliases,jdbcType=ARRAY,typeHandler=org.apache.ibatis.type.ArrayTypeHandler}::text[],
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
     <update id="assignWard">
         UPDATE places p
         SET ward_code = w.code, province_code = w.province_code
@@ -122,6 +145,93 @@
           AND p.latitude IS NOT NULL AND p.longitude IS NOT NULL
           AND w.is_active = TRUE
           AND ST_Covers(w.geom, ST_SetSRID(ST_MakePoint(p.longitude::float8, p.latitude::float8), 4326))
+    </update>
+
+    <!-- Place edit suggestions (epic 09, V286). locked_fields is read and written only here;
+         it is not in PlaceResultMap or the generic update, so a job re-saving a loaded Place
+         cannot clear it. Each applied field is one narrow statement. -->
+    <select id="findLockedFields" resultType="string">
+        SELECT f FROM places p, unnest(p.locked_fields) AS f WHERE p.id = #{id} ORDER BY f
+    </select>
+
+    <update id="addLockedFields">
+        UPDATE places
+        SET locked_fields = ARRAY(
+                SELECT DISTINCT f
+                FROM unnest(locked_fields || CAST(#{fields,jdbcType=ARRAY,typeHandler=org.apache.ibatis.type.ArrayTypeHandler} AS varchar[])) AS f
+                ORDER BY f)::varchar[],
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="removeLockedField">
+        UPDATE places
+        SET locked_fields = array_remove(locked_fields, CAST(#{field} AS varchar)),
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- A partner place: partner-sourced, or with a partner source row, or an enabled hotel profile. -->
+    <select id="findEditGuard" resultType="com.ds.goroute.entity.PlaceEditGuard">
+        SELECT p.id AS "id",
+               p.title AS "title",
+               p.place_group AS "placeGroup",
+               p.status AS "status",
+               p.visibility_status AS "visibilityStatus",
+               p.lifecycle_status AS "lifecycleStatus",
+               (p.primary_source_type = 'PARTNER'
+                OR EXISTS (SELECT 1 FROM place_sources s WHERE s.place_id = p.id AND s.source_type = 'PARTNER')
+                OR EXISTS (SELECT 1 FROM hotel_profiles h WHERE h.place_id = p.id AND h.status = 'ENABLED'))
+                   AS "partnerPlace"
+        FROM places p
+        WHERE p.id = #{id}
+    </select>
+
+    <update id="updateAddress">
+        UPDATE places SET address = #{address,jdbcType=VARCHAR}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateLocation">
+        UPDATE places SET latitude = #{latitude}, longitude = #{longitude}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <!-- regular mirrors open_hours: both are what Google calls the regular week. -->
+    <update id="updateOpenHours">
+        UPDATE places
+        SET open_hours = #{openHours,jdbcType=VARCHAR}, regular = #{regular,jdbcType=VARCHAR}, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updatePhone">
+        UPDATE places SET phone = #{phone,jdbcType=VARCHAR}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateWebsite">
+        UPDATE places SET website = #{website,jdbcType=VARCHAR}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updatePriceRange">
+        UPDATE places SET price_range = #{priceRange,jdbcType=VARCHAR}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateStatusText">
+        UPDATE places SET status = #{status,jdbcType=VARCHAR}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateVisibility">
+        UPDATE places
+        SET visibility_status = #{visibilityStatus},
+            merged_into_place_id = COALESCE(CAST(#{mergedIntoPlaceId} AS uuid), merged_into_place_id),
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updatePlaceGroup">
+        UPDATE places SET place_group = #{placeGroup}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateAttributes">
+        UPDATE places SET attributes = CAST(#{attributes,jdbcType=VARCHAR} AS jsonb), updated_at = NOW() WHERE id = #{id}
     </update>
 
     <!-- Null when the place has no drawn area, so the caller falls back to the radius.
@@ -242,23 +352,343 @@
         </foreach>
     </select>
 
+    <select id="findReferencesByPlaceIds" resultMap="PlaceResultMap">
+        SELECT id, place_id, cid FROM places
+        WHERE place_id IN
+        <foreach collection="placeIds" item="placeId" open="(" separator="," close=")">
+            #{placeId}
+        </foreach>
+    </select>
+
+    <select id="findReferencesByCids" resultMap="PlaceResultMap">
+        SELECT id, place_id, cid FROM places
+        WHERE cid IN
+        <foreach collection="cids" item="cid" open="(" separator="," close=")">
+            #{cid}
+        </foreach>
+    </select>
+
+    <!-- Radius and nearest-first order spell goroute_point(latitude, longitude) exactly as
+         idx_places_point (V214) does, so the GiST index serves both. Distance in metres. -->
     <select id="findNearCoordinates" resultMap="PlaceResultMap">
         SELECT *,
-            (6371000 * acos(LEAST(1, GREATEST(-1,
-                cos(radians(#{latitude})) * cos(radians(latitude)) *
-                cos(radians(longitude) - radians(#{longitude})) +
-                sin(radians(#{latitude})) * sin(radians(latitude))
-            )))) AS distance
+            ST_Distance(goroute_point(latitude, longitude),
+                        goroute_point(#{latitude}::float8, #{longitude}::float8)) AS distance
         FROM places
-        WHERE latitude IS NOT NULL
-          AND longitude IS NOT NULL
-          AND (6371000 * acos(LEAST(1, GREATEST(-1,
-                cos(radians(#{latitude})) * cos(radians(latitude)) *
-                cos(radians(longitude) - radians(#{longitude})) +
-                sin(radians(#{latitude})) * sin(radians(latitude))
-            )))) &lt;= #{maxDistanceMeters}
-        ORDER BY distance
+        WHERE ST_DWithin(goroute_point(latitude, longitude),
+                         goroute_point(#{latitude}::float8, #{longitude}::float8),
+                         #{maxDistanceMeters}::float8)
+        ORDER BY goroute_point(latitude, longitude) &lt;-&gt; goroute_point(#{latitude}::float8, #{longitude}::float8), id
         LIMIT 1
+    </select>
+
+    <!-- Duplicate check: the K nearest places in the radius, identity columns only. -->
+    <select id="findNearbyIdentityCandidates" resultMap="PlaceResultMap">
+        SELECT id, place_id, cid, title, address, latitude, longitude,
+            ST_Distance(goroute_point(latitude, longitude),
+                        goroute_point(#{latitude}::float8, #{longitude}::float8)) AS distance
+        FROM places
+        WHERE ST_DWithin(goroute_point(latitude, longitude),
+                         goroute_point(#{latitude}::float8, #{longitude}::float8),
+                         #{maxDistanceMeters}::float8)
+        ORDER BY goroute_point(latitude, longitude) &lt;-&gt; goroute_point(#{latitude}::float8, #{longitude}::float8), id
+        LIMIT #{limit}
+    </select>
+
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM places WHERE id = #{id})
+    </select>
+
+    <select id="findGeoCodes" resultMap="PlaceResultMap">
+        SELECT id, ward_code, province_code FROM places WHERE id = #{id}
+    </select>
+
+    <!-- What a list card shows. Left out on purpose: raw_data, menu, popular_times, about,
+         reviews_per_rating, ai_description, ai_references, attributes and the drawn
+         verification geometry; the detail screen reloads the place by id. -->
+    <sql id="PlaceListColumns">
+        id, place_id, title, place_group, category, sub_types, address, province_code, ward_code, destinations,
+        latitude, longitude, verification_radius_meters, phone, website, google_maps_link,
+        review_count, review_rating, adjusted_rating, place_overall_score, score_sample_count,
+        score_source, last_scraped_at, thumbnail, images, descriptions, visibility_status,
+        price_range, open_hours, regular, status, created_at, updated_at, trip_use_count, checkin_count
+    </sql>
+
+    <select id="findListSummaryByIds" resultMap="PlaceResultMap">
+        SELECT <include refid="PlaceListColumns"/>
+        FROM places
+        WHERE id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        <if test="publicOnly">
+            AND visibility_status = 'ACTIVE' AND lifecycle_status = 'ACTIVE'
+        </if>
+    </select>
+
+    <!--
+      Trending: what trips and check-ins used in the last few days (days), near a point. Counted
+      the way recomputeUsageCounts counts all time (each trip once, deleted trips and REJECTED
+      activities not at all, removed check-ins not at all), but only rows created inside the
+      window, and only for the public places of the area. Ranked by the PlaceProminence score
+      over the window (a check-in weighs PlaceProminence.CHECKIN_WEIGHT = 2 trips), then by
+      all-time use.
+    -->
+    <!-- For the AI trip planner (excludeAiTrips): a trip an AI job created is left out, or the
+         planner would read its own earlier picks back as what travellers like. -->
+    <sql id="trendingNotAiTrip">
+        <if test="excludeAiTrips">
+              AND NOT EXISTS (SELECT 1 FROM ai_trip_generation_jobs j WHERE j.created_trip_id = a.trip_id)
+        </if>
+    </sql>
+
+    <!-- A place reported (and approved) as permanently closed keeps its page but is no longer
+         suggested: trending and the AI candidates skip it (PlaceBusinessStatus). -->
+    <sql id="notPermanentlyClosed">
+              AND COALESCE(status, '') NOT ILIKE '%permanently closed%'
+    </sql>
+
+    <select id="findTrendingUsage" resultType="com.ds.goroute.entity.PlaceTrendingRow">
+        WITH area AS (
+            SELECT id, place_id, trip_use_count, checkin_count
+            FROM places
+            WHERE ST_DWithin(goroute_point(latitude, longitude),
+                             goroute_point(#{latitude}::float8, #{longitude}::float8),
+                             #{radiusMeters}::float8)
+              AND visibility_status = 'ACTIVE' AND lifecycle_status = 'ACTIVE'
+              <include refid="notPermanentlyClosed"/>
+              <if test="placeGroups != null and placeGroups.size() > 0">
+                AND place_group IN
+                <foreach item="placeGroup" collection="placeGroups" open="(" separator="," close=")">
+                    #{placeGroup}
+                </foreach>
+              </if>
+        ),
+        <!-- Driven from the area's places through the activity indexes, so a call costs the
+             area's activities, not every activity in the country inside the window. -->
+        activity_places AS (
+            SELECT ar.id AS place_uuid, a.trip_id
+            FROM area ar
+            JOIN activities a ON a.place_ref_id = ar.id
+            JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
+            WHERE a.created_at &gt;= NOW() - make_interval(days => #{days})
+              AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+              <include refid="trendingNotAiTrip"/>
+            UNION ALL
+            SELECT ar.id, a.trip_id
+            FROM area ar
+            JOIN activities a ON a.place_ref_id IS NULL AND a.place_id = ar.place_id
+            JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
+            WHERE a.created_at &gt;= NOW() - make_interval(days => #{days})
+              AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+              <include refid="trendingNotAiTrip"/>
+            UNION ALL
+            SELECT ar.id, a.trip_id
+            FROM area ar
+            JOIN activities a ON a.place_ref_id IS NULL AND a.place_id = ar.id::text
+            JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
+            WHERE a.created_at &gt;= NOW() - make_interval(days => #{days})
+              AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+              <include refid="trendingNotAiTrip"/>
+        ),
+        trip_uses AS (
+            SELECT place_uuid, COUNT(DISTINCT trip_id) AS trips
+            FROM activity_places
+            GROUP BY place_uuid
+        ),
+        recent_checkins AS (
+            SELECT c.place_id AS place_uuid, COUNT(*) AS checkins
+            FROM user_checkins c
+            JOIN area ar ON ar.id = c.place_id
+            WHERE c.is_removed = FALSE
+              AND c.created_at &gt;= NOW() - make_interval(days => #{days})
+            GROUP BY c.place_id
+        )
+        SELECT ar.id AS "placeId",
+               COALESCE(tu.trips, 0)::int AS "tripCount",
+               COALESCE(rc.checkins, 0)::int AS "checkinCount"
+        FROM area ar
+        LEFT JOIN trip_uses tu ON tu.place_uuid = ar.id
+        LEFT JOIN recent_checkins rc ON rc.place_uuid = ar.id
+        WHERE tu.trips IS NOT NULL OR rc.checkins IS NOT NULL
+        ORDER BY LN(1 + COALESCE(tu.trips, 0)) + 2 * LN(1 + COALESCE(rc.checkins, 0)) DESC,
+                 LN(1 + ar.trip_use_count) + 2 * LN(1 + ar.checkin_count) DESC,
+                 ar.id
+        LIMIT #{limit}
+    </select>
+
+    <!-- Map pins: the search index picked the ids, this reads only what a pin draws. Same
+         public rule as findListSummaryByIds with publicOnly. -->
+    <select id="findMapPinsByIds" resultMap="PlaceResultMap">
+        SELECT id, place_id, title, place_group, sub_types, address, latitude, longitude, thumbnail,
+               images, review_count, review_rating, adjusted_rating, trip_use_count, checkin_count, status
+        FROM places
+        WHERE id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        AND visibility_status = 'ACTIVE' AND lifecycle_status = 'ACTIVE'
+    </select>
+
+    <!-- Same order as idx_places_created_id (created_at DESC, id DESC). -->
+    <select id="findListPage" resultMap="PlaceResultMap">
+        SELECT <include refid="PlaceListColumns"/>
+        FROM places
+        <where>
+            <if test="publicOnly">
+                AND visibility_status = 'ACTIVE' AND lifecycle_status = 'ACTIVE'
+            </if>
+            <if test="placeGroups != null and placeGroups.size() > 0">
+                AND place_group IN
+                <foreach item="placeGroup" collection="placeGroups" open="(" separator="," close=")">
+                    #{placeGroup}
+                </foreach>
+            </if>
+        </where>
+        ORDER BY created_at DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <sql id="PlaceSearchIndexColumns">
+        id, title, search_aliases, latitude, longitude, visibility_status, category, place_group, sub_types,
+        review_rating, adjusted_rating, review_count, destinations, trip_use_count, checkin_count, status,
+        address, province_code, ward_code
+    </sql>
+
+    <!--
+      One hash per place of the words the search index finds it by: visibility, title, aliases,
+      every translated name, and where and what it is (address, ward, province, category, kinds;
+      the ward is assigned by SQL after a place is created), plus the fields the index filters
+      on (coordinates, group, city slugs, Google business status: a SQL fix of a wrong pin or
+      group, or a place marked closed, must reach radius search and tiles). The index compares these with the
+      ones it was built from, so what is written straight into the database (a SQL import, the
+      ward job) is picked up without a restart. The locale order is byte order, so the hash does
+      not depend on the collation.
+    -->
+    <select id="findSearchNameHashes" resultType="com.ds.goroute.entity.PlaceSearchNameHash">
+        SELECT p.id AS id,
+               md5(concat_ws(E'\n', p.visibility_status, p.title, array_to_string(p.search_aliases, E'\n'),
+                   (SELECT string_agg(t.locale || '=' || COALESCE(t.name, ''), E'\n' ORDER BY t.locale COLLATE "C")
+                    FROM place_translations t WHERE t.place_id = p.id),
+                   COALESCE(p.address, ''), COALESCE(p.ward_code, ''), COALESCE(p.province_code, ''),
+                   COALESCE(p.category, ''), COALESCE(array_to_string(p.sub_types, ','), ''),
+                   COALESCE(p.latitude::text, ''), COALESCE(p.longitude::text, ''), COALESCE(p.place_group, ''),
+                   COALESCE(p.destinations::text, ''), COALESCE(p.status, ''))) AS nameHash
+        FROM places p
+    </select>
+
+    <select id="findSearchIndexPage" resultMap="PlaceResultMap">
+        SELECT <include refid="PlaceSearchIndexColumns"/>
+        FROM places
+        <where>
+            <if test="afterId != null">id &gt; #{afterId}</if>
+        </where>
+        ORDER BY id
+        LIMIT #{limit}
+    </select>
+
+    <!--
+      Recounts trip_use_count and checkin_count (V225) of the given places, or of every place
+      when placeIds is null, and returns the ids whose counts changed. An activity points at a
+      place by place_ref_id, or, without one, by place_id holding the catalogue id or the Google
+      place id; each trip counts once, deleted trips and REJECTED activities not at all. Removed
+      check-ins do not count. Set-based, so the nightly run over every place is one statement.
+    -->
+    <select id="recomputeUsageCounts" resultType="java.util.UUID" flushCache="true" useCache="false">
+        WITH activity_places AS (
+            SELECT a.place_ref_id AS place_uuid, a.trip_id
+            FROM activities a
+            JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
+            WHERE a.place_ref_id IS NOT NULL
+              AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+              <if test="placeIds != null">
+                AND a.place_ref_id IN
+                <foreach item="placeId" collection="placeIds" open="(" separator="," close=")">#{placeId}</foreach>
+              </if>
+            UNION ALL
+            SELECT p.id, a.trip_id
+            FROM places p
+            JOIN activities a ON a.place_id = p.place_id AND a.place_ref_id IS NULL
+            JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
+            WHERE COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+              <if test="placeIds != null">
+                AND p.id IN
+                <foreach item="placeId" collection="placeIds" open="(" separator="," close=")">#{placeId}</foreach>
+              </if>
+            UNION ALL
+            SELECT p.id, a.trip_id
+            FROM places p
+            JOIN activities a ON a.place_id = p.id::text AND a.place_ref_id IS NULL
+            JOIN trips t ON t.id = a.trip_id AND t.is_deleted = FALSE
+            WHERE COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+              <if test="placeIds != null">
+                AND p.id IN
+                <foreach item="placeId" collection="placeIds" open="(" separator="," close=")">#{placeId}</foreach>
+              </if>
+        ),
+        trip_uses AS (
+            SELECT place_uuid, COUNT(DISTINCT trip_id) AS uses
+            FROM activity_places
+            GROUP BY place_uuid
+        ),
+        checkins AS (
+            SELECT c.place_id AS place_uuid, COUNT(*) AS checkins
+            FROM user_checkins c
+            WHERE c.is_removed = FALSE
+              AND c.place_id IS NOT NULL
+              <if test="placeIds != null">
+                AND c.place_id IN
+                <foreach item="placeId" collection="placeIds" open="(" separator="," close=")">#{placeId}</foreach>
+              </if>
+            GROUP BY c.place_id
+        ),
+        counted AS (
+            SELECT p.id, COALESCE(tu.uses, 0) AS uses, COALESCE(ck.checkins, 0) AS checkins
+            FROM places p
+            LEFT JOIN trip_uses tu ON tu.place_uuid = p.id
+            LEFT JOIN checkins ck ON ck.place_uuid = p.id
+            <if test="placeIds != null">
+                WHERE p.id IN
+                <foreach item="placeId" collection="placeIds" open="(" separator="," close=")">#{placeId}</foreach>
+            </if>
+        )
+        UPDATE places p
+        SET trip_use_count = counted.uses,
+            checkin_count = counted.checkins
+        FROM counted
+        WHERE counted.id = p.id
+          AND (p.trip_use_count &lt;&gt; counted.uses OR p.checkin_count &lt;&gt; counted.checkins)
+        RETURNING p.id
+    </select>
+
+    <!--
+      The catalogue places a set of loose references names: an activity's place_ref_id or
+      place_id, which holds the catalogue id or the Google place id.
+    -->
+    <select id="findIdsByReferences" resultType="java.util.UUID">
+        SELECT id FROM places
+        WHERE
+        <trim prefixOverrides="OR">
+            <if test="ids != null and ids.size() > 0">
+                id IN
+                <foreach item="id" collection="ids" open="(" separator="," close=")">#{id}</foreach>
+            </if>
+            <if test="googlePlaceIds != null and googlePlaceIds.size() > 0">
+                OR place_id IN
+                <foreach item="googlePlaceId" collection="googlePlaceIds" open="(" separator="," close=")">#{googlePlaceId}</foreach>
+            </if>
+        </trim>
+    </select>
+
+    <!-- Just the two usage counts (V225), for indexing a place object built without them. -->
+    <select id="findUsageCounts" resultMap="PlaceResultMap">
+        SELECT id, trip_use_count, checkin_count FROM places WHERE id = #{id}
+    </select>
+
+    <select id="findSearchIndexRow" resultMap="PlaceResultMap">
+        SELECT <include refid="PlaceSearchIndexColumns"/>
+        FROM places
+        WHERE id = #{id}
     </select>
 
     <select id="findAll" resultMap="PlaceResultMap">
@@ -272,18 +702,20 @@
 
     <select id="findPage" resultMap="PlaceResultMap">
         SELECT * FROM places
-        ORDER BY created_at DESC
+        ORDER BY created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <sql id="PlaceFilterWhere">
         <where>
+            <!-- Every branch has an index (title/address trigram, place_id btree, primary key), so
+                 the OR can be a bitmap OR instead of a sequential scan: ids match whole, never in part. -->
             <if test="search != null and search != ''">
                 AND (
                     title ILIKE CONCAT('%', #{search}, '%')
                     OR address ILIKE CONCAT('%', #{search}, '%')
-                    OR place_id ILIKE CONCAT('%', #{search}, '%')
-                    OR CAST(id AS TEXT) ILIKE CONCAT('%', #{search}, '%')
+                    OR place_id = #{search}
+                    <if test="searchId != null">OR id = #{searchId}</if>
                 )
             </if>
             <if test="placeGroups != null and placeGroups.size() > 0">
@@ -291,6 +723,12 @@
                 <foreach item="placeGroup" collection="placeGroups" open="(" separator="," close=")">
                     #{placeGroup}
                 </foreach>
+            </if>
+            <!-- Any of the chosen kinds (array overlap), served by idx_places_sub_types. -->
+            <if test="subTypes != null and subTypes.size() > 0">
+                AND sub_types &amp;&amp; ARRAY[
+                <foreach item="subType" collection="subTypes" separator=",">#{subType}</foreach>
+                ]::varchar[]
             </if>
             <if test="visibilityStatus != null and visibilityStatus.size() > 0">
                 AND visibility_status IN
@@ -382,6 +820,38 @@
         </choose>
     </select>
 
+    <!-- What a feed card shows of its place (check-ins, reviews, city stories): the plain
+         columns only. SELECT * would also unpack raw_data, menu, popular_times, about,
+         attributes and the AI texts, none of which a card sends. -->
+    <select id="findCardsByIds" resultMap="PlaceResultMap">
+        SELECT id, place_id, title, place_group, category, sub_types, address, province_code, ward_code,
+               latitude, longitude, thumbnail, review_count, review_rating, adjusted_rating,
+               phone, website, price_range, visit_duration_minutes, visibility_status,
+               trip_use_count, checkin_count, created_at, updated_at
+        FROM places
+        WHERE id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <select id="findSavedSummaryByIds" resultMap="PlaceResultMap">
+        SELECT id, title, category, address, latitude, longitude,
+               review_rating, adjusted_rating, thumbnail, location_image_id
+        FROM places
+        <choose>
+            <when test="ids != null and ids.size() > 0">
+                WHERE id IN
+                <foreach item="id" collection="ids" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>
+                WHERE 1 = 0
+            </otherwise>
+        </choose>
+    </select>
+
     <select id="findByPlaceIds" resultMap="PlaceResultMap">
         SELECT * FROM places
         WHERE place_id IN
@@ -394,57 +864,91 @@
         DELETE FROM places WHERE id = #{id}
     </delete>
 
-    <select id="findForAiByDestination" resultMap="PlaceResultMap">
-        SELECT p.*,
-               CASE
-                   WHEN p.latitude IS NULL OR p.longitude IS NULL THEN NULL
-                   ELSE (6371 * acos(LEAST(1, GREATEST(-1,
-                       cos(radians(#{latitude})) * cos(radians(p.latitude)) *
-                       cos(radians(p.longitude) - radians(#{longitude})) +
-                       sin(radians(#{latitude})) * sin(radians(p.latitude))
-                   ))))
-               END AS distance
+    <!-- AI inventory is geo-scoped deliberately: destination slugs and incomplete ratings are not filters. -->
+    <!--
+      Candidates for the AI planner and the chat assistant. Only the columns those callers read:
+      the heavy JSON columns (images, popular_times, reviews_per_rating, raw_data, descriptions)
+      stay in the table, and attributes is cut down to the one key they use.
+
+      areaId pins the result to one tourist area (location_images): a place mapped to that area,
+      or a place not yet mapped to any area that lies inside the area's coverage radius. Without
+      it a 50 km circle around Da Nang also returns all of Hoi An, which is a destination of its own.
+    -->
+    <select id="findActiveForAiWithinRadius" resultMap="PlaceResultMap">
+        SELECT p.id, p.place_id, p.title, p.place_group, p.category, p.sub_types, p.address,
+               p.latitude, p.longitude, p.review_count, p.review_rating, p.ai_description,
+               p.price_range, p.open_hours, p.visit_duration_minutes, p.menu, p.about,
+               CASE WHEN p.attributes -> 'price_level' IS NOT NULL
+                    THEN jsonb_build_object('price_level', p.attributes -> 'price_level')::text
+               END AS attributes,
+               p.place_overall_score, p.adjusted_rating, p.thumbnail, p.location_image_id,
+               p.trip_use_count, p.checkin_count,
+               ST_Distance(goroute_point(p.latitude, p.longitude),
+                           goroute_point(#{latitude}::float8, #{longitude}::float8)) / 1000.0 AS distance
         FROM places p
         WHERE p.visibility_status = 'ACTIVE'
-          AND p.destinations @&gt; #{citySlugJson}::jsonb
-          AND p.place_group = #{placeGroup}
-        <if test="minRating != null">
-            AND p.review_rating &gt;= #{minRating}
+          AND COALESCE(p.status, '') NOT ILIKE '%permanently closed%'
+          AND ST_DWithin(goroute_point(p.latitude, p.longitude),
+                         goroute_point(#{latitude}::float8, #{longitude}::float8),
+                         #{radiusKm}::float8 * 1000.0)
+        <if test="areaId != null">
+          AND (p.location_image_id = #{areaId}
+               OR (p.location_image_id IS NULL
+                   AND ST_DWithin(goroute_point(p.latitude, p.longitude),
+                                  goroute_point(#{areaLatitude}::float8, #{areaLongitude}::float8),
+                                  #{areaRadiusKm}::float8 * 1000.0)))
         </if>
-        ORDER BY distance NULLS LAST,
-                 p.place_overall_score DESC NULLS LAST,
+        <if test="placeGroups != null and placeGroups.size() > 0">
+          AND p.place_group IN
+          <foreach item="group" collection="placeGroups" open="(" separator="," close=")">
+              #{group}
+          </foreach>
+        </if>
+        <if test="ids != null and ids.size() > 0">
+          AND p.id IN
+          <foreach item="id" collection="ids" open="(" separator="," close=")">
+              #{id}
+          </foreach>
+        </if>
+        ORDER BY p.place_overall_score DESC NULLS LAST,
                  p.adjusted_rating DESC NULLS LAST,
-                 p.review_count DESC NULLS LAST
+                 p.review_count DESC NULLS LAST,
+                 distance ASC,
+                 p.id
         LIMIT #{limit}
     </select>
 
-    <!-- AI inventory is geo-scoped deliberately: destination slugs and incomplete ratings are not filters. -->
-    <select id="findActiveForAiWithinRadius" resultMap="PlaceResultMap">
-        SELECT scoped.*
-        FROM (
-            SELECT p.*,
-                   (6371 * acos(LEAST(1, GREATEST(-1,
-                       cos(radians(#{latitude})) * cos(radians(p.latitude)) *
-                       cos(radians(p.longitude) - radians(#{longitude})) +
-                       sin(radians(#{latitude})) * sin(radians(p.latitude))
-                   )))) AS distance
-            FROM places p
-            WHERE p.visibility_status = 'ACTIVE'
-              AND p.latitude IS NOT NULL
-              AND p.longitude IS NOT NULL
-            <if test="placeGroups != null and placeGroups.size() > 0">
-              AND p.place_group IN
-              <foreach item="group" collection="placeGroups" open="(" separator="," close=")">
-                  #{group}
-              </foreach>
-            </if>
-        ) scoped
-        WHERE scoped.distance &lt;= #{radiusKm}
-        ORDER BY scoped.place_overall_score DESC NULLS LAST,
-                 scoped.adjusted_rating DESC NULLS LAST,
-                 scoped.review_count DESC NULLS LAST,
-                 scoped.distance ASC
+    <!-- Place image compression (epic 06 §2.13). Files are overwritten under their own keys,
+         so only the record column is ever written here. -->
+    <sql id="placeHasImages">
+        (COALESCE(thumbnail, '') &lt;&gt; '' OR COALESCE(images, '') NOT IN ('', '[]'))
+    </sql>
+
+    <select id="findImageState" resultType="com.ds.goroute.entity.PlaceImageState">
+        SELECT id, place_id, thumbnail, images, image_compression::text AS image_compression
+        FROM places
+        WHERE id = #{id}
+    </select>
+
+    <update id="recordImageCompression">
+        UPDATE places
+        SET image_compression = CAST(#{record} AS jsonb)
+        WHERE id = #{id} AND image_compression IS NULL
+    </update>
+
+    <select id="findImageCompressionPendingIds" resultType="java.util.UUID">
+        SELECT id FROM places
+        WHERE image_compression IS NULL
+          AND <include refid="placeHasImages"/>
+          <if test="afterId != null">AND id &gt; #{afterId}</if>
+        ORDER BY id
         LIMIT #{limit}
+    </select>
+
+    <select id="countImageCompressionPending" resultType="long">
+        SELECT COUNT(*) FROM places
+        WHERE image_compression IS NULL
+          AND <include refid="placeHasImages"/>
     </select>
 
 </mapper>

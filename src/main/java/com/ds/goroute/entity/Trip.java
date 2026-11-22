@@ -56,6 +56,8 @@ public class Trip {
     private LocalDateTime publicSharedAt;
     /** Curated tourist area (location_images) this row belongs to; null until auto-map resolves one. */
     private UUID locationImageId;
+    /** Read-only, filled only by the Home "Friends" query; see {@link UserCheckin#getFocusRank()}. */
+    private Integer focusRank;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

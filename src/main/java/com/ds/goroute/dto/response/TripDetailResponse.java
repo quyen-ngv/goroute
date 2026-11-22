@@ -22,6 +22,8 @@ public class TripDetailResponse {
     private String destination;
     private BigDecimal lat;
     private BigDecimal lng;
+    /** Coverage radius of the tourist area at the trip's main destination; null when no area matches. */
+    private BigDecimal coverageRadiusKm;
     private List<TripDestinationResponse> destinations;
     private String routeSummary;
     private LocalDate startDate;
@@ -46,4 +48,6 @@ public class TripDetailResponse {
     private UserResponse owner;
     private List<TripMemberResponse> members;
     private TripStatsResponse stats;
+    /** The caller's role in this trip: OWNER, EDITOR or VIEWER. Same field as on TripResponse. */
+    private String userRole;
 }

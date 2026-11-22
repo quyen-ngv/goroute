@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -24,9 +24,14 @@ public class PlaceResponse {
     private String locale;
     private String name;
     private String title;
+    /** Name of the place's {@code vi} translation row (its name on signs); null when there is none. */
+    private String originalName;
     private Map<String, PlaceTranslationResponse> translations;
     private String category;
     private String placeGroup;
+    private List<String> subTypes;
+    /** Other names the place is searched by; indexed, not a display name. */
+    private List<String> searchAliases;
     private String address;
     private List<String> destinations;
     private BigDecimal latitude;
@@ -37,11 +42,17 @@ public class PlaceResponse {
     private String wardCode;
     /** Province the ward belongs to; only populated since the geo backfill fills the column. */
     private String provinceCode;
+    /** Name of {@link #provinceCode}; only set by GET /places/search/grouped, to tell far places apart. */
+    private String provinceName;
     private String phone;
     private String website;
     private String googleMapsLink;
 
     private Integer reviewCount;
+    /** Trips that use the place (V225); recounted shortly after a trip changes. */
+    private Integer tripUseCount;
+    /** Check-ins on the place (V225); recounted shortly after a check-in. */
+    private Integer checkinCount;
     private BigDecimal reviewRating;
     private BigDecimal adjustedRating;
     private BigDecimal placeOverallScore;
@@ -58,6 +69,8 @@ public class PlaceResponse {
     private String aiDescription; // Curated for AI trip planning
     private JsonNode aiReferences; // Article/review source metadata read by AI
     private String visibilityStatus;
+    /** OPEN, TEMPORARILY_CLOSED or PERMANENTLY_CLOSED, read from Google's status text (PlaceBusinessStatus). */
+    private String businessStatus;
     private String priceRange;
 
     private Map<String, List<String>> openHours; // {"Monday": ["9 AM - 5 PM"], ...}

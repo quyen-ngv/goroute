@@ -21,7 +21,6 @@ public final class FoodNameResolver {
             case "vi" -> food.getNameVi();
             case "ja" -> food.getNameJa();
             case "ko" -> food.getNameKo();
-            case "zh-tw" -> food.getNameJa();
             default -> food.getNameEn();
         };
         if (fromLang != null && !fromLang.isBlank()) {

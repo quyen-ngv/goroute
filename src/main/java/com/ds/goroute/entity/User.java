@@ -39,6 +39,14 @@ public class User {
     private LocalDateTime passwordChangedAt;
     private String accountStatus;
     private LocalDateTime lastLoginAt;
+    /**
+     * An account an admin holds and posts for (V276). Written only by the managed-account
+     * statements of UserMapper, never by {@code updateById}, so a profile save cannot flip it.
+     */
+    private Boolean managedByAdmin;
+    private LocalDateTime managedSince;
+    private LocalDateTime handedOverAt;
+    private UUID handedOverBy;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime deletedAt;

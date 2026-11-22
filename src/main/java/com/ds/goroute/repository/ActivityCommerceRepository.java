@@ -7,6 +7,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface ActivityCommerceRepository {
+ /** Publicly bookable products among these ids (Feed search); the others are absent. */
+ List<MarketplaceActivityProduct> findPublicProductsByIds(java.util.Collection<UUID> ids);
  int insertProduct(MarketplaceActivityProduct v);int updateProduct(MarketplaceActivityProduct v);Optional<MarketplaceActivityProduct> findProduct(UUID id);Optional<MarketplaceActivityProduct> findPublicProduct(UUID id);List<MarketplaceActivityProduct> findProductsByOrganization(UUID id);List<MarketplaceActivityProduct> findProductsPublic(String q,List<String> activityTypes,int l,int o);List<MarketplaceActivityProduct> findSimilarProductsPublic(UUID excludeId,List<String> activityTypes,Double lat,Double lng,int limit);List<MarketplaceActivityProduct> findProductsAdmin(String q,List<String> s,List<UUID> areas,String sort,boolean descending,int l,int o);
  int insertPackage(ActivityPackage v);int updatePackage(ActivityPackage v);Optional<ActivityPackage> findPackage(UUID id);List<ActivityPackage> findPackages(UUID id,boolean all);
  int insertSlot(ActivitySlot v);int updateSlot(ActivitySlot v);Optional<ActivitySlot> findSlot(UUID id);List<ActivitySlot> findSlots(UUID id,LocalDateTime from,boolean all);int reserveSlot(UUID id,int q,UUID a,LocalDateTime n);int confirmSlot(UUID id,int q,UUID a,LocalDateTime n);int releaseSlot(UUID id,int q,boolean r,UUID a,LocalDateTime n);

@@ -2,11 +2,14 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.BaseResponse;
+import com.ds.goroute.dto.request.AiApiCallLogRequest;
 import com.ds.goroute.dto.request.AiTripCandidateQueryRequest;
 import com.ds.goroute.dto.request.AiTripCandidateResolutionRequest;
 import com.ds.goroute.dto.request.AiTripCommitRequest;
 import com.ds.goroute.dto.request.AiTripJobEventRequest;
+import com.ds.goroute.dto.response.AiCreditStatus;
 import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.service.AiCallLogService;
 import com.ds.goroute.service.AiTripGenerationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +32,7 @@ import java.util.UUID;
 public class InternalAiTripGenerationController extends BaseController {
 
     private final AiTripGenerationService service;
+    private final AiCallLogService aiCallLogService;
 
     @PostMapping("/{jobId}/events")
     public ResponseEntity<BaseResponse<Void>> event(
@@ -46,12 +50,30 @@ public class InternalAiTripGenerationController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(service.candidates(jobId, attemptId, request)));
     }
 
+    /** The destination's places travellers used most in the last 7 and 30 days, with the counts. */
+    @PostMapping("/{jobId}/trending")
+    public ResponseEntity<BaseResponse<List<Map<String, Object>>>> trending(
+            @PathVariable UUID jobId,
+            @RequestHeader("X-Attempt-Id") String attemptId,
+            @Valid @RequestBody AiTripCandidateQueryRequest request) {
+        return ResponseEntity.ok(ofSucceeded(service.trending(jobId, attemptId, request)));
+    }
+
     @PostMapping("/{jobId}/resolve-candidates")
     public ResponseEntity<BaseResponse<List<Map<String, Object>>>> resolveCandidates(
             @PathVariable UUID jobId,
             @RequestHeader("X-Attempt-Id") String attemptId,
             @Valid @RequestBody AiTripCandidateResolutionRequest request) {
         return ResponseEntity.ok(ofSucceeded(service.resolveCandidates(jobId, attemptId, request)));
+    }
+
+    /** One AI provider call made by the worker for this job (prompt, response, usage). */
+    @PostMapping("/{jobId}/ai-calls")
+    public ResponseEntity<BaseResponse<AiCreditStatus>> aiCall(
+            @PathVariable UUID jobId,
+            @Valid @RequestBody AiApiCallLogRequest request) {
+        if (request.getTraceId() == null) request.setTraceId(jobId.toString());
+        return ResponseEntity.ok(ofSucceeded(aiCallLogService.record(request, service.jobUserId(jobId))));
     }
 
     @GetMapping("/{jobId}/config")
@@ -78,6 +100,8 @@ public class InternalAiTripGenerationController extends BaseController {
         try {
             return ResponseEntity.ok(ofSucceeded(Map.of("tripId", service.commit(jobId, request))));
         } catch (BusinessException error) {
+            // LEGACY-STAR-QUOTA: commit overdraws credits since V262, so this no longer fires; it goes
+            // with ErrorConstant.TRIP_CREATION_QUOTA_EXHAUSTED.
             if (error.getError() != null
                     && error.getError().getCode() == ErrorConstant.TRIP_CREATION_QUOTA_EXHAUSTED) {
                 service.fail(jobId, "TRIP_CREATION_QUOTA_EXHAUSTED");

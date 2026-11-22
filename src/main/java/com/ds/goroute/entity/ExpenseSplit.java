@@ -20,6 +20,8 @@ public class ExpenseSplit {
     private UUID guestMemberId; // Reference to trip_members.id for guest
     private String guestName; // Treat as both username and fullName
     private BigDecimal amount;
+    /** What the person was asked for: a percentage, a number of shares or an adjustment. */
+    private BigDecimal shareInput;
     private Boolean isSettled;
     private LocalDateTime settledAt;
 }

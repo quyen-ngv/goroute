@@ -9,8 +9,17 @@ package com.ds.goroute.type;
  * code default instead of changing product behaviour.
  */
 public enum BusinessConfigKey {
+    /**
+     * LEGACY-STAR-QUOTA: the old free-trip count. Since V262 turned unused free trips into credits
+     * it is read only by the deprecated admin quota endpoint; delete with that endpoint.
+     */
+    @Deprecated
     TRIP_FREE_CREATION_QUOTA("TRIP", "FREE_TRIP_QUOTA", 3, 0, 1000),
     FREE_TRIP_MEMORY_LIMIT("TRIP_MEMORY", "FREE_TRIP_MEMORY_LIMIT", 50, 1, 1000),
+    /** Sends the evening-before weather alert of a trip day to every member; beta users always get it. */
+    TRIP_WEATHER_ALERT_ENABLED("TRIP_WEATHER", "ALERT_ENABLED", false),
+    /** Rain chance, in percent, from which that alert goes out even when no advisory is raised. */
+    TRIP_WEATHER_ALERT_RAIN_PERCENT("TRIP_WEATHER", "ALERT_RAIN_PERCENT", 80, 50, 100),
     PLACE_REVIEW_REFRESH_MAX_REVIEWS("PLACE_REVIEW", "DEFAULT_REFRESH_MAX_REVIEWS", 200, 1, 200),
     /**
      * Gates the scraper worker's daily review refresh. The worker reads this before every
@@ -18,6 +27,16 @@ public enum BusinessConfigKey {
      * Administrator-triggered refreshes and the place-activation refresh are unaffected.
      */
     PLACE_REVIEW_DAILY_REFRESH_ENABLED("PLACE_REVIEW", "DAILY_REFRESH_ENABLED", true),
+
+    // --- Epic 06: place search ---------------------------------------------------------
+    /**
+     * Lets GET /places/search/grouped look outside the searched area by name when the area
+     * finds nothing, or only names sharing one word. Off: the far group is always empty, as
+     * before it existed. GET /places/search never looks outside the area either way.
+     */
+    PLACE_SEARCH_ELSEWHERE_ENABLED("PLACE_SEARCH", "ELSEWHERE_ENABLED", true),
+    /** How many far places that search returns at most, after one per name and province. */
+    PLACE_SEARCH_ELSEWHERE_MAX("PLACE_SEARCH", "ELSEWHERE_MAX", 10, 1, 30),
 
     // --- Epic 12: content moderation -------------------------------------------------
     MODERATION_TEXT_FILTER_ENABLED("MODERATION", "TEXT_FILTER_ENABLED", true),
@@ -36,12 +55,30 @@ public enum BusinessConfigKey {
     MODERATION_STRICTNESS_PRIVATE("MODERATION", "STRICTNESS_PRIVATE", "OFF"),
     MODERATION_POLICY_VERSION("MODERATION", "POLICY_VERSION", "1.0.0"),
 
-    // --- Epic 03: AI trip generation -----------------------------------------------
-    AI_TRIP_FREE_QUOTA("AI_TRIP_QUOTA", "FREE_TRIP_QUOTA", 3, 0, 1000),
-    AI_TRIP_PRO_QUOTA("AI_TRIP_QUOTA", "PRO_TRIP_QUOTA", 10, 0, 1000),
-
-    // --- Epic 09: social-location extraction ---------------------------------------
-    SOCIAL_LOCATION_DAILY_JOB_LIMIT("SOCIAL_LOCATION", "DAILY_JOB_LIMIT_DEFAULT", 5, 0, 1000),
+    // --- AI credits (V254): every user-triggered model call is charged its cost ---------
+    /** Credits charged = cost_usd x MARKUP / USD_PER_CREDIT; 1.2 is a 20% margin. */
+    AI_CREDIT_MARKUP("AI_CREDIT", "MARKUP", 1.2d, 1d, 10d),
+    /** Sale price of one credit, USD. */
+    AI_CREDIT_USD_PER_CREDIT("AI_CREDIT", "USD_PER_CREDIT", 0.001d, 0.00001d, 1d),
+    /** Plan credits a FREE account gets each month; PRO plans set theirs in subscription_plans. */
+    AI_CREDIT_FREE_MONTHLY_CREDITS("AI_CREDIT", "FREE_MONTHLY_CREDITS", 1000, 0, 1_000_000),
+    /** How far below zero a running AI task may go before it is stopped (non-beta users). */
+    AI_CREDIT_NEGATIVE_FLOOR("AI_CREDIT", "NEGATIVE_FLOOR", 5, 0, 1000),
+    /** Balance needed to start each AI feature; beta users are never refused. */
+    AI_CREDIT_MIN_BALANCE_ASSISTANT("AI_CREDIT", "MIN_BALANCE_ASSISTANT", 20, 0, 100_000),
+    AI_CREDIT_MIN_BALANCE_AI_TRIP("AI_CREDIT", "MIN_BALANCE_AI_TRIP", 100, 0, 100_000),
+    AI_CREDIT_MIN_BALANCE_RECEIPT_SCAN("AI_CREDIT", "MIN_BALANCE_RECEIPT_SCAN", 10, 0, 100_000),
+    AI_CREDIT_MIN_BALANCE_SOCIAL_LOCATION("AI_CREDIT", "MIN_BALANCE_SOCIAL_LOCATION", 10, 0, 100_000),
+    /** Charged for a call whose model has no AI_PRICING row, so a missing price is never free. */
+    AI_CREDIT_FALLBACK_CREDITS_PER_CALL("AI_CREDIT", "FALLBACK_CREDITS_PER_CALL", 20, 0, 100_000),
+    /** Credits every trip creation costs: manual, clone, AI draft, Pengoo card (V262). */
+    AI_CREDIT_TRIP_CREATION_COST("AI_CREDIT", "TRIP_CREATION_COST", 50, 0, 100_000),
+    /** Stars may be exchanged one way into credits. */
+    AI_CREDIT_STAR_EXCHANGE_ENABLED("AI_CREDIT", "STAR_EXCHANGE_ENABLED", true),
+    /** Credits one Star buys. */
+    AI_CREDIT_STAR_EXCHANGE_RATE("AI_CREDIT", "STAR_EXCHANGE_RATE", 10, 1, 1000),
+    /** Credits a user may get from Stars per credit-wallet period; caps check-in farming. */
+    AI_CREDIT_STAR_EXCHANGE_MONTHLY_CAP("AI_CREDIT", "STAR_EXCHANGE_MONTHLY_CAP", 500, 0, 100_000),
 
     // --- Social video itinerary defaults --------------------------------------------
     SOCIAL_START_OFFSET_DAYS("AI_TRIP", "SOCIAL_START_OFFSET_DAYS", 5, 0, 30),
@@ -51,9 +88,18 @@ public enum BusinessConfigKey {
     // --- Epic 06: check-in -----------------------------------------------------------
     CHECKIN_ENABLED("CHECKIN", "CHECKIN_ENABLED", true),
     CHECKIN_VERIFY_RADIUS_METERS("CHECKIN", "VERIFY_RADIUS_METERS", 200, 20, 5000),
+    /** Radius around an event venue with no catalogue place inside which a check-in counts as there (V285). */
+    CHECKIN_EVENT_VERIFY_RADIUS_METERS("CHECKIN", "EVENT_VERIFY_RADIUS_METERS", 150, 20, 5000),
     CHECKIN_MAX_ACCURACY_METERS("CHECKIN", "MAX_ACCURACY_METERS", 100, 5, 2000),
     CHECKIN_MAX_PHOTOS("CHECKIN", "MAX_PHOTOS", 6, 1, 20),
     CHECKIN_MAX_CAPTION_LENGTH("CHECKIN", "MAX_CAPTION_LENGTH", 2000, 100, 5000),
+    /** Lets everyone post a video check-in; beta users always can. */
+    CHECKIN_VIDEO_ENABLED("CHECKIN", "VIDEO_ENABLED", false),
+    CHECKIN_MAX_VIDEO_SECONDS("CHECKIN", "MAX_VIDEO_SECONDS", 60, 5, 300),
+    /** Lets everyone add background music to a check-in; beta users always can. */
+    CHECKIN_MUSIC_ENABLED("CHECKIN", "MUSIC_ENABLED", false),
+    /** Lets everyone use the camera's filters and frames; beta users always can. */
+    CHECKIN_CAMERA_LOOKS_ENABLED("CHECKIN", "CAMERA_LOOKS_ENABLED", false),
     CHECKIN_LOCATION_KEY_PRECISION("CHECKIN", "LOCATION_KEY_PRECISION", 4, 2, 6),
     CHECKIN_GALLERY_ALLOWED_FOR_FREE("CHECKIN", "GALLERY_ALLOWED_FOR_FREE", true),
     CHECKIN_GUIDE_SCREEN_ENABLED("CHECKIN", "GUIDE_SCREEN_ENABLED", true),
@@ -105,8 +151,10 @@ public enum BusinessConfigKey {
     PARTNER_RESPONSE_SLA_MINUTES("MARKETPLACE", "PARTNER_RESPONSE_SLA_MINUTES", 720, 5, 10080),
 
     // --- Epic 05: expenses ----------------------------------------------------------
-    /** Minimum interval before the same payer can remind the same outstanding split again. */
-    EXPENSE_PAYMENT_REMINDER_COOLDOWN_MINUTES("EXPENSE", "PAYMENT_REMINDER_COOLDOWN_MINUTES", 1440, 1, 10080),
+    /** Reminders one payer may send the same person per day (Asia/Ho_Chi_Minh); each covers all picked splits. */
+    EXPENSE_PAYMENT_REMINDER_DAILY_MAX("EXPENSE", "PAYMENT_REMINDER_DAILY_MAX", 2, 1, 20),
+    /** Everyone may scan a receipt into an expense; beta users (USER.BETA_USER) may while this is off. */
+    EXPENSE_RECEIPT_SCAN_ENABLED("EXPENSE", "RECEIPT_SCAN_ENABLED", false),
 
     // --- Epic 11: marketplace partner finance ---------------------------------------
     /**
@@ -146,20 +194,59 @@ public enum BusinessConfigKey {
      */
     CHAT_DIRECT_ENABLED("CHAT", "DIRECT_ENABLED", true),
 
-    // --- Media upload & compression -------------------------------------------------
+    // --- Legal documents (V278 user_consents) -----------------------------------------
     /**
-     * Whether to compress uploaded images through the external ImagePress service.
-     * When disabled (default), images are stored as-is after validation and moderation,
-     * which is faster but results in larger storage size and slower client downloads.
-     * When enabled, images are compressed to WebP format before storage.
+     * Version of the Terms of Service the app bundles (goroute_fe/assets/legal). Raising it shows
+     * the consent screen again to everyone who accepted an older one: change it only together
+     * with an app release carrying the new text.
      */
-    IMAGE_COMPRESSION_ENABLED("MEDIA_UPLOAD", "COMPRESSION_ENABLED", false),
-    
+    LEGAL_TERMS_VERSION("LEGAL", "TERMS_VERSION", "2.0"),
+    /** Same as LEGAL_TERMS_VERSION, for the Privacy Policy. */
+    LEGAL_PRIVACY_VERSION("LEGAL", "PRIVACY_VERSION", "2.0"),
+
+    // --- Chat assistant (Pengoo) ------------------------------------------------------
+    /** Everyone may ask Pengoo; beta users (USER.BETA_USER) may ask while this is off. */
+    ASSISTANT_ENABLED("ASSISTANT", "ENABLED", false),
+    /** Tool calls Pengoo may make for one question from a FREE account (each parallel call counts). */
+    ASSISTANT_FREE_MAX_TOOL_CALLS("ASSISTANT", "FREE_MAX_TOOL_CALLS", 6, 1, 30),
+    /** Tool calls Pengoo may make for one question from a PRO account. */
+    ASSISTANT_PRO_MAX_TOOL_CALLS("ASSISTANT", "PRO_MAX_TOOL_CALLS", 20, 1, 50),
+    /**
+     * Whether prompts and answers are stored in ai_api_calls. On only during the beta: chat
+     * text is otherwise private, and the log is readable from the console.
+     */
+    ASSISTANT_LOG_PAYLOADS("ASSISTANT", "LOG_PAYLOADS", true),
+    /** Recent messages sent with each question as conversation context. */
+    ASSISTANT_HISTORY_MESSAGES("ASSISTANT", "HISTORY_MESSAGES", 20, 0, 50),
+    /** Pengoo greets a new trip's chat with suggestion chips (no model call, not counted). */
+    ASSISTANT_WELCOME_ENABLED("ASSISTANT", "WELCOME_ENABLED", true),
+    /** A turn still running after this many seconds is failed and the asker is told. */
+    ASSISTANT_TURN_TIMEOUT_SECONDS("ASSISTANT", "TURN_TIMEOUT_SECONDS", 300, 30, 900),
+    /** Pengoo may search the web (once per turn) when the catalogue has nothing; the worker also needs a search API key. */
+    ASSISTANT_WEB_SEARCH_ENABLED("ASSISTANT", "WEB_SEARCH_ENABLED", true),
+    /**
+     * search_places also asks the map provider (Goong / Mapbox) when the catalogue has fewer than
+     * three places by the asked name; map rows become cards and plain activities, never places.
+     */
+    ASSISTANT_MAP_SEARCH_ENABLED("ASSISTANT", "MAP_SEARCH_ENABLED", true),
+
+    // --- Media upload -----------------------------------------------------------------
     /**
      * Maximum number of files allowed in a single batch upload request.
      * Higher values allow faster bulk uploads but may strain server resources.
      */
     UPLOAD_MAX_BATCH_FILES("MEDIA_UPLOAD", "MAX_BATCH_FILES", 30, 1, 100),
+
+    // --- Image compression (epic 00 §9b) ---------------------------------------------
+    // Caesium WebP compression, overwriting files in place. AUTO_ENABLED turns on the upload
+    // hook; the other keys are read by it, by the console's bulk run and by its preview.
+    // FREE applies only to images of users on the free plan; everything else uses PRO.
+    IMAGE_COMPRESSION_AUTO_ENABLED("IMAGE_COMPRESSION", "AUTO_ENABLED", false),
+    IMAGE_COMPRESSION_QUALITY_FREE("IMAGE_COMPRESSION", "QUALITY_FREE", 70, 30, 95),
+    IMAGE_COMPRESSION_QUALITY_PRO("IMAGE_COMPRESSION", "QUALITY_PRO", 82, 30, 95),
+    IMAGE_COMPRESSION_MAX_LONG_EDGE_FREE("IMAGE_COMPRESSION", "MAX_LONG_EDGE_FREE", 1600, 640, 4096),
+    IMAGE_COMPRESSION_MAX_LONG_EDGE_PRO("IMAGE_COMPRESSION", "MAX_LONG_EDGE_PRO", 2048, 640, 4096),
+    IMAGE_COMPRESSION_MIN_SAVINGS_PERCENT("IMAGE_COMPRESSION", "MIN_SAVINGS_PERCENT", 10, 0, 90),
 
     // --- Quest platform (§7.7) -------------------------------------------------------
     // Every threshold the quest feature reads lives here so an out-of-range admin value
@@ -243,7 +330,193 @@ public enum BusinessConfigKey {
     QUEST_AR_MAX_MODEL_MB("QUEST", "AR_MAX_MODEL_MB", 50, 1, 200),
     // The most triangles a GLB may have. Detail beyond what the phone shows costs frame time, but
     // the product favours fidelity; the upload warns above ArModelInspector.WARN_TRIANGLES.
-    QUEST_AR_MAX_TRIANGLES("QUEST", "AR_MAX_TRIANGLES", 1_000_000, 1_000, 5_000_000);
+    QUEST_AR_MAX_TRIANGLES("QUEST", "AR_MAX_TRIANGLES", 1_000_000, 1_000, 5_000_000),
+
+    // --- Epic 16: travel tracker (.docs/designs/TRAVEL_TRACKER_PLAN.md) ----------------
+    // The app reads these through GET /v1/api/trips/{tripId}/track/context, not PUBLIC_CONFIG:
+    // they only mean something once the user is inside a trip.
+    TRACKER_ENABLED("TRACKER", "ENABLED", false),
+    // Days before the first and after the last day of a trip that still accept points (TR-02).
+    TRACKER_WINDOW_PAD_DAYS("TRACKER", "WINDOW_PAD_DAYS", 1, 0, 3),
+    // A point whose reported accuracy is worse than this (m) is dropped, per recording mode.
+    TRACKER_MAX_ACCURACY_HIGH_M("TRACKER", "MAX_ACCURACY_HIGH_M", 30, 5, 500),
+    TRACKER_MAX_ACCURACY_BALANCED_M("TRACKER", "MAX_ACCURACY_BALANCED_M", 60, 5, 500),
+    TRACKER_MAX_ACCURACY_SAVER_M("TRACKER", "MAX_ACCURACY_SAVER_M", 150, 5, 500),
+    // Distance filter the phone asks the OS for, per recording mode (m).
+    TRACKER_DISTANCE_FILTER_HIGH_M("TRACKER", "DISTANCE_FILTER_HIGH_M", 10, 1, 500),
+    TRACKER_DISTANCE_FILTER_BALANCED_M("TRACKER", "DISTANCE_FILTER_BALANCED_M", 25, 1, 500),
+    TRACKER_DISTANCE_FILTER_SAVER_M("TRACKER", "DISTANCE_FILTER_SAVER_M", 100, 1, 500),
+    // A short hop faster than this (km/h) is a GPS jump and is ignored when building the line.
+    TRACKER_MAX_SPEED_KMH("TRACKER", "MAX_SPEED_KMH", 300, 50, 1200),
+    // No signal for longer than GAP_MINUTES and further than GAP_DISTANCE_M: dashed gap (TR-11).
+    TRACKER_GAP_MINUTES("TRACKER", "GAP_MINUTES", 10, 1, 240),
+    TRACKER_GAP_DISTANCE_M("TRACKER", "GAP_DISTANCE_M", 1000, 100, 100_000),
+    // A hop at least this long and this fast is a flight: arc, counted apart (TR-12).
+    TRACKER_FLIGHT_MIN_KM("TRACKER", "FLIGHT_MIN_KM", 200, 50, 2000),
+    TRACKER_FLIGHT_MIN_KMH("TRACKER", "FLIGHT_MIN_KMH", 300, 100, 1200),
+    // Standing still within this radius for this long auto-pauses recording (TR-08).
+    TRACKER_STATIONARY_RADIUS_M("TRACKER", "STATIONARY_RADIUS_M", 30, 5, 200),
+    TRACKER_STATIONARY_MINUTES("TRACKER", "STATIONARY_MINUTES", 3, 1, 30),
+    // Within this radius of a planned activity for this long counts as having arrived (TR-15).
+    TRACKER_ARRIVAL_RADIUS_M("TRACKER", "ARRIVAL_RADIUS_M", 100, 20, 500),
+    TRACKER_ARRIVAL_MINUTES("TRACKER", "ARRIVAL_MINUTES", 3, 1, 60),
+    // Check-in nudges: spacing, daily cap and quiet hours in the trip's local time (TR-18).
+    TRACKER_NUDGE_COOLDOWN_MINUTES("TRACKER", "NUDGE_COOLDOWN_MINUTES", 20, 0, 240),
+    TRACKER_NUDGE_DAILY_MAX("TRACKER", "NUDGE_DAILY_MAX", 6, 0, 50),
+    TRACKER_QUIET_START_HOUR("TRACKER", "QUIET_START_HOUR", 22, 0, 23),
+    TRACKER_QUIET_END_HOUR("TRACKER", "QUIET_END_HOUR", 7, 0, 23),
+    // Battery levels (%) that switch to the saver mode and that end the session (TR-09).
+    TRACKER_LOW_BATTERY_PCT("TRACKER", "LOW_BATTERY_PCT", 15, 5, 50),
+    TRACKER_STOP_BATTERY_PCT("TRACKER", "STOP_BATTERY_PCT", 5, 1, 30),
+    // Raw points are kept this many days after the trip's last day; day lines stay (TR-24).
+    TRACKER_RAW_RETENTION_DAYS("TRACKER", "RAW_RETENTION_DAYS", 90, 7, 365),
+    // Most points one upload may carry.
+    TRACKER_CHUNK_MAX_POINTS("TRACKER", "CHUNK_MAX_POINTS", 500, 50, 500),
+    // Off-plan stop (P2, TR-16): within this radius (m) for this long (minutes), away from
+    // every planned activity of the day.
+    TRACKER_OFFPLAN_RADIUS_M("TRACKER", "OFFPLAN_RADIUS_M", 100, 20, 500),
+    TRACKER_OFFPLAN_MIN_MINUTES("TRACKER", "OFFPLAN_MIN_MINUTES", 10, 1, 120),
+    // A catalogue place this close (m) to an off-plan stop names it; otherwise Goong does.
+    TRACKER_OFFPLAN_NAME_RADIUS_M("TRACKER", "OFFPLAN_NAME_RADIUS_M", 60, 10, 500),
+
+    // --- Epic 12: telling followers about a new check-in or public trip ------------------
+    // Off: only followers on USER/BETA_USER are told. Pushes are throttled per author
+    // (cooldown) and per recipient (daily max); the in-app row is written either way.
+    SOCIAL_FOLLOWER_FANOUT_ENABLED("SOCIAL", "FOLLOWER_FANOUT_ENABLED", false),
+    SOCIAL_FOLLOWER_PUSH_COOLDOWN_MINUTES("SOCIAL", "FOLLOWER_PUSH_COOLDOWN_MINUTES", 30, 0, 1440),
+    SOCIAL_FOLLOWER_PUSH_DAILY_MAX("SOCIAL", "FOLLOWER_PUSH_DAILY_MAX", 10, 0, 100),
+    SOCIAL_FOLLOWER_FANOUT_BATCH_SIZE("SOCIAL", "FOLLOWER_FANOUT_BATCH_SIZE", 500, 50, 500),
+    SOCIAL_FOLLOWER_FANOUT_PAUSE_MS("SOCIAL", "FOLLOWER_FANOUT_PAUSE_MS", 100, 0, 5000),
+    /** The "moments" popup only offers unread follower posts this recent. */
+    SOCIAL_MOMENTS_WINDOW_HOURS("SOCIAL", "MOMENTS_WINDOW_HOURS", 72, 1, 336),
+
+    // --- Epic 17: local events --------------------------------------------------------
+    // Event data is public, so reads are never gated; the app shows the Home "Sự kiện" tab when
+    // this is on (read through PUBLIC_CONFIG) or the user is a beta user. Joining an event and its
+    // group chat are gated on the server by the same flag (LocalEventAttendanceService). On for
+    // everyone since V224.
+    EVENT_ENABLED("EVENT", "ENABLED", true),
+    /** Reminders for saved events: the day before, two hours before, opening day, last days, status changes (V285). */
+    EVENT_REMINDERS_ENABLED("EVENT", "REMINDERS_ENABLED", true),
+    /** Machine translation of a published event's summary, description and notes into the app languages (V285). */
+    EVENT_AUTO_TRANSLATE_ENABLED("EVENT", "AUTO_TRANSLATE_ENABLED", true),
+
+    // --- Epic 18: meetups ("Hoạt động") -----------------------------------------------
+    // The flag gates every meetup user endpoint on the server (beta users always pass) and is
+    // folded into GET /v1/api/meetups/context (on for everyone since V224); the other keys are
+    // the caps and time windows.
+    MEETUP_ENABLED("MEETUP", "ENABLED", true),
+    MEETUP_MAX_ACTIVE_PER_HOST("MEETUP", "MAX_ACTIVE_PER_HOST", 2, 1, 10),
+    MEETUP_MAX_SUBMISSIONS_PER_DAY("MEETUP", "MAX_SUBMISSIONS_PER_DAY", 5, 1, 50),
+    MEETUP_MAX_DAYS_AHEAD("MEETUP", "MAX_DAYS_AHEAD", 3, 0, 14),
+    MEETUP_EXACT_MIN_LEAD_MINUTES("MEETUP", "EXACT_MIN_LEAD_MINUTES", 30, 0, 720),
+    MEETUP_EXACT_VISIBLE_HOURS("MEETUP", "EXACT_VISIBLE_HOURS", 3, 1, 12),
+    MEETUP_MAX_OPEN_REQUESTS_PER_USER("MEETUP", "MAX_OPEN_REQUESTS_PER_USER", 5, 1, 50),
+    MEETUP_MAX_RESUBMITS("MEETUP", "MAX_RESUBMITS", 2, 0, 10),
+
+    // --- Epic 09: place edit suggestions (V286) -----------------------------------------
+    // The flag gates every /edit-suggestions user endpoint (beta users always pass) and is
+    // folded into GET /v1/api/places/{placeId}/edit-suggestions/context (`enabled`).
+    PLACE_EDIT_ENABLED("PLACE_EDIT", "ENABLED", false),
+    /** An account younger than this cannot suggest edits (context reason ACCOUNT_TOO_NEW). */
+    PLACE_EDIT_MIN_ACCOUNT_AGE_HOURS("PLACE_EDIT", "MIN_ACCOUNT_AGE_HOURS", 24, 0, 720),
+    /** Suggestions one person may send in the last 24 hours. */
+    PLACE_EDIT_MAX_SUBMISSIONS_PER_DAY("PLACE_EDIT", "MAX_SUBMISSIONS_PER_DAY", 10, 1, 100),
+    /** Suggestions of one person waiting for review at the same time. */
+    PLACE_EDIT_MAX_PENDING_PER_USER("PLACE_EDIT", "MAX_PENDING_PER_USER", 30, 1, 500),
+    /** Farthest a suggested pin may be from the stored one, in metres (the floor is 10 m, fixed). */
+    PLACE_EDIT_MAX_PIN_MOVE_METERS("PLACE_EDIT", "MAX_PIN_MOVE_METERS", 2000, 10, 50000),
+    /** Stars for each approved (or partly approved) suggestion. */
+    PLACE_EDIT_REWARD_STARS("PLACE_EDIT", "REWARD_STARS", 1, 0, 100),
+    /** Rewards one person may receive for suggestions in 24 hours; later approvals are unpaid. */
+    PLACE_EDIT_MAX_REWARDS_PER_DAY("PLACE_EDIT", "MAX_REWARDS_PER_DAY", 5, 0, 100),
+    /** Comma-separated hosts a suggested website may not point at (link shorteners). */
+    PLACE_EDIT_WEBSITE_BLOCKED_HOSTS("PLACE_EDIT", "WEBSITE_BLOCKED_HOSTS", "bit.ly,tinyurl.com,t.co,goo.gl"),
+
+    // --- Epic 06: per-user limits on the app's Goong search proxy ---------------------
+    // Every autocomplete and place-detail call through /v1/api/goong is a paid Goong
+    // request. Server-side lookups (AI trip, tracker naming) are not counted here.
+    MAP_SEARCH_RATE_LIMIT_ENABLED("MAP_SEARCH", "RATE_LIMIT_ENABLED", true),
+    /** Operators fill place addresses from the console all day; they are staff, not abuse. */
+    MAP_SEARCH_EXEMPT_ADMINS("MAP_SEARCH", "EXEMPT_ADMINS", true),
+    MAP_SEARCH_AUTOCOMPLETE_PER_MINUTE("MAP_SEARCH", "AUTOCOMPLETE_PER_MINUTE", 30, 1, 600),
+    MAP_SEARCH_AUTOCOMPLETE_PER_DAY("MAP_SEARCH", "AUTOCOMPLETE_PER_DAY", 300, 1, 100000),
+    MAP_SEARCH_PLACE_DETAIL_PER_MINUTE("MAP_SEARCH", "PLACE_DETAIL_PER_MINUTE", 30, 1, 600),
+    MAP_SEARCH_PLACE_DETAIL_PER_DAY("MAP_SEARCH", "PLACE_DETAIL_PER_DAY", 200, 1, 100000),
+    // Reverse/forward geocoding (/v1/api/goong/geocode) and road routes (/v1/api/routes/day).
+    MAP_SEARCH_GEOCODE_PER_MINUTE("MAP_SEARCH", "GEOCODE_PER_MINUTE", 20, 1, 600),
+    MAP_SEARCH_GEOCODE_PER_DAY("MAP_SEARCH", "GEOCODE_PER_DAY", 200, 1, 100000),
+    MAP_SEARCH_ROUTE_PER_MINUTE("MAP_SEARCH", "ROUTE_PER_MINUTE", 30, 1, 600),
+    MAP_SEARCH_ROUTE_PER_DAY("MAP_SEARCH", "ROUTE_PER_DAY", 300, 1, 100000),
+    /** Days of per-user daily counters kept for reporting before the nightly purge. */
+    MAP_SEARCH_USAGE_RETENTION_DAYS("MAP_SEARCH", "USAGE_RETENTION_DAYS", 90, 7, 730),
+
+    // --- Epic 06: which map provider answers search, geocode and routes ----------------
+    // Values: GOONG or MAPBOX. Beta users (USER/BETA_USER) read BETA_PROVIDER, everybody else
+    // USER_PROVIDER. A provider without a key is skipped (MAPBOX -> GOONG -> catalogue only).
+    MAP_PROVIDER_USER("MAP_PROVIDER", "USER_PROVIDER", "GOONG"),
+    MAP_PROVIDER_BETA("MAP_PROVIDER", "BETA_PROVIDER", "MAPBOX"),
+    /** Mapbox failing (5xx, 429, timeout) retries with Goong; Goong only knows Vietnam. */
+    MAP_PROVIDER_FALLBACK_TO_GOONG("MAP_PROVIDER", "FALLBACK_TO_GOONG", true),
+
+    // --- Epic 06: ceiling on paid Mapbox calls for the whole system ---------------------
+    // Counted per calendar month (UTC) and per day. At the cap the server stops calling Mapbox
+    // and answers from its caches and the catalogue ("saving mode") until the period ends.
+    MAP_BUDGET_ENABLED("MAP_BUDGET", "ENABLED", true),
+    /** Search Box requests (forward, reverse, retrieve). Free tier: 50,000 a month. */
+    MAP_BUDGET_SEARCH_MONTHLY_CAP("MAP_BUDGET", "SEARCH_MONTHLY_CAP", 50000, 0, 100000000),
+    /** Geocoding v6 requests (city names). Free tier: 100,000 a month. */
+    MAP_BUDGET_GEOCODE_MONTHLY_CAP("MAP_BUDGET", "GEOCODE_MONTHLY_CAP", 100000, 0, 100000000),
+    /** Directions requests. Free tier: 100,000 a month. */
+    MAP_BUDGET_DIRECTIONS_MONTHLY_CAP("MAP_BUDGET", "DIRECTIONS_MONTHLY_CAP", 100000, 0, 100000000),
+    /** One day may spend at most this share of the month, so one bad day cannot use it all. */
+    MAP_BUDGET_DAILY_CAP_PERCENT("MAP_BUDGET", "DAILY_CAP_PERCENT", 10, 1, 100),
+    /** Operators are told when a month's count crosses this share of its cap. */
+    MAP_BUDGET_WARN_PERCENT("MAP_BUDGET", "WARN_PERCENT", 80, 1, 100),
+
+    // --- Epic 12: Feed ranking (.docs/FEED_RANKING_PLAN_2026-10-22.md) -------------------
+    /** feed_impressions rows older than this are deleted every night (V245). */
+    FEED_IMPRESSION_RETENTION_DAYS("FEED", "IMPRESSION_RETENTION_DAYS", 90, 7, 365),
+    /** "Hide posts from this person" lasts this long. */
+    FEED_HIDE_AUTHOR_DAYS("FEED", "HIDE_AUTHOR_DAYS", 30, 1, 365),
+    /** The ranked "For you" feed for everyone (V249). Off: only USER.BETA_USER and FEED_RANKING_PERCENT. */
+    FEED_RANKING_ENABLED("FEED", "RANKING_ENABLED", false),
+    /** Share of users, by a hash of their id, on the ranked feed while it is not on for everyone. */
+    FEED_RANKING_PERCENT("FEED", "RANKING_PERCENT", 0, 0, 100),
+    /**
+     * JSON overriding the ranking weights; keys left out keep the defaults in
+     * {@code feed/feed-ranking-defaults.json}. Shape: .docs/FEED_RANKING_DESIGN_2026-10-22.md §3.7.
+     */
+    FEED_RANKING_WEIGHTS("FEED", "RANKING_WEIGHTS", "{}"),
+    /** Write feed_events (V267): what the Feed served and what viewers did with it. */
+    FEED_EVENTS_ENABLED("FEED", "EVENTS_ENABLED", true),
+    /** Days of feed_events kept; older daily partitions are dropped every night. */
+    FEED_EVENTS_RETENTION_DAYS("FEED", "EVENTS_RETENTION_DAYS", 30, 7, 365),
+    /** Where the ranked feed reads candidates: SQL, or LUCENE (the feed index, SQL when it cannot). */
+    FEED_CANDIDATES_BACKEND("FEED", "CANDIDATES_BACKEND", "SQL"),
+    /**
+     * Trips that have not started yet (start date after today, Vietnam time) stay off the Feed;
+     * a trip under way or already over shows. Every Feed trip source (V274, FeedTripRules).
+     */
+    FEED_TRIP_HIDE_UPCOMING("FEED", "TRIP_HIDE_UPCOMING", true),
+    /** A Feed trip needs at least this many activities per day of the trip; 0 turns the rule off. */
+    FEED_TRIP_MIN_ACTIVITIES_PER_DAY("FEED", "TRIP_MIN_ACTIVITIES_PER_DAY", 2.0, 0.0, 50.0),
+
+    // --- Epic 20: blog posts (.docs/BLOG_POSTS_PLAN_2026-11-10.md §1, V275) ---------------
+    // Both switches read "config || beta user" and are folded into GET /v1/api/posts/policy. The
+    // admin console is never gated by them. ENABLED off empties every list for non-beta viewers;
+    // a post opened by its id stays readable so a shared link does not die.
+    POST_ENABLED("POST", "ENABLED", false),
+    /** Off: creating or editing a post in the app answers POST_WRITE_NOT_ALLOWED (403). */
+    POST_USER_WRITE_ENABLED("POST", "USER_WRITE_ENABLED", false),
+    /** Characters of markdown in one body, checked on every save. */
+    POST_MAX_BODY_LENGTH("POST", "MAX_BODY_LENGTH", 30000, 1000, 100000),
+    /** Non-deleted media (cover and body) one post may carry. */
+    POST_MAX_MEDIA("POST", "MAX_MEDIA", 200, 1, 500),
+    /** Seconds of one post video, read from the file's own header like a check-in video. */
+    POST_MAX_VIDEO_SECONDS("POST", "MAX_VIDEO_SECONDS", 300, 5, 900),
+    /** Catalogue places one post may be tagged with. */
+    POST_MAX_PLACES("POST", "MAX_PLACES", 30, 1, 100);
 
     /** Value shapes the configuration layer knows how to validate. */
     public enum ValueType {

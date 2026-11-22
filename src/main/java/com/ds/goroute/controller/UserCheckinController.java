@@ -2,17 +2,24 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
+import com.ds.goroute.dto.FeedGeoFilter;
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.request.CreateUserCheckinRequest;
 import com.ds.goroute.dto.request.UpdateUserCheckinRequest;
 import com.ds.goroute.dto.response.CheckinContextResponse;
+import com.ds.goroute.dto.response.CheckinVideoUploadResponse;
 import com.ds.goroute.dto.response.UserCheckinResponse;
 import com.ds.goroute.dto.response.CheckinLikeResponse;
 import com.ds.goroute.service.UserCheckinService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -24,6 +31,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -67,6 +75,19 @@ public class UserCheckinController extends BaseController {
                 .body(ofSucceeded(checkinService.create(userId, request)));
     }
 
+    /**
+     * Uploads the one video of a check-in (MP4/MOV/WEBM, at most 50 MB). The app then posts
+     * the check-in with this URL as its only media item, plus a still frame it uploaded as an
+     * ordinary image.
+     */
+    @PostMapping(value = "/videos", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<BaseResponse<CheckinVideoUploadResponse>> uploadVideo(
+            @RequestParam("file") MultipartFile file,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ofSucceeded(checkinService.uploadVideo(userId, file)));
+    }
+
     @PutMapping("/{checkinId}")
     public ResponseEntity<BaseResponse<UserCheckinResponse>> update(
             @PathVariable UUID checkinId,
@@ -101,24 +122,63 @@ public class UserCheckinController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(checkinService.get(userId, checkinId)));
     }
 
+    /** {@code liked} is the state the viewer wants; without it the like flips (older apps). */
     @PostMapping("/{checkinId}/like")
     public ResponseEntity<BaseResponse<CheckinLikeResponse>> toggleLike(
             @PathVariable UUID checkinId,
+            @RequestParam(required = false) Boolean liked,
             @CurrentUser UUID userId) {
-        return ResponseEntity.ok(ofSucceeded(checkinService.toggleLike(userId, checkinId)));
+        return ResponseEntity.ok(ofSucceeded(checkinService.setLike(userId, checkinId, liked)));
     }
 
     /**
-     * Pages by number rather than on the last row's timestamp: posts with photos come
-     * first, so the order is not chronological and a timestamp cursor would skip rows. A
-     * post arriving mid-scroll only pushes rows down, which the client de-duplicates by id.
+     * Posts with photos first, then newest. Each post carries a {@code feedCursor}; sending
+     * the last one back as {@code cursor} returns the page after it, so a post arriving
+     * mid-scroll neither repeats nor skips a row. Without a cursor the feed pages by
+     * {@code page}, for app builds that predate it (they de-duplicate by id).
+     *
+     * <p>{@code latitude}/{@code longitude} scope the feed to {@code radiusKm} around a point,
+     * for the Feed's "near you" tab. Without them the feed covers everywhere.
      */
     @GetMapping("/feed")
     public ResponseEntity<BaseResponse<List<UserCheckinResponse>>> feed(
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
+            @RequestParam(required = false) BigDecimal latitude,
+            @RequestParam(required = false) BigDecimal longitude,
+            @RequestParam(defaultValue = "50") BigDecimal radiusKm,
+            @RequestParam(required = false) @Size(max = 200) String cursor,
+            // The Feed's place-kind chips: PlaceGroup and PlaceSubType codes. A post matches
+            // through its catalogue place, a trip through any of its stops.
+            @RequestParam(required = false) List<String> placeGroups,
+            @RequestParam(required = false) List<String> subTypes,
             @CurrentUser(required = false) UUID userId) {
-        return ResponseEntity.ok(ofSucceeded(checkinService.feed(userId, page, size)));
+        return ResponseEntity.ok(ofSucceeded(checkinService.feed(
+                userId, FeedGeoFilter.of(latitude, longitude, radiusKm),
+                FeedPlaceKind.of(placeGroups, subTypes), page, size, cursor)));
+    }
+
+    /**
+     * Public check-ins by the people the caller follows: the Home "Friends" tab. With
+     * {@code latitude}/{@code longitude} (the city Home is on) those in that province come
+     * first, then the rest ring by ring outwards, newest first within each, every post
+     * carrying its {@code focusRank}; without them, newest first. Signed-in only, since
+     * "people I follow" means nothing to a guest. Paged by number like {@link #feed}, so
+     * the client de-duplicates by id.
+     */
+    @GetMapping("/following")
+    public ResponseEntity<BaseResponse<List<UserCheckinResponse>>> following(
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
+            @RequestParam(required = false) @DecimalMin("-90") @DecimalMax("90") Double latitude,
+            @RequestParam(required = false) @DecimalMin("-180") @DecimalMax("180") Double longitude,
+            // The Feed's place-kind chips: PlaceGroup and PlaceSubType codes. A post matches
+            // through its catalogue place, a trip through any of its stops.
+            @RequestParam(required = false) List<String> placeGroups,
+            @RequestParam(required = false) List<String> subTypes,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(checkinService.followingFeed(
+                userId, latitude, longitude, FeedPlaceKind.of(placeGroups, subTypes), page, size)));
     }
 
     @GetMapping("/users/{userId}")
@@ -139,12 +199,34 @@ public class UserCheckinController extends BaseController {
                 checkinService.visitedWards(viewerId, userId == null ? viewerId : userId)));
     }
 
+    /**
+     * The public check-ins written during one trip, oldest first, for its members: the
+     * itinerary map lists them under their stops. Same rows as the shared-trip page.
+     */
+    @GetMapping("/trips/{tripId}")
+    public ResponseEntity<BaseResponse<List<UserCheckinResponse>>> byTrip(
+            @PathVariable UUID tripId,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(checkinService.byTripForMember(userId, tripId)));
+    }
+
     @GetMapping("/places/{placeId}")
     public ResponseEntity<BaseResponse<List<UserCheckinResponse>>> byPlace(
             @PathVariable UUID placeId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size) {
-        return ResponseEntity.ok(ofSucceeded(checkinService.byPlace(placeId, page, size)));
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
+            @CurrentUser(required = false) UUID viewerId) {
+        return ResponseEntity.ok(ofSucceeded(checkinService.byPlace(viewerId, placeId, page, size)));
+    }
+
+    /** Check-ins people made at a local event, for the event's page. Public, like the event. */
+    @GetMapping("/events/{eventId}")
+    public ResponseEntity<BaseResponse<List<UserCheckinResponse>>> byLocalEvent(
+            @PathVariable UUID eventId,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
+            @CurrentUser(required = false) UUID viewerId) {
+        return ResponseEntity.ok(ofSucceeded(checkinService.byLocalEvent(viewerId, eventId, page, size)));
     }
 
     /**
@@ -155,7 +237,8 @@ public class UserCheckinController extends BaseController {
     public ResponseEntity<BaseResponse<List<UserCheckinResponse>>> byLocation(
             @PathVariable String locationKey,
             @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size) {
-        return ResponseEntity.ok(ofSucceeded(checkinService.byLocationKey(locationKey, page, size)));
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
+            @CurrentUser(required = false) UUID viewerId) {
+        return ResponseEntity.ok(ofSucceeded(checkinService.byLocationKey(viewerId, locationKey, page, size)));
     }
 }

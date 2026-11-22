@@ -82,7 +82,7 @@ class MarketplaceMapperXmlTest {
 
     /**
      * The privacy rule, in the query rather than only in the service: an operator list that
-     * gains a filter or a sort must not be able to produce a trip group or a person-to-person
+     * gains a filter or a sort must not be able to produce a trip, meetup or event group or a person-to-person
      * thread by accident.
      */
     @Test
@@ -91,7 +91,7 @@ class MarketplaceMapperXmlTest {
         int start = xml.indexOf("<select id=\"findAdmin\"");
         String statement = xml.substring(start, xml.indexOf("</select>", start));
 
-        assertTrue(statement.contains("c.conversation_type &lt;&gt; 'TRIP'"));
+        assertTrue(statement.contains("c.conversation_type NOT IN ('TRIP','MEETUP','EVENT','ASSISTANT')"));
         assertTrue(statement.contains("NOT (c.conversation_type='DIRECT' AND c.organization_id IS NULL)"));
     }
 
@@ -99,7 +99,10 @@ class MarketplaceMapperXmlTest {
     void chatWritesCarryTheNewColumns() throws Exception {
         String xml = chatMapperXml();
         int conversation = xml.indexOf("<insert id=\"insertConversation\">");
-        assertTrue(xml.substring(conversation, xml.indexOf("</insert>", conversation)).contains("trip_id"));
+        String insertConversation = xml.substring(conversation, xml.indexOf("</insert>", conversation));
+        assertTrue(insertConversation.contains("trip_id"));
+        assertTrue(insertConversation.contains("meetup_id"));
+        assertTrue(insertConversation.contains("local_event_id"));
 
         int message = xml.indexOf("<insert id=\"insertMessage\">");
         assertTrue(xml.substring(message, xml.indexOf("</insert>", message)).contains("reply_to_message_id"));
@@ -110,7 +113,38 @@ class MarketplaceMapperXmlTest {
     void theInboxHidesArchivedThreads() throws Exception {
         String xml = chatMapperXml();
         int start = xml.indexOf("<select id=\"findForUser\"");
-        assertTrue(xml.substring(start, xml.indexOf("</select>", start)).contains("c.status &lt;&gt; 'ARCHIVED'"));
+        assertTrue(xml.substring(start, xml.indexOf("</select>", start)).contains("pc.status &lt;&gt; 'ARCHIVED'"));
+    }
+
+    /** The inbox picks its page before reading last messages and counts for it. */
+    @Test
+    void theInboxPagesBeforeItJoins() throws Exception {
+        String xml = chatMapperXml();
+        int start = xml.indexOf("<select id=\"findForUser\"");
+        String select = xml.substring(start, xml.indexOf("</select>", start));
+        assertTrue(select.indexOf("LIMIT #{limit} OFFSET #{offset}") < select.indexOf(") page"));
+        assertTrue(select.contains("ConversationRelatedJoins"));
+    }
+
+    /** Unread counts stop at 100: the app shows 99+ and a big unread group is not counted in full. */
+    @Test
+    void unreadCountsAreCapped() throws Exception {
+        String xml = chatMapperXml();
+        int fragment = xml.indexOf("<sql id=\"UnreadCount\">");
+        assertTrue(xml.substring(fragment, xml.indexOf("</sql>", fragment)).contains("LIMIT 100"));
+        int states = xml.indexOf("<select id=\"findMemberInboxStates\"");
+        String select = xml.substring(states, xml.indexOf("</select>", states));
+        assertTrue(select.contains("LIMIT 100"));
+        assertTrue(select.contains("AND cm.user_id=#{userId}"));
+    }
+
+    /** Re-adding a current member with the same role does not rewrite the row. */
+    @Test
+    void reAddingAnUnchangedMemberWritesNothing() throws Exception {
+        String xml = chatMapperXml();
+        int start = xml.indexOf("<insert id=\"insertMember\">");
+        assertTrue(xml.substring(start, xml.indexOf("</insert>", start))
+                .contains("WHERE marketplace_conversation_members.left_at IS NOT NULL"));
     }
 
     /** Read markers only ever move forward, so an old screen cannot un-read a thread. */

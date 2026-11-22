@@ -27,6 +27,11 @@ public class PublicUserProfileResponse {
     private int hiddenGemContributionCount;
     private int followersCount;
     private int followingCount;
+    /**
+     * The check-ins GET /checkins/users/{userId} can list for this viewer: public, live and
+     * not taken down for anyone else; every live one when the viewer is the profile's owner.
+     */
+    private long checkinCount;
     private UserRankProgressResponse rank;
 
     /** True when an operator has vouched for this account as a VietdeGuide. */
@@ -34,6 +39,12 @@ public class PublicUserProfileResponse {
 
     /** What the guide badge says, when the guide has a speciality worth naming. */
     private String guideTitle;
+
+    /**
+     * True while an operator runs this account (users.managed_by_admin). Nobody reads its
+     * messages and it has no trips or contributions of its own, so the app leaves those out.
+     */
+    private boolean managedAccount;
     private boolean isFollowing;
     private boolean isFollowedBy;
 }

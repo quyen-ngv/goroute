@@ -9,7 +9,16 @@ import java.util.UUID;
 public interface LocationImageRepository {
     Optional<LocationImage> findBestMatch(String searchTerm);
     List<LocationImage> findAll();
+
+    /** All areas for list screens, without {@code description} and {@code normalizedAddress}. */
+    List<LocationImage> findAllForList();
     Optional<LocationImage> findById(UUID id);
+
+    /** The tourist area a point falls in (ward link first, then nearest covering area); empty outside every area. */
+    Optional<UUID> findAreaIdForPoint(java.math.BigDecimal latitude, java.math.BigDecimal longitude);
+
+    /** Only {@code id} and {@code fullAddress} are filled. */
+    List<LocationImage> findNamesByIds(java.util.Collection<UUID> ids);
     void insert(LocationImage locationImage);
     void update(LocationImage locationImage);
     void deleteById(UUID id);

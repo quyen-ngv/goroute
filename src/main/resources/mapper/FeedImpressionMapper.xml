@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.FeedImpressionMapper">
+
+    <!-- One statement per batch whatever its size (the controller caps it at 50). The VALUES
+         list keeps the parameters typed; the service has already removed duplicate keys, which
+         ON CONFLICT DO UPDATE would reject within one statement. -->
+    <insert id="upsertBatch">
+        INSERT INTO feed_impressions
+            (user_id, item_type, item_id, first_seen_at, last_seen_at, seen_count, max_dwell_ms, opened)
+        VALUES
+        <foreach collection="items" item="item" separator=",">
+            (#{userId}, #{item.type}, #{item.id}, NOW(), NOW(), 1, #{item.dwellMs}, #{item.opened})
+        </foreach>
+        ON CONFLICT (user_id, item_type, item_id) DO UPDATE SET
+            last_seen_at = NOW(),
+            seen_count   = LEAST(feed_impressions.seen_count + 1, 32000),
+            max_dwell_ms = GREATEST(feed_impressions.max_dwell_ms, EXCLUDED.max_dwell_ms),
+            opened       = feed_impressions.opened OR EXCLUDED.opened
+    </insert>
+
+    <select id="findSeenIds" resultType="java.util.UUID">
+        SELECT item_id FROM feed_impressions
+        WHERE user_id = #{userId} AND item_type = #{itemType} AND item_id IN
+        <foreach collection="itemIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <!-- In slices, so a night with millions of expired rows never holds one long lock. -->
+    <delete id="deleteSeenBefore">
+        DELETE FROM feed_impressions
+        WHERE ctid IN (
+            SELECT ctid FROM feed_impressions
+            WHERE last_seen_at &lt; #{cutoff}
+            LIMIT #{limit})
+    </delete>
+</mapper>

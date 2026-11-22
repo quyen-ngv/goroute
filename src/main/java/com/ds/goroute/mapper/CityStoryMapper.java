@@ -109,9 +109,15 @@ public interface CityStoryMapper {
             @Param("userId") UUID userId,
             @Param("viewedAt") LocalDateTime viewedAt);
 
+    /**
+     * A story inside the window was created after {@code since}, so it cannot have been viewed
+     * before then: the time bound changes nothing in the answer and lets
+     * idx_city_story_views_user (user_id, viewed_at) skip the user's older views.
+     */
     @Select("""
         SELECT story_id FROM city_story_views
         WHERE user_id = #{userId}
+          AND viewed_at >= #{since}
           AND story_id IN (
             SELECT id FROM city_stories
             WHERE deleted_at IS NULL AND created_at >= #{since}
@@ -121,9 +127,11 @@ public interface CityStoryMapper {
             @Param("userId") UUID userId,
             @Param("since") LocalDateTime since);
 
+    /** Bounded by time for the same reason, over idx_city_story_likes_user (user_id, created_at). */
     @Select("""
         SELECT story_id FROM city_story_likes
         WHERE user_id = #{userId}
+          AND created_at >= #{since}
           AND story_id IN (
             SELECT id FROM city_stories
             WHERE deleted_at IS NULL AND created_at >= #{since}

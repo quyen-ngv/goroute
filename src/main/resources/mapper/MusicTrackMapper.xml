@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- Background-music catalogue (V282). Read-only from the app; seeded by migration. -->
+<mapper namespace="com.ds.goroute.mapper.MusicTrackMapper">
+
+    <resultMap id="MusicTrackMap" type="com.ds.goroute.entity.MusicTrack">
+        <id property="id" column="id"/>
+        <result property="title" column="title"/>
+        <result property="artist" column="artist"/>
+        <result property="audioUrl" column="audio_url"/>
+        <result property="sourceUrl" column="source_url"/>
+        <result property="license" column="license"/>
+        <result property="attribution" column="attribution"/>
+        <result property="mood" column="mood"/>
+        <result property="durationSeconds" column="duration_seconds"/>
+        <result property="sortOrder" column="sort_order"/>
+        <result property="isActive" column="is_active"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="columns">
+        id, title, artist, audio_url, source_url, license, attribution, mood, duration_seconds,
+        sort_order, is_active, created_at, updated_at
+    </sql>
+
+    <select id="findActive" resultMap="MusicTrackMap">
+        SELECT <include refid="columns"/>
+        FROM music_tracks
+        WHERE is_active = TRUE
+        ORDER BY sort_order, title
+        LIMIT #{limit}
+    </select>
+
+    <select id="findActiveByIds" resultMap="MusicTrackMap">
+        SELECT <include refid="columns"/>
+        FROM music_tracks
+        WHERE is_active = TRUE
+          AND id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+</mapper>

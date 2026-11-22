@@ -1,0 +1,135 @@
+package com.ds.goroute.dto;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.Locale;
+
+/**
+ * The viewer-independent part of a public trip search, normalised so that two requests
+ * asking for the same ranking compare equal. It is the key of the shared ranking cache and
+ * the parameter object of the ranking query.
+ *
+ * <ul>
+ *   <li>The point is rounded to two decimals (about 1 km) and the query runs on the rounded
+ *       point, so a cached ranking is exactly what the query returns for that key.</li>
+ *   <li>With {@code allPublic} the point and radius neither filter nor order anything, so
+ *       they are dropped and every caller shares one ranking.</li>
+ *   <li>{@code recommended} overrides the random seed, so the seed is dropped with it.</li>
+ *   <li>Text filters are trimmed and lower-cased; the query compares them lower-cased.</li>
+ *   <li>{@code placeKind}, the Feed's place-kind chip, is part of the key: a trip with no
+ *       stop of that kind is not in that ranking at all.</li>
+ * </ul>
+ *
+ * <p>"Photos" are a trip's memory photos ({@code trips.memory_count}), the list the trip
+ * card shows; the cover does not count, since every card gets one (the destination's
+ * stock image when the trip has none).
+ *
+ * @param latitude        rounded search point, null when {@code allPublic}
+ * @param longitude       rounded search point, null when {@code allPublic}
+ * @param radiusMeters    radius around the point, null when {@code allPublic}
+ * @param photosOnly      only trips with at least one photo (the Feed's "All" chip)
+ * @param photosThenStops trips with photos first, then the most stops, then the newest
+ *                        (the Feed's "Trips" chip); overrides every other order
+ * @param feedRules       which trips the Feed may show (upcoming, too few activities); null
+ *                        outside the Feed. Part of the key: a new day is a new ranking
+ */
+public record PublicTripSearchCriteria(
+        Double latitude,
+        Double longitude,
+        Double radiusMeters,
+        String destination,
+        String keyword,
+        boolean allPublic,
+        String randomSeed,
+        boolean preferImages,
+        boolean recommended,
+        FeedPlaceKind placeKind,
+        boolean photosOnly,
+        boolean photosThenStops,
+        FeedTripRules feedRules) {
+
+    private static final int POINT_DECIMALS = 2;
+
+    public static PublicTripSearchCriteria of(BigDecimal latitude,
+                                              BigDecimal longitude,
+                                              BigDecimal radiusKm,
+                                              String destination,
+                                              String keyword,
+                                              boolean allPublic,
+                                              String randomSeed,
+                                              boolean preferImages,
+                                              boolean recommended) {
+        return of(latitude, longitude, radiusKm, destination, keyword,
+                allPublic, randomSeed, preferImages, recommended, null);
+    }
+
+    public static PublicTripSearchCriteria of(BigDecimal latitude,
+                                              BigDecimal longitude,
+                                              BigDecimal radiusKm,
+                                              String destination,
+                                              String keyword,
+                                              boolean allPublic,
+                                              String randomSeed,
+                                              boolean preferImages,
+                                              boolean recommended,
+                                              FeedPlaceKind placeKind) {
+        Double roundedLatitude = allPublic ? null : round(latitude);
+        Double roundedLongitude = allPublic ? null : round(longitude);
+        Double radiusMeters = null;
+        if (!allPublic) {
+            // A missing or negative radius matches nothing, as the old "distance <= radius" did.
+            radiusMeters = radiusKm == null || radiusKm.signum() < 0
+                    ? 0d
+                    : radiusKm.doubleValue() * 1000d;
+        }
+        return new PublicTripSearchCriteria(
+                roundedLatitude,
+                roundedLongitude,
+                radiusMeters,
+                normalizeText(destination),
+                normalizeText(keyword),
+                allPublic,
+                recommended ? null : normalizeSeed(randomSeed),
+                preferImages,
+                recommended,
+                placeKind,
+                false,
+                false,
+                null);
+    }
+
+    /** This search with the photo rules set; see the record's parameters. */
+    public PublicTripSearchCriteria withPhotoRules(boolean photosOnly, boolean photosThenStops) {
+        return new PublicTripSearchCriteria(latitude, longitude, radiusMeters, destination, keyword,
+                allPublic, randomSeed, preferImages, recommended, placeKind, photosOnly, photosThenStops, feedRules);
+    }
+
+    /** This search with the Feed's trip rules; null for none. */
+    public PublicTripSearchCriteria withFeedRules(FeedTripRules rules) {
+        return new PublicTripSearchCriteria(latitude, longitude, radiusMeters, destination, keyword,
+                allPublic, randomSeed, preferImages, recommended, placeKind, photosOnly, photosThenStops, rules);
+    }
+
+    /**
+     * Whether results are ordered nearest first, the only order that needs each trip's
+     * distance rather than just "within the radius".
+     */
+    public boolean orderedByDistance() {
+        return !allPublic && !recommended && randomSeed == null && !photosThenStops;
+    }
+
+    private static Double round(BigDecimal coordinate) {
+        return coordinate == null ? null : coordinate.setScale(POINT_DECIMALS, RoundingMode.HALF_UP).doubleValue();
+    }
+
+    private static String normalizeText(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String normalizeSeed(String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
+}

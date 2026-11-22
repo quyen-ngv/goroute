@@ -2,87 +2,64 @@ package com.ds.goroute.service;
 
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.response.AiTripUsage;
-import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.dto.response.AiCreditWalletResponse;
 import com.ds.goroute.repository.AiTripRepository;
+import com.ds.goroute.type.AiCreditFeature;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.UUID;
 
 /**
- * The two allowances an AI-generated trip spends, priced together.
+ * What an AI-generated trip needs before it may start: credits for the generation and for saving
+ * the result as a trip (AI_CREDIT.MIN_BALANCE_AI_TRIP + AI_CREDIT.TRIP_CREATION_COST).
  *
- * <p>A generation costs a generation slot when it starts and a trip-creation slot when the result
- * is saved. Charging the first without looking at the second is what produced the dead end this
- * class now closes: the generation slot gone, the model bill paid, and a refusal at the last step
- * with nothing to show for it. Both are quoted and both are checked before anything is spent.
+ * <p>Both are checked up front so a run that could never be saved does not start and spend
+ * credits. The trip itself is charged at commit, where it may overdraw: holding credits across a
+ * generation that can take minutes would strand them whenever the run fails.
  */
 @Service
 @RequiredArgsConstructor
 public class AiTripQuotaService {
     private final AiTripRepository repository;
-    private final StarService starService;
-    private final UserQuotaPolicyService quotaPolicy;
+    private final AiCreditService credits;
 
     @Transactional
     public AiTripUsage getUsage(UUID userId) {
         repository.ensureSubscription(userId);
-        String tier = repository.getSubscriptionTier(userId);
-        return usage(userId, tier, repository.getAiTripsUsed(userId));
+        boolean creditAvailable = credits.canStartTrip(userId, AiCreditFeature.AI_TRIP);
+        AiCreditWalletResponse wallet = credits.wallet(userId);
+        int cost = wallet.getTripCreationCost();
+        boolean tripAffordable = wallet.isUnlimited()
+                || wallet.getBalance().compareTo(BigDecimal.valueOf(cost)) >= 0;
+        return AiTripUsage.builder()
+                .tier(repository.getSubscriptionTier(userId))
+                .eligible(creditAvailable)
+                .creditAvailable(creditAvailable)
+                .tripCreationCost(cost)
+                .tripQuotaAvailable(tripAffordable)
+                .freeTripQuotaUsed(0)
+                .freeTripQuota(0)
+                .unlockedTripSlots(cost <= 0 ? 0 : wallet.getBalance().max(BigDecimal.ZERO)
+                        .divide(BigDecimal.valueOf(cost), 0, RoundingMode.FLOOR).intValue())
+                .tierExpiresAt(repository.getSubscriptionExpiresAt(userId))
+                .build();
     }
 
     /**
-     * Takes a generation slot, refusing when either allowance is empty.
-     *
-     * <p>The trip-creation side is checked first and deliberately not consumed here: the trip does
-     * not exist yet, and holding a slot across a generation that can take minutes would strand it
-     * whenever the run fails. It is consumed by trip creation at commit time, as it always was --
-     * this check only stops a run that could not possibly finish.
+     * Refuses a generation that cannot finish ({@link ErrorConstant#AI_CREDIT_INSUFFICIENT}):
+     * fewer credits than the AI minimum plus a trip creation. {@code extraFeatures} add their own
+     * minimums, for a social video that is extracted and then planned.
      */
     @Transactional
-    public AiTripUsage reserve(UUID userId) {
+    public void ensureCanGenerate(UUID userId, AiCreditFeature... extraFeatures) {
         repository.ensureSubscription(userId);
-        String tier = repository.getSubscriptionTier(userId);
-        int limit = limitForTier(userId, tier);
-
-        if (!starService.tripCreationStatus(userId).available()) {
-            throw new BusinessException(ErrorConstant.TRIP_CREATION_QUOTA_EXHAUSTED,
-                    "You are out of trip creation slots, so an AI itinerary could not be saved. "
-                            + "Unlock a slot with stars before generating one.");
-        }
-        if (repository.consumeAiTripQuota(userId, limit) == 0) {
-            throw new BusinessException(ErrorConstant.AI_TRIP_QUOTA_EXHAUSTED);
-        }
-        return usage(userId, tier, repository.getAiTripsUsed(userId));
-    }
-
-    @Transactional
-    public void release(UUID userId) {
-        repository.releaseAiTripQuota(userId);
-    }
-
-    public int limitForTier(UUID userId, String tier) {
-        return quotaPolicy.aiTripQuota(userId, tier);
-    }
-
-    private AiTripUsage usage(UUID userId, String tier, int used) {
-        int limit = limitForTier(userId, tier);
-        StarService.TripCreationStatus tripQuota = starService.tripCreationStatus(userId);
-        boolean aiAvailable = used < limit;
-        return AiTripUsage.builder()
-                .tier(tier)
-                .used(used)
-                .limit(limit)
-                // Both, because the client asks this one question to decide whether to offer the
-                // button at all, and either empty allowance is a reason not to.
-                .eligible(aiAvailable && tripQuota.available())
-                .aiQuotaAvailable(aiAvailable)
-                .tripQuotaAvailable(tripQuota.available())
-                .freeTripQuotaUsed(tripQuota.freeQuotaUsed())
-                .freeTripQuota(tripQuota.freeQuota())
-                .unlockedTripSlots(tripQuota.unlockedSlots())
-                .tierExpiresAt(repository.getSubscriptionExpiresAt(userId))
-                .build();
+        AiCreditFeature[] features = new AiCreditFeature[extraFeatures.length + 1];
+        features[0] = AiCreditFeature.AI_TRIP;
+        System.arraycopy(extraFeatures, 0, features, 1, extraFeatures.length);
+        credits.ensureCanStartTrip(userId, features);
     }
 }

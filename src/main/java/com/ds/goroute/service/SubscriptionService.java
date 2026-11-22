@@ -48,6 +48,7 @@ public class SubscriptionService {
     private final SubscriptionMapper mapper;
     private final UserSubscriptionBootstrapService bootstrap;
     private final PlatformTransactionManager transactionManager;
+    private final AiCreditService aiCreditService;
 
     @Transactional(readOnly = true)
     public List<SubscriptionPlan> plans(boolean activeOnly) {
@@ -165,6 +166,7 @@ public class SubscriptionService {
 
         mapper.applyPlan(userId, plan.getTier(), plan.getCode(),
                 currentEnd != null && currentEnd.isAfter(now) ? (LocalDateTime) null : now, expiresAt);
+        aiCreditService.onPlanChanged(userId);
         log.info("Granted {} to user {} until {} (reference {})", plan.getCode(), userId, expiresAt, key);
         return readSummary(userId);
     }
@@ -179,7 +181,20 @@ public class SubscriptionService {
     public SubscriptionSummaryResponse revoke(UUID userId) {
         bootstrap.ensureExists(userId);
         mapper.revokePlan(userId, LocalDateTime.now());
+        aiCreditService.onPlanChanged(userId);
         return readSummary(userId);
+    }
+
+    /**
+     * Sets a plan's AI credit allowance and refill cycle. Subscribers get it from their next
+     * refill; the period in progress keeps what it was refilled with.
+     */
+    @Transactional
+    public SubscriptionPlan updatePlanAiCredits(String planCode, java.math.BigDecimal creditsPerRefill, int refillMonths) {
+        if (mapper.updatePlanAiCredits(planCode, creditsPerRefill, refillMonths) != 1) {
+            throw new BusinessException(ErrorConstant.NOT_FOUND, "Subscription plan not found");
+        }
+        return mapper.findPlan(planCode);
     }
 
     @Transactional(readOnly = true)

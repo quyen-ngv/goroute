@@ -1,5 +1,6 @@
 package com.ds.goroute.entity;
 
+import com.ds.goroute.type.TripNoteType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -18,6 +19,8 @@ public class TripNote {
     private UUID activityId;  // Optional: for activity-specific notes
     private UUID userId;
     private String content;
+    /** Null is read as {@link TripNoteType#TEXT}. */
+    private TripNoteType noteType;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private Boolean isDeleted;

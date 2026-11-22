@@ -36,7 +36,8 @@ class AdminAuthServiceImplTest {
     private final PasswordEncoder encoder = mock(PasswordEncoder.class);
     private final JwtUtils jwt = mock(JwtUtils.class);
     private final HostOrganizationService organizations = mock(HostOrganizationService.class);
-    private final AdminAuthServiceImpl service = new AdminAuthServiceImpl(users, adminMapper, encoder, jwt, organizations);
+    private final AdminAuthServiceImpl service = new AdminAuthServiceImpl(users, adminMapper, encoder, jwt, organizations,
+            new com.ds.goroute.service.LoginAttemptGuard(new com.ds.goroute.config.LoginLockoutProperties()));
 
     @Test
     void registrationRejectsDuplicateUsernameBeforeCreatingAnything() {

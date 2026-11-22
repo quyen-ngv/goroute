@@ -4,6 +4,7 @@ import com.ds.goroute.entity.TripDestination;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -13,7 +14,12 @@ public interface TripDestinationMapper {
 
     List<TripDestination> selectByTripId(@Param("tripId") UUID tripId);
 
+    /** Destinations of several trips, grouped by trip and in route order within each. */
+    List<TripDestination> selectByTripIds(@Param("tripIds") List<UUID> tripIds);
+
     TripDestination selectById(@Param("id") UUID id);
 
     int deleteByTripId(@Param("tripId") UUID tripId);
+
+    int updateDates(@Param("id") UUID id, @Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
 }

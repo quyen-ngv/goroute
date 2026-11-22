@@ -1,9 +1,10 @@
 package com.ds.goroute.config.filter;
 
 import com.ds.goroute.config.ApiSecurityErrorResponseWriter;
+import com.ds.goroute.config.cache.AuthSubjectCache;
+import com.ds.goroute.config.cache.AuthSubjectCache.AuthSubject;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.constant.RequestKeyConstant;
-import com.ds.goroute.entity.User;
 import com.ds.goroute.mapper.AdminMapper;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.utils.JwtUtils;
@@ -15,6 +16,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -26,6 +28,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Component
@@ -50,6 +53,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final AdminMapper adminMapper;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
+    private final AuthSubjectCache authSubjectCache;
 
     @Override
     protected void doFilterInternal(
@@ -95,6 +99,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     "Password change required");
                             return;
                         }
+                        // Removed by RequestContextFilter when the request ends.
+                        MDC.put(RequestKeyConstant.THREAD_USER_ID, userId.toString());
                         log.debug("JWT authenticated user: {} ({})", email, userId);
                     }
                 }
@@ -122,21 +128,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      * (deleted account) authenticates nothing — a signature alone is not an account.
      */
     private AuthOutcome authenticate(HttpServletRequest request, UUID userId) {
-        User user = userRepository.findById(userId).orElse(null);
-        if (user == null) {
+        AuthSubject subject = authSubjectCache.get(userId, this::loadSubject).orElse(null);
+        if (subject == null) {
             return AuthOutcome.USER_NOT_FOUND;
         }
-
-        boolean admin = adminMapper.hasAnyRole(userId);
-        boolean partner = adminMapper.isPartnerUser(userId);
-        boolean mustChangePassword = Boolean.TRUE.equals(user.getMustChangePassword());
+        boolean mustChangePassword = subject.mustChangePassword();
 
         var authorities = new ArrayList<SimpleGrantedAuthority>();
         authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
-        if (admin) {
+        if (subject.admin()) {
             authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
         }
-        if (partner) {
+        if (subject.partner()) {
             authorities.add(new SimpleGrantedAuthority("ROLE_PARTNER"));
         }
         if (mustChangePassword) {
@@ -147,6 +150,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
         SecurityContextHolder.getContext().setAuthentication(authToken);
         return mustChangePassword ? AuthOutcome.MUST_CHANGE_PASSWORD : AuthOutcome.AUTHENTICATED;
+    }
+
+    /** The three lookups behind a token, run once per user per {@link AuthSubjectCache} TTL. */
+    private Optional<AuthSubject> loadSubject(UUID userId) {
+        return userRepository.findById(userId).map(user -> new AuthSubject(
+                adminMapper.hasAnyRole(userId),
+                adminMapper.isPartnerUser(userId),
+                Boolean.TRUE.equals(user.getMustChangePassword())));
     }
 
     private boolean isPasswordChangeProtected(String path) {

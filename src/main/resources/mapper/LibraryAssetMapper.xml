@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ds.goroute.mapper.LibraryAssetMapper">
+
+    <resultMap id="LibraryAssetResultMap" type="com.ds.goroute.entity.LibraryAsset">
+        <id property="id" column="id"/>
+        <result property="collection" column="collection"/>
+        <result property="assetKey" column="asset_key"/>
+        <result property="nameVi" column="name_vi"/>
+        <result property="nameEn" column="name_en"/>
+        <result property="nameJa" column="name_ja"/>
+        <result property="nameKo" column="name_ko"/>
+        <result property="description" column="description"/>
+        <result property="tags" column="tags"/>
+        <result property="imageUrl" column="image_url"/>
+        <result property="source" column="source"/>
+        <result property="sourceUrl" column="source_url"/>
+        <result property="licenseNote" column="license_note"/>
+        <result property="status" column="status"/>
+        <result property="version" column="version"/>
+        <result property="createdBy" column="created_by"/>
+        <result property="updatedBy" column="updated_by"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="assetColumns">
+        id, collection, asset_key, name_vi, name_en, name_ja, name_ko, description, tags::text AS tags,
+        image_url, source, source_url, license_note, status, version,
+        created_by, updated_by, created_at, updated_at
+    </sql>
+
+    <sql id="searchFilter">
+        <where>
+            <if test="collection != null">collection = #{collection}</if>
+            <if test="status != null">AND status = #{status}</if>
+            <if test="missingImage">AND image_url IS NULL</if>
+            <if test="q != null and q != ''">
+                AND (asset_key ILIKE CONCAT('%', #{q}, '%')
+                     OR name_en ILIKE CONCAT('%', #{q}, '%')
+                     OR COALESCE(name_vi, '') ILIKE CONCAT('%', #{q}, '%')
+                     OR tags::text ILIKE CONCAT('%', #{q}, '%'))
+            </if>
+        </where>
+    </sql>
+
+    <insert id="insert">
+        INSERT INTO asset_library (id, collection, asset_key, name_vi, name_en, name_ja, name_ko, description, tags,
+                                   image_url, source, source_url, license_note, status, version,
+                                   created_by, updated_by, created_at, updated_at)
+        VALUES (#{id}, #{collection}, #{assetKey}, #{nameVi}, #{nameEn}, #{nameJa}, #{nameKo}, #{description},
+                COALESCE(#{tags}::jsonb, '[]'::jsonb),
+                #{imageUrl}, #{source}, #{sourceUrl}, #{licenseNote}, #{status}, #{version},
+                #{createdBy}, #{updatedBy}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <update id="update">
+        UPDATE asset_library SET
+            asset_key = #{assetKey},
+            name_vi = #{nameVi},
+            name_en = #{nameEn},
+            name_ja = #{nameJa},
+            name_ko = #{nameKo},
+            description = #{description},
+            tags = COALESCE(#{tags}::jsonb, '[]'::jsonb),
+            image_url = #{imageUrl},
+            source = #{source},
+            source_url = #{sourceUrl},
+            license_note = #{licenseNote},
+            status = #{status},
+            version = #{version},
+            updated_by = #{updatedBy},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="delete">
+        DELETE FROM asset_library WHERE id = #{id}
+    </delete>
+
+    <select id="findById" resultMap="LibraryAssetResultMap">
+        SELECT <include refid="assetColumns"/>
+        FROM asset_library
+        WHERE id = #{id}
+    </select>
+
+    <select id="findByCollectionAndKey" resultMap="LibraryAssetResultMap">
+        SELECT <include refid="assetColumns"/>
+        FROM asset_library
+        WHERE collection = #{collection} AND asset_key = #{assetKey}
+    </select>
+
+    <select id="findByIds" resultMap="LibraryAssetResultMap">
+        SELECT <include refid="assetColumns"/>
+        FROM asset_library
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <select id="search" resultMap="LibraryAssetResultMap">
+        SELECT <include refid="assetColumns"/>
+        FROM asset_library
+        <include refid="searchFilter"/>
+        ORDER BY name_en ASC, id ASC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*)
+        FROM asset_library
+        <include refid="searchFilter"/>
+    </select>
+</mapper>

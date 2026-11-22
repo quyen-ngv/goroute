@@ -1,18 +1,15 @@
 package com.ds.goroute.service.impl;
 
 import com.ds.goroute.config.FileUploadProperties;
-import com.ds.goroute.config.ImgpressProperties;
 import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.service.BusinessConfigService;
 import com.ds.goroute.service.ImageModerationService;
 import com.ds.goroute.service.ImageUploadOutcome;
 import com.ds.goroute.service.ImageUploadRequest;
 import com.ds.goroute.service.StorageService;
-import com.ds.goroute.service.moderation.ModerationVerdict;
 import com.ds.goroute.type.BusinessConfigKey;
-import com.ds.goroute.type.ModerationAction;
-import com.ds.goroute.type.ModerationCategory;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.util.unit.DataSize;
 import org.springframework.web.client.RestTemplate;
@@ -27,7 +24,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.endsWith;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -44,12 +44,12 @@ class FileUploadServiceImplTest {
     private final ImageModerationService imageModerationService = mock(ImageModerationService.class);
     private final BusinessConfigService businessConfigService = mock(BusinessConfigService.class);
     private final AiTripRepository aiTripRepository = mock(AiTripRepository.class);
+    private final RestTemplate restTemplate = mock(RestTemplate.class);
     private final FileUploadProperties properties = properties();
     private final FileUploadServiceImpl service = new FileUploadServiceImpl(
             storageService,
-            mock(RestTemplate.class),
+            restTemplate,
             properties,
-            new ImgpressProperties(),
             imageModerationService,
             businessConfigService,
             aiTripRepository);
@@ -79,44 +79,55 @@ class FileUploadServiceImplTest {
     }
 
     /**
-     * MOD-04: one rejected photo must not cost the user the rest of the batch, and the
-     * rejection has to be distinguishable from a technical failure.
+     * Moderation no longer sits in the upload request: the image is stored and returned at
+     * once, then handed to the background check with the key and URL it was stored under.
      */
     @Test
-    void keepsTheRestOfTheBatchWhenOneImageIsRejectedForItsContent() {
-        MockMultipartFile good = new MockMultipartFile("files", "beach.jpg", "image/jpeg", JPEG);
-        MockMultipartFile bad = new MockMultipartFile("files", "bad.jpg", "image/jpeg",
-                new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, 1});
-        when(imageModerationService.inspect(any(), any(), any(), any()))
-                .thenReturn(ModerationVerdict.allowed())
-                .thenReturn(ModerationVerdict.of(ModerationAction.BLOCK, ModerationCategory.SEXUAL, null, "x"));
-        when(businessConfigService.getInt(BusinessConfigKey.UPLOAD_MAX_BATCH_FILES))
-                .thenReturn(30);
-        when(businessConfigService.getBoolean(BusinessConfigKey.IMAGE_COMPRESSION_ENABLED))
-                .thenReturn(false);
+    void storesTheImageFirstThenSubmitsItForBackgroundModeration() {
+        MockMultipartFile file = new MockMultipartFile("file", "beach.jpg", "image/jpeg", JPEG);
         when(storageService.uploadFile(anyString(), any(), anyString(), anyLong()))
-                .thenReturn("https://cdn/beach.webp");
+                .thenAnswer(invocation -> "https://cdn/" + invocation.getArgument(0));
+        ImageUploadRequest request = userUpload();
 
-        List<ImageUploadOutcome> outcomes = service.uploadImages(userUpload(), List.of(good, bad));
+        ImageUploadOutcome outcome = service.uploadImage(request, file);
 
-        assertThat(outcomes).hasSize(2);
-        assertThat(outcomes.get(0).isAccepted()).isTrue();
-        assertThat(outcomes.get(1).isAccepted()).isFalse();
-        assertThat(outcomes.get(1).isContentRejection()).isTrue();
-        assertThat(outcomes.get(1).rejectedCategory()).isEqualTo(ModerationCategory.SEXUAL);
+        assertThat(outcome.isAccepted()).isTrue();
+        assertThat(outcome.isContentRejection()).isFalse();
+        InOrder order = inOrder(storageService, imageModerationService);
+        order.verify(storageService).uploadFile(anyString(), any(), eq("image/jpeg"), eq((long) JPEG.length));
+        order.verify(imageModerationService).submit(
+                eq(request.userId()),
+                eq(ImageUploadRequest.ImageEntryPoint.USER_UPLOAD),
+                argThat(key -> key.startsWith("expenses/test/") && key.endsWith(".jpg")),
+                eq(outcome.url()),
+                eq(JPEG),
+                eq("image/jpeg"));
     }
 
-    /** A rejected image must never reach storage, because a stored image already has a URL. */
     @Test
-    void neverStoresAnImageThatModerationRejected() {
-        MockMultipartFile file = new MockMultipartFile("file", "bad.jpg", "image/jpeg", JPEG);
-        when(imageModerationService.inspect(any(), any(), any(), any()))
-                .thenReturn(ModerationVerdict.of(ModerationAction.BLOCK, ModerationCategory.VIOLENCE, null, "x"));
+    void aFileThatFailsValidationIsNeverSubmittedForModeration() {
+        MockMultipartFile disguised = new MockMultipartFile(
+                "file", "payload.jpg", "image/jpeg", "not-an-image".getBytes());
+
+        ImageUploadOutcome outcome = service.uploadImage(userUpload(), disguised);
+
+        assertThat(outcome.isAccepted()).isFalse();
+        verifyNoInteractions(imageModerationService);
+    }
+
+    /** Upload latency: the image is stored as sent, with no call out to a re-encoding service. */
+    @Test
+    void storesTheImageAsUploadedWithoutCallingAnotherService() {
+        MockMultipartFile file = new MockMultipartFile("file", "beach.jpg", "image/jpeg", JPEG);
+        when(storageService.uploadFile(anyString(), any(), anyString(), anyLong()))
+                .thenReturn("https://cdn/beach.jpg");
 
         ImageUploadOutcome outcome = service.uploadImage(userUpload(), file);
 
-        assertThat(outcome.isContentRejection()).isTrue();
-        verifyNoInteractions(storageService);
+        assertThat(outcome.isAccepted()).isTrue();
+        verify(storageService).uploadFile(
+                endsWith(".jpg"), any(), eq("image/jpeg"), eq((long) JPEG.length));
+        verifyNoInteractions(restTemplate);
     }
 
     @Test
@@ -184,7 +195,6 @@ class FileUploadServiceImplTest {
                     storageService,
                     mock(RestTemplate.class),
                     properties,
-                    new ImgpressProperties(),
                     imageModerationService,
                     businessConfigService,
                     aiTripRepository,
@@ -192,10 +202,6 @@ class FileUploadServiceImplTest {
 
             when(businessConfigService.getInt(BusinessConfigKey.UPLOAD_MAX_BATCH_FILES))
                     .thenReturn(10);
-            when(businessConfigService.getBoolean(BusinessConfigKey.IMAGE_COMPRESSION_ENABLED))
-                    .thenReturn(false);
-            when(imageModerationService.inspect(any(), any(), any(), any()))
-                    .thenReturn(ModerationVerdict.allowed());
             when(storageService.uploadFile(anyString(), any(), anyString(), anyLong()))
                     .thenAnswer(invocation -> "https://cdn/" + invocation.getArgument(0));
 
@@ -215,9 +221,39 @@ class FileUploadServiceImplTest {
         }
     }
 
+    @Test
+    void aPublicUrlIsFetchedThroughTheGuardedDownloadAndRecognisedByItsBytes() {
+        when(storageService.downloadPublicFile("https://images.example.com/a"))
+                .thenReturn(new StorageService.DownloadedFile(JPEG, "text/html"));
+        when(storageService.uploadFile(anyString(), any(), anyString(), anyLong()))
+                .thenAnswer(invocation -> "https://cdn/" + invocation.getArgument(0));
+
+        ImageUploadOutcome outcome = service.uploadImageFromPublicUrl(new ImageUploadRequest(null,
+                ImageUploadRequest.ImageEntryPoint.LOCAL_EVENT, "events/e1"), "https://images.example.com/a");
+
+        assertThat(outcome.isAccepted()).isTrue();
+        assertThat(outcome.url()).startsWith("https://cdn/events/e1/").endsWith(".jpg");
+        verify(storageService).uploadFile(anyString(), any(), eq("image/jpeg"), eq((long) JPEG.length));
+        verifyNoInteractions(restTemplate);
+    }
+
+    @Test
+    void aRefusedPublicUrlIsAFailureAndNothingIsStored() {
+        when(storageService.downloadPublicFile("https://10.0.0.1/a"))
+                .thenThrow(new IllegalArgumentException("Remote file URL must resolve to a public address"));
+
+        ImageUploadOutcome outcome = service.uploadImageFromPublicUrl(new ImageUploadRequest(null,
+                ImageUploadRequest.ImageEntryPoint.LOCAL_EVENT, "events/e1"), "https://10.0.0.1/a");
+
+        assertThat(outcome.isAccepted()).isFalse();
+        assertThat(outcome.failureMessage()).contains("public address");
+        verify(storageService, never()).uploadFile(anyString(), any(), anyString(), anyLong());
+        verifyNoInteractions(imageModerationService);
+    }
+
     private ImageUploadRequest userUpload() {
         return new ImageUploadRequest(UUID.randomUUID(),
-                ImageUploadRequest.ImageEntryPoint.USER_UPLOAD, "expenses/test", false);
+                ImageUploadRequest.ImageEntryPoint.USER_UPLOAD, "expenses/test");
     }
 
     private FileUploadProperties properties() {

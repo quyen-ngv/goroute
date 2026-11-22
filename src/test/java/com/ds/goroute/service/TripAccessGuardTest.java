@@ -6,6 +6,7 @@ import com.ds.goroute.exception.BusinessException;
 import com.ds.goroute.repository.TripMemberRepository;
 import com.ds.goroute.repository.TripRepository;
 import com.ds.goroute.type.MemberStatus;
+import com.ds.goroute.type.TripVisibility;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
@@ -66,6 +67,25 @@ class TripAccessGuardTest {
         assertThatThrownBy(() -> guard.requireAccess(tripId, otherId))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Access denied");
+    }
+
+    @Test
+    void publicViewFollowsTheTripVisibility() {
+        Trip trip = trip();
+
+        trip.setVisibility(TripVisibility.PUBLIC);
+        assertThat(guard.requirePublicView(tripId, null)).isSameAs(trip);
+
+        // "Link only": anyone holding the link, signed in or not, member or not.
+        trip.setVisibility(TripVisibility.SHARED);
+        assertThat(guard.requirePublicView(tripId, ownerId)).isSameAs(trip);
+        assertThat(guard.requirePublicView(tripId, null)).isSameAs(trip);
+        assertThat(guard.requirePublicView(tripId, otherId)).isSameAs(trip);
+
+        trip.setVisibility(TripVisibility.PRIVATE);
+        assertThatThrownBy(() -> guard.requirePublicView(tripId, ownerId))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("not shared");
     }
 
     @Test

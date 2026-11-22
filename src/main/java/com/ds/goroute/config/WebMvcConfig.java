@@ -18,13 +18,16 @@ import java.util.List;
 @Configuration
 @EnableConfigurationProperties({
         ApiRequestLimitsProperties.class,
+        LoginLockoutProperties.class,
         ScrapeHttpClientProperties.class,
         AiTripWorkerProperties.class,
         FileUploadProperties.class,
-        ImgpressProperties.class,
         ImageModerationProperties.class,
         OpenAiImageModerationProperties.class,
-        PlaceImportWatchdogProperties.class
+        ClaudeProperties.class,
+        PlaceImportWatchdogProperties.class,
+        AppLinksProperties.class,
+        CaesiumProperties.class
 })
 public class WebMvcConfig implements WebMvcConfigurer {
 

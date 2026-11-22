@@ -4,19 +4,13 @@ import com.ds.goroute.repository.AppConfigRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.util.UUID;
-
 @Service
 @RequiredArgsConstructor
 public class SocialLocationConfigService {
     private static final String LABEL = "SOCIAL_LOCATION";
 
     private final AppConfigRepository repository;
-    private final UserQuotaPolicyService quotaPolicy;
 
-    public int dailyJobLimit(UUID userId) {
-        return quotaPolicy.socialLocationDailyLimit(userId);
-    }
     public int maxConcurrentJobs() { return positive("MAX_CONCURRENT_JOBS", 5); }
     public int maxQueuedJobs() { return positive("MAX_QUEUED_JOBS", 100); }
     public int maxVideoSeconds(String tier) {
@@ -30,7 +24,8 @@ public class SocialLocationConfigService {
     public int firstBlockMinutes() { return positive("FIRST_BLOCK_MINUTES", 10); }
     public int secondBlockHours() { return positive("SECOND_BLOCK_HOURS", 24); }
     public int permanentBlockStrikes() { return positive("PERMANENT_BLOCK_STRIKES", 3); }
-    public String aiProvider() { return text("AI_PROVIDER", "DEEPSEEK").toUpperCase(); }
+    /** Empty unless the admin pins one: the worker then uses its AI_PROVIDER switch. */
+    public String aiProvider() { return text("AI_PROVIDER", "").toUpperCase(); }
     public String aiModel() { return text("AI_MODEL", ""); }
     public String aiBaseUrl() { return text("AI_BASE_URL", ""); }
 

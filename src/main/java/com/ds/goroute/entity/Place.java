@@ -29,6 +29,13 @@ public class Place {
     private String title;
     private PlaceGroup placeGroup;
     private String category;
+    /** {@link com.ds.goroute.type.PlaceSubType} codes. The generic update leaves them alone; see {@code updateSubTypes}. */
+    private String[] subTypes;
+    /**
+     * Other names the place is searched by (V284), in any language; indexed, never shown as
+     * the name. The generic update leaves them alone; see {@code updateSearchAliases}.
+     */
+    private String[] searchAliases;
     private String address;
     /** Province this row was resolved to; what a check-in inherits when it is linked here. */
     private String provinceCode;
@@ -103,6 +110,13 @@ public class Place {
     private Integer scoreSampleCount;
     private String scoreSource;
     private LocalDateTime lastScrapedAt;
+
+    // How much travellers use the place (V225), recounted asynchronously by
+    // PlaceUsageStatsService. Read-only here: no insert or update writes them.
+    /** Trips (not deleted) with a non-rejected activity on the place, each trip once. */
+    private Integer tripUseCount;
+    /** Check-ins on the place that are not removed. */
+    private Integer checkinCount;
 
     // Metadata
     /** Curated tourist area (location_images) this row belongs to; null until auto-map resolves one. */

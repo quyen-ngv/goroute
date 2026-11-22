@@ -11,16 +11,20 @@ import com.ds.goroute.service.ExpenseService;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.type.ExpenseCategory;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.UUID;
 
 @RestController
+@Validated
 @RequestMapping("/v1/api/trips/{tripId}/expenses")
 @RequiredArgsConstructor
 @Slf4j
@@ -28,12 +32,15 @@ public class ExpenseController extends BaseController {
 
     private final ExpenseService expenseService;
 
+    /** Without page/size the whole list, as old builds expect; with either, one page (size at most 100). */
     @GetMapping
     public ResponseEntity<BaseResponse<List<ExpenseResponse>>> getExpenses(
             @PathVariable UUID tripId,
             @RequestParam(required = false) ExpenseCategory category,
+            @RequestParam(required = false) @Min(0) Integer page,
+            @RequestParam(required = false) @Min(1) @Max(100) Integer size,
             @CurrentUser UUID userId) {
-        List<ExpenseResponse> expenses = expenseService.getExpenses(tripId, category, userId);
+        List<ExpenseResponse> expenses = expenseService.getExpenses(tripId, category, page, size, userId);
         return ResponseEntity.ok(ofSucceeded(expenses));
     }
 

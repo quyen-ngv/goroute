@@ -15,6 +15,10 @@ import java.util.UUID;
 public class ExpenseSplitResponse {
     private UUID id;
     private UserResponse user;
+    /** trip_members.id of a guest split; null for a registered user's split. */
+    private UUID guestMemberId;
     private BigDecimal amount;
     private Boolean isPaid;
+    /** The percentage, number of shares or adjustment the share was computed from; null otherwise. */
+    private BigDecimal shareInput;
 }

@@ -30,6 +30,8 @@ public class InternalApiAuthenticationFilter extends OncePerRequestFilter {
 
     static final String INTERNAL_API_PREFIX = "/v1/api/internal/";
     static final String AI_TRIP_PREFIX = "/v1/api/internal/ai-trip-generations/";
+    /** Pengoo's turns are answered by the same AI worker, with the same secret. */
+    static final String ASSISTANT_PREFIX = "/v1/api/internal/assistant/";
     static final String INTERNAL_TOKEN_HEADER = "X-Internal-Token";
     public static final String AI_TRIP_SETTING = "AI_TRIP_INTERNAL_TOKEN";
     public static final String SCRAPE_CALLBACK_SETTING = "SCRAPE_CALLBACK_TOKEN";
@@ -49,7 +51,7 @@ public class InternalApiAuthenticationFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
         String requestPath = pathWithinApplication(request);
-        boolean aiTripRequest = requestPath.startsWith(AI_TRIP_PREFIX);
+        boolean aiTripRequest = requestPath.startsWith(AI_TRIP_PREFIX) || requestPath.startsWith(ASSISTANT_PREFIX);
         String expectedToken = aiTripRequest
                 ? properties.aiTripToken()
                 : properties.scrapeCallbackToken();
@@ -74,7 +76,7 @@ public class InternalApiAuthenticationFilter extends OncePerRequestFilter {
         }
 
         if (SecurityContextHolder.getContext().getAuthentication() == null) {
-            String principal = requestPath.startsWith(AI_TRIP_PREFIX) ? "ai-trip-worker" : "scrape-worker";
+            String principal = aiTripRequest ? "ai-trip-worker" : "scrape-worker";
             SecurityContextHolder.getContext().setAuthentication(
                     new UsernamePasswordAuthenticationToken(
                             principal,

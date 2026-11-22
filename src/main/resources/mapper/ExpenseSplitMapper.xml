@@ -9,15 +9,20 @@
         <result column="guest_member_id" property="guestMemberId" javaType="java.util.UUID" jdbcType="OTHER"/>
         <result column="guest_name" property="guestName" jdbcType="VARCHAR"/>
         <result column="amount" property="amount" jdbcType="DECIMAL"/>
+        <result column="share_input" property="shareInput" jdbcType="DECIMAL"/>
         <result column="is_settled" property="isSettled" jdbcType="BOOLEAN"/>
         <result column="settled_at" property="settledAt" jdbcType="TIMESTAMP"/>
     </resultMap>
 
+    <!-- is_settled used to be written as FALSE whatever the caller set, so a payer's own share
+         was stored as unpaid although every service meant it as settled. -->
     <insert id="insert" parameterType="com.ds.goroute.entity.ExpenseSplit">
-        INSERT INTO expense_splits (id, expense_id, user_id, guest_member_id, guest_name, amount, is_settled)
+        INSERT INTO expense_splits (id, expense_id, user_id, guest_member_id, guest_name, amount, share_input,
+                                    is_settled, settled_at)
         VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{expenseId,javaType=java.util.UUID,jdbcType=OTHER},
                 #{userId,javaType=java.util.UUID,jdbcType=OTHER}, #{guestMemberId,javaType=java.util.UUID,jdbcType=OTHER},
-                #{guestName}, #{amount}, FALSE)
+                #{guestName}, #{amount}, #{shareInput,jdbcType=DECIMAL},
+                COALESCE(#{isSettled,jdbcType=BOOLEAN}, FALSE), #{settledAt,jdbcType=TIMESTAMP})
     </insert>
 
     <!-- ORDER BY id: without it the order is whatever the plan returns, and it is visible
@@ -45,6 +50,7 @@
             guest_member_id = #{guestMemberId,javaType=java.util.UUID,jdbcType=OTHER},
             guest_name = #{guestName},
             amount = #{amount},
+            share_input = #{shareInput,jdbcType=DECIMAL},
             is_settled = #{isSettled},
             settled_at = #{settledAt}
         WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}

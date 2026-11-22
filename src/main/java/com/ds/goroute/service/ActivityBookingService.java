@@ -41,6 +41,9 @@ public interface ActivityBookingService {
 
     ActivityBookingResponse getById(UUID id, String targetCurrency);
 
+    /** Cards of the imported catalogue tours among {@code ids} (Feed search); partner products are absent. */
+    List<ActivityBookingResponse> listCatalogueByIds(java.util.Collection<UUID> ids);
+
     ActivityBookingResponse updateById(UUID id, UpdateActivityBookingRequest request);
 
     void deleteById(UUID id);

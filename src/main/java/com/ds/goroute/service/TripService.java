@@ -1,14 +1,21 @@
 package com.ds.goroute.service;
 
+import com.ds.goroute.dto.PublicTripSearchCriteria;
+import com.ds.goroute.dto.FeedPlaceKind;
+import com.ds.goroute.dto.FeedTripRules;
 import com.ds.goroute.dto.request.*;
 import com.ds.goroute.dto.response.*;
+import com.ds.goroute.type.TripCreationCharge;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
 public interface TripService {
+    /** Creates a trip the user pays AI_CREDIT.TRIP_CREATION_COST for; refused when the balance is short. */
     TripResponse createTrip(CreateTripRequest request, UUID userId);
+
+    TripResponse createTrip(CreateTripRequest request, UUID userId, TripCreationCharge charge);
 
     List<TripResponse> getTrips(UUID userId, String status);
 
@@ -16,7 +23,13 @@ public interface TripService {
 
     TripResponse updateTrip(UUID tripId, UpdateTripRequest request, UUID userId);
 
-    void deleteTrip(UUID tripId, UUID userId);
+    /** Deletes the trip and keeps its group chat, read-only, for the people in it. */
+    default void deleteTrip(UUID tripId, UUID userId) {
+        deleteTrip(tripId, userId, false);
+    }
+
+    /** @param deleteChat whether the trip's group chat goes with it (the owner's choice). */
+    void deleteTrip(UUID tripId, UUID userId, boolean deleteChat);
 
     TripMemberResponse inviteMember(UUID tripId, InviteMemberRequest request, UUID userId);
 
@@ -42,9 +55,15 @@ public interface TripService {
 
     PublicTripResponse getPublicTrip(UUID tripId, UUID viewerId);
 
-    TripVoteResponse voteTripHelpful(UUID tripId, UUID userId);
+    /**
+     * Sets or removes the viewer's helpful vote; {@code voted} null flips it, for app builds
+     * that only knew the toggle. Sending the wanted state means a heart drawn from a stale
+     * copy of the trip cannot turn a like into an unlike.
+     */
+    TripVoteResponse voteTripHelpful(UUID tripId, UUID userId, Boolean voted);
 
-    TripVoteResponse voteTripUnhelpful(UUID tripId, UUID userId);
+    /** As {@link #voteTripHelpful}, for the not-helpful vote. */
+    TripVoteResponse voteTripUnhelpful(UUID tripId, UUID userId, Boolean voted);
 
     TripResponse joinTripByCode(String code, UUID userId);
 
@@ -62,9 +81,54 @@ public interface TripService {
                                                boolean allPublic,
                                                String randomSeed,
                                                boolean preferImages,
+                                               boolean recommended,
+                                               FeedPlaceKind placeKind,
                                                int page, int size,
                                                UUID viewerId,
                                                UUID excludeUserId);
+
+    /** One page of public trips ranked as {@code criteria} says. */
+    List<PublicTripResponse> searchPublicTrips(PublicTripSearchCriteria criteria,
+                                               int page, int size,
+                                               UUID viewerId,
+                                               UUID excludeUserId);
+
+    /**
+     * Public trips owned by the people {@code viewerId} follows, most recently shared first;
+     * with a focus point (both non-null) those whose destination is in its province first,
+     * then by 100 km ring outwards, each carrying its {@code focusRank}. Deleted owners,
+     * taken-down trips and blocks in either direction are left out. {@code kind} keeps the
+     * trips with a stop of that kind; null means all of them. {@code feedRules} (the Feed's
+     * Friends tab; null elsewhere) also drops trips not started yet or with too few activities.
+     */
+    List<PublicTripResponse> getFollowingTrips(UUID viewerId, Double focusLat, Double focusLng, FeedPlaceKind kind,
+                                               FeedTripRules feedRules, int page, int size);
+
+    /** Without the Feed's trip rules: the Home "Friends" tab. */
+    default List<PublicTripResponse> getFollowingTrips(UUID viewerId, Double focusLat, Double focusLng,
+                                                       FeedPlaceKind kind, int page, int size) {
+        return getFollowingTrips(viewerId, focusLat, focusLng, kind, null, page, size);
+    }
+
+    /**
+     * The trips among {@code tripIds} that are still public, not deleted and not taken down, as
+     * list cards for {@code viewerId}, in the order of the ids. No block check: callers that need
+     * one filter on {@code ownerId}.
+     */
+    List<PublicTripResponse> getPublicTripCards(UUID viewerId, List<UUID> tripIds);
+
+    /**
+     * Public trips whose itinerary has the catalogue place {@code placeId}, as list cards,
+     * most recently shared first. Private, deleted and taken-down trips are left out, so
+     * this can be shorter than the place's {@code tripUseCount}.
+     */
+    List<PublicTripResponse> getPublicTripsWithPlace(UUID placeId, int page, int size, UUID viewerId);
+
+    /**
+     * Recounts the public-search ranking inputs (activity and memory counts, V216) of every
+     * trip whose stored numbers drifted. Returns the number of trips fixed.
+     */
+    int reconcileContentCounts();
 
     TripRecentLocationResponse getRecentLocation(UUID userId);
 

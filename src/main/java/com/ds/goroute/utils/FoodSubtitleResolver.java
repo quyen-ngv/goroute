@@ -21,7 +21,6 @@ public final class FoodSubtitleResolver {
             case "vi" -> food.getSubtitleVi();
             case "ja" -> food.getSubtitleJa();
             case "ko" -> food.getSubtitleKo();
-            case "zh-tw" -> food.getSubtitleJa();
             default -> food.getSubtitleEn();
         };
         if (fromLang != null && !fromLang.isBlank()) {

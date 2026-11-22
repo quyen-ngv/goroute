@@ -34,6 +34,12 @@ public interface TripChatService {
      */
     void onMembershipChanged(UUID tripId);
 
-    /** Retires the conversation with its trip; the transcript stays for the people in it. */
-    void onTripDeleted(UUID tripId);
+    /**
+     * Retires the conversation with its trip.
+     *
+     * @param deleteChat the owner's choice when deleting. False keeps the transcript, read-only
+     *                   and still listed, for the people in it; true removes the group for all
+     *                   of them.
+     */
+    void onTripDeleted(UUID tripId, boolean deleteChat);
 }

@@ -19,6 +19,7 @@ public class PlaceImportJobItemResponse {
     private UUID id;
     private UUID sourceRefId;
     private UUID activityId;
+    private UUID checkinId;
     private String sourceUrl;
     private String sourceAddress;
     private String sourceOriginalUrl;

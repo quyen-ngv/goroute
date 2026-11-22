@@ -10,11 +10,14 @@ import com.ds.goroute.dto.response.ActivityBookingResponse;
 import com.ds.goroute.dto.response.ActivityResponse;
 import com.ds.goroute.service.ActivityBookingService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -22,10 +25,14 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
+@Validated
 @RequestMapping("/v1/api/activity-bookings")
 @RequiredArgsConstructor
 @Slf4j
 public class ActivityBookingController extends BaseController {
+
+    /** Catalog/selection cap: the admin list asks for 200 per page. */
+    private static final int MAX_SEARCH_PAGE_SIZE = 500;
 
     private final ActivityBookingService activityBookingService;
 
@@ -48,8 +55,8 @@ public class ActivityBookingController extends BaseController {
             @RequestParam(required = false) BigDecimal longitude,
             @RequestParam(defaultValue = "50") double radiusKm,
             @RequestParam(required = false) Float minLuceneScore,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_SEARCH_PAGE_SIZE) int size) {
         String currency = AcceptCurrencyFilter.current();
         List<ActivityBookingResponse> responses = activityBookingService.search(
                 q, minPrice, maxPrice, minRating, destinations,
@@ -62,8 +69,8 @@ public class ActivityBookingController extends BaseController {
             @RequestParam UUID placeId,
             @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "50") double radiusKm,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_SEARCH_PAGE_SIZE) int size) {
         String currency = AcceptCurrencyFilter.current();
         List<ActivityBookingResponse> responses = activityBookingService.searchByPlace(
                 placeId, q, radiusKm, currency, page, size);

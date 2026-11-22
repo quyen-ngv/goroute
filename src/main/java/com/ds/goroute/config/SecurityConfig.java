@@ -1,5 +1,6 @@
 package com.ds.goroute.config;
 
+import com.ds.goroute.config.filter.AdminApiKeyAuthenticationFilter;
 import com.ds.goroute.config.filter.ApiKeyAuthenticationFilter;
 import com.ds.goroute.config.filter.InternalApiAuthenticationFilter;
 import com.ds.goroute.config.filter.JwtAuthenticationFilter;
@@ -34,6 +35,7 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final ApiKeyAuthenticationFilter apiKeyAuthenticationFilter;
+    private final AdminApiKeyAuthenticationFilter adminApiKeyAuthenticationFilter;
     private final InternalApiAuthenticationFilter internalApiAuthenticationFilter;
     private final CorsProperties corsProperties;
     private final ApiAuthenticationEntryPoint apiAuthenticationEntryPoint;
@@ -63,6 +65,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/v1/api/weather").permitAll()
                         .requestMatchers("/v1/api/city-stories/feed").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/location-images/*/stories").permitAll()
+                        // Place edit suggestions (epic 09): any signed-in user, never a guest. Must precede
+                        // the public GET /places/** rule and the admin-only /places/** rule below.
+                        .requestMatchers("/v1/api/places/*/edit-suggestions",
+                                "/v1/api/places/*/edit-suggestions/**").authenticated()
                         // Must precede the public GET rule below: this one can expose INACTIVE places.
                         .requestMatchers(HttpMethod.GET, "/v1/api/places/detail-refresh-candidates")
                         .hasAnyAuthority("ROLE_ADMIN", "ROLE_API_KEY")
@@ -102,14 +108,18 @@ public class SecurityConfig {
                         .requestMatchers("/v1/api/partner/**").hasAnyAuthority("ROLE_PARTNER", "ROLE_ADMIN")
                         .requestMatchers("/v1/api/internal/**").hasAuthority("ROLE_INTERNAL")
                         .requestMatchers("/v1/api/notifications/admin/**").hasAuthority("ROLE_ADMIN")
-                        // A shared collection is meant to be openable by anyone holding the
-                        // link. Only this one method and path is public; every other
-                        // collection route stays authenticated, and un-publishing clears
-                        // the slug so an old link resolves to nothing.
-                        .requestMatchers(HttpMethod.GET, "/v1/api/collections/shared/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/checkins/feed").permitAll()
+                        // The ranked feed answers guests too (enabled only once it is on for everyone).
+                        .requestMatchers(HttpMethod.GET, "/v1/api/feed/for-you").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/v1/api/users/top-active").permitAll()
+                        // Blog posts (epic 20): the reads answer guests. "following" means nothing to a
+                        // guest and must precede the /posts/* rule, which would otherwise open it.
+                        .requestMatchers(HttpMethod.GET, "/v1/api/posts/following").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/v1/api/posts/policy", "/v1/api/posts/feed",
+                                "/v1/api/posts/*", "/v1/api/users/*/posts").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/checkins/places/*",
-                                "/v1/api/checkins/locations/*").permitAll()
+                                "/v1/api/checkins/locations/*",
+                                "/v1/api/checkins/events/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/api/contributions/check").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/api/contributions/places/*/contributors").permitAll()
                         .requestMatchers("/share/**").permitAll()
@@ -129,11 +139,24 @@ public class SecurityConfig {
                                 "/ondetour",
                                 "/ondetour/*",
                                 "/goroute/ondetour",
-                                "/goroute/ondetour/*"
+                                "/goroute/ondetour/*",
+                                "/pengoo-logo.png",
+                                "/goroute/pengoo-logo.png"
                         ).permitAll()
+                        // A shared profile link: the page itself. Its reads are under
+                        // /v1/api/public/users/**, already open above.
+                        .requestMatchers(HttpMethod.GET, "/u/*").permitAll()
+                        // App Links / Universal Links association files; the proxy forwards
+                        // them from the root of the domain.
+                        .requestMatchers(HttpMethod.GET,
+                                "/.well-known/assetlinks.json",
+                                "/.well-known/apple-app-site-association").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(apiKeyAuthenticationFilter, JwtAuthenticationFilter.class)
+                // X-Admin-Api-Key (events crawler): only on its scoped admin paths, fails closed,
+                // and authenticates as the key owner before any bearer token is looked at.
+                .addFilterBefore(adminApiKeyAuthenticationFilter, JwtAuthenticationFilter.class)
                 .addFilterBefore(internalApiAuthenticationFilter, ApiKeyAuthenticationFilter.class);
 
         return http.build();

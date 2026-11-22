@@ -1,22 +1,36 @@
 package com.ds.goroute.repository.impl;
 
+import com.ds.goroute.dto.FeedPlaceKind;
+import com.ds.goroute.dto.FeedTripRules;
+import com.ds.goroute.dto.PublicTripSearchCriteria;
+import com.ds.goroute.entity.AdminTripRow;
 import com.ds.goroute.entity.Trip;
+import com.ds.goroute.entity.TripRankRow;
+import com.ds.goroute.event.PlaceUsageChangedEvent;
 import com.ds.goroute.mapper.TripMapper;
+import com.ds.goroute.repository.ActivityRepository;
 import com.ds.goroute.repository.TripRepository;
+import com.google.common.collect.Lists;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Repository;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Repository
 @RequiredArgsConstructor
 public class TripRepositoryImpl implements TripRepository {
-    
+
+    private static final int ID_BATCH_SIZE = 500;
+
     private final TripMapper tripMapper;
+    private final ActivityRepository activityRepository;
+    private final ApplicationEventPublisher events;
     
     @Override
     public void insert(Trip trip) {
@@ -45,7 +59,12 @@ public class TripRepositoryImpl implements TripRepository {
     
     @Override
     public void deleteById(UUID id) {
+        // A deleted trip no longer counts towards its places' usage (V225).
+        Set<String> places = activityRepository.tripPlaceReferences(id);
         tripMapper.deleteById(id);
+        if (!places.isEmpty()) {
+            events.publishEvent(new PlaceUsageChangedEvent(places));
+        }
     }
     
     @Override
@@ -54,33 +73,72 @@ public class TripRepositoryImpl implements TripRepository {
     }
     
     @Override
-    public List<Trip> searchPublicTrips(BigDecimal latitude,
-                                        BigDecimal longitude,
-                                        BigDecimal radiusKm,
-                                        String destination,
-                                        String keyword,
-                                        boolean allPublic,
-                                        String randomSeed,
-                                        boolean preferImages,
-                                        int page,
-                                        int size,
-                                        UUID excludeUserId) {
-        int offset = page * size;
-        return tripMapper.searchPublicTrips(
-                latitude,
-                longitude,
-                radiusKm,
-                destination,
-                keyword,
-                allPublic,
-                randomSeed,
-                preferImages,
-                offset,
-                size,
-                excludeUserId
-        );
+    public List<TripRankRow> searchPublicTripRanking(PublicTripSearchCriteria criteria,
+                                                     UUID excludeUserId,
+                                                     UUID viewerId,
+                                                     int limit,
+                                                     int offset) {
+        return tripMapper.searchPublicTripRanking(criteria, excludeUserId, viewerId, limit, offset);
+    }
+
+    @Override
+    public List<Trip> findPublicByIds(List<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        List<Trip> trips = new ArrayList<>();
+        for (List<UUID> batch : Lists.partition(ids, ID_BATCH_SIZE)) {
+            trips.addAll(tripMapper.selectPublicByIds(batch));
+        }
+        return trips;
+    }
+
+    @Override
+    public List<AdminTripRow> findAdminSharedTrips(String search, UUID ownerId, String visibility, Boolean hidden,
+                                                   int limit, int offset) {
+        return tripMapper.selectAdminSharedTrips(search, ownerId, visibility, hidden, limit, offset);
+    }
+
+    @Override
+    public long countAdminSharedTrips(String search, UUID ownerId, String visibility, Boolean hidden) {
+        return tripMapper.countAdminSharedTrips(search, ownerId, visibility, hidden);
+    }
+
+    @Override
+    public boolean claimFollowersNotification(UUID tripId) {
+        return tripId != null && tripMapper.claimFollowersNotification(tripId) == 1;
+    }
+
+    @Override
+    public void refreshActivityCount(UUID tripId) {
+        if (tripId != null) {
+            tripMapper.refreshActivityCount(tripId);
+        }
+    }
+
+    @Override
+    public void refreshMemoryCount(UUID tripId) {
+        if (tripId != null) {
+            tripMapper.refreshMemoryCount(tripId);
+        }
+    }
+
+    @Override
+    public int reconcileContentCounts() {
+        return tripMapper.reconcileContentCounts();
     }
     
+    @Override
+    public List<Trip> findFollowingTrips(UUID viewerId, Double focusLat, Double focusLng,
+                                         FeedPlaceKind kind, FeedTripRules rules, int limit, int offset) {
+        return tripMapper.findFollowingTrips(viewerId, focusLat, focusLng, kind, rules, limit, offset);
+    }
+
+    @Override
+    public List<UUID> findPublicTripIdsByPlace(UUID placeId, int limit, int offset) {
+        return tripMapper.selectPublicTripIdsByPlace(placeId, limit, offset);
+    }
+
     @Override
     public void incrementViewCount(UUID id) {
         tripMapper.incrementViewCount(id);
@@ -129,5 +187,31 @@ public class TripRepositoryImpl implements TripRepository {
     @Override
     public List<Trip> findNotificationCandidates(LocalDate fromDate, LocalDate toDate) {
         return tripMapper.selectNotificationCandidates(fromDate, toDate);
+    }
+
+    @Override
+    public List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexPage(UUID afterId, int limit) {
+        return tripMapper.selectSearchIndexPage(afterId, limit);
+    }
+
+    @Override
+    public List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexChanges(
+            java.time.LocalDateTime afterUpdatedAt, UUID afterId, int limit) {
+        return tripMapper.selectSearchIndexChanges(afterUpdatedAt, afterId, limit);
+    }
+
+    @Override
+    public Optional<java.time.LocalDateTime> findSearchIndexMaxUpdatedAt() {
+        return Optional.ofNullable(tripMapper.selectSearchIndexMaxUpdatedAt());
+    }
+
+    @Override
+    public boolean findSimplifyDebts(UUID tripId) {
+        return !Boolean.FALSE.equals(tripMapper.selectSimplifyDebts(tripId));
+    }
+
+    @Override
+    public void updateSimplifyDebts(UUID tripId, boolean simplifyDebts) {
+        tripMapper.updateSimplifyDebts(tripId, simplifyDebts);
     }
 }

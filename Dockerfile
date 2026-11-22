@@ -29,8 +29,10 @@ RUN groupadd --system spring && useradd --system -g spring spring && \
 
 COPY --from=builder --chown=spring:spring /app/target/ticketmaster-0.0.1-SNAPSHOT.jar app.jar
 
+ENV TZ=UTC
+
 # Biến môi trường quan trọng giúp tránh lỗi SSL/Networking khi khởi tạo
-ENV JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError -Djava.net.preferIPv4Stack=true -Djava.security.egd=file:/dev/./urandom -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8"
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError -Djava.net.preferIPv4Stack=true -Djava.security.egd=file:/dev/./urandom -Duser.timezone=UTC -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8"
 
 # Firebase credentials are mounted at runtime and are never baked into the image.
 
@@ -42,5 +44,7 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=5 \
   CMD curl -fsS http://localhost:8080/actuator/health || exit 1
 
-# Chạy ứng dụng với JAVA_OPTS
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+# Chạy ứng dụng với JAVA_OPTS. `exec` thay sh bằng java làm PID 1: không có nó, `docker stop`
+# gửi SIGTERM cho sh (PID 1 bỏ qua), graceful shutdown không chạy và java bị SIGKILL sau
+# stop_grace_period, cắt mọi request đang chạy giữa lúc rollout.
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]

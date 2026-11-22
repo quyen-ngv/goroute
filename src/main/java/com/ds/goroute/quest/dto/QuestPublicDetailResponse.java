@@ -39,7 +39,11 @@ public record QuestPublicDetailResponse(
         /** The creator shows every checkpoint from the start. */
         boolean revealRoute,
         /** The checkpoints in order, on the map; empty unless {@link #revealRoute}. */
-        List<RouteStop> route) {
+        List<RouteStop> route,
+        /** PUBLISHED, or PAUSED / ARCHIVED when shown to someone who already played it. */
+        String status,
+        /** False when the page is shown only because the viewer played it before: no new run. */
+        boolean playable) {
 
     /**
      * One checkpoint of a shown route. PIN: its spot and unlock radius. AREA: the offset search

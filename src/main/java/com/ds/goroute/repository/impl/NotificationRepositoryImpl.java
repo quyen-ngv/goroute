@@ -71,6 +71,11 @@ public class NotificationRepositoryImpl implements NotificationRepository {
     }
 
     @Override
+    public Optional<Notification> findLatestConversationNotification(UUID userId, UUID conversationId) {
+        return Optional.ofNullable(notificationMapper.findLatestConversationNotification(userId, conversationId));
+    }
+
+    @Override
     public void updateSocialNotification(Notification notification) {
         notificationMapper.updateSocialNotification(notification);
     }
@@ -103,5 +108,35 @@ public class NotificationRepositoryImpl implements NotificationRepository {
     @Override
     public void lockTarget(UUID userId, com.ds.goroute.type.NotificationType type, String targetType, UUID targetId) {
         notificationMapper.lockTarget(userId, type, targetType, targetId);
+    }
+
+    @Override
+    public List<UUID> insertFollowerNotifications(List<UUID> recipientIds, com.ds.goroute.type.NotificationType type,
+                                                  String data, UUID actorId, String dedupeKey) {
+        if (recipientIds == null || recipientIds.isEmpty()) {
+            return List.of();
+        }
+        return notificationMapper.insertFollowerNotifications(recipientIds, type.name(), data, actorId, dedupeKey);
+    }
+
+    @Override
+    public List<UUID> findOverFollowingDailyCap(List<UUID> userIds, int hours, int cap) {
+        if (userIds == null || userIds.isEmpty()) {
+            return List.of();
+        }
+        return notificationMapper.findOverFollowingDailyCap(userIds, hours, cap);
+    }
+
+    @Override
+    public List<Notification> findUnreadFollowingPosts(UUID userId, int hours, int limit) {
+        return notificationMapper.findUnreadFollowingPosts(userId, hours, limit);
+    }
+
+    @Override
+    public int markFollowingPostsRead(UUID userId, java.util.Collection<String> dedupeKeys) {
+        if (dedupeKeys == null || dedupeKeys.isEmpty()) {
+            return 0;
+        }
+        return notificationMapper.markFollowingPostsRead(userId, dedupeKeys);
     }
 }

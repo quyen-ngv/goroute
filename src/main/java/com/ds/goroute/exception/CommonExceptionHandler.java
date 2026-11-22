@@ -8,6 +8,7 @@ import com.ds.goroute.utils.ErrorMessages;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.ServletRequestBindingException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
@@ -31,6 +33,11 @@ import java.util.List;
 @RestControllerAdvice
 @Slf4j
 public class CommonExceptionHandler {
+
+    private static final String OWN_PACKAGE_PREFIX = "com.ds.goroute.";
+
+    /** Seconds a client should wait after a 503 (an upload refused for want of a free slot). */
+    private static final String SERVICE_UNAVAILABLE_RETRY_AFTER_SECONDS = "5";
 
     private final HttpServletRequest httpServletRequest;
 
@@ -49,6 +56,20 @@ public class CommonExceptionHandler {
         List<ErrorViolation> violations = error.getData() instanceof String description
                 ? List.of(ErrorViolation.builder().description(description).build())
                 : null;
+        if (error.getData() instanceof java.util.Map<?, ?>) {
+            logClientError(status, error.getCode(), message, violations);
+            // Structured detail the client acts on, e.g. when a refused map search may retry.
+            BaseResponse<?> body = BaseResponse.ofFailed(requestId(), error, message, null, error.getData());
+            return ResponseEntity.status(status).body(body);
+        }
+        if (status == HttpStatus.SERVICE_UNAVAILABLE) {
+            log.warn("API {} {} -> 503 code={} {}", httpServletRequest.getMethod(),
+                    httpServletRequest.getRequestURI(), error.getCode(), message);
+            // A busy answer, not a broken one: tell the client when to come back.
+            return ResponseEntity.status(status)
+                    .header(HttpHeaders.RETRY_AFTER, SERVICE_UNAVAILABLE_RETRY_AFTER_SECONDS)
+                    .body(BaseResponse.ofFailed(requestId(), error, message, violations));
+        }
         return response(error, message, violations, status);
     }
 
@@ -106,12 +127,28 @@ public class CommonExceptionHandler {
         return invalidParameters(List.of(violation(null, "Request body is invalid")));
     }
 
+    /**
+     * Our own code throws IllegalArgumentException with a message written for the caller
+     * ("URL must be a TikTok or Instagram URL"), and clients show it. The JDK and libraries
+     * throw it too -- Enum.valueOf ("No enum constant com.ds.goroute.type..."), UUID.fromString,
+     * NumberFormatException -- and those messages name internal classes, so they are logged
+     * and answered with a generic text instead.
+     */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<BaseResponse<?>> handleIllegalArgument(IllegalArgumentException exception) {
-        String message = exception.getMessage() == null || exception.getMessage().isBlank()
-                ? "Invalid parameter"
-                : exception.getMessage();
+        String message = exception.getMessage();
+        if (message == null || message.isBlank()) {
+            message = "Invalid parameter";
+        } else if (!thrownByOurCode(exception)) {
+            log.debug("Rejected request with a library argument error: {}", message);
+            message = "Invalid parameter";
+        }
         return invalidParameters(List.of(violation(null, message)));
+    }
+
+    private static boolean thrownByOurCode(Throwable exception) {
+        StackTraceElement[] trace = exception.getStackTrace();
+        return trace.length > 0 && trace[0].getClassName().startsWith(OWN_PACKAGE_PREFIX);
     }
 
     @ExceptionHandler(AuthenticationException.class)
@@ -157,6 +194,17 @@ public class CommonExceptionHandler {
         return response(ErrorConstant.BAD_REQUEST, "Method not allowed", null, HttpStatus.METHOD_NOT_ALLOWED);
     }
 
+    /**
+     * The client hung up (usually the app's 30 s receive timeout) before the response was
+     * written. Nothing can be sent back and nothing broke here, so this is not a 500; a slow
+     * request behind it is logged by RequestContextFilter.
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleClientGone(AsyncRequestNotUsableException exception) {
+        log.info("Client closed the connection before {} {} was answered: {}",
+                httpServletRequest.getMethod(), httpServletRequest.getRequestURI(), exception.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<BaseResponse<?>> handleUnexpectedException(Exception exception) {
         log.error("Unhandled API exception for {} {}",
@@ -176,8 +224,27 @@ public class CommonExceptionHandler {
 
     private ResponseEntity<BaseResponse<?>> response(
             BusinessError error, String message, List<ErrorViolation> errors, HttpStatusCode status) {
+        logClientError(status, error.getCode(), message, errors);
         BaseResponse<?> body = BaseResponse.ofFailed(requestId(), error, message, errors);
         return ResponseEntity.status(status).body(body);
+    }
+
+    /**
+     * One line per 4xx so a status in the nginx log can be traced to its business code (which of
+     * REFERRAL_WINDOW_EXPIRED / REFERRAL_ALREADY_APPLIED / … a 400 was). 5xx are logged with their
+     * stack trace by their own handlers. userId and appBuild come from the MDC.
+     */
+    private void logClientError(HttpStatusCode status, int code, String message, List<ErrorViolation> errors) {
+        if (!status.is4xxClientError()) {
+            return;
+        }
+        String detail = errors == null || errors.isEmpty() ? "" : " " + errors.stream()
+                .map(violation -> violation.getField() == null
+                        ? violation.getDescription()
+                        : violation.getField() + ": " + violation.getDescription())
+                .toList();
+        log.warn("API {} {} -> {} code={} {}{}", httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(), status.value(), code, message, detail);
     }
 
     private String requestId() {

@@ -1,13 +1,19 @@
 package com.ds.goroute.service;
 
+import com.ds.goroute.dto.FeedGeoFilter;
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.dto.request.CreateUserCheckinRequest;
 import com.ds.goroute.dto.request.UpdateUserCheckinRequest;
 import com.ds.goroute.dto.response.CheckinContextResponse;
+import com.ds.goroute.dto.response.CheckinVideoUploadResponse;
 import com.ds.goroute.dto.response.UserCheckinResponse;
 import com.ds.goroute.dto.response.CheckinLikeResponse;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -41,6 +47,13 @@ public interface UserCheckinService {
      */
     UserCheckinResponse create(UUID userId, CreateUserCheckinRequest request);
 
+    /**
+     * Stores the one video of a check-in about to be posted. Refused when video check-ins are
+     * not open to this user, or when the file's header says it runs past
+     * {@code CHECKIN.MAX_VIDEO_SECONDS}.
+     */
+    CheckinVideoUploadResponse uploadVideo(UUID userId, MultipartFile file);
+
     /** Edits caption, rating, custom name and visibility. The place cannot be changed. */
     UserCheckinResponse update(UUID userId, UUID checkinId, UpdateUserCheckinRequest request);
 
@@ -54,6 +67,12 @@ public interface UserCheckinService {
      * surface that can remove it.
      */
     void delete(UUID userId, UUID checkinId, boolean deleteReview);
+
+    /**
+     * The admin console removing an unsuitable check-in: the same removal as {@link #delete},
+     * done on the author's behalf. The author is not told here; the caller does that.
+     */
+    void removeAsAdmin(UUID checkinId, boolean deleteReview);
 
     /** Keeps the check-in only, which is what every existing caller meant. */
     default void delete(UUID userId, UUID checkinId) {
@@ -71,17 +90,50 @@ public interface UserCheckinService {
 
     UserCheckinResponse get(UUID viewerId, UUID checkinId);
 
-    CheckinLikeResponse toggleLike(UUID userId, UUID checkinId);
+    /**
+     * The check-ins among {@code checkinIds} that someone other than the author may open:
+     * not removed, public and not taken down. Keyed by id; missing ids are not visible.
+     * Blocks are the caller's business.
+     */
+    Map<UUID, UserCheckinResponse> findVisibleByIds(UUID viewerId, Collection<UUID> checkinIds);
+
+    /**
+     * Sets the viewer's like to {@code liked}; null flips it, for app builds that only knew
+     * the toggle. A client that sends the state it wants cannot turn a like into an unlike
+     * by tapping a heart drawn from a stale copy of the post.
+     */
+    CheckinLikeResponse setLike(UUID userId, UUID checkinId, Boolean liked);
 
     /**
      * Public feed without the viewer's own check-ins: posts with photos first, then newest
-     * first.
+     * first. {@code geo} limits it to an area; null means everywhere.
+     *
+     * <p>{@code cursor} is the {@code feedCursor} of the last post the client holds; when
+     * present the page after it is returned and {@code page} is ignored. Without it the feed
+     * pages by number, as builds that predate the cursor expect. {@code kind} keeps the
+     * check-ins at a place of that kind; null means every check-in.
      */
-    List<UserCheckinResponse> feed(UUID viewerId, int page, int size);
+    List<UserCheckinResponse> feed(UUID viewerId, FeedGeoFilter geo, FeedPlaceKind kind,
+                                   int page, int size, String cursor);
+
+    /**
+     * Public check-ins by the people {@code viewerId} follows, newest first. Deleted
+     * authors, taken-down posts and anyone blocked in either direction are left out:
+     * blocking does not remove a follow, so the follow alone is not consent to be shown.
+     */
+    /**
+     * Public check-ins by the people the viewer follows. With a focus point (both non-null)
+     * the ones in its province come first, then the rest by 100 km ring outwards, newest
+     * first within each; each carries its {@code focusRank}. Without, newest first.
+     * {@code kind} keeps the check-ins at a place of that kind; null means all of them.
+     */
+    List<UserCheckinResponse> followingFeed(UUID viewerId, Double focusLat, Double focusLng, FeedPlaceKind kind,
+                                            int page, int size);
 
     List<UserCheckinResponse> byUser(UUID viewerId, UUID userId, int page, int size);
 
-    List<UserCheckinResponse> byPlace(UUID placeId, int page, int size);
+    /** {@code viewerId} (null for guests) only decides {@code hasSaved}. */
+    List<UserCheckinResponse> byPlace(UUID viewerId, UUID placeId, int page, int size);
 
     /**
      * Every public check-in written during one trip, oldest first.
@@ -91,9 +143,24 @@ public interface UserCheckinService {
      */
     List<UserCheckinResponse> byTrip(UUID viewerId, UUID tripId);
 
+    /**
+     * {@link #byTrip} for the trip's own members, whatever the trip's visibility: the
+     * itinerary map shows each stop's public check-ins. Refuses anyone without access.
+     */
+    List<UserCheckinResponse> byTripForMember(UUID userId, UUID tripId);
+
+    /** Public check-ins made at one local event (epic 17), newest visit first. */
+    List<UserCheckinResponse> byLocalEvent(UUID viewerId, UUID eventId, int page, int size);
+
     /** Everything at one uncatalogued spot, so its name is still tappable in the feed. */
-    List<UserCheckinResponse> byLocationKey(String locationKey, int page, int size);
+    List<UserCheckinResponse> byLocationKey(UUID viewerId, String locationKey, int page, int size);
 
     /** Wards this person has checked in at; private check-ins count only for the owner. */
     List<com.ds.goroute.dto.response.VisitedWardResponse> visitedWards(UUID viewerId, UUID userId);
+
+    /**
+     * Turns up to {@code batchSize} reviews written outside the check-in flow into check-ins
+     * (oldest first) and returns how many were created. Runs from {@code LegacyReviewCheckinJob}.
+     */
+    int convertLegacyReviews(int batchSize);
 }

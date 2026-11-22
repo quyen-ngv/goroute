@@ -227,6 +227,8 @@ public final class PlaceAttributeCatalog {
                 "photogenic", "scenic", "uniqueness");
         add(result, PlaceAttributeGroup.UNIVERSAL, PlaceAttributeType.TIME_COMMITMENT, "time_commitment");
         add(result, PlaceAttributeGroup.UNIVERSAL, PlaceAttributeType.PRICE_LEVEL, "price_level");
+        add(result, PlaceAttributeGroup.UNIVERSAL, PlaceAttributeType.TIME_OF_DAY, "best_time_of_day");
+        add(result, PlaceAttributeGroup.UNIVERSAL, PlaceAttributeType.MONTH, "best_months");
 
         add(result, PlaceAttributeGroup.VIETNAM, PlaceAttributeType.BOOLEAN,
                 "alley_location", "motorbike_parking", "street_side_location", "street_seating", "air_conditioning",

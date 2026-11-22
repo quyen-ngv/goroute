@@ -1,5 +1,6 @@
 package com.ds.goroute.config;
 
+import com.ds.goroute.config.filter.AdminApiKeyAuthenticationFilter;
 import com.ds.goroute.config.filter.ApiKeyAuthenticationFilter;
 import com.ds.goroute.config.filter.InternalApiAuthenticationFilter;
 import com.ds.goroute.config.filter.JwtAuthenticationFilter;
@@ -19,6 +20,7 @@ class SecurityConfigStartupTest {
                     "application.security.jwt.secret-key=test-only-security-config-secret-key-1234567890")
             .withBean(JwtAuthenticationFilter.class, () -> mock(JwtAuthenticationFilter.class))
             .withBean(ApiKeyAuthenticationFilter.class, () -> mock(ApiKeyAuthenticationFilter.class))
+            .withBean(AdminApiKeyAuthenticationFilter.class, () -> mock(AdminApiKeyAuthenticationFilter.class))
             .withBean(InternalApiAuthenticationFilter.class, () -> mock(InternalApiAuthenticationFilter.class))
             .withBean(ApiAuthenticationEntryPoint.class, () -> mock(ApiAuthenticationEntryPoint.class))
             .withBean(ApiAccessDeniedHandler.class, () -> mock(ApiAccessDeniedHandler.class))

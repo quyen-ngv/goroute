@@ -34,6 +34,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -65,12 +66,14 @@ class TripChatServiceImplTest {
     private TripMemberRepository tripMembers;
     @Mock
     private UserRepository users;
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher events;
 
     private TripChatServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new TripChatServiceImpl(chatRepository, chatService, trips, tripMembers, users);
+        service = new TripChatServiceImpl(chatRepository, chatService, trips, tripMembers, users, events);
         when(trips.findById(TRIP)).thenReturn(Optional.of(Trip.builder().id(TRIP).name("Đà Lạt").build()));
         when(users.findById(any())).thenReturn(Optional.of(User.builder().id(FRIEND).fullName("Linh").build()));
     }
@@ -261,10 +264,22 @@ class TripChatServiceImplTest {
     void archivesOnTripDeletion() {
         when(chatRepository.findByTrip(TRIP, null)).thenReturn(Optional.of(conversation()));
 
-        service.onTripDeleted(TRIP);
+        service.onTripDeleted(TRIP, false);
 
         verify(chatRepository).updateConversation(eq(CONVERSATION),
                 eq(MarketplaceConversationStatus.ARCHIVED.name()), eq(null), eq(false), any());
+        verify(chatRepository, never()).archiveTripConversation(any(), any());
+    }
+
+    @Test
+    @DisplayName("removes the group for everybody when the owner deletes the chat with the trip")
+    void deletesChatWithTripWhenAsked() {
+        when(chatRepository.findByTrip(TRIP, null)).thenReturn(Optional.of(conversation()));
+
+        service.onTripDeleted(TRIP, true);
+
+        verify(chatRepository).archiveTripConversation(eq(CONVERSATION), any());
+        verify(chatRepository, never()).updateConversation(any(), any(), any(), anyBoolean(), any());
     }
 
     private MarketplaceConversation conversation() {

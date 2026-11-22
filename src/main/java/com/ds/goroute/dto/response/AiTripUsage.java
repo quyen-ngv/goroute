@@ -6,13 +6,10 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * What an AI trip generation would cost the user, both halves of it.
+ * Whether an AI trip generation may start, and why not.
  *
- * <p>An AI generation spends two different allowances: a generation slot up front, and a
- * trip-creation slot at the end when the itinerary is saved as a real trip. Reporting only the
- * first is what let somebody start a generation they could never finish -- the AI slot gone, the
- * model bill paid, and a refusal at the last step. The client needs both numbers to say so before
- * anything is spent.
+ * <p>A generation needs credits for the AI and for saving the itinerary as a real trip.
+ * Reporting only the first is what let somebody start a generation they could never finish.
  */
 @Data
 @Builder
@@ -20,20 +17,33 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class AiTripUsage {
     private String tier;
-    private Integer used;
-    private Integer limit;
 
-    /** True only when both allowances have room. */
+    /** Same as creditAvailable; kept as the one answer older clients ask. */
     private Boolean eligible;
 
-    /** Generation slots alone, ignoring the trip-creation side. */
-    private Boolean aiQuotaAvailable;
+    /**
+     * The balance covers AI_CREDIT.MIN_BALANCE_AI_TRIP + AI_CREDIT.TRIP_CREATION_COST (always true
+     * for beta users).
+     */
+    private Boolean creditAvailable;
 
-    /** Trip-creation slots alone: a free slot left, or an unlocked one not yet used. */
+    /** Credits saving the result as a trip costs (AI_CREDIT.TRIP_CREATION_COST). */
+    private Integer tripCreationCost;
+
+    // LEGACY-STAR-QUOTA: read by app builds up to 21; worked out from credits since V262. Delete
+    // once APP.MIN_BUILD_* passes the first credit build.
+
+    /** LEGACY-STAR-QUOTA: the balance covers one trip creation. */
+    @Deprecated
     private Boolean tripQuotaAvailable;
-
+    /** LEGACY-STAR-QUOTA: always 0. */
+    @Deprecated
     private Integer freeTripQuotaUsed;
+    /** LEGACY-STAR-QUOTA: always 0. */
+    @Deprecated
     private Integer freeTripQuota;
+    /** LEGACY-STAR-QUOTA: trip creations the balance pays for. */
+    @Deprecated
     private Integer unlockedTripSlots;
 
     /** When the subscription lapses, so the client can say what a downgrade would cost. */

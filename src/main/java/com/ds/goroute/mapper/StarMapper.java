@@ -1,13 +1,11 @@
 package com.ds.goroute.mapper;
 
 import com.ds.goroute.entity.StarTransaction;
-import com.ds.goroute.entity.TripCreationEntitlement;
 import com.ds.goroute.entity.UserStarWallet;
 import com.ds.goroute.entity.TripCompletionCandidate;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -38,15 +36,6 @@ public interface StarMapper {
 
     int incrementBalance(@Param("userId") UUID userId, @Param("amount") int amount);
 
-    /**
-     * Consumes one free slot, refusing past the quota.
-     *
-     * <p>The quota is passed in rather than written into the statement: the same number
-     * living in two places is how the third free slot came to be unreachable while the
-     * service still believed it had granted it.
-     */
-    int incrementFreeQuota(@Param("userId") UUID userId, @Param("quota") int quota);
-
     int insertTransaction(StarTransaction transaction);
 
     List<StarTransaction> findTransactions(@Param("userId") UUID userId,
@@ -75,18 +64,6 @@ public interface StarMapper {
      */
     List<UUID> findWalletsWithBalanceAfter(@Param("afterUserId") UUID afterUserId,
                                            @Param("limit") int limit);
-
-    int insertEntitlement(TripCreationEntitlement entitlement);
-
-    TripCreationEntitlement findActiveEntitlement(@Param("userId") UUID userId, @Param("now") LocalDateTime now);
-
-    /** Every slot ever bought, used or not -- the sequence an unlock's idempotency key counts. */
-    int countEntitlements(@Param("userId") UUID userId);
-
-    /** Slots bought, not yet used and not yet expired. */
-    int countActiveEntitlements(@Param("userId") UUID userId, @Param("now") LocalDateTime now);
-
-    int consumeEntitlement(@Param("id") UUID id, @Param("now") LocalDateTime now);
 
     List<TripCompletionCandidate> findEligibleCompletionCandidates();
 }

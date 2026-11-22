@@ -34,7 +34,7 @@ class DataSourceBindingTest {
 
         assertNotNull(dataSource.getJdbcUrl(), "jdbc-url must bind");
         assertEquals("org.postgresql.Driver", dataSource.getDriverClassName());
-        assertEquals(10, dataSource.getMaximumPoolSize());
+        assertEquals(20, dataSource.getMaximumPoolSize());
         assertEquals(5, dataSource.getMinimumIdle(), "minimum-idle is the setting that silently did nothing");
         assertEquals(30000, dataSource.getConnectionTimeout());
         assertEquals(600000, dataSource.getIdleTimeout());

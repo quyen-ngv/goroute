@@ -80,6 +80,10 @@ public class AiTripGenerateRequest {
     @Builder.Default
     private Boolean includeBackupActivities = true; // For indoor alternatives during bad weather
 
+    /** The same answers as structured codes, stored in trip_preferences when the trip is committed. */
+    @Valid
+    private TripPreferencesRequest preferences;
+
     /** Optional source-video context. It is internal provenance for the worker, not user prompt text. */
     private Map<String, Object> socialContext;
 }

@@ -1,5 +1,6 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.dto.FeedPlaceKind;
 import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.request.CloneTripRequest;
 import com.ds.goroute.dto.request.CreateTripRequest;
@@ -10,8 +11,13 @@ import com.ds.goroute.dto.request.UpdateGuestNameRequest;
 import com.ds.goroute.dto.request.UpdateTripRequest;
 import com.ds.goroute.dto.response.*;
 import com.ds.goroute.service.TripService;
+import com.ds.goroute.service.trip.FeedTripRulesProvider;
 import com.ds.goroute.dto.BaseResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -27,7 +33,10 @@ import java.util.UUID;
 @Slf4j
 public class TripController extends BaseController {
 
+    private static final int MAX_FOLLOWING_PAGE_SIZE = 50;
+
     private final TripService tripService;
+    private final FeedTripRulesProvider feedTripRules;
 
     @PostMapping
     public ResponseEntity<BaseResponse<TripResponse>> createTrip(
@@ -80,8 +89,9 @@ public class TripController extends BaseController {
     @DeleteMapping("/{tripId}")
     public ResponseEntity<BaseResponse<Void>> deleteTrip(
             @PathVariable UUID tripId,
+            @RequestParam(defaultValue = "false") boolean deleteChat,
             @CurrentUser UUID userId) {
-        tripService.deleteTrip(tripId, userId);
+        tripService.deleteTrip(tripId, userId, deleteChat);
         return ResponseEntity.ok(ofSucceeded(null));
     }
 
@@ -213,5 +223,32 @@ public class TripController extends BaseController {
             @CurrentUser UUID userId) {
         TripRecentLocationResponse location = tripService.getRecentLocation(userId);
         return ResponseEntity.ok(ofSucceeded(location));
+    }
+
+    /**
+     * Public trips owned by the people the caller follows, most recently shared first: the
+     * Home "Friends" tab. With {@code latitude}/{@code longitude} (the city Home is on) they
+     * rank like GET /checkins/following -- that province first, then ring by ring -- each
+     * carrying its {@code focusRank}. Same summary shape as public trip search, so the app
+     * reuses its model. Lives here rather than under {@code /public} because it needs a
+     * signed-in user.
+     */
+    @GetMapping("/following")
+    public ResponseEntity<BaseResponse<List<PublicTripResponse>>> getFollowingTrips(
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_FOLLOWING_PAGE_SIZE) int size,
+            @RequestParam(required = false) @DecimalMin("-90") @DecimalMax("90") Double latitude,
+            @RequestParam(required = false) @DecimalMin("-180") @DecimalMax("180") Double longitude,
+            // The Feed's place-kind chips: PlaceGroup and PlaceSubType codes. A post matches
+            // through its catalogue place, a trip through any of its stops.
+            @RequestParam(required = false) List<String> placeGroups,
+            @RequestParam(required = false) List<String> subTypes,
+            // The Feed's Friends tab: its trip rules apply (no trip that has not started, none
+            // with too few activities; FEED config group). The Home Friends tab leaves it off.
+            @RequestParam(defaultValue = "false") boolean feed,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(tripService.getFollowingTrips(
+                userId, latitude, longitude, FeedPlaceKind.of(placeGroups, subTypes),
+                feed ? feedTripRules.current() : null, page, size)));
     }
 }

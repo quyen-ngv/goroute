@@ -15,15 +15,13 @@ import java.util.UUID;
  * @param entryPoint  short stable identifier, recorded with the moderation result;
  *                    see {@link ImageEntryPoint}
  * @param objectPrefix storage prefix, for example {@code avatars/<userId>}
- * @param compress    whether to run the image through the compression service first
  */
 public record ImageUploadRequest(UUID userId,
                                  String entryPoint,
-                                 String objectPrefix,
-                                 boolean compress) {
+                                 String objectPrefix) {
 
     public static ImageUploadRequest of(UUID userId, String entryPoint, String objectPrefix) {
-        return new ImageUploadRequest(userId, entryPoint, objectPrefix, true);
+        return new ImageUploadRequest(userId, entryPoint, objectPrefix);
     }
 
     /**
@@ -54,6 +52,26 @@ public record ImageUploadRequest(UUID userId,
         public static final String LOCATION_IMAGE = "admin-location-image";
         /** Operators: imagery for curated passport collections and proof tags. */
         public static final String PASSPORT_CATALOG = "admin-passport-catalog";
+        /**
+         * Operators and the events crawler: local event images, uploaded in the console or
+         * re-hosted from the crawler's URLs by LocalEventImageJob (SSRF-guarded download).
+         */
+        public static final String LOCAL_EVENT = "admin-local-event";
+
+        /** Operators: images of the shared asset library (ingredient icons, banners, promotions). */
+        public static final String ASSET_LIBRARY = "admin-asset-library";
+
+        /**
+         * Operators: LUT, frame and thumbnail PNGs of the check-in camera's filters and frames,
+         * stored under camera-looks/ and never compressed (epic 08, V293).
+         */
+        public static final String CAMERA_LOOK = "admin-camera-look";
+
+        /**
+         * Users, and operators writing for a managed account: a blog post's photos and video
+         * posters, stored under post-media/{postId} (epic 20).
+         */
+        public static final String POST_MEDIA = "post-media";
 
         private ImageEntryPoint() {
         }

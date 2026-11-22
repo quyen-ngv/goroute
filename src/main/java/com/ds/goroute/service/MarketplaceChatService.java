@@ -24,7 +24,7 @@ public interface MarketplaceChatService {
     MarketplaceConversationResponse start(UUID actor, StartMarketplaceConversationRequest request);
 
     /** The inbox. {@code types} filters the chips; empty means everything. */
-    List<MarketplaceConversationResponse> listMine(UUID actor, List<String> types, int page, int size);
+    List<MarketplaceConversationResponse> listMine(UUID actor, List<String> types, boolean unreadOnly, int page, int size);
 
     /** Threads with something unread in them, muted ones excluded: the tab badge. */
     long unreadConversationCount(UUID actor);
@@ -61,6 +61,19 @@ public interface MarketplaceChatService {
      */
     MarketplaceMessageResponse postSystemMessage(UUID conversationId, String event,
                                                  UUID subjectUserId, String subjectName);
+
+    /**
+     * A message from the assistant (Pengoo): Markdown text plus display blocks. Written by the
+     * assistant's own services, never by a client.
+     *
+     * @param replyToMessageId the question being answered, quoted in a group; null for none
+     * @param notifyUserId     the one person to push it to (the asker); null for no push at all
+     * @param idempotencyKey   repeated calls with the same key return the first message
+     */
+    MarketplaceMessageResponse postAssistantMessage(UUID conversationId, String content,
+                                                    List<java.util.Map<String, Object>> blocks,
+                                                    UUID replyToMessageId, UUID notifyUserId,
+                                                    String idempotencyKey);
 
     List<MarketplaceConversationResponse> partnerList(UUID actor, UUID organizationId, String status,
                                                       int page, int size);

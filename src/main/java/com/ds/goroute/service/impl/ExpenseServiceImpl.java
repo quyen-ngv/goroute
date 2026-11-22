@@ -4,13 +4,16 @@ import com.ds.goroute.service.TripAccessGuard;
 
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.request.CreateExpenseRequest;
+import com.ds.goroute.dto.request.ExpenseSplitRequest;
 import com.ds.goroute.dto.request.UpdateExpenseRequest;
 import com.ds.goroute.dto.request.MarkPaymentRequest;
 import com.ds.goroute.dto.response.BudgetOverviewResponse;
+import com.ds.goroute.dto.response.ExpensePayerResponse;
 import com.ds.goroute.dto.response.ExpenseResponse;
 import com.ds.goroute.dto.response.ExpenseSplitResponse;
 import com.ds.goroute.dto.response.MemoryImageResponse;
 import com.ds.goroute.dto.response.UserResponse;
+import com.ds.goroute.dto.response.WalletPersonResponse;
 import com.ds.goroute.entity.Activity;
 import com.ds.goroute.entity.Expense;
 import com.ds.goroute.entity.MediaAsset;
@@ -30,26 +33,47 @@ import com.ds.goroute.service.ExpenseService;
 import com.ds.goroute.service.ExchangeRateService;
 import com.ds.goroute.service.ImageStorageCleanupService;
 import com.ds.goroute.service.TripRealtimePublisher;
+import com.ds.goroute.service.expense.ExpenseComposer;
+import com.ds.goroute.service.expense.ExpenseComposition;
+import com.ds.goroute.service.expense.ExpenseComposition.PayerLine;
+import com.ds.goroute.service.expense.ExpenseComposition.SplitLine;
+import com.ds.goroute.service.expense.ExpenseLedgerStore;
+import com.ds.goroute.service.expense.ExpenseParticipants;
+import com.ds.goroute.service.expense.ExpenseParticipants.TripRoster;
+import com.ds.goroute.service.expense.ParticipantRef;
+import com.ds.goroute.service.expense.SplitCalculator;
 import com.ds.goroute.service.notification.NotificationHelper;
 import com.ds.goroute.type.ExpenseCategory;
-import com.ds.goroute.type.MemberStatus;
+import com.ds.goroute.type.SplitMethod;
 import com.ds.goroute.type.TripRealtimeEventType;
 import com.ds.goroute.type.NotificationType;
 import com.ds.goroute.utils.MediaAssetResponseMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -69,9 +93,16 @@ public class ExpenseServiceImpl implements ExpenseService {
     private final ImageStorageCleanupService imageStorageCleanupService;
     private final MediaAssetRepository mediaAssetRepository;
     private final TripRealtimePublisher tripRealtimePublisher;
+    private final ExpenseLedgerStore ledgerStore;
+    private final ExpenseParticipants participants;
+    private final PlatformTransactionManager transactionManager;
 
     /** Receipts live in media_assets alongside trip memories, keyed by this. */
     private static final String EXPENSE_ENTITY_TYPE = "EXPENSE";
+    private static final Pattern CURRENCY_CODE = Pattern.compile("[A-Z]{3}");
+    /** Page size when the caller pages without saying how much; the cap matches the API rule. */
+    private static final int DEFAULT_PAGE_SIZE = 30;
+    private static final int MAX_PAGE_SIZE = 100;
 
     /** Reading the budget: owner, or an accepted member of any role. */
     private Trip validateTripAccess(UUID tripId, UUID userId) {
@@ -83,74 +114,55 @@ public class ExpenseServiceImpl implements ExpenseService {
         return tripAccessGuard.requireEditAccess(tripId, userId);
     }
 
+    /**
+     * Not {@code @Transactional}: the exchange rate may need an HTTP lookup, which must not hold a
+     * database connection. The writes run in {@link #inTransaction} afterwards (joining the
+     * caller's transaction when there is one, as for the assistant's edits).
+     */
     @Override
-    @Transactional
     public ExpenseResponse createExpense(UUID tripId, CreateExpenseRequest request, UUID userId) {
         Trip trip = validateTripEditAccess(tripId, userId);
+        LocalDateTime expenseDate = resolveExpenseDate(request.getExpenseDate());
+        String currency = currencyCode(request.getCurrency());
+        BigDecimal rate = rateFor(currency, trip, request.getExchangeRate(), expenseDate.toLocalDate());
+        return inTransaction(() -> insertExpense(trip, request, currency, rate, expenseDate, userId));
+    }
 
-        UUID paidBy = request.getPaidBy() != null ? request.getPaidBy() : userId;
+    private ExpenseResponse insertExpense(Trip trip, CreateExpenseRequest request, String currency, BigDecimal rate,
+                                          LocalDateTime expenseDate, UUID userId) {
+        UUID tripId = trip.getId();
+        TripRoster roster = participants.roster(trip);
+        ExpenseComposer.Resolver resolver = tripResolver(roster, Set.of());
+        BigDecimal amount = request.getAmount();
 
-        // If guest payer is provided, fetch guest member info
-        String paidByGuestName = request.getPaidByGuestName();
-        UUID paidByGuestMemberId = request.getPaidByGuestMemberId();
-
-        if (paidByGuestMemberId != null) {
-            TripMember guestMember = tripMemberRepository.findById(paidByGuestMemberId)
-                    .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Guest member not found"));
-
-            // Set paid_by = paidByGuestMemberId (same ID)
-            paidBy = paidByGuestMemberId;
-            paidByGuestName = guestMember.getGuestName();
-        }
+        ParticipantRef legacyPayer = request.getPayers() != null && !request.getPayers().isEmpty() ? null
+                : request.getPaidByGuestMemberId() != null
+                ? resolver.resolve(null, request.getPaidByGuestMemberId(), null, false)
+                : resolver.resolve(request.getPaidBy() != null ? request.getPaidBy() : userId, null, null, false);
+        List<PayerLine> payers = ExpenseComposer.payers(request.getPayers(), legacyPayer, amount, resolver);
+        ExpenseComposer.Shares shares = ExpenseComposer.shares(request.getSplitMethod(), amount, currency,
+                request.getSplits(), resolver);
+        ExpenseComposition composition = new ExpenseComposition(shares.storedMethod(), payers, shares.splits());
 
         Expense expense = Expense.builder()
                 .id(UUID.randomUUID())
                 .tripId(tripId)
                 .activityId(request.getActivityId())
-                .amount(request.getAmount())
-                .currency(request.getCurrency())
+                .amount(amount)
+                .currency(currency)
                 .category(request.getCategory())
                 .description(request.getDescription())
-                .paidBy(paidBy)
-                .paidByGuestName(paidByGuestName)
-                .paidByGuestMemberId(paidByGuestMemberId)
-                .expenseDate(resolveExpenseDate(request.getExpenseDate()))
+                .expenseDate(expenseDate)
+                .splitMethod(shares.storedMethod())
                 .createdBy(userId)
                 .build();
-
-        applyTripCurrencyConversion(expense, trip);
+        ParticipantRef primary = composition.primaryPayer();
+        ExpenseLedgerStore.applyPrimaryPayer(expense, primary, roster.guestName(primary));
+        applyRate(expense, rate);
 
         expenseRepository.insert(expense);
         syncExpensePhotos(expense, request.getPhotoUrls(), userId);
-
-        if (request.getSplits() != null && !request.getSplits().isEmpty()) {
-            for (var split : request.getSplits()) {
-                if (split.getUserId() == null &&
-                    (split.getGuestName() == null || split.getGuestName().trim().isEmpty())) {
-                    throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
-                        "Each split must have either userId or guestName");
-                }
-
-                boolean isSettled = false;
-                if (split.getUserId() != null && split.getUserId().equals(paidBy)) {
-                    isSettled = true;
-                } else if (split.getGuestMemberId() != null && split.getGuestMemberId().equals(paidByGuestMemberId)) {
-                    isSettled = true;
-                }
-
-                ExpenseSplit expenseSplit = ExpenseSplit.builder()
-                        .id(UUID.randomUUID())
-                        .expenseId(expense.getId())
-                        .userId(split.getUserId())
-                        .guestMemberId(split.getGuestMemberId())
-                        .guestName(split.getGuestName())
-                        .amount(split.getAmount())
-                        .isSettled(isSettled)
-                        .settledAt(isSettled ? LocalDateTime.now() : null)
-                        .build();
-                expenseSplitRepository.save(expenseSplit);
-            }
-        }
+        ledgerStore.write(expense, composition, List.of(), null);
 
         log.info("Expense created: {} in trip: {}", expense.getId(), tripId);
 
@@ -159,6 +171,7 @@ public class ExpenseServiceImpl implements ExpenseService {
                 expenseRecipients(expense), null);
         tripRealtimePublisher.publishAfterCommit(
                 TripRealtimeEventType.EXPENSE_CREATED, tripId, expense.getId(), userId);
+        tripRealtimePublisher.publishAfterCommit(TripRealtimeEventType.LEDGER_UPDATED, tripId, expense.getId(), userId);
 
         return mapToExpenseResponse(expense);
     }
@@ -166,13 +179,26 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     @Transactional(readOnly = true)
     public List<ExpenseResponse> getExpenses(UUID tripId, ExpenseCategory category, UUID userId) {
-        validateTripAccess(tripId, userId);
-        List<Expense> expenses = expenseRepository.findByTripId(tripId);
+        return getExpenses(tripId, category, null, null, userId);
+    }
 
-        if (category != null) {
-            expenses = expenses.stream()
-                    .filter(e -> e.getCategory() == category)
-                    .collect(Collectors.toList());
+    @Override
+    @Transactional(readOnly = true)
+    public List<ExpenseResponse> getExpenses(UUID tripId, ExpenseCategory category, Integer page, Integer size,
+                                             UUID userId) {
+        validateTripAccess(tripId, userId);
+        List<Expense> expenses;
+        if (page == null && size == null) {
+            expenses = expenseRepository.findByTripId(tripId);
+            if (category != null) {
+                expenses = expenses.stream()
+                        .filter(e -> e.getCategory() == category)
+                        .collect(Collectors.toList());
+            }
+        } else {
+            int pageSize = Math.max(1, Math.min(MAX_PAGE_SIZE, size == null ? DEFAULT_PAGE_SIZE : size));
+            int pageNumber = Math.max(0, page == null ? 0 : page);
+            expenses = expenseRepository.findByTripIdPage(tripId, category, pageSize, pageNumber * pageSize);
         }
 
         // One media query for the whole page rather than one per expense.
@@ -228,9 +254,11 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         BigDecimal myShare = BigDecimal.ZERO;
         BigDecimal myPaid = BigDecimal.ZERO;
+        Map<UUID, List<ExpenseSplit>> splitsByExpense = expenseSplitRepository
+                .findByExpenseIds(expenses.stream().map(Expense::getId).toList()).stream()
+                .collect(Collectors.groupingBy(ExpenseSplit::getExpenseId));
         for (Expense expense : expenses) {
-            List<ExpenseSplit> splits = expenseSplitRepository.findByExpenseId(expense.getId());
-            for (ExpenseSplit split : splits) {
+            for (ExpenseSplit split : splitsByExpense.getOrDefault(expense.getId(), List.of())) {
                 if (split.getUserId() == null || !split.getUserId().equals(userId)) {
                     continue;
                 }
@@ -262,7 +290,7 @@ public class ExpenseServiceImpl implements ExpenseService {
         Expense expense = expenseRepository.findById(expenseId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found"));
 
-        if (!expense.getTripId().equals(tripId)) {
+        if (!tripId.equals(expense.getTripId())) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found");
         }
 
@@ -271,9 +299,12 @@ public class ExpenseServiceImpl implements ExpenseService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
         Set<UUID> recipients = expenseRecipients(expense);
+        List<ExpenseSplit> splits = expenseSplitRepository.findByExpenseId(expenseId);
         imageStorageCleanupService.deleteImagesForEntityRecord("EXPENSE", expenseId);
         mediaAssetRepository.softDeleteByEntity(EXPENSE_ENTITY_TYPE, expenseId);
+        ledgerStore.beforeDelete(splits);
         expenseSplitRepository.deleteByExpenseId(expenseId);
+        // Payers go with the row (ON DELETE CASCADE, V268).
         expenseRepository.deleteById(expenseId);
         log.info("Expense deleted: {}", expenseId);
 
@@ -282,39 +313,45 @@ public class ExpenseServiceImpl implements ExpenseService {
                 recipients, null);
         tripRealtimePublisher.publishAfterCommit(
                 TripRealtimeEventType.EXPENSE_DELETED, tripId, expenseId, userId);
+        tripRealtimePublisher.publishAfterCommit(TripRealtimeEventType.LEDGER_UPDATED, tripId, expenseId, userId);
     }
 
+    /** Not {@code @Transactional}, for the same reason as {@link #createExpense}. */
     @Override
-    @Transactional
     public ExpenseResponse updateExpense(UUID tripId, UUID expenseId, UpdateExpenseRequest request, UUID userId) {
-        log.info("ðŸ”µ Updating expense: expenseId={}, tripId={}, userId={}", expenseId, tripId, userId);
-        log.info("ðŸ”µ Request paidById: {}, paidByGuestMemberId: {}", request.getPaidById(), request.getPaidByGuestMemberId());
-
-        // 1. Fetch existing expense
         Expense expense = expenseRepository.findById(expenseId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found"));
-
-        // 2. Validate expense belongs to trip
-        if (!expense.getTripId().equals(tripId)) {
+        if (!tripId.equals(expense.getTripId())) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found");
         }
+        Trip trip = validateTripEditAccess(tripId, userId);
 
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-        validateTripEditAccess(tripId, userId);
+        String currency = request.getCurrency() != null ? currencyCode(request.getCurrency()) : expense.getCurrency();
+        boolean currencyChanged = currency != null && !currency.equalsIgnoreCase(expense.getCurrency());
+        LocalDateTime expenseDate = request.getExpenseDate() != null
+                ? resolveExpenseDate(request.getExpenseDate())
+                : expense.getExpenseDate() != null ? expense.getExpenseDate() : LocalDateTime.now();
+        BigDecimal rate = rateForUpdate(expense, trip, currency, currencyChanged, request.getExchangeRate(),
+                expenseDate.toLocalDate());
+        return inTransaction(() -> applyUpdate(expense, trip, request, currency, rate, userId));
+    }
+
+    private ExpenseResponse applyUpdate(Expense expense, Trip trip, UpdateExpenseRequest request, String currency,
+                                        BigDecimal rate, UUID userId) {
+        UUID tripId = trip.getId();
+        UUID expenseId = expense.getId();
         Set<UUID> affectedRecipients = expenseRecipients(expense);
+        List<ExpenseSplit> previousSplits = expenseSplitRepository.findByExpenseId(expenseId);
+        ExpenseLedgerStore.Details details = ledgerStore.details(List.of(expense));
+        List<PayerLine> previousPayers = details.payers(expenseId);
+        ParticipantRef previousPrimary = ExpenseLedgerStore.primaryPayerOf(expense);
+        String previousGuestPayerName = expense.getPaidByGuestName();
 
-        // Track if amount or currency changed
-        boolean amountChanged = request.getAmount() != null && request.getAmount().compareTo(expense.getAmount()) != 0;
-        boolean currencyChanged = request.getCurrency() != null && !request.getCurrency().equals(expense.getCurrency());
+        BigDecimal amount = request.getAmount() != null ? request.getAmount() : expense.getAmount();
+        boolean amountChanged = amount.compareTo(expense.getAmount()) != 0;
 
-        // Update expense fields if provided
-        if (request.getAmount() != null) {
-            expense.setAmount(request.getAmount());
-        }
-        if (request.getCurrency() != null) {
-            expense.setCurrency(request.getCurrency());
-        }
+        expense.setAmount(amount);
+        expense.setCurrency(currency);
         if (request.getCategory() != null) {
             expense.setCategory(request.getCategory());
         }
@@ -330,165 +367,171 @@ public class ExpenseServiceImpl implements ExpenseService {
         if (request.getPhotoUrls() != null) {
             syncExpensePhotos(expense, request.getPhotoUrls(), userId);
         }
+        applyRate(expense, rate);
 
-        // Update paidBy if provided
-        log.info("ðŸ”µ Checking paidBy update: paidById={}, paidByGuestMemberId={}",
-                request.getPaidById(), request.getPaidByGuestMemberId());
-        log.info("ðŸ”µ Current expense paidBy: {}, paidByGuestMemberId: {}",
-                expense.getPaidBy(), expense.getPaidByGuestMemberId());
+        TripRoster roster = participants.roster(trip);
+        ExpenseComposer.Resolver resolver = tripResolver(roster,
+                ExpenseLedgerStore.participantsOf(previousPayers, previousSplits));
 
-        if (request.getPaidById() != null) {
-            log.info("ðŸŸ¢ Updating paidBy to user: {} (was: {})", request.getPaidById(), expense.getPaidBy());
-            expense.setPaidBy(request.getPaidById());
-            expense.setPaidByGuestName(null); // Clear guest if setting real user
-            expense.setPaidByGuestMemberId(null); // Clear guest member reference
-            log.info("ðŸŸ¢ Updated paidBy to user: {}", request.getPaidById());
-        } else if (request.getPaidByGuestMemberId() != null) {
-            log.info("ðŸŸ¢ Updating paidBy to guest: {}", request.getPaidByGuestMemberId());
-            // Fetch guest member to get name
-            TripMember guestMember = tripMemberRepository.findById(request.getPaidByGuestMemberId())
-                    .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Guest member not found"));
+        List<PayerLine> payers = updatedPayers(request, amount, amountChanged, previousPayers, previousPrimary, resolver);
+        ExpenseComposer.Shares shares = updatedShares(expense, request, amount, amountChanged, previousSplits, resolver);
+        ExpenseComposition composition = new ExpenseComposition(shares.storedMethod(), payers, shares.splits());
 
-            // Set paid_by = paidByGuestMemberId (same ID)
-            expense.setPaidBy(request.getPaidByGuestMemberId());
-            expense.setPaidByGuestMemberId(request.getPaidByGuestMemberId());
-            expense.setPaidByGuestName(guestMember.getGuestName());
-            log.info("ðŸŸ¢ Updated paidBy to guest: {} (ID: {})",
-                    guestMember.getGuestName(), request.getPaidByGuestMemberId());
-        } else {
-            log.info("âš ï¸ No paidBy update requested (both paidById and paidByGuestMemberId are null)");
+        expense.setSplitMethod(shares.storedMethod());
+        ParticipantRef primary = composition.primaryPayer();
+        String guestName = roster.guestName(primary);
+        if (guestName == null && primary.isGuest() && primary.equals(previousPrimary)) {
+            guestName = previousGuestPayerName;
         }
-
-        if (currencyChanged || amountChanged) {
-            applyTripCurrencyConversion(expense, trip);
-            if (request.getExchangeRate() != null) {
-                expense.setExchangeRate(request.getExchangeRate());
-                expense.setAmountInTripCurrency(
-                        expense.getAmount().multiply(request.getExchangeRate())
-                                .setScale(2, RoundingMode.HALF_UP));
-            }
-            log.info("Currency/amount updated for expense {}: {} rate={}",
-                    expenseId, expense.getCurrency(), expense.getExchangeRate());
-        }
-
-        // 4. If amount changed and splitType=equal â†’ recalculate splits
-        if (request.getSplitType() != null && "equal".equalsIgnoreCase(request.getSplitType())) {
-            if (amountChanged || request.getSplitWith() != null) {
-                // Delete existing splits
-                expenseSplitRepository.deleteByExpenseId(expenseId);
-
-                // Get split members
-                List<UUID> splitWith = request.getSplitWith();
-                if (splitWith != null && !splitWith.isEmpty()) {
-                    // Calculate equal split
-                    int memberCount = splitWith.size();
-                    BigDecimal splitAmount = expense.getAmount().divide(
-                            BigDecimal.valueOf(memberCount),
-                            2,
-                            RoundingMode.DOWN
-                    );
-
-                    // Calculate remainder to add to last split
-                    BigDecimal totalSplit = splitAmount.multiply(BigDecimal.valueOf(memberCount));
-                    BigDecimal remainder = expense.getAmount().subtract(totalSplit);
-
-                    // Create new splits
-                    for (int i = 0; i < splitWith.size(); i++) {
-                        UUID memberId = splitWith.get(i);
-                        BigDecimal amount = splitAmount;
-
-                        // Add remainder to last split
-                        if (i == splitWith.size() - 1) {
-                            amount = amount.add(remainder);
-                        }
-
-                        // Auto-settle if this split is for the payer
-                        boolean isSettled = memberId.equals(expense.getPaidBy());
-
-                        ExpenseSplit split = ExpenseSplit.builder()
-                                .id(UUID.randomUUID())
-                                .expenseId(expenseId)
-                                .userId(memberId)
-                                .guestMemberId(null) // Equal split is for registered users only
-                                .amount(amount)
-                                .isSettled(isSettled)
-                                .settledAt(isSettled ? LocalDateTime.now() : null)
-                                .build();
-                        expenseSplitRepository.save(split);
-                    }
-                    log.info("Recalculated equal splits for expense {}: {} members", expenseId, memberCount);
-                }
-            }
-        } else if (request.getSplits() != null && !request.getSplits().isEmpty()) {
-            // Custom splits provided
-            // Validate splits sum equals amount
-            BigDecimal splitsSum = request.getSplits().stream()
-                    .map(s -> s.getAmount())
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-            if (splitsSum.compareTo(expense.getAmount()) != 0) {
-                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
-                        "Split amounts must sum to total expense amount");
-            }
-
-            // Delete existing splits and create new ones
-            expenseSplitRepository.deleteByExpenseId(expenseId);
-            for (var split : request.getSplits()) {
-                // Validate: must have either userId or guestName
-                if (split.getUserId() == null &&
-                    (split.getGuestName() == null || split.getGuestName().trim().isEmpty())) {
-                    throw new BusinessException(ErrorConstant.INVALID_PARAMETERS,
-                        "Each split must have either userId or guestName");
-                }
-
-                // Auto-settle if this split is for the payer
-                boolean isSettled = false;
-                if (split.getUserId() != null && split.getUserId().equals(expense.getPaidBy())) {
-                    isSettled = true;
-                } else if (split.getGuestMemberId() != null && split.getGuestMemberId().equals(expense.getPaidByGuestMemberId())) {
-                    isSettled = true;
-                }
-
-                ExpenseSplit expenseSplit = ExpenseSplit.builder()
-                        .id(UUID.randomUUID())
-                        .expenseId(expenseId)
-                        .userId(split.getUserId())
-                        .guestMemberId(split.getGuestMemberId())
-                        .guestName(split.getGuestName())
-                        .amount(split.getAmount())
-                        .isSettled(isSettled)
-                        .settledAt(isSettled ? LocalDateTime.now() : null)
-                        .build();
-                expenseSplitRepository.save(expenseSplit);
-            }
-            log.info("Updated custom splits for expense {}", expenseId);
-        }
-
-        log.info("ðŸ”µ Before save - expense paidBy: {}, paidByGuestMemberId: {}",
-                expense.getPaidBy(), expense.getPaidByGuestMemberId());
+        ExpenseLedgerStore.applyPrimaryPayer(expense, primary, guestName);
 
         expenseRepository.updateById(expense);
-
-        log.info("ðŸ”µ After save - expense paidBy: {}, paidByGuestMemberId: {}",
-                expense.getPaidBy(), expense.getPaidByGuestMemberId());
-
-        log.info("Cache invalidated for expenses:{}:overview", tripId);
-
-        log.info("ðŸŸ¢ Expense updated successfully: expenseId={}", expenseId);
+        ledgerStore.write(expense, composition, previousSplits, previousPrimary);
+        log.info("Expense updated: expenseId={}, payers={}, splits={}", expenseId, payers.size(),
+                composition.splits().size());
 
         affectedRecipients.addAll(expenseRecipients(expense));
         notificationHelper.emitGeneric(tripId, userId, NotificationType.EXPENSE_UPDATED,
                 expenseNotificationData(expense, trip, userId, "/trip/" + tripId + "/expenses/" + expenseId),
                 affectedRecipients, null);
+        boolean splitsTouched = request.getSplits() != null || request.getSplitWith() != null
+                || request.getSplitMethod() != null || request.getPayers() != null;
         tripRealtimePublisher.publishAfterCommit(
-                request.getSplits() != null || request.getSplitWith() != null
-                        ? TripRealtimeEventType.EXPENSE_SPLITS_UPDATED
-                        : TripRealtimeEventType.EXPENSE_UPDATED,
+                splitsTouched ? TripRealtimeEventType.EXPENSE_SPLITS_UPDATED : TripRealtimeEventType.EXPENSE_UPDATED,
                 tripId,
                 expenseId,
                 userId);
+        tripRealtimePublisher.publishAfterCommit(TripRealtimeEventType.LEDGER_UPDATED, tripId, expenseId, userId);
 
         return mapToExpenseResponse(expense);
+    }
+
+    /**
+     * The new payers: the {@code payers} list, else a legacy {@code paidById} /
+     * {@code paidByGuestMemberId} for the whole amount, else unchanged while the amount is (an old
+     * build editing a several-payer expense keeps it intact), else the main payer for the new amount.
+     */
+    private List<PayerLine> updatedPayers(UpdateExpenseRequest request, BigDecimal amount, boolean amountChanged,
+                                          List<PayerLine> previousPayers, ParticipantRef previousPrimary,
+                                          ExpenseComposer.Resolver resolver) {
+        if (request.getPayers() != null && !request.getPayers().isEmpty()) {
+            return ExpenseComposer.payers(request.getPayers(), null, amount, resolver);
+        }
+        if (request.getPaidById() != null) {
+            return List.of(new PayerLine(resolver.resolve(request.getPaidById(), null, null, false), amount));
+        }
+        if (request.getPaidByGuestMemberId() != null) {
+            return List.of(new PayerLine(resolver.resolve(null, request.getPaidByGuestMemberId(), null, false), amount));
+        }
+        if (!amountChanged && !previousPayers.isEmpty()) {
+            return previousPayers;
+        }
+        ParticipantRef main = previousPayers.isEmpty() ? previousPrimary
+                : new ExpenseComposition(null, previousPayers, List.of()).primaryPayer();
+        if (main == null) throw invalid("Choose who paid");
+        return List.of(new PayerLine(main, amount));
+    }
+
+    /**
+     * The new shares. A {@code splitMethod} recomputes from the request; the legacy shapes keep
+     * working ({@code splitType=equal} over {@code splitWith}, or the split amounts as sent); a new
+     * amount with no new split keeps the split's proportions; otherwise the shares stay as they are.
+     */
+    private ExpenseComposer.Shares updatedShares(Expense expense, UpdateExpenseRequest request, BigDecimal amount,
+                                                 boolean amountChanged, List<ExpenseSplit> previousSplits,
+                                                 ExpenseComposer.Resolver resolver) {
+        String currency = expense.getCurrency();
+        if (request.getSplitMethod() != null) {
+            return ExpenseComposer.shares(request.getSplitMethod(), amount, currency, request.getSplits(), resolver);
+        }
+        if ("equal".equalsIgnoreCase(request.getSplitType()) && (amountChanged || request.getSplitWith() != null)) {
+            List<ExpenseSplitRequest> people = request.getSplitWith() != null
+                    ? request.getSplitWith().stream().filter(Objects::nonNull).distinct()
+                            .map(id -> ExpenseSplitRequest.builder().userId(id).build()).toList()
+                    : asRequests(previousSplits);
+            if (people.isEmpty()) return new ExpenseComposer.Shares(SplitMethod.EQUAL, List.of());
+            return ExpenseComposer.shares(SplitMethod.EQUAL, amount, currency, people, resolver);
+        }
+        if (request.getSplits() != null && !request.getSplits().isEmpty()) {
+            return ExpenseComposer.shares(null, amount, currency, request.getSplits(), resolver);
+        }
+        if (amountChanged && !previousSplits.isEmpty()) {
+            return rescaled(expense, amount, previousSplits, resolver);
+        }
+        return new ExpenseComposer.Shares(expense.getSplitMethod(), linesOf(previousSplits));
+    }
+
+    /** Same people, same method, new amount: what an old build's amount-only edit means. */
+    private ExpenseComposer.Shares rescaled(Expense expense, BigDecimal amount, List<ExpenseSplit> previousSplits,
+                                            ExpenseComposer.Resolver resolver) {
+        String currency = expense.getCurrency();
+        SplitMethod method = expense.getSplitMethod();
+        if (method == null && SplitCalculator.isEvenSplit(expense.getAmount(), currency,
+                previousSplits.stream().map(ExpenseSplit::getAmount).toList())) {
+            method = SplitMethod.EQUAL;
+        }
+        boolean allIdentified = previousSplits.stream().allMatch(s -> s.getUserId() != null || s.getGuestMemberId() != null);
+        if (allIdentified && (method == SplitMethod.EQUAL || method == SplitMethod.PERCENT
+                || method == SplitMethod.SHARES || method == SplitMethod.ADJUSTMENT)) {
+            return ExpenseComposer.shares(method, amount, currency, asRequests(previousSplits), resolver);
+        }
+        List<BigDecimal> weights = previousSplits.stream()
+                .map(split -> split.getAmount() == null ? BigDecimal.ZERO : split.getAmount()).toList();
+        if (weights.stream().allMatch(weight -> weight.signum() == 0)) {
+            weights = previousSplits.stream().map(split -> BigDecimal.ONE).toList();
+        }
+        List<BigDecimal> amounts = SplitCalculator.proportional(amount, currency, weights);
+        List<SplitLine> lines = new ArrayList<>();
+        for (int i = 0; i < previousSplits.size(); i++) {
+            ExpenseSplit split = previousSplits.get(i);
+            lines.add(new SplitLine(ParticipantRef.of(split.getUserId(), split.getGuestMemberId()),
+                    split.getGuestName(), amounts.get(i), null));
+        }
+        return new ExpenseComposer.Shares(method, lines);
+    }
+
+    private static List<ExpenseSplitRequest> asRequests(List<ExpenseSplit> splits) {
+        return splits.stream().map(split -> ExpenseSplitRequest.builder()
+                .userId(split.getUserId())
+                .guestMemberId(split.getGuestMemberId())
+                .guestName(split.getGuestName())
+                .amount(split.getAmount())
+                .shareInput(split.getShareInput())
+                .build()).toList();
+    }
+
+    private static List<SplitLine> linesOf(List<ExpenseSplit> splits) {
+        return splits.stream().map(split -> new SplitLine(ParticipantRef.of(split.getUserId(), split.getGuestMemberId()),
+                split.getGuestName(), split.getAmount(), split.getShareInput())).toList();
+    }
+
+    /**
+     * People named on a trip expense must belong to the trip (plan §1 bug 7): the owner, an
+     * ACCEPTED member, or a guest of this trip. Someone already on the expense stays allowed.
+     */
+    private ExpenseComposer.Resolver tripResolver(TripRoster roster, Set<ParticipantRef> alreadyOnExpense) {
+        return new ExpenseComposer.Resolver() {
+            @Override
+            public ParticipantRef resolve(UUID userId, UUID guestMemberId, String guestName, boolean legacy) {
+                ParticipantRef participant = roster.resolve(userId, guestMemberId);
+                if (participant == null) participant = roster.guestNamed(guestName);
+                if (participant == null) {
+                    // An old build names a guest it has no id for by name only; that share is
+                    // kept as it always was, and the ledger leaves it with the payer.
+                    if (legacy && guestName != null && !guestName.isBlank()) return null;
+                    throw invalid("Each split must have either userId or guestName");
+                }
+                if (!roster.contains(participant) && !alreadyOnExpense.contains(participant)) {
+                    throw invalid("Everyone on an expense must be a member of the trip");
+                }
+                return participant;
+            }
+
+            @Override
+            public String guestName(ParticipantRef participant) {
+                return roster.guestName(participant);
+            }
+        };
     }
 
     private String tripCurrencyOf(Trip trip) {
@@ -497,12 +540,62 @@ public class ExpenseServiceImpl implements ExpenseService {
                 : "VND";
     }
 
+    private static String currencyCode(String value) {
+        String code = value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+        if (!CURRENCY_CODE.matcher(code).matches()) throw invalid("Currency must be a 3-letter code");
+        return code;
+    }
+
+    /**
+     * 1 for the trip's own currency; the rate the app sent; else the provider's rate for the day
+     * the money was spent. No rate refuses the expense (plan §7): storing 1:1 priced one JPY as
+     * one VND for good (ISSUES A32).
+     */
+    private BigDecimal rateFor(String expenseCurrency, Trip trip, BigDecimal requested, LocalDate spentOn) {
+        String tripCurrency = tripCurrencyOf(trip);
+        if (expenseCurrency.equalsIgnoreCase(tripCurrency)) return BigDecimal.ONE;
+        if (requested != null && requested.signum() > 0) return requested;
+        return exchangeRateService.findRateOn(expenseCurrency, tripCurrency, spentOn)
+                .orElseThrow(() -> new BusinessException(ErrorConstant.EXCHANGE_RATE_UNAVAILABLE,
+                        "No exchange rate from " + expenseCurrency + " to " + tripCurrency));
+    }
+
+    /**
+     * On an edit: a new currency is priced afresh, ignoring a rate the app merely sent back
+     * unchanged (old builds resend the previous rate after a currency change, plan §1 bug 3);
+     * otherwise the stored rate stands, so changing the amount does not re-price at today's rate.
+     */
+    private BigDecimal rateForUpdate(Expense expense, Trip trip, String currency, boolean currencyChanged,
+                                     BigDecimal requested, LocalDate spentOn) {
+        String tripCurrency = tripCurrencyOf(trip);
+        if (currency.equalsIgnoreCase(tripCurrency)) return BigDecimal.ONE;
+        BigDecimal stored = expense.getExchangeRate();
+        if (currencyChanged && requested != null && stored != null && requested.compareTo(stored) == 0) {
+            requested = null;
+        }
+        if (requested != null && requested.signum() > 0) return requested;
+        boolean storedIsReal = stored != null && stored.signum() > 0 && stored.compareTo(BigDecimal.ONE) != 0;
+        if (!currencyChanged && storedIsReal) return stored;
+        return rateFor(currency, trip, null, spentOn);
+    }
+
+    private static void applyRate(Expense expense, BigDecimal rate) {
+        expense.setExchangeRate(rate);
+        expense.setAmountInTripCurrency(expense.getAmount().multiply(rate).setScale(2, RoundingMode.HALF_UP));
+    }
+
+    /** Runs {@code work} in a transaction, joining the caller's when there is one. */
+    private <T> T inTransaction(Supplier<T> work) {
+        return new TransactionTemplate(transactionManager).execute(status -> work.get());
+    }
+
     private Set<UUID> expenseRecipients(Expense expense) {
         Set<UUID> recipients = expenseSplitRepository.findByExpenseId(expense.getId()).stream()
                 .map(ExpenseSplit::getUserId)
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
-        if (expense.getPaidBy() != null && userRepository.findById(expense.getPaidBy()).isPresent()) {
+        if (expense.getPaidBy() != null && expense.getPaidByGuestMemberId() == null
+                && userRepository.findById(expense.getPaidBy()).isPresent()) {
             recipients.add(expense.getPaidBy());
         }
         return recipients;
@@ -520,15 +613,6 @@ public class ExpenseServiceImpl implements ExpenseService {
         return data;
     }
 
-    private void applyTripCurrencyConversion(Expense expense, Trip trip) {
-        String tripCurrency = tripCurrencyOf(trip);
-        String expenseCurrency = expense.getCurrency() != null ? expense.getCurrency() : tripCurrency;
-        BigDecimal rate = exchangeRateService.getRate(expenseCurrency, tripCurrency);
-        expense.setExchangeRate(rate);
-        expense.setAmountInTripCurrency(
-                expense.getAmount().multiply(rate).setScale(2, RoundingMode.HALF_UP));
-    }
-
     private BigDecimal resolveAmountInTripCurrency(Expense expense, Trip trip) {
         if (expense.getAmount() == null) {
             return BigDecimal.ZERO;
@@ -543,7 +627,14 @@ public class ExpenseServiceImpl implements ExpenseService {
                 && expense.getExchangeRate().compareTo(BigDecimal.ZERO) > 0) {
             return expense.getAmountInTripCurrency();
         }
-        return exchangeRateService.convert(expense.getAmount(), expenseCurrency, tripCurrency);
+        // No frozen rate (a currency change found none): today's, or left out rather than 1:1.
+        Optional<BigDecimal> rate = exchangeRateService.findRate(expenseCurrency, tripCurrency);
+        if (rate.isEmpty()) {
+            log.warn("Expense {} has no rate {}->{}; left out of the trip totals", expense.getId(),
+                    expenseCurrency, tripCurrency);
+            return BigDecimal.ZERO;
+        }
+        return expense.getAmount().multiply(rate.get()).setScale(2, RoundingMode.HALF_UP);
     }
 
     private BigDecimal resolveEstimatedCostInTripCurrency(Activity activity, Trip trip) {
@@ -582,7 +673,9 @@ public class ExpenseServiceImpl implements ExpenseService {
             Map<UUID, Trip> trips,
             Map<UUID, TripMember> guestMembers,
             Map<UUID, User> users,
-            Map<UUID, List<ExpenseSplit>> splitsByExpense) {
+            Map<UUID, List<ExpenseSplit>> splitsByExpense,
+            ExpenseLedgerStore.Details details,
+            Map<ParticipantRef, WalletPersonResponse> people) {
 
         Trip trip(UUID tripId) {
             return tripId == null ? null : trips.get(tripId);
@@ -603,7 +696,8 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     private ExpenseBatch loadExpenseBatch(List<Expense> expenses) {
         if (expenses.isEmpty()) {
-            return new ExpenseBatch(Map.of(), Map.of(), Map.of(), Map.of());
+            return new ExpenseBatch(Map.of(), Map.of(), Map.of(), Map.of(),
+                    ledgerStore.details(List.of()), Map.of());
         }
 
         Map<UUID, Trip> trips = new HashMap<>();
@@ -642,7 +736,13 @@ public class ExpenseServiceImpl implements ExpenseService {
         Map<UUID, User> users = userRepository.findByIds(userIds).stream()
                 .collect(Collectors.toMap(User::getId, user -> user, (a, b) -> a));
 
-        return new ExpenseBatch(trips, guestMembers, users, splitsByExpense);
+        ExpenseLedgerStore.Details details = ledgerStore.details(expenses);
+        Set<ParticipantRef> refs = new LinkedHashSet<>();
+        details.payers().values().forEach(lines -> lines.forEach(line -> refs.add(line.participant())));
+        refs.remove(null);
+        Map<ParticipantRef, WalletPersonResponse> people = refs.isEmpty() ? Map.of() : participants.describe(refs);
+
+        return new ExpenseBatch(trips, guestMembers, users, splitsByExpense, details, people);
     }
 
     private ExpenseResponse mapToExpenseResponse(Expense expense) {
@@ -661,57 +761,11 @@ public class ExpenseServiceImpl implements ExpenseService {
      * first time somebody edited an unrelated field.
      */
     private void syncExpensePhotos(Expense expense, List<String> urls, UUID userId) {
-        if (urls == null) return;
-
-        List<String> wanted = urls.stream()
-                .filter(url -> url != null && !url.isBlank())
-                .map(String::trim)
-                .distinct()
-                .toList();
-
-        List<MediaAsset> existing =
-                mediaAssetRepository.findByEntity(EXPENSE_ENTITY_TYPE, expense.getId());
-        for (MediaAsset asset : existing) {
-            if (asset.getAssetRole() != null && !"PHOTO".equalsIgnoreCase(asset.getAssetRole())) {
-                continue;
-            }
-            if (!wanted.contains(asset.getUrl())) {
-                mediaAssetRepository.softDelete(asset.getId());
-            }
-        }
-
-        for (int index = 0; index < wanted.size(); index++) {
-            String url = wanted.get(index);
-            Optional<MediaAsset> existingAsset = existing.stream()
-                    .filter(asset -> ("PHOTO".equalsIgnoreCase(asset.getAssetRole())
-                            || asset.getAssetRole() == null)
-                            && url.equals(asset.getUrl()))
-                    .findFirst();
-            if (existingAsset.isPresent()) {
-                existingAsset.get().setPosition(index);
-                mediaAssetRepository.updatePosition(existingAsset.get());
-                continue;
-            }
-            mediaAssetRepository.insert(MediaAsset.builder()
-                    .id(UUID.randomUUID())
-                    .tripId(expense.getTripId())
-                    .activityId(expense.getActivityId())
-                    .entityType(EXPENSE_ENTITY_TYPE)
-                    .entityId(expense.getId())
-                    .mediaType("IMAGE")
-                    .assetRole("PHOTO")
-                    .position(index)
-                    .url(url)
-                    .uploadedBy(userId)
-                    .build());
-        }
+        ExpensePhotoSync.sync(mediaAssetRepository, expense, urls, userId);
     }
 
     private ExpenseResponse mapToExpenseResponse(Expense expense, List<MediaAsset> photos,
                                                  ExpenseBatch batch) {
-        log.info("ðŸ”µ mapToExpenseResponse: expenseId={}, paidBy={}, paidByGuestMemberId={}",
-                expense.getId(), expense.getPaidBy(), expense.getPaidByGuestMemberId());
-
         Trip trip = batch.trip(expense.getTripId());
         BigDecimal amountInTripCurrency = trip != null
                 ? resolveAmountInTripCurrency(expense, trip)
@@ -725,13 +779,9 @@ public class ExpenseServiceImpl implements ExpenseService {
         // Handle paidBy - can be registered user or guest
         UserResponse paidByResponse = null;
 
-        // Check if this is a guest payer
         if (expense.getPaidByGuestMemberId() != null) {
-            log.info("   Guest payer detected: {}", expense.getPaidByGuestMemberId());
-            // Guest payer - fetch from trip_members
             TripMember guestMember = batch.guestMember(expense.getPaidByGuestMemberId());
             if (guestMember != null) {
-                log.info("   Found guest member: {}", guestMember.getGuestName());
                 if (guestMember.getUserId() != null) {
                     // Guest is linked to a user - fetch user info
                     User user = batch.user(guestMember.getUserId());
@@ -747,16 +797,12 @@ public class ExpenseServiceImpl implements ExpenseService {
                             .build();
                 }
             } else {
-                log.warn("   Guest member not found!");
+                log.warn("Guest payer {} of expense {} not found", expense.getPaidByGuestMemberId(), expense.getId());
             }
         } else if (expense.getPaidBy() != null) {
-            log.info("   Regular user payer: {}", expense.getPaidBy());
-            // Regular user payer
             User paidBy = batch.user(expense.getPaidBy());
             paidByResponse = mapToUserResponse(paidBy);
         }
-
-        log.info("   Final paidByResponse: {}", paidByResponse != null ? paidByResponse.getFullName() : "null");
 
         List<ExpenseSplit> splits = batch.splits(expense.getId());
 
@@ -788,8 +834,10 @@ public class ExpenseServiceImpl implements ExpenseService {
                     return ExpenseSplitResponse.builder()
                             .id(s.getId())
                             .user(userResponse)
+                            .guestMemberId(s.getGuestMemberId())
                             .amount(s.getAmount())
                             .isPaid(s.getIsSettled())
+                            .shareInput(s.getShareInput())
                             .build();
                 })
                 .collect(Collectors.toList());
@@ -800,6 +848,7 @@ public class ExpenseServiceImpl implements ExpenseService {
                                 || "PHOTO".equalsIgnoreCase(asset.getAssetRole()))
                         .toList());
 
+        ExpenseLedgerStore.Details details = batch.details();
         return ExpenseResponse.builder()
                 .id(expense.getId())
                 .amount(expense.getAmount())
@@ -816,7 +865,22 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .photoUrlsV2(photoResponses)
                 .expenseDate(expense.getExpenseDate() != null ? expense.getExpenseDate() : expense.getCreatedAt())
                 .createdAt(expense.getCreatedAt())
+                .payers(details.payers(expense.getId()).stream()
+                        .map(payer -> ExpensePayerResponse.builder()
+                                .participant(ExpenseParticipants.person(payer.participant(), batch.people()))
+                                .amount(payer.amount())
+                                .build())
+                        .toList())
+                .splitMethod(splitMethodOf(expense, splits).name())
                 .build();
+    }
+
+    /** The stored method, or for a row written without one: EQUAL when the shares are the even split. */
+    static SplitMethod splitMethodOf(Expense expense, List<ExpenseSplit> splits) {
+        if (expense.getSplitMethod() != null) return expense.getSplitMethod();
+        if (splits.isEmpty()) return SplitMethod.EQUAL;
+        return SplitCalculator.isEvenSplit(expense.getAmount(), expense.getCurrency(),
+                splits.stream().map(ExpenseSplit::getAmount).toList()) ? SplitMethod.EQUAL : SplitMethod.EXACT;
     }
 
     /**
@@ -854,6 +918,10 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .build();
     }
 
+    /**
+     * An old build's "paid" mark on one share. It now also records (or soft-deletes) the
+     * settlement that share stands for, so the new balances follow (epic 05 §2.4).
+     */
     @Override
     @Transactional
     public ExpenseSplitResponse markPaymentForSplit(UUID tripId, UUID expenseId, UUID splitId, MarkPaymentRequest request, UUID userId) {
@@ -864,21 +932,20 @@ public class ExpenseServiceImpl implements ExpenseService {
         // registered payer reconcile splits they funded.
         validateTripAccess(tripId, userId);
 
-        // 2. Fetch expense
         Expense expense = expenseRepository.findById(expenseId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found"));
 
-        if (!expense.getTripId().equals(tripId)) {
+        if (!tripId.equals(expense.getTripId())) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found");
         }
 
-        // 3. Fetch split
         ExpenseSplit split = expenseSplitRepository.findById(splitId);
         if (split == null || !split.getExpenseId().equals(expenseId)) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Split not found");
         }
 
-        boolean isExpensePayer = expense.getPaidBy() != null && expense.getPaidBy().equals(userId);
+        boolean isExpensePayer = expense.getPaidByGuestMemberId() == null
+                && expense.getPaidBy() != null && expense.getPaidBy().equals(userId);
         boolean isOwnSplit = split.getUserId() != null && split.getUserId().equals(userId);
         if (!isExpensePayer && !isOwnSplit) {
             throw new BusinessException(
@@ -886,20 +953,16 @@ public class ExpenseServiceImpl implements ExpenseService {
                     "Only the payer or split owner can update this payment");
         }
 
-        boolean isPayerSplit = expense.getPaidBy() != null &&
-                (expense.getPaidBy().equals(split.getUserId()) ||
-                 expense.getPaidBy().equals(split.getGuestMemberId()));
-        boolean settled = isPayerSplit || request.getIsPaid();
-        split.setIsSettled(settled);
-        split.setSettledAt(settled ? LocalDateTime.now() : null);
-        expenseSplitRepository.update(split);
+        boolean paid = !Boolean.FALSE.equals(request.getIsPaid());
+        ledgerStore.settleLegacy(expense, List.of(split), paid, userId);
 
-        log.info("Payment marked for split {}: isPaid={}", splitId, request.getIsPaid());
+        log.info("Payment marked for split {}: isPaid={}", splitId, paid);
 
         notificationHelper.emitPaymentMarked(tripId, expenseId, splitId, split,
-            expense.getDescription(), expense.getCurrency(), request.getIsPaid(), userId);
+            expense.getDescription(), expense.getCurrency(), paid, userId);
         tripRealtimePublisher.publishAfterCommit(
                 TripRealtimeEventType.EXPENSE_PAYMENT_UPDATED, tripId, expenseId, userId);
+        tripRealtimePublisher.publishAfterCommit(TripRealtimeEventType.LEDGER_UPDATED, tripId, expenseId, userId);
 
         return mapToExpenseSplitResponse(split);
     }
@@ -911,80 +974,119 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         validateTripEditAccess(tripId, userId);
 
-        // 2. Fetch expense
         Expense expense = expenseRepository.findById(expenseId)
                 .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found"));
 
-        if (!expense.getTripId().equals(tripId)) {
+        if (!tripId.equals(expense.getTripId())) {
             throw new BusinessException(ErrorConstant.NOT_FOUND, "Expense not found");
         }
 
-        if (expense.getPaidBy() == null || !expense.getPaidBy().equals(userId)) {
+        if (expense.getPaidBy() == null || expense.getPaidByGuestMemberId() != null
+                || !expense.getPaidBy().equals(userId)) {
             throw new BusinessException(
                     ErrorConstant.FORBIDDEN_ERROR,
                     "Only the expense payer can update all payments");
         }
 
+        boolean paid = !Boolean.FALSE.equals(request.getIsPaid());
         List<ExpenseSplit> splits = expenseSplitRepository.findByExpenseId(expenseId);
-        for (ExpenseSplit split : splits) {
-            boolean isPayerSplit = expense.getPaidBy().equals(split.getUserId()) ||
-                    expense.getPaidBy().equals(split.getGuestMemberId());
-            boolean settled = isPayerSplit || request.getIsPaid();
-            split.setIsSettled(settled);
-            split.setSettledAt(settled ? LocalDateTime.now() : null);
-            expenseSplitRepository.update(split);
-        }
+        ledgerStore.settleLegacy(expense, splits, paid, userId);
 
-        log.info("All payments marked for expense {}: isPaid={}, count={}", expenseId, request.getIsPaid(), splits.size());
+        log.info("All payments marked for expense {}: isPaid={}, count={}", expenseId, paid, splits.size());
 
-        notificationHelper.emitPaymentAllMarked(tripId, expenseId, expense.getDescription(), request.getIsPaid(), userId);
+        notificationHelper.emitPaymentAllMarked(tripId, expenseId, expense.getDescription(), paid, userId);
         tripRealtimePublisher.publishAfterCommit(
                 TripRealtimeEventType.EXPENSE_PAYMENT_UPDATED, tripId, expenseId, userId);
+        tripRealtimePublisher.publishAfterCommit(TripRealtimeEventType.LEDGER_UPDATED, tripId, expenseId, userId);
 
         return mapToExpenseResponse(expense);
     }
 
+    /**
+     * Re-prices every expense in the trip's (new) currency at the rate of the day each was spent
+     * (plan §7), not today's. Inside a transaction this waits for it to commit, then fetches the
+     * rates holding no connection and writes in a transaction of its own. An expense with no rate
+     * keeps no converted amount (it is left out of the totals) rather than a 1:1 guess.
+     */
     @Override
-    @Transactional
     public void recalculateForTripCurrency(UUID tripId) {
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Trip not found"));
-
-        List<Expense> expenses = expenseRepository.findByTripId(tripId);
-        for (Expense expense : expenses) {
-            applyTripCurrencyConversion(expense, trip);
-            expenseRepository.updateById(expense);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    recalculateNow(tripId);
+                }
+            });
+            return;
         }
-        log.info("Recalculated amountInTripCurrency for {} expenses on trip {} ({})",
-                expenses.size(), tripId, tripCurrencyOf(trip));
+        recalculateNow(tripId);
     }
 
+    private void recalculateNow(UUID tripId) {
+        Trip trip = tripRepository.findById(tripId).orElse(null);
+        if (trip == null) return;
+        String tripCurrency = tripCurrencyOf(trip);
+        List<Expense> expenses = expenseRepository.findByTripId(tripId);
+        Map<String, Optional<BigDecimal>> rates = new HashMap<>();
+        int unpriced = 0;
+        for (Expense expense : expenses) {
+            String currency = expense.getCurrency() == null ? tripCurrency : expense.getCurrency();
+            LocalDate day = (expense.getExpenseDate() != null ? expense.getExpenseDate()
+                    : expense.getCreatedAt() != null ? expense.getCreatedAt() : LocalDateTime.now()).toLocalDate();
+            Optional<BigDecimal> rate = currency.equalsIgnoreCase(tripCurrency) ? Optional.of(BigDecimal.ONE)
+                    : rates.computeIfAbsent(currency + "|" + day,
+                            key -> exchangeRateService.findRateOn(currency, tripCurrency, day));
+            if (rate.isPresent()) {
+                applyRate(expense, rate.get());
+            } else {
+                expense.setExchangeRate(null);
+                expense.setAmountInTripCurrency(null);
+                unpriced++;
+            }
+        }
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+        transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        transaction.executeWithoutResult(status -> {
+            expenses.forEach(expenseRepository::updateById);
+            tripRealtimePublisher.publishAfterCommit(TripRealtimeEventType.EXPENSE_UPDATED, tripId, null);
+        });
+        log.info("Recalculated amountInTripCurrency for {} expenses on trip {} ({}), {} without a rate",
+                expenses.size(), tripId, tripCurrency, unpriced);
+    }
+
+    /**
+     * Old builds' "everything in this trip is paid / not paid". It now touches only the expenses
+     * the caller paid (plan §1 bug 5: any editor could settle other people's debts), and a
+     * payer's own share always stays paid.
+     */
     @Override
     @Transactional
     public void markAllPaymentsForTrip(UUID tripId, MarkPaymentRequest request, UUID userId) {
         log.info("Marking all payments for trip: tripId={}, userId={}", tripId, userId);
 
-        validateTripEditAccess(tripId, userId);
+        validateTripAccess(tripId, userId);
+        boolean paid = !Boolean.FALSE.equals(request.getIsPaid());
 
-        // 2. Get all expenses for trip
-        List<Expense> expenses = expenseRepository.findByTripId(tripId);
+        List<Expense> mine = expenseRepository.findByTripId(tripId).stream()
+                .filter(expense -> expense.getPaidByGuestMemberId() == null && userId.equals(expense.getPaidBy()))
+                .toList();
+        Map<UUID, List<ExpenseSplit>> splitsByExpense = expenseSplitRepository
+                .findByExpenseIds(mine.stream().map(Expense::getId).toList()).stream()
+                .collect(Collectors.groupingBy(ExpenseSplit::getExpenseId));
 
         int totalUpdated = 0;
-        for (Expense expense : expenses) {
-            List<ExpenseSplit> splits = expenseSplitRepository.findByExpenseId(expense.getId());
-            for (ExpenseSplit split : splits) {
-                split.setIsSettled(request.getIsPaid());
-                split.setSettledAt(request.getIsPaid() ? LocalDateTime.now() : null);
-                expenseSplitRepository.update(split);
-                totalUpdated++;
-            }
+        for (Expense expense : mine) {
+            List<ExpenseSplit> splits = splitsByExpense.getOrDefault(expense.getId(), List.of());
+            ledgerStore.settleLegacy(expense, splits, paid, userId);
+            totalUpdated += splits.size();
         }
 
-        log.info("All payments marked for trip {}: isPaid={}, totalUpdated={}", tripId, request.getIsPaid(), totalUpdated);
+        log.info("All payments marked for trip {}: isPaid={}, totalUpdated={}", tripId, paid, totalUpdated);
 
-        notificationHelper.emitPaymentTripMarked(tripId, request.getIsPaid(), userId);
+        notificationHelper.emitPaymentTripMarked(tripId, paid, userId);
         tripRealtimePublisher.publishAfterCommit(
                 TripRealtimeEventType.EXPENSE_PAYMENT_UPDATED, tripId, null, userId);
+        tripRealtimePublisher.publishAfterCommit(TripRealtimeEventType.LEDGER_UPDATED, tripId, null, userId);
     }
 
     private ExpenseSplitResponse mapToExpenseSplitResponse(ExpenseSplit split) {
@@ -1013,8 +1115,14 @@ public class ExpenseServiceImpl implements ExpenseService {
         return ExpenseSplitResponse.builder()
                 .id(split.getId())
                 .user(userResponse)
+                .guestMemberId(split.getGuestMemberId())
                 .amount(split.getAmount())
                 .isPaid(split.getIsSettled())
+                .shareInput(split.getShareInput())
                 .build();
+    }
+
+    private static BusinessException invalid(String message) {
+        return new BusinessException(ErrorConstant.INVALID_PARAMETERS, message);
     }
 }

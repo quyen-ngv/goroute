@@ -17,7 +17,8 @@ public class UpsertPartnerPlaceRequest {
     @NotNull private UUID organizationId;
     @ModeratedText(contentType = ModeratedContentType.PARTNER_LISTING, visibility = ModerationVisibility.PUBLIC)
     @NotBlank @Size(max=500) private String title;
-    @Pattern(regexp="FOOD_AND_DRINK|CULTURE_AND_HERITAGE|NATURE_AND_OUTDOORS|SHOPPING_AND_MARKET|ATTRACTIONS|ACCOMMODATION|OTHER")
+    // Legacy sightseeing codes are still accepted from older partner builds and stored as ATTRACTIONS.
+    @Pattern(regexp="FOOD_AND_DRINK|ATTRACTIONS|ACCOMMODATION|CULTURE_AND_HERITAGE|NATURE_AND_OUTDOORS|SHOPPING_AND_MARKET|OTHER")
     private String placeGroup="ACCOMMODATION";
     @Size(max=255) private String category;
     @ModeratedText(contentType = ModeratedContentType.PARTNER_LISTING, visibility = ModerationVisibility.PUBLIC)

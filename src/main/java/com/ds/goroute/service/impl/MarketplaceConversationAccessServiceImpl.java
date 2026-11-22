@@ -29,6 +29,16 @@ public class MarketplaceConversationAccessServiceImpl implements MarketplaceConv
             if(!member)throw forbidden();
             return;
         }
+        if(conversation.getMeetupId()!=null){
+            // The meetup decides, live: its host or a participant whose row is JOINED.
+            if(!chatRepository.isMeetupHostOrJoined(conversation.getMeetupId(),userId))throw forbidden();
+            return;
+        }
+        if(conversation.getLocalEventId()!=null){
+            // The event decides, live: whoever is going to it right now.
+            if(!chatRepository.isEventAttendee(conversation.getLocalEventId(),userId))throw forbidden();
+            return;
+        }
         if(conversation.getOrganizationId()==null){
             if(!chatRepository.canAccess(conversationId,userId))throw forbidden();
             return;

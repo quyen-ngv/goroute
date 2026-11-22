@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.ds.goroute.mapper.TripNoteTodoMapper">
+
+    <resultMap id="ItemResultMap" type="com.ds.goroute.entity.TripNoteTodoItem">
+        <id column="id" property="id" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="note_id" property="noteId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="trip_id" property="tripId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="text" property="text" jdbcType="VARCHAR"/>
+        <result column="sort_order" property="sortOrder" jdbcType="INTEGER"/>
+        <result column="is_done" property="isDone" jdbcType="BOOLEAN"/>
+        <result column="done_by" property="doneBy" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="done_at" property="doneAt" jdbcType="TIMESTAMP"/>
+        <result column="created_by" property="createdBy" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
+        <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <resultMap id="AssigneeResultMap" type="com.ds.goroute.entity.TripNoteTodoAssignee">
+        <result column="item_id" property="itemId" javaType="java.util.UUID" jdbcType="OTHER"/>
+        <result column="user_id" property="userId" javaType="java.util.UUID" jdbcType="OTHER"/>
+    </resultMap>
+
+    <sql id="ItemColumns">
+        id, note_id, trip_id, text, sort_order, is_done, done_by, done_at, created_by, created_at, updated_at
+    </sql>
+
+    <select id="selectItemById" resultMap="ItemResultMap">
+        SELECT <include refid="ItemColumns"/> FROM trip_note_todo_items
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND is_deleted = FALSE
+    </select>
+
+    <select id="selectItemsByNoteIds" resultMap="ItemResultMap">
+        SELECT <include refid="ItemColumns"/> FROM trip_note_todo_items
+        WHERE is_deleted = FALSE
+          AND note_id IN
+          <foreach collection="noteIds" item="noteId" open="(" separator="," close=")">
+              #{noteId,javaType=java.util.UUID,jdbcType=OTHER}
+          </foreach>
+        ORDER BY note_id, sort_order, created_at
+    </select>
+
+    <select id="countItemsByNoteId" resultType="int">
+        SELECT COUNT(*) FROM trip_note_todo_items
+        WHERE note_id = #{noteId,javaType=java.util.UUID,jdbcType=OTHER} AND is_deleted = FALSE
+    </select>
+
+    <select id="selectMaxSortOrder" resultType="java.lang.Integer">
+        SELECT MAX(sort_order) FROM trip_note_todo_items
+        WHERE note_id = #{noteId,javaType=java.util.UUID,jdbcType=OTHER} AND is_deleted = FALSE
+    </select>
+
+    <insert id="insertItem" parameterType="com.ds.goroute.entity.TripNoteTodoItem">
+        INSERT INTO trip_note_todo_items (id, note_id, trip_id, text, sort_order, is_done, done_by, done_at,
+                                          created_by, created_at, updated_at, is_deleted)
+        VALUES (#{id,javaType=java.util.UUID,jdbcType=OTHER}, #{noteId,javaType=java.util.UUID,jdbcType=OTHER},
+                #{tripId,javaType=java.util.UUID,jdbcType=OTHER}, #{text}, #{sortOrder}, FALSE, NULL, NULL,
+                #{createdBy,javaType=java.util.UUID,jdbcType=OTHER}, NOW(), NOW(), FALSE)
+    </insert>
+
+    <update id="updateItem" parameterType="com.ds.goroute.entity.TripNoteTodoItem">
+        UPDATE trip_note_todo_items
+        SET text = #{text},
+            is_done = #{isDone,jdbcType=BOOLEAN},
+            done_by = #{doneBy,javaType=java.util.UUID,jdbcType=OTHER},
+            done_at = #{doneAt,jdbcType=TIMESTAMP},
+            updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND is_deleted = FALSE
+    </update>
+
+    <update id="softDeleteItem">
+        UPDATE trip_note_todo_items SET is_deleted = TRUE, updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <update id="softDeleteItemsByNoteId">
+        UPDATE trip_note_todo_items SET is_deleted = TRUE, updated_at = NOW()
+        WHERE note_id = #{noteId,javaType=java.util.UUID,jdbcType=OTHER} AND is_deleted = FALSE
+    </update>
+
+    <select id="selectAssigneesByItemIds" resultMap="AssigneeResultMap">
+        SELECT item_id, user_id FROM trip_note_todo_assignees
+        WHERE item_id IN
+        <foreach collection="itemIds" item="itemId" open="(" separator="," close=")">
+            #{itemId,javaType=java.util.UUID,jdbcType=OTHER}
+        </foreach>
+        ORDER BY created_at
+    </select>
+
+    <insert id="insertAssignees">
+        INSERT INTO trip_note_todo_assignees (item_id, user_id, created_at)
+        VALUES
+        <foreach collection="userIds" item="userId" separator=",">
+            (#{itemId,javaType=java.util.UUID,jdbcType=OTHER}, #{userId,javaType=java.util.UUID,jdbcType=OTHER}, NOW())
+        </foreach>
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <delete id="deleteAssigneesByItemId">
+        DELETE FROM trip_note_todo_assignees WHERE item_id = #{itemId,javaType=java.util.UUID,jdbcType=OTHER}
+    </delete>
+
+</mapper>

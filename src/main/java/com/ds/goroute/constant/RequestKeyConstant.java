@@ -8,6 +8,14 @@ public class RequestKeyConstant {
 
     public static final String THREAD_REQUEST_ID = "requestId";
 
+    /** MDC key: the signed-in caller, set once the JWT is accepted. */
+    public static final String THREAD_USER_ID = "userId";
+
+    /** MDC key: the app build number from {@link #X_APP_BUILD}. */
+    public static final String THREAD_APP_BUILD = "appBuild";
+
+    public static final String X_APP_BUILD = "X-App-Build";
+
     public static final String REQUEST_PARAMETERS = "request_parameters";
 
     public static final String REQUEST_BODY = "request_body";

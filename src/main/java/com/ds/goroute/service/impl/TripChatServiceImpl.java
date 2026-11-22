@@ -40,6 +40,8 @@ public class TripChatServiceImpl implements TripChatService {
     private final TripRepository trips;
     private final TripMemberRepository tripMembers;
     private final UserRepository users;
+    /** Announces a new trip chat after commit; Pengoo greets it (AssistantEventListener). */
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     @Override
     @Transactional
@@ -67,10 +69,15 @@ public class TripChatServiceImpl implements TripChatService {
 
     @Override
     @Transactional
-    public void onTripDeleted(UUID tripId) {
-        chatRepository.findByTrip(tripId, null).ifPresent(conversation ->
-                chatRepository.updateConversation(conversation.getId(),
-                        MarketplaceConversationStatus.ARCHIVED.name(), null, false, LocalDateTime.now()));
+    public void onTripDeleted(UUID tripId, boolean deleteChat) {
+        chatRepository.findByTrip(tripId, null).ifPresent(conversation -> {
+            if (deleteChat) {
+                chatRepository.archiveTripConversation(conversation.getId(), LocalDateTime.now());
+                return;
+            }
+            chatRepository.updateConversation(conversation.getId(),
+                    MarketplaceConversationStatus.ARCHIVED.name(), null, false, LocalDateTime.now());
+        });
     }
 
     private void requireMember(UUID tripId, UUID userId) {
@@ -114,6 +121,7 @@ public class TripChatServiceImpl implements TripChatService {
             chatRepository.addMember(created.getId(), member.getUserId(), memberRole(member), now);
         }
         chatService.postSystemMessage(created.getId(), "CONVERSATION_CREATED", null, null);
+        events.publishEvent(new com.ds.goroute.event.TripConversationCreatedEvent(created.getId(), trip.getId()));
         return created;
     }
 

@@ -1,0 +1,555 @@
+package com.ds.goroute.feed;
+
+import com.ds.goroute.dto.response.FeedForYouPageResponse;
+import com.ds.goroute.dto.response.PublicTripResponse;
+import com.ds.goroute.dto.response.UserCheckinResponse;
+import com.ds.goroute.dto.response.UserReviewResponse;
+import com.ds.goroute.feed.FeedTypes.FillLevel;
+import com.ds.goroute.feed.backend.CandidateBackend;
+import com.ds.goroute.feed.event.FeedEventLogger;
+import com.ds.goroute.feed.model.FeedEventRow;
+import com.ds.goroute.feed.model.FeedCandidateQuery;
+import com.ds.goroute.feed.model.FeedItemRow;
+import com.ds.goroute.feed.model.FeedKey;
+import com.ds.goroute.feed.rerank.Reranker;
+import com.ds.goroute.feed.score.ScoreFactor;
+import com.ds.goroute.feed.score.ScoreFactors;
+import com.ds.goroute.feed.session.FeedSession;
+import com.ds.goroute.feed.session.FeedSessionStore;
+import com.ds.goroute.feed.source.CandidateSource;
+import com.ds.goroute.service.ParallelReads;
+import com.ds.goroute.service.ReviewService;
+import com.ds.goroute.service.TripService;
+import com.ds.goroute.service.UserBlockService;
+import com.ds.goroute.service.UserCheckinService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+
+/**
+ * The ranked "For you" feed (plan §4, design §1): sources -> filter -> score -> re-rank ->
+ * session -> page. A ranking is built once per scroll and kept in a {@link FeedSession}; the
+ * following pages are slices of it, so nothing on screen moves and nothing is scored twice.
+ * When a scroll reaches the end of a full session the next ranking leaves out everything the
+ * scroll already served.
+ *
+ * <p>What runs is the for-you {@link SurfaceSpec} (every source and factor unless configured
+ * otherwise), and every post a page serves is logged to feed_events as SERVE with the factor
+ * values it was ranked with (plan §3, §8.2).
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class FeedForYouService {
+
+    public static final int MAX_PAGE_SIZE = 50;
+    /** Version of the SERVE features JSON: the factor names, then "score". */
+    static final int FEATURES_SCHEMA = 1;
+    static final String SERVE = "SERVE";
+
+    private final FeedRollout rollout;
+    private final ViewerContextResolver contexts;
+    private final FeedWeightsProvider weightsProvider;
+    private final CandidateBackend backend;
+    private final List<CandidateSource> sources;
+    private final List<ScoreFactor> factors;
+    private final Reranker reranker;
+    private final FeedSessionStore sessions;
+    private final UserCheckinService checkinService;
+    private final ReviewService reviewService;
+    private final TripService tripService;
+    private final ParallelReads parallelReads;
+    private final FeedEventLogger eventLogger;
+    private final UserBlockService userBlockService;
+    /** Field-injected and optional so the hand-built service in unit tests keeps its constructor. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.ds.goroute.service.trip.FeedTripRulesProvider tripRulesProvider;
+
+    public FeedForYouPageResponse page(UUID viewerId, FeedFilterSpec spec, String cursor, int size,
+                                       Double deviceLat, Double deviceLng, boolean contextOff,
+                                       Set<UUID> contextOffTrips, boolean debug) {
+        if (!rollout.enabledFor(viewerId)) {
+            return FeedForYouPageResponse.builder()
+                    .enabled(false)
+                    .variant(FeedRollout.LEGACY)
+                    .items(List.of())
+                    .build();
+        }
+        int pageSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+        boolean explain = debug && rollout.isBeta(viewerId);
+        FeedWeights w = weightsProvider.get();
+        SurfaceSpec surface = SurfaceSpec.of(SurfaceSpec.FOR_YOU, w);
+        int sessionSize = w.i("caps.sessionSize", 500);
+
+        Cursor at = Cursor.decode(cursor);
+        FeedSession session = at == null ? null : sessions.get(at.sessionId())
+                .filter(found -> java.util.Objects.equals(found.viewerId(), viewerId))
+                .filter(found -> found.filterKey().equals(spec.key()))
+                .orElse(null);
+        boolean restarted = at != null && session == null;
+        int offset = session == null ? 0 : Math.max(0, at.offset());
+
+        if (session == null) {
+            session = rank(viewerId, surface, spec, w, Set.of(), FillLevel.L1,
+                    deviceLat, deviceLng, contextOff, contextOffTrips, explain);
+        } else if (offset >= session.ranked().size() && session.continues(sessionSize)) {
+            // The end of a ranking that may have more after it: rank again without everything
+            // this scroll served, from the next fill level when this one ran short.
+            Set<String> served = new HashSet<>(session.servedBefore());
+            session.ranked().forEach(key -> served.add(key.key()));
+            session = rank(viewerId, surface, spec, w, served, session.nextLevel(sessionSize),
+                    deviceLat, deviceLng, contextOff, contextOffTrips, explain);
+            offset = 0;
+        }
+
+        List<FeedKey> slice = offset >= session.ranked().size() ? List.of()
+                : session.ranked().subList(offset, Math.min(offset + pageSize, session.ranked().size()));
+        int nextOffset = offset + slice.size();
+        boolean hasMore = nextOffset < session.ranked().size()
+                || (session.continues(sessionSize) && !slice.isEmpty());
+        List<FeedEventRow> servedRows = new ArrayList<>(slice.size());
+        List<FeedForYouPageResponse.Item> items = enrich(viewerId, slice, offset, session, servedRows);
+        if (viewerId != null) {
+            eventLogger.log(servedRows);
+        }
+
+        return FeedForYouPageResponse.builder()
+                .enabled(true)
+                .variant(FeedRollout.RANKED)
+                .sessionId(session.id())
+                .nextCursor(hasMore ? new Cursor(session.id(), nextOffset).encode() : null)
+                .hasMore(hasMore)
+                .fillLevel(session.fillLevel().name())
+                .restarted(restarted)
+                .context(session.context())
+                .items(items)
+                .build();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Ranking
+
+    private FeedSession rank(UUID viewerId, SurfaceSpec surface, FeedFilterSpec spec, FeedWeights w,
+                             Set<String> exclude, FillLevel fromLevel,
+                             Double deviceLat, Double deviceLng, boolean contextOff, Set<UUID> contextOffTrips,
+                             boolean explain) {
+        LocalDateTime now = LocalDateTime.now();
+        ViewerContext context = contexts.resolve(viewerId, deviceLat, deviceLng, contextOff, contextOffTrips);
+        int minCandidates = w.i("caps.minCandidates", 120);
+        int maxCandidates = w.i("caps.maxCandidates", 1400);
+
+        Map<String, FeedCandidate> pool = new LinkedHashMap<>();
+        Set<FeedCandidateQuery> alreadyRead = new HashSet<>();
+        FillLevel level = fromLevel;
+        List<FeedCandidate> usable = List.of();
+        for (FillLevel attempt : List.of(FillLevel.L1, FillLevel.L2, FillLevel.L3, FillLevel.L4)) {
+            if (!attempt.atLeast(fromLevel)) {
+                continue;
+            }
+            level = attempt;
+            collect(pool, alreadyRead, surface, context, spec, w, attempt, maxCandidates);
+            usable = usable(pool, exclude, context, spec, w, attempt, now);
+            if (usable.size() >= minCandidates) {
+                break;
+            }
+        }
+        if (usable.size() < 20) {
+            level = FillLevel.L5;
+        }
+
+        ScoreFactor.Request request = new ScoreFactor.Request(context, spec, w, level, now);
+        List<ScoreFactor> active = factors.stream().filter(factor -> surface.scores(factor.name())).toList();
+        for (FeedCandidate candidate : usable) {
+            annotate(candidate, context, w);
+            double score = 1.0;
+            for (ScoreFactor factor : active) {
+                double value = factor.apply(candidate, request);
+                score *= value;
+                candidate.features().put(factor.name(), value);
+            }
+            candidate.score(score);
+        }
+
+        List<FeedCandidate> ranked = reranker.rerank(usable, w.i("caps.sessionSize", 500), context, spec, w, now);
+        Map<String, FeedForYouPageResponse.Rank> ranks = explain ? new HashMap<>() : Map.of();
+        if (explain) {
+            for (FeedCandidate candidate : ranked) {
+                ranks.put(candidate.keyString(), FeedForYouPageResponse.Rank.builder()
+                        .score(round(candidate.score()))
+                        .sources(candidate.sources().stream().map(Enum::name).toList())
+                        .factors(rounded(candidate.features()))
+                        .context(candidate.contextReason())
+                        .build());
+            }
+        }
+
+        FeedSession session = new FeedSession(
+                UUID.randomUUID().toString(),
+                viewerId,
+                spec.key(),
+                ranked.stream().map(FeedCandidate::key).toList(),
+                Set.copyOf(exclude),
+                level,
+                contextLine(context),
+                explain,
+                ranks,
+                featureNames(active),
+                features(ranked, active));
+        sessions.put(session);
+        if (log.isDebugEnabled()) {
+            log.debug("Feed ranking for {}: {} candidates, {} ranked, level {}",
+                    viewerId, pool.size(), ranked.size(), level);
+        }
+        return session;
+    }
+
+    /**
+     * Runs every applicable source at {@code level}, at the same time, and merges their rows into
+     * {@code pool} in source order. A query an earlier level already ran is not run again: L3
+     * reads exactly what L2 read (it only lets seen posts back in) and the Social source never
+     * changes with the level.
+     */
+    private void collect(Map<String, FeedCandidate> pool, Set<FeedCandidateQuery> alreadyRead,
+                         SurfaceSpec surface, ViewerContext context, FeedFilterSpec spec, FeedWeights w, FillLevel level,
+                         int maxCandidates) {
+        if (pool.size() >= maxCandidates) {
+            return;
+        }
+        FeedCandidateQuery base = baseQuery(context, spec, w, level,
+                tripRulesProvider == null ? null : tripRulesProvider.current());
+        List<CandidateSource> toRun = new ArrayList<>();
+        List<Supplier<List<FeedItemRow>>> reads = new ArrayList<>();
+        for (CandidateSource source : sources) {
+            if (!surface.runs(source.kind()) || !source.applies(context, spec)) {
+                continue;
+            }
+            FeedCandidateQuery query = source.query(base, context, w, level);
+            if (query == null || !alreadyRead.add(identity(query))) {
+                continue;
+            }
+            toRun.add(source);
+            reads.add(() -> read(source, query));
+        }
+        List<List<FeedItemRow>> results = parallelReads.all(reads);
+        for (int i = 0; i < toRun.size(); i++) {
+            if (pool.size() >= maxCandidates) {
+                break;
+            }
+            CandidateSource source = toRun.get(i);
+            for (FeedItemRow row : results.get(i)) {
+                FeedCandidate known = pool.get(row.key().key());
+                if (known != null) {
+                    known.sources().add(source.kind());
+                } else if (pool.size() < maxCandidates) {
+                    // caps.maxCandidates bounds the pool, not only the sources started: at L4
+                    // Fresh alone reads 1,400 rows, and every row kept is scored and reranked.
+                    FeedCandidate candidate = new FeedCandidate(row);
+                    candidate.sources().add(source.kind());
+                    pool.put(row.key().key(), candidate);
+                }
+            }
+        }
+    }
+
+    private List<FeedItemRow> read(CandidateSource source, FeedCandidateQuery query) {
+        try {
+            return backend.execute(query);
+        } catch (RuntimeException exception) {
+            // One source failing costs its posts, not the feed.
+            log.warn("Feed source {} failed: {}", source.kind(), exception.getMessage());
+            return List.of();
+        }
+    }
+
+    /** {@code query} with its window to the minute: two levels asking the same window read the same rows. */
+    private static FeedCandidateQuery identity(FeedCandidateQuery query) {
+        return query.getSince() == null ? query
+                : query.toBuilder().since(query.getSince().truncatedTo(ChronoUnit.MINUTES)).build();
+    }
+
+    private static FeedCandidateQuery baseQuery(ViewerContext context, FeedFilterSpec spec, FeedWeights w,
+                                                FillLevel level, com.ds.goroute.dto.FeedTripRules tripRules) {
+        FeedCandidateQuery.FeedCandidateQueryBuilder base = FeedCandidateQuery.builder()
+                .viewerId(context.getViewerId())
+                // No trip that has not started, none with too few activities (FEED config).
+                .tripRules(tripRules)
+                .itemTypes(spec.itemTypes().isEmpty() ? null : spec.itemTypeNames())
+                .ignoreRecommendGate(spec.tripsChip())
+                .relaxedRecommendGate(level.atLeast(FillLevel.L4))
+                .limit(100);
+        if (spec.kind() != null) {
+            base.placeGroups(spec.kind().getPlaceGroups())
+                    .subTypes(spec.kind().getSubTypes())
+                    .chipTripMinStops(w.i("chipTrips.minStops", 3))
+                    .chipTripMinRatio(w.d("chipTrips.minRatio", 0.4));
+        }
+        if (spec.geo() != null) {
+            base.radiusLat(spec.geo().latitude().doubleValue())
+                    .radiusLng(spec.geo().longitude().doubleValue())
+                    .radiusMeters(spec.geo().radiusKm().doubleValue() * 1000);
+        }
+        return base.build();
+    }
+
+    /**
+     * The pool without what this scroll already served and, until L3, without the posts the
+     * viewer saw repeatedly lately (D8). Under a chip nothing seen is left out.
+     */
+    private static List<FeedCandidate> usable(Map<String, FeedCandidate> pool, Set<String> exclude,
+                                              ViewerContext context, FeedFilterSpec spec, FeedWeights w,
+                                              FillLevel level, LocalDateTime now) {
+        ScoreFactor.Request request = new ScoreFactor.Request(context, spec, w, level, now);
+        boolean dropRepeated = !spec.narrowed() && !level.atLeast(FillLevel.L3);
+        List<FeedCandidate> usable = new ArrayList<>(pool.size());
+        for (FeedCandidate candidate : pool.values()) {
+            String key = candidate.keyString();
+            if (exclude.contains(key)) {
+                continue;
+            }
+            candidate.seen(context.getSeen().get(key));
+            if (dropRepeated && candidate.seen() != null
+                    && ScoreFactors.Seen.repeatedlySeen(candidate.seen(), request)) {
+                continue;
+            }
+            usable.add(candidate);
+        }
+        return usable;
+    }
+
+    /** Context match (plan §4.9), social proof. The strongest context wins. */
+    private static void annotate(FeedCandidate candidate, ViewerContext context, FeedWeights w) {
+        FeedItemRow row = candidate.row();
+        String province = row.getProvinceCode();
+        boolean tripContext = !context.isContextOff();
+        if (tripContext && ((row.getPlaceId() != null && context.getItineraryPlaceIds().contains(row.getPlaceId()))
+                || (row.isTrip() && candidate.from(FeedTypes.SourceKind.ITINERARY)))) {
+            candidate.context(w.d("context.itineraryPlace", 1.2), "itinerary");
+        }
+        if (tripContext && province != null && context.getTodayProvinces().contains(province)) {
+            candidate.context(w.d("context.todayDestination", 0.8), "today");
+        }
+        if (context.hasDevice() && row.getLatitude() != null && row.getLongitude() != null) {
+            double km = distanceKm(context.getDeviceLat(), context.getDeviceLng(), row.getLatitude(), row.getLongitude());
+            if (km <= w.d("context.nearDeviceKm", 30)) {
+                candidate.nearDevice(true);
+                candidate.context(w.d("context.nearDevice", 0.6), "near");
+            }
+        }
+        if (tripContext && province != null && context.getUpcomingProvinces().contains(province)) {
+            candidate.context(w.d("context.upcomingTrip", 0.5), "upcoming");
+        }
+        if (province != null && context.getRelatedProvinces().contains(province)) {
+            candidate.context(w.d("context.relatedProvince", 0.3), "related");
+        }
+        Integer people = context.getSocialProof().get(candidate.keyString());
+        candidate.socialPeople(people == null ? 0 : people);
+    }
+
+    private FeedForYouPageResponse.Context contextLine(ViewerContext context) {
+        if (!context.tripContextActive()) {
+            return null;
+        }
+        String province = context.getTodayProvinces().stream().sorted().findFirst().orElse(null);
+        return FeedForYouPageResponse.Context.builder()
+                .tripId(context.getOngoingTripId())
+                .tripName(context.getOngoingTripName())
+                .provinceName(contexts.provinceName(province))
+                .build();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Page
+
+    /**
+     * The page's posts as the three feeds return them, in ranked order. A post that went
+     * private, was deleted or taken down since it was ranked is left out of the page, and so is
+     * a post whose author blocked the viewer (or was blocked by them) since: blocks are checked
+     * when the session is ranked, and a session lives up to 30 minutes.
+     */
+    private List<FeedForYouPageResponse.Item> enrich(UUID viewerId, List<FeedKey> slice, int offset,
+                                                     FeedSession session, List<FeedEventRow> served) {
+        if (slice.isEmpty()) {
+            return List.of();
+        }
+        Map<String, List<UUID>> idsByType = slice.stream().collect(Collectors.groupingBy(
+                FeedKey::getItemType, Collectors.mapping(FeedKey::getItemId, Collectors.toList())));
+        // The three card kinds are independent reads of about ten queries each: load them together.
+        List<Map<UUID, ?>> loaded = parallelReads.all(List.<Supplier<Map<UUID, ?>>>of(
+                () -> idsByType.containsKey("CHECKIN")
+                        ? checkinService.findVisibleByIds(viewerId, idsByType.get("CHECKIN")) : Map.of(),
+                () -> idsByType.containsKey("REVIEW")
+                        ? reviewService.findVisibleByIds(viewerId, idsByType.get("REVIEW")) : Map.of(),
+                () -> idsByType.containsKey("TRIP")
+                        ? tripService.getPublicTripCards(viewerId, idsByType.get("TRIP")).stream()
+                                .collect(Collectors.toMap(PublicTripResponse::getId, Function.identity(), (a, b) -> a))
+                        : Map.of()));
+        @SuppressWarnings("unchecked")
+        Map<UUID, UserCheckinResponse> checkins = (Map<UUID, UserCheckinResponse>) loaded.get(0);
+        @SuppressWarnings("unchecked")
+        Map<UUID, UserReviewResponse> reviews = (Map<UUID, UserReviewResponse>) loaded.get(1);
+        @SuppressWarnings("unchecked")
+        Map<UUID, PublicTripResponse> trips = (Map<UUID, PublicTripResponse>) loaded.get(2);
+        Set<UUID> blocked = blockedAuthors(viewerId, checkins, reviews, trips);
+
+        List<FeedForYouPageResponse.Item> items = new ArrayList<>(slice.size());
+        for (int index = 0; index < slice.size(); index++) {
+            FeedKey key = slice.get(index);
+            FeedForYouPageResponse.Item.ItemBuilder item = FeedForYouPageResponse.Item.builder().type(key.getItemType());
+            switch (key.getItemType()) {
+                case "CHECKIN" -> {
+                    UserCheckinResponse checkin = checkins.get(key.getItemId());
+                    if (checkin == null || blocked.contains(checkin.getUserId())) {
+                        continue;
+                    }
+                    item.checkin(checkin);
+                }
+                case "REVIEW" -> {
+                    UserReviewResponse review = reviews.get(key.getItemId());
+                    if (review == null || blocked.contains(review.getUserId())) {
+                        continue;
+                    }
+                    item.review(review);
+                }
+                case "TRIP" -> {
+                    PublicTripResponse trip = trips.get(key.getItemId());
+                    if (trip == null || blocked.contains(trip.getOwnerId())) {
+                        continue;
+                    }
+                    item.trip(trip);
+                }
+                default -> {
+                    continue;
+                }
+            }
+            if (session.debug()) {
+                item.rank(session.explain().get(key.key()));
+            }
+            items.add(item.build());
+            served.add(servedRow(viewerId, key, session, offset + index));
+        }
+        return items;
+    }
+
+    /** Authors of the loaded page with a block either way with the viewer: one query per page. */
+    private Set<UUID> blockedAuthors(UUID viewerId, Map<UUID, UserCheckinResponse> checkins,
+                                     Map<UUID, UserReviewResponse> reviews, Map<UUID, PublicTripResponse> trips) {
+        if (viewerId == null) {
+            return Set.of();
+        }
+        Set<UUID> authors = new HashSet<>();
+        checkins.values().forEach(checkin -> authors.add(checkin.getUserId()));
+        reviews.values().forEach(review -> authors.add(review.getUserId()));
+        trips.values().forEach(trip -> authors.add(trip.getOwnerId()));
+        authors.remove(null);
+        return authors.isEmpty() ? Set.of() : userBlockService.blockedAmong(viewerId, authors);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Features (feed_events SERVE)
+
+    private static List<String> featureNames(List<ScoreFactor> active) {
+        List<String> names = new ArrayList<>(active.size() + 1);
+        active.forEach(factor -> names.add(factor.name()));
+        names.add("score");
+        return List.copyOf(names);
+    }
+
+    /** Every ranked post's factor values and score, flat and as float16 (see {@link FeedSession}). */
+    private static short[] features(List<FeedCandidate> ranked, List<ScoreFactor> active) {
+        int width = active.size() + 1;
+        short[] features = new short[ranked.size() * width];
+        for (int row = 0; row < ranked.size(); row++) {
+            FeedCandidate candidate = ranked.get(row);
+            for (int column = 0; column < active.size(); column++) {
+                Double value = candidate.features().get(active.get(column).name());
+                features[row * width + column] = Float.floatToFloat16(value == null ? 0f : value.floatValue());
+            }
+            features[row * width + active.size()] = Float.floatToFloat16((float) candidate.score());
+        }
+        return features;
+    }
+
+    private static FeedEventRow servedRow(UUID viewerId, FeedKey key, FeedSession session, int position) {
+        return FeedEventRow.builder()
+                .userId(viewerId)
+                .itemType(key.getItemType())
+                .itemId(key.getItemId())
+                .event(SERVE)
+                .surface(SurfaceSpec.FOR_YOU)
+                .variant(FeedRollout.RANKED)
+                .sessionId(session.id())
+                .position(position)
+                .features(featuresJson(session.featuresAt(position)))
+                .build();
+    }
+
+    /** {"v":1,"EQN":1.2,...,"score":0.8}; a value float16 cannot hold is written as 0. */
+    static String featuresJson(Map<String, Float> values) {
+        StringBuilder json = new StringBuilder("{\"v\":").append(FEATURES_SCHEMA);
+        values.forEach((name, value) -> json.append(",\"").append(name).append("\":")
+                .append(Float.isFinite(value) ? value : 0f));
+        return json.append('}').toString();
+    }
+
+    private static Map<String, Double> rounded(Map<String, Double> values) {
+        Map<String, Double> rounded = new HashMap<>();
+        values.forEach((name, value) -> rounded.put(name, round(value)));
+        return Map.copyOf(rounded);
+    }
+
+    // ---------------------------------------------------------------------------------------
+
+    private static double round(double value) {
+        return Math.round(value * 1000) / 1000.0;
+    }
+
+    private static double distanceKm(double lat1, double lng1, double lat2, double lng2) {
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        return 6371.0 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    /** "sessionId:offset", URL-safe Base64. A cursor that does not decode starts a new ranking. */
+    record Cursor(String sessionId, int offset) {
+
+        String encode() {
+            return Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString((sessionId + ':' + offset).getBytes(StandardCharsets.UTF_8));
+        }
+
+        static Cursor decode(String cursor) {
+            if (cursor == null || cursor.isBlank() || cursor.length() > 200) {
+                return null;
+            }
+            try {
+                String raw = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
+                int colon = raw.lastIndexOf(':');
+                if (colon <= 0) {
+                    return null;
+                }
+                return new Cursor(raw.substring(0, colon), Integer.parseInt(raw.substring(colon + 1)));
+            } catch (IllegalArgumentException exception) {
+                return null;
+            }
+        }
+    }
+}

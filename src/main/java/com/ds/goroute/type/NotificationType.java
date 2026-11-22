@@ -37,6 +37,9 @@ public enum NotificationType {
     PAYMENT_ALL_MARKED,
     PAYMENT_TRIP_MARKED,
     PAYMENT_REMINDER,
+    // Ledger (epic 05). Data: actorName, payerName, payeeName, amount, currency, settlementId, deepLink.
+    // A payment was recorded between two people; sent to the side that did not record it.
+    SETTLEMENT_ADDED,
     
     // Check-in events
     CHECKIN,
@@ -46,6 +49,9 @@ public enum NotificationType {
     NOTE_ADDED,
     NOTE_UPDATED,
     NOTE_DELETED,
+    // Todo list in a trip note (epic 04 §2.4). Data: actorName, tripName, todoText, deepLink.
+    // Sent to the people newly assigned to an item, never to the actor.
+    TODO_ASSIGNED,
 
     // Trip memory events
     MEMORY_ADDED,
@@ -62,7 +68,17 @@ public enum NotificationType {
     // target to prevent a busy post from producing a push for every single action.
     SOCIAL_LIKE,
     SOCIAL_COMMENT,
-    
+
+    // Someone the recipient follows posted (epic 12). Sent by FollowerFanoutService to every
+    // follower, one row per follower per post (notifications.dedupe_key). Data: postType, postId,
+    // authorId, actorName, placeName / tripTitle, postCount, imageUrl, deepLink.
+    FOLLOWING_CHECKIN,
+    FOLLOWING_TRIP_SHARED,
+    // A followed author published a blog post for the first time (epic 20). Data as above, with
+    // postTitle instead of placeName and deepLink /posts/{postId}. Not offered by the moments
+    // popup, whose cards only know check-ins and trips.
+    FOLLOWING_POST,
+
     // Other
     ROUTE_OPTIMIZED,
     TRIP_REMINDER,
@@ -77,7 +93,11 @@ public enum NotificationType {
     TRIP_STARTED,
     ITINERARY_ITEM_PREPARATION,
     ITINERARY_ITEM_UPCOMING,
+    /** No longer scheduled (one TRIP_DAY_ENDED per day replaced it); kept so stored rows still parse. */
     ITINERARY_ITEM_COMPLETED,
+    TRIP_DAY_ENDED,
+    /** Evening before a trip day whose forecast has an advisory or likely rain. */
+    TRIP_DAY_WEATHER_ALERT,
     TRIP_ENDED,
     TRIP_SUMMARY,
 
@@ -114,5 +134,54 @@ public enum NotificationType {
     // A partner submitted verification documents; sent to operators (optional).
     PARTNER_VERIFICATION_SUBMITTED,
     // Monthly commission statement issued; sent to the owner and finance members.
-    PARTNER_STATEMENT_READY
+    PARTNER_STATEMENT_READY,
+    // Meetups (epic 18). Data: meetupId, meetupTitle, hostName, userName, reason, deepLink "/meetups/<id>".
+    // An admin approved the host's meetup; sent to the host.
+    MEETUP_APPROVED,
+    // An admin rejected the host's meetup (reason label + note); sent to the host.
+    MEETUP_REJECTED,
+    // An admin removed an approved meetup; sent to the host (participants get MEETUP_CANCELLED).
+    MEETUP_REMOVED,
+    // Someone asked to join an APPROVAL meetup; sent to the host.
+    MEETUP_JOIN_REQUESTED,
+    // Someone joined an OPEN meetup; sent to the host.
+    MEETUP_PARTICIPANT_JOINED,
+    // The host accepted a join request; sent to the requester.
+    MEETUP_REQUEST_ACCEPTED,
+    // The host declined a join request; sent to the requester.
+    MEETUP_REQUEST_DECLINED,
+    // The host cancelled, or an admin removed, a meetup; sent to joined, requesting and invited people.
+    MEETUP_CANCELLED,
+    // The host invited someone they follow or who follows them; sent to the invitee.
+    MEETUP_INVITED,
+    // Saved local events (epic 17, V285); sent by LocalEventReminderService to people who saved
+    // the event (going saves it). Data: eventId, eventTitle, startTime, startDate, endDate,
+    // deepLink "/events/<id>".
+    // A one-day event starts tomorrow.
+    LOCAL_EVENT_TOMORROW,
+    // A one-day event starts within two hours.
+    LOCAL_EVENT_STARTING_SOON,
+    // A long-running event (an exhibition, a fair) opens today.
+    LOCAL_EVENT_OPENING_TODAY,
+    // A long-running event closes within three days and the person has not checked in at it.
+    LOCAL_EVENT_ENDING_SOON,
+    // The event's status changed to CANCELLED / POSTPONED / RESCHEDULED.
+    LOCAL_EVENT_CANCELLED,
+    LOCAL_EVENT_POSTPONED,
+    LOCAL_EVENT_RESCHEDULED,
+    // Map usage (epic 06). Data: operation, resetAt (ISO instant), resetTime (shown, GMT+7).
+    // The user used up today's map calls of one kind; sent to that user once a day per kind.
+    MAP_LIMIT_REACHED,
+    // A user keeps calling after being refused; sent to operators. Data: spamUserId, userName,
+    // operation, rejectedCount.
+    MAP_SPAM_ALERT,
+    // The month's paid Mapbox calls crossed MAP_BUDGET/WARN_PERCENT; sent to operators. Data: api, usedPercent.
+    MAP_BUDGET_WARNING,
+    // A Mapbox API hit its cap and the server answers from caches; sent to operators. Data: api, resetAt, resetTime.
+    MAP_BUDGET_REACHED,
+    // Place edit suggestions (epic 09). Data: placeId, placeName, suggestionId, rejectReason,
+    // deepLink "/place/<placeId>". An operator applied at least one change; sent to the submitter.
+    PLACE_EDIT_APPROVED,
+    // An operator applied nothing of the suggestion; sent to the submitter.
+    PLACE_EDIT_REJECTED
 }

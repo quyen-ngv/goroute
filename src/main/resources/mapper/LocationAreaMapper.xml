@@ -32,36 +32,69 @@
       then falls back to goroute_nearest_location_image (V163): the nearest area whose own
       coverage_radius_km reaches the point, so overlapping areas resolve to the closer
       anchor instead of whichever row the planner happened to read first.
+
+      The resolver runs once per row: a MATERIALIZED CTE computes it, and the UPDATE reads
+      the result for both the new value and the "found an area" filter. (Referencing the
+      function in SET and WHERE ran it twice per row; an inlined subquery would too.) The
+      IS NULL guard is repeated on the UPDATE so a row filled meanwhile is not overwritten.
     -->
     <update id="assignByCoordinates">
         <choose>
             <when test="target.name() == 'PLACE'">
-                UPDATE places
-                SET location_image_id = goroute_location_image_for_point(latitude, longitude)
-                WHERE location_image_id IS NULL
-                  AND latitude IS NOT NULL AND longitude IS NOT NULL
-                  AND goroute_location_image_for_point(latitude, longitude) IS NOT NULL
+                WITH resolved AS MATERIALIZED (
+                    SELECT id, goroute_location_image_for_point(latitude, longitude) AS area_id
+                    FROM places
+                    WHERE location_image_id IS NULL
+                      AND latitude IS NOT NULL AND longitude IS NOT NULL
+                )
+                UPDATE places t
+                SET location_image_id = r.area_id
+                FROM resolved r
+                WHERE t.id = r.id
+                  AND r.area_id IS NOT NULL
+                  AND t.location_image_id IS NULL
             </when>
             <when test="target.name() == 'TRIP'">
-                UPDATE trips
-                SET location_image_id = goroute_location_image_for_point(destination_lat, destination_lng)
-                WHERE location_image_id IS NULL
-                  AND destination_lat IS NOT NULL AND destination_lng IS NOT NULL
-                  AND goroute_location_image_for_point(destination_lat, destination_lng) IS NOT NULL
+                WITH resolved AS MATERIALIZED (
+                    SELECT id, goroute_location_image_for_point(destination_lat, destination_lng) AS area_id
+                    FROM trips
+                    WHERE location_image_id IS NULL
+                      AND destination_lat IS NOT NULL AND destination_lng IS NOT NULL
+                )
+                UPDATE trips t
+                SET location_image_id = r.area_id
+                FROM resolved r
+                WHERE t.id = r.id
+                  AND r.area_id IS NOT NULL
+                  AND t.location_image_id IS NULL
             </when>
             <when test="target.name() == 'TRIP_DESTINATION'">
-                UPDATE trip_destinations
-                SET location_image_id = goroute_location_image_for_point(lat, lng)
-                WHERE location_image_id IS NULL
-                  AND lat IS NOT NULL AND lng IS NOT NULL
-                  AND goroute_location_image_for_point(lat, lng) IS NOT NULL
+                WITH resolved AS MATERIALIZED (
+                    SELECT id, goroute_location_image_for_point(lat, lng) AS area_id
+                    FROM trip_destinations
+                    WHERE location_image_id IS NULL
+                      AND lat IS NOT NULL AND lng IS NOT NULL
+                )
+                UPDATE trip_destinations t
+                SET location_image_id = r.area_id
+                FROM resolved r
+                WHERE t.id = r.id
+                  AND r.area_id IS NOT NULL
+                  AND t.location_image_id IS NULL
             </when>
             <when test="target.name() == 'ACTIVITY'">
-                UPDATE activity_bookings
-                SET location_image_id = goroute_location_image_for_point(search_lat::NUMERIC, search_lng::NUMERIC)
-                WHERE location_image_id IS NULL
-                  AND search_lat IS NOT NULL AND search_lng IS NOT NULL
-                  AND goroute_location_image_for_point(search_lat::NUMERIC, search_lng::NUMERIC) IS NOT NULL
+                WITH resolved AS MATERIALIZED (
+                    SELECT id, goroute_location_image_for_point(search_lat::NUMERIC, search_lng::NUMERIC) AS area_id
+                    FROM activity_bookings
+                    WHERE location_image_id IS NULL
+                      AND search_lat IS NOT NULL AND search_lng IS NOT NULL
+                )
+                UPDATE activity_bookings t
+                SET location_image_id = r.area_id
+                FROM resolved r
+                WHERE t.id = r.id
+                  AND r.area_id IS NOT NULL
+                  AND t.location_image_id IS NULL
             </when>
             <otherwise>
                 <!-- FOOD_CITY_SCORE and HOTEL have no coordinates of their own. -->
@@ -70,14 +103,21 @@
         </choose>
     </update>
 
-    <!-- One freshly imported place; same resolver and IS NULL guard as the bulk pass. -->
+    <!-- One freshly imported place; same resolver (run once) and IS NULL guard as the bulk pass. -->
     <update id="assignPlaceByCoordinates">
-        UPDATE places
-        SET location_image_id = goroute_location_image_for_point(latitude, longitude)
-        WHERE id = #{id}
-          AND location_image_id IS NULL
-          AND latitude IS NOT NULL AND longitude IS NOT NULL
-          AND goroute_location_image_for_point(latitude, longitude) IS NOT NULL
+        WITH resolved AS MATERIALIZED (
+            SELECT id, goroute_location_image_for_point(latitude, longitude) AS area_id
+            FROM places
+            WHERE id = #{id}
+              AND location_image_id IS NULL
+              AND latitude IS NOT NULL AND longitude IS NOT NULL
+        )
+        UPDATE places t
+        SET location_image_id = r.area_id
+        FROM resolved r
+        WHERE t.id = r.id
+          AND r.area_id IS NOT NULL
+          AND t.location_image_id IS NULL
     </update>
 
     <update id="assignHotelsFromPlace">

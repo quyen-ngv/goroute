@@ -42,6 +42,17 @@
         WHERE user_id = #{userId}
     </select>
 
+    <!-- Every author on a page of reviews in one query. -->
+    <select id="findByUserIds" resultMap="UserReviewProfileResultMap">
+        SELECT user_id, tier, trust_score, review_count, avg_review_length,
+               helpful_votes_received, verified_trips_count, updated_at
+        FROM user_review_profiles
+        WHERE user_id IN
+        <foreach collection="userIds" item="userId" open="(" separator="," close=")">
+            #{userId}
+        </foreach>
+    </select>
+
     <update id="incrementReviewCount">
         UPDATE user_review_profiles
         SET review_count = review_count + 1,

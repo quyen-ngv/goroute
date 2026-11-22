@@ -1,5 +1,6 @@
 package com.ds.goroute.quest.web;
 
+import com.ds.goroute.annotations.CurrentUser;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.response.PageResponse;
 import com.ds.goroute.quest.dto.QuestPublicDetailResponse;
@@ -40,7 +41,9 @@ public class QuestDiscoveryController {
     }
 
     @GetMapping("/{questId}")
-    public ResponseEntity<BaseResponse<QuestPublicDetailResponse>> detail(@PathVariable UUID questId) {
-        return ResponseEntity.ok(BaseResponse.ofSucceeded(discoveryService.detail(questId)));
+    public ResponseEntity<BaseResponse<QuestPublicDetailResponse>> detail(
+            @PathVariable UUID questId,
+            @CurrentUser(required = false) UUID userId) {
+        return ResponseEntity.ok(BaseResponse.ofSucceeded(discoveryService.detail(questId, userId)));
     }
 }

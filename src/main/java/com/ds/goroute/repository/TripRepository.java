@@ -1,7 +1,11 @@
 package com.ds.goroute.repository;
 
+import com.ds.goroute.dto.FeedPlaceKind;
+import com.ds.goroute.dto.FeedTripRules;
+import com.ds.goroute.dto.PublicTripSearchCriteria;
+import com.ds.goroute.entity.AdminTripRow;
 import com.ds.goroute.entity.Trip;
-import java.math.BigDecimal;
+import com.ds.goroute.entity.TripRankRow;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -22,18 +26,57 @@ public interface TripRepository {
     
     Optional<Trip> findByShareCode(String shareCode);
     
-    List<Trip> searchPublicTrips(BigDecimal latitude,
-                                 BigDecimal longitude,
-                                 BigDecimal radiusKm,
-                                 String destination,
-                                 String keyword,
-                                 boolean allPublic,
-                                 String randomSeed,
-                                 boolean preferImages,
-                                 int page,
-                                 int size,
-                                 UUID excludeUserId);
-    
+    /**
+     * Ranked public trips (id and owner) for one slice of a search, without deleted or
+     * taken-down trips and, when {@code excludeUserId} is set, without the trips that user
+     * owns or is an accepted member of. With {@code viewerId} it also drops trips hidden
+     * from that viewer: blocks either way and their feed_feedback hides. The shared ranking
+     * cache passes null for both.
+     */
+    List<TripRankRow> searchPublicTripRanking(PublicTripSearchCriteria criteria,
+                                              UUID excludeUserId,
+                                              UUID viewerId,
+                                              int limit,
+                                              int offset);
+
+    /** The trips among {@code ids} that are still public, live and not taken down. */
+    List<Trip> findPublicByIds(List<UUID> ids);
+
+    /**
+     * Live PUBLIC and SHARED trips for the admin console, most recently shared first.
+     * {@code visibility} narrows to one of the two, {@code hidden} to taken-down or not.
+     */
+    List<AdminTripRow> findAdminSharedTrips(String search, UUID ownerId, String visibility, Boolean hidden,
+                                            int limit, int offset);
+
+    long countAdminSharedTrips(String search, UUID ownerId, String visibility, Boolean hidden);
+
+    /** Recounts {@code trips.activity_count} (V216) for one trip. */
+    void refreshActivityCount(UUID tripId);
+
+    /** Stamps followers_notified_at once; true only for the call that stamped it on a public trip. */
+    boolean claimFollowersNotification(UUID tripId);
+
+    /** Recounts {@code trips.memory_count} (V216) for one trip. */
+    void refreshMemoryCount(UUID tripId);
+
+    /** Repairs both V216 counters for every trip that drifted; returns the rows fixed. */
+    int reconcileContentCounts();
+
+    /**
+     * Public trips owned by the people {@code viewerId} follows, most recently shared first,
+     * without deleted owners, taken-down trips or blocks in either direction. {@code rules}
+     * (the Feed's Friends tab) also drops trips not started yet or with too few activities.
+     */
+    List<Trip> findFollowingTrips(UUID viewerId, Double focusLat, Double focusLng, FeedPlaceKind kind,
+                                  FeedTripRules rules, int limit, int offset);
+
+    /**
+     * Ids of the public trips that have the catalogue place {@code placeId} in their
+     * itinerary, most recently shared first.
+     */
+    List<UUID> findPublicTripIdsByPlace(UUID placeId, int limit, int offset);
+
     void incrementViewCount(UUID id);
     
     void incrementCopyCount(UUID id);
@@ -53,4 +96,20 @@ public interface TripRepository {
     int sumHelpfulVotesByOwnerId(UUID ownerId);
 
     List<Trip> findNotificationCandidates(LocalDate fromDate, LocalDate toDate);
+
+    // --- Feed search index -----------------------------------------------------------
+
+    /** The next {@code limit} trips anyone may find, after {@code afterId} (null: from the start). */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexPage(UUID afterId, int limit);
+
+    /** Trips changed after ({@code afterUpdatedAt}, {@code afterId}), each saying whether it is still findable. */
+    List<com.ds.goroute.entity.SocialSearchIndexRow> findSearchIndexChanges(
+            java.time.LocalDateTime afterUpdatedAt, UUID afterId, int limit);
+
+    Optional<java.time.LocalDateTime> findSearchIndexMaxUpdatedAt();
+
+    /** Whether the trip's ledger shows simplified debts (V268, default true). */
+    boolean findSimplifyDebts(UUID tripId);
+
+    void updateSimplifyDebts(UUID tripId, boolean simplifyDebts);
 }

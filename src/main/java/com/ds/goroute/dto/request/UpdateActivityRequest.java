@@ -5,6 +5,7 @@ import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.ModerationVisibility;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -24,6 +25,7 @@ import java.util.UUID;
 public class UpdateActivityRequest {
     private String placeId;
     private UUID customPlaceId;
+    @Size(max = 1000, message = "Activity name must be at most 1000 characters")
     @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)
     private String name;
     @ModeratedText(contentType = ModeratedContentType.ACTIVITY, visibility = ModerationVisibility.GROUP)

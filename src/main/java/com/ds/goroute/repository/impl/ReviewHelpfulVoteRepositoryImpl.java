@@ -5,6 +5,8 @@ import com.ds.goroute.mapper.ReviewHelpfulVoteMapper;
 import com.ds.goroute.repository.ReviewHelpfulVoteRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 @Repository
@@ -42,6 +44,14 @@ public class ReviewHelpfulVoteRepositoryImpl implements ReviewHelpfulVoteReposit
         return mapper.findByReviewIdAndUserId(reviewId, userId);
     }
     
+    @Override
+    public List<ReviewHelpfulVote> findByReviewIdsAndUserId(Collection<UUID> reviewIds, UUID userId) {
+        if (userId == null || reviewIds == null || reviewIds.isEmpty()) {
+            return List.of();
+        }
+        return mapper.findByReviewIdsAndUserId(reviewIds, userId);
+    }
+
     @Override
     public int countByReviewIdAndIsHelpful(UUID reviewId, boolean isHelpful) {
         return mapper.countByReviewIdAndIsHelpful(reviewId, isHelpful);

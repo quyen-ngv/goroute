@@ -11,7 +11,17 @@ import java.util.UUID;
 @Mapper
 public interface PlaceTranslationMapper {
 
-    void upsert(PlaceTranslation translation);
+    /** @return 1 when the row was written, 0 when a higher-ranked source already holds it */
+    int upsert(PlaceTranslation translation);
+
+    /** {@link #upsert} that leaves the stored description alone. */
+    int upsertName(PlaceTranslation translation);
+
+    /**
+     * The description only: an existing name is kept, a new row takes the entity's name. Same
+     * rank rule as {@link #upsert}.
+     */
+    int upsertDescription(PlaceTranslation translation);
 
     PlaceTranslation findByPlaceIdAndLocale(@Param("placeId") UUID placeId,
                                             @Param("locale") TranslationLocale locale);

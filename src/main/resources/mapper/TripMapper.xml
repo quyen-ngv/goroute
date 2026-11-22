@@ -78,6 +78,11 @@
             cover_image_url = #{coverImageUrl},
             destination = #{destination},
             destination_place_id = #{destinationPlaceId},
+            -- A moved destination needs its zone looked up again (TripTimeZoneResolveJob).
+            timezone = CASE
+                WHEN destination_lat IS DISTINCT FROM #{destinationLat}
+                  OR destination_lng IS DISTINCT FROM #{destinationLng} THEN NULL
+                ELSE timezone END,
             destination_lat = #{destinationLat},
             destination_lng = #{destinationLng},
             start_date = #{startDate},
@@ -108,87 +113,424 @@
         SELECT * FROM trips WHERE share_code = #{shareCode} AND is_deleted = FALSE
     </select>
 
-    <select id="searchPublicTrips" resultMap="TripResultMap">
-        SELECT * FROM (
-            SELECT t.*,
-                MIN(
-                    CASE
-                        WHEN COALESCE(td.lat, t.destination_lat) IS NULL
-                          OR COALESCE(td.lng, t.destination_lng) IS NULL
-                        THEN NULL
-                        ELSE 6371 * acos(LEAST(1, GREATEST(-1,
-                            cos(radians(#{latitude})) * cos(radians(COALESCE(td.lat, t.destination_lat))) *
-                            cos(radians(COALESCE(td.lng, t.destination_lng)) - radians(#{longitude})) +
-                            sin(radians(#{latitude})) * sin(radians(COALESCE(td.lat, t.destination_lat)))
-                        )))
-                    END
-                ) AS distance
-            FROM trips t
-            LEFT JOIN trip_destinations td
-              ON td.trip_id = t.id
-            WHERE t.visibility = 'PUBLIC'
-              AND t.is_deleted = FALSE
-              <if test="!allPublic">
-                  AND (
-                      (t.destination_lat IS NOT NULL AND t.destination_lng IS NOT NULL)
-                      OR (td.lat IS NOT NULL AND td.lng IS NOT NULL)
-                  )
-              </if>
-              <if test="excludeUserId != null">
-                  AND t.owner_id != #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
-                  AND t.id NOT IN (
-                      SELECT trip_id FROM trip_members
-                      WHERE user_id = #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
-                      AND status = 'ACCEPTED'
-                  )
-              </if>
-              <if test="destination != null and destination != ''">
-                  AND (
-                      LOWER(t.destination) LIKE LOWER(CONCAT('%', #{destination}, '%'))
-                      OR LOWER(td.name) LIKE LOWER(CONCAT('%', #{destination}, '%'))
-                      OR LOWER(td.address) LIKE LOWER(CONCAT('%', #{destination}, '%'))
-                  )
-              </if>
-              <if test="keyword != null and keyword != ''">
-                  AND (
-                      LOWER(t.name) LIKE LOWER(CONCAT('%', #{keyword}, '%'))
-                      OR LOWER(t.destination) LIKE LOWER(CONCAT('%', #{keyword}, '%'))
-                      OR LOWER(t.description) LIKE LOWER(CONCAT('%', #{keyword}, '%'))
-                      OR LOWER(td.name) LIKE LOWER(CONCAT('%', #{keyword}, '%'))
-                      OR LOWER(td.address) LIKE LOWER(CONCAT('%', #{keyword}, '%'))
-                  )
-              </if>
-            GROUP BY t.id
-        ) AS t
-        <if test="!allPublic">
-            WHERE distance &lt;= #{radiusKm}
+    <!-- A trip's memory photos, as the gallery and the ranking count them. -->
+    <!-- The Feed's place-kind chips (FeedPlaceKind, as the parameter "kind") on a place
+         aliased kp: in one of the groups, and with any of the sub types. The same fragment
+         sits in UserCheckinMapper.xml and UserReviewMapper.xml: each mapper is parsed on its own. -->
+    <sql id="feedPlaceKind">
+        <if test="kind.placeGroups != null and kind.placeGroups.size() > 0">
+            AND kp.place_group IN
+            <foreach item="kindGroup" collection="kind.placeGroups" open="(" separator="," close=")">#{kindGroup}</foreach>
         </if>
-        ORDER BY
-            <if test="preferImages">
-                (
-                    NULLIF(TRIM(COALESCE(t.cover_image_url, '')), '') IS NOT NULL
-                    OR EXISTS (
-                        SELECT 1 FROM media_assets ma
-                        WHERE ma.trip_id = t.id
-                          AND ma.entity_type IN ('TRIP_MEMORY', 'TRIP_ACTIVITY_MEMORY')
-                          AND (ma.asset_role IS NULL OR ma.asset_role = 'MEMORY')
-                          AND ma.deleted_at IS NULL
-                    )
-                ) DESC,
+        <if test="kind.subTypes != null and kind.subTypes.size() > 0">
+            AND kp.sub_types &amp;&amp; ARRAY[<foreach item="kindSubType" collection="kind.subTypes" separator=",">#{kindSubType}</foreach>]::varchar[]
+        </if>
+    </sql>
+
+    <!-- The Feed's trip rules (FeedTripRules, bound as "rules", may be null): no trip that has
+         not started yet, and enough activities per day of the trip. Trips without dates count
+         as started and as one day long. activity_count is the V216 counter. -->
+    <sql id="feedTripRules">
+        <if test="rules != null">
+            <if test="rules.startedBy() != null">
+                AND (t.start_date IS NULL OR t.start_date &lt;= #{rules.startedBy})
             </if>
+            <if test="rules.minActivitiesPerDay() != null">
+                AND COALESCE(t.activity_count, 0) &gt;= #{rules.minActivitiesPerDay} *
+                    CASE WHEN t.start_date IS NOT NULL AND t.end_date IS NOT NULL
+                         THEN GREATEST(1, t.end_date - t.start_date + 1) ELSE 1 END
+            </if>
+        </if>
+    </sql>
+
+    <!-- A trip with at least one stop of the kind. A stop names its place by place_ref_id
+         or, from before that column, by the place's Google id in place_id; rejected
+         suggestions are not stops. -->
+    <sql id="tripHasStopOfKind">
+        AND (EXISTS (
+                SELECT 1 FROM activities ka
+                JOIN places kp ON kp.id = ka.place_ref_id
+                WHERE ka.trip_id = t.id
+                  AND COALESCE(ka.status, '') &lt;&gt; 'REJECTED'
+                <include refid="feedPlaceKind"/>)
+             OR EXISTS (
+                SELECT 1 FROM activities ka
+                JOIN places kp ON kp.place_id = ka.place_id
+                WHERE ka.trip_id = t.id
+                  AND ka.place_ref_id IS NULL
+                  AND COALESCE(ka.status, '') &lt;&gt; 'REJECTED'
+                <include refid="feedPlaceKind"/>))
+    </sql>
+
+    <sql id="tripMemoryPredicate">
+        ma.entity_type IN ('TRIP_MEMORY', 'TRIP_ACTIVITY_MEMORY')
+        AND (ma.asset_role IS NULL OR ma.asset_role = 'MEMORY')
+        AND ma.deleted_at IS NULL
+    </sql>
+
+    <sql id="publicTripColumns">
+        t.id, t.name, t.cover_image_url, t.destination, t.destination_place_id,
+        t.destination_lat, t.destination_lng, t.start_date, t.end_date, t.budget, t.currency,
+        t.status, t.visibility, t.share_code, t.share_expenses, t.share_notes, t.description,
+        t.timezone, t.owner_id, t.starting_point_name, t.starting_point_address,
+        t.starting_point_lat, t.starting_point_lng, t.starting_point_time, t.view_count,
+        t.copy_count, t.helpful_votes, t.unhelpful_votes, t.is_deleted, t.deleted_at,
+        t.public_shared_at, t.created_at, t.updated_at, t.location_image_id
+    </sql>
+
+    <!-- Radius test for one destination row (alias td); matches idx_trip_destinations_point. -->
+    <sql id="destinationWithinRadius">
+        td.lat IS NOT NULL AND td.lng IS NOT NULL
+        AND ST_DWithin(goroute_point(td.lat, td.lng),
+                       goroute_point(#{criteria.latitude}, #{criteria.longitude}),
+                       #{criteria.radiusMeters}, false)
+    </sql>
+
+    <!-- Radius test for the trip's own point (alias tr); matches idx_trips_destination_point.
+         The trip's point counts only where a destination cannot speak for it: the trip has
+         no destination rows, or one of them has no coordinates. -->
+    <sql id="tripPointWithinRadius">
+        tr.destination_lat IS NOT NULL AND tr.destination_lng IS NOT NULL
+        AND ST_DWithin(goroute_point(tr.destination_lat, tr.destination_lng),
+                       goroute_point(#{criteria.latitude}, #{criteria.longitude}),
+                       #{criteria.radiusMeters}, false)
+        AND NOT COALESCE((
+            SELECT bool_and(x.lat IS NOT NULL AND x.lng IS NOT NULL)
+            FROM trip_destinations x
+            WHERE x.trip_id = tr.id), FALSE)
+    </sql>
+
+    <!--
+        Public trip search: the ranked trip ids (and owners) for one page. The trips
+        themselves are loaded afterwards by selectPublicByIds, so a ranking can be cached
+        and shared by every viewer.
+
+        Radius search (allPublic = false) finds candidates through the GiST indexes of V214:
+        a trip is near when one of its destinations is, or - for a trip with no destination
+        rows or a destination without coordinates - when the trip's own destination point
+        is. goroute_point(...) must be spelled exactly like the index expressions. Distances
+        are on the sphere (use_spheroid = false), the same model as the haversine this
+        replaced and cheaper than the spheroid; the index serves both. Only the nearest-first
+        order computes a distance; the other orders only need "within the radius".
+
+        Ranking inputs come from the columns of V216, not from a count per row.
+    -->
+    <select id="searchPublicTripRanking" resultType="com.ds.goroute.entity.TripRankRow">
+        <bind name="kind" value="criteria.placeKind()"/>
+        <bind name="rules" value="criteria.feedRules()"/>
+        SELECT t.id, t.owner_id
+        FROM trips t
+        <if test="!criteria.allPublic()">
             <choose>
-                <when test="randomSeed != null and randomSeed != ''">
-                    MD5(t.id::text || #{randomSeed})
-                </when>
-                <when test="allPublic">
-                    COALESCE(public_shared_at, created_at) DESC,
-                    distance ASC NULLS LAST
+                <when test="criteria.orderedByDistance()">
+        JOIN (
+            SELECT near.trip_id, MIN(near.distance_m) AS distance_m
+            FROM (
+                SELECT td.trip_id,
+                       ST_Distance(goroute_point(td.lat, td.lng),
+                                   goroute_point(#{criteria.latitude}, #{criteria.longitude}), false) AS distance_m
+                FROM trip_destinations td
+                WHERE <include refid="destinationWithinRadius"/>
+                UNION ALL
+                SELECT tr.id AS trip_id,
+                       ST_Distance(goroute_point(tr.destination_lat, tr.destination_lng),
+                                   goroute_point(#{criteria.latitude}, #{criteria.longitude}), false) AS distance_m
+                FROM trips tr
+                WHERE <include refid="tripPointWithinRadius"/>
+            ) near
+            GROUP BY near.trip_id
+        ) nearest ON nearest.trip_id = t.id
                 </when>
                 <otherwise>
-                    distance ASC,
-                    COALESCE(public_shared_at, created_at) DESC
+        JOIN (
+            SELECT td.trip_id
+            FROM trip_destinations td
+            WHERE <include refid="destinationWithinRadius"/>
+            UNION
+            SELECT tr.id AS trip_id
+            FROM trips tr
+            WHERE <include refid="tripPointWithinRadius"/>
+        ) nearby ON nearby.trip_id = t.id
                 </otherwise>
             </choose>
+        </if>
+        WHERE t.visibility = 'PUBLIC'
+          AND t.is_deleted = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns ct
+              WHERE ct.content_type = 'TRIP' AND ct.content_id = t.id
+                AND ct.restored_at IS NULL)
+          <!-- A deleted account's trips leave every listing with it. Viewer-independent, so
+               the shared PublicTripRankingCache window carries it too. -->
+          AND EXISTS (
+              SELECT 1 FROM users au
+              WHERE au.id = t.owner_id AND au.deleted_at IS NULL)
+          <include refid="feedTripRules"/>
+          <if test="excludeUserId != null">
+              AND t.owner_id != #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
+              AND NOT EXISTS (
+                  SELECT 1 FROM trip_members tm
+                  WHERE tm.trip_id = t.id
+                    AND tm.user_id = #{excludeUserId,javaType=java.util.UUID,jdbcType=OTHER}
+                    AND tm.status = 'ACCEPTED')
+          </if>
+          <if test="viewerId != null">
+              <!-- Blocks in both directions (D9) and the viewer's feed_feedback hides (V245).
+                   Never set when filling the shared cache; TripServiceImpl applies the same
+                   rule to the cached window in Java. -->
+              AND NOT EXISTS (
+                  SELECT 1 FROM user_blocks b
+                  WHERE (b.blocker_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER} AND b.blocked_id = t.owner_id)
+                     OR (b.blocker_id = t.owner_id AND b.blocked_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER}))
+              AND NOT EXISTS (
+                  SELECT 1 FROM feed_feedback ff
+                  WHERE ff.user_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER}
+                    AND ff.revoked_at IS NULL
+                    AND ((ff.kind = 'HIDE_POST' AND ff.item_type = 'TRIP' AND ff.item_id = t.id)
+                      OR (ff.kind = 'HIDE_AUTHOR' AND ff.target_user_id = t.owner_id
+                          AND ff.expires_at &gt; NOW())))
+          </if>
+          <if test="kind != null">
+              <include refid="tripHasStopOfKind"/>
+          </if>
+          <if test="criteria.photosOnly()">
+              AND t.memory_count > 0
+          </if>
+          <if test="criteria.destination() != null">
+              AND (
+                  LOWER(t.destination) LIKE LOWER(CONCAT('%', #{criteria.destination}, '%'))
+                  OR EXISTS (
+                      SELECT 1 FROM trip_destinations x
+                      WHERE x.trip_id = t.id
+                        AND (LOWER(x.name) LIKE LOWER(CONCAT('%', #{criteria.destination}, '%'))
+                             OR LOWER(x.address) LIKE LOWER(CONCAT('%', #{criteria.destination}, '%'))))
+              )
+          </if>
+          <if test="criteria.keyword() != null">
+              AND (
+                  LOWER(t.name) LIKE LOWER(CONCAT('%', #{criteria.keyword}, '%'))
+                  OR LOWER(t.destination) LIKE LOWER(CONCAT('%', #{criteria.keyword}, '%'))
+                  OR LOWER(t.description) LIKE LOWER(CONCAT('%', #{criteria.keyword}, '%'))
+                  OR EXISTS (
+                      SELECT 1 FROM trip_destinations x
+                      WHERE x.trip_id = t.id
+                        AND (LOWER(x.name) LIKE LOWER(CONCAT('%', #{criteria.keyword}, '%'))
+                             OR LOWER(x.address) LIKE LOWER(CONCAT('%', #{criteria.keyword}, '%'))))
+              )
+          </if>
+        ORDER BY
+            <if test="criteria.preferImages()">
+                (NULLIF(TRIM(COALESCE(t.cover_image_url, '')), '') IS NOT NULL OR t.memory_count > 0) DESC,
+            </if>
+            <choose>
+                <when test="criteria.photosThenStops()">
+                    <!-- The Feed's Trips chip: trips with photos first, then the fullest
+                         itineraries, then the newest. -->
+                    (t.memory_count > 0) DESC,
+                    t.activity_count DESC,
+                    COALESCE(t.public_shared_at, t.created_at) DESC,
+                    t.id
+                </when>
+                <when test="criteria.recommended()">
+                    <!-- The Feed's ranking. Stops and photos are what make an itinerary
+                         worth opening; capped so one huge trip cannot outrank a week of new
+                         ones. Recency counts for up to 45 days. -->
+                    (
+                        LEAST(t.activity_count, 12) * 3
+                        + LEAST(t.memory_count, 10) * 2
+                        + GREATEST(0, 45 - EXTRACT(EPOCH FROM (NOW() - COALESCE(t.public_shared_at, t.created_at))) / 86400)
+                    ) DESC,
+                    COALESCE(t.public_shared_at, t.created_at) DESC,
+                    t.id
+                </when>
+                <when test="criteria.randomSeed() != null">
+                    MD5(t.id::text || #{criteria.randomSeed}),
+                    t.id
+                </when>
+                <when test="criteria.allPublic()">
+                    COALESCE(t.public_shared_at, t.created_at) DESC,
+                    t.id DESC
+                </when>
+                <otherwise>
+                    nearest.distance_m ASC,
+                    COALESCE(t.public_shared_at, t.created_at) DESC,
+                    t.id
+                </otherwise>
+            </choose>
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- The trips of one ranked page. Visibility, deletion and takedowns are checked again:
+         a cached ranking can be up to two minutes old. Order is the caller's. -->
+    <select id="selectPublicByIds" resultMap="TripResultMap">
+        SELECT <include refid="publicTripColumns"/>
+        FROM trips t
+        WHERE t.id IN
+              <foreach collection="ids" item="id" open="(" separator="," close=")">
+                  #{id,javaType=java.util.UUID,jdbcType=OTHER}
+              </foreach>
+          AND t.visibility = 'PUBLIC'
+          AND t.is_deleted = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns ct
+              WHERE ct.content_type = 'TRIP' AND ct.content_id = t.id
+                AND ct.restored_at IS NULL)
+    </select>
+
+    <!-- The admin public-trip console: every live PUBLIC or SHARED ("Link only") trip, with
+         whether it is taken down. Owners are read separately. -->
+    <sql id="adminSharedTripFilter">
+        FROM trips t
+        WHERE t.is_deleted = FALSE
+        <choose>
+            <when test="visibility != null">AND t.visibility = #{visibility}</when>
+            <otherwise>AND t.visibility IN ('PUBLIC', 'SHARED')</otherwise>
+        </choose>
+        <if test="ownerId != null">
+            AND t.owner_id = #{ownerId,javaType=java.util.UUID,jdbcType=OTHER}
+        </if>
+        <if test="search != null and search != ''">
+            AND (t.name ILIKE CONCAT('%', #{search}, '%')
+                 OR t.destination ILIKE CONCAT('%', #{search}, '%')
+                 OR t.description ILIKE CONCAT('%', #{search}, '%'))
+        </if>
+        <if test="hidden != null">
+            AND <if test="!hidden">NOT</if> EXISTS (
+                SELECT 1 FROM content_takedowns ct
+                WHERE ct.content_type = 'TRIP' AND ct.content_id = t.id
+                  AND ct.restored_at IS NULL)
+        </if>
+    </sql>
+
+    <select id="selectAdminSharedTrips" resultType="com.ds.goroute.entity.AdminTripRow">
+        SELECT t.id, t.name, t.description, t.cover_image_url, t.destination, t.visibility, t.owner_id,
+               t.start_date, t.end_date, t.activity_count, t.memory_count, t.view_count, t.copy_count,
+               t.helpful_votes, t.public_shared_at, t.created_at,
+               EXISTS (
+                   SELECT 1 FROM content_takedowns ct
+                   WHERE ct.content_type = 'TRIP' AND ct.content_id = t.id
+                     AND ct.restored_at IS NULL) AS hidden
+        <include refid="adminSharedTripFilter"/>
+        ORDER BY COALESCE(t.public_shared_at, t.created_at) DESC, t.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAdminSharedTrips" resultType="long">
+        SELECT COUNT(*)
+        <include refid="adminSharedTripFilter"/>
+    </select>
+
+    <resultMap id="FollowingTripResultMap" type="com.ds.goroute.entity.Trip" extends="TripResultMap">
+        <result property="focusRank" column="focus_rank"/>
+    </resultMap>
+
+    <!-- The Home "Friends" tab: public trips owned by the people the viewer follows. Blocks
+         are checked in both directions because blocking does not remove a follow, and a
+         deleted account's trips go with it.
+
+         With a focus point (the city Home is on) the trips rank by focus_rank first, the
+         same ranks as findFollowingFeed in UserCheckinMapper.xml so the app can interleave
+         the two lists: 0 when the destination is inside the province that covers the
+         point, then 1, 2, ... per 100 km ring further out, trips without a destination
+         point last; most recently shared first inside each rank. Without one, or when no
+         province covers it, most recently shared first throughout, as before.
+
+         The focus province is found once (the focus CTE), not once per trip, as in
+         findFollowingFeed. -->
+    <select id="findFollowingTrips" resultMap="FollowingTripResultMap">
+        <if test="focusLat != null and focusLng != null">
+        WITH focus AS MATERIALIZED (
+            SELECT fp.geom
+            FROM provinces fp
+            WHERE fp.geom IS NOT NULL
+              AND ST_Covers(fp.geom, ST_SetSRID(ST_MakePoint(#{focusLng}::float8, #{focusLat}::float8), 4326))
+        )
+        </if>
+        SELECT t.id, t.name, t.cover_image_url, t.destination, t.destination_place_id,
+               t.destination_lat, t.destination_lng, t.start_date, t.end_date, t.budget, t.currency,
+               t.status, t.visibility, t.share_code, t.share_expenses, t.share_notes, t.description,
+               t.timezone, t.owner_id, t.starting_point_name, t.starting_point_address,
+               t.starting_point_lat, t.starting_point_lng, t.starting_point_time, t.view_count,
+               t.copy_count, t.helpful_votes, t.unhelpful_votes, t.is_deleted, t.deleted_at,
+               t.public_shared_at, t.created_at, t.updated_at, t.location_image_id,
+        <choose>
+            <when test="focusLat != null and focusLng != null">
+               CASE
+                   WHEN t.destination_lat IS NULL OR t.destination_lng IS NULL THEN NULL
+                   WHEN EXISTS (
+                       SELECT 1 FROM focus fp
+                       WHERE ST_Covers(fp.geom, ST_SetSRID(ST_MakePoint(t.destination_lng::float8, t.destination_lat::float8), 4326)))
+                       THEN 0
+                   ELSE 1 + FLOOR(ST_Distance(
+                                goroute_point(t.destination_lat::float8, t.destination_lng::float8),
+                                goroute_point(#{focusLat}::float8, #{focusLng}::float8)) / 100000)::int
+               END
+            </when>
+            <otherwise>NULL::int</otherwise>
+        </choose> AS focus_rank
+        FROM trips t
+        JOIN user_follows f
+          ON f.following_id = t.owner_id
+         AND f.follower_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER}
+        JOIN users u ON u.id = t.owner_id AND u.deleted_at IS NULL
+        WHERE t.visibility = 'PUBLIC'
+          AND t.is_deleted = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM user_blocks b
+              WHERE (b.blocker_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER}
+                     AND b.blocked_id = t.owner_id)
+                 OR (b.blocker_id = t.owner_id
+                     AND b.blocked_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER}))
+          <if test="kind != null">
+              <include refid="tripHasStopOfKind"/>
+          </if>
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns ct
+              WHERE ct.content_type = 'TRIP' AND ct.content_id = t.id
+                AND ct.restored_at IS NULL)
+          AND NOT EXISTS (
+              SELECT 1 FROM feed_feedback ff
+              WHERE ff.user_id = #{viewerId,javaType=java.util.UUID,jdbcType=OTHER}
+                AND ff.revoked_at IS NULL
+                AND ((ff.kind = 'HIDE_POST' AND ff.item_type = 'TRIP' AND ff.item_id = t.id)
+                  OR (ff.kind = 'HIDE_AUTHOR' AND ff.target_user_id = t.owner_id
+                      AND ff.expires_at &gt; NOW())))
+          <include refid="feedTripRules"/>
+        ORDER BY focus_rank ASC NULLS LAST, COALESCE(t.public_shared_at, t.created_at) DESC, t.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- Place Detail's "public itineraries with this place". An activity points at a place
+         by place_ref_id, or, without one, by place_id holding the catalogue id or the Google
+         place id; REJECTED activities do not count. The same matching as the place's
+         trip_use_count (V225), narrowed to trips anyone may open. -->
+    <select id="selectPublicTripIdsByPlace" resultType="java.util.UUID">
+        SELECT t.id
+        FROM trips t
+        WHERE t.id IN (
+                SELECT a.trip_id
+                FROM activities a
+                WHERE a.place_ref_id = #{placeId,javaType=java.util.UUID,jdbcType=OTHER}
+                  AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+                UNION
+                SELECT a.trip_id
+                FROM places p
+                JOIN activities a ON a.place_id = p.place_id AND a.place_ref_id IS NULL
+                WHERE p.id = #{placeId,javaType=java.util.UUID,jdbcType=OTHER}
+                  AND COALESCE(a.status, '') &lt;&gt; 'REJECTED'
+                UNION
+                SELECT a.trip_id
+                FROM activities a
+                WHERE a.place_ref_id IS NULL
+                  AND a.place_id = CAST(#{placeId,javaType=java.util.UUID,jdbcType=OTHER} AS TEXT)
+                  AND COALESCE(a.status, '') &lt;&gt; 'REJECTED')
+          AND t.visibility = 'PUBLIC'
+          AND t.is_deleted = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM content_takedowns ct
+              WHERE ct.content_type = 'TRIP' AND ct.content_id = t.id
+                AND ct.restored_at IS NULL)
+        ORDER BY COALESCE(t.public_shared_at, t.created_at) DESC, t.id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
@@ -288,5 +630,131 @@
           AND end_date &gt;= #{fromDate}
         ORDER BY start_date, id
     </select>
+
+    <!-- Followers hear about a trip once (V242): the first caller to stamp the column wins, and only
+         while the trip is still public. -->
+    <update id="claimFollowersNotification">
+        UPDATE trips
+        SET followers_notified_at = NOW()
+        WHERE id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+          AND followers_notified_at IS NULL
+          AND visibility = 'PUBLIC'
+          AND is_deleted = FALSE
+    </update>
+
+    <!-- Recount the ranking input of V216 for one trip after its activities changed. -->
+    <update id="refreshActivityCount">
+        UPDATE trips
+        SET activity_count = (SELECT COUNT(*) FROM activities a WHERE a.trip_id = trips.id)
+        WHERE id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <!-- Recount the ranking input of V216 for one trip after its memories changed. -->
+    <update id="refreshMemoryCount">
+        UPDATE trips
+        SET memory_count = (
+            SELECT COUNT(*) FROM media_assets ma
+            WHERE ma.trip_id = trips.id
+              AND <include refid="tripMemoryPredicate"/>
+        )
+        WHERE id = #{tripId,javaType=java.util.UUID,jdbcType=OTHER}
+    </update>
+
+    <!-- Nightly repair of both counters for every trip; writes only the rows that drifted. -->
+    <update id="reconcileContentCounts">
+        UPDATE trips t
+        SET activity_count = counted.activity_count,
+            memory_count = counted.memory_count
+        FROM (
+            SELECT tr.id,
+                   (SELECT COUNT(*) FROM activities a WHERE a.trip_id = tr.id)::int AS activity_count,
+                   (SELECT COUNT(*) FROM media_assets ma
+                    WHERE ma.trip_id = tr.id
+                      AND <include refid="tripMemoryPredicate"/>)::int AS memory_count
+            FROM trips tr
+        ) counted
+        WHERE counted.id = t.id
+          AND (t.activity_count, t.memory_count)
+              IS DISTINCT FROM (counted.activity_count, counted.memory_count)
+    </update>
+
+    <select id="selectWithoutTimezone" resultMap="TripResultMap">
+        SELECT id, destination_lat, destination_lng
+        FROM trips
+        WHERE timezone IS NULL
+          AND destination_lat IS NOT NULL AND destination_lng IS NOT NULL
+          AND is_deleted IS NOT TRUE
+        ORDER BY updated_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <update id="updateTimezone">
+        UPDATE trips SET timezone = #{timezone}
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
+          AND destination_lat = #{destinationLat}
+          AND destination_lng = #{destinationLng}
+    </update>
+
+    <!--
+         Feed search index (epic 12 §4.4): a trip is found by its name and destinations, then
+         by description, starting point and up to 60 stops, and ranks higher with more helpful
+         votes and copies. Findable while public, not deleted and by a live account; takedowns
+         are checked when results are read. Stops changed later reach the index with the next
+         change to the trip row or the nightly rebuild.
+    -->
+    <sql id="SearchIndexRowColumns">
+        t.id, t.owner_id,
+        concat_ws(' ', t.name, NULLIF(t.destination, ''),
+            (SELECT string_agg(d.name, ' ' ORDER BY d.order_index)
+             FROM trip_destinations d WHERE d.trip_id = t.id)) AS title,
+        NULL AS handle,
+        concat_ws(' ', t.description, NULLIF(t.starting_point_name, ''),
+            (SELECT string_agg(s.name, ' ')
+             FROM (SELECT a.name FROM activities a
+                   WHERE a.trip_id = t.id AND a.status IS DISTINCT FROM 'REJECTED'
+                   ORDER BY a.day_number, a.sort_order NULLS LAST
+                   LIMIT 60) s)) AS body,
+        (COALESCE(t.helpful_votes, 0) + COALESCE(t.copy_count, 0)) AS popularity,
+        COALESCE(t.public_shared_at, t.created_at) AS published_at, t.updated_at,
+        (t.visibility = 'PUBLIC' AND t.is_deleted = FALSE AND u.deleted_at IS NULL) AS eligible
+    </sql>
+
+    <select id="selectSearchIndexPage" resultType="com.ds.goroute.entity.SocialSearchIndexRow">
+        SELECT <include refid="SearchIndexRowColumns"/>
+        FROM trips t
+        JOIN users u ON u.id = t.owner_id
+        WHERE t.visibility = 'PUBLIC'
+          AND t.is_deleted = FALSE
+          AND u.deleted_at IS NULL
+          <if test="afterId != null">
+              AND t.id &gt; #{afterId,javaType=java.util.UUID,jdbcType=OTHER}
+          </if>
+        ORDER BY t.id
+        LIMIT #{limit}
+    </select>
+
+    <!-- Served by idx_trips_updated_at (V246). -->
+    <select id="selectSearchIndexChanges" resultType="com.ds.goroute.entity.SocialSearchIndexRow">
+        SELECT <include refid="SearchIndexRowColumns"/>
+        FROM trips t
+        JOIN users u ON u.id = t.owner_id
+        WHERE (t.updated_at, t.id) &gt; (#{afterUpdatedAt}, #{afterId,javaType=java.util.UUID,jdbcType=OTHER})
+        ORDER BY t.updated_at, t.id
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectSearchIndexMaxUpdatedAt" resultType="java.time.LocalDateTime">
+        SELECT MAX(updated_at) FROM trips
+    </select>
+
+    <select id="selectSimplifyDebts" resultType="java.lang.Boolean">
+        SELECT simplify_debts FROM trips
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND is_deleted = FALSE
+    </select>
+
+    <update id="updateSimplifyDebts">
+        UPDATE trips SET simplify_debts = #{simplifyDebts}, updated_at = NOW()
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND is_deleted = FALSE
+    </update>
 
 </mapper>

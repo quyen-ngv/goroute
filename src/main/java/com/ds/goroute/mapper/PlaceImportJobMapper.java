@@ -45,10 +45,17 @@ public interface PlaceImportJobMapper {
 
     List<AdminPlaceImportMappingResponse> findAdminMappings(
             @Param("approvalStatus") String approvalStatus,
+            @Param("sourceType") String sourceType,
             @Param("limit") int limit,
             @Param("offset") int offset);
 
     AdminPlaceImportMappingResponse findAdminMappingByItemId(@Param("itemId") UUID itemId);
+
+    /** An AGENT_PROPOSAL item for this activity that is still queued, running or awaiting approval. */
+    boolean existsOpenActivityProposal(@Param("activityId") UUID activityId);
+
+    /** The same for a check-in proposal. */
+    boolean existsOpenCheckinProposal(@Param("checkinId") UUID checkinId);
 
     List<PlaceImportJobItem> findItemsByJobId(@Param("jobId") UUID jobId);
 

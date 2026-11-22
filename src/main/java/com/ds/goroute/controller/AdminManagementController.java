@@ -1,5 +1,6 @@
 package com.ds.goroute.controller;
 
+import com.ds.goroute.config.cache.AuthSubjectCache;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.AdminUserRequest;
 import com.ds.goroute.dto.request.ResetPasswordRequest;
@@ -10,6 +11,7 @@ import com.ds.goroute.mapper.AdminMapper;
 import com.ds.goroute.repository.UserRepository;
 import com.ds.goroute.type.AuthProvider;
 import com.ds.goroute.service.UserAccountService;
+import com.ds.goroute.service.UserService;
 import com.ds.goroute.utils.AdminListSort;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +29,8 @@ public class AdminManagementController {
     private final UserRepository users;
     private final PasswordEncoder encoder;
     private final UserAccountService userAccountService;
+    private final AuthSubjectCache authSubjectCache;
+    private final UserService userService;
 
     /** Columns the console may order the account list by; anything else falls back to newest first. */
     private static final Set<String> USER_SORT_FIELDS = Set.of(
@@ -97,18 +101,21 @@ public class AdminManagementController {
     public BaseResponse<Void> assignRoles(@PathVariable UUID id, @RequestBody Set<String> roles) {
         adminMapper.deleteUserRoles(id);
         assignRoleCodes(id, roles);
+        authSubjectCache.evict(id);
         return BaseResponse.ofSucceeded(null);
     }
 
     private void assignRoleCodes(UUID userId, Set<String> roles) {
         if (roles == null || roles.isEmpty()) return;
         adminMapper.insertUserRoles(userId, roles);
+        authSubjectCache.evict(userId);
     }
 
     @DeleteMapping("/users/{id}")
     @PreAuthorize("@adminAuthorization.can(authentication,'users','delete')")
     public BaseResponse<Void> deleteUser(@PathVariable UUID id) {
-        users.softDeleteById(id);
+        // The same erasure as a person deleting their own account: irreversible.
+        userService.deleteAccount(id);
         return BaseResponse.ofSucceeded(null);
     }
 

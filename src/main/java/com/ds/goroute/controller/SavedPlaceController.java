@@ -1,28 +1,37 @@
 package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.BaseResponse;
+import com.ds.goroute.dto.request.RemoveSavedPlacesRequest;
 import com.ds.goroute.dto.request.SavePlaceRequest;
 import com.ds.goroute.dto.response.RecentSavedPlaceResponse;
 import com.ds.goroute.dto.response.SavedPlaceResponse;
 import com.ds.goroute.dto.response.SavedItemsOverviewResponse;
 import com.ds.goroute.service.SavedPlaceService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.UUID;
 
 @RestController
+@Validated
 @RequestMapping("/v1/api/saved-places")
 @RequiredArgsConstructor
 @Slf4j
 public class SavedPlaceController {
+
+    /** The app asks for 100 per page. */
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final SavedPlaceService savedPlaceService;
 
@@ -31,8 +40,8 @@ public class SavedPlaceController {
             Authentication authentication,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) String itemType,
-            @RequestParam(defaultValue = "0") Integer page,
-            @RequestParam(defaultValue = "20") Integer size) {
+            @RequestParam(defaultValue = "0") @Min(0) Integer page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) Integer size) {
         UUID userId = currentUserId(authentication);
         List<SavedPlaceResponse> places = savedPlaceService.getSavedPlaces(userId, category, itemType, page, size);
         return ResponseEntity.ok(BaseResponse.ofSucceeded(places));
@@ -88,6 +97,35 @@ public class SavedPlaceController {
         UUID userId = currentUserId(authentication);
         SavedPlaceResponse updated = savedPlaceService.updateTags(userId, savedPlaceId, tags);
         return ResponseEntity.ok(BaseResponse.ofSucceeded(updated));
+    }
+
+    /**
+     * Takes places off the saved list (or out of one category), whatever saves put them there:
+     * one save per category, or a video the place was found in.
+     */
+    @PostMapping("/remove")
+    public ResponseEntity<BaseResponse<Void>> removeFromList(
+            Authentication authentication,
+            @Valid @RequestBody RemoveSavedPlacesRequest request) {
+        UUID userId = currentUserId(authentication);
+        savedPlaceService.removeFromList(userId, request.getPlaceIds(), request.getCategory());
+        return ResponseEntity.ok(BaseResponse.ofSucceeded());
+    }
+
+    @PutMapping("/places/{placeId}/visited")
+    public ResponseEntity<BaseResponse<Void>> markVisited(
+            Authentication authentication,
+            @PathVariable @Size(max = 255) String placeId) {
+        savedPlaceService.setVisited(currentUserId(authentication), placeId, true);
+        return ResponseEntity.ok(BaseResponse.ofSucceeded());
+    }
+
+    @DeleteMapping("/places/{placeId}/visited")
+    public ResponseEntity<BaseResponse<Void>> unmarkVisited(
+            Authentication authentication,
+            @PathVariable @Size(max = 255) String placeId) {
+        savedPlaceService.setVisited(currentUserId(authentication), placeId, false);
+        return ResponseEntity.ok(BaseResponse.ofSucceeded());
     }
 
     private UUID currentUserId(Authentication authentication) {

@@ -221,7 +221,7 @@ public class PassportServiceImpl implements PassportService {
                 .totalLocationImageCount(totalLocationImages)
                 .locationCompletionPercent(locationCompletionPercent(visitedLocationImages, totalLocationImages))
                 .completionPercent(completionPercent(visitedProvinces, totalProvinces))
-                .pointsBalance(includePrivate ? pointWallet.getWallet(userId).getBalance() : 0)
+                .pointsBalance(includePrivate ? pointWallet.getBalance(userId) : 0)
                 .stamps(stamps)
                 .nextStamps(includePrivate
                         ? progressTowardsNextStamps(rules, earned, counters, visitedProvinces)
@@ -1056,6 +1056,8 @@ public class PassportServiceImpl implements PassportService {
                 .description(rule == null ? null
                         : PassportTextResolver.resolve(rule.getDescription(), rule.getDescriptionEn()))
                 .icon(rule == null ? null : rule.getIcon())
+                .rewardPoints(rule == null ? null : rule.getRewardPoints())
+                .threshold(rule == null ? null : rule.getThreshold())
                 .awardedAt(stamp.getAwardedAt())
                 .triggeringEventId(stamp.getTriggeringEventId())
                 .build();

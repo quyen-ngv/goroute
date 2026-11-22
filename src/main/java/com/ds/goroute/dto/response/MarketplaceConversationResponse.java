@@ -20,6 +20,12 @@ public class MarketplaceConversationResponse {
     private List<ConversationParticipantResponse> participants;
 
     /**
+     * Pengoo in this thread for the viewer (allowance, editing rights, the turn in progress).
+     * Only on a trip or assistant conversation opened on its own; null in inbox lists.
+     */
+    private AssistantInfoResponse assistant;
+
+    /**
      * What to head the thread with, decided once on the server so the inbox reads the same on
      * every client: the property or product for a booking, the business for a pre-booking
      * enquiry, the trip for a group, and otherwise the other people in it.
@@ -36,6 +42,18 @@ public class MarketplaceConversationResponse {
     /** The trip this is the group chat of, {@code null} for every other kind. */
     private UUID tripId;
 
+    /** The meetup this is the group chat of, {@code null} for every other kind. */
+    private UUID meetupId;
+
+    /** The meetup category code (e.g. COFFEE); the client draws its emoji as the thread picture. */
+    private String meetupCategory;
+
+    /** The local event this is the group chat of, {@code null} for every other kind. */
+    private UUID localEventId;
+
+    /** The event category code (e.g. MUSIC); the client draws its icon when the event has no cover. */
+    private String eventCategory;
+
     private UUID pinnedMessageId;
     private Long memberCount;
     private LocalDateTime mutedUntil;
@@ -48,6 +66,8 @@ public class MarketplaceConversationResponse {
     private UUID lastMessageSenderId;
     private String lastMessageSenderName;
     private String lastMessageType;
+    /** Set when {@link #lastMessageType} is SHARE: the kind of item shared. */
+    private String lastMessageShareType;
 
     @Data
     @Builder

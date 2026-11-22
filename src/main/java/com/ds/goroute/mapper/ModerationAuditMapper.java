@@ -22,6 +22,16 @@ public interface ModerationAuditMapper {
 
     int insertImageResult(ImageModerationResult result);
 
+    /** Records the background check's decision on a PENDING row; 0 when it was already done. */
+    int completeImageResult(ImageModerationResult result);
+
+    /** PENDING rows older than {@code before}: the worker never finished them. */
+    List<ImageModerationResult> findStalePendingImageResults(@Param("before") LocalDateTime before,
+                                                             @Param("limit") int limit);
+
+    /** Object keys of every image currently hidden by a takedown. */
+    List<String> findHiddenImageKeys();
+
     /** Totals per decision for the selected window. */
     List<Map<String, Object>> summarizeDecisions(@Param("from") LocalDateTime from,
                                                  @Param("to") LocalDateTime to);

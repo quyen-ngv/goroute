@@ -24,4 +24,6 @@ public class TripDestinationResponse {
     private LocalDate startDate;
     private LocalDate endDate;
     private Boolean isPrimary;
+    /** Coverage radius of the tourist area this stop belongs to; null when no area matches. */
+    private BigDecimal coverageRadiusKm;
 }

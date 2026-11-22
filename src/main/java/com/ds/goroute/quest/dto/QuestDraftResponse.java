@@ -34,7 +34,14 @@ public record QuestDraftResponse(
          * Whether this viewer may add or change an AR object (§3.15): AR_ENABLED, or a beta tester.
          * The console never may (it shows AR objects read-only) and gets false.
          */
-        boolean arObjectsAllowed) {
+        boolean arObjectsAllowed,
+        /**
+         * The statuses this viewer may move the quest to through a status change (pause, archive,
+         * resume; for an admin also suspend and restore). Empty on the review path.
+         */
+        List<String> allowedStatuses,
+        /** Whether this viewer may delete the quest now. */
+        boolean deletable) {
 
     public record VersionView(
             UUID id,
@@ -136,7 +143,9 @@ public record QuestDraftResponse(
                                         List<String> amenityTags, List<String> cityImageIds,
                                         Function<String, List<String>> readStrings,
                                         Function<String, QuestArObject> readArObject,
-                                        boolean arObjectsAllowed) {
+                                        boolean arObjectsAllowed,
+                                        List<String> allowedStatuses,
+                                        boolean deletable) {
         List<CheckpointView> checkpoints = version.getCheckpoints().stream()
                 .map(cp -> checkpointView(cp, notesByCheckpoint.getOrDefault(cp.getId(), List.of()),
                         readStrings, readArObject))
@@ -152,7 +161,7 @@ public record QuestDraftResponse(
         return new QuestDraftResponse(quest.getId(), quest.getCreatorId(), quest.getOrigin(),
                 quest.getStatus(), quest.getDataVersion() == null ? 0 : quest.getDataVersion(),
                 quest.getDraftVersionId(), quest.getPublishedVersionId(), quest.isPendingChangeReview(),
-                versionView, arObjectsAllowed);
+                versionView, arObjectsAllowed, allowedStatuses, deletable);
     }
 
     private static CheckpointView checkpointView(QuestCheckpoint cp, List<QuestCreatorNote> notes,

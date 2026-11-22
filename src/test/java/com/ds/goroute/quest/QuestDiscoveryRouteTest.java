@@ -1,10 +1,13 @@
 package com.ds.goroute.quest;
 
+import com.ds.goroute.exception.BusinessException;
+import com.ds.goroute.quest.domain.Quest;
 import com.ds.goroute.quest.domain.QuestCheckpoint;
 import com.ds.goroute.quest.domain.QuestListItem;
 import com.ds.goroute.quest.domain.QuestVersion;
 import com.ds.goroute.quest.dto.QuestPublicDetailResponse;
 import com.ds.goroute.quest.persistence.QuestRepository;
+import com.ds.goroute.quest.persistence.QuestRunRepository;
 import com.ds.goroute.quest.service.QuestDiscoveryService;
 import com.ds.goroute.service.marketplace.MarketplaceJson;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,6 +21,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -33,8 +37,10 @@ class QuestDiscoveryRouteTest {
     private static final BigDecimal CENTER_LNG = new BigDecimal("105.8530000");
 
     private final QuestRepository repository = mock(QuestRepository.class);
+    private final QuestRunRepository runRepository = mock(QuestRunRepository.class);
     private final QuestDiscoveryService service =
-            new QuestDiscoveryService(repository, new MarketplaceJson(new ObjectMapper()));
+            new QuestDiscoveryService(repository, new MarketplaceJson(new ObjectMapper()), runRepository);
+    private final UUID player = UUID.randomUUID();
     private final UUID questId = UUID.randomUUID();
     private final UUID versionId = UUID.randomUUID();
 
@@ -60,7 +66,7 @@ class QuestDiscoveryRouteTest {
     void shownRoute() {
         published(true);
 
-        QuestPublicDetailResponse detail = service.detail(questId);
+        QuestPublicDetailResponse detail = service.detail(questId, null);
 
         assertThat(detail.revealRoute()).isTrue();
         assertThat(detail.route()).hasSize(2);
@@ -81,11 +87,60 @@ class QuestDiscoveryRouteTest {
     void hiddenRoute() {
         published(false);
 
-        QuestPublicDetailResponse detail = service.detail(questId);
+        QuestPublicDetailResponse detail = service.detail(questId, null);
 
         assertThat(detail.revealRoute()).isFalse();
         assertThat(detail.route()).isEmpty();
         verify(repository, never()).loadVersionGraph(any());
+    }
+
+    private void offDiscovery(String status, boolean played) {
+        when(repository.findPublicQuestDetail(questId)).thenReturn(Optional.empty());
+        when(repository.findQuestById(questId)).thenReturn(Optional.of(Quest.builder().id(questId)
+                .status(status).publishedVersionId(versionId).build()));
+        when(repository.findQuestDetailUngated(questId)).thenReturn(Optional.of(QuestListItem.builder()
+                .questId(questId).publishedVersionId(versionId).title("Old Quarter").revealRoute(false).build()));
+        when(runRepository.existsMemberRun(questId, player)).thenReturn(played);
+    }
+
+    @Test
+    @DisplayName("a live quest is playable and says so")
+    void publishedIsPlayable() {
+        published(false);
+
+        QuestPublicDetailResponse detail = service.detail(questId, player);
+
+        assertThat(detail.status()).isEqualTo("PUBLISHED");
+        assertThat(detail.playable()).isTrue();
+    }
+
+    @Test
+    @DisplayName("a paused quest stays readable, not playable, to someone who played it")
+    void pausedForPastPlayer() {
+        offDiscovery("PAUSED", true);
+
+        QuestPublicDetailResponse detail = service.detail(questId, player);
+
+        assertThat(detail.title()).isEqualTo("Old Quarter");
+        assertThat(detail.status()).isEqualTo("PAUSED");
+        assertThat(detail.playable()).isFalse();
+    }
+
+    @Test
+    @DisplayName("an archived quest is a 404 to someone who never played it")
+    void archivedForStranger() {
+        offDiscovery("ARCHIVED", false);
+
+        assertThatThrownBy(() -> service.detail(questId, player)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> service.detail(questId, null)).isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    @DisplayName("a suspended quest stays hidden even from past players")
+    void suspendedHidden() {
+        offDiscovery("SUSPENDED", true);
+
+        assertThatThrownBy(() -> service.detail(questId, player)).isInstanceOf(BusinessException.class);
     }
 
     @Test

@@ -2,7 +2,10 @@ package com.ds.goroute.dto.request;
 
 import com.ds.goroute.annotations.ModeratedText;
 import com.ds.goroute.type.CheckinLocationSource;
+import com.ds.goroute.type.CheckinMediaType;
 import com.ds.goroute.type.CheckinPhotoSource;
+import com.ds.goroute.type.CheckinFrameStyle;
+import com.ds.goroute.type.CheckinPlaceKind;
 import com.ds.goroute.type.ContentVisibility;
 import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.ModerationVisibility;
@@ -14,6 +17,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
@@ -91,9 +95,31 @@ public class CreateUserCheckinRequest {
     private UUID questRunId;
     private UUID questCheckpointId;
 
+    /**
+     * Set when the check-in is made at a published local event (epic 17). The location fields
+     * carry the venue; an event that is gone by the time this arrives is simply not linked.
+     */
+    private UUID localEventId;
+
     @Size(max = 5000)
     @ModeratedText(contentType = ModeratedContentType.CHECKIN, visibility = ModerationVisibility.PUBLIC)
     private String caption;
+
+    /** Optional. The frame the photos are shown in; absent shows them plainly. */
+    private CheckinFrameStyle frameStyle;
+
+    /**
+     * Optional. What kind of spot it is, for a spot not in the catalogue, so the Feed's
+     * place-kind chips can find the post. Ignored when the check-in resolves to a catalogue
+     * place, whose own kind applies.
+     */
+    private CheckinPlaceKind placeKind;
+
+    /** Optional. An active track of the music catalogue played with the post (V282). */
+    private UUID musicTrackId;
+
+    /** Optional, for a video with music: true plays only the music; absent or false mixes in the clip's sound. */
+    private Boolean muteVideoSound;
 
     /**
      * The day of the visit, for someone posting after they got home. Absent means now.
@@ -140,6 +166,21 @@ public class CreateUserCheckinRequest {
         private CheckinPhotoSource source;
 
         /**
+         * Absent means IMAGE, which is what every app before video sends. A VIDEO must be
+         * the only item of its check-in, uploaded through {@code POST /checkins/videos}.
+         */
+        private CheckinMediaType mediaType;
+
+        /** The still frame of a video, uploaded as an ordinary image. Required for a VIDEO. */
+        @Size(max = 1000)
+        private String thumbnailUrl;
+
+        /** Length of a video as the app measured it; display only. */
+        @Min(0)
+        @Max(3600)
+        private Integer durationSeconds;
+
+        /**
          * When the device says the photo was taken. Reference information only: device
          * clocks and embedded metadata are editable, so this never decides verification.
          */
@@ -163,5 +204,18 @@ public class CreateUserCheckinRequest {
         private BigDecimal latitude;
         private BigDecimal longitude;
         private BigDecimal accuracyMeters;
+
+        /**
+         * Optional. The camera filter and frame the photo was taken with. Only the format is
+         * checked: the app's bundled looks have no row on the server. On an edit, absent keeps
+         * the keys of a photo whose URL is unchanged, so an older app cannot wipe them.
+         */
+        @Size(max = CameraLookKeys.MAX_LENGTH)
+        @Pattern(regexp = CameraLookKeys.PATTERN, message = "filterKey must be lowercase snake_case")
+        private String filterKey;
+
+        @Size(max = CameraLookKeys.MAX_LENGTH)
+        @Pattern(regexp = CameraLookKeys.PATTERN, message = "frameKey must be lowercase snake_case")
+        private String frameKey;
     }
 }

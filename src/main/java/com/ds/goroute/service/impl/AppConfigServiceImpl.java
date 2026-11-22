@@ -9,12 +9,12 @@ import com.ds.goroute.repository.AppConfigRepository;
 import com.ds.goroute.service.AppConfigService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -33,7 +33,12 @@ public class AppConfigServiceImpl implements AppConfigService {
 
     private final AppConfigRepository repository;
 
+    /**
+     * Read on every app start, so cached with the rest of the config rows: every admin edit
+     * below evicts {@code businessConfig}, and its TTL covers rows changed straight in SQL.
+     */
     @Override
+    @Cacheable(cacheNames = "businessConfig", key = "'PUBLIC_CONFIG:list'", sync = true)
     public List<AppConfigResponse> listPublic() {
         AppConfig publicConfig = repository.findActiveByLabelAndKey(PUBLIC_LABEL, PUBLIC_KEY).orElse(null);
         if (publicConfig == null) return List.of();
@@ -47,7 +52,7 @@ public class AppConfigServiceImpl implements AppConfigService {
                     .map(this::response)
                     .ifPresent(config -> result.put(config.getId(), config));
         }
-        return new ArrayList<>(result.values());
+        return List.copyOf(result.values());
     }
 
     @Override

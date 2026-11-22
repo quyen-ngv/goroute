@@ -5,8 +5,11 @@ import com.ds.goroute.type.ModeratedContentType;
 import com.ds.goroute.type.ModerationVisibility;
 
 import com.ds.goroute.type.ExpenseCategory;
+import com.ds.goroute.type.SplitMethod;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -44,6 +47,25 @@ public class CreateExpenseRequest {
     private UUID paidBy;
     private String paidByGuestName; // Treat as both username and fullName
     private UUID paidByGuestMemberId; // Reference to trip_members.id for guest payer
+    @Size(max = 100)
     private List<ExpenseSplitRequest> splits;
     private List<String> photoUrls;
+
+    /**
+     * 1 unit of {@link #currency} in the trip currency. Absent: looked up for the expense date;
+     * a failed lookup refuses the expense with EXCHANGE_RATE_UNAVAILABLE rather than storing 1:1.
+     */
+    @Positive
+    private BigDecimal exchangeRate;
+
+    /**
+     * Who paid (epic 05 §8.2). Absent: the legacy {@code paidBy} / {@code paidByGuestMemberId}
+     * pays the whole amount. Present: the amounts must add up to the expense amount.
+     */
+    @Valid
+    @Size(max = 50)
+    private List<ExpensePayerRequest> payers;
+
+    /** How to split. Absent keeps the legacy behaviour: the split amounts as sent (or splitType). */
+    private SplitMethod splitMethod;
 }

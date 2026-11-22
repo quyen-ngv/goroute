@@ -23,6 +23,12 @@ public class AdminPlaceImportMappingResponse {
     private UUID sourceRefId;
     private UUID activityId;
     private String activityName;
+    private String activityAddress;
+    /** Set instead of the activity fields when the proposal is for a check-in. */
+    private UUID checkinId;
+    private String checkinName;
+    private String checkinAddress;
+    private String checkinCaption;
     private String candidateName;
     private String sourceUrl;
     private String sourceAddress;
@@ -39,6 +45,7 @@ public class AdminPlaceImportMappingResponse {
     private PlaceImportJobItemStatus status;
     private PlaceImportApprovalStatus approvalStatus;
     private String approvalNote;
+    private String proposalNote;
     private String errorMessage;
     private LocalDateTime createdAt;
     private LocalDateTime approvedAt;

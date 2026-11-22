@@ -54,6 +54,7 @@ public class ActivityCommerceServiceImpl implements ActivityCommerceService {
  @Value("${goroute.marketplace.partner-confirmation-sla-minutes:120}") private long partnerConfirmationSlaMinutes=120;
 
  public List<MarketplaceActivityResponse> listPublic(String q,String kind,int p,int s){Page r=page(p,s);return repository.findProductsPublic(clean(q),activityTypesOfKind(kind),r.limit,r.offset).stream().map(this::productResponse).map(this::displayed).toList();}
+ public List<MarketplaceActivityResponse> listPublicByIds(java.util.Collection<UUID> ids){return repository.findPublicProductsByIds(ids).stream().map(this::productResponse).map(this::displayed).toList();}
   public List<MarketplaceActivityResponse> listSimilarPublic(UUID id,int size){
    MarketplaceActivityProduct p=publicProduct(id);
    List<String> types=activityTypesOfKind(com.ds.goroute.type.ActivityProductType.kindOf(p.getActivityType()));

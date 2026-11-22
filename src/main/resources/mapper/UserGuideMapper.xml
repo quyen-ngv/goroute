@@ -30,6 +30,18 @@
         </foreach>
     </select>
 
+    <!-- The badge of each guide among these accounts: who is one, and the title they carry. One
+         query per page of check-ins or posts (epic 20); display_title may be NULL, which the app
+         shows as its default "Local Guide" label. -->
+    <select id="findActiveTitles" resultType="com.ds.goroute.entity.UserGuideGrant">
+        SELECT user_id, display_title FROM user_guide_grants
+        WHERE status = 'ACTIVE'
+          AND user_id IN
+        <foreach item="userId" collection="userIds" open="(" separator="," close=")">
+            #{userId,javaType=java.util.UUID,jdbcType=OTHER}
+        </foreach>
+    </select>
+
     <!--
       Re-granting a revoked guide clears the revocation rather than leaving both sets of columns
       filled: a row saying ACTIVE and still carrying a revoke reason cannot be read by anybody.

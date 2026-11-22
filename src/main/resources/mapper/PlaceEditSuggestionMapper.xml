@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ds.goroute.mapper.PlaceEditSuggestionMapper">
+
+    <resultMap id="SuggestionMap" type="com.ds.goroute.entity.PlaceEditSuggestion">
+        <id property="id" column="id"/>
+        <result property="placeId" column="place_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="type" column="type" javaType="com.ds.goroute.type.PlaceEditType"/>
+        <result property="status" column="status" javaType="com.ds.goroute.type.PlaceEditStatus"/>
+        <result property="description" column="description"/>
+        <result property="evidencePhotos" column="evidence_photos"/>
+        <result property="locale" column="locale"/>
+        <result property="rejectReason" column="reject_reason" javaType="com.ds.goroute.type.PlaceEditRejectReason"/>
+        <result property="reviewNote" column="review_note"/>
+        <result property="reviewChannel" column="review_channel" javaType="com.ds.goroute.type.PlaceEditReviewChannel"/>
+        <result property="reviewedBy" column="reviewed_by"/>
+        <result property="reviewedAt" column="reviewed_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <resultMap id="ChangeMap" type="com.ds.goroute.entity.PlaceEditChange">
+        <id property="id" column="id"/>
+        <result property="suggestionId" column="suggestion_id"/>
+        <result property="placeId" column="place_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="field" column="field" javaType="com.ds.goroute.type.PlaceEditField"/>
+        <result property="oldValue" column="old_value"/>
+        <result property="newValue" column="new_value"/>
+        <result property="appliedValue" column="applied_value"/>
+        <result property="author" column="author" javaType="com.ds.goroute.type.PlaceEditAuthor"/>
+        <result property="status" column="status" javaType="com.ds.goroute.type.PlaceEditChangeStatus"/>
+        <result property="rejectReason" column="reject_reason" javaType="com.ds.goroute.type.PlaceEditRejectReason"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="suggestionColumns">
+        id, place_id, user_id, type, status, description, evidence_photos::text AS evidence_photos, locale,
+        reject_reason, review_note, review_channel, reviewed_by, reviewed_at, created_at, updated_at
+    </sql>
+
+    <sql id="changeColumns">
+        id, suggestion_id, place_id, user_id, field, old_value::text AS old_value, new_value::text AS new_value,
+        applied_value::text AS applied_value, author, status, reject_reason, created_at, updated_at
+    </sql>
+
+    <insert id="insertSuggestion" parameterType="com.ds.goroute.entity.PlaceEditSuggestion">
+        INSERT INTO place_edit_suggestions (
+            id, place_id, user_id, type, status, description, evidence_photos, locale, created_at, updated_at
+        ) VALUES (
+            #{id}, #{placeId}, #{userId}, #{type}, #{status}, #{description,jdbcType=VARCHAR},
+            CAST(COALESCE(#{evidencePhotos,jdbcType=VARCHAR}, '[]') AS jsonb), #{locale},
+            #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <select id="findSuggestionById" resultMap="SuggestionMap">
+        SELECT <include refid="suggestionColumns"/> FROM place_edit_suggestions WHERE id = #{id}
+    </select>
+
+    <select id="lockSuggestion" resultMap="SuggestionMap">
+        SELECT <include refid="suggestionColumns"/> FROM place_edit_suggestions WHERE id = #{id} FOR UPDATE
+    </select>
+
+    <!-- idx_pes_user_created serves the order. -->
+    <select id="findSuggestionsByUser" resultMap="SuggestionMap">
+        SELECT <include refid="suggestionColumns"/>
+        FROM place_edit_suggestions
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countSuggestionsByUser" resultType="long">
+        SELECT COUNT(*) FROM place_edit_suggestions WHERE user_id = #{userId}
+    </select>
+
+    <select id="countSubmittedSince" resultType="long">
+        SELECT COUNT(*) FROM place_edit_suggestions WHERE user_id = #{userId} AND created_at &gt;= #{since}
+    </select>
+
+    <select id="countPendingByUser" resultType="long">
+        SELECT COUNT(*) FROM place_edit_suggestions WHERE user_id = #{userId} AND status = 'PENDING'
+    </select>
+
+    <update id="cancelSuggestion">
+        UPDATE place_edit_suggestions
+        SET status = 'CANCELLED', updated_at = #{now}
+        WHERE id = #{id} AND user_id = #{userId} AND status = 'PENDING'
+    </update>
+
+    <update id="updateReview">
+        UPDATE place_edit_suggestions
+        SET status = #{status},
+            reject_reason = #{rejectReason,jdbcType=VARCHAR},
+            review_note = #{reviewNote,jdbcType=VARCHAR},
+            review_channel = #{reviewChannel},
+            reviewed_by = #{reviewedBy},
+            reviewed_at = #{reviewedAt},
+            updated_at = #{reviewedAt}
+        WHERE id = #{id} AND status = 'PENDING'
+    </update>
+
+    <insert id="insertChange" parameterType="com.ds.goroute.entity.PlaceEditChange">
+        INSERT INTO place_edit_changes (
+            id, suggestion_id, place_id, user_id, field, old_value, new_value, applied_value,
+            author, status, reject_reason, created_at, updated_at
+        ) VALUES (
+            #{id}, #{suggestionId}, #{placeId}, #{userId}, #{field},
+            CAST(#{oldValue,jdbcType=VARCHAR} AS jsonb), CAST(#{newValue,jdbcType=VARCHAR} AS jsonb),
+            CAST(#{appliedValue,jdbcType=VARCHAR} AS jsonb),
+            #{author}, #{status}, #{rejectReason,jdbcType=VARCHAR}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <select id="findChangesBySuggestionIds" resultMap="ChangeMap">
+        SELECT <include refid="changeColumns"/>
+        FROM place_edit_changes
+        WHERE suggestion_id IN
+        <foreach item="suggestionId" collection="suggestionIds" open="(" separator="," close=")">
+            #{suggestionId}
+        </foreach>
+        ORDER BY created_at, id
+    </select>
+
+    <select id="findPendingUserChange" resultMap="ChangeMap">
+        SELECT <include refid="changeColumns"/>
+        FROM place_edit_changes
+        WHERE user_id = #{userId} AND place_id = #{placeId} AND field = #{field}
+          AND status = 'PENDING' AND author = 'USER'
+        LIMIT 1
+    </select>
+
+    <update id="moveChange">
+        UPDATE place_edit_changes
+        SET suggestion_id = #{suggestionId},
+            old_value = CAST(#{oldValue,jdbcType=VARCHAR} AS jsonb),
+            new_value = CAST(#{newValue,jdbcType=VARCHAR} AS jsonb),
+            updated_at = #{now}
+        WHERE id = #{id} AND status = 'PENDING'
+    </update>
+
+    <update id="decideChange">
+        UPDATE place_edit_changes
+        SET status = #{status},
+            applied_value = CAST(#{appliedValue,jdbcType=VARCHAR} AS jsonb),
+            reject_reason = #{rejectReason,jdbcType=VARCHAR},
+            updated_at = #{now}
+        WHERE id = #{id} AND status = 'PENDING'
+    </update>
+
+    <update id="cancelChangesOfSuggestion">
+        UPDATE place_edit_changes
+        SET status = 'CANCELLED', updated_at = #{now}
+        WHERE suggestion_id = #{suggestionId} AND status = 'PENDING'
+    </update>
+
+    <!-- idx_pec_place_field_pending serves the predicate. -->
+    <update id="supersedePending">
+        UPDATE place_edit_changes
+        SET status = 'SUPERSEDED', updated_at = #{now}
+        WHERE place_id = #{placeId} AND field = #{field} AND status = 'PENDING'
+          AND suggestion_id &lt;&gt; #{exceptSuggestionId}
+    </update>
+
+    <select id="findPendingChangesOfUserForPlace" resultMap="ChangeMap">
+        SELECT <include refid="changeColumns"/>
+        FROM place_edit_changes
+        WHERE user_id = #{userId} AND place_id = #{placeId} AND status = 'PENDING' AND author = 'USER'
+        ORDER BY created_at, id
+    </select>
+
+    <sql id="adminWhere">
+        <where>
+            <if test="status != null">AND status = #{status}</if>
+            <if test="type != null">AND type = #{type}</if>
+            <if test="placeId != null">AND place_id = #{placeId}</if>
+            <if test="userId != null">AND user_id = #{userId}</if>
+        </where>
+    </sql>
+
+    <!-- The pending queue is worked oldest first; any other list shows the newest first. -->
+    <select id="findAdminPage" resultMap="SuggestionMap">
+        SELECT <include refid="suggestionColumns"/>
+        FROM place_edit_suggestions
+        <include refid="adminWhere"/>
+        <choose>
+            <when test="status == 'PENDING'">ORDER BY created_at ASC, id ASC</when>
+            <otherwise>ORDER BY created_at DESC, id DESC</otherwise>
+        </choose>
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAdmin" resultType="long">
+        SELECT COUNT(*) FROM place_edit_suggestions
+        <include refid="adminWhere"/>
+    </select>
+
+    <select id="findOtherPendingForPlace" resultMap="SuggestionMap">
+        SELECT <include refid="suggestionColumns"/>
+        FROM place_edit_suggestions
+        WHERE place_id = #{placeId} AND status = 'PENDING' AND id &lt;&gt; #{exceptId}
+        ORDER BY created_at, id
+        LIMIT 20
+    </select>
+
+    <select id="findSubmitterStats" resultType="com.ds.goroute.entity.PlaceEditSubmitterStats">
+        SELECT COUNT(*) FILTER (WHERE status IN ('APPROVED', 'PARTIALLY_APPROVED')) AS "approvedCount",
+               COUNT(*) FILTER (WHERE status = 'REJECTED') AS "rejectedCount"
+        FROM place_edit_suggestions
+        WHERE user_id = #{userId}
+    </select>
+
+    <select id="countRewardsSince" resultType="long">
+        SELECT COUNT(*) FROM star_transactions
+        WHERE user_id = #{userId} AND transaction_type = 'PLACE_EDIT' AND created_at &gt;= #{since}
+    </select>
+</mapper>

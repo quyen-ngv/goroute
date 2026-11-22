@@ -4,7 +4,6 @@ import com.ds.goroute.config.InternalApiProperties;
 import com.ds.goroute.config.ScrapeHttpClientProperties;
 import com.ds.goroute.dto.request.CreateSocialLocationJobRequest;
 import com.ds.goroute.dto.request.SocialLocationJobCallbackRequest;
-import com.ds.goroute.dto.request.CreateSocialPlaceImportJobRequest;
 import com.ds.goroute.dto.response.SocialLocationJobResponse;
 import com.ds.goroute.entity.SocialLocationJob;
 import com.ds.goroute.entity.AiApiCall;
@@ -14,12 +13,15 @@ import com.ds.goroute.mapper.PlaceImportJobMapper;
 import com.ds.goroute.mapper.PlaceMapper;
 import com.ds.goroute.mapper.SocialLocationJobMapper;
 import com.ds.goroute.entity.Place;
+import com.ds.goroute.service.AiCreditService;
+import com.ds.goroute.service.AiTripQuotaService;
 import com.ds.goroute.service.SocialLocationJobService;
-import com.ds.goroute.service.PlaceImportJobService;
 import com.ds.goroute.service.PlaceSocialVideoService;
 import com.ds.goroute.service.SocialLocationConfigService;
 import com.ds.goroute.service.NotificationService;
 import com.ds.goroute.service.SocialLocationCompletionService;
+import com.ds.goroute.service.SocialCandidateImageService;
+import com.ds.goroute.type.AiCreditFeature;
 import com.ds.goroute.repository.AiTripRepository;
 import com.ds.goroute.repository.SocialLocationRestrictionRepository;
 import com.ds.goroute.entity.SocialLocationSubmissionEvent;
@@ -36,6 +38,7 @@ import com.ds.goroute.type.NotificationType;
 import com.ds.goroute.type.SocialLocationOperation;
 import com.ds.goroute.utils.SocialLocationSourceKey;
 import com.ds.goroute.utils.PlaceImportCandidateKey;
+import com.ds.goroute.utils.PlaceIdentityMatcher;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -65,10 +68,12 @@ import java.util.Locale;
 @Slf4j
 public class SocialLocationJobServiceImpl implements SocialLocationJobService {
 
-    private static final String CURRENT_CANDIDATE_POLICY = "AI_EVIDENCE_JUDGE_V2";
+    private static final String CURRENT_CANDIDATE_POLICY = "AI_EVIDENCE_JUDGE_V3";
 
     /** error_details marker for a trigger call that was accepted but never answered. */
     private static final String DISPATCH_OUTCOME_UNVERIFIED = "UNVERIFIED";
+    /** Tells the worker to ask {@code map_search_url} instead of scraping Google Maps. */
+    private static final String MAP_SEARCH_PROVIDER = "MAPBOX";
 
     private final SocialLocationJobMapper jobMapper;
     private final AiApiCallMapper aiApiCallMapper;
@@ -76,7 +81,6 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     private final PlaceMapper placeMapper;
     private final ScrapeServiceClient scrapeServiceClient;
     private final ObjectMapper objectMapper;
-    private final PlaceImportJobService placeImportJobService;
     private final PlaceSocialVideoService placeSocialVideoService;
     private final SocialLocationConfigService socialConfig;
     private final AiTripRepository aiTripRepository;
@@ -97,6 +101,12 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     private String internalBaseUrl;
 
     private final InternalApiProperties internalApiProperties;
+
+    private final SocialCandidateImageService candidateImageService;
+
+
+    private final AiCreditService credits;
+    private final AiTripQuotaService aiTripQuota;
 
     @Value("${social-location.dispatch-timeout-seconds:90}")
     private long dispatchTimeoutSeconds;
@@ -161,9 +171,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
             return toResponse(reusableJob);
         }
 
-        if (requestedOperation == SocialLocationOperation.SAVE_SPOTS) {
-            enforceDailyLimit(userId, sourceUrl);
-        }
+        ensureCredits(userId, sourceUrl, requestedOperation);
         if (jobMapper.countQueued() >= socialConfig.maxQueuedJobs()) {
             audit(userId, null, sourceUrl, "REJECTED_QUEUE_FULL", "QUEUE_FULL", null);
             throw new BusinessException(ErrorConstant.SOCIAL_LOCATION_QUEUE_FULL,
@@ -212,14 +220,31 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         return toResponse(job);
     }
 
-    private void enforceDailyLimit(UUID userId, String sourceUrl) {
-        int dailyJobLimit = socialConfig.dailyJobLimit(userId);
-        if (jobMapper.countCreatedByUserSince(userId, LocalDate.now().atStartOfDay()) < dailyJobLimit) {
-            return;
+    /**
+     * Extraction is charged in AI credits. An itinerary request also needs what an AI trip needs
+     * (credits and a trip slot) before the video is analysed, so the extraction is not paid for
+     * a plan that could never be made.
+     */
+    private void ensureCredits(UUID userId, String sourceUrl, SocialLocationOperation operation) {
+        try {
+            if (operation == SocialLocationOperation.GEN_ITINERARY) {
+                aiTripQuota.ensureCanGenerate(userId, AiCreditFeature.SOCIAL_LOCATION);
+            } else {
+                credits.ensureCanStart(userId, AiCreditFeature.SOCIAL_LOCATION);
+            }
+        } catch (BusinessException refused) {
+            audit(userId, null, sourceUrl, "REJECTED_CREDIT", "INSUFFICIENT_CREDIT_OR_TRIP_SLOT", null);
+            throw refused;
         }
-        audit(userId, null, sourceUrl, "REJECTED_DAILY_LIMIT", "DAILY_LIMIT_REACHED", null);
-        throw new BusinessException(ErrorConstant.SOCIAL_LOCATION_DAILY_LIMIT_REACHED,
-                Map.of("dailyLimit", dailyJobLimit));
+    }
+
+    /**
+     * A job that failed or timed out on our side gives its credits back. A social job costs a few
+     * credits at most, so it is never stopped mid-way for credit; the start check is enough.
+     */
+    private void refundIfFailed(SocialLocationJob job, SocialLocationJobStatus status) {
+        if (status != SocialLocationJobStatus.FAILED && status != SocialLocationJobStatus.TIMED_OUT) return;
+        credits.refundTask(job.getUserId(), job.getId().toString(), "Social video job " + status.name().toLowerCase(java.util.Locale.ROOT));
     }
 
     /**
@@ -285,11 +310,16 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                         .frameIntervalSeconds(interval)
                         .imageMaxWidth(socialConfig.imageMaxWidth())
                         .imageJpegQuality(socialConfig.imageJpegQuality())
-                        .aiProvider(socialConfig.aiProvider())
-                        .aiModel(socialConfig.aiModel())
-                        .aiBaseUrl(socialConfig.aiBaseUrl())
+                        // Blank means "the worker's AI_PROVIDER"; the worker rejects an empty provider name.
+                        .aiProvider(blankToNull(socialConfig.aiProvider()))
+                        .aiModel(blankToNull(socialConfig.aiModel()))
+                        .aiBaseUrl(blankToNull(socialConfig.aiBaseUrl()))
                         .includeMapSearch(true)
                         .mapSearchLimit(1)
+                        // Places are looked up through the backend (catalogue, then Mapbox); the
+                        // worker no longer scrapes Google Maps.
+                        .mapSearchProvider(MAP_SEARCH_PROVIDER)
+                        .mapSearchUrl(placeSearchUrl())
                         .headless(true)
                         .build());
         } catch (ScrapeServiceClient.TriggerUnverifiedException e) {
@@ -527,10 +557,12 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
             job.setStatus(SocialLocationJobStatus.TIMED_OUT);
             job.setNextAttemptAt(null);
             job.setCompletedAt(now);
+            refundIfFailed(job, SocialLocationJobStatus.TIMED_OUT);
         } else {
             job.setStatus(SocialLocationJobStatus.FAILED);
             job.setNextAttemptAt(null);
             job.setCompletedAt(now);
+            refundIfFailed(job, SocialLocationJobStatus.FAILED);
         }
         job.setUpdatedAt(now);
     }
@@ -590,6 +622,9 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
      */
     @Override
     public SocialLocationJobResponse handleCallback(SocialLocationJobCallbackRequest request) {
+        // Stored before the transaction: an upload is a network call and must not hold the
+        // per-user lock taken below.
+        request.setResult(candidateImageService.storePreviewImages(callbackJobId(request), request.getResult()));
         CallbackOutcome outcome = inTransaction(() -> applyCallback(request));
         SocialLocationJob job = outcome.job();
         if (outcome.alreadyTerminal()) {
@@ -606,6 +641,16 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                                    SocialLocationJobStatus status,
                                    JsonNode result,
                                    boolean alreadyTerminal) {
+    }
+
+    private UUID callbackJobId(SocialLocationJobCallbackRequest request) {
+        if (request.getGorouteJobId() != null) {
+            return request.getGorouteJobId();
+        }
+        SocialLocationJob job = request.getPythonJobId() == null
+                ? null
+                : jobMapper.findByPythonJobId(request.getPythonJobId());
+        return job == null ? null : job.getId();
     }
 
     private CallbackOutcome applyCallback(SocialLocationJobCallbackRequest request) {
@@ -625,12 +670,20 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         if (isTerminal(job.getStatus())) {
             return new CallbackOutcome(job, job.getStatus(), null, true);
         }
+        if (status == SocialLocationJobStatus.PROCESSING && job.getDeadlineAt() == null) {
+            // A progress report can land before dispatch() records the worker's answer; dispatch
+            // then finds the job no longer DISPATCHING and skips its update, so the deadline must
+            // be set here or reconciliation could never time the job out.
+            LocalDateTime now = LocalDateTime.now();
+            job.setStartedAt(job.getStartedAt() == null ? now : job.getStartedAt());
+            job.setDeadlineAt(job.getStartedAt().plusMinutes(Math.max(1, jobTimeoutMinutes)));
+        }
         job.setStatus(status);
         job.setPythonJobId(firstNonBlank(request.getPythonJobId(), job.getPythonJobId()));
         job.setSourceUrl(firstNonBlank(request.getSourceUrl(), job.getSourceUrl()));
         job.setPlatform(firstNonBlank(request.getPlatform(), job.getPlatform()));
-        JsonNode callbackResult = retainOnlyCertainCandidates(
-                attachExistingDatabasePlaces(request.getResult()));
+        JsonNode callbackResult = retainOnlyCertainCandidates(attachExistingDatabasePlaces(
+                candidateImageService.carryOverImageUrls(parseJson(job.getResultPayload()), request.getResult())));
         request.setResult(callbackResult);
         job.setResultPayload(callbackResult != null && !callbackResult.isNull()
                 ? callbackResult.toString()
@@ -655,6 +708,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         job.setUpdatedAt(LocalDateTime.now());
         jobMapper.update(job);
         recordAiApiCall(job, request, status);
+        refundIfFailed(job, status);
         if (status == SocialLocationJobStatus.REJECTED_TOPIC) {
             recordTopicViolation(job, request.getError());
         } else if (status == SocialLocationJobStatus.REJECTED_DURATION) {
@@ -684,17 +738,6 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
             itineraryStarted = completionService.handleCompleted(job, callbackResult);
         } catch (Exception e) {
             log.warn("Could not persist completed social job {} side effects: {}",
-                    job.getId(), e.getMessage(), e);
-        }
-        try {
-            placeImportJobService.createFromSocialJobs(
-                    job.getUserId(),
-                    CreateSocialPlaceImportJobRequest.builder()
-                            .socialJobIds(List.of(job.getId()))
-                            .maxReviews(5)
-                            .build());
-        } catch (Exception e) {
-            log.warn("Could not queue automatic place import for social job {}: {}",
                     job.getId(), e.getMessage(), e);
         }
         if (!itineraryStarted) {
@@ -748,6 +791,10 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
 
     private String callbackUrl() {
         return internalBaseUrl.replaceAll("/+$", "") + "/v1/api/internal/social-location/jobs/callback";
+    }
+
+    private String placeSearchUrl() {
+        return internalBaseUrl.replaceAll("/+$", "") + "/v1/api/internal/place-search/text";
     }
 
     private String platformFromUrl(String url) {
@@ -895,7 +942,6 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         int candidateCount = hasAiResponse && extraction.path("candidates").isArray()
                 ? extraction.path("candidates").size()
                 : 0;
-        JsonNode usage = hasAiResponse ? extraction.path("usage") : null;
 
         aiApiCallMapper.upsert(AiApiCall.builder()
                 .id(UUID.randomUUID())
@@ -903,6 +949,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 .feature("SOCIAL_LOCATION")
                 .operation("EXTRACT_PLACES")
                 .correlationId(job.getId().toString())
+                .traceId(job.getId().toString())
                 .provider(hasAiResponse ? text(extraction, "provider") : socialConfig.aiProvider())
                 .model(hasAiResponse ? text(extraction, "model") : socialConfig.aiModel())
                 .status(jobStatus == SocialLocationJobStatus.PROCESSING
@@ -914,9 +961,9 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 .errorPayload(callback.getError() == null || callback.getError().isNull()
                         ? null : callback.getError().toString())
                 .candidateCount(candidateCount)
-                .inputTokens(integer(usage, "inputTokens", "prompt_tokens"))
-                .outputTokens(integer(usage, "outputTokens", "completion_tokens"))
-                .totalTokens(integer(usage, "totalTokens", "total_tokens"))
+                // Tokens and cost live on the per-call rows the worker reports (TRANSCRIBE_AUDIO,
+                // PREFILTER_TOPIC, EXTRACT_CANDIDATES, same traceId); repeating them here would
+                // count the extraction twice. The job usage stays readable in responsePayload.usage.
                 .latencyMs(latencyMs)
                 .startedAt(job.getStartedAt())
                 .completedAt(completedAt)
@@ -1003,6 +1050,14 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
     }
 
     private Place findExistingPlace(JsonNode candidate) {
+        // The backend search names the catalogue place it answered with.
+        UUID catalogPlaceId = uuidOrNull(text(candidate, "catalogPlaceId"));
+        if (catalogPlaceId != null) {
+            Place place = placeMapper.findById(catalogPlaceId);
+            if (place != null) {
+                return place;
+            }
+        }
         String googlePlaceId = text(candidate, "placeId", "googlePlaceId");
         if (googlePlaceId != null) {
             Place place = placeMapper.findByPlaceId(googlePlaceId);
@@ -1017,15 +1072,32 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
                 return place;
             }
         }
+        // Coordinates alone are not identity: only a same-named (or same-address) place
+        // among the nearest few inside 25 m is this candidate.
         java.math.BigDecimal latitude = decimal(candidate, "latitude");
         java.math.BigDecimal longitude = decimal(candidate, "longitude");
-        if (latitude != null && longitude != null) {
-            return placeMapper.findNearCoordinates(
-                    latitude,
-                    longitude,
-                    java.math.BigDecimal.valueOf(25));
+        if (latitude == null || longitude == null) {
+            return null;
         }
-        return null;
+        String title = text(candidate, "title", "name");
+        String address = text(candidate, "address");
+        return PlaceIdentityMatcher.firstSameIdentity(
+                        placeMapper.findNearbyIdentityCandidates(latitude, longitude,
+                                java.math.BigDecimal.valueOf(25), PlaceIdentityMatcher.NEARBY_CANDIDATE_LIMIT),
+                        title, address)
+                .map(placeMapper::findById)
+                .orElse(null);
+    }
+
+    private static UUID uuidOrNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private void enforceRestriction(UUID userId, String sourceUrl) {
@@ -1210,16 +1282,7 @@ public class SocialLocationJobServiceImpl implements SocialLocationJobService {
         }
     }
 
-    private Integer integer(JsonNode node, String... fields) {
-        if (node == null || node.isNull() || node.isMissingNode()) {
-            return null;
-        }
-        for (String field : fields) {
-            JsonNode value = node.get(field);
-            if (value != null && value.canConvertToInt()) {
-                return value.asInt();
-            }
-        }
-        return null;
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 }

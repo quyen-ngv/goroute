@@ -2,13 +2,17 @@ package com.ds.goroute.controller;
 
 import com.ds.goroute.dto.request.TriggerPlaceReviewRefreshRequest;
 import com.ds.goroute.dto.request.ImportPlaceRequest;
+import com.ds.goroute.dto.request.PlaceTranslationBatchRequest;
 import com.ds.goroute.dto.request.UpdatePlaceRequest;
 import com.ds.goroute.dto.response.AdminPlaceResponse;
+import com.ds.goroute.dto.BaseResponse;
+import com.ds.goroute.dto.response.PlaceTranslationBatchResponse;
 import com.ds.goroute.dto.response.PlaceReviewRefreshResponse;
 import com.ds.goroute.service.AdminPlaceReviewRefreshService;
 import com.ds.goroute.service.FoodService;
 import com.ds.goroute.service.PlaceAttributeCatalog;
 import com.ds.goroute.service.PlaceService;
+import com.ds.goroute.service.PlaceTranslationBatchService;
 import com.ds.goroute.type.PlaceReviewRefreshRerunMode;
 import com.ds.goroute.utils.AdminListSort;
 import jakarta.validation.Valid;
@@ -41,6 +45,7 @@ public class AdminPlaceController extends BaseController {
     private final AdminPlaceReviewRefreshService adminPlaceReviewRefreshService;
     private final PlaceService placeService;
     private final FoodService foodService;
+    private final PlaceTranslationBatchService placeTranslationBatchService;
 
     /**
      * The catalog is a compile-time constant (~42KB of JSON), so it is served here once
@@ -70,6 +75,7 @@ public class AdminPlaceController extends BaseController {
     public ResponseEntity listPlaces(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) java.util.List<String> placeGroups,
+            @RequestParam(required = false) java.util.List<com.ds.goroute.type.PlaceSubType> subTypes,
             @RequestParam(required = false) java.util.List<String> visibilityStatus,
             @RequestParam(required = false) java.util.List<String> trustLevel,
             @RequestParam(required = false) java.util.List<UUID> locationImageId,
@@ -77,7 +83,8 @@ public class AdminPlaceController extends BaseController {
             @RequestParam(required = false) String direction,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        return ResponseEntity.ok(ofSucceeded(placeService.getAdminPlaces(search, placeGroups, visibilityStatus,
+        return ResponseEntity.ok(ofSucceeded(placeService.getAdminPlaces(search, placeGroups,
+                com.ds.goroute.type.PlaceSubType.names(subTypes), visibilityStatus,
                 trustLevel, locationImageId, AdminListSort.field(sort, PLACE_SORT_FIELDS),
                 AdminListSort.descending(direction), page, size)));
     }
@@ -113,6 +120,17 @@ public class AdminPlaceController extends BaseController {
         return ResponseEntity.ok(ofSucceeded(result));
     }
 
+    /**
+     * Localized names keyed by Google place id (name scraper, backfill). A MANUAL name is never
+     * overwritten by GOOGLE or WIKIDATA; invalid rows are counted, not rejected.
+     */
+    @PostMapping("/translations/batch")
+    @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
+    public ResponseEntity<BaseResponse<PlaceTranslationBatchResponse>> writeTranslations(
+            @Valid @RequestBody PlaceTranslationBatchRequest request) {
+        return ResponseEntity.ok(ofSucceeded(placeTranslationBatchService.writeNames(request.getItems())));
+    }
+
     @DeleteMapping("/{placeId}")
     @PreAuthorize("@adminAuthorization.can(authentication,'places','delete')")
     public ResponseEntity deletePlace(@PathVariable UUID placeId) {
@@ -123,8 +141,9 @@ public class AdminPlaceController extends BaseController {
     @PostMapping("/indexing/trigger")
     @PreAuthorize("@adminAuthorization.can(authentication,'places','update')")
     public ResponseEntity triggerSearchReindex() {
-        placeService.triggerSearchReindex();
-        return ResponseEntity.ok(ofSucceeded(null));
+        // The rebuild runs in the background; false means one is already running.
+        boolean started = placeService.triggerSearchReindex();
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(ofSucceeded(java.util.Map.of("started", started)));
     }
 
     @GetMapping("/{placeId}/food-tags")

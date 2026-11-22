@@ -6,6 +6,7 @@ import com.ds.goroute.type.ModerationVisibility;
 
 import com.ds.goroute.type.MarketplaceMessageType;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -43,4 +44,15 @@ public class SendMarketplaceMessageRequest {
      * conversation, so a crafted request cannot notify a stranger.
      */
     private List<UUID> mentionedUserIds;
+
+    /**
+     * Where the sender's device is, when the app already knows it; optional, and older apps
+     * never send it.
+     *
+     * <p>A structured field, never part of {@link #content}: only a question to Pengoo in the
+     * 1:1 assistant chat reads it (to answer "near me"), for that one answer, and it is never
+     * stored with the message. Every other message ignores it.
+     */
+    @Valid
+    private SenderLocationRequest senderLocation;
 }

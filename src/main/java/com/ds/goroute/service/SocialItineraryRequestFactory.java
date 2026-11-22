@@ -4,6 +4,7 @@ import com.ds.goroute.dto.request.AiTripDestinationRequest;
 import com.ds.goroute.dto.request.AiTripGenerateRequest;
 import com.ds.goroute.entity.SocialLocationJob;
 import com.ds.goroute.type.BusinessConfigKey;
+import com.ds.goroute.type.PlaceGroup;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -80,9 +81,15 @@ public class SocialItineraryRequestFactory {
         socialContext.put("destination", destination == null || destination.isMissingNode()
                 ? Map.of("name", destinationName) : destination);
         socialContext.put("candidates", rows);
+        // Planner-voice overview and advice the extractor wrote from the video; the worker uses
+        // them as the trip description instead of writing its own generic one.
+        put(socialContext, "tripDescription", first(extraction, "trip_description", "tripDescription"));
+        List<String> generalGuidance = strings(extraction, "general_guidance", "generalGuidance");
+        if (!generalGuidance.isEmpty()) socialContext.put("generalGuidance", generalGuidance);
 
-        String summary = first(extraction, "summary");
-        String tripName = summary == null ? destinationName + " itinerary" : summary;
+        // The extractor names the trip; the video's own title or summary never becomes the name.
+        String tripName = first(extraction, "trip_title", "tripTitle");
+        if (tripName == null) tripName = destinationName;
         return AiTripGenerateRequest.builder()
                 .tripName(limit(tripName, 255))
                 .cityName(limit(cityName, 255))
@@ -120,6 +127,8 @@ public class SocialItineraryRequestFactory {
         put(row, "id", placeId);
         put(row, "candidateId", first(candidate, "candidateRef", "candidateId"));
         put(row, "googlePlaceId", googlePlaceId);
+        // A Mapbox hit is not in `places`; the activity keeps this id with its own location.
+        put(row, "mapboxId", mapCandidate == null ? null : first(mapCandidate, "mapboxId"));
         row.put("title", limit(title, 255));
         String address = first(candidate, "address_hint", "addressHint", "city_hint", "region_hint");
         if (address == null && mapCandidate != null) {
@@ -136,8 +145,11 @@ public class SocialItineraryRequestFactory {
         put(row, "latitude", latitude);
         put(row, "longitude", longitude);
         row.put("placeGroup", inferPlaceGroup(candidate));
+        row.put("subTypes", inferSubTypes(candidate));
         put(row, "category", first(candidate, "place_type_hint", "mention_type"));
         put(row, "description", first(candidate, "description"));
+        List<String> tips = strings(candidate, "useful_info", "visit_guidance");
+        if (!tips.isEmpty()) row.put("tips", tips);
         put(row, "visitDurationMinutes", integer(candidate, "visitDurationMinutes"));
         row.put("source", "social");
         row.put("socialJobId", job.getId().toString());
@@ -187,25 +199,27 @@ public class SocialItineraryRequestFactory {
         return new Coordinates(null, null);
     }
 
-    private String inferPlaceGroup(JsonNode candidate) {
-        String value = (first(candidate, "place_type_hint", "mention_type", "category") + " "
+    private String typeText(JsonNode candidate) {
+        return (first(candidate, "place_type_hint", "mention_type", "category") + " "
                 + first(candidate, "name", "query")).toLowerCase(Locale.ROOT);
-        if (value.matches(".*(restaurant|cafe|coffee|food|drink|bar|bakery|dessert|\u0103n|u\u1ed1ng|qu\u00e1n).*")) {
-            return FOOD;
-        }
-        if (value.matches(".*(museum|temple|pagoda|church|heritage|culture|\u0111\u1ec1n|ch\u00f9a).*")) {
-            return "CULTURE_AND_HERITAGE";
-        }
-        if (value.matches(".*(beach|park|mountain|nature|waterfall|island|bi\u1ec3n|n\u00fai|th\u00e1c).*")) {
-            return "NATURE_AND_OUTDOORS";
-        }
-        if (value.matches(".*(shop|market|mall|shopping|ch\u1ee3|mua s\u1eafm).*")) {
-            return "SHOPPING_AND_MARKET";
-        }
-        if (value.matches(".*(attraction|theme park|show|cinema|karaoke|tour|activity).*")) {
-            return "ATTRACTIONS";
-        }
-        return "OTHER";
+    }
+
+    private String inferPlaceGroup(JsonNode candidate) {
+        return typeText(candidate).matches(".*(restaurant|cafe|coffee|food|drink|bar|bakery|dessert|\u0103n|u\u1ed1ng|qu\u00e1n).*")
+                ? FOOD : PlaceGroup.ATTRACTIONS.name();
+    }
+
+    /** The kinds a video mention hints at, so the planner can still tell a temple from a beach. */
+    private List<String> inferSubTypes(JsonNode candidate) {
+        String value = typeText(candidate);
+        List<String> kinds = new ArrayList<>();
+        if (value.matches(".*(temple|pagoda|church|\u0111\u1ec1n|ch\u00f9a).*")) kinds.add("SPIRITUAL");
+        if (value.matches(".*(museum|b\u1ea3o t\u00e0ng).*")) kinds.add("MUSEUM");
+        if (value.matches(".*(beach|bi\u1ec3n).*")) kinds.add("BEACH");
+        if (value.matches(".*(park|mountain|nature|waterfall|island|n\u00fai|th\u00e1c).*")) kinds.add("NATURE");
+        if (value.matches(".*(market|ch\u1ee3).*")) kinds.add("MARKET");
+        if (value.matches(".*(mall|shopping|mua s\u1eafm).*")) kinds.add("SHOPPING");
+        return kinds;
     }
 
     private String firstCandidateContext(List<JsonNode> candidates) {
@@ -232,6 +246,21 @@ public class SocialItineraryRequestFactory {
             if (value != null && !value.isNull() && !value.asText().isBlank()) return value.asText().trim();
         }
         return null;
+    }
+
+    /** Every non-blank text entry of the listed array fields, in order, without duplicates. */
+    private List<String> strings(JsonNode node, String... fields) {
+        List<String> values = new ArrayList<>();
+        if (node == null || node.isMissingNode() || node.isNull()) return values;
+        for (String field : fields) {
+            JsonNode array = node.get(field);
+            if (array == null || !array.isArray()) continue;
+            for (JsonNode value : array) {
+                String text = value == null || value.isNull() ? "" : value.asText().trim();
+                if (!text.isEmpty() && !values.contains(text)) values.add(text);
+            }
+        }
+        return values;
     }
 
     private String text(JsonNode node, String field) {

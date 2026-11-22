@@ -58,5 +58,13 @@ public class ScrapeSocialLocationJobRequest {
     @JsonProperty("map_search_limit")
     private Integer mapSearchLimit;
 
+    /** {@code SCRAPE} or {@code GOOGLE}; a worker that predates the field ignores it and scrapes. */
+    @JsonProperty("map_search_provider")
+    private String mapSearchProvider;
+
+    /** Backend place-search endpoint, set only with {@code GOOGLE}. Called with the callback token. */
+    @JsonProperty("map_search_url")
+    private String mapSearchUrl;
+
     private Boolean headless;
 }

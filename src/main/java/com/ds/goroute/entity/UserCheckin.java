@@ -4,6 +4,8 @@ import com.ds.goroute.type.CheckinLocationSource;
 import com.ds.goroute.type.CheckinPhotoSource;
 import com.ds.goroute.type.CheckinVerificationScope;
 import com.ds.goroute.type.CheckinVerificationStatus;
+import com.ds.goroute.type.CheckinFrameStyle;
+import com.ds.goroute.type.CheckinPlaceKind;
 import com.ds.goroute.type.ContentVisibility;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -57,10 +59,28 @@ public class UserCheckin {
     /** Set when this check-in was made at a quest checkpoint the player was required to check in at (D13). */
     private UUID questRunId;
 
+    /** The local event this check-in was made at (epic 17, V285); null for an ordinary check-in. */
+    private UUID localEventId;
+
     /** Rounded-coordinate grouping key; equal keys are treated as the same spot. */
     private String locationKey;
 
     private String caption;
+
+    /** The frame the photos are shown in; null is none. */
+    private CheckinFrameStyle frameStyle;
+
+    /**
+     * The kind of spot the author said it is, kept only for a check-in without a catalogue
+     * place (V289); null otherwise or when not said. A place, once attached, decides instead.
+     */
+    private CheckinPlaceKind placeKind;
+
+    /** The background-music track (music_tracks.id); null is none. */
+    private UUID musicTrackId;
+
+    /** A video with music plays only the music (true) or mixes in its own sound (false). V290. */
+    private boolean muteVideoSound;
 
     private Integer overallRating;
     private Integer foodRating;
@@ -81,6 +101,8 @@ public class UserCheckin {
     private String rewardReason;
 
     private Boolean isRemoved;
+    /** An approver said this check-in names no real place, so it left the queue for one (V272). */
+    private LocalDateTime placeDismissedAt;
     /**
      * The day of the visit, which the author can set when they post after getting home.
      * {@link #createdAt} stays the moment the row was written: the reward window and the
@@ -91,6 +113,19 @@ public class UserCheckin {
     private LocalDateTime editedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    /**
+     * Maintained by the database (V215 trigger on media_assets): true while the post has a
+     * live photo. Read-only here; the public feed orders and pages on it.
+     */
+    private Boolean hasPhoto;
+
+    /**
+     * Read-only, filled only by the Home "Friends" query: 0 when the post is inside the
+     * province Home is on, 1, 2, ... per 100 km ring further out, null when it cannot be
+     * placed or no focus point was given.
+     */
+    private Integer focusRank;
 
     /** True when this check-in is attached to a row in the curated catalogue. */
     public boolean hasCataloguePlace() {
