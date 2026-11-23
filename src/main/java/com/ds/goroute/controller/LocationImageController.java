@@ -1,5 +1,8 @@
 package com.ds.goroute.controller;
 
+import org.springframework.context.i18n.LocaleContextHolder;
+import jakarta.validation.constraints.Pattern;
+import com.ds.goroute.enums.LocationImageKindFilter;
 import com.ds.goroute.dto.BaseResponse;
 import com.ds.goroute.dto.request.CreateLocationImageRequest;
 import com.ds.goroute.dto.request.UpdateLocationImageRequest;
@@ -34,8 +37,12 @@ public class LocationImageController extends BaseController {
      */
     @GetMapping
     public ResponseEntity<BaseResponse<List<LocationImageResponse>>> getAllLocationImages(
-            @RequestParam(defaultValue = "false") boolean includeWeather) {
-        List<LocationImageResponse> locationImages = locationImageService.getAllLocationImages(includeWeather);
+            @RequestParam(defaultValue = "false") boolean includeWeather,
+            @RequestParam(defaultValue = "REGION") LocationImageKindFilter kind,
+            @RequestParam(required = false) @Pattern(regexp = "^[A-Za-z]{2}$") String countryCode) {
+        // REGION by default: an app from before countries existed (V296) lists travel regions only.
+        List<LocationImageResponse> locationImages = locationImageService.getCatalogue(
+                kind, countryCode, LocaleContextHolder.getLocale(), includeWeather);
         return ResponseEntity.ok(ofSucceeded(locationImages));
     }
 
@@ -44,7 +51,8 @@ public class LocationImageController extends BaseController {
     public ResponseEntity<BaseResponse<LocationImageResponse>> getLocationImage(
             @PathVariable UUID id,
             @RequestParam(defaultValue = "true") boolean includeWeather) {
-        LocationImageResponse locationImage = locationImageService.getLocationImage(id, includeWeather);
+        LocationImageResponse locationImage = locationImageService.getLocationImage(
+                id, includeWeather, LocaleContextHolder.getLocale());
         return ResponseEntity.ok(ofSucceeded(locationImage));
     }
 

@@ -1,9 +1,11 @@
 package com.ds.goroute.dto.request;
 
+import com.ds.goroute.enums.LocationImageKind;
 import com.ds.goroute.dto.LocationDescriptionSection;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -41,4 +43,18 @@ public class UpdateLocationImageRequest {
 
     /** Null keeps the current wards; an empty list clears them. */
     private List<String> wardCodes;
+
+    /** COUNTRY or REGION; a new entry is a REGION when omitted. */
+    private LocationImageKind kind;
+
+    /** ISO 3166-1 alpha-2; Vietnam when omitted on create. */
+    @Pattern(regexp = "^[A-Za-z]{2}$", message = "Country code must be two letters")
+    private String countryCode;
+
+    /** ISO 4217; a region takes its country's when omitted. */
+    @Pattern(regexp = "^[A-Za-z]{3}$", message = "Currency code must be three letters")
+    private String currencyCode;
+
+    /** Names in other languages by locale code ("en", "ja", "zh-CN"); replaces the stored set when present. */
+    private java.util.Map<@Size(max = 10) String, @Size(max = 255) String> nameTranslations;
 }

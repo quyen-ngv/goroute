@@ -21,6 +21,7 @@ public interface LocationImageMapper {
           AND similarity(normalized_address, #{searchTerm}) > 0.3
         ORDER BY
             (normalized_address = #{searchTerm}) DESC,
+            (kind = 'REGION') DESC,
             similarity(normalized_address, #{searchTerm}) DESC,
             priority DESC,
             id
@@ -28,12 +29,14 @@ public interface LocationImageMapper {
         """)
     LocationImage selectBestMatch(String searchTerm);
 
-    @Select("SELECT * FROM location_images ORDER BY priority DESC, created_at DESC")
+    /** Travel regions only: every caller assigns or describes tourist areas, never whole countries. */
+    @Select("SELECT * FROM location_images WHERE kind = 'REGION' ORDER BY priority DESC, created_at DESC")
     List<LocationImage> selectAll();
 
-    /** Every column the public list shows; leaves out the JSONB description and normalized_address. */
+    /** Countries and regions, every column the public list shows; no JSONB description, no normalized_address. */
     @Select("""
-        SELECT id, full_address, slogan, image_url, avatar_url, city_slug, province_code,
+        SELECT id, kind, country_code, parent_id, currency_code,
+               full_address, slogan, image_url, avatar_url, city_slug, province_code,
                latitude, longitude, priority, coverage_radius_km, created_at, updated_at
         FROM location_images
         ORDER BY priority DESC, created_at DESC, id
@@ -42,6 +45,9 @@ public interface LocationImageMapper {
 
     @Select("SELECT * FROM location_images WHERE id = #{id}")
     LocationImage selectById(UUID id);
+
+    @Select("SELECT id FROM location_images WHERE kind = 'COUNTRY' AND country_code = #{countryCode}")
+    UUID selectCountryId(@Param("countryCode") String countryCode);
 
     /**
      * The tourist area a point belongs to: an area that lists the point's ward first, otherwise
@@ -60,14 +66,18 @@ public interface LocationImageMapper {
     List<LocationImage> selectNamesByIds(@Param("ids") Collection<UUID> ids);
 
     @Insert("""
-        INSERT INTO location_images (id, full_address, normalized_address, slogan, description, image_url, avatar_url, city_slug, province_code, latitude, longitude, priority, coverage_radius_km, created_at, updated_at)
-        VALUES (#{id}, #{fullAddress}, #{normalizedAddress}, #{slogan}, #{description}::jsonb, #{imageUrl}, #{avatarUrl}, #{citySlug}, #{provinceCode}, #{latitude}, #{longitude}, #{priority}, COALESCE(#{coverageRadiusKm}, 30), #{createdAt}, #{updatedAt})
+        INSERT INTO location_images (id, kind, country_code, parent_id, currency_code, full_address, normalized_address, slogan, description, image_url, avatar_url, city_slug, province_code, latitude, longitude, priority, coverage_radius_km, created_at, updated_at)
+        VALUES (#{id}, #{kind}, #{countryCode}, #{parentId}, #{currencyCode}, #{fullAddress}, #{normalizedAddress}, #{slogan}, #{description}::jsonb, #{imageUrl}, #{avatarUrl}, #{citySlug}, #{provinceCode}, #{latitude}, #{longitude}, #{priority}, COALESCE(#{coverageRadiusKm}, 30), #{createdAt}, #{updatedAt})
         """)
     void insert(LocationImage locationImage);
 
     @Update("""
         UPDATE location_images
-        SET full_address = #{fullAddress},
+        SET kind = #{kind},
+            country_code = #{countryCode},
+            parent_id = #{parentId},
+            currency_code = #{currencyCode},
+            full_address = #{fullAddress},
             normalized_address = #{normalizedAddress},
             slogan = #{slogan},
             description = #{description}::jsonb,

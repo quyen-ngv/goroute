@@ -909,7 +909,7 @@ public class AssistantToolService {
         try {
             return areas.findAreaIdForPoint(lat, lng).flatMap(areas::findById).orElse(null);
         } catch (RuntimeException e) {
-            log.debug("Assistant: no tourist area for {},{}: {}", lat, lng, e.getMessage());
+            log.debug("Assistant: no tourist area for the point: {}", e.getMessage());
             return null;
         }
     }

@@ -220,7 +220,12 @@ public class AiTripGenerationService {
         try {
             if (locationImageId != null) {
                 Optional<LocationImage> picked = locationImageRepository.findById(locationImageId);
-                if (picked.isPresent()) return picked.get();
+                // A whole country is not a tourist area: plan around the coordinates with no area.
+                if (picked.isPresent()) {
+                    return picked.get().getKind() == com.ds.goroute.enums.LocationImageKind.COUNTRY
+                            ? null
+                            : picked.get();
+                }
             }
             return locationImageRepository.findAreaIdForPoint(latitude, longitude)
                     .flatMap(locationImageRepository::findById)

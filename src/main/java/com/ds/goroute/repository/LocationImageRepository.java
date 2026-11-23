@@ -29,4 +29,13 @@ public interface LocationImageRepository {
     java.util.Map<UUID, List<String>> findAllWardCodes();
 
     void replaceWardCodes(UUID locationImageId, java.util.Collection<String> wardCodes);
+
+    /** The COUNTRY row of an ISO alpha-2 code. */
+    Optional<UUID> findCountryId(String countryCode);
+
+    /** Every region name translation: area id, then locale code, then name. */
+    java.util.Map<UUID, java.util.Map<String, String>> findAllNameTranslations();
+
+    /** Replaces an area's translated names with {@code namesByLocale}. */
+    void replaceNameTranslations(UUID locationImageId, java.util.Map<String, String> namesByLocale);
 }

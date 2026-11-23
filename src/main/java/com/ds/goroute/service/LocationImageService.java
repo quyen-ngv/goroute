@@ -22,7 +22,17 @@ public interface LocationImageService {
      */
     List<LocationImageResponse> getAllLocationImages(boolean includeWeather);
 
+    /**
+     * The destination catalogue: countries, travel regions, or both, optionally of one country.
+     * Names come back in {@code locale} ({@code name}, {@code countryName}). Weather is never
+     * attached to a country.
+     */
+    List<LocationImageResponse> getCatalogue(com.ds.goroute.enums.LocationImageKindFilter kind, String countryCode,
+                                             java.util.Locale locale, boolean includeWeather);
+
     LocationImageResponse getLocationImage(UUID id);
+
+    LocationImageResponse getLocationImage(UUID id, boolean includeWeather, java.util.Locale locale);
 
     /** @param includeWeather attach live weather and air quality; {@code null} when unavailable */
     LocationImageResponse getLocationImage(UUID id, boolean includeWeather);

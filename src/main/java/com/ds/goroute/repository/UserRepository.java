@@ -78,6 +78,11 @@ public interface UserRepository {
     /** Rows changed: 1, or 0 when the user does not exist or is deleted. */
     int updateBirthYear(UUID id, int birthYear, java.time.LocalDateTime updatedAt);
 
+    /** The user's home country (V296); null when not said yet. */
+    String findHomeCountryCode(UUID id);
+
+    int updateHomeCountryCode(UUID id, String countryCode, java.time.LocalDateTime updatedAt);
+
     /** Discover cards (with the four counts) of these people; deleted and non-human accounts are absent. */
     List<com.ds.goroute.dto.response.DiscoverUserResponse> findDiscoverProfilesByIds(java.util.Collection<UUID> ids);
 

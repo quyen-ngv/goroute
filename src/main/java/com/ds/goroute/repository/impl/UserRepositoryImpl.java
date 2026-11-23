@@ -181,6 +181,16 @@ public class UserRepositoryImpl implements UserRepository {
     }
 
     @Override
+    public String findHomeCountryCode(UUID id) {
+        return userMapper.selectHomeCountryCode(id);
+    }
+
+    @Override
+    public int updateHomeCountryCode(UUID id, String countryCode, java.time.LocalDateTime updatedAt) {
+        return userMapper.updateHomeCountryCode(id, countryCode, updatedAt);
+    }
+
+    @Override
     public List<com.ds.goroute.dto.response.DiscoverUserResponse> findDiscoverProfilesByIds(
             java.util.Collection<UUID> ids) {
         if (ids == null || ids.isEmpty()) {

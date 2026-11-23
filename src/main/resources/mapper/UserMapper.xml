@@ -409,6 +409,17 @@
         SELECT time_zone FROM users WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER}
     </select>
 
+    <select id="selectHomeCountryCode" resultType="java.lang.String">
+        SELECT home_country_code FROM users
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
+    </select>
+
+    <update id="updateHomeCountryCode">
+        UPDATE users
+        SET home_country_code = #{countryCode}, updated_at = #{updatedAt}
+        WHERE id = #{id,javaType=java.util.UUID,jdbcType=OTHER} AND deleted_at IS NULL
+    </update>
+
     <update id="updateBirthYear">
         UPDATE users
         SET birth_year = #{birthYear}, updated_at = #{updatedAt}

@@ -93,6 +93,13 @@ public interface UserMapper {
                         @Param("birthYear") int birthYear,
                         @Param("updatedAt") java.time.LocalDateTime updatedAt);
 
+    /** Where the user is from (V296); null for an unknown or deleted account. */
+    String selectHomeCountryCode(@Param("id") UUID id);
+
+    int updateHomeCountryCode(@Param("id") UUID id,
+                              @Param("countryCode") String countryCode,
+                              @Param("updatedAt") java.time.LocalDateTime updatedAt);
+
     /** IANA zone the user's device last reported; no-op when unchanged. */
     int updateTimeZone(@Param("id") UUID id, @Param("timeZone") String timeZone);
 

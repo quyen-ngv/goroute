@@ -7,6 +7,8 @@ import lombok.NoArgsConstructor;
 
 import java.text.Normalizer;
 import java.time.LocalDateTime;
+import com.ds.goroute.enums.LocationImageKind;
+
 import java.math.BigDecimal;
 import java.util.UUID;
 
@@ -16,6 +18,14 @@ import java.util.UUID;
 @AllArgsConstructor
 public class LocationImage {
     private UUID id;
+    /** COUNTRY or REGION (V296). */
+    private LocationImageKind kind;
+    /** ISO 3166-1 alpha-2 of the country this row is, or is in. */
+    private String countryCode;
+    /** A region's country row; null on a country. */
+    private UUID parentId;
+    /** The country's main currency (ISO 4217); null when unknown. */
+    private String currencyCode;
     private String fullAddress;
     private String normalizedAddress;
     private String slogan;

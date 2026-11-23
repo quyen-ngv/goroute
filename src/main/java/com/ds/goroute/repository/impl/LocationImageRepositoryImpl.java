@@ -16,6 +16,7 @@ public class LocationImageRepositoryImpl implements LocationImageRepository {
     
     private final LocationImageMapper locationImageMapper;
     private final com.ds.goroute.mapper.LocationImageWardMapper wardMapper;
+    private final com.ds.goroute.mapper.LocationImageTranslationMapper translationMapper;
     
     @Override
     public Optional<LocationImage> findBestMatch(String searchTerm) {
@@ -83,6 +84,29 @@ public class LocationImageRepositoryImpl implements LocationImageRepository {
         wardMapper.deleteByLocationImage(locationImageId);
         if (wardCodes != null && !wardCodes.isEmpty()) {
             wardMapper.insertAll(locationImageId, new java.util.LinkedHashSet<>(wardCodes));
+        }
+    }
+
+    @Override
+    public Optional<UUID> findCountryId(String countryCode) {
+        return countryCode == null ? Optional.empty() : Optional.ofNullable(locationImageMapper.selectCountryId(countryCode));
+    }
+
+    @Override
+    public java.util.Map<UUID, java.util.Map<String, String>> findAllNameTranslations() {
+        java.util.Map<UUID, java.util.Map<String, String>> result = new java.util.HashMap<>();
+        for (java.util.Map<String, Object> row : translationMapper.findAll()) {
+            result.computeIfAbsent((UUID) row.get("locationImageId"), key -> new java.util.LinkedHashMap<>())
+                    .put(row.get("locale").toString(), row.get("name").toString());
+        }
+        return result;
+    }
+
+    @Override
+    public void replaceNameTranslations(UUID locationImageId, java.util.Map<String, String> namesByLocale) {
+        translationMapper.deleteByLocationImage(locationImageId);
+        if (namesByLocale != null) {
+            namesByLocale.forEach((locale, name) -> translationMapper.upsert(locationImageId, locale, name));
         }
     }
 }

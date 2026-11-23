@@ -36,6 +36,7 @@ import java.util.UUID;
 public class UserController extends BaseController {
     
     private final UserService userService;
+    private final com.ds.goroute.service.UserHomeService userHomeService;
     private final TripService tripService;
     private final ReviewService reviewService;
 
@@ -116,6 +117,22 @@ public class UserController extends BaseController {
             @CurrentUser UUID userId) {
         userService.unfollowUser(userId, targetUserId);
         return ResponseEntity.ok(ofSucceeded(null));
+    }
+
+    /** Where the caller is from; every field null until they have said so. */
+    @GetMapping("/me/home")
+    public ResponseEntity<BaseResponse<com.ds.goroute.dto.response.UserHomeResponse>> getHome(
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(userHomeService.getHome(
+                userId, org.springframework.context.i18n.LocaleContextHolder.getLocale())));
+    }
+
+    @PutMapping("/me/home")
+    public ResponseEntity<BaseResponse<com.ds.goroute.dto.response.UserHomeResponse>> updateHome(
+            @Valid @RequestBody com.ds.goroute.dto.request.UpdateUserHomeRequest request,
+            @CurrentUser UUID userId) {
+        return ResponseEntity.ok(ofSucceeded(userHomeService.updateHome(
+                userId, request, org.springframework.context.i18n.LocaleContextHolder.getLocale())));
     }
 
     /** Self-declared birth year for the meetup age rules (epic 18); never shown to other users. */

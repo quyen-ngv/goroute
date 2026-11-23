@@ -138,6 +138,7 @@
         SET location_image_id = li.id
         FROM location_images li
         WHERE f.location_image_id IS NULL
+          AND li.kind = 'REGION'
           AND (
               (li.city_slug IS NOT NULL AND li.city_slug &lt;&gt; '' AND li.city_slug = f.city_slug)
               OR replace(li.normalized_address, ' ', '') = f.city_slug

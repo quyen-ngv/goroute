@@ -1,5 +1,8 @@
 package com.ds.goroute.service.impl;
 
+import java.util.Locale;
+import com.ds.goroute.enums.LocationImageKindFilter;
+import com.ds.goroute.enums.LocationImageKind;
 import com.ds.goroute.constant.ErrorConstant;
 import com.ds.goroute.dto.LocationDescriptionContent;
 import com.ds.goroute.dto.LocationDescriptionSection;
@@ -64,6 +67,10 @@ public class LocationImageServiceImpl implements LocationImageService {
 
     private static final String DEFAULT_IMAGE = "https://images.unsplash.com/photo-1488646953014-85cb44e25828";
 
+    /** Every row before V296 is Vietnamese, and so is an entry created without a country. */
+    private static final String DEFAULT_COUNTRY_CODE = "VN";
+    private static final java.util.Set<String> ISO_COUNTRY_CODES = java.util.Set.of(Locale.getISOCountries());
+
     static final Duration CATALOG_CACHE_TTL = Duration.ofMinutes(5);
     static final Duration BEST_MATCH_CACHE_TTL = Duration.ofMinutes(10);
     private static final int BEST_MATCH_CACHE_SIZE = 2_000;
@@ -84,7 +91,10 @@ public class LocationImageServiceImpl implements LocationImageService {
             .expireAfterWrite(BEST_MATCH_CACHE_TTL)
             .build();
 
-    private record CatalogSnapshot(List<LocationImage> rows, Map<UUID, List<String>> wardsByArea) {
+    /** {@code rows} holds countries and regions; {@code regions} is what area matching reads. */
+    private record CatalogSnapshot(List<LocationImage> rows, List<LocationImage> regions,
+                                   Map<UUID, List<String>> wardsByArea,
+                                   Map<UUID, Map<String, String>> namesByArea) {
     }
 
     @Override
@@ -118,27 +128,83 @@ public class LocationImageServiceImpl implements LocationImageService {
     @Override
     @Transactional(readOnly = true)
     public List<LocationImageResponse> getAllLocationImages(boolean includeWeather) {
+        return getCatalogue(LocationImageKindFilter.REGION, null, Locale.ROOT, includeWeather);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<LocationImageResponse> getCatalogue(LocationImageKindFilter kind, String countryCode,
+                                                    Locale locale, boolean includeWeather) {
         CatalogSnapshot catalog = catalogCache.get(Boolean.TRUE, ignored -> loadCatalog());
-        List<LocationImage> locationImages = catalog.rows();
-        Map<UUID, List<String>> wardsByArea = catalog.wardsByArea();
+        LocationImageKindFilter wanted = kind == null ? LocationImageKindFilter.REGION : kind;
+        String country = normalizeCountryCode(countryCode);
+        List<LocationImage> locationImages = catalog.rows().stream()
+            .filter(row -> wanted.accepts(kindOf(row)))
+            .filter(row -> country == null || country.equals(row.getCountryCode()))
+            .toList();
         if (!includeWeather) {
             return locationImages.stream()
-                .map(locationImage -> withWards(mapToListResponse(locationImage, null), wardsByArea))
+                .map(locationImage -> forList(locationImage, null, catalog, locale))
                 .collect(Collectors.toList());
         }
 
         // A cold cache would otherwise cost one sequential upstream round-trip per city.
         // Weather is cached per grid cell, so repeats across the list collapse into one call.
+        // A country gets none: the weather at its centre says nothing about a trip there.
         List<CompletableFuture<LocationImageResponse>> pending = locationImages.stream()
-            .map(locationImage -> CompletableFuture.supplyAsync(
-                () -> withWards(mapToListResponse(locationImage, cityWeatherService.findWeatherQuietly(locationImage)),
-                        wardsByArea),
-                applicationTaskExecutor))
+            .map(locationImage -> kindOf(locationImage) == LocationImageKind.COUNTRY
+                ? CompletableFuture.completedFuture(forList(locationImage, null, catalog, locale))
+                : CompletableFuture.supplyAsync(
+                    () -> forList(locationImage, cityWeatherService.findWeatherQuietly(locationImage), catalog,
+                            locale),
+                    applicationTaskExecutor))
             .toList();
 
         return pending.stream()
             .map(CompletableFuture::join)
             .collect(Collectors.toList());
+    }
+
+    private LocationImageResponse forList(LocationImage locationImage, CityWeatherResponse weather,
+                                          CatalogSnapshot catalog, Locale locale) {
+        LocationImageResponse response = withWards(mapToListResponse(locationImage, weather), catalog.wardsByArea());
+        localize(response, catalog.namesByArea().get(locationImage.getId()), locale);
+        return response;
+    }
+
+    /** A row written before V296 reached the cache has no kind: it is a region. */
+    private static LocationImageKind kindOf(LocationImage locationImage) {
+        return locationImage.getKind() == null ? LocationImageKind.REGION : locationImage.getKind();
+    }
+
+    private static String normalizeCountryCode(String countryCode) {
+        return countryCode == null || countryCode.isBlank() ? null : countryCode.trim().toUpperCase(Locale.ROOT);
+    }
+
+    /**
+     * Fills {@code name} and {@code countryName} for {@code locale}. A country's name comes from its
+     * code (the JDK's CLDR data, every app language); a region's from its stored translations: the
+     * exact tag, then the language alone, then the name it was created with.
+     */
+    private static void localize(LocationImageResponse response, Map<String, String> names, Locale locale) {
+        Locale target = locale == null || locale.getLanguage().isEmpty() ? Locale.ENGLISH : locale;
+        String countryCode = response.getCountryCode();
+        if (countryCode != null) {
+            String countryName = Locale.of("", countryCode).getDisplayCountry(target);
+            response.setCountryName(countryName.isBlank() || countryName.equals(countryCode) ? null : countryName);
+        }
+        if (response.getKind() == LocationImageKind.COUNTRY) {
+            response.setName(response.getCountryName() != null ? response.getCountryName() : response.getFullAddress());
+            return;
+        }
+        String translated = null;
+        if (names != null && locale != null && !locale.getLanguage().isEmpty()) {
+            translated = names.get(locale.toLanguageTag());
+            if (translated == null) {
+                translated = names.get(locale.getLanguage());
+            }
+        }
+        response.setName(translated != null && !translated.isBlank() ? translated : response.getFullAddress());
     }
 
     @Override
@@ -150,19 +216,30 @@ public class LocationImageServiceImpl implements LocationImageService {
     @Override
     @Transactional(readOnly = true)
     public LocationImageResponse getLocationImage(UUID id, boolean includeWeather) {
+        return getLocationImage(id, includeWeather, Locale.ROOT);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public LocationImageResponse getLocationImage(UUID id, boolean includeWeather, Locale locale) {
         LocationImage locationImage = locationImageRepository.findById(id)
             .orElseThrow(() -> new BusinessException(ErrorConstant.NOT_FOUND, "Location image not found"));
-        LocationImageResponse response = includeWeather
+        boolean withWeather = includeWeather && kindOf(locationImage) == LocationImageKind.REGION;
+        LocationImageResponse response = withWeather
             ? mapToResponse(locationImage, cityWeatherService.findWeatherQuietly(locationImage))
             : mapToResponse(locationImage);
         response.setWardCodes(locationImageRepository.findWardCodes(id));
+        Map<String, String> names = catalogCache.get(Boolean.TRUE, ignored -> loadCatalog()).namesByArea().get(id);
+        response.setNameTranslations(names == null ? Map.of() : names);
+        localize(response, names, locale);
         return response;
     }
 
     @Override
     public Optional<BigDecimal> findCoverageRadiusKm(UUID locationImageId, BigDecimal latitude, BigDecimal longitude,
                                                      List<String> texts) {
-        List<LocationImage> areas = catalogCache.get(Boolean.TRUE, ignored -> loadCatalog()).rows();
+        // Regions only: a trip stop is never "inside" a country row.
+        List<LocationImage> areas = catalogCache.get(Boolean.TRUE, ignored -> loadCatalog()).regions();
         Optional<LocationImage> linked = locationImageId == null
                 ? Optional.empty()
                 : areas.stream().filter(area -> locationImageId.equals(area.getId())).findFirst();
@@ -175,7 +252,14 @@ public class LocationImageServiceImpl implements LocationImageService {
         Map<UUID, List<String>> wardsByArea = new java.util.HashMap<>();
         locationImageRepository.findAllWardCodes()
                 .forEach((areaId, wards) -> wardsByArea.put(areaId, List.copyOf(wards)));
-        return new CatalogSnapshot(List.copyOf(locationImageRepository.findAllForList()), Map.copyOf(wardsByArea));
+        Map<UUID, Map<String, String>> namesByArea = new java.util.HashMap<>();
+        locationImageRepository.findAllNameTranslations()
+                .forEach((areaId, names) -> namesByArea.put(areaId, Map.copyOf(names)));
+        List<LocationImage> rows = List.copyOf(locationImageRepository.findAllForList());
+        List<LocationImage> regions = rows.stream()
+                .filter(row -> kindOf(row) == LocationImageKind.REGION)
+                .toList();
+        return new CatalogSnapshot(rows, regions, Map.copyOf(wardsByArea), Map.copyOf(namesByArea));
     }
 
     /**
@@ -204,8 +288,19 @@ public class LocationImageServiceImpl implements LocationImageService {
     @Override
     @Transactional
     public LocationImageResponse createLocationImage(CreateLocationImageRequest request) {
+        LocationImageKind kind = request.getKind() == null ? LocationImageKind.REGION : request.getKind();
+        String countryCode = normalizeCountryCode(request.getCountryCode());
+        if (countryCode == null) {
+            countryCode = DEFAULT_COUNTRY_CODE;
+        }
+        Optional<LocationImage> country = countryRow(countryCode);
+        requireValidPlacement(kind, countryCode, country, null);
         LocationImage locationImage = LocationImage.builder()
             .id(UUID.randomUUID())
+            .kind(kind)
+            .countryCode(countryCode)
+            .parentId(kind == LocationImageKind.REGION ? country.map(LocationImage::getId).orElse(null) : null)
+            .currencyCode(resolveCurrency(request.getCurrencyCode(), country))
             .fullAddress(request.getFullAddress())
             .slogan(request.getSlogan())
             .description(serializeDescription(normalizeDescription(request.getDescription())))
@@ -227,11 +322,17 @@ public class LocationImageServiceImpl implements LocationImageService {
         if (request.getWardCodes() != null) {
             locationImageRepository.replaceWardCodes(locationImage.getId(), request.getWardCodes());
         }
+        Map<String, String> names = cleanTranslations(request.getNameTranslations());
+        if (names != null) {
+            locationImageRepository.replaceNameTranslations(locationImage.getId(), names);
+        }
         invalidateCaches();
 
         log.info("Location image created: {}", locationImage.getId());
         LocationImageResponse response = mapToResponse(locationImage);
         response.setWardCodes(locationImageRepository.findWardCodes(locationImage.getId()));
+        response.setNameTranslations(names == null ? Map.of() : names);
+        localize(response, names, Locale.ROOT);
         return response;
     }
 
@@ -243,6 +344,22 @@ public class LocationImageServiceImpl implements LocationImageService {
 
         if (request.getFullAddress() != null) {
             locationImage.setFullAddress(request.getFullAddress());
+        }
+        LocationImageKind kind = request.getKind() != null ? request.getKind() : kindOf(locationImage);
+        String requestedCountry = normalizeCountryCode(request.getCountryCode());
+        String countryCode = requestedCountry != null ? requestedCountry : locationImage.getCountryCode();
+        if (countryCode == null) {
+            countryCode = DEFAULT_COUNTRY_CODE;
+        }
+        Optional<LocationImage> country = countryRow(countryCode);
+        requireValidPlacement(kind, countryCode, country, id);
+        locationImage.setKind(kind);
+        locationImage.setCountryCode(countryCode);
+        locationImage.setParentId(kind == LocationImageKind.REGION
+                ? country.map(LocationImage::getId).orElse(null)
+                : null);
+        if (request.getCurrencyCode() != null || locationImage.getCurrencyCode() == null) {
+            locationImage.setCurrencyCode(resolveCurrency(request.getCurrencyCode(), country));
         }
         if (request.getSlogan() != null) {
             locationImage.setSlogan(request.getSlogan());
@@ -280,11 +397,20 @@ public class LocationImageServiceImpl implements LocationImageService {
         if (request.getWardCodes() != null) {
             locationImageRepository.replaceWardCodes(id, request.getWardCodes());
         }
+        Map<String, String> names = cleanTranslations(request.getNameTranslations());
+        if (names != null) {
+            locationImageRepository.replaceNameTranslations(id, names);
+        }
         invalidateCaches();
 
         log.info("Location image updated: {}", id);
         LocationImageResponse response = mapToResponse(locationImage);
         response.setWardCodes(locationImageRepository.findWardCodes(id));
+        Map<String, String> stored = names != null
+                ? names
+                : locationImageRepository.findAllNameTranslations().getOrDefault(id, Map.of());
+        response.setNameTranslations(stored);
+        localize(response, stored, Locale.ROOT);
         return response;
     }
 
@@ -298,6 +424,47 @@ public class LocationImageServiceImpl implements LocationImageService {
         locationImageRepository.deleteById(id);
         invalidateCaches();
         log.info("Location image deleted: {}", id);
+    }
+
+    private Optional<LocationImage> countryRow(String countryCode) {
+        return locationImageRepository.findCountryId(countryCode).flatMap(locationImageRepository::findById);
+    }
+
+    /**
+     * A country code must be a real ISO code, and a country exists once. A region whose country
+     * has no row yet (a territory V296 left out) is still saved, with no parent.
+     */
+    private void requireValidPlacement(LocationImageKind kind, String countryCode,
+                                       Optional<LocationImage> country, UUID selfId) {
+        if (!ISO_COUNTRY_CODES.contains(countryCode)) {
+            throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "Unknown country code");
+        }
+        if (kind == LocationImageKind.COUNTRY) {
+            if (country.isPresent() && !country.get().getId().equals(selfId)) {
+                throw new BusinessException(ErrorConstant.INVALID_PARAMETERS, "This country already exists");
+            }
+        }
+    }
+
+    private static String resolveCurrency(String requested, Optional<LocationImage> country) {
+        if (requested != null && !requested.isBlank()) {
+            return requested.trim().toUpperCase(Locale.ROOT);
+        }
+        return country.map(LocationImage::getCurrencyCode).orElse(null);
+    }
+
+    /** Null when the request does not touch translations; otherwise trimmed pairs, blanks dropped. */
+    private static Map<String, String> cleanTranslations(Map<String, String> requested) {
+        if (requested == null) {
+            return null;
+        }
+        Map<String, String> cleaned = new java.util.LinkedHashMap<>();
+        requested.forEach((locale, name) -> {
+            if (locale != null && !locale.isBlank() && name != null && !name.isBlank()) {
+                cleaned.put(locale.trim(), name.trim());
+            }
+        });
+        return cleaned;
     }
 
     /** Curated location imagery goes through the shared upload door like everything else (MOD-05). */
@@ -339,6 +506,11 @@ public class LocationImageServiceImpl implements LocationImageService {
         return LocationImageResponse.builder()
             .weather(weather)
             .id(locationImage.getId())
+            .kind(kindOf(locationImage))
+            .countryCode(locationImage.getCountryCode())
+            .parentId(locationImage.getParentId())
+            .currencyCode(locationImage.getCurrencyCode())
+            .name(locationImage.getFullAddress())
             .fullAddress(locationImage.getFullAddress())
             .citySlug(locationImage.getCitySlug())
             .provinceCode(locationImage.getProvinceCode())
